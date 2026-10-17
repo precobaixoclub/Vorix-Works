@@ -1,0 +1,483 @@
+import type { Deal, PipelineStage } from "../../domain/crm/crm.model.js";
+import {
+  ACTIVE_GOAL_METRICS,
+  dealsInGoalScope,
+  goalProgress,
+  normalizePeriodStart,
+  paceAndProjection,
+  periodRange,
+  previousPeriodStart,
+  realizedValue,
+  type GoalMetric,
+  type GoalPeriod,
+  type GoalProgress,
+  type GoalScope,
+  type SalesGoal,
+  type WonDealFacts,
+} from "../../domain/sales/goals.js";
+import { hasPermission } from "../../domain/identity/identity.model.js";
+import type { SalesAnalyticsRepositoryPort, SalesGoalRepositoryPort } from "../ports/sales-goal-repository.port.js";
+import { notifyBestEffort } from "../notification/notification-use-cases.js";
+import { fireDealAutomation, resolveDealProbability } from "./deal-commercial-use-cases.js";
+import { isSalesManager, listManagerUserIds, loadCommercialSettings, mustDealInWorkspace, resolveVisibility, type SalesActor, type SalesEngineDeps } from "./sales-context.js";
+
+export type SalesPerformanceDeps = SalesEngineDeps & { goalRepository: SalesGoalRepositoryPort; analyticsRepository: SalesAnalyticsRepositoryPort };
+
+const DAY_MS = 86_400_000;
+const bp = (part: number, whole: number): number | undefined => (whole > 0 ? Math.round((part * 10000) / whole) : undefined);
+
+function toWonFacts(deal: Deal): WonDealFacts {
+  return {
+    id: deal.id,
+    creditedOwnerUserId: deal.creditedOwnerUserId ?? deal.ownerUserId,
+    creditedTeamId: deal.creditedTeamId ?? deal.teamId,
+    contactId: deal.contactId,
+    closedAt: deal.closedAt ?? deal.wonAt ?? deal.updatedAt,
+    finalValueCents: deal.finalValueCents ?? deal.valueCents,
+    finalGrossProfitCents: deal.finalGrossProfitCents,
+    finalMrrCents: deal.finalMrrCents,
+  };
+}
+
+/** Vendedor vê o próprio; gestão (sales_report:read_team) vê equipe/empresa/qualquer vendedor. */
+export function resolveReportSubject(actor: SalesActor, requested: { userId?: string; teamId?: string }): { userId?: string; teamId?: string } {
+  const canTeam = hasPermission(actor.role, "sales_report:read_team");
+  if (canTeam) return requested;
+  if (requested.teamId || (requested.userId && requested.userId !== actor.userId)) throw new Error("SALES_REPORT_FORBIDDEN: você só pode ver a sua própria performance.");
+  return { userId: actor.userId };
+}
+
+function matchesSubject(deal: Deal, subject: { userId?: string; teamId?: string }, credited: boolean): boolean {
+  const owner = credited ? deal.creditedOwnerUserId ?? deal.ownerUserId : deal.ownerUserId;
+  const team = credited ? deal.creditedTeamId ?? deal.teamId : deal.teamId;
+  if (subject.userId && owner !== subject.userId) return false;
+  if (subject.teamId && team !== subject.teamId) return false;
+  return true;
+}
+
+async function stageMap(deps: SalesPerformanceDeps, deals: readonly Deal[]): Promise<Map<string, PipelineStage[]>> {
+  const map = new Map<string, PipelineStage[]>();
+  for (const pipelineId of new Set(deals.map((deal) => deal.pipelineId))) map.set(pipelineId, await deps.pipelineStageRepository.listByPipeline(pipelineId));
+  return map;
+}
+
+// ---------------------------------------------------------------------------------------------
+// Metas
+// ---------------------------------------------------------------------------------------------
+
+export type GoalWithProgress = SalesGoal & { progress: GoalProgress; pace?: ReturnType<typeof paceAndProjection> };
+
+async function wonDealsBetween(deps: SalesPerformanceDeps, tenantId: string, workspaceId: string, from: string, to: string): Promise<Deal[]> {
+  return deps.analyticsRepository.listDeals({ tenantId, workspaceId, statuses: ["won"], closedFrom: from, closedTo: to });
+}
+
+async function attachProgress(deps: SalesPerformanceDeps, tenantId: string, workspaceId: string, goals: readonly SalesGoal[], now: Date): Promise<GoalWithProgress[]> {
+  if (goals.length === 0) return [];
+  const ranges = goals.map((goal) => periodRange(goal.periodType, goal.periodStart));
+  const from = ranges.map((range) => range.from).sort()[0];
+  const to = ranges.map((range) => range.to).sort().at(-1) as string;
+  const won = (await wonDealsBetween(deps, tenantId, workspaceId, from, to)).map(toWonFacts);
+  return goals.map((goal, index) => {
+    const range = ranges[index];
+    const inPeriod = dealsInGoalScope(goal, won.filter((deal) => deal.closedAt >= range.from && deal.closedAt < range.to));
+    const progress = goalProgress(goal.targetValue, realizedValue(goal.metric, inPeriod));
+    return { ...goal, progress, pace: goal.periodType !== "monthly" ? paceAndProjection(goal.periodType, goal.periodStart, goal.targetValue, progress.realizedValue, now) : undefined };
+  });
+}
+
+export async function listGoals(deps: SalesPerformanceDeps, actor: SalesActor, input: { workspaceId: string; year?: number; periodType?: GoalPeriod; now?: Date }): Promise<GoalWithProgress[]> {
+  if (!hasPermission(actor.role, "goal:read")) throw new Error("SALES_REPORT_FORBIDDEN: sem acesso a metas.");
+  const now = input.now ?? new Date();
+  const year = input.year ?? now.getUTCFullYear();
+  let goals = await deps.goalRepository.list({ tenantId: actor.tenantId, workspaceId: input.workspaceId, periodFrom: `${year}-01-01`, periodTo: `${year + 1}-01-01` });
+  if (input.periodType) goals = goals.filter((goal) => goal.periodType === input.periodType);
+  if (!hasPermission(actor.role, "sales_report:read_team")) {
+    const teams = new Set((await deps.teamMembershipRepository.listByUser(actor.userId)).map((membership) => membership.teamId));
+    goals = goals.filter((goal) => goal.scopeType === "company" || (goal.scopeType === "user" && goal.scopeId === actor.userId) || (goal.scopeType === "team" && goal.scopeId && teams.has(goal.scopeId)));
+  }
+  return attachProgress(deps, actor.tenantId, input.workspaceId, goals, now);
+}
+
+export async function upsertGoal(deps: SalesPerformanceDeps, actor: SalesActor, input: { workspaceId: string; scopeType: GoalScope; scopeId?: string; metric: GoalMetric; periodType: GoalPeriod; periodStart: string; targetValue: number; currency?: string }): Promise<SalesGoal> {
+  if (!hasPermission(actor.role, "goal:manage")) throw new Error("SALES_REPORT_FORBIDDEN: só a gestão define metas.");
+  if (!ACTIVE_GOAL_METRICS.includes(input.metric)) throw new Error("SALES_GOAL_INVALID: este tipo de meta ainda não está disponível.");
+  if (!(input.targetValue > 0) || !Number.isInteger(input.targetValue)) throw new Error("SALES_GOAL_INVALID: a meta deve ser um valor positivo.");
+  if (input.scopeType !== "company" && !input.scopeId) throw new Error("SALES_GOAL_INVALID: informe o vendedor ou a equipe.");
+  if (input.scopeType === "user" && !(await deps.membershipRepository.getByUserAndTenant(input.scopeId as string, actor.tenantId))) throw new Error("SALES_GOAL_INVALID: vendedor não pertence a esta conta.");
+  const { goal, previousTarget } = await deps.goalRepository.upsert({
+    tenantId: actor.tenantId, workspaceId: input.workspaceId, scopeType: input.scopeType, scopeId: input.scopeType === "company" ? undefined : input.scopeId,
+    metric: input.metric, periodType: input.periodType, periodStart: normalizePeriodStart(input.periodType, input.periodStart), targetValue: input.targetValue, currency: input.currency, actorUserId: actor.userId,
+  });
+  await deps.goalRepository.recordChange({ goalId: goal.id, tenantId: actor.tenantId, workspaceId: input.workspaceId, changedBy: actor.userId, fromValue: previousTarget, toValue: goal.targetValue, action: previousTarget === undefined ? "created" : "updated" });
+  return goal;
+}
+
+export async function deleteGoal(deps: SalesPerformanceDeps, actor: SalesActor, input: { workspaceId: string; goalId: string }): Promise<void> {
+  if (!hasPermission(actor.role, "goal:manage")) throw new Error("SALES_REPORT_FORBIDDEN: só a gestão define metas.");
+  const goal = await deps.goalRepository.getById(input.goalId);
+  if (!goal || goal.tenantId !== actor.tenantId || goal.workspaceId !== input.workspaceId) throw new Error(`SALES_GOAL_NOT_FOUND: meta "${input.goalId}" não existe.`);
+  await deps.goalRepository.delete(goal.id);
+  await deps.goalRepository.recordChange({ goalId: goal.id, tenantId: actor.tenantId, workspaceId: input.workspaceId, changedBy: actor.userId, fromValue: goal.targetValue, action: "deleted" });
+}
+
+/** "Meta atingida" — avaliado a cada ganho; notifica uma única vez por meta. */
+export async function checkGoalsReached(deps: SalesPerformanceDeps, deal: Deal): Promise<void> {
+  if (deal.status !== "won" || !deal.closedAt) return;
+  const day = deal.closedAt.slice(0, 10);
+  const candidates = (await deps.goalRepository.list({ tenantId: deal.tenantId, workspaceId: deal.workspaceId, periodFrom: `${day.slice(0, 4)}-01-01`, periodTo: `${Number(day.slice(0, 4)) + 1}-01-01` }))
+    .filter((goal) => {
+      const range = periodRange(goal.periodType, goal.periodStart);
+      if (deal.closedAt! < range.from || deal.closedAt! >= range.to) return false;
+      const facts = toWonFacts(deal);
+      return dealsInGoalScope(goal, [facts]).length > 0;
+    });
+  for (const goal of await attachProgress(deps, deal.tenantId, deal.workspaceId, candidates, new Date())) {
+    if (!goal.progress.reached || !(await deps.goalRepository.claimAchievement(goal.id, deal.id))) continue;
+    const recipients = goal.scopeType === "user" ? [goal.scopeId as string] : await listManagerUserIds(deps, deal.tenantId);
+    for (const userId of new Set(recipients)) {
+      notifyBestEffort(deps.notification, {
+        tenantId: deal.tenantId, workspaceId: deal.workspaceId, userId, title: "Meta atingida! 🎯",
+        body: `${goal.scopeType === "user" ? "Sua meta" : goal.scopeType === "team" ? "A meta da equipe" : "A meta da empresa"} ${goal.periodType === "monthly" ? "do mês" : goal.periodType === "quarterly" ? "do trimestre" : "do ano"} foi alcançada.`,
+        sourceType: "sales_goal_reached", sourceId: goal.id, sourceUrl: `/workspaces/${deal.workspaceId}/performance`,
+      });
+    }
+    await fireDealAutomation(deps, deal, "goal_reached");
+  }
+}
+
+// ---------------------------------------------------------------------------------------------
+// Performance, forecast e impacto na meta
+// ---------------------------------------------------------------------------------------------
+
+export type ForecastBuckets = { wonCents: number; commitCents: number; bestCaseCents: number; pipelineCents: number; weightedCents: number };
+
+function forecastFor(openDeals: readonly Deal[], stages: Map<string, PipelineStage[]>, range: { from: string; to: string }, wonCents: number): ForecastBuckets {
+  const inPeriod = openDeals.filter((deal) => deal.expectedCloseDate && `${deal.expectedCloseDate}T00:00:00.000Z` >= range.from && `${deal.expectedCloseDate}T00:00:00.000Z` < range.to);
+  const sum = (category: Deal["forecastCategory"]) => inPeriod.filter((deal) => deal.forecastCategory === category).reduce((total, deal) => total + deal.valueCents, 0);
+  return {
+    wonCents,
+    commitCents: sum("commit"),
+    bestCaseCents: sum("best_case"),
+    pipelineCents: sum("pipeline"),
+    weightedCents: inPeriod.filter((deal) => deal.forecastCategory !== "omitted").reduce((total, deal) => total + Math.round((deal.valueCents * resolveDealProbability(deal, stages.get(deal.pipelineId) ?? []).value) / 100), 0),
+  };
+}
+
+export type PerformanceReport = {
+  subject: { userId?: string; teamId?: string };
+  period: { type: GoalPeriod; start: string; from: string; to: string };
+  goals: GoalWithProgress[];
+  won: { count: number; revenueCents: number; averageTicketCents?: number; grossProfitCents?: number; averageMarginBp?: number; mrrCents: number; arrCents: number };
+  lost: { count: number; valueCents: number };
+  conversionBp?: number;
+  averageCycleDays?: number;
+  pipeline: { openCount: number; openValueCents: number; weightedValueCents: number };
+  forecast: ForecastBuckets;
+  dataQuality: { withoutNextActivity: number; stale: number; overdueExpectedClose: number; withoutValue: number; withoutOwner: number };
+  comparison: { previousRevenueCents: number; previousWonCount: number; available: boolean };
+};
+
+export async function getPerformance(deps: SalesPerformanceDeps, actor: SalesActor, input: { workspaceId: string; userId?: string; teamId?: string; periodType?: GoalPeriod; periodStart?: string; now?: Date }): Promise<PerformanceReport> {
+  const now = input.now ?? new Date();
+  const subject = resolveReportSubject(actor, { userId: input.userId, teamId: input.teamId });
+  const periodType = input.periodType ?? "monthly";
+  const start = normalizePeriodStart(periodType, input.periodStart ?? now.toISOString().slice(0, 10));
+  const range = periodRange(periodType, start);
+  const previous = periodRange(periodType, previousPeriodStart(periodType, start));
+  const settings = await loadCommercialSettings(deps, actor.tenantId, input.workspaceId);
+  const visibility = resolveVisibility(actor, settings);
+
+  const [closed, previousWon, open, withTasks] = await Promise.all([
+    deps.analyticsRepository.listDeals({ tenantId: actor.tenantId, workspaceId: input.workspaceId, statuses: ["won", "lost"], closedFrom: range.from, closedTo: range.to }),
+    deps.analyticsRepository.listDeals({ tenantId: actor.tenantId, workspaceId: input.workspaceId, statuses: ["won"], closedFrom: previous.from, closedTo: previous.to }),
+    deps.analyticsRepository.listDeals({ tenantId: actor.tenantId, workspaceId: input.workspaceId, statuses: ["open"] }),
+    deps.analyticsRepository.listDealIdsWithPendingTasks({ tenantId: actor.tenantId, workspaceId: input.workspaceId }),
+  ]);
+  const won = closed.filter((deal) => deal.status === "won" && matchesSubject(deal, subject, true));
+  const lost = closed.filter((deal) => deal.status === "lost" && matchesSubject(deal, subject, true));
+  const mine = open.filter((deal) => matchesSubject(deal, subject, false));
+  const stages = await stageMap(deps, mine);
+  const revenue = won.reduce((sum, deal) => sum + (deal.finalValueCents ?? deal.valueCents), 0);
+  const withMargin = won.filter((deal) => deal.finalGrossProfitCents !== undefined);
+  const marginRevenue = withMargin.reduce((sum, deal) => sum + (deal.finalValueCents ?? 0), 0);
+  const profit = withMargin.reduce((sum, deal) => sum + (deal.finalGrossProfitCents ?? 0), 0);
+  const mrr = won.reduce((sum, deal) => sum + (deal.finalMrrCents ?? 0), 0);
+  const cycles = [...won, ...lost].filter((deal) => deal.closedAt).map((deal) => (new Date(deal.closedAt as string).getTime() - new Date(deal.createdAt).getTime()) / DAY_MS);
+
+  const goalScopes = subject.userId ? { scopeType: "user" as const, scopeId: subject.userId } : subject.teamId ? { scopeType: "team" as const, scopeId: subject.teamId } : { scopeType: "company" as const };
+  const goals = (await deps.goalRepository.list({ tenantId: actor.tenantId, workspaceId: input.workspaceId, scopeType: goalScopes.scopeType, scopeId: "scopeId" in goalScopes ? goalScopes.scopeId : undefined }))
+    .filter((goal) => goal.periodType === periodType && goal.periodStart === start && (visibility.canViewMargin || goal.metric !== "gross_margin"));
+
+  return {
+    subject,
+    period: { type: periodType, start, ...range },
+    goals: await attachProgress(deps, actor.tenantId, input.workspaceId, goals, now),
+    won: {
+      count: won.length,
+      revenueCents: revenue,
+      averageTicketCents: won.length ? Math.round(revenue / won.length) : undefined,
+      grossProfitCents: visibility.canViewMargin && withMargin.length ? profit : undefined,
+      averageMarginBp: visibility.canViewMargin ? bp(profit, marginRevenue) : undefined,
+      mrrCents: mrr,
+      arrCents: mrr * 12,
+    },
+    lost: { count: lost.length, valueCents: lost.reduce((sum, deal) => sum + deal.valueCents, 0) },
+    conversionBp: bp(won.length, won.length + lost.length),
+    averageCycleDays: cycles.length ? Math.round((cycles.reduce((a, b) => a + b, 0) / cycles.length) * 10) / 10 : undefined,
+    pipeline: {
+      openCount: mine.length,
+      openValueCents: mine.reduce((sum, deal) => sum + deal.valueCents, 0),
+      weightedValueCents: mine.reduce((sum, deal) => sum + Math.round((deal.valueCents * resolveDealProbability(deal, stages.get(deal.pipelineId) ?? []).value) / 100), 0),
+    },
+    forecast: forecastFor(mine, stages, range, revenue),
+    dataQuality: {
+      withoutNextActivity: mine.filter((deal) => !withTasks.has(deal.id)).length,
+      stale: mine.filter((deal) => {
+        const stage = stages.get(deal.pipelineId)?.find((item) => item.id === deal.stageId);
+        return stage?.staleAfterDays !== undefined && (now.getTime() - new Date(deal.lastStageChangedAt).getTime()) / DAY_MS >= stage.staleAfterDays;
+      }).length,
+      overdueExpectedClose: mine.filter((deal) => deal.expectedCloseDate && deal.expectedCloseDate < now.toISOString().slice(0, 10)).length,
+      withoutValue: mine.filter((deal) => !(deal.valueCents > 0)).length,
+      withoutOwner: mine.filter((deal) => !deal.ownerUserId).length,
+    },
+    comparison: {
+      previousRevenueCents: previousWon.filter((deal) => matchesSubject(deal, subject, true)).reduce((sum, deal) => sum + (deal.finalValueCents ?? deal.valueCents), 0),
+      previousWonCount: previousWon.filter((deal) => matchesSubject(deal, subject, true)).length,
+      available: previousWon.length > 0,
+    },
+  };
+}
+
+/** "Se você fechar esta venda" — cálculo determinístico sobre a meta mensal de receita do responsável. */
+export async function getDealGoalImpact(deps: SalesPerformanceDeps, actor: SalesActor, input: { workspaceId: string; dealId: string; now?: Date }) {
+  const deal = await mustDealInWorkspace(deps, input.dealId, actor.tenantId, input.workspaceId);
+  const ownerUserId = deal.ownerUserId ?? actor.userId;
+  if (ownerUserId !== actor.userId && !hasPermission(actor.role, "sales_report:read_team")) return { available: false as const };
+  const now = input.now ?? new Date();
+  const start = normalizePeriodStart("monthly", now.toISOString().slice(0, 10));
+  const [goal] = await deps.goalRepository.list({ tenantId: actor.tenantId, workspaceId: input.workspaceId, scopeType: "user", scopeId: ownerUserId, metric: "sales_revenue" })
+    .then((goals) => goals.filter((item) => item.periodType === "monthly" && item.periodStart === start));
+  if (!goal) return { available: false as const, ownerUserId };
+  const [withProgress] = await attachProgress(deps, actor.tenantId, input.workspaceId, [goal], now);
+  const value = deal.status === "won" ? 0 : deal.valueCents;
+  const after = withProgress.progress.realizedValue + value;
+  return {
+    available: true as const,
+    ownerUserId,
+    targetCents: goal.targetValue,
+    realizedCents: withProgress.progress.realizedValue,
+    attainmentBp: withProgress.progress.attainmentBp,
+    remainingCents: withProgress.progress.remainingValue,
+    dealValueCents: value,
+    dealShareOfGoalBp: bp(value, goal.targetValue) ?? 0,
+    afterCloseCents: after,
+    afterCloseAttainmentBp: bp(after, goal.targetValue) ?? 0,
+    afterCloseRemainingCents: Math.max(0, goal.targetValue - after),
+  };
+}
+
+// ---------------------------------------------------------------------------------------------
+// Equipe, forecast mensal e relatórios
+// ---------------------------------------------------------------------------------------------
+
+export async function getTeamPerformance(deps: SalesPerformanceDeps, actor: SalesActor, input: { workspaceId: string; teamId?: string; periodType?: GoalPeriod; periodStart?: string; now?: Date }) {
+  if (!hasPermission(actor.role, "sales_report:read_team")) throw new Error("SALES_REPORT_FORBIDDEN: visão de equipe é da gestão.");
+  const now = input.now ?? new Date();
+  const periodType = input.periodType ?? "monthly";
+  const start = normalizePeriodStart(periodType, input.periodStart ?? now.toISOString().slice(0, 10));
+  const members = await deps.membershipRepository.listByTenant(actor.tenantId);
+  const company = await getPerformance(deps, actor, { workspaceId: input.workspaceId, teamId: input.teamId, periodType, periodStart: start, now });
+  const rows = [];
+  for (const member of members) {
+    const report = await getPerformance(deps, actor, { workspaceId: input.workspaceId, userId: member.userId, periodType, periodStart: start, now });
+    if (input.teamId) {
+      // Escopo de equipe: só quem tem atividade creditada na equipe aparece.
+      const teamReport = await getPerformance(deps, actor, { workspaceId: input.workspaceId, userId: member.userId, teamId: input.teamId, periodType, periodStart: start, now });
+      if (teamReport.won.count + teamReport.pipeline.openCount + teamReport.lost.count === 0 && report.goals.length === 0) continue;
+    }
+    const revenueGoal = report.goals.find((goal) => goal.metric === "sales_revenue");
+    rows.push({
+      userId: member.userId,
+      role: member.role,
+      goalCents: revenueGoal?.targetValue,
+      soldCents: report.won.revenueCents,
+      attainmentBp: revenueGoal?.progress.attainmentBp,
+      averageMarginBp: report.won.averageMarginBp,
+      wonCount: report.won.count,
+      pipelineCents: report.pipeline.openValueCents,
+      weightedCents: report.pipeline.weightedValueCents,
+      conversionBp: report.conversionBp,
+      averageTicketCents: report.won.averageTicketCents,
+      averageCycleDays: report.averageCycleDays,
+    });
+  }
+  const settings = await loadCommercialSettings(deps, actor.tenantId, input.workspaceId);
+  return { team: company, sellers: rows.sort((a, b) => b.soldCents - a.soldCents), rankingEnabled: settings.rankingEnabled };
+}
+
+/** Forecast por mês (trimestre/ano): ganho, commit, best case, pipeline, ponderado, meta e gap. */
+export async function getForecast(deps: SalesPerformanceDeps, actor: SalesActor, input: { workspaceId: string; userId?: string; teamId?: string; periodType?: "quarterly" | "annual" | "monthly"; periodStart?: string; now?: Date }) {
+  const now = input.now ?? new Date();
+  const periodType = input.periodType ?? "quarterly";
+  const start = normalizePeriodStart(periodType, input.periodStart ?? now.toISOString().slice(0, 10));
+  const months = periodType === "annual" ? 12 : periodType === "quarterly" ? 3 : 1;
+  const [year, month] = start.split("-").map(Number);
+  const rows: (ForecastBuckets & { month: string; goalCents?: number; gapCents?: number })[] = [];
+  for (let index = 0; index < months; index++) {
+    const monthStart = new Date(Date.UTC(year, month - 1 + index, 1)).toISOString().slice(0, 10);
+    const report = await getPerformance(deps, actor, { workspaceId: input.workspaceId, userId: input.userId, teamId: input.teamId, periodType: "monthly", periodStart: monthStart, now });
+    const goal = report.goals.find((item) => item.metric === "sales_revenue");
+    rows.push({ month: monthStart, ...report.forecast, goalCents: goal?.targetValue, gapCents: goal ? Math.max(0, goal.targetValue - report.forecast.wonCents) : undefined });
+  }
+  const sum = (key: "wonCents" | "commitCents" | "bestCaseCents" | "pipelineCents" | "weightedCents") => rows.reduce((total, row) => total + row[key], 0);
+  const goalTotal = rows.every((row) => row.goalCents !== undefined) ? rows.reduce((total, row) => total + (row.goalCents ?? 0), 0) : undefined;
+  return { periodType, start, months: rows, totals: { wonCents: sum("wonCents"), commitCents: sum("commitCents"), bestCaseCents: sum("bestCaseCents"), pipelineCents: sum("pipelineCents"), weightedCents: sum("weightedCents"), goalCents: goalTotal, gapCents: goalTotal !== undefined ? Math.max(0, goalTotal - sum("wonCents")) : undefined } };
+}
+
+export async function getSalesReports(deps: SalesPerformanceDeps, actor: SalesActor, input: { workspaceId: string; from: string; to: string; userId?: string; teamId?: string; pipelineId?: string; origin?: string }) {
+  const subject = resolveReportSubject(actor, { userId: input.userId, teamId: input.teamId });
+  const settings = await loadCommercialSettings(deps, actor.tenantId, input.workspaceId);
+  const visibility = resolveVisibility(actor, settings);
+  const filterDeal = (deal: Deal, credited: boolean) => matchesSubject(deal, subject, credited) && (!input.pipelineId || deal.pipelineId === input.pipelineId) && (!input.origin || deal.origin === input.origin);
+  const [closedAll, createdAll, proposals, approvals, events] = await Promise.all([
+    deps.analyticsRepository.listDeals({ tenantId: actor.tenantId, workspaceId: input.workspaceId, statuses: ["won", "lost"], closedFrom: input.from, closedTo: input.to }),
+    deps.analyticsRepository.listDeals({ tenantId: actor.tenantId, workspaceId: input.workspaceId, createdFrom: input.from, createdTo: input.to }),
+    deps.analyticsRepository.listProposals({ tenantId: actor.tenantId, workspaceId: input.workspaceId, createdFrom: input.from, createdTo: input.to }),
+    deps.analyticsRepository.listApprovals({ tenantId: actor.tenantId, workspaceId: input.workspaceId, from: input.from, to: input.to }),
+    deps.analyticsRepository.listDealStageEvents({ tenantId: actor.tenantId, workspaceId: input.workspaceId, from: input.from, to: input.to }),
+  ]);
+  const closed = closedAll.filter((deal) => filterDeal(deal, true));
+  const won = closed.filter((deal) => deal.status === "won");
+  const lost = closed.filter((deal) => deal.status === "lost");
+  const items = await deps.dealItemRepository.listByDeals(closed.map((deal) => deal.id));
+
+  // Produtos: vendidos (itens de ganhos) + conversão (oportunidades fechadas que continham o produto).
+  const products = new Map<string, { productId?: string; name: string; quantity: number; revenueCents: number; costCents?: number; wonDeals: Set<string>; lostDeals: Set<string> }>();
+  const statusOf = new Map(closed.map((deal) => [deal.id, deal.status]));
+  for (const item of items) {
+    const key = item.productId ?? `avulso:${item.productNameSnapshot}`;
+    const row = products.get(key) ?? { productId: item.productId, name: item.productNameSnapshot, quantity: 0, revenueCents: 0, costCents: 0, wonDeals: new Set<string>(), lostDeals: new Set<string>() };
+    if (statusOf.get(item.dealId) === "won") {
+      row.quantity += item.quantity;
+      row.revenueCents += item.subtotalProposedCents;
+      row.costCents = row.costCents === undefined || item.subtotalCostCents === undefined ? undefined : row.costCents + item.subtotalCostCents;
+      row.wonDeals.add(item.dealId);
+    } else row.lostDeals.add(item.dealId);
+    products.set(key, row);
+  }
+
+  const group = <K extends string>(deals: readonly Deal[], key: (deal: Deal) => K | undefined) => {
+    const map = new Map<string, { won: number; lost: number; wonValueCents: number }>();
+    for (const deal of deals) {
+      const id = key(deal) ?? "—";
+      const row = map.get(id) ?? { won: 0, lost: 0, wonValueCents: 0 };
+      if (deal.status === "won") { row.won++; row.wonValueCents += deal.finalValueCents ?? deal.valueCents; } else row.lost++;
+      map.set(id, row);
+    }
+    return [...map.entries()].map(([id, row]) => ({ id, ...row, conversionBp: bp(row.won, row.won + row.lost) })).sort((a, b) => b.wonValueCents - a.wonValueCents);
+  };
+
+  // Funil: entradas por etapa e tempo médio na etapa (eventos de mudança de etapa no período).
+  const entries = new Map<string, number>();
+  const durations = new Map<string, number[]>();
+  const byDeal = new Map<string, { stageId: string; at: string }[]>();
+  for (const event of events) {
+    const stageId = String((event.eventType === "deal_created" ? event.payload.stageId : event.payload.toStageId) ?? "");
+    if (!stageId) continue;
+    entries.set(stageId, (entries.get(stageId) ?? 0) + 1);
+    byDeal.set(event.entityId, [...(byDeal.get(event.entityId) ?? []), { stageId, at: event.occurredAt }]);
+  }
+  for (const steps of byDeal.values()) {
+    for (let index = 0; index < steps.length - 1; index++) {
+      const days = (new Date(steps[index + 1].at).getTime() - new Date(steps[index].at).getTime()) / DAY_MS;
+      durations.set(steps[index].stageId, [...(durations.get(steps[index].stageId) ?? []), days]);
+    }
+  }
+  const pipelineIds = new Set([...createdAll, ...closed].map((deal) => deal.pipelineId).filter((id) => !input.pipelineId || id === input.pipelineId));
+  const funnel = [];
+  for (const pipelineId of pipelineIds) {
+    const stages = (await deps.pipelineStageRepository.listByPipeline(pipelineId)).sort((a, b) => a.position - b.position);
+    funnel.push({
+      pipelineId,
+      stages: stages.map((stage, index) => {
+        const entered = entries.get(stage.id) ?? 0;
+        const next = stages.slice(index + 1).reduce((total, later) => total + (entries.get(later.id) ?? 0), 0);
+        const times = durations.get(stage.id) ?? [];
+        return { stageId: stage.id, name: stage.name, isWon: stage.isWon, isLost: stage.isLost, entered, advanceRateBp: stage.isWon || stage.isLost ? undefined : bp(Math.min(entered, next), entered), averageDays: times.length ? Math.round((times.reduce((a, b) => a + b, 0) / times.length) * 10) / 10 : undefined };
+      }),
+    });
+  }
+
+  const scopedProposals = proposals.filter((proposal) => !subject.userId || proposal.createdByUserId === subject.userId || proposal.sentByUserId === subject.userId);
+  const sent = scopedProposals.filter((proposal) => proposal.sentAt);
+  const viewed = sent.filter((proposal) => proposal.viewedAt);
+  const accepted = sent.filter((proposal) => proposal.status === "accepted");
+  const hoursBetween = (a?: string, b?: string) => (a && b ? (new Date(b).getTime() - new Date(a).getTime()) / 3_600_000 : undefined);
+  const avg = (values: (number | undefined)[]) => {
+    const clean = values.filter((value): value is number => value !== undefined);
+    return clean.length ? Math.round((clean.reduce((x, y) => x + y, 0) / clean.length) * 10) / 10 : undefined;
+  };
+
+  const discountWon = won.map((deal) => {
+    const totals = (deal.finalSnapshot as { totals?: { listTotalCents?: number; discountCents?: number; discountBp?: number } } | undefined)?.totals;
+    return { listTotal: totals?.listTotalCents, discount: totals?.discountCents, discountBp: totals?.discountBp };
+  }).filter((row) => row.listTotal !== undefined);
+
+  return {
+    period: { from: input.from, to: input.to },
+    subject,
+    conversion: {
+      won: won.length, lost: lost.length, conversionBp: bp(won.length, won.length + lost.length),
+      bySeller: group(closed, (deal) => deal.creditedOwnerUserId ?? deal.ownerUserId),
+      byTeam: group(closed, (deal) => deal.creditedTeamId ?? deal.teamId),
+      byPipeline: group(closed, (deal) => deal.pipelineId),
+      byOrigin: group(closed, (deal) => deal.origin),
+    },
+    products: [...products.values()].map((row) => ({
+      productId: row.productId, name: row.name, quantity: row.quantity, revenueCents: row.revenueCents, wonDeals: row.wonDeals.size, lostDeals: row.lostDeals.size,
+      averageTicketCents: row.wonDeals.size ? Math.round(row.revenueCents / row.wonDeals.size) : undefined,
+      grossMarginBp: visibility.canViewMargin && row.costCents !== undefined ? bp(row.revenueCents - row.costCents, row.revenueCents) : undefined,
+      conversionBp: bp(row.wonDeals.size, row.wonDeals.size + row.lostDeals.size),
+    })).sort((a, b) => b.revenueCents - a.revenueCents),
+    losses: {
+      count: lost.length,
+      valueCents: lost.reduce((sum, deal) => sum + deal.valueCents, 0),
+      byReason: group(lost, (deal) => deal.lossReason).map((row) => ({ reason: row.id, count: row.lost })),
+      byCompetitor: group(lost, (deal) => deal.competitorId).map((row) => ({ competitorId: row.id, count: row.lost })),
+      bySeller: group(lost, (deal) => deal.creditedOwnerUserId ?? deal.ownerUserId).map((row) => ({ userId: row.id, count: row.lost })),
+    },
+    funnel,
+    cycle: {
+      averageDaysWon: avg(won.map((deal) => (deal.closedAt ? (new Date(deal.closedAt).getTime() - new Date(deal.createdAt).getTime()) / DAY_MS : undefined))),
+      averageDaysLost: avg(lost.map((deal) => (deal.closedAt ? (new Date(deal.closedAt).getTime() - new Date(deal.createdAt).getTime()) / DAY_MS : undefined))),
+    },
+    proposals: {
+      created: scopedProposals.length, sent: sent.length, viewed: viewed.length, accepted: accepted.length,
+      declined: sent.filter((proposal) => proposal.status === "rejected").length, expired: scopedProposals.filter((proposal) => proposal.status === "expired").length,
+      sentToViewedBp: bp(viewed.length, sent.length), viewedToAcceptedBp: bp(accepted.length, viewed.length), sentToAcceptedBp: bp(accepted.length, sent.length),
+      averageHoursSentToViewed: avg(viewed.map((proposal) => hoursBetween(proposal.sentAt, proposal.viewedAt))),
+      averageHoursViewedToAccepted: avg(accepted.map((proposal) => hoursBetween(proposal.viewedAt, proposal.respondedAt))),
+    },
+    margin: visibility.canViewMargin ? {
+      revenueCents: won.reduce((sum, deal) => sum + (deal.finalValueCents ?? 0), 0),
+      costCents: won.reduce((sum, deal) => sum + (deal.finalCostCents ?? 0), 0),
+      grossProfitCents: won.reduce((sum, deal) => sum + (deal.finalGrossProfitCents ?? 0), 0),
+      grossMarginBp: bp(won.reduce((sum, deal) => sum + (deal.finalGrossProfitCents ?? 0), 0), won.filter((deal) => deal.finalGrossProfitCents !== undefined).reduce((sum, deal) => sum + (deal.finalValueCents ?? 0), 0)),
+      bySeller: [...new Set(won.map((deal) => deal.creditedOwnerUserId ?? "—"))].map((userId) => {
+        const mine = won.filter((deal) => (deal.creditedOwnerUserId ?? "—") === userId && deal.finalGrossProfitCents !== undefined);
+        return { userId, revenueCents: mine.reduce((sum, deal) => sum + (deal.finalValueCents ?? 0), 0), grossProfitCents: mine.reduce((sum, deal) => sum + (deal.finalGrossProfitCents ?? 0), 0), grossMarginBp: bp(mine.reduce((sum, deal) => sum + (deal.finalGrossProfitCents ?? 0), 0), mine.reduce((sum, deal) => sum + (deal.finalValueCents ?? 0), 0)) };
+      }),
+    } : undefined,
+    discounts: {
+      wonWithDiscount: discountWon.filter((row) => (row.discount ?? 0) > 0).length,
+      totalDiscountCents: discountWon.reduce((sum, row) => sum + (row.discount ?? 0), 0),
+      averageDiscountBp: discountWon.length ? Math.round(discountWon.reduce((sum, row) => sum + (row.discountBp ?? 0), 0) / discountWon.length) : undefined,
+      approvalsRequested: approvals.length,
+      approvalsApproved: approvals.filter((request) => request.status === "approved").length,
+      approvalsRejected: approvals.filter((request) => request.status === "rejected").length,
+    },
+    visibility,
+  };
+}
+
+export { isSalesManager };

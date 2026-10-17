@@ -45,6 +45,8 @@ import { registerCommercialSuggestionsRoutes } from "./commercial-suggestions.ro
 import { registerAutomationRulesRoutes } from "./automation-rules.route.js";
 import { registerCommercialMetricsRoutes } from "./commercial-metrics.route.js";
 import { registerSalesEngineRoutes } from "./sales-engine.route.js";
+import { registerSalesPerformanceRoutes } from "./sales-performance.route.js";
+import { checkGoalsReached } from "../../../../application/sales/sales-performance-use-cases.js";
 import { proposalAcceptanceHandler, proposalApprovalGate, proposalBuyerEventHandler, proposalMessageTemplates, renderProposalMessage } from "../../../../application/sales/proposal-sales-use-cases.js";
 import { registerBillingEntitlementsRoutes } from "./billing-entitlements.route.js";
 import { registerReadOnlyGuard } from "../../http/read-only-guard.js";
@@ -388,7 +390,10 @@ export async function registerV1Routes(app: FastifyInstance): Promise<void> {
       notification: { notificationRepository: app.zunoContainer.notificationRepository, realtimePublisher: app.zunoContainer.notificationRealtimePublisher },
       automation: automationDeps,
       proposalRepository: identity.proposalRepository,
+      // Metas: cada ganho reavalia "meta atingida" (notifica uma única vez por meta).
+      onDealWon: async (deal: import("../../../../domain/crm/crm.model.js").Deal) => checkGoalsReached(salesPerformanceDeps, deal),
     };
+    const salesPerformanceDeps = { ...salesDeps, goalRepository: identity.salesGoalRepository, analyticsRepository: identity.salesAnalyticsRepository };
     // Proposta como parte da negociação: gate de aprovação no envio, alertas ao vendedor e o
     // efeito configurável do aceite (padrão: só sinaliza; ganho automático se o tenant quiser).
     const proposalSalesHooks = {
@@ -405,6 +410,7 @@ export async function registerV1Routes(app: FastifyInstance): Promise<void> {
       sales: salesDeps,
     });
     await registerSalesEngineRoutes(app, salesDeps);
+    await registerSalesPerformanceRoutes(app, salesPerformanceDeps);
     // CRM/Comercial (Fase 3) — Tarefas, Catálogo de produtos, Propostas (com link público).
     await registerTasksRoutes(app, { taskRepository: identity.taskRepository, timelineEventRepository: identity.timelineEventRepository });
     await registerProductsRoutes(app, { productRepository: identity.productRepository, salesConfigRepository: identity.salesConfigRepository });

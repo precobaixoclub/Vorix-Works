@@ -46,6 +46,8 @@ import { PostgresAutomationRunLogRepository } from "./postgres/postgres-automati
 import { PostgresBillingEventRepository, PostgresInvoiceRepository, PostgresPaymentMethodRepository, PostgresPaymentWebhookEventRepository } from "./postgres/postgres-billing-ops-repository.js";
 import { PostgresCommercialMetricsRepository } from "./postgres/postgres-commercial-metrics-repository.js";
 import { PostgresCommercialApprovalRepository, PostgresDealItemRepository, PostgresSalesCatalogRepository, PostgresSalesConfigRepository } from "./postgres/postgres-sales-engine-repositories.js";
+import { PostgresSalesAnalyticsRepository, PostgresSalesGoalRepository } from "./postgres/postgres-sales-goal-repositories.js";
+import type { SalesAnalyticsRepositoryPort, SalesGoalRepositoryPort } from "../../application/ports/sales-goal-repository.port.js";
 import { PostgresCommercialSuggestionRepository } from "./postgres/postgres-commercial-suggestion-repository.js";
 import { PostgresContactRepository } from "./postgres/postgres-contact-repository.js";
 import { PostgresDealRepository } from "./postgres/postgres-deal-repository.js";
@@ -129,6 +131,8 @@ export type IdentityRepositories = {
   salesCatalogRepository: SalesCatalogRepositoryPort;
   salesConfigRepository: SalesConfigRepositoryPort;
   commercialApprovalRepository: CommercialApprovalRepositoryPort;
+  salesGoalRepository: SalesGoalRepositoryPort;
+  salesAnalyticsRepository: SalesAnalyticsRepositoryPort;
   /** SaaS Commercialization (Fase 1) — Billing Foundation: versionamento de plano, assinatura,
    * add-ons, uso e operações de cobrança. */
   planVersionRepository: PlanVersionRepositoryPort;
@@ -191,6 +195,8 @@ export function buildIdentityRepositories(options: { databaseUrl: string; secret
     salesCatalogRepository: new PostgresSalesCatalogRepository(pool),
     salesConfigRepository: new PostgresSalesConfigRepository(pool),
     commercialApprovalRepository: new PostgresCommercialApprovalRepository(pool),
+    salesGoalRepository: new PostgresSalesGoalRepository(pool),
+    salesAnalyticsRepository: new PostgresSalesAnalyticsRepository(pool),
     planVersionRepository: new PostgresPlanVersionRepository(pool),
     addonDefinitionRepository: new PostgresAddonDefinitionRepository(pool),
     subscriptionRepository: new PostgresSubscriptionRepository(pool),

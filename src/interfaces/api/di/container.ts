@@ -123,6 +123,7 @@ import type { SubscriptionItemRepositoryPort, SubscriptionPendingChangeRepositor
 import type { UsageCounterRepositoryPort } from "../../../application/ports/usage-counter-repository.port.js";
 import type { CommercialMetricsRepositoryPort } from "../../../application/ports/commercial-metrics-repository.port.js";
 import type { CommercialApprovalRepositoryPort, DealItemRepositoryPort, SalesCatalogRepositoryPort, SalesConfigRepositoryPort } from "../../../application/ports/sales-engine-repository.port.js";
+import type { SalesAnalyticsRepositoryPort, SalesGoalRepositoryPort } from "../../../application/ports/sales-goal-repository.port.js";
 import type { CommercialSuggestionRepositoryPort } from "../../../application/ports/commercial-suggestion-repository.port.js";
 import type { ContactRepositoryPort } from "../../../application/ports/contact-repository.port.js";
 import type { ContactIdentityRepositoryPort } from "../../../application/ports/contact-identity-repository.port.js";
@@ -545,6 +546,8 @@ export type ApiContainer = {
     salesCatalogRepository: SalesCatalogRepositoryPort;
     salesConfigRepository: SalesConfigRepositoryPort;
     commercialApprovalRepository: CommercialApprovalRepositoryPort;
+    salesGoalRepository: SalesGoalRepositoryPort;
+    salesAnalyticsRepository: SalesAnalyticsRepositoryPort;
     /** SaaS Commercialization (Fase 1) — Billing Foundation. */
     planVersionRepository: PlanVersionRepositoryPort;
     addonDefinitionRepository: AddonDefinitionRepositoryPort;

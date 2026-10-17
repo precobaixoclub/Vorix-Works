@@ -51,6 +51,11 @@ type ProposalRow = {
   accepted_version: number | null;
 };
 
+export type { ProposalRow };
+export function mapProposalRow(row: ProposalRow): Proposal {
+  return toDomain(row);
+}
+
 function toDomain(row: ProposalRow): Proposal {
   return {
     id: row.id,

@@ -59,6 +59,11 @@ type DealRow = {
 
 const optionalNumber = (value: string | number | null): number | undefined => (value === null ? undefined : Number(value));
 
+export type { DealRow };
+export function mapDealRow(row: DealRow): Deal {
+  return toDomain(row);
+}
+
 function toDomain(row: DealRow): Deal {
   return {
     id: row.id,

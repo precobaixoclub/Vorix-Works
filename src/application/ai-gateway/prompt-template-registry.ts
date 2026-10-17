@@ -12,6 +12,8 @@ import {
 } from "./schemas/meeting-ai-analysis-result.v1.js";
 import { meetingQuestionAnswerPromptV1, type MeetingQuestionAnswerPromptContext } from "./prompts/meeting-question-answer.v1.js";
 import { meetingFollowUpPromptV1, type MeetingFollowUpPromptContext } from "./prompts/meeting-follow-up.v1.js";
+import { dealCommercialInsightsPromptV1, type DealInsightsPromptContext, type DealInsightsPromptMessage } from "./prompts/deal-commercial-insights.v1.js";
+import { applyDealCommercialInsightsSemanticValidation, DEAL_COMMERCIAL_INSIGHTS_RESULT_SCHEMA_VERSION, DEAL_COMMERCIAL_INSIGHTS_TOOL_INPUT_SCHEMA, validateDealCommercialInsightsStructure, type DealCommercialInsightsResult } from "./schemas/deal-commercial-insights-result.v1.js";
 import {
   applyMeetingQuestionAnswerSemanticValidation,
   validateMeetingQuestionAnswerStructure,
@@ -114,6 +116,22 @@ function buildCommercialCopilotSuggestionsContext(input: Readonly<Record<string,
   };
 }
 
+function buildDealInsightsContext(input: Readonly<Record<string, unknown>>): DealInsightsPromptContext {
+  const strings = (value: unknown) => (Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : []);
+  const messages = (Array.isArray(input.messages) ? (input.messages as unknown[]) : [])
+    .filter((entry): entry is Record<string, unknown> => typeof entry === "object" && entry !== null)
+    .map((entry): DealInsightsPromptMessage => ({ direction: entry.direction === "outbound" ? "outbound" : "inbound", at: String(entry.at ?? ""), text: String(entry.text ?? "") }));
+  return {
+    dealTitle: String(input.dealTitle ?? ""),
+    stageName: String(input.stageName ?? ""),
+    status: String(input.status ?? ""),
+    facts: strings(input.facts),
+    proposals: strings(input.proposals),
+    pendingTasks: strings(input.pendingTasks),
+    messages,
+  };
+}
+
 function toSegments(raw: unknown): MeetingAiAnalysisPromptContext["segments"] {
   return (Array.isArray(raw) ? (raw as unknown[]) : [])
     .filter((entry): entry is Record<string, unknown> => typeof entry === "object" && entry !== null)
@@ -207,6 +225,19 @@ export const PROMPT_TEMPLATE_REGISTRY: Partial<Record<AiOperation, PromptTemplat
       const context = buildCommercialCopilotSuggestionsContext(sanitizedInput);
       const sourceText = commercialCopilotSuggestionsPromptV1.buildUserInput(context);
       return applyCommercialCopilotSuggestionsSemanticValidation({ structural: structural as CommercialCopilotSuggestionsResult, sourceText });
+    },
+  },
+  deal_commercial_insights: {
+    template: dealCommercialInsightsPromptV1 as PromptTemplate<unknown>,
+    buildContext: (input) => buildDealInsightsContext(input),
+    toolName: "submit_deal_commercial_insights",
+    toolDescription: "Envia o resumo comercial, riscos e próximas ações sugeridas desta oportunidade, sempre com evidência literal dos dados.",
+    toolInputSchema: DEAL_COMMERCIAL_INSIGHTS_TOOL_INPUT_SCHEMA,
+    outputSchemaRef: { id: "deal-commercial-insights-result", version: DEAL_COMMERCIAL_INSIGHTS_RESULT_SCHEMA_VERSION },
+    validateStructure: (raw) => validateDealCommercialInsightsStructure(raw),
+    validateSemantics: (structural, sanitizedInput) => {
+      const sourceText = dealCommercialInsightsPromptV1.buildUserInput(buildDealInsightsContext(sanitizedInput));
+      return applyDealCommercialInsightsSemanticValidation({ structural: structural as DealCommercialInsightsResult, sourceText });
     },
   },
   inbox_auto_reply: {

@@ -47,6 +47,7 @@ import { registerCommercialMetricsRoutes } from "./commercial-metrics.route.js";
 import { registerSalesEngineRoutes } from "./sales-engine.route.js";
 import { registerSalesPerformanceRoutes } from "./sales-performance.route.js";
 import { checkGoalsReached } from "../../../../application/sales/sales-performance-use-cases.js";
+import { AiGatewayDealInsightsGenerator } from "../../../../infrastructure/ai-gateway/deal-insights-generator-adapter.js";
 import { proposalAcceptanceHandler, proposalApprovalGate, proposalBuyerEventHandler, proposalMessageTemplates, renderProposalMessage } from "../../../../application/sales/proposal-sales-use-cases.js";
 import { registerBillingEntitlementsRoutes } from "./billing-entitlements.route.js";
 import { registerReadOnlyGuard } from "../../http/read-only-guard.js";
@@ -410,7 +411,25 @@ export async function registerV1Routes(app: FastifyInstance): Promise<void> {
       sales: salesDeps,
     });
     await registerSalesEngineRoutes(app, salesDeps);
-    await registerSalesPerformanceRoutes(app, salesPerformanceDeps);
+    // IA comercial: leitura da conversa do contato por ponte (sales nunca importa inbox) e gerador
+    // via AI Gateway (mesmo stack/créditos do Copiloto Comercial).
+    const inboxForInsights = sharedInboxDeps;
+    await registerSalesPerformanceRoutes(app, {
+      ...salesPerformanceDeps,
+      proposalRepository: identity.proposalRepository,
+      insightsGenerator: new AiGatewayDealInsightsGenerator(app.zunoContainer.aiGateway),
+      conversationReader: inboxForInsights ? {
+        recentMessages: async ({ tenantId, workspaceId, contactId, limit }) => {
+          const conversations = await inboxForInsights.conversationRepository.listByWorkspace({ tenantId, workspaceId, contactId });
+          const messages = (await Promise.all(conversations.slice(0, 3).map((conversation) => inboxForInsights.messageRepository.listByConversation({ tenantId, workspaceId, conversationId: conversation.id, limit })))).flat();
+          return messages
+            .filter((message) => typeof message.body === "string" && message.body.trim().length > 0)
+            .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+            .slice(-limit)
+            .map((message) => ({ direction: message.direction, at: message.createdAt.slice(0, 16).replace("T", " "), text: message.body as string }));
+        },
+      } : undefined,
+    });
     // CRM/Comercial (Fase 3) — Tarefas, Catálogo de produtos, Propostas (com link público).
     await registerTasksRoutes(app, { taskRepository: identity.taskRepository, timelineEventRepository: identity.timelineEventRepository });
     await registerProductsRoutes(app, { productRepository: identity.productRepository, salesConfigRepository: identity.salesConfigRepository });

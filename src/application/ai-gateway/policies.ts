@@ -53,6 +53,20 @@ export const COMMERCIAL_COPILOT_SUGGESTIONS_POLICY: AiPolicy = {
   providerFallbackAllowed: false,
 };
 
+/** Política de `deal_commercial_insights` — Sales Engine. Entrada moderada (fatos + até ~30
+ * mensagens truncadas), temperatura baixa (análise fiel, não criação). */
+export const DEAL_COMMERCIAL_INSIGHTS_POLICY: AiPolicy = {
+  preferredCapability: "structured_text",
+  maxInputTokens: 8_000,
+  maxOutputTokens: 1_200,
+  timeoutMs: 20_000,
+  retryPolicy: DEFAULT_AI_RETRY_POLICY,
+  temperature: 0.2,
+  structuredOutputRequired: true,
+  sensitiveDataPolicy: "strict",
+  providerFallbackAllowed: false,
+};
+
 /** Política de `meeting_ai_analysis` — Vorix Meetings. Entrada grande (transcrição inteira de uma
  * reunião de até ~1h30), temperatura baixa (registro fiel, não criação), saída estruturada. Uma
  * transcrição acima do limite FALHA com motivo explícito — nunca é truncada em silêncio (cortar o

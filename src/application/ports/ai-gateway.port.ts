@@ -40,6 +40,9 @@ export const AI_OPERATIONS = [
   "meeting_question_answer",
   /** Vorix Meetings — rascunho de follow-up (e-mail + WhatsApp) a partir da análise. */
   "meeting_follow_up",
+  /** Sales Engine (Conversas) — resumo, riscos e próximas ações de uma oportunidade, sempre com
+   * evidência literal; números comerciais vêm calculados do backend (a IA só explica). */
+  "deal_commercial_insights",
 ] as const;
 export type AiOperation = (typeof AI_OPERATIONS)[number];
 
@@ -48,7 +51,7 @@ export type AiOperation = (typeof AI_OPERATIONS)[number];
  * `infrastructure/ai-gateway/inbox-ai-responder-adapter.ts` chama `inbox_auto_reply`; o adapter em
  * `infrastructure/ai-gateway/commercial-copilot-generator-adapter.ts` chama
  * `commercial_copilot_suggestions`. */
-export const EXECUTABLE_AI_OPERATIONS: readonly AiOperation[] = ["briefing_field_extraction", "inbox_auto_reply", "commercial_copilot_suggestions", "meeting_ai_analysis", "meeting_question_answer", "meeting_follow_up"];
+export const EXECUTABLE_AI_OPERATIONS: readonly AiOperation[] = ["briefing_field_extraction", "inbox_auto_reply", "commercial_copilot_suggestions", "meeting_ai_analysis", "meeting_question_answer", "meeting_follow_up", "deal_commercial_insights"];
 
 export type AiCapability = "structured_text" | "free_text" | "vision" | "image_generation" | "embeddings" | "tool_calling" | "streaming";
 

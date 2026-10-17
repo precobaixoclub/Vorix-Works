@@ -223,6 +223,7 @@
   "tests/sales-engine.test.mjs",
   "tests/sales-engine-proposals.test.mjs",
   "tests/sales-engine-performance.test.mjs",
+  "tests/sales-engine-insights.test.mjs",
   "tests/crm-execucao-comercial.test.mjs",
   "tests/crm-conversas-integration.test.mjs",
   "tests/crm-inteligencia.test.mjs",

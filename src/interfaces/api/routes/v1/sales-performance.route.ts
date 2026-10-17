@@ -11,8 +11,9 @@ import {
   type SalesPerformanceDeps,
 } from "../../../../application/sales/sales-performance-use-cases.js";
 import type { SalesActor } from "../../../../application/sales/sales-context.js";
+import { generateDealAiInsights, getDealInsights, type DealInsightsDeps } from "../../../../application/sales/deal-insights-use-cases.js";
 import { dealVisibleInScope, mustDealInWorkspace, resolveDealScope } from "../../../../application/sales/sales-context.js";
-import { ForbiddenError, NotFoundError, ValidationError } from "../../http/app-error.js";
+import { ForbiddenError, NotFoundError, ServiceUnavailableLikeError, ValidationError } from "./sales-performance-errors.js";
 import { requirePermission } from "../../http/require-principal.js";
 import { successEnvelope } from "../../http/response-envelope.js";
 import type { Permission } from "../../../../domain/identity/identity.model.js";
@@ -27,6 +28,7 @@ function translate(error: unknown): never {
     if (error.message.startsWith("SALES_REPORT_FORBIDDEN")) throw new ForbiddenError(error.message);
     if (error.message.startsWith("SALES_GOAL_NOT_FOUND") || error.message.startsWith("DEAL_NOT_FOUND")) throw new NotFoundError(error.message);
     if (error.message.startsWith("SALES_GOAL_INVALID")) throw new ValidationError(error.message);
+    if (error.message.startsWith("DEAL_INSIGHTS_UNAVAILABLE") || error.message.startsWith("DEAL_INSIGHTS_FAILED")) throw new ServiceUnavailableLikeError(error.message);
   }
   throw error;
 }
@@ -44,7 +46,36 @@ function actorFor(request: FastifyRequest, permission: Permission): SalesActor {
   return { tenantId: principal.tenantId, userId: principal.userId, role: principal.role };
 }
 
-export async function registerSalesPerformanceRoutes(app: FastifyInstance, deps: SalesPerformanceDeps): Promise<void> {
+export async function registerSalesPerformanceRoutes(app: FastifyInstance, deps: SalesPerformanceDeps & Partial<Pick<DealInsightsDeps, "proposalRepository" | "conversationReader" | "insightsGenerator">>): Promise<void> {
+  async function visible(actor: SalesActor, workspaceId: string, dealId: string) {
+    const deal = await mustDealInWorkspace(deps, dealId, actor.tenantId, workspaceId);
+    if (!dealVisibleInScope(deal, await resolveDealScope(deps, actor, workspaceId))) throw new Error(`DEAL_NOT_FOUND: oportunidade "${dealId}" não existe.`);
+  }
+
+  /** IA comercial — parte determinística (riscos, explicações, impacto na meta), sempre disponível. */
+  app.get("/deals/:id/insights", { schema: { params: { type: "object", required: ["id"], properties: { id: WS } }, querystring: { type: "object", required: ["workspaceId"], properties: { workspaceId: WS } } } }, async (request) => {
+    const actor = actorFor(request, "deal:read");
+    const { id } = request.params as { id: string };
+    const { workspaceId } = request.query as { workspaceId: string };
+    if (!deps.proposalRepository) throw new NotFoundError("DEAL_NOT_FOUND: insights indisponíveis.");
+    return successEnvelope(await guard(async () => {
+      await visible(actor, workspaceId, id);
+      return getDealInsights(deps as DealInsightsDeps, actor, { workspaceId, dealId: id });
+    }), request.id);
+  });
+
+  /** IA sob demanda (custo de IA só quando o vendedor pede). Sugestão — nunca execução. */
+  app.post("/deals/:id/insights/ai", { schema: { params: { type: "object", required: ["id"], properties: { id: WS } }, body: { type: "object", required: ["workspaceId"], additionalProperties: false, properties: { workspaceId: WS } } } }, async (request) => {
+    const actor = actorFor(request, "deal:manage");
+    const { id } = request.params as { id: string };
+    const { workspaceId } = request.body as { workspaceId: string };
+    if (!deps.proposalRepository) throw new NotFoundError("DEAL_NOT_FOUND: insights indisponíveis.");
+    return successEnvelope(await guard(async () => {
+      await visible(actor, workspaceId, id);
+      return generateDealAiInsights(deps as DealInsightsDeps, actor, { workspaceId, dealId: id });
+    }), request.id);
+  });
+
   app.get("/sales-goals", { schema: { querystring: { type: "object", required: ["workspaceId"], properties: { workspaceId: WS, year: { type: "integer", minimum: 2000, maximum: 2100 }, periodType: PERIOD } } } }, async (request) => {
     const actor = actorFor(request, "goal:read");
     const query = request.query as { workspaceId: string; year?: number; periodType?: "monthly" | "quarterly" | "annual" };

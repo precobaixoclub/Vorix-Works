@@ -118,8 +118,15 @@ test("ENTITLEMENT: tenant comum tem Conversas e NÃO tem Marketing; concessão i
   assert.equal(await service.hasAccess(tenantId, "marketing"), false);
 
   const audit = await db.pool.query(`select old_enabled, new_enabled, source, actor_user_id from solution_entitlement_audit_log where tenant_id = $1 order by occurred_at`, [tenantId]);
-  assert.deepEqual(audit.rows.map((row) => [row.old_enabled, row.new_enabled]), [[null, true], [true, false]]);
-  assert.equal(audit.rows[0].actor_user_id, "platform-admin-1");
+  // Eventos podem compartilhar o mesmo timestamp. SQL não garante a ordem entre empates;
+  // a auditoria deve preservar ambas as transições e seus atores, independentemente disso.
+  const transitions = audit.rows.map((row) => [row.old_enabled, row.new_enabled])
+    .sort(([previousA], [previousB]) => Number(previousA !== null) - Number(previousB !== null));
+  assert.deepEqual(transitions, [[null, true], [true, false]]);
+  for (const row of audit.rows) {
+    assert.equal(row.actor_user_id, "platform-admin-1");
+    assert.equal(row.source, "internal");
+  }
 });
 
 test("KILL SWITCH: desliga a solução para todos, inclusive quem tem concessão interna", async () => {

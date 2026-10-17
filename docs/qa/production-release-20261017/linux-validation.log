@@ -1,0 +1,1047 @@
+
+> zuno@1.0.0 build
+> npm run build:clean && tsc -p tsconfig.json && npm run build:copy-skill-manifests && npm run build:copy-remotion-assets && npm run build:copy-rendering-assets
+
+
+> zuno@1.0.0 build:clean
+> node -e "require('fs').rmSync('dist',{recursive:true,force:true})"
+
+
+> zuno@1.0.0 build:copy-skill-manifests
+> node scripts/copy-skill-manifests.mjs
+
+[copy-skill-manifests] 14 manifesto(s) copiado(s) para dist/skills.
+  - dist/skills/ana-social-publishing/skill.manifest.json
+  - dist/skills/bianca-social-media-design/skill.manifest.json
+  - dist/skills/bruno-video-script/skill.manifest.json
+  - dist/skills/diego-video-editing/skill.manifest.json
+  - dist/skills/eduardo-editorial-planning/skill.manifest.json
+  - dist/skills/joao-marketing-strategy/skill.manifest.json
+  - dist/skills/lucas-quality-review/skill.manifest.json
+  - dist/skills/maria-copywriting/skill.manifest.json
+  - dist/skills/motion-design-engine/skill.manifest.json
+  - dist/skills/nora-video-narration/skill.manifest.json
+  - dist/skills/pedro-image-generation/skill.manifest.json
+  - dist/skills/rafa-video-rendering/skill.manifest.json
+  - dist/skills/sofia-art-direction/skill.manifest.json
+  - dist/skills/vanessa-video-direction/skill.manifest.json
+
+> zuno@1.0.0 build:copy-remotion-assets
+> node scripts/copy-remotion-assets.mjs
+
+[copy-remotion-assets] 2 arquivo(s) .jsx copiado(s) para dist/infrastructure/motion-rendering/remotion.
+  - dist/infrastructure/motion-rendering/remotion/MotionSceneRenderer.jsx
+  - dist/infrastructure/motion-rendering/remotion/Root.jsx
+
+> zuno@1.0.0 build:copy-rendering-assets
+> node scripts/copy-rendering-assets.mjs
+
+[copy-rendering-assets] 2 fonte(s) .ttf copiada(s) para dist/infrastructure/rendering/assets.
+  - dist/infrastructure/rendering/assets/dm-serif-display-regular.ttf
+  - dist/infrastructure/rendering/assets/geist-regular.ttf
+npm notice
+npm notice New major version of npm available! 10.8.2 -> 12.2.0
+npm notice Changelog: https://github.com/npm/cli/releases/tag/v12.2.0
+npm notice To update run: npm install -g npm@12.2.0
+npm notice
+TAP version 13
+# Subtest: Smoke (FakeAiProvider, app Fastify real via app.inject): campanha incompleta aciona a IA de ponta a ponta e devolve aiAssisted
+ok 1 - Smoke (FakeAiProvider, app Fastify real via app.inject): campanha incompleta aciona a IA de ponta a ponta e devolve aiAssisted
+  ---
+  duration_ms: 16414.938822
+  ...
+# Subtest: Smoke (Gateway desligado, app Fastify real): comportamento idêntico à Sprint 07 — sem campos de IA
+ok 2 - Smoke (Gateway desligado, app Fastify real): comportamento idêntico à Sprint 07 — sem campos de IA
+  ---
+  duration_ms: 2066.040164
+  ...
+# Subtest: AiGateway: caminho feliz — resultado validado, execução persistida como succeeded, telemetria registrada, traceId == id persistido
+ok 3 - AiGateway: caminho feliz — resultado validado, execução persistida como succeeded, telemetria registrada, traceId == id persistido
+  ---
+  duration_ms: 6.995554
+  ...
+# Subtest: AiGateway: saída estrutural inválida vira invalid_output, nunca é retentada
+ok 4 - AiGateway: saída estrutural inválida vira invalid_output, nunca é retentada
+  ---
+  duration_ms: 2.270659
+  ...
+# Subtest: AiGateway: timeout (retentável) seguido de sucesso — retryCount registrado corretamente
+ok 5 - AiGateway: timeout (retentável) seguido de sucesso — retryCount registrado corretamente
+  ---
+  duration_ms: 182.608122
+  ...
+# Subtest: AiGateway: falha não-retentável (authentication_failed) nunca tenta de novo
+ok 6 - AiGateway: falha não-retentável (authentication_failed) nunca tenta de novo
+  ---
+  duration_ms: 0.76695
+  ...
+# Subtest: AiGateway: content_blocked nunca é retentado
+ok 7 - AiGateway: content_blocked nunca é retentado
+  ---
+  duration_ms: 0.575593
+  ...
+# Subtest: AiGateway: rate limit bloqueia ANTES de qualquer chamada ao provider
+ok 8 - AiGateway: rate limit bloqueia ANTES de qualquer chamada ao provider
+  ---
+  duration_ms: 0.396919
+  ...
+# Subtest: AiGateway: circuit breaker aberto depois de falhas consecutivas passa a bloquear sem chamar o provider
+ok 9 - AiGateway: circuit breaker aberto depois de falhas consecutivas passa a bloquear sem chamar o provider
+  ---
+  duration_ms: 172.324814
+  ...
+# Subtest: AiGateway: provider não configurado (sem credencial) nunca é chamado
+ok 10 - AiGateway: provider não configurado (sem credencial) nunca é chamado
+  ---
+  duration_ms: 0.673707
+  ...
+# Subtest: AiGateway: sanitização roda DENTRO do Gateway antes do provider — input desproporcionalmente grande é rejeitado sem nenhuma chamada real
+ok 11 - AiGateway: sanitização roda DENTRO do Gateway antes do provider — input desproporcionalmente grande é rejeitado sem nenhuma chamada real
+  ---
+  duration_ms: 0.891441
+  ...
+# Subtest: Model Registry: nenhum alias implícito — modelId sempre explícito e versionado
+ok 12 - Model Registry: nenhum alias implícito — modelId sempre explícito e versionado
+  ---
+  duration_ms: 2.275556
+  ...
+# Subtest: Model Registry: listActiveEntriesForCapability só devolve entradas ativas com a capability
+ok 13 - Model Registry: listActiveEntriesForCapability só devolve entradas ativas com a capability
+  ---
+  duration_ms: 0.301611
+  ...
+# Subtest: AiModelRouter: operação não suportada devolve not_configured
+ok 14 - AiModelRouter: operação não suportada devolve not_configured
+  ---
+  duration_ms: 0.478595
+  ...
+# Subtest: AiModelRouter: capability da política incompatível com a operação é invalid_request
+ok 15 - AiModelRouter: capability da política incompatível com a operação é invalid_request
+  ---
+  duration_ms: 0.253456
+  ...
+# Subtest: AiModelRouter: provider ausente (sem binding configurado) devolve not_configured
+ok 16 - AiModelRouter: provider ausente (sem binding configurado) devolve not_configured
+  ---
+  duration_ms: 0.267515
+  ...
+# Subtest: AiModelRouter: provider configurado mas não presente na lista de providers devolve not_configured
+ok 17 - AiModelRouter: provider configurado mas não presente na lista de providers devolve not_configured
+  ---
+  duration_ms: 0.219851
+  ...
+# Subtest: AiModelRouter: circuit breaker aberto devolve provider_unavailable (retryable)
+ok 18 - AiModelRouter: circuit breaker aberto devolve provider_unavailable (retryable)
+  ---
+  duration_ms: 0.397326
+  ...
+# Subtest: AiModelRouter: binding para modelo fora do allowedModels é policy_violation
+ok 19 - AiModelRouter: binding para modelo fora do allowedModels é policy_violation
+  ---
+  duration_ms: 0.255188
+  ...
+# Subtest: AiModelRouter: caminho feliz devolve exatamente um candidato
+ok 20 - AiModelRouter: caminho feliz devolve exatamente um candidato
+  ---
+  duration_ms: 0.453386
+  ...
+# Subtest: Structured output: resposta válida passa na validação estrutural
+ok 21 - Structured output: resposta válida passa na validação estrutural
+  ---
+  duration_ms: 3.149203
+  ...
+# Subtest: Structured output: JSON com formato errado (não é objeto) falha estruturalmente
+ok 22 - Structured output: JSON com formato errado (não é objeto) falha estruturalmente
+  ---
+  duration_ms: 0.749229
+  ...
+# Subtest: Structured output: schemaVersion inválida falha estruturalmente
+ok 23 - Structured output: schemaVersion inválida falha estruturalmente
+  ---
+  duration_ms: 0.513035
+  ...
+# Subtest: Structured output: campo desconhecido no objeto (Zod strict) falha estruturalmente
+ok 24 - Structured output: campo desconhecido no objeto (Zod strict) falha estruturalmente
+  ---
+  duration_ms: 0.463493
+  ...
+# Subtest: Structured output: candidate com propriedade extra (Zod strict no nível do candidato) falha estruturalmente
+ok 25 - Structured output: candidate com propriedade extra (Zod strict no nível do candidato) falha estruturalmente
+  ---
+  duration_ms: 0.561252
+  ...
+# Subtest: Structured output: confidence fora de [0,1] falha estruturalmente
+ok 26 - Structured output: confidence fora de [0,1] falha estruturalmente
+  ---
+  duration_ms: 0.626543
+  ...
+# Subtest: Structured output: rationaleCode fora do enum fechado falha estruturalmente
+ok 27 - Structured output: rationaleCode fora do enum fechado falha estruturalmente
+  ---
+  duration_ms: 0.502313
+  ...
+# Subtest: Semântica: campo desconhecido no schema ativo é descartado (não invalida o lote inteiro)
+ok 28 - Semântica: campo desconhecido no schema ativo é descartado (não invalida o lote inteiro)
+  ---
+  duration_ms: 0.619648
+  ...
+# Subtest: Semântica: acceptedValue inválido para campo enum é descartado
+ok 29 - Semântica: acceptedValue inválido para campo enum é descartado
+  ---
+  duration_ms: 0.469928
+  ...
+# Subtest: Semântica: evidence que não aparece no texto original (alucinação) é descartada
+ok 30 - Semântica: evidence que não aparece no texto original (alucinação) é descartada
+  ---
+  duration_ms: 0.484791
+  ...
+# Subtest: Semântica: quando NADA sobra depois de filtrar, ainda é 'valid' (só um turno sem novidade) — nunca bloqueia o fluxo
+ok 31 - Semântica: quando NADA sobra depois de filtrar, ainda é 'valid' (só um turno sem novidade) — nunca bloqueia o fluxo
+  ---
+  duration_ms: 1.642682
+  ...
+# Subtest: Semântica: ambiguidade explícita nunca é tratada como erro — sobrevive à validação
+ok 32 - Semântica: ambiguidade explícita nunca é tratada como erro — sobrevive à validação
+  ---
+  duration_ms: 0.507898
+  ...
+# Subtest: Sanitizer: remove campos sensíveis por nome (senha, token, storageRef...)
+ok 33 - Sanitizer: remove campos sensíveis por nome (senha, token, storageRef...)
+  ---
+  duration_ms: 0.635064
+  ...
+# Subtest: Sanitizer: isola workspace — um workspaceId diferente do esperado é removido com alerta
+ok 34 - Sanitizer: isola workspace — um workspaceId diferente do esperado é removido com alerta
+  ---
+  duration_ms: 0.225504
+  ...
+# Subtest: Sanitizer: NUNCA trunca — input acima do limite é rejeitado inteiro
+ok 35 - Sanitizer: NUNCA trunca — input acima do limite é rejeitado inteiro
+  ---
+  duration_ms: 0.197635
+  ...
+# Subtest: Sanitizer: nada sobra depois de remover tudo sensível é rejeitado
+ok 36 - Sanitizer: nada sobra depois de remover tudo sensível é rejeitado
+  ---
+  duration_ms: 0.164656
+  ...
+# Subtest: Post-render check: detecta padrão de vazamento (bearer token) mesmo depois da sanitização de entrada
+ok 37 - Post-render check: detecta padrão de vazamento (bearer token) mesmo depois da sanitização de entrada
+  ---
+  duration_ms: 0.400027
+  ...
+# Subtest: Post-render check: prompt renderizado gigante é rejeitado mesmo com input sanitizado pequeno
+ok 38 - Post-render check: prompt renderizado gigante é rejeitado mesmo com input sanitizado pequeno
+  ---
+  duration_ms: 0.156104
+  ...
+# Subtest: AiCostCalculator: usa pricing versionado do Model Registry, considera tokens em cache
+ok 39 - AiCostCalculator: usa pricing versionado do Model Registry, considera tokens em cache
+  ---
+  duration_ms: 0.326841
+  ...
+# Subtest: AiUsage: providerReported=false quando o provider não informa tokens
+ok 40 - AiUsage: providerReported=false quando o provider não informa tokens
+  ---
+  duration_ms: 0.213197
+  ...
+# Subtest: Retry policy: só timeout/rate_limited/provider_unavailable são retentáveis por padrão
+ok 41 - Retry policy: só timeout/rate_limited/provider_unavailable são retentáveis por padrão
+  ---
+  duration_ms: 0.168327
+  ...
+# Subtest: Retry policy: backoff cresce com o número de tentativas
+ok 42 - Retry policy: backoff cresce com o número de tentativas
+  ---
+  duration_ms: 0.208034
+  ...
+# Subtest: Circuit breaker: abre depois do limiar de falhas consecutivas e bloqueia; sucesso fecha de novo
+ok 43 - Circuit breaker: abre depois do limiar de falhas consecutivas e bloqueia; sucesso fecha de novo
+  ---
+  duration_ms: 0.417309
+  ...
+# Subtest: Circuit breaker: half_open depois do cooldown, mas falha nele reabre imediatamente
+ok 44 - Circuit breaker: half_open depois do cooldown, mas falha nele reabre imediatamente
+  ---
+  duration_ms: 0.265064
+  ...
+# Subtest: Rate limiter: bloqueia depois do limite na janela, libera fora dela
+ok 45 - Rate limiter: bloqueia depois do limite na janela, libera fora dela
+  ---
+  duration_ms: 0.360508
+  ...
+# Subtest: AiExtractionDecision: feature desligada nunca chama IA, mesmo com lacunas
+ok 46 - AiExtractionDecision: feature desligada nunca chama IA, mesmo com lacunas
+  ---
+  duration_ms: 0.19992
+  ...
+# Subtest: AiExtractionDecision: extração determinística suficiente (nada faltando) não chama IA
+ok 47 - AiExtractionDecision: extração determinística suficiente (nada faltando) não chama IA
+  ---
+  duration_ms: 0.155499
+  ...
+# Subtest: AiExtractionDecision: NÃO é restrita a campo obrigatório faltante — ambiguidade e opcional de alto impacto também acionam
+ok 48 - AiExtractionDecision: NÃO é restrita a campo obrigatório faltante — ambiguidade e opcional de alto impacto também acionam
+  ---
+  duration_ms: 0.15624
+  ...
+# Subtest: Fase 5 — Timeline 360 agrega contato, negócio, tarefa, proposta e conversa numa lista só, mais recente primeiro
+ok 49 - Fase 5 — Timeline 360 agrega contato, negócio, tarefa, proposta e conversa numa lista só, mais recente primeiro
+  ---
+  duration_ms: 10913.883144
+  ...
+# Subtest: Fase 5 — recusa de proposta mantém negócio aberto e é registrada como ação do cliente
+ok 50 - Fase 5 — recusa de proposta mantém negócio aberto e é registrada como ação do cliente
+  ---
+  duration_ms: 101.992365
+  ...
+# Subtest: Fase 5 — contato sem negócio nenhum ainda mostra tarefa e conversa na Timeline
+ok 51 - Fase 5 — contato sem negócio nenhum ainda mostra tarefa e conversa na Timeline
+  ---
+  duration_ms: 74.665546
+  ...
+# Subtest: Fase 5 — funciona sem o módulo Conversas (inbox desligado) usando só eventos CRM
+ok 52 - Fase 5 — funciona sem o módulo Conversas (inbox desligado) usando só eventos CRM
+  ---
+  duration_ms: 20.079033
+  ...
+# Subtest: Fase 5 — isolamento multi-tenant: contato de um tenant nunca aparece pra outro
+ok 53 - Fase 5 — isolamento multi-tenant: contato de um tenant nunca aparece pra outro
+  ---
+  duration_ms: 8.494107
+  ...
+# Subtest: Fase 5 — reagendar tarefa gera task_rescheduled; negócio reaberto após Ganho vira deal_reopened
+ok 54 - Fase 5 — reagendar tarefa gera task_rescheduled; negócio reaberto após Ganho vira deal_reopened
+  ---
+  duration_ms: 102.151044
+  ...
+# Subtest: Fase 5 — eventos operacionais de baixo nível (assigned, IA) não viram ruído na Timeline salvo os listados
+ok 55 - Fase 5 — eventos operacionais de baixo nível (assigned, IA) não viram ruído na Timeline salvo os listados
+  ---
+  duration_ms: 82.892165
+  ...
+# Subtest: CreditGatedAiGateway: bloqueia quando tenant sem billing
+ok 56 - CreditGatedAiGateway: bloqueia quando tenant sem billing
+  ---
+  duration_ms: 1.749171
+  ...
+# Subtest: CreditGatedAiGateway: bloqueia quando subscription_status é 'suspended'
+ok 57 - CreditGatedAiGateway: bloqueia quando subscription_status é 'suspended'
+  ---
+  duration_ms: 0.432026
+  ...
+# Subtest: CreditGatedAiGateway: bloqueia quando saldo total de créditos é insuficiente
+ok 58 - CreditGatedAiGateway: bloqueia quando saldo total de créditos é insuficiente
+  ---
+  duration_ms: 0.464984
+  ...
+# Subtest: CreditGatedAiGateway: chama inner e registra consumo dentro da cota mensal (sem tocar creditsExtra)
+ok 59 - CreditGatedAiGateway: chama inner e registra consumo dentro da cota mensal (sem tocar creditsExtra)
+  ---
+  duration_ms: 0.856782
+  ...
+# Subtest: CreditGatedAiGateway: tenant com priceMultiplier 1 (0% de lucro, ex.: conta interna própria) tem receita igual ao custo
+ok 60 - CreditGatedAiGateway: tenant com priceMultiplier 1 (0% de lucro, ex.: conta interna própria) tem receita igual ao custo
+  ---
+  duration_ms: 0.315169
+  ...
+# Subtest: CreditGatedAiGateway: consumo estoura a cota mensal e sangra em creditsExtra via applyCreditDelta
+ok 61 - CreditGatedAiGateway: consumo estoura a cota mensal e sangra em creditsExtra via applyCreditDelta
+  ---
+  duration_ms: 0.472765
+  ...
+# Subtest: Migrations 0101-0102 aplicam sem erro; tabelas de automação existem
+ok 62 - Migrations 0101-0102 aplicam sem erro; tabelas de automação existem
+  ---
+  duration_ms: 10866.427519
+  ...
+# Subtest: Regra: criar, listar, atualizar, apagar e isolamento cross-tenant
+ok 63 - Regra: criar, listar, atualizar, apagar e isolamento cross-tenant
+  ---
+  duration_ms: 29.287833
+  ...
+# Subtest: contact_created: regra com condição de origem só dispara quando a origem bate (E lógico)
+ok 64 - contact_created: regra com condição de origem só dispara quando a origem bate (E lógico)
+  ---
+  duration_ms: 49.433073
+  ...
+# Subtest: contact_created: assign_owner atribui um responsável fixo
+ok 65 - contact_created: assign_owner atribui um responsável fixo
+  ---
+  duration_ms: 16.230011
+  ...
+# Subtest: contact_created: assign_owner_least_loaded_in_team distribui pro membro com menos contatos do time
+ok 66 - contact_created: assign_owner_least_loaded_in_team distribui pro membro com menos contatos do time
+  ---
+  duration_ms: 40.34634
+  ...
+# Subtest: deal_stage_changed: move_deal_stage usa o repositório direto (nunca reentra em moveDealStage) e nunca move pra etapa de perda
+ok 67 - deal_stage_changed: move_deal_stage usa o repositório direto (nunca reentra em moveDealStage) e nunca move pra etapa de perda
+  ---
+  duration_ms: 138.219809
+  ...
+# Subtest: Falha de uma ação (config inválida) nunca derruba a ação de negócio que disparou o gatilho
+ok 68 - Falha de uma ação (config inválida) nunca derruba a ação de negócio que disparou o gatilho
+  ---
+  duration_ms: 12.518528
+  ...
+# Subtest: Vincular um inbox_contact (WhatsApp) a um Contact do CRM aparece em InboxContact.crmContactId e na listagem de conversas
+ok 69 - Vincular um inbox_contact (WhatsApp) a um Contact do CRM aparece em InboxContact.crmContactId e na listagem de conversas
+  ---
+  duration_ms: 10663.758507
+  ...
+# Subtest: Negócios filtrados por contactId retornam só os negócios daquele contato
+ok 70 - Negócios filtrados por contactId retornam só os negócios daquele contato
+  ---
+  duration_ms: 37.020543
+  ...
+# Subtest: Ponte automática: conversa direta com sinal mínimo de mensagens cria e vincula um Contact do CRM automaticamente
+ok 71 - Ponte automática: conversa direta com sinal mínimo de mensagens cria e vincula um Contact do CRM automaticamente
+  ---
+  duration_ms: 73.301804
+  ...
+# Subtest: Ponte automática: NUNCA dispara antes do sinal mínimo de mensagens (evita virar lixo por uma mensagem isolada)
+ok 72 - Ponte automática: NUNCA dispara antes do sinal mínimo de mensagens (evita virar lixo por uma mensagem isolada)
+  ---
+  duration_ms: 15.700922
+  ...
+# Subtest: Ponte automática: idempotente — chamar duas vezes para o mesmo InboxContact nunca cria um segundo Contact
+ok 73 - Ponte automática: idempotente — chamar duas vezes para o mesmo InboxContact nunca cria um segundo Contact
+  ---
+  duration_ms: 54.09606
+  ...
+# [commercial-bridge] corrida detectada ao vincular InboxContact "contact-mvccvxbs-7u1mmg" — identidade já pertencia ao Contact "contact-mvccvxc5-64vjzy"; usando o vencedor da corrida, Contact "contact-mvccvxc9-orktqi" fica órfão (sem identidade, nunca fundido automaticamente).
+# Subtest: Ponte automática: simula uma corrida concorrente (duas chamadas em paralelo) — só um Contact sobrevive, nunca duas identidades divergentes
+ok 74 - Ponte automática: simula uma corrida concorrente (duas chamadas em paralelo) — só um Contact sobrevive, nunca duas identidades divergentes
+  ---
+  duration_ms: 42.954647
+  ...
+# Subtest: Ponte automática: contato de GRUPO nunca é chamado (grupo nunca tem InboxContact) — checagem estrutural do gatilho
+ok 75 - Ponte automática: contato de GRUPO nunca é chamado (grupo nunca tem InboxContact) — checagem estrutural do gatilho
+  ---
+  duration_ms: 18.334727
+  ...
+# Subtest: Ponte automática: multi-tenant — mesmo número de telefone em tenants diferentes nunca se cruza
+ok 76 - Ponte automática: multi-tenant — mesmo número de telefone em tenants diferentes nunca se cruza
+  ---
+  duration_ms: 66.97679
+  ...
+# Subtest: Migrations 0096-0098 aplicam sem erro; tabelas de tarefa/produto/proposta existem
+ok 77 - Migrations 0096-0098 aplicam sem erro; tabelas de tarefa/produto/proposta existem
+  ---
+  duration_ms: 9724.349216
+  ...
+# Subtest: Tarefa: criar, listar, atualizar, concluir e cancelar
+ok 78 - Tarefa: criar, listar, atualizar, concluir e cancelar
+  ---
+  duration_ms: 68.835976
+  ...
+# Subtest: Tarefa: isolamento cross-tenant nunca vaza existência (404)
+ok 79 - Tarefa: isolamento cross-tenant nunca vaza existência (404)
+  ---
+  duration_ms: 11.754214
+  ...
+# Subtest: Produto: criar, listar, atualizar (inclusive desativar) e excluir
+ok 80 - Produto: criar, listar, atualizar (inclusive desativar) e excluir
+  ---
+  duration_ms: 30.761552
+  ...
+# Subtest: Proposta: itens congelam quantidade x preço; total = subtotal - desconto
+ok 81 - Proposta: itens congelam quantidade x preço; total = subtotal - desconto
+  ---
+  duration_ms: 21.031506
+  ...
+# Subtest: Proposta: só edita em rascunho; enviar uma vez só
+ok 82 - Proposta: só edita em rascunho; enviar uma vez só
+  ---
+  duration_ms: 48.520588
+  ...
+# Subtest: Proposta pública: visualizar marca 'viewed', aceitar marca 'accepted' e move o negócio ligado pra Ganho
+ok 83 - Proposta pública: visualizar marca 'viewed', aceitar marca 'accepted' e move o negócio ligado pra Ganho
+  ---
+  duration_ms: 105.781801
+  ...
+# Subtest: Proposta pública: recusar marca 'rejected'; token inválido nunca vaza existência (404)
+ok 84 - Proposta pública: recusar marca 'rejected'; token inválido nunca vaza existência (404)
+  ---
+  duration_ms: 78.344372
+  ...
+# Subtest: Proposta: isolamento cross-tenant nunca vaza existência (404)
+ok 85 - Proposta: isolamento cross-tenant nunca vaza existência (404)
+  ---
+  duration_ms: 12.719677
+  ...
+# Subtest: Migrations 0089-0093 aplicam sem erro; tabelas do CRM existem
+ok 86 - Migrations 0089-0093 aplicam sem erro; tabelas do CRM existem
+  ---
+  duration_ms: 9508.467554
+  ...
+# Subtest: Backfill: contato do WhatsApp já existente ganha um Contact + ContactIdentity, sem fusão
+ok 87 - Backfill: contato do WhatsApp já existente ganha um Contact + ContactIdentity, sem fusão
+  ---
+  duration_ms: 11.594095
+  ...
+# Subtest: Equipes: criar, adicionar/remover membro, editar e apagar
+ok 88 - Equipes: criar, adicionar/remover membro, editar e apagar
+  ---
+  duration_ms: 31.130996
+  ...
+# Subtest: Equipes: isolamento cross-tenant — equipe de outro tenant nunca é encontrada (404, não vaza existência)
+ok 89 - Equipes: isolamento cross-tenant — equipe de outro tenant nunca é encontrada (404, não vaza existência)
+  ---
+  duration_ms: 7.913317
+  ...
+# Subtest: Convite: convidar, aceitar (liga a um usuário existente pelo e-mail), e nunca aceitar duas vezes
+ok 90 - Convite: convidar, aceitar (liga a um usuário existente pelo e-mail), e nunca aceitar duas vezes
+  ---
+  duration_ms: 42.743159
+  ...
+# Subtest: Convite: e-mail não bate com o do usuário autenticado é recusado
+ok 91 - Convite: e-mail não bate com o do usuário autenticado é recusado
+  ---
+  duration_ms: 6.544532
+  ...
+# Subtest: Convite: revogar impede aceite posterior
+ok 92 - Convite: revogar impede aceite posterior
+  ---
+  duration_ms: 6.440906
+  ...
+# Subtest: Membro: trocar papel e remover
+ok 93 - Membro: trocar papel e remover
+  ---
+  duration_ms: 8.436464
+  ...
+# Subtest: Contato: criar registra evento na timeline
+ok 94 - Contato: criar registra evento na timeline
+  ---
+  duration_ms: 11.835176
+  ...
+# Subtest: ContactIdentity: ligar é idempotente por (channel, externalId) — segunda chamada não duplica
+ok 95 - ContactIdentity: ligar é idempotente por (channel, externalId) — segunda chamada não duplica
+  ---
+  duration_ms: 19.397759
+  ...
+# Subtest: ContactIdentity: nunca funde automaticamente — identidade já ligada a OUTRO contato é reportada como conflito
+ok 96 - ContactIdentity: nunca funde automaticamente — identidade já ligada a OUTRO contato é reportada como conflito
+  ---
+  duration_ms: 47.988533
+  ...
+# Subtest: Contato: isolamento cross-tenant — contato de outro tenant nunca é encontrado
+ok 97 - Contato: isolamento cross-tenant — contato de outro tenant nunca é encontrado
+  ---
+  duration_ms: 8.660124
+  ...
+# Subtest: Contato: atualizar campos preserva os não informados
+ok 98 - Contato: atualizar campos preserva os não informados
+  ---
+  duration_ms: 17.753443
+  ...
+# Subtest: Migrations 0099-0100 aplicam sem erro; commercial_suggestions e a operação de IA existem
+ok 99 - Migrations 0099-0100 aplicam sem erro; commercial_suggestions e a operação de IA existem
+  ---
+  duration_ms: 9599.572816
+  ...
+# Subtest: computeLeadScore: interação recente + negócio aberto de alto valor + histórico de negócio ganho pontua quente, com fatores explicados
+ok 100 - computeLeadScore: interação recente + negócio aberto de alto valor + histórico de negócio ganho pontua quente, com fatores explicados
+  ---
+  duration_ms: 0.733093
+  ...
+# Subtest: computeLeadScore: sem interação há mais de 30 dias e tarefa atrasada esfria o lead
+ok 101 - computeLeadScore: sem interação há mais de 30 dias e tarefa atrasada esfria o lead
+  ---
+  duration_ms: 0.208997
+  ...
+# Subtest: getLeadScore: calcula a partir dos dados reais do contato (negócio + tarefa) e nunca de outro tenant
+ok 102 - getLeadScore: calcula a partir dos dados reais do contato (negócio + tarefa) e nunca de outro tenant
+  ---
+  duration_ms: 43.925594
+  ...
+# Subtest: Validação semântica anti-alucinação: descarta sugestão cuja evidência não aparece no texto-fonte, mantém a que aparece
+ok 103 - Validação semântica anti-alucinação: descarta sugestão cuja evidência não aparece no texto-fonte, mantém a que aparece
+  ---
+  duration_ms: 0.328571
+  ...
+# Subtest: Copiloto Comercial: gera sugestões via generator (fake), aceitar follow_up_task cria a Tarefa de verdade
+ok 104 - Copiloto Comercial: gera sugestões via generator (fake), aceitar follow_up_task cria a Tarefa de verdade
+  ---
+  duration_ms: 74.440972
+  ...
+# Subtest: Copiloto Comercial: dispensar marca 'dismissed' e nunca cria nada; falha do gateway propaga erro claro
+ok 105 - Copiloto Comercial: dispensar marca 'dismissed' e nunca cria nada; falha do gateway propaga erro claro
+  ---
+  duration_ms: 25.383632
+  ...
+# Subtest: Copiloto Comercial: isolamento cross-tenant nunca vaza existência (404)
+ok 106 - Copiloto Comercial: isolamento cross-tenant nunca vaza existência (404)
+  ---
+  duration_ms: 58.165501
+  ...
+# Subtest: Migrations 0094-0095 aplicam sem erro; tabelas de pipeline/deal existem
+ok 107 - Migrations 0094-0095 aplicam sem erro; tabelas de pipeline/deal existem
+  ---
+  duration_ms: 12882.839732
+  ...
+# Subtest: Pipeline padrão: criado sob demanda com 6 etapas, idempotente
+ok 108 - Pipeline padrão: criado sob demanda com 6 etapas, idempotente
+  ---
+  duration_ms: 39.352989
+  ...
+# Subtest: Pipeline: isolamento cross-tenant nunca vaza existência (404)
+ok 109 - Pipeline: isolamento cross-tenant nunca vaza existência (404)
+  ---
+  duration_ms: 10.382429
+  ...
+# Subtest: Negócio: criar exige que a etapa pertença ao pipeline informado
+ok 110 - Negócio: criar exige que a etapa pertença ao pipeline informado
+  ---
+  duration_ms: 69.275563
+  ...
+# Subtest: Negócio: mover para etapa de perda exige motivo; mover para etapa de ganho marca wonAt
+ok 111 - Negócio: mover para etapa de perda exige motivo; mover para etapa de ganho marca wonAt
+  ---
+  duration_ms: 81.289637
+  ...
+# Subtest: Negócio: reabrir (mover de volta a etapa aberta) limpa ganho/perda
+ok 112 - Negócio: reabrir (mover de volta a etapa aberta) limpa ganho/perda
+  ---
+  duration_ms: 79.304405
+  ...
+# Subtest: Negócio: isolamento cross-tenant nunca vaza existência (404)
+ok 113 - Negócio: isolamento cross-tenant nunca vaza existência (404)
+  ---
+  duration_ms: 31.751453
+  ...
+# Subtest: Negócio: updateDeal nunca muda a etapa (só moveDealStage pode)
+ok 114 - Negócio: updateDeal nunca muda a etapa (só moveDealStage pode)
+  ---
+  duration_ms: 47.78575
+  ...
+# Subtest: Negócios: listagem com filtro de responsável, e resumo por etapa (contagem + soma)
+ok 115 - Negócios: listagem com filtro de responsável, e resumo por etapa (contagem + soma)
+  ---
+  duration_ms: 75.458848
+  ...
+# Subtest: Fase 4 registra primeira/ultima abertura e quantidade sem dados invasivos
+ok 116 - Fase 4 registra primeira/ultima abertura e quantidade sem dados invasivos
+  ---
+  duration_ms: 13012.104628
+  ...
+# Subtest: Fase 4 lista propostas pelo status solicitado
+ok 117 - Fase 4 lista propostas pelo status solicitado
+  ---
+  duration_ms: 119.998234
+  ...
+# Subtest: Fase 4 rotaciona e revoga token; resposta repetida e idempotente
+ok 118 - Fase 4 rotaciona e revoga token; resposta repetida e idempotente
+  ---
+  duration_ms: 176.136093
+  ...
+# Subtest: Fase 4 modelos tem CRUD, duplicacao e isolamento multi-tenant
+ok 119 - Fase 4 modelos tem CRUD, duplicacao e isolamento multi-tenant
+  ---
+  duration_ms: 53.624342
+  ...
+# Subtest: Fase 4 reserva idempotente impede envio duplicado, inclusive em falha de publish
+ok 120 - Fase 4 reserva idempotente impede envio duplicado, inclusive em falha de publish
+  ---
+  duration_ms: 298.153943
+  ...
+# Subtest: Fase 4 aceite move Deal pra Ganho e e idempotente em duplo aceite
+ok 121 - Fase 4 aceite move Deal pra Ganho e e idempotente em duplo aceite
+  ---
+  duration_ms: 182.100549
+  ...
+# Subtest: Fase 4 tracking de visualização é preservado depois do aceite
+ok 122 - Fase 4 tracking de visualização é preservado depois do aceite
+  ---
+  duration_ms: 98.85452
+  ...
+# Subtest: Fase 4 template pré-preenche, mas Proposal já criada vira snapshot independente
+ok 123 - Fase 4 template pré-preenche, mas Proposal já criada vira snapshot independente
+  ---
+  duration_ms: 59.96223
+  ...
+# Subtest: Fase 4 recusa nunca move o Deal vinculado — negócio continua aberto
+ok 124 - Fase 4 recusa nunca move o Deal vinculado — negócio continua aberto
+  ---
+  duration_ms: 100.36554
+  ...
+# Subtest: Métricas comerciais: negócios criados, aberto, ganho/perdido, conversão, ticket médio e negócios sem próximo passo
+ok 125 - Métricas comerciais: negócios criados, aberto, ganho/perdido, conversão, ticket médio e negócios sem próximo passo
+  ---
+  duration_ms: 13916.81533
+  ...
+# Subtest: Métricas comerciais: aging por etapa, filtro por origem restringe o relatório
+ok 126 - Métricas comerciais: aging por etapa, filtro por origem restringe o relatório
+  ---
+  duration_ms: 196.286795
+  ...
+# Subtest: Métricas comerciais: propostas enviadas/aceitas e taxa de aceite
+ok 127 - Métricas comerciais: propostas enviadas/aceitas e taxa de aceite
+  ---
+  duration_ms: 136.245757
+  ...
+# Subtest: Métricas de atendimento: recebidas, backlog, IA vs. humano e tempo de primeira resposta
+ok 128 - Métricas de atendimento: recebidas, backlog, IA vs. humano e tempo de primeira resposta
+  ---
+  duration_ms: 131.171898
+  ...
+# Subtest: nova conversa por telefone nacional: cria contato + conversa no pivô E.164, atribui a quem iniciou e enfileira a 1ª mensagem
+ok 129 - nova conversa por telefone nacional: cria contato + conversa no pivô E.164, atribui a quem iniciou e enfileira a 1ª mensagem
+  ---
+  duration_ms: 13296.111322
+  ...
+# Subtest: nova conversa com contato já existente reaproveita a conversa e reabre se estava finalizada
+ok 130 - nova conversa com contato já existente reaproveita a conversa e reabre se estava finalizada
+  ---
+  duration_ms: 207.969404
+  ...
+# Subtest: nova conversa: rejeita telefone inválido, canal desconectado, Instagram e contato de outro workspace
+ok 131 - nova conversa: rejeita telefone inválido, canal desconectado, Instagram e contato de outro workspace
+  ---
+  duration_ms: 118.478952
+  ...
+# Subtest: respostas rápidas: normaliza atalho, impede duplicado sem diferenciar maiúsculas e isola por workspace
+ok 132 - respostas rápidas: normaliza atalho, impede duplicado sem diferenciar maiúsculas e isola por workspace
+  ---
+  duration_ms: 255.970896
+  ...
+# Subtest: nota interna vira evento da timeline e nunca é enviada ao contato
+ok 133 - nota interna vira evento da timeline e nunca é enviada ao contato
+  ---
+  duration_ms: 172.185859
+  ...
+# Subtest: nova conversa: número com +código de país nunca recebe 55
+ok 134 - nova conversa: número com +código de país nunca recebe 55
+  ---
+  duration_ms: 125.785235
+  ...
+# Subtest: figurinhas: salva a recebida (cópia própria, sem duplicar), envia em outra conversa e isola por workspace
+ok 135 - figurinhas: salva a recebida (cópia própria, sem duplicar), envia em outra conversa e isola por workspace
+  ---
+  duration_ms: 435.93637
+  ...
+# Subtest: plan catalog: FREE tem 50 créditos; PRO tem cota maior; PRO destacado; ENTERPRISE e FREE fora do público (aquisição self-service, seção 1: sem plano gratuito permanente)
+ok 136 - plan catalog: FREE tem 50 créditos; PRO tem cota maior; PRO destacado; ENTERPRISE e FREE fora do público (aquisição self-service, seção 1: sem plano gratuito permanente)
+  ---
+  duration_ms: 4.330339
+  ...
+# Subtest: getPlatformPlan retorna a definição; código desconhecido lança
+ok 137 - getPlatformPlan retorna a definição; código desconhecido lança
+  ---
+  duration_ms: 2.442497
+  ...
+# Subtest: periodOf retorna YYYY-MM em UTC (não local)
+ok 138 - periodOf retorna YYYY-MM em UTC (não local)
+  ---
+  duration_ms: 0.636258
+  ...
+# Subtest: applyMarkup: markup 2x dobra o custo; markup < 1 lança
+ok 139 - applyMarkup: markup 2x dobra o custo; markup < 1 lança
+  ---
+  duration_ms: 0.409918
+  ...
+# Subtest: profitOfMonthly: receita − custo, nunca negativo
+ok 140 - profitOfMonthly: receita − custo, nunca negativo
+  ---
+  duration_ms: 0.376122
+  ...
+# Subtest: calculateCustomerCharge é o mesmo que applyMarkup — API pública
+ok 141 - calculateCustomerCharge é o mesmo que applyMarkup — API pública
+  ---
+  duration_ms: 0.230567
+  ...
+# Subtest: changeTenantPlan aplica cotas do plano do catálogo
+ok 142 - changeTenantPlan aplica cotas do plano do catálogo
+  ---
+  duration_ms: 1.261164
+  ...
+# Subtest: adjustTenantCredits soma delta positivo e escreve ledger
+ok 143 - adjustTenantCredits soma delta positivo e escreve ledger
+  ---
+  duration_ms: 0.607043
+  ...
+# Subtest: adjustTenantCredits recusa delta = 0
+ok 144 - adjustTenantCredits recusa delta = 0
+  ---
+  duration_ms: 0.999928
+  ...
+# Subtest: suspendTenant e activateTenant alternam status
+ok 145 - suspendTenant e activateTenant alternam status
+  ---
+  duration_ms: 0.636211
+  ...
+# Subtest: setPriceMultiplier valida faixa 1..100
+ok 146 - setPriceMultiplier valida faixa 1..100
+  ---
+  duration_ms: 11.793384
+  ...
+# Subtest: listTenantsOverview retorna items com quotaUsagePercent computado
+ok 147 - listTenantsOverview retorna items com quotaUsagePercent computado
+  ---
+  duration_ms: 1.386215
+  ...
+# Subtest: getPlatformDashboard soma receita/custo/lucro do mês corrente
+ok 148 - getPlatformDashboard soma receita/custo/lucro do mês corrente
+  ---
+  duration_ms: 1.071085
+  ...
+# Subtest: getTenantDetail junta billing + workspaces + members + usage history de 6 meses
+ok 149 - getTenantDetail junta billing + workspaces + members + usage history de 6 meses
+  ---
+  duration_ms: 1.376822
+  ...
+# Subtest: Riscos determinísticos e explicações com números do backend (sem IA)
+ok 150 - Riscos determinísticos e explicações com números do backend (sem IA)
+  ---
+  duration_ms: 21514.049305
+  ...
+# Subtest: IA sob demanda recebe fatos calculados e conversa real; sem permissão de margem, margem não vai à IA
+ok 151 - IA sob demanda recebe fatos calculados e conversa real; sem permissão de margem, margem não vai à IA
+  ---
+  duration_ms: 249.892917
+  ...
+# Subtest: Validação anti-alucinação descarta risco/ação/resumo sem evidência literal
+ok 152 - Validação anti-alucinação descarta risco/ação/resumo sem evidência literal
+  ---
+  duration_ms: 6.074312
+  ...
+# Subtest: IA indisponível falha de forma explícita e segura
+ok 153 - IA indisponível falha de forma explícita e segura
+  ---
+  duration_ms: 97.873362
+  ...
+# Subtest: Realizado só conta GANHAS; impacto da oportunidade na meta (cenário 78/84)
+ok 154 - Realizado só conta GANHAS; impacto da oportunidade na meta (cenário 78/84)
+  ---
+  duration_ms: 21211.645587
+  ...
+# Subtest: Vendedor não vê performance alheia nem altera meta; gestão vê equipe
+ok 155 - Vendedor não vê performance alheia nem altera meta; gestão vê equipe
+  ---
+  duration_ms: 194.503834
+  ...
+# Subtest: Crédito é do responsável no momento do ganho, mesmo após transferência
+ok 156 - Crédito é do responsável no momento do ganho, mesmo após transferência
+  ---
+  duration_ms: 195.283191
+  ...
+# Subtest: Meta atingida notifica uma única vez
+ok 157 - Meta atingida notifica uma única vez
+  ---
+  duration_ms: 132.838993
+  ...
+# Subtest: Metas sazonais por mês e meta anual com ritmo e projeção
+ok 158 - Metas sazonais por mês e meta anual com ritmo e projeção
+  ---
+  duration_ms: 30.22404
+  ...
+# Subtest: Forecast trimestral separa ganho, commit, best case e pipeline ponderado
+ok 159 - Forecast trimestral separa ganho, commit, best case e pipeline ponderado
+  ---
+  duration_ms: 67.764804
+  ...
+# Subtest: Relatórios: produtos, perdas por motivo e conversão; margem só para autorizados
+ok 160 - Relatórios: produtos, perdas por motivo e conversão; margem só para autorizados
+  ---
+  duration_ms: 187.387057
+  ...
+# Subtest: Isolamento: metas e relatórios de outro tenant nunca aparecem
+ok 161 - Isolamento: metas e relatórios de outro tenant nunca aparecem
+  ---
+  duration_ms: 85.634372
+  ...
+# Subtest: Gerar proposta da oportunidade puxa cliente, itens e totais (número PROP-AAAA-NNN v1)
+ok 162 - Gerar proposta da oportunidade puxa cliente, itens e totais (número PROP-AAAA-NNN v1)
+  ---
+  duration_ms: 19588.331651
+  ...
+# Subtest: Abaixo do mínimo: proposta nasce aguardando aprovação; envio bloqueado até o gestor aprovar
+ok 163 - Abaixo do mínimo: proposta nasce aguardando aprovação; envio bloqueado até o gestor aprovar
+  ---
+  duration_ms: 263.816797
+  ...
+# Subtest: Nova versão substitui a anterior só quando enviada; link antigo não aceita mais
+ok 164 - Nova versão substitui a anterior só quando enviada; link antigo não aceita mais
+  ---
+  duration_ms: 255.496759
+  ...
+# Subtest: Visualização só pelo link real; alerta na 1ª abertura e no sinal quente, não a cada refresh
+ok 165 - Visualização só pelo link real; alerta na 1ª abertura e no sinal quente, não a cada refresh
+  ---
+  duration_ms: 202.635924
+  ...
+# Subtest: Aceite idempotente e auditado; padrão não ganha a oportunidade automaticamente
+ok 166 - Aceite idempotente e auditado; padrão não ganha a oportunidade automaticamente
+  ---
+  duration_ms: 198.296092
+  ...
+# Subtest: Com ganho automático configurado, o aceite fecha a venda com o valor da proposta
+ok 167 - Com ganho automático configurado, o aceite fecha a venda com o valor da proposta
+  ---
+  duration_ms: 297.625025
+  ...
+# Subtest: Recusa registra motivo e não perde a oportunidade; proposta vencida não é aceita
+ok 168 - Recusa registra motivo e não perde a oportunidade; proposta vencida não é aceita
+  ---
+  duration_ms: 192.168515
+  ...
+# Subtest: Follow-up: tarefa única para proposta enviada e não aberta em 24h (sem spam)
+ok 169 - Follow-up: tarefa única para proposta enviada e não aberta em 24h (sem spam)
+  ---
+  duration_ms: 167.88548
+  ...
+# Subtest: Mensagem do WhatsApp vem de modelo configurável e sempre leva o link
+ok 170 - Mensagem do WhatsApp vem de modelo configurável e sempre leva o link
+  ---
+  duration_ms: 0.694948
+  ...
+# Subtest: Domínio: margem, desconto e espaço de negociação (cenário 147)
+ok 171 - Domínio: margem, desconto e espaço de negociação (cenário 147)
+  ---
+  duration_ms: 19204.271377
+  ...
+# Subtest: Domínio: acima da tabela é permitido e aumenta a margem (cenário 148)
+ok 172 - Domínio: acima da tabela é permitido e aumenta a margem (cenário 148)
+  ---
+  duration_ms: 1.717393
+  ...
+# Subtest: Domínio: recorrência gera MRR/ARR/TCV sem forçar contrato anual
+ok 173 - Domínio: recorrência gera MRR/ARR/TCV sem forçar contrato anual
+  ---
+  duration_ms: 0.418452
+  ...
+# Subtest: Item da oportunidade: snapshot nunca muda quando o catálogo muda (cenário 150)
+ok 174 - Item da oportunidade: snapshot nunca muda quando o catálogo muda (cenário 150)
+  ---
+  duration_ms: 129.117232
+  ...
+# Subtest: Multi-produto: quantidades, descontos, custo e margem determinísticos (cenário 151)
+ok 175 - Multi-produto: quantidades, descontos, custo e margem determinísticos (cenário 151)
+  ---
+  duration_ms: 241.730522
+  ...
+# Subtest: Visibilidade: vendedor sem permissão não recebe custo; margem conforme configuração
+ok 176 - Visibilidade: vendedor sem permissão não recebe custo; margem conforme configuração
+  ---
+  duration_ms: 189.904114
+  ...
+# Subtest: Abaixo do mínimo exige aprovação; envio bloqueado até aprovar (cenário 149)
+ok 177 - Abaixo do mínimo exige aprovação; envio bloqueado até aprovar (cenário 149)
+  ---
+  duration_ms: 314.34284
+  ...
+# Subtest: Política: margem mínima e desconto máximo por usuário sobrescrevem o workspace
+ok 178 - Política: margem mínima e desconto máximo por usuário sobrescrevem o workspace
+  ---
+  duration_ms: 187.042932
+  ...
+# Subtest: Ganho grava snapshot definitivo e credita o responsável do momento (cenário 152)
+ok 179 - Ganho grava snapshot definitivo e credita o responsável do momento (cenário 152)
+  ---
+  duration_ms: 208.043527
+  ...
+# Subtest: Perda exige motivo, registra concorrente e não conta como venda (cenário 153)
+ok 180 - Perda exige motivo, registra concorrente e não conta como venda (cenário 153)
+  ---
+  duration_ms: 185.628638
+  ...
+# Subtest: Kanban: mover para etapa de ganho fecha com snapshot; etapa exige campos configurados
+ok 181 - Kanban: mover para etapa de ganho fecha com snapshot; etapa exige campos configurados
+  ---
+  duration_ms: 139.29563
+  ...
+# Subtest: Tabela de preço e variação resolvem o preço; isolamento entre tenants
+ok 182 - Tabela de preço e variação resolvem o preço; isolamento entre tenants
+  ---
+  duration_ms: 129.549196
+  ...
+# Subtest: Visibilidade own/team e aviso de duplicidade
+ok 183 - Visibilidade own/team e aviso de duplicidade
+  ---
+  duration_ms: 56.254751
+  ...
+# Subtest: DISPONIBILIDADE COMERCIAL: só o Vorix Conversas é público; Marketing é interno
+ok 184 - DISPONIBILIDADE COMERCIAL: só o Vorix Conversas é público; Marketing é interno
+  ---
+  duration_ms: 4350.403349
+  ...
+# Subtest: ACESSO: kill switch, entitlement e default são conceitos separados
+ok 185 - ACESSO: kill switch, entitlement e default são conceitos separados
+  ---
+  duration_ms: 0.369019
+  ...
+# Subtest: CONCESSÃO: solução não comercial só aceita origem interna
+ok 186 - CONCESSÃO: solução não comercial só aceita origem interna
+  ---
+  duration_ms: 0.438939
+  ...
+# Subtest: ROTAS: classificação por solução — Marketing barrado, Core e Conversas livres
+ok 187 - ROTAS: classificação por solução — Marketing barrado, Core e Conversas livres
+  ---
+  duration_ms: 0.590221
+  ...
+# Subtest: ONBOARDING: o wizard é só do Conversas — a etapa de marca (Marketing) saiu da sequência
+ok 188 - ONBOARDING: o wizard é só do Conversas — a etapa de marca (Marketing) saiu da sequência
+  ---
+  duration_ms: 0.156695
+  ...
+# Subtest: ENTITLEMENT: tenant comum tem Conversas e NÃO tem Marketing; concessão interna libera e fica auditada
+ok 189 - ENTITLEMENT: tenant comum tem Conversas e NÃO tem Marketing; concessão interna libera e fica auditada
+  ---
+  duration_ms: 21.841743
+  ...
+# Subtest: KILL SWITCH: desliga a solução para todos, inclusive quem tem concessão interna
+ok 190 - KILL SWITCH: desliga a solução para todos, inclusive quem tem concessão interna
+  ---
+  duration_ms: 7.198227
+  ...
+# Subtest: CACHE: uma concessão nova vale imediatamente no mesmo processo
+ok 191 - CACHE: uma concessão nova vale imediatamente no mesmo processo
+  ---
+  duration_ms: 5.32672
+  ...
+# Subtest: MIGRATION: quem já usa o Creative Engine mantém acesso interno ao Marketing; ninguém mais ganha
+ok 192 - MIGRATION: quem já usa o Creative Engine mantém acesso interno ao Marketing; ninguém mais ganha
+  ---
+  duration_ms: 12.784534
+  ...
+# Subtest: API: usuário comum (até owner) recebe 403 em TODA rota de Marketing — não é só a sidebar
+ok 193 - API: usuário comum (até owner) recebe 403 em TODA rota de Marketing — não é só a sidebar
+  ---
+  duration_ms: 513.985839
+  ...
+# Subtest: API: Conversas e Core seguem funcionando para o mesmo usuário comum
+ok 194 - API: Conversas e Core seguem funcionando para o mesmo usuário comum
+  ---
+  duration_ms: 273.886899
+  ...
+# Subtest: API: tenant com concessão INTERNA acessa o Marketing e vê as duas soluções
+ok 195 - API: tenant com concessão INTERNA acessa o Marketing e vê as duas soluções
+  ---
+  duration_ms: 228.878968
+  ...
+# Subtest: API: o guarda de solução não substitui o RBAC — viewer interno continua barrado pelo papel
+ok 196 - API: o guarda de solução não substitui o RBAC — viewer interno continua barrado pelo papel
+  ---
+  duration_ms: 231.0273
+  ...
+# Subtest: API: conceder solução é só de administrador da plataforma, e Marketing recusa origem comercial
+ok 197 - API: conceder solução é só de administrador da plataforma, e Marketing recusa origem comercial
+  ---
+  duration_ms: 357.353573
+  ...
+# Subtest: API: requisição sem autenticação não é decidida pelo guarda (webhooks/callbacks seguem com a própria rota)
+ok 198 - API: requisição sem autenticação não é decidida pelo guarda (webhooks/callbacks seguem com a própria rota)
+  ---
+  duration_ms: 141.881335
+  ...
+1..198
+# tests 198
+# suites 0
+# pass 198
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 65373.022983

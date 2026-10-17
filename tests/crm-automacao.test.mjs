@@ -26,6 +26,8 @@ import {
   updateAutomationRule,
 } from "../dist/application/crm/automation-use-cases.js";
 import { startTestPostgres } from "./helpers/pglite-test-db.mjs";
+import Fastify from "fastify";
+import { registerAutomationRulesRoutes } from "../dist/interfaces/api/routes/v1/automation-rules.route.js";
 
 /**
  * CRM/Comercial — Fase 6 (Automação). Foco: (1) CRUD de regras + isolamento cross-tenant; (2)
@@ -49,6 +51,32 @@ before(async () => {
 
 after(async () => {
   await db.stop();
+});
+
+test("API cria exemplos já desativados; não age até a ativação explícita", async () => {
+  const tenantId = "tenant-disabled-example";
+  const workspace = await makeWorkspace(tenantId);
+  const deps = automationDeps();
+  const app = Fastify();
+  app.addHook("onRequest", async request => {
+    request.zunoContext = { principal: { tenantId, userId: "fixture-admin", role: "admin" } };
+  });
+  await registerAutomationRulesRoutes(app, deps);
+  try {
+    const response = await app.inject({ method: "POST", url: "/automation-rules", payload: {
+      workspaceId: workspace.id, name: "Lembrar do primeiro atendimento", trigger: "contact_created",
+      conditions: [], action: "create_task", actionConfig: { taskType: "follow_up", taskTitle: "Primeiro atendimento" }, active: false,
+    } });
+    assert.equal(response.statusCode, 201, response.body);
+    const rule = response.json().data;
+    assert.equal(rule.active, false);
+    const first = await createContact(contactDeps(deps), { tenantId, workspaceId: workspace.id, name: "Contato antes da ativação" });
+    assert.equal((await db.pool.query("select count(*)::int as n from tasks where contact_id=$1", [first.id])).rows[0].n, 0);
+    assert.deepEqual(await listAutomationRunLogs(deps, { ruleId: rule.id, tenantId, workspaceId: workspace.id }), []);
+    await updateAutomationRule(deps, { ruleId: rule.id, tenantId, workspaceId: workspace.id, patch: { active: true } });
+    const second = await createContact(contactDeps(deps), { tenantId, workspaceId: workspace.id, name: "Contato após ativar" });
+    assert.equal((await db.pool.query("select count(*)::int as n from tasks where contact_id=$1", [second.id])).rows[0].n, 1);
+  } finally { await app.close(); }
 });
 
 async function makeWorkspace(tenantId) {

@@ -336,6 +336,7 @@ export type AutomationRuleInput = {
   conditions: readonly AutomationCondition[];
   action: AutomationActionType;
   actionConfig: AutomationActionConfig;
+  active?: boolean;
 };
 
 export function listAutomationRules(workspaceId: string): Promise<AutomationRule[]> {

@@ -8,6 +8,7 @@ export type CreateAutomationRuleInput = {
   conditions: readonly AutomationCondition[];
   action: AutomationActionType;
   actionConfig: AutomationActionConfig;
+  active?: boolean;
 };
 
 export type UpdateAutomationRuleInput = Partial<Omit<CreateAutomationRuleInput, "tenantId" | "workspaceId">> & { active?: boolean };

@@ -43,10 +43,10 @@ export class PostgresAutomationRuleRepository implements AutomationRuleRepositor
 
   async create(input: CreateAutomationRuleInput): Promise<AutomationRule> {
     const result = await this.pool.query<Row>(
-      `insert into automation_rules (id, tenant_id, workspace_id, name, trigger, conditions, action, action_config)
-       values ($1, $2, $3, $4, $5, $6, $7, $8)
+      `insert into automation_rules (id, tenant_id, workspace_id, name, trigger, conditions, action, action_config, active)
+       values ($1, $2, $3, $4, $5, $6, $7, $8, $9)
        returning *`,
-      [ruleId(), input.tenantId, input.workspaceId, input.name, input.trigger, JSON.stringify(input.conditions), input.action, JSON.stringify(input.actionConfig)],
+      [ruleId(), input.tenantId, input.workspaceId, input.name, input.trigger, JSON.stringify(input.conditions), input.action, JSON.stringify(input.actionConfig), input.active ?? true],
     );
     return toDomain(result.rows[0]);
   }

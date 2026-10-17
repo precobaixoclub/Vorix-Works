@@ -44,6 +44,7 @@ const CREATE_BODY_SCHEMA = {
     conditions: { type: "array", items: CONDITION_SCHEMA, maxItems: 3 },
     action: { type: "string", enum: [...AUTOMATION_ACTIONS] },
     actionConfig: ACTION_CONFIG_SCHEMA,
+    active: { type: "boolean" },
   },
 } as const;
 const UPDATE_BODY_SCHEMA = {

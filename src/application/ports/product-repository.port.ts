@@ -7,6 +7,16 @@ export type CreateProductInput = {
   description?: string;
   priceCents: number;
   currency?: string;
+  code?: string | null;
+  category?: string | null;
+  itemType?: Product["itemType"];
+  unit?: string | null;
+  billingType?: Product["billingType"];
+  costCents?: number | null;
+  minimumPriceCents?: number | null;
+  commissionType?: Product["commissionType"] | null;
+  commissionValue?: number | null;
+  taxMetadata?: Record<string, unknown>;
 };
 
 export type UpdateProductInput = Partial<Omit<CreateProductInput, "tenantId" | "workspaceId">> & { active?: boolean };

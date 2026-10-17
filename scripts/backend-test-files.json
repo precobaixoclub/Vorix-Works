@@ -220,6 +220,7 @@
   "tests/backup-restore-drill.test.mjs",
   "tests/crm-fundacao.test.mjs",
   "tests/crm-pipelines-deals.test.mjs",
+  "tests/sales-engine.test.mjs",
   "tests/crm-execucao-comercial.test.mjs",
   "tests/crm-conversas-integration.test.mjs",
   "tests/crm-inteligencia.test.mjs",

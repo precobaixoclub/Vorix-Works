@@ -10,6 +10,7 @@ import type { AutomationRuleRepositoryPort } from "../../application/ports/autom
 import type { AutomationRunLogRepositoryPort } from "../../application/ports/automation-run-log-repository.port.js";
 import type { BillingEventRepositoryPort, InvoiceRepositoryPort, PaymentMethodRepositoryPort, PaymentWebhookEventRepositoryPort } from "../../application/ports/billing-ops-repository.port.js";
 import type { CommercialMetricsRepositoryPort } from "../../application/ports/commercial-metrics-repository.port.js";
+import type { CommercialApprovalRepositoryPort, DealItemRepositoryPort, SalesCatalogRepositoryPort, SalesConfigRepositoryPort } from "../../application/ports/sales-engine-repository.port.js";
 import type { CommercialSuggestionRepositoryPort } from "../../application/ports/commercial-suggestion-repository.port.js";
 import type { ContactRepositoryPort } from "../../application/ports/contact-repository.port.js";
 import type { DealRepositoryPort } from "../../application/ports/deal-repository.port.js";
@@ -44,6 +45,7 @@ import { PostgresAutomationRuleRepository } from "./postgres/postgres-automation
 import { PostgresAutomationRunLogRepository } from "./postgres/postgres-automation-run-log-repository.js";
 import { PostgresBillingEventRepository, PostgresInvoiceRepository, PostgresPaymentMethodRepository, PostgresPaymentWebhookEventRepository } from "./postgres/postgres-billing-ops-repository.js";
 import { PostgresCommercialMetricsRepository } from "./postgres/postgres-commercial-metrics-repository.js";
+import { PostgresCommercialApprovalRepository, PostgresDealItemRepository, PostgresSalesCatalogRepository, PostgresSalesConfigRepository } from "./postgres/postgres-sales-engine-repositories.js";
 import { PostgresCommercialSuggestionRepository } from "./postgres/postgres-commercial-suggestion-repository.js";
 import { PostgresContactRepository } from "./postgres/postgres-contact-repository.js";
 import { PostgresDealRepository } from "./postgres/postgres-deal-repository.js";
@@ -122,6 +124,11 @@ export type IdentityRepositories = {
   automationRunLogRepository: AutomationRunLogRepositoryPort;
   /** CRM/Comercial (Fase 7) — relatório agregado de resultados comerciais (read-only). */
   commercialMetricsRepository: CommercialMetricsRepositoryPort;
+  // Sales Engine — itens com snapshot, catálogo estendido, configuração comercial e aprovações.
+  dealItemRepository: DealItemRepositoryPort;
+  salesCatalogRepository: SalesCatalogRepositoryPort;
+  salesConfigRepository: SalesConfigRepositoryPort;
+  commercialApprovalRepository: CommercialApprovalRepositoryPort;
   /** SaaS Commercialization (Fase 1) — Billing Foundation: versionamento de plano, assinatura,
    * add-ons, uso e operações de cobrança. */
   planVersionRepository: PlanVersionRepositoryPort;
@@ -180,6 +187,10 @@ export function buildIdentityRepositories(options: { databaseUrl: string; secret
     automationRuleRepository: new PostgresAutomationRuleRepository(pool),
     automationRunLogRepository: new PostgresAutomationRunLogRepository(pool),
     commercialMetricsRepository: new PostgresCommercialMetricsRepository(pool),
+    dealItemRepository: new PostgresDealItemRepository(pool),
+    salesCatalogRepository: new PostgresSalesCatalogRepository(pool),
+    salesConfigRepository: new PostgresSalesConfigRepository(pool),
+    commercialApprovalRepository: new PostgresCommercialApprovalRepository(pool),
     planVersionRepository: new PostgresPlanVersionRepository(pool),
     addonDefinitionRepository: new PostgresAddonDefinitionRepository(pool),
     subscriptionRepository: new PostgresSubscriptionRepository(pool),

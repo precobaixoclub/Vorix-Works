@@ -13,6 +13,9 @@ export type CreateStageInput = {
   position: number;
   isWon?: boolean;
   isLost?: boolean;
+  probability?: number | null;
+  staleAfterDays?: number | null;
+  requiredFields?: readonly string[];
 };
 
 export type UpdateStageInput = Partial<Omit<CreateStageInput, "pipelineId">>;

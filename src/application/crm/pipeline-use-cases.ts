@@ -78,7 +78,7 @@ export async function listStages(deps: PipelineUseCaseDeps, input: { pipelineId:
   return deps.pipelineStageRepository.listByPipeline(input.pipelineId);
 }
 
-export async function createStage(deps: PipelineUseCaseDeps, input: { pipelineId: string; tenantId: string; workspaceId: string; name: string; position: number; isWon?: boolean; isLost?: boolean }): Promise<PipelineStage> {
+export async function createStage(deps: PipelineUseCaseDeps, input: { pipelineId: string; tenantId: string; workspaceId: string; name: string; position: number; isWon?: boolean; isLost?: boolean; probability?: number | null; staleAfterDays?: number | null; requiredFields?: readonly string[] }): Promise<PipelineStage> {
   await mustPipelineBelongToTenantAndWorkspace(deps, input.pipelineId, input.tenantId, input.workspaceId);
   return deps.pipelineStageRepository.create(input);
 }

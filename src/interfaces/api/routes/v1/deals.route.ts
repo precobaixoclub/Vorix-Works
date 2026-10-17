@@ -9,6 +9,7 @@ import {
   updateDeal,
 } from "../../../../application/crm/deal-use-cases.js";
 import type { DealUseCaseDeps } from "../../../../application/crm/deal-use-cases.js";
+import { dealVisibleInScope, resolveDealScope } from "../../../../application/sales/sales-context.js";
 import { NotFoundError, ValidationError } from "../../http/app-error.js";
 import { requirePermission } from "../../http/require-principal.js";
 import { successEnvelope } from "../../http/response-envelope.js";
@@ -25,6 +26,7 @@ const LIST_QUERY_SCHEMA = {
     teamId: { type: "string" },
     origin: { type: "string" },
     search: { type: "string" },
+    status: { type: "string", enum: ["open", "won", "lost", "cancelled"] },
     cursor: { type: "string" },
     limit: { type: "integer", minimum: 1, maximum: 500 },
   },
@@ -59,6 +61,10 @@ const CREATE_BODY_SCHEMA = {
     teamId: { type: "string" },
     origin: { type: "string", maxLength: 60 },
     expectedCloseDate: { type: "string", format: "date" },
+    probability: { type: "integer", minimum: 0, maximum: 100 },
+    forecastCategory: { type: "string", enum: ["pipeline", "best_case", "commit"] },
+    contractMonths: { type: "integer", minimum: 1, maximum: 600 },
+    priceBookId: { type: "string" },
   },
 } as const;
 const UPDATE_BODY_SCHEMA = {
@@ -90,7 +96,7 @@ const MOVE_STAGE_BODY_SCHEMA = {
 
 function translateDealError(error: unknown): never {
   if (error instanceof Error && error.message.startsWith("DEAL_NOT_FOUND")) throw new NotFoundError(error.message);
-  if (error instanceof Error && (error.message.startsWith("DEAL_STAGE_PIPELINE_MISMATCH") || error.message.startsWith("DEAL_LOSS_REASON_REQUIRED"))) {
+  if (error instanceof Error && (error.message.startsWith("DEAL_STAGE_PIPELINE_MISMATCH") || error.message.startsWith("DEAL_LOSS_REASON_REQUIRED") || error.message.startsWith("DEAL_STAGE_REQUIREMENTS_MISSING") || error.message.startsWith("DEAL_FINAL_VALUE_REQUIRED") || error.message.startsWith("DEAL_CLOSED") || error.message.startsWith("DEAL_VALUE_CALCULATED"))) {
     throw new ValidationError(error.message);
   }
   throw error;
@@ -99,8 +105,9 @@ function translateDealError(error: unknown): never {
 export async function registerDealsRoutes(app: FastifyInstance, deps: DealUseCaseDeps): Promise<void> {
   app.get("/deals", { schema: { querystring: LIST_QUERY_SCHEMA } }, async (request) => {
     const principal = requirePermission(request, "deal:read");
-    const query = request.query as { workspaceId: string; pipelineId?: string; stageId?: string; contactId?: string; ownerUserId?: string; teamId?: string; origin?: string; search?: string; cursor?: string; limit?: number };
-    const deals = await listDeals(deps, { tenantId: principal.tenantId, ...query });
+    const query = request.query as { workspaceId: string; pipelineId?: string; stageId?: string; contactId?: string; ownerUserId?: string; teamId?: string; origin?: string; search?: string; status?: "open" | "won" | "lost" | "cancelled"; cursor?: string; limit?: number };
+    const scope = deps.sales ? await resolveDealScope(deps.sales, { tenantId: principal.tenantId, userId: principal.userId, role: principal.role }, query.workspaceId) : {};
+    const deals = await listDeals(deps, { tenantId: principal.tenantId, ...query, ...scope });
     return successEnvelope(deals, request.id);
   });
 
@@ -115,7 +122,7 @@ export async function registerDealsRoutes(app: FastifyInstance, deps: DealUseCas
     const principal = requirePermission(request, "deal:manage");
     const body = request.body as Record<string, unknown> & { workspaceId: string; pipelineId: string; stageId: string; title: string };
     try {
-      const deal = await createDeal(deps, { tenantId: principal.tenantId, ...body } as never);
+      const deal = await createDeal(deps, { tenantId: principal.tenantId, ...body, actorUserId: principal.userId } as never);
       reply.code(201);
       return successEnvelope(deal, request.id);
     } catch (error) {
@@ -129,6 +136,9 @@ export async function registerDealsRoutes(app: FastifyInstance, deps: DealUseCas
     const { workspaceId } = request.query as { workspaceId: string };
     try {
       const deal = await getDeal(deps, { dealId: id, tenantId: principal.tenantId, workspaceId });
+      if (deps.sales && !dealVisibleInScope(deal, await resolveDealScope(deps.sales, { tenantId: principal.tenantId, userId: principal.userId, role: principal.role }, workspaceId))) {
+        throw new Error(`DEAL_NOT_FOUND: oportunidade "${id}" não existe.`);
+      }
       return successEnvelope(deal, request.id);
     } catch (error) {
       translateDealError(error);
@@ -140,7 +150,7 @@ export async function registerDealsRoutes(app: FastifyInstance, deps: DealUseCas
     const { id } = request.params as { id: string };
     const { workspaceId, ...patch } = request.body as { workspaceId: string } & Record<string, unknown>;
     try {
-      const deal = await updateDeal(deps, { dealId: id, tenantId: principal.tenantId, workspaceId, patch: patch as never });
+      const deal = await updateDeal(deps, { dealId: id, tenantId: principal.tenantId, workspaceId, patch: patch as never, actorUserId: principal.userId });
       return successEnvelope(deal, request.id);
     } catch (error) {
       translateDealError(error);
@@ -152,7 +162,7 @@ export async function registerDealsRoutes(app: FastifyInstance, deps: DealUseCas
     const { id } = request.params as { id: string };
     const { workspaceId, stageId, lossReason } = request.body as { workspaceId: string; stageId: string; lossReason?: string };
     try {
-      const deal = await moveDealStage(deps, { dealId: id, tenantId: principal.tenantId, workspaceId, targetStageId: stageId, lossReason });
+      const deal = await moveDealStage(deps, { dealId: id, tenantId: principal.tenantId, workspaceId, targetStageId: stageId, lossReason, actorUserId: principal.userId });
       return successEnvelope(deal, request.id);
     } catch (error) {
       translateDealError(error);

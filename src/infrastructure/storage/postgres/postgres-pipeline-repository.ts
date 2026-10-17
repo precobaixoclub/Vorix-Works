@@ -28,6 +28,9 @@ type StageRow = {
   position: number;
   is_won: boolean;
   is_lost: boolean;
+  probability: number | null;
+  stale_after_days: number | null;
+  required_fields: string[] | null;
   created_at: Date;
 };
 
@@ -51,6 +54,9 @@ function toStage(row: StageRow): PipelineStage {
     position: row.position,
     isWon: row.is_won,
     isLost: row.is_lost,
+    probability: row.probability ?? undefined,
+    staleAfterDays: row.stale_after_days ?? undefined,
+    requiredFields: row.required_fields ?? [],
     createdAt: row.created_at.toISOString(),
   };
 }
@@ -93,9 +99,9 @@ export class PostgresPipelineStageRepository implements PipelineStageRepositoryP
 
   async create(input: CreateStageInput): Promise<PipelineStage> {
     const result = await this.pool.query<StageRow>(
-      `insert into pipeline_stages (id, pipeline_id, name, position, is_won, is_lost)
-       values ($1, $2, $3, $4, $5, $6) returning *`,
-      [stageId(), input.pipelineId, input.name, input.position, input.isWon ?? false, input.isLost ?? false],
+      `insert into pipeline_stages (id, pipeline_id, name, position, is_won, is_lost, probability, stale_after_days, required_fields)
+       values ($1, $2, $3, $4, $5, $6, $7, $8, $9) returning *`,
+      [stageId(), input.pipelineId, input.name, input.position, input.isWon ?? false, input.isLost ?? false, input.probability ?? null, input.staleAfterDays ?? null, [...(input.requiredFields ?? [])]],
     );
     return toStage(result.rows[0]);
   }
@@ -117,13 +123,16 @@ export class PostgresPipelineStageRepository implements PipelineStageRepositoryP
     const existing = await this.getById(id);
     if (!existing) throw new Error(`PIPELINE_STAGE_NOT_FOUND: etapa "${id}" não existe.`);
     const result = await this.pool.query<StageRow>(
-      `update pipeline_stages set name = $2, position = $3, is_won = $4, is_lost = $5 where id = $1 returning *`,
+      `update pipeline_stages set name = $2, position = $3, is_won = $4, is_lost = $5, probability = $6, stale_after_days = $7, required_fields = $8 where id = $1 returning *`,
       [
         id,
         input.name ?? existing.name,
         input.position ?? existing.position,
         input.isWon ?? existing.isWon,
         input.isLost ?? existing.isLost,
+        input.probability !== undefined ? input.probability : existing.probability ?? null,
+        input.staleAfterDays !== undefined ? input.staleAfterDays : existing.staleAfterDays ?? null,
+        [...(input.requiredFields ?? existing.requiredFields)],
       ],
     );
     return toStage(result.rows[0]);

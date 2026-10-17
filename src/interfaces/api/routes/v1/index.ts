@@ -44,6 +44,7 @@ import { registerProductsRoutes } from "./products.route.js";
 import { registerCommercialSuggestionsRoutes } from "./commercial-suggestions.route.js";
 import { registerAutomationRulesRoutes } from "./automation-rules.route.js";
 import { registerCommercialMetricsRoutes } from "./commercial-metrics.route.js";
+import { registerSalesEngineRoutes } from "./sales-engine.route.js";
 import { registerBillingEntitlementsRoutes } from "./billing-entitlements.route.js";
 import { registerReadOnlyGuard } from "../../http/read-only-guard.js";
 import { registerAdminPlanVersionsRoutes } from "./admin-plan-versions.route.js";
@@ -368,6 +369,24 @@ export async function registerV1Routes(app: FastifyInstance): Promise<void> {
       pipelineRepository: identity.pipelineRepository,
       pipelineStageRepository: identity.pipelineStageRepository,
     });
+    // Sales Engine (Conversas) — oportunidade como negociação completa: itens com snapshot,
+    // margem, política comercial/aprovações, fechamento com snapshot, catálogo estendido.
+    const salesDeps = {
+      dealRepository: identity.dealRepository,
+      pipelineStageRepository: identity.pipelineStageRepository,
+      productRepository: identity.productRepository,
+      timelineEventRepository: identity.timelineEventRepository,
+      dealItemRepository: identity.dealItemRepository,
+      salesCatalogRepository: identity.salesCatalogRepository,
+      salesConfigRepository: identity.salesConfigRepository,
+      approvalRepository: identity.commercialApprovalRepository,
+      membershipRepository: identity.membershipRepository,
+      teamMembershipRepository: identity.teamMembershipRepository,
+      taskRepository: identity.taskRepository,
+      contactRepository: identity.contactRepository,
+      notification: { notificationRepository: app.zunoContainer.notificationRepository, realtimePublisher: app.zunoContainer.notificationRealtimePublisher },
+      automation: automationDeps,
+    };
     await registerDealsRoutes(app, {
       dealRepository: identity.dealRepository,
       pipelineStageRepository: identity.pipelineStageRepository,
@@ -375,10 +394,12 @@ export async function registerV1Routes(app: FastifyInstance): Promise<void> {
       // Fase 6 — dispara `deal_stage_changed` ao mover um negócio de etapa.
       automation: automationDeps,
       productAnalytics: productAnalyticsDeps,
+      sales: salesDeps,
     });
+    await registerSalesEngineRoutes(app, salesDeps);
     // CRM/Comercial (Fase 3) — Tarefas, Catálogo de produtos, Propostas (com link público).
     await registerTasksRoutes(app, { taskRepository: identity.taskRepository, timelineEventRepository: identity.timelineEventRepository });
-    await registerProductsRoutes(app, { productRepository: identity.productRepository });
+    await registerProductsRoutes(app, { productRepository: identity.productRepository, salesConfigRepository: identity.salesConfigRepository });
     await registerProposalsRoutes(app, {
       proposalRepository: identity.proposalRepository,
       timelineEventRepository: identity.timelineEventRepository,

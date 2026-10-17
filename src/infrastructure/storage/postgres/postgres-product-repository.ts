@@ -15,6 +15,16 @@ type ProductRow = {
   active: boolean;
   created_at: Date;
   updated_at: Date;
+  code: string | null;
+  category: string | null;
+  item_type: Product["itemType"];
+  unit: string | null;
+  billing_type: Product["billingType"];
+  cost_cents: string | null;
+  minimum_price_cents: string | null;
+  commission_type: Product["commissionType"] | null;
+  commission_value: string | null;
+  tax_metadata: Record<string, unknown> | null;
 };
 
 function toDomain(row: ProductRow): Product {
@@ -29,6 +39,16 @@ function toDomain(row: ProductRow): Product {
     active: row.active,
     createdAt: row.created_at.toISOString(),
     updatedAt: row.updated_at.toISOString(),
+    code: row.code ?? undefined,
+    category: row.category ?? undefined,
+    itemType: row.item_type,
+    unit: row.unit ?? undefined,
+    billingType: row.billing_type,
+    costCents: row.cost_cents === null ? undefined : Number(row.cost_cents),
+    minimumPriceCents: row.minimum_price_cents === null ? undefined : Number(row.minimum_price_cents),
+    commissionType: row.commission_type ?? undefined,
+    commissionValue: row.commission_value === null ? undefined : Number(row.commission_value),
+    taxMetadata: row.tax_metadata ?? {},
   };
 }
 
@@ -37,9 +57,14 @@ export class PostgresProductRepository implements ProductRepositoryPort {
 
   async create(input: CreateProductInput): Promise<Product> {
     const result = await this.pool.query<ProductRow>(
-      `insert into products (id, tenant_id, workspace_id, name, description, price_cents, currency)
-       values ($1, $2, $3, $4, $5, $6, $7) returning *`,
-      [productId(), input.tenantId, input.workspaceId, input.name, input.description ?? null, input.priceCents, input.currency ?? "BRL"],
+      `insert into products (id, tenant_id, workspace_id, name, description, price_cents, currency, code, category, item_type, unit, billing_type,
+         cost_cents, minimum_price_cents, commission_type, commission_value, tax_metadata)
+       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17) returning *`,
+      [
+        productId(), input.tenantId, input.workspaceId, input.name, input.description ?? null, input.priceCents, input.currency ?? "BRL",
+        input.code ?? null, input.category ?? null, input.itemType ?? "product", input.unit ?? null, input.billingType ?? "one_time",
+        input.costCents ?? null, input.minimumPriceCents ?? null, input.commissionType ?? null, input.commissionValue ?? null, JSON.stringify(input.taxMetadata ?? {}),
+      ],
     );
     return toDomain(result.rows[0]);
   }
@@ -54,7 +79,7 @@ export class PostgresProductRepository implements ProductRepositoryPort {
     const params: unknown[] = [input.tenantId, input.workspaceId];
     if (input.search) {
       params.push(`%${input.search}%`);
-      conditions.push(`name ilike $${params.length}`);
+      conditions.push(`(name ilike $${params.length} or code ilike $${params.length} or category ilike $${params.length})`);
     }
     if (input.activeOnly) conditions.push("active");
     const result = await this.pool.query<ProductRow>(
@@ -68,7 +93,9 @@ export class PostgresProductRepository implements ProductRepositoryPort {
     const existing = await this.getById(id);
     if (!existing) throw new Error(`PRODUCT_NOT_FOUND: produto "${id}" não existe.`);
     const result = await this.pool.query<ProductRow>(
-      `update products set name = $2, description = $3, price_cents = $4, currency = $5, active = $6, updated_at = now()
+      `update products set name = $2, description = $3, price_cents = $4, currency = $5, active = $6, code = $7, category = $8, item_type = $9,
+         unit = $10, billing_type = $11, cost_cents = $12, minimum_price_cents = $13, commission_type = $14, commission_value = $15,
+         tax_metadata = $16, updated_at = now()
        where id = $1 returning *`,
       [
         id,
@@ -77,6 +104,16 @@ export class PostgresProductRepository implements ProductRepositoryPort {
         input.priceCents ?? existing.priceCents,
         input.currency ?? existing.currency,
         input.active ?? existing.active,
+        input.code !== undefined ? input.code : existing.code ?? null,
+        input.category !== undefined ? input.category : existing.category ?? null,
+        input.itemType ?? existing.itemType,
+        input.unit !== undefined ? input.unit : existing.unit ?? null,
+        input.billingType ?? existing.billingType,
+        input.costCents !== undefined ? input.costCents : existing.costCents ?? null,
+        input.minimumPriceCents !== undefined ? input.minimumPriceCents : existing.minimumPriceCents ?? null,
+        input.commissionType !== undefined ? input.commissionType : existing.commissionType ?? null,
+        input.commissionValue !== undefined ? input.commissionValue : existing.commissionValue ?? null,
+        JSON.stringify(input.taxMetadata ?? existing.taxMetadata),
       ],
     );
     return toDomain(result.rows[0]);

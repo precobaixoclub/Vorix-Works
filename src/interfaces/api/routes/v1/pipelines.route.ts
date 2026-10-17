@@ -31,6 +31,9 @@ const CREATE_STAGE_BODY_SCHEMA = {
     position: { type: "integer", minimum: 0 },
     isWon: { type: "boolean" },
     isLost: { type: "boolean" },
+    probability: { type: ["integer", "null"], minimum: 0, maximum: 100 },
+    staleAfterDays: { type: ["integer", "null"], minimum: 1, maximum: 3650 },
+    requiredFields: { type: "array", maxItems: 30, items: { type: "string", minLength: 1, maxLength: 60 } },
   },
 } as const;
 const UPDATE_STAGE_BODY_SCHEMA = {
@@ -43,6 +46,9 @@ const UPDATE_STAGE_BODY_SCHEMA = {
     position: { type: "integer", minimum: 0 },
     isWon: { type: "boolean" },
     isLost: { type: "boolean" },
+    probability: { type: ["integer", "null"], minimum: 0, maximum: 100 },
+    staleAfterDays: { type: ["integer", "null"], minimum: 1, maximum: 3650 },
+    requiredFields: { type: "array", maxItems: 30, items: { type: "string", minLength: 1, maxLength: 60 } },
   },
 } as const;
 
@@ -87,9 +93,9 @@ export async function registerPipelinesRoutes(app: FastifyInstance, deps: Pipeli
   app.post("/pipelines/:id/stages", { schema: { params: ID_PARAMS_SCHEMA, body: CREATE_STAGE_BODY_SCHEMA } }, async (request, reply) => {
     const principal = requirePermission(request, "deal:manage");
     const { id } = request.params as { id: string };
-    const { workspaceId, name, position, isWon, isLost } = request.body as { workspaceId: string; name: string; position: number; isWon?: boolean; isLost?: boolean };
+    const { workspaceId, name, position, isWon, isLost, probability, staleAfterDays, requiredFields } = request.body as { workspaceId: string; name: string; position: number; isWon?: boolean; isLost?: boolean; probability?: number | null; staleAfterDays?: number | null; requiredFields?: string[] };
     try {
-      const stage = await createStage(deps, { pipelineId: id, tenantId: principal.tenantId, workspaceId, name, position, isWon, isLost });
+      const stage = await createStage(deps, { pipelineId: id, tenantId: principal.tenantId, workspaceId, name, position, isWon, isLost, probability, staleAfterDays, requiredFields });
       reply.code(201);
       return successEnvelope(stage, request.id);
     } catch (error) {

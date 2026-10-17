@@ -1,3 +1,4 @@
+import type { BillingType } from "../sales/pricing.js";
 /**
  * Domínio CRM/Comercial — Fase 1 (Fundação Comercial). Ver
  * `docs/crm-omnichannel-architecture-audit.md` para o racional completo. Bounded context próprio,
@@ -94,6 +95,12 @@ export type PipelineStage = {
   position: number;
   isWon: boolean;
   isLost: boolean;
+  /** Sales Engine — probabilidade padrão da etapa (0–100); ausente = derivada da posição. */
+  probability?: number;
+  /** Dias sem mudar de etapa para considerar a oportunidade parada; ausente = sem alerta. */
+  staleAfterDays?: number;
+  /** Chaves de campos exigidos para ENTRAR nesta etapa (ex.: `expectedCloseDate`, `custom:budget`). */
+  requiredFields: readonly string[];
   createdAt: string;
 };
 
@@ -117,7 +124,45 @@ export type Deal = {
   createdAt: string;
   updatedAt: string;
   lastStageChangedAt: string;
+  // Sales Engine — status explícito (não depende só da coluna do Kanban), modo do valor,
+  // forecast e snapshot definitivo do fechamento (nunca recalculado com o catálogo atual).
+  status: DealStatus;
+  /** `calculated` = `valueCents` é a soma dos itens (backend recalcula); `manual` = informado. */
+  valueMode: DealValueMode;
+  /** Override de probabilidade; ausente = probabilidade da etapa. */
+  probability?: number;
+  forecastCategory: ForecastCategory;
+  priceBookId?: string;
+  /** Desconto global da oportunidade (além dos descontos por item; nunca aplicado duas vezes). */
+  discountCents: number;
+  contractMonths?: number;
+  customFields: Readonly<Record<string, unknown>>;
+  closedAt?: string;
+  closedByUserId?: string;
+  /** Quem recebe o crédito da venda — o responsável NO MOMENTO do ganho, nunca o atual. */
+  creditedOwnerUserId?: string;
+  creditedTeamId?: string;
+  wonReason?: string;
+  closeComment?: string;
+  competitorId?: string;
+  wonProposalId?: string;
+  finalValueCents?: number;
+  finalCostCents?: number;
+  finalGrossProfitCents?: number;
+  finalMarginBp?: number;
+  finalMrrCents?: number;
+  finalArrCents?: number;
+  finalTcvCents?: number;
+  finalSnapshot?: Readonly<Record<string, unknown>>;
 };
+
+export const DEAL_STATUSES = ["open", "won", "lost", "cancelled"] as const;
+export type DealStatus = (typeof DEAL_STATUSES)[number];
+export const DEAL_VALUE_MODES = ["manual", "calculated"] as const;
+export type DealValueMode = (typeof DEAL_VALUE_MODES)[number];
+/** Confiança comercial — independente da etapa (o vendedor sinaliza sem mover o card). */
+export const FORECAST_CATEGORIES = ["pipeline", "best_case", "commit", "closed", "omitted"] as const;
+export type ForecastCategory = (typeof FORECAST_CATEGORIES)[number];
 
 export type DealStageSummary = {
   stageId: string;
@@ -164,11 +209,26 @@ export type Product = {
   workspaceId: string;
   name: string;
   description?: string;
+  /** Preço de TABELA (nome histórico mantido por compatibilidade — ver `listPriceCents` na API). */
   priceCents: number;
   currency: string;
   active: boolean;
   createdAt: string;
   updatedAt: string;
+  // Sales Engine — preços formais (nunca colapsados num único "price").
+  code?: string;
+  category?: string;
+  itemType: "product" | "service";
+  unit?: string;
+  billingType: BillingType;
+  /** Custo unitário — visível só para quem a política comercial permite. */
+  costCents?: number;
+  /** Preço mínimo sem aprovação; ausente = sem piso. */
+  minimumPriceCents?: number;
+  commissionType?: "percent" | "fixed";
+  /** `percent` em basis points; `fixed` em centavos. */
+  commissionValue?: number;
+  taxMetadata: Readonly<Record<string, unknown>>;
 };
 
 /**

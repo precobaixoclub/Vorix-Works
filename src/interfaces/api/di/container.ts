@@ -122,6 +122,7 @@ import type { AddonDefinitionRepositoryPort, PlanVersionRepositoryPort } from ".
 import type { SubscriptionItemRepositoryPort, SubscriptionPendingChangeRepositoryPort, SubscriptionRepositoryPort } from "../../../application/ports/subscription-repository.port.js";
 import type { UsageCounterRepositoryPort } from "../../../application/ports/usage-counter-repository.port.js";
 import type { CommercialMetricsRepositoryPort } from "../../../application/ports/commercial-metrics-repository.port.js";
+import type { CommercialApprovalRepositoryPort, DealItemRepositoryPort, SalesCatalogRepositoryPort, SalesConfigRepositoryPort } from "../../../application/ports/sales-engine-repository.port.js";
 import type { CommercialSuggestionRepositoryPort } from "../../../application/ports/commercial-suggestion-repository.port.js";
 import type { ContactRepositoryPort } from "../../../application/ports/contact-repository.port.js";
 import type { ContactIdentityRepositoryPort } from "../../../application/ports/contact-identity-repository.port.js";
@@ -539,6 +540,11 @@ export type ApiContainer = {
     automationRunLogRepository: AutomationRunLogRepositoryPort;
     /** CRM/Comercial (Fase 7) — relatório agregado de resultados comerciais (read-only). */
     commercialMetricsRepository: CommercialMetricsRepositoryPort;
+    /** Sales Engine — itens, catálogo estendido, configuração comercial e aprovações. */
+    dealItemRepository: DealItemRepositoryPort;
+    salesCatalogRepository: SalesCatalogRepositoryPort;
+    salesConfigRepository: SalesConfigRepositoryPort;
+    commercialApprovalRepository: CommercialApprovalRepositoryPort;
     /** SaaS Commercialization (Fase 1) — Billing Foundation. */
     planVersionRepository: PlanVersionRepositoryPort;
     addonDefinitionRepository: AddonDefinitionRepositoryPort;

@@ -39,6 +39,8 @@ export type SignupPublicTransactionDeps = {
    * não tem trial habilitado (signup continua funcionando normalmente, só sem Subscription real —
    * mesmo estado de hoje, `tenant_billing` FREE/trial legado). */
   trialEnabled: boolean;
+  /** Créditos de IA do teste gratuito (env `TRIAL_AI_CREDITS`). */
+  trialAiCredits?: number;
 };
 
 /**
@@ -114,6 +116,7 @@ export async function signupPublicTransactional(
             platformBillingRepository: new PostgresPlatformBillingRepository(txPool),
             billingEventRepository: new PostgresBillingEventRepository(txPool),
             trialEnabled: deps.trialEnabled,
+            trialAiCredits: deps.trialAiCredits,
             now: deps.now,
             // Sem `productAnalytics` aqui de propósito — `startTrial` gravaria o evento
             // imediatamente contra o pool REAL (fora desta transação), mentindo se o signup como

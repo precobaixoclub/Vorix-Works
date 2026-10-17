@@ -43,6 +43,10 @@ export const AI_OPERATIONS = [
   /** Sales Engine (Conversas) — resumo, riscos e próximas ações de uma oportunidade, sempre com
    * evidência literal; números comerciais vêm calculados do backend (a IA só explica). */
   "deal_commercial_insights",
+  /** Relatórios (Conversas) — leitura executiva de um relatório já calculado, com evidência literal. */
+  "report_ai_analysis",
+  /** Relatórios (Conversas) — monta um modelo de relatório escolhendo seções do catálogo fechado. */
+  "report_template_builder",
 ] as const;
 export type AiOperation = (typeof AI_OPERATIONS)[number];
 
@@ -51,7 +55,7 @@ export type AiOperation = (typeof AI_OPERATIONS)[number];
  * `infrastructure/ai-gateway/inbox-ai-responder-adapter.ts` chama `inbox_auto_reply`; o adapter em
  * `infrastructure/ai-gateway/commercial-copilot-generator-adapter.ts` chama
  * `commercial_copilot_suggestions`. */
-export const EXECUTABLE_AI_OPERATIONS: readonly AiOperation[] = ["briefing_field_extraction", "inbox_auto_reply", "commercial_copilot_suggestions", "meeting_ai_analysis", "meeting_question_answer", "meeting_follow_up", "deal_commercial_insights"];
+export const EXECUTABLE_AI_OPERATIONS: readonly AiOperation[] = ["briefing_field_extraction", "inbox_auto_reply", "commercial_copilot_suggestions", "meeting_ai_analysis", "meeting_question_answer", "meeting_follow_up", "deal_commercial_insights", "report_ai_analysis", "report_template_builder"];
 
 export type AiCapability = "structured_text" | "free_text" | "vision" | "image_generation" | "embeddings" | "tool_calling" | "streaming";
 

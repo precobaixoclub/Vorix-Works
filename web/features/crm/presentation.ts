@@ -29,14 +29,32 @@ export const PROPOSAL_STATUS_LABEL: Record<ProposalStatus, string> = {
   superseded: "Substituída",
 };
 
+/** Lê o texto de um campo de dinheiro em centavos. Aceita o formato da máscara ("1.234,56") e,
+ * por segurança, o formato com ponto decimal ("1234.56") — nunca multiplica por 100 duas vezes. */
 export function centsFromCurrencyInput(value: string): number {
-  const normalized = value.replace(/\./g, "").replace(",", ".");
+  const text = value.replace(/[^\d.,-]/g, "");
+  const normalized = text.includes(",")
+    ? text.replace(/\./g, "").replace(",", ".")
+    : /^\d+\.\d{1,2}$/.test(text)
+      ? text
+      : text.replace(/\./g, "");
   return Math.max(0, Math.round(Number(normalized) * 100) || 0);
 }
 
+const MONEY_INPUT_FORMAT = new Intl.NumberFormat("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+/** Centavos → texto da máscara ("1.234,56"); vazio quando não há valor. */
 export function currencyInputFromCents(cents: number | undefined): string {
   if (!cents) return "";
-  return (cents / 100).toFixed(2);
+  return MONEY_INPUT_FORMAT.format(cents / 100);
+}
+
+/** Máscara de moeda estilo caixa eletrônico: os dígitos entram pela direita ("1" → "0,01",
+ * "1234" → "12,34"). Colar "1.500,00" mantém 1.500,00. Vazio continua vazio. */
+export function maskCurrencyInput(raw: string): string {
+  const digits = raw.replace(/\D/g, "").replace(/^0+(?=\d)/, "").slice(0, 13);
+  if (!digits) return "";
+  return MONEY_INPUT_FORMAT.format(Number(digits) / 100);
 }
 
 export function isTaskOverdue(task: Task, now = new Date()): boolean {

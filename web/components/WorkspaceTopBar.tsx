@@ -3,7 +3,8 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { LogOut, Settings, ShieldCheck } from "lucide-react";
+import { LogOut, Plus, Settings, ShieldCheck } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { Breadcrumbs } from "@/components/Breadcrumbs";
 import { NotificationBell } from "@/components/NotificationBell";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -34,6 +35,7 @@ export function WorkspaceTopBar({ workspaceId, name, status, hideBreadcrumb }: {
   const { available: availableSolutions } = useSolutions();
   const base = `/workspaces/${workspaceId}`;
   const [menuOpen, setMenuOpen] = useState(false);
+  const lowCredits = Boolean(credits && credits.remainingCredits <= Math.max(20, credits.monthlyCreditsQuota * 0.1));
   const initials = (user?.name ?? user?.email ?? "?").split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]?.toUpperCase()).join("");
 
   async function handleLogout() {
@@ -64,13 +66,20 @@ export function WorkspaceTopBar({ workspaceId, name, status, hideBreadcrumb }: {
             </Link>
           ) : null}
           {credits ? (
-            <span
-              className="hidden h-7 items-center gap-1.5 rounded-full border border-border/80 bg-surface-2/60 px-2.5 text-[11px] font-medium tabular-nums text-text-secondary md:inline-flex"
-              title={`Cota mensal: ${credits.monthlyCreditsQuota} · Usado este mês: ${credits.creditsConsumedThisMonth} · Extras: ${credits.creditsExtra}`}
+            <Link
+              href={`${base}/settings/plano#creditos`}
+              className={cn(
+                "group hidden h-7 items-center gap-1.5 rounded-full border bg-surface-2/60 pl-2.5 pr-1 text-[11px] font-medium tabular-nums transition-colors hover:border-ai/50 md:inline-flex",
+                lowCredits ? "border-warning/50 text-warning" : "border-border/80 text-text-secondary",
+              )}
+              title={`Cota mensal: ${credits.monthlyCreditsQuota} · Usado este mês: ${credits.creditsConsumedThisMonth} · Comprados: ${credits.creditsExtra} — clique para comprar mais`}
             >
               <VorixAiIcon className="h-3 w-3" />
               {credits.remainingCredits.toLocaleString("pt-BR")} créditos
-            </span>
+              <span className="flex h-5 items-center gap-0.5 rounded-full bg-ai/15 px-1.5 text-[10px] font-semibold text-ai group-hover:bg-ai/25" aria-hidden="true">
+                <Plus className="h-2.5 w-2.5" />Comprar
+              </span>
+            </Link>
           ) : null}
           <NotificationBell workspaceId={workspaceId} />
           <Popover open={menuOpen} onOpenChange={setMenuOpen}>
@@ -92,10 +101,10 @@ export function WorkspaceTopBar({ workspaceId, name, status, hideBreadcrumb }: {
               ) : null}
               <div className="space-y-1 p-2">
                 {credits ? (
-                  <p className="flex items-center gap-1.5 rounded-md px-2 py-1.5 text-xs text-text-secondary md:hidden">
-                    <VorixAiIcon className="h-3 w-3" />
-                    {credits.remainingCredits.toLocaleString("pt-BR")} créditos de IA
-                  </p>
+                  <Link href={`${base}/settings/plano#creditos`} onClick={() => setMenuOpen(false)} className="flex items-center justify-between gap-1.5 rounded-md px-2 py-1.5 text-xs text-text-secondary hover:bg-surface-2 md:hidden">
+                    <span className="flex items-center gap-1.5"><VorixAiIcon className="h-3 w-3" />{credits.remainingCredits.toLocaleString("pt-BR")} créditos de IA</span>
+                    <span className="font-semibold text-ai">Comprar</span>
+                  </Link>
                 ) : null}
                 <div className="flex items-center justify-between gap-2 px-2 py-1">
                   <span className="text-xs text-muted-foreground">Conta</span>

@@ -15,6 +15,10 @@ import type { SubscriptionItem } from "./subscription.model.js";
 
 const USER_RESOURCE = "users" as const;
 const WHATSAPP_RESOURCE = "messaging_connections" as const;
+/** Vorix Meetings — unidade comercial é a gravação simultânea (base = 1, extras = +1 cada). */
+const RECORDING_RESOURCE = "meetings_concurrent_recordings" as const;
+const MEETINGS_BASE_CODE = "meetings_base";
+const MEETINGS_EXTRA_CODE = "meetings_extra_recording";
 
 export type CapacitySnapshot = {
   planCode: PlatformPlanCode;
@@ -25,6 +29,8 @@ export type CapacitySnapshot = {
   includedWhatsappConnections: number | null;
   additionalWhatsappConnections: number;
   totalWhatsappConnections: number | null;
+  /** Gravações simultâneas do Vorix Meetings contratadas (0 = Meetings não contratado). */
+  concurrentRecordings: number;
   baseMonthlyAmount: number;
   addonsMonthlyAmount: number;
   totalMonthlyAmount: number;
@@ -38,6 +44,7 @@ export function resolveCommercialCapacity(planVersion: PlanVersion, addonDefinit
   const definitionByCode = new Map(addonDefinitions.map((addon) => [addon.code, addon]));
   let additionalUsers = 0;
   let additionalWhatsapp = 0;
+  let concurrentRecordings = 0;
   let addonsMonthlyAmount = 0;
 
   for (const item of items) {
@@ -46,6 +53,7 @@ export function resolveCommercialCapacity(planVersion: PlanVersion, addonDefinit
     const increment = addon.increment * item.quantity;
     if (addon.resource === USER_RESOURCE) additionalUsers += increment;
     if (addon.resource === WHATSAPP_RESOURCE) additionalWhatsapp += increment;
+    if (addon.resource === RECORDING_RESOURCE) concurrentRecordings += increment;
     addonsMonthlyAmount += item.unitPriceUsd * item.quantity;
   }
 
@@ -61,13 +69,15 @@ export function resolveCommercialCapacity(planVersion: PlanVersion, addonDefinit
     includedWhatsappConnections: includedWhatsapp,
     additionalWhatsappConnections: additionalWhatsapp,
     totalWhatsappConnections: includedWhatsapp === null ? null : includedWhatsapp + additionalWhatsapp,
+    concurrentRecordings,
     baseMonthlyAmount: planVersion.monthlyPriceUsd,
     addonsMonthlyAmount,
     totalMonthlyAmount: planVersion.monthlyPriceUsd + addonsMonthlyAmount,
   };
 }
 
-export type CapacityRequirement = { users: number; whatsappConnections: number };
+/** `concurrentRecordings` opcional: 0/ausente = sem Vorix Meetings. */
+export type CapacityRequirement = { users: number; whatsappConnections: number; concurrentRecordings?: number };
 
 export type CapacityCostBreakdown = {
   planCode: PlatformPlanCode;
@@ -79,6 +89,8 @@ export type CapacityCostBreakdown = {
   additionalWhatsappConnections: number;
   userAddonMonthlyAmount: number;
   whatsappAddonMonthlyAmount: number;
+  concurrentRecordings: number;
+  meetingsMonthlyAmount: number;
   addonsMonthlyAmount: number;
   totalMonthlyAmount: number;
   /** `false` quando o plano não tem addon de algum recurso necessário cadastrado em
@@ -99,7 +111,11 @@ export function computeCapacityCost(planVersion: PlanVersion, addonDefinitions: 
   const neededExtraUsers = includedUsers === null ? 0 : Math.max(0, required.users - includedUsers);
   const neededExtraWhatsapp = includedWhatsapp === null ? 0 : Math.max(0, required.whatsappConnections - includedWhatsapp);
 
-  const feasible = (neededExtraUsers === 0 || Boolean(userAddon)) && (neededExtraWhatsapp === 0 || Boolean(whatsappAddon));
+  const recordings = Math.max(0, Math.floor(required.concurrentRecordings ?? 0));
+  const meetingsBase = addonDefinitions.find((addon) => addon.code === MEETINGS_BASE_CODE && planVersion.allowedAddonCodes.includes(addon.code));
+  const meetingsExtra = addonDefinitions.find((addon) => addon.code === MEETINGS_EXTRA_CODE && planVersion.allowedAddonCodes.includes(addon.code));
+  const meetingsFeasible = recordings === 0 || (Boolean(meetingsBase) && (recordings === 1 || Boolean(meetingsExtra)));
+  const feasible = (neededExtraUsers === 0 || Boolean(userAddon)) && (neededExtraWhatsapp === 0 || Boolean(whatsappAddon)) && meetingsFeasible;
 
   const userUnits = userAddon && neededExtraUsers > 0 ? Math.ceil(neededExtraUsers / userAddon.increment) : 0;
   const whatsappUnits = whatsappAddon && neededExtraWhatsapp > 0 ? Math.ceil(neededExtraWhatsapp / whatsappAddon.increment) : 0;
@@ -110,7 +126,9 @@ export function computeCapacityCost(planVersion: PlanVersion, addonDefinitions: 
   const whatsappAddonPrice = whatsappAddon ? (billingInterval === "monthly" ? whatsappAddon.monthlyPriceUsd : whatsappAddon.yearlyPriceUsd) : 0;
   const userAddonMonthlyAmount = userUnits * userAddonPrice;
   const whatsappAddonMonthlyAmount = whatsappUnits * whatsappAddonPrice;
-  const addonsMonthlyAmount = userAddonMonthlyAmount + whatsappAddonMonthlyAmount;
+  const priceOf = (addon: AddonDefinition | undefined) => (addon ? (billingInterval === "monthly" ? addon.monthlyPriceUsd : addon.yearlyPriceUsd) : 0);
+  const meetingsMonthlyAmount = recordings > 0 ? priceOf(meetingsBase) + Math.max(0, recordings - 1) * priceOf(meetingsExtra) : 0;
+  const addonsMonthlyAmount = userAddonMonthlyAmount + whatsappAddonMonthlyAmount + meetingsMonthlyAmount;
   const baseMonthlyAmount = billingInterval === "monthly" ? planVersion.monthlyPriceUsd : planVersion.yearlyPriceUsd;
 
   return {
@@ -123,6 +141,8 @@ export function computeCapacityCost(planVersion: PlanVersion, addonDefinitions: 
     additionalWhatsappConnections,
     userAddonMonthlyAmount,
     whatsappAddonMonthlyAmount,
+    concurrentRecordings: recordings,
+    meetingsMonthlyAmount,
     addonsMonthlyAmount,
     totalMonthlyAmount: baseMonthlyAmount + addonsMonthlyAmount,
     feasible,

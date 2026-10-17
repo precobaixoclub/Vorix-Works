@@ -91,6 +91,33 @@ export type PaymentMethodSnapshot = { providerPaymentMethodId: string; brand?: s
 export type GetPaymentMethodInput = { providerCustomerId: string };
 export type GetPaymentMethodResult = { ok: true; paymentMethod: PaymentMethodSnapshot | undefined };
 
+/** Cobrança AVULSA (ex.: créditos de IA) — nunca altera a assinatura. `reference` identifica a
+ * compra no Vorix e volta no webhook (metadados/external_reference) para confirmar uma única vez. */
+export type OneTimeChargeInput = {
+  tenantId: string;
+  reference: string;
+  amountCents: number;
+  currency: string;
+  description: string;
+  providerCustomerId: string;
+  /** Idempotência no gateway — a mesma compra nunca cobra duas vezes. */
+  idempotencyKey: string;
+};
+/** `succeeded`: pago agora. `pending`: o gateway confirma depois (webhook). `requires_action`: o
+ * cartão exige autenticação — o chamador oferece o checkout como alternativa. */
+export type OneTimeChargeResult = { ok: true; status: "succeeded" | "pending" | "requires_action"; providerPaymentId: string };
+export type OneTimeCheckoutInput = {
+  tenantId: string;
+  reference: string;
+  amountCents: number;
+  currency: string;
+  description: string;
+  customerEmail: string;
+  existingProviderCustomerId?: string;
+  successUrl: string;
+  cancelUrl: string;
+};
+
 export type CreateCustomerPortalInput = { providerCustomerId: string; returnUrl: string };
 export type CreateCustomerPortalResult = { ok: true; portalUrl: string };
 
@@ -131,5 +158,11 @@ export type BillingProviderPort = {
   updateSubscriptionItemQuantity(input: UpdateSubscriptionItemQuantityInput): Promise<{ ok: true } | BillingProviderFailure>;
   getPaymentMethod(input: GetPaymentMethodInput): Promise<GetPaymentMethodResult | BillingProviderFailure>;
   createCustomerPortal(input: CreateCustomerPortalInput): Promise<CreateCustomerPortalResult | BillingProviderFailure>;
+  /** `true` quando o gateway consegue cobrar a forma de pagamento salva sem o cliente presente. */
+  readonly supportsOffSessionCharge: boolean;
+  /** Cobra a forma de pagamento salva do cliente (sem redirecionar). */
+  chargeOneTime(input: OneTimeChargeInput): Promise<OneTimeChargeResult | BillingProviderFailure>;
+  /** Página de pagamento único hospedada pelo gateway (sem forma de pagamento salva, ou recusa). */
+  createOneTimeCheckout(input: OneTimeCheckoutInput): Promise<CreateCheckoutResult | BillingProviderFailure>;
   handleWebhook(input: HandleWebhookInput): Promise<HandleWebhookResult | BillingProviderFailure>;
 };

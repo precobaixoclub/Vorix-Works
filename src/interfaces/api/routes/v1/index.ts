@@ -57,6 +57,9 @@ import { registerBillingCapacityRoutes } from "./billing-capacity.route.js";
 import { registerProductEventsRoutes } from "./product-events.route.js";
 import { registerBillingLifecycleRoutes } from "./billing-lifecycle.route.js";
 import { registerBillingOverviewRoutes } from "./billing-overview.route.js";
+import { registerBillingCreditsRoutes } from "./billing-credits.route.js";
+import { registerReportsRoutes } from "./reports.route.js";
+import { AiGatewayReportAi } from "../../../../infrastructure/ai-gateway/report-ai-adapter.js";
 import { registerOnboardingRoutes } from "./onboarding.route.js";
 import { DefaultResourceCounterAdapter } from "../../../../infrastructure/billing/resource-counter-adapter.js";
 import { registerProposalsRoutes } from "./proposals.route.js";
@@ -432,7 +435,12 @@ export async function registerV1Routes(app: FastifyInstance): Promise<void> {
     });
     // CRM/Comercial (Fase 3) — Tarefas, Catálogo de produtos, Propostas (com link público).
     await registerTasksRoutes(app, { taskRepository: identity.taskRepository, timelineEventRepository: identity.timelineEventRepository });
-    await registerProductsRoutes(app, { productRepository: identity.productRepository, salesConfigRepository: identity.salesConfigRepository });
+    await registerProductsRoutes(app, {
+      productRepository: identity.productRepository,
+      salesConfigRepository: identity.salesConfigRepository,
+      membershipRepository: identity.membershipRepository,
+      notification: { notificationRepository: app.zunoContainer.notificationRepository, realtimePublisher: app.zunoContainer.notificationRealtimePublisher },
+    });
     const proposalUseCaseDeps = {
       proposalRepository: identity.proposalRepository,
       timelineEventRepository: identity.timelineEventRepository,
@@ -549,6 +557,7 @@ export async function registerV1Routes(app: FastifyInstance): Promise<void> {
       platformBillingRepository: identity.platformBillingRepository,
       billingEventRepository: identity.billingEventRepository,
       trialEnabled: app.zunoConfig.billing.trialEnabled,
+      trialAiCredits: app.zunoConfig.billing.aiCredits.trialCredits,
       productAnalytics: productAnalyticsDeps,
     });
     // Trial + Product Analytics — fundação de eventos de produto (`productAnalyticsDeps`
@@ -579,6 +588,18 @@ export async function registerV1Routes(app: FastifyInstance): Promise<void> {
       ...entitlementDeps,
       billingProvider: app.zunoContainer.billingProvider,
       invoiceRepository: identity.invoiceRepository,
+      appBaseUrl: app.zunoConfig.billing.appBaseUrl,
+    });
+    // Relatórios — modelos fixos e do cliente, criação de modelo e análise com IA (créditos via AI Gateway).
+    await registerReportsRoutes(app, { reportTemplateRepository: identity.reportTemplateRepository, reportAi: new AiGatewayReportAi(app.zunoContainer.aiGateway) });
+    // Créditos de IA avulsos — saldo, preço e recarga (cartão salvo ou checkout de pagamento único).
+    await registerBillingCreditsRoutes(app, {
+      billingProvider: app.zunoContainer.billingProvider,
+      subscriptionRepository: identity.subscriptionRepository,
+      platformBillingRepository: identity.platformBillingRepository,
+      aiCreditPurchaseRepository: identity.aiCreditPurchaseRepository,
+      userRepository: identity.userRepository,
+      pricing: app.zunoConfig.billing.aiCredits,
       appBaseUrl: app.zunoConfig.billing.appBaseUrl,
     });
     // Onboarding guiado — orquestra Convites/Conexões/Entitlements já existentes, nunca uma

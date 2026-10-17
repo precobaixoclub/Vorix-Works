@@ -1,5 +1,5 @@
 import type { Pool } from "pg";
-import type { CreateProductInput, ProductRepositoryPort, UpdateProductInput } from "../../../application/ports/product-repository.port.js";
+import type { AdjustStockInput, CreateProductInput, ProductRepositoryPort, UpdateProductInput } from "../../../application/ports/product-repository.port.js";
 import type { Product } from "../../../domain/crm/crm.model.js";
 
 const productId = () => `product-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
@@ -25,6 +25,9 @@ type ProductRow = {
   commission_type: Product["commissionType"] | null;
   commission_value: string | null;
   tax_metadata: Record<string, unknown> | null;
+  track_stock: boolean;
+  stock_quantity: string;
+  stock_alert_threshold: string | null;
 };
 
 function toDomain(row: ProductRow): Product {
@@ -49,6 +52,9 @@ function toDomain(row: ProductRow): Product {
     commissionType: row.commission_type ?? undefined,
     commissionValue: row.commission_value === null ? undefined : Number(row.commission_value),
     taxMetadata: row.tax_metadata ?? {},
+    trackStock: row.track_stock,
+    stockQuantity: Number(row.stock_quantity),
+    stockAlertThreshold: row.stock_alert_threshold === null ? undefined : Number(row.stock_alert_threshold),
   };
 }
 
@@ -58,12 +64,13 @@ export class PostgresProductRepository implements ProductRepositoryPort {
   async create(input: CreateProductInput): Promise<Product> {
     const result = await this.pool.query<ProductRow>(
       `insert into products (id, tenant_id, workspace_id, name, description, price_cents, currency, code, category, item_type, unit, billing_type,
-         cost_cents, minimum_price_cents, commission_type, commission_value, tax_metadata)
-       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17) returning *`,
+         cost_cents, minimum_price_cents, commission_type, commission_value, tax_metadata, track_stock, stock_quantity, stock_alert_threshold)
+       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20) returning *`,
       [
         productId(), input.tenantId, input.workspaceId, input.name, input.description ?? null, input.priceCents, input.currency ?? "BRL",
         input.code ?? null, input.category ?? null, input.itemType ?? "product", input.unit ?? null, input.billingType ?? "one_time",
         input.costCents ?? null, input.minimumPriceCents ?? null, input.commissionType ?? null, input.commissionValue ?? null, JSON.stringify(input.taxMetadata ?? {}),
+        input.trackStock ?? false, input.stockQuantity ?? 0, input.stockAlertThreshold ?? null,
       ],
     );
     return toDomain(result.rows[0]);
@@ -95,7 +102,7 @@ export class PostgresProductRepository implements ProductRepositoryPort {
     const result = await this.pool.query<ProductRow>(
       `update products set name = $2, description = $3, price_cents = $4, currency = $5, active = $6, code = $7, category = $8, item_type = $9,
          unit = $10, billing_type = $11, cost_cents = $12, minimum_price_cents = $13, commission_type = $14, commission_value = $15,
-         tax_metadata = $16, updated_at = now()
+         tax_metadata = $16, track_stock = $17, stock_quantity = $18, stock_alert_threshold = $19, updated_at = now()
        where id = $1 returning *`,
       [
         id,
@@ -114,6 +121,9 @@ export class PostgresProductRepository implements ProductRepositoryPort {
         input.commissionType !== undefined ? input.commissionType : existing.commissionType ?? null,
         input.commissionValue !== undefined ? input.commissionValue : existing.commissionValue ?? null,
         JSON.stringify(input.taxMetadata ?? existing.taxMetadata),
+        input.trackStock ?? existing.trackStock,
+        input.stockQuantity ?? existing.stockQuantity,
+        input.stockAlertThreshold !== undefined ? input.stockAlertThreshold : existing.stockAlertThreshold ?? null,
       ],
     );
     return toDomain(result.rows[0]);
@@ -121,5 +131,39 @@ export class PostgresProductRepository implements ProductRepositoryPort {
 
   async delete(id: string): Promise<void> {
     await this.pool.query("delete from products where id = $1", [id]);
+  }
+
+  async netStockByDeal(dealId: string): Promise<{ productId: string; delta: number }[]> {
+    const result = await this.pool.query<{ product_id: string; delta: string }>(
+      "select product_id, sum(delta) as delta from product_stock_movements where deal_id = $1 group by product_id",
+      [dealId],
+    );
+    return result.rows.map((row) => ({ productId: row.product_id, delta: Number(row.delta) }));
+  }
+
+  async adjustStock(input: AdjustStockInput): Promise<Product | undefined> {
+    const client = await this.pool.connect();
+    try {
+      await client.query("begin");
+      const result = await client.query<ProductRow>(
+        "update products set stock_quantity = stock_quantity + $2, updated_at = now() where id = $1 and track_stock returning *",
+        [input.productId, input.delta],
+      );
+      const row = result.rows[0];
+      if (row) {
+        await client.query(
+          `insert into product_stock_movements (id, tenant_id, workspace_id, product_id, delta, quantity_after, reason, deal_id, user_id)
+           values ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+          [`stock-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`, row.tenant_id, row.workspace_id, row.id, input.delta, row.stock_quantity, input.reason, input.dealId ?? null, input.userId ?? null],
+        );
+      }
+      await client.query("commit");
+      return row ? toDomain(row) : undefined;
+    } catch (error) {
+      await client.query("rollback");
+      throw error;
+    } finally {
+      client.release();
+    }
   }
 }

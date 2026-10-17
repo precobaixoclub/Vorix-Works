@@ -7,7 +7,7 @@ import {
   getSalesReports,
   getTeamPerformance,
   listGoals,
-  upsertGoal,
+  setMonthlyGoals, upsertGoal,
   type SalesPerformanceDeps,
 } from "../../../../application/sales/sales-performance-use-cases.js";
 import type { SalesActor } from "../../../../application/sales/sales-context.js";
@@ -92,6 +92,19 @@ export async function registerSalesPerformanceRoutes(app: FastifyInstance, deps:
     const actor = actorFor(request, "goal:manage");
     const body = request.body as Parameters<typeof upsertGoal>[2];
     return successEnvelope(await guard(() => upsertGoal(deps, actor, body)), request.id);
+  });
+
+  app.put("/sales-goals/monthly", {
+    schema: { body: { type: "object", required: ["workspaceId", "scopeType", "metric", "year", "months"], additionalProperties: false, properties: {
+      workspaceId: WS, scopeType: { type: "string", enum: ["user", "team", "company"] }, scopeId: { type: "string" },
+      metric: { type: "string", enum: ["sales_revenue", "gross_margin", "won_opportunities", "mrr"] }, year: { type: "integer", minimum: 2000, maximum: 2100 },
+      months: { type: "array", minItems: 12, maxItems: 12, items: { type: ["integer", "null"], minimum: 0, maximum: 9_000_000_000_000 } },
+      currency: { type: "string", minLength: 3, maxLength: 3 },
+    } } },
+  }, async (request) => {
+    const actor = actorFor(request, "goal:manage");
+    const body = request.body as Parameters<typeof setMonthlyGoals>[2];
+    return successEnvelope(await guard(() => setMonthlyGoals(deps, actor, body)), request.id);
   });
 
   app.delete("/sales-goals/:id", { schema: { params: { type: "object", required: ["id"], properties: { id: WS } }, querystring: { type: "object", required: ["workspaceId"], properties: { workspaceId: WS } } } }, async (request, reply) => {

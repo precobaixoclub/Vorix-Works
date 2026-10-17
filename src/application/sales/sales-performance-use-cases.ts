@@ -98,7 +98,71 @@ export async function listGoals(deps: SalesPerformanceDeps, actor: SalesActor, i
   return attachProgress(deps, actor.tenantId, input.workspaceId, goals, now);
 }
 
-export async function upsertGoal(deps: SalesPerformanceDeps, actor: SalesActor, input: { workspaceId: string; scopeType: GoalScope; scopeId?: string; metric: GoalMetric; periodType: GoalPeriod; periodStart: string; targetValue: number; currency?: string }): Promise<SalesGoal> {
+type GoalInput = { workspaceId: string; scopeType: GoalScope; scopeId?: string; metric: GoalMetric; periodType: GoalPeriod; periodStart: string; targetValue: number; currency?: string };
+
+/** Metas são definidas MÊS a MÊS; trimestre e ano são sempre a soma dos meses (nunca digitados). */
+export async function upsertGoal(deps: SalesPerformanceDeps, actor: SalesActor, input: GoalInput): Promise<SalesGoal> {
+  if (input.periodType !== "monthly") throw new Error("SALES_GOAL_INVALID: defina metas mensais — a meta trimestral e a anual são a soma dos meses.");
+  const goal = await writeMonthlyGoal(deps, actor, input);
+  await syncDerivedGoals(deps, actor, { workspaceId: input.workspaceId, scopeType: input.scopeType, scopeId: input.scopeId, metric: input.metric, year: Number(goal.periodStart.slice(0, 4)), currency: input.currency });
+  return goal;
+}
+
+/** "Aplicar a todos os meses" e edição em lote: um valor por mês (null = sem meta), um único recálculo. */
+export async function setMonthlyGoals(deps: SalesPerformanceDeps, actor: SalesActor, input: { workspaceId: string; scopeType: GoalScope; scopeId?: string; metric: GoalMetric; year: number; months: (number | null)[]; currency?: string }): Promise<GoalWithProgress[]> {
+  if (!hasPermission(actor.role, "goal:manage")) throw new Error("SALES_REPORT_FORBIDDEN: só a gestão define metas.");
+  if (input.months.length !== 12) throw new Error("SALES_GOAL_INVALID: informe os 12 meses.");
+  const existing = await scopeGoals(deps, actor, input);
+  for (let index = 0; index < 12; index += 1) {
+    const value = input.months[index];
+    const periodStart = `${input.year}-${String(index + 1).padStart(2, "0")}-01`;
+    const current = existing.find((goal) => goal.periodType === "monthly" && goal.periodStart === periodStart);
+    if (value === null || !(value > 0)) {
+      if (current) await removeGoal(deps, actor, input.workspaceId, current);
+    } else if (!current || current.targetValue !== value) {
+      await writeMonthlyGoal(deps, actor, { workspaceId: input.workspaceId, scopeType: input.scopeType, scopeId: input.scopeId, metric: input.metric, periodType: "monthly", periodStart, targetValue: value, currency: input.currency });
+    }
+  }
+  await syncDerivedGoals(deps, actor, input);
+  return listGoals(deps, actor, { workspaceId: input.workspaceId, year: input.year });
+}
+
+async function scopeGoals(deps: SalesPerformanceDeps, actor: SalesActor, input: { workspaceId: string; scopeType: GoalScope; scopeId?: string; metric: GoalMetric; year: number }): Promise<SalesGoal[]> {
+  const goals = await deps.goalRepository.list({ tenantId: actor.tenantId, workspaceId: input.workspaceId, periodFrom: `${input.year}-01-01`, periodTo: `${input.year + 1}-01-01` });
+  const scopeId = input.scopeType === "company" ? undefined : input.scopeId;
+  return goals.filter((goal) => goal.scopeType === input.scopeType && (goal.scopeId ?? undefined) === scopeId && goal.metric === input.metric);
+}
+
+/** Recalcula as metas trimestrais e a anual a partir dos meses (remove as que ficaram sem meses). */
+async function syncDerivedGoals(deps: SalesPerformanceDeps, actor: SalesActor, input: { workspaceId: string; scopeType: GoalScope; scopeId?: string; metric: GoalMetric; year: number; currency?: string }): Promise<void> {
+  const goals = await scopeGoals(deps, actor, input);
+  const monthly = goals.filter((goal) => goal.periodType === "monthly");
+  const sumOf = (months: number[]) => monthly.filter((goal) => months.includes(Number(goal.periodStart.slice(5, 7)))).reduce((sum, goal) => sum + goal.targetValue, 0);
+  const derived: { periodType: GoalPeriod; periodStart: string; months: number[] }[] = [
+    { periodType: "annual", periodStart: `${input.year}-01-01`, months: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12] },
+    ...[0, 1, 2, 3].map((quarter) => ({ periodType: "quarterly" as GoalPeriod, periodStart: `${input.year}-${String(quarter * 3 + 1).padStart(2, "0")}-01`, months: [quarter * 3 + 1, quarter * 3 + 2, quarter * 3 + 3] })),
+  ];
+  for (const target of derived) {
+    const total = sumOf(target.months);
+    const current = goals.find((goal) => goal.periodType === target.periodType && goal.periodStart === target.periodStart);
+    if (total <= 0) {
+      if (current) await removeGoal(deps, actor, input.workspaceId, current);
+    } else if (!current || current.targetValue !== total) {
+      await writeGoal(deps, actor, { workspaceId: input.workspaceId, scopeType: input.scopeType, scopeId: input.scopeId, metric: input.metric, periodType: target.periodType, periodStart: target.periodStart, targetValue: total, currency: input.currency });
+    }
+  }
+}
+
+async function removeGoal(deps: SalesPerformanceDeps, actor: SalesActor, workspaceId: string, goal: SalesGoal): Promise<void> {
+  await deps.goalRepository.delete(goal.id);
+  await deps.goalRepository.recordChange({ goalId: goal.id, tenantId: actor.tenantId, workspaceId, changedBy: actor.userId, fromValue: goal.targetValue, action: "deleted" });
+}
+
+async function writeMonthlyGoal(deps: SalesPerformanceDeps, actor: SalesActor, input: GoalInput): Promise<SalesGoal> {
+  return writeGoal(deps, actor, { ...input, periodType: "monthly" });
+}
+
+async function writeGoal(deps: SalesPerformanceDeps, actor: SalesActor, input: GoalInput): Promise<SalesGoal> {
   if (!hasPermission(actor.role, "goal:manage")) throw new Error("SALES_REPORT_FORBIDDEN: só a gestão define metas.");
   if (!ACTIVE_GOAL_METRICS.includes(input.metric)) throw new Error("SALES_GOAL_INVALID: este tipo de meta ainda não está disponível.");
   if (!(input.targetValue > 0) || !Number.isInteger(input.targetValue)) throw new Error("SALES_GOAL_INVALID: a meta deve ser um valor positivo.");
@@ -116,8 +180,9 @@ export async function deleteGoal(deps: SalesPerformanceDeps, actor: SalesActor, 
   if (!hasPermission(actor.role, "goal:manage")) throw new Error("SALES_REPORT_FORBIDDEN: só a gestão define metas.");
   const goal = await deps.goalRepository.getById(input.goalId);
   if (!goal || goal.tenantId !== actor.tenantId || goal.workspaceId !== input.workspaceId) throw new Error(`SALES_GOAL_NOT_FOUND: meta "${input.goalId}" não existe.`);
-  await deps.goalRepository.delete(goal.id);
-  await deps.goalRepository.recordChange({ goalId: goal.id, tenantId: actor.tenantId, workspaceId: input.workspaceId, changedBy: actor.userId, fromValue: goal.targetValue, action: "deleted" });
+  if (goal.periodType !== "monthly") throw new Error("SALES_GOAL_INVALID: a meta trimestral e a anual são a soma dos meses — remova os meses.");
+  await removeGoal(deps, actor, input.workspaceId, goal);
+  await syncDerivedGoals(deps, actor, { workspaceId: input.workspaceId, scopeType: goal.scopeType, scopeId: goal.scopeId, metric: goal.metric, year: Number(goal.periodStart.slice(0, 4)), currency: goal.currency });
 }
 
 /** "Meta atingida" — avaliado a cada ganho; notifica uma única vez por meta. */
@@ -131,8 +196,21 @@ export async function checkGoalsReached(deps: SalesPerformanceDeps, deal: Deal):
       const facts = toWonFacts(deal);
       return dealsInGoalScope(goal, [facts]).length > 0;
     });
+  // Trimestre e ano são a soma dos meses: o mesmo ganho pode "atingir" vários períodos de uma vez
+  // (ex.: só um mês tem meta). Todos são marcados como atingidos, mas a pessoa recebe UM aviso por
+  // escopo/indicador — o do período mais longo alcançado.
+  const PERIOD_WEIGHT = { monthly: 1, quarterly: 2, annual: 3 } as const;
+  const newlyReached: GoalWithProgress[] = [];
   for (const goal of await attachProgress(deps, deal.tenantId, deal.workspaceId, candidates, new Date())) {
-    if (!goal.progress.reached || !(await deps.goalRepository.claimAchievement(goal.id, deal.id))) continue;
+    if (goal.progress.reached && (await deps.goalRepository.claimAchievement(goal.id, deal.id))) newlyReached.push(goal);
+  }
+  const byScope = new Map<string, GoalWithProgress>();
+  for (const goal of newlyReached) {
+    const key = `${goal.scopeType}:${goal.scopeId ?? ""}:${goal.metric}`;
+    const current = byScope.get(key);
+    if (!current || PERIOD_WEIGHT[goal.periodType] > PERIOD_WEIGHT[current.periodType]) byScope.set(key, goal);
+  }
+  for (const goal of byScope.values()) {
     const recipients = goal.scopeType === "user" ? [goal.scopeId as string] : await listManagerUserIds(deps, deal.tenantId);
     for (const userId of new Set(recipients)) {
       notifyBestEffort(deps.notification, {

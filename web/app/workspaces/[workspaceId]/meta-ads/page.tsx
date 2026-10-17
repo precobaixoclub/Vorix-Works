@@ -6,7 +6,8 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { EmptyState } from "@/components/EmptyState";
 import { ErrorState } from "@/components/ErrorState";
-import { Input, Label, Textarea } from "@/components/Field";
+import { Input, Label, MoneyInput, Textarea } from "@/components/Field";
+import { centsFromCurrencyInput } from "@/features/crm/presentation";
 import { Modal } from "@/components/Modal";
 import { PageHeader } from "@/components/PageHeader";
 import { PageSubnav } from "@/components/PageSubnav";
@@ -401,7 +402,7 @@ function NewCampaignModal({ workspaceId, adAccountId, onClose, onCreated }: { wo
         adAccountId,
         name: name.trim(),
         objective,
-        ...(dailyBudget ? { dailyBudget: Number(dailyBudget) } : {}),
+        ...(dailyBudget ? { dailyBudget: centsFromCurrencyInput(dailyBudget) / 100 } : {}),
       });
       onCreated();
     } catch (cause) {
@@ -430,7 +431,7 @@ function NewCampaignModal({ workspaceId, adAccountId, onClose, onCreated }: { wo
         </div>
         <div>
           <Label htmlFor="campaign-budget">Orçamento diário (opcional)</Label>
-          <Input id="campaign-budget" type="number" min={0} step="0.01" value={dailyBudget} onChange={(event) => setDailyBudget(event.target.value)} placeholder="Ex.: 50" />
+          <MoneyInput id="campaign-budget" value={dailyBudget} onChange={(event) => setDailyBudget(event.target.value)} placeholder="50,00" />
         </div>
         {error ? <p className="text-sm text-destructive">{error}</p> : null}
         <div className="flex justify-end gap-2">
@@ -471,7 +472,7 @@ function NewAdSetModal({ workspaceId, campaign, onClose, onCreated }: { workspac
         name: name.trim(),
         optimizationGoal,
         billingEvent,
-        ...(dailyBudget ? { dailyBudget: Number(dailyBudget) } : {}),
+        ...(dailyBudget ? { dailyBudget: centsFromCurrencyInput(dailyBudget) / 100 } : {}),
         targeting: {
           geoCountries: countries,
           ...(ageMin ? { ageMin: Number(ageMin) } : {}),
@@ -516,7 +517,7 @@ function NewAdSetModal({ workspaceId, campaign, onClose, onCreated }: { workspac
         </div>
         <div>
           <Label htmlFor="adset-budget">Orçamento diário (opcional)</Label>
-          <Input id="adset-budget" type="number" min={0} step="0.01" value={dailyBudget} onChange={(event) => setDailyBudget(event.target.value)} placeholder="Ex.: 30" />
+          <MoneyInput id="adset-budget" value={dailyBudget} onChange={(event) => setDailyBudget(event.target.value)} placeholder="30,00" />
         </div>
         <div>
           <Label htmlFor="adset-countries">Países (código de 2 letras, separados por vírgula)</Label>

@@ -184,6 +184,13 @@ export type Product = {
   minimumPriceCents?: number;
   commissionType?: "percent" | "fixed";
   commissionValue?: number;
+  /** Controle de estoque (opcional por produto). */
+  trackStock?: boolean;
+  stockQuantity?: number;
+  /** Ponto de reposição — com o estoque neste valor ou abaixo, o sistema alerta. */
+  stockAlertThreshold?: number;
+  /** Calculado pela API: estoque no ponto de reposição ou abaixo. */
+  lowStock?: boolean;
 };
 
 export type BillingType = "one_time" | "monthly" | "quarterly" | "annual" | "per_unit" | "per_hour" | "custom";

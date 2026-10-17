@@ -57,6 +57,10 @@ import { PostgresPlatformAiSettingsRepository } from "./postgres/postgres-platfo
 import { PostgresBillingProviderSettingsRepository } from "./postgres/postgres-billing-provider-settings-repository.js";
 import { PostgresPlatformBillingRepository } from "./postgres/postgres-platform-billing-repository.js";
 import { PostgresProductRepository } from "./postgres/postgres-product-repository.js";
+import { PostgresReportTemplateRepository } from "./postgres/postgres-report-template-repository.js";
+import type { ReportTemplateRepositoryPort } from "../../application/ports/report-template-repository.port.js";
+import { PostgresAiCreditPurchaseRepository } from "./postgres/postgres-ai-credit-purchase-repository.js";
+import type { AiCreditPurchaseRepositoryPort } from "../../application/ports/ai-credit-purchase-repository.port.js";
 import { PostgresProposalRepository } from "./postgres/postgres-proposal-repository.js";
 import { PostgresProposalTemplateRepository } from "./postgres/postgres-proposal-template-repository.js";
 import { PostgresRefreshTokenRepository } from "./postgres/postgres-refresh-token-repository.js";
@@ -150,6 +154,10 @@ export type IdentityRepositories = {
   invoiceRepository: InvoiceRepositoryPort;
   billingEventRepository: BillingEventRepositoryPort;
   paymentWebhookEventRepository: PaymentWebhookEventRepositoryPort;
+  /** Compras avulsas de créditos de IA. */
+  aiCreditPurchaseRepository: AiCreditPurchaseRepositoryPort;
+  /** Relatórios — modelos do cliente. */
+  reportTemplateRepository: ReportTemplateRepositoryPort;
   /** Onboarding guiado — progresso por workspace. */
   workspaceOnboardingRepository: WorkspaceOnboardingRepositoryPort;
   /** Trial + Product Analytics — fundação de eventos de produto. */
@@ -185,6 +193,8 @@ export function buildIdentityRepositories(options: { databaseUrl: string; secret
     dealRepository: new PostgresDealRepository(pool),
     taskRepository: new PostgresTaskRepository(pool),
     productRepository: new PostgresProductRepository(pool),
+    aiCreditPurchaseRepository: new PostgresAiCreditPurchaseRepository(pool),
+    reportTemplateRepository: new PostgresReportTemplateRepository(pool),
     proposalRepository: new PostgresProposalRepository(pool),
     proposalTemplateRepository: new PostgresProposalTemplateRepository(pool),
     commercialSuggestionRepository: new PostgresCommercialSuggestionRepository(pool),

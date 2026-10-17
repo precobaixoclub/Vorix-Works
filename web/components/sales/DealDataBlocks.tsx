@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import useSWR from "swr";
 import { Button } from "@/components/Button";
 import { DetailBlock } from "@/components/DetailModal";
-import { Input } from "@/components/Field";
+import { Input, MoneyInput } from "@/components/Field";
 import { SearchableCombo } from "@/components/SearchableCombo";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -76,7 +76,11 @@ function CustomFieldInput({ field, value, onSave }: { field: DealCustomField; va
   };
   return (
     <label className="block">{label}
-      <Input type={field.fieldType === "date" ? "date" : "text"} inputMode={field.fieldType === "number" || field.fieldType === "currency" ? "decimal" : undefined} value={text} onChange={(event) => setText(event.target.value)} onBlur={commit} />
+      {field.fieldType === "currency" ? (
+        <MoneyInput value={text} onChange={(event) => setText(event.target.value)} onBlur={commit} />
+      ) : (
+        <Input type={field.fieldType === "date" ? "date" : "text"} inputMode={field.fieldType === "number" ? "decimal" : undefined} value={text} onChange={(event) => setText(event.target.value)} onBlur={commit} />
+      )}
     </label>
   );
 }

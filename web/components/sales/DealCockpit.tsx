@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/Button";
 import { DetailBlock } from "@/components/DetailModal";
 import { ErrorState } from "@/components/ErrorState";
-import { Input, Label, Textarea } from "@/components/Field";
+import { Input, Label, MoneyInput, Textarea } from "@/components/Field";
 import { Modal } from "@/components/Modal";
 import { SearchableCombo } from "@/components/SearchableCombo";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -307,7 +307,7 @@ function ItemRow({ item, currency, summary, editable, onSave, onRemove }: { item
       </div>
       <div className="mt-2 grid grid-cols-3 gap-2">
         <label className="text-[11px] text-muted-foreground">Qtd.<Input value={quantity} disabled={!editable} onChange={(event) => setQuantity(event.target.value)} onBlur={save} inputMode="decimal" /></label>
-        <label className="text-[11px] text-muted-foreground">Preço proposto<Input value={price} disabled={!editable} onChange={(event) => setPrice(event.target.value)} onBlur={save} inputMode="decimal" /></label>
+        <label className="text-[11px] text-muted-foreground">Preço proposto<MoneyInput value={price} disabled={!editable} onChange={(event) => setPrice(event.target.value)} onBlur={save} /></label>
         <label className="text-[11px] text-muted-foreground">Desconto %
           <Input
             value={discount}
@@ -360,13 +360,13 @@ function DealTermsBlock({ workspaceId, deal, summary, editable, onSaved }: { wor
         </div>
         {summary.valueMode === "manual" ? (
           <div>
-            <Label htmlFor="deal-manual-value">Valor estimado (R$)</Label>
-            <Input id="deal-manual-value" value={manualValue} disabled={!editable} onChange={(event) => setManualValue(event.target.value)} onBlur={() => void save({ workspaceId, valueCents: centsFromCurrencyInput(manualValue) })} inputMode="decimal" />
+            <Label htmlFor="deal-manual-value">Valor estimado</Label>
+            <MoneyInput id="deal-manual-value" value={manualValue} disabled={!editable} onChange={(event) => setManualValue(event.target.value)} onBlur={() => void save({ workspaceId, valueCents: centsFromCurrencyInput(manualValue) })} />
           </div>
         ) : (
           <div>
-            <Label htmlFor="deal-global-discount">Desconto global (R$)</Label>
-            <Input id="deal-global-discount" value={discount} disabled={!editable} onChange={(event) => setDiscount(event.target.value)} onBlur={() => void save({ workspaceId, discountCents: centsFromCurrencyInput(discount) })} inputMode="decimal" />
+            <Label htmlFor="deal-global-discount">Desconto global</Label>
+            <MoneyInput id="deal-global-discount" value={discount} disabled={!editable} onChange={(event) => setDiscount(event.target.value)} onBlur={() => void save({ workspaceId, discountCents: centsFromCurrencyInput(discount) })} />
           </div>
         )}
         <div>
@@ -519,8 +519,8 @@ export function CloseDealModal({
           </div>
         ) : deal.valueMode !== "calculated" ? (
           <div>
-            <Label htmlFor="final-value">Valor final (R$)</Label>
-            <Input id="final-value" value={finalValue} onChange={(event) => setFinalValue(event.target.value)} inputMode="decimal" />
+            <Label htmlFor="final-value">Valor final</Label>
+            <MoneyInput id="final-value" value={finalValue} onChange={(event) => setFinalValue(event.target.value)} />
           </div>
         ) : <p className="text-xs text-muted-foreground">Valor final = {formatCurrencyCents(deal.valueCents, deal.currency)} (produtos e condições negociadas). O snapshot da venda fica registrado e não muda depois.</p>}
         <div>

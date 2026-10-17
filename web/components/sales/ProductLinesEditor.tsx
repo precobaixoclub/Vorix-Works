@@ -3,7 +3,7 @@
 import { useMemo } from "react";
 import { Trash2 } from "lucide-react";
 import { Button } from "@/components/Button";
-import { Input } from "@/components/Field";
+import { Input, MoneyInput } from "@/components/Field";
 import { SearchableCombo } from "@/components/SearchableCombo";
 import { centsFromCurrencyInput, currencyInputFromCents } from "@/features/crm/presentation";
 import type { BillingType, Product } from "@/features/crm/types";
@@ -88,7 +88,7 @@ export function ProductLinesEditor({
                 <Input value={line.quantity} onChange={(event) => update(line.key, { quantity: event.target.value })} inputMode="decimal" />
               </label>
               <label className="text-[11px] text-muted-foreground">Preço proposto
-                <Input value={line.priceInput} onChange={(event) => update(line.key, { priceInput: event.target.value })} inputMode="decimal" />
+                <MoneyInput value={line.priceInput} onChange={(event) => update(line.key, { priceInput: event.target.value })} />
               </label>
               <label className="text-[11px] text-muted-foreground">Desconto %
                 <Input

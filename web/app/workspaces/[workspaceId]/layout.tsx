@@ -9,6 +9,7 @@ import { EmptyState } from "@/components/EmptyState";
 import { RequireAuth } from "@/components/RequireAuth";
 import { Spinner } from "@/components/Spinner";
 import { WorkspaceReadOnlyBanner } from "@/components/WorkspaceReadOnlyBanner";
+import { TrialCountdownBanner, TrialExpiredGate } from "@/components/TrialGate";
 import { WorkspaceSidebar } from "@/components/WorkspaceSidebar";
 import { WorkspaceTopBar } from "@/components/WorkspaceTopBar";
 import { canUseBackstage, isBackstagePath as isBackstageRoute } from "@/components/workspace-navigation";
@@ -148,6 +149,8 @@ function WorkspaceShell({ children }: { children: React.ReactNode }) {
           >
             <WorkspaceTopBar workspaceId={workspace.id} name={workspace.name} status={workspace.status} hideBreadcrumb={isFocusPath || solutionBlocked || solutionPending} />
             <WorkspaceReadOnlyBanner workspaceId={workspace.id} />
+            <TrialCountdownBanner workspaceId={workspace.id} />
+            <TrialExpiredGate workspaceId={workspace.id} />
             <div
               className={
                 isFocusPath

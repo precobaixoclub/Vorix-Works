@@ -17,6 +17,9 @@ import type {
   GetPaymentMethodResult,
   HandleWebhookInput,
   HandleWebhookResult,
+  OneTimeChargeInput,
+  OneTimeChargeResult,
+  OneTimeCheckoutInput,
   RemoveSubscriptionItemInput,
   ResumeSubscriptionInput,
   UpdateSubscriptionItemQuantityInput,
@@ -41,6 +44,7 @@ const NOT_CONFIGURED: BillingProviderFailure = { ok: false, kind: "not_configure
 export class StripeBillingProvider implements BillingProviderPort {
   readonly providerId = "stripe";
   readonly supportsNativeScheduledCancellation = true;
+  readonly supportsOffSessionCharge = true;
   private readonly client?: Stripe;
   private readonly webhookSecret?: string;
 
@@ -186,6 +190,61 @@ export class StripeBillingProvider implements BillingProviderPort {
     }
   }
 
+  /** Cobra o cartão salvo do cliente (PaymentIntent off-session). Cartão que exige autenticação
+   * volta como `requires_action` — o chamador oferece o checkout hospedado. */
+  async chargeOneTime(input: OneTimeChargeInput): Promise<OneTimeChargeResult | BillingProviderFailure> {
+    if (!this.client) return NOT_CONFIGURED;
+    try {
+      const methods = await this.client.paymentMethods.list({ customer: input.providerCustomerId, type: "card", limit: 1 });
+      const paymentMethod = methods.data[0];
+      if (!paymentMethod) return { ok: false, kind: "invalid_request", message: "Nenhum cartão salvo para cobrança automática." };
+      const intent = await this.client.paymentIntents.create(
+        {
+          amount: input.amountCents,
+          currency: input.currency.toLowerCase(),
+          customer: input.providerCustomerId,
+          payment_method: paymentMethod.id,
+          off_session: true,
+          confirm: true,
+          description: input.description,
+          metadata: { tenantId: input.tenantId, kind: "one_time", reference: input.reference },
+        },
+        { idempotencyKey: input.idempotencyKey },
+      );
+      const status = intent.status === "succeeded" ? "succeeded" : intent.status === "processing" ? "pending" : "requires_action";
+      return { ok: true, status, providerPaymentId: intent.id };
+    } catch (error) {
+      const stripeError = error as { code?: string; payment_intent?: { id?: string } };
+      if (stripeError.code === "authentication_required" && stripeError.payment_intent?.id) {
+        return { ok: true, status: "requires_action", providerPaymentId: stripeError.payment_intent.id };
+      }
+      return { ok: false, kind: "invalid_request", message: error instanceof Error ? error.message : String(error) };
+    }
+  }
+
+  async createOneTimeCheckout(input: OneTimeCheckoutInput): Promise<CreateCheckoutResult | BillingProviderFailure> {
+    if (!this.client) return NOT_CONFIGURED;
+    try {
+      const metadata = { tenantId: input.tenantId, kind: "one_time", reference: input.reference };
+      const session = await this.client.checkout.sessions.create({
+        mode: "payment",
+        line_items: [{ quantity: 1, price_data: { currency: input.currency.toLowerCase(), unit_amount: input.amountCents, product_data: { name: input.description } } }],
+        success_url: input.successUrl,
+        cancel_url: input.cancelUrl,
+        customer: input.existingProviderCustomerId,
+        customer_email: input.existingProviderCustomerId ? undefined : input.customerEmail,
+        client_reference_id: input.tenantId,
+        metadata,
+        // Guarda o cartão para as próximas recargas serem cobradas direto.
+        payment_intent_data: { metadata, setup_future_usage: "off_session" },
+      });
+      if (!session.url) return { ok: false, kind: "provider_unavailable", message: "Stripe não devolveu uma URL de checkout." };
+      return { ok: true, checkoutUrl: session.url, providerSessionId: session.id };
+    } catch (error) {
+      return { ok: false, kind: "invalid_request", message: error instanceof Error ? error.message : String(error) };
+    }
+  }
+
   async handleWebhook(input: HandleWebhookInput): Promise<HandleWebhookResult | BillingProviderFailure> {
     if (!this.client || !this.webhookSecret) return NOT_CONFIGURED;
     const signature = Array.isArray(input.signatureHeader) ? input.signatureHeader[0] : input.signatureHeader;
@@ -200,6 +259,18 @@ export class StripeBillingProvider implements BillingProviderPort {
           : event.type.startsWith("customer.subscription")
             ? (data as { id?: string }).id
             : undefined;
+      // Pagamento avulso (créditos de IA): vocabulário canônico próprio, nunca confundido com a
+      // ativação de assinatura que também chega como `checkout.session.completed`.
+      const metadata = (data as { metadata?: Record<string, string> }).metadata ?? {};
+      if (metadata.kind === "one_time" && metadata.reference) {
+        const paid =
+          (event.type === "checkout.session.completed" && (data as { payment_status?: string }).payment_status === "paid") ||
+          event.type === "checkout.session.async_payment_succeeded" ||
+          event.type === "payment_intent.succeeded";
+        const failed = event.type === "payment_intent.payment_failed" || event.type === "checkout.session.async_payment_failed" || event.type === "checkout.session.expired";
+        const eventType = paid ? "one_time_payment.succeeded" : failed ? "one_time_payment.failed" : `stripe.one_time.${event.type}`;
+        return { ok: true, event: { providerEventId: event.id, eventType, providerCustomerId, data: { reference: metadata.reference, tenantId: metadata.tenantId, providerPaymentId: (data as { id?: string }).id } } };
+      }
       return {
         ok: true,
         event: { providerEventId: event.id, eventType: event.type, providerCustomerId, providerSubscriptionId, data: data as Record<string, unknown> },

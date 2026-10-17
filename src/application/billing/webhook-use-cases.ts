@@ -9,6 +9,11 @@ import { syncMeetingsEntitlementFromSubscription } from "./meetings-offer.js";
 import { getPlatformPlan, type PlatformSubscriptionStatus } from "../../domain/platform-billing/platform-plan-catalog.js";
 import type { BillingInterval } from "../../domain/platform-billing/subscription.model.js";
 import { recordProductEvent, type ProductAnalyticsUseCaseDeps } from "../product-analytics/product-analytics-use-cases.js";
+import type { AiCreditPurchaseRepositoryPort } from "../ports/ai-credit-purchase-repository.port.js";
+import { completeAiCreditPurchase, failAiCreditPurchase } from "./ai-credits-use-cases.js";
+
+/** Créditos de IA liberados durante o teste gratuito (só para testar — depois, só recarga paga). */
+export const DEFAULT_TRIAL_AI_CREDITS = 100;
 
 export type WebhookUseCaseDeps = {
   billingProvider: BillingProviderPort;
@@ -28,6 +33,10 @@ export type WebhookUseCaseDeps = {
   subscriptionItemRepository?: SubscriptionItemRepositoryPort;
   addonDefinitionRepository?: AddonDefinitionRepositoryPort;
   solutionEntitlementRepository?: SolutionEntitlementRepositoryPort;
+  /** Compras avulsas de créditos de IA confirmadas pelo webhook do gateway. */
+  aiCreditPurchaseRepository?: AiCreditPurchaseRepositoryPort;
+  /** Créditos do teste gratuito (env `TRIAL_AI_CREDITS`). */
+  trialAiCredits?: number;
 };
 
 export type ProcessBillingWebhookResult =
@@ -71,13 +80,16 @@ function readMetadata(data: Record<string, unknown>): Record<string, unknown> {
  * de volta para o catálogo legado só para as cotas que o novo modelo ainda não cobre
  * (`monthly_publications_quota` não existe em `PLAN_LIMIT_RESOURCES` — ver auditoria). */
 export async function syncTenantBilling(
-  deps: Pick<WebhookUseCaseDeps, "planVersionRepository" | "platformBillingRepository" | "now">,
+  deps: Pick<WebhookUseCaseDeps, "planVersionRepository" | "platformBillingRepository" | "now"> & { trialAiCredits?: number },
   input: { tenantId: string; planVersionId: string; status: PlatformSubscriptionStatus },
 ): Promise<void> {
   const planVersion = await deps.planVersionRepository.getById(input.planVersionId);
   if (!planVersion) return;
   const legacyPlan = getPlatformPlan(planVersion.planCode);
-  const aiCreditsLimit = planVersion.limits.ai_credits;
+  // Teste gratuito: só uma cota de créditos para testar; teste vencido: nenhuma cota mensal (os
+  // créditos comprados continuam valendo). A cota do plano entra quando a assinatura é paga.
+  const aiCreditsLimit =
+    input.status === "trial" ? (deps.trialAiCredits ?? DEFAULT_TRIAL_AI_CREDITS) : input.status === "trial_expired" ? 0 : planVersion.limits.ai_credits;
   await deps.platformBillingRepository.updateTenantBilling({
     tenantId: input.tenantId,
     patch: {
@@ -265,6 +277,18 @@ async function applyBillingWebhookEvent(deps: WebhookUseCaseDeps, event: Billing
     case "invoice.payment_failed":
       await handleInvoiceEvent(deps, event, false);
       return "processed";
+    case "one_time_payment.succeeded": {
+      const reference = readString(event.data, "reference");
+      if (!reference || !deps.aiCreditPurchaseRepository) return "event_type_ignored";
+      await completeAiCreditPurchase({ aiCreditPurchaseRepository: deps.aiCreditPurchaseRepository, platformBillingRepository: deps.platformBillingRepository, now: deps.now }, { reference, providerPaymentId: readString(event.data, "providerPaymentId") });
+      return "processed";
+    }
+    case "one_time_payment.failed": {
+      const reference = readString(event.data, "reference");
+      if (!reference || !deps.aiCreditPurchaseRepository) return "event_type_ignored";
+      await failAiCreditPurchase({ aiCreditPurchaseRepository: deps.aiCreditPurchaseRepository }, { reference, reason: "Pagamento recusado ou expirado" });
+      return "processed";
+    }
     default:
       return "event_type_ignored";
   }

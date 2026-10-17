@@ -4,6 +4,10 @@ import type { ProductUseCaseDeps } from "../../../../application/crm/product-use
 import { assertProductPricing, redactProduct } from "../../../../application/sales/catalog-use-cases.js";
 import { loadCommercialSettings, resolveVisibility, type SalesVisibility } from "../../../../application/sales/sales-context.js";
 import type { SalesConfigRepositoryPort } from "../../../../application/ports/sales-engine-repository.port.js";
+import type { TenantMembershipRepositoryPort } from "../../../../application/ports/tenant-membership-repository.port.js";
+import type { NotificationUseCaseDeps } from "../../../../application/notification/notification-use-cases.js";
+import { setStockQuantity } from "../../../../application/sales/stock-use-cases.js";
+import { isLowStock } from "../../../../domain/crm/crm.model.js";
 import type { AuthPrincipal } from "../../../../domain/identity/identity.model.js";
 import type { Product } from "../../../../domain/crm/crm.model.js";
 import { NotFoundError, ValidationError } from "../../http/app-error.js";
@@ -24,7 +28,7 @@ const CREATE_BODY_SCHEMA = {
   properties: {
     workspaceId: { type: "string", minLength: 1 },
     name: { type: "string", minLength: 1, maxLength: 200 },
-    description: { type: "string", maxLength: 2000 },
+    description: { type: "string", maxLength: 5000 },
     priceCents: { type: "integer", minimum: 0 },
     currency: { type: "string", minLength: 3, maxLength: 3 },
     code: { type: ["string", "null"], maxLength: 60 },
@@ -37,6 +41,9 @@ const CREATE_BODY_SCHEMA = {
     commissionType: { type: ["string", "null"], enum: ["percent", "fixed", null] },
     commissionValue: { type: ["integer", "null"], minimum: 0 },
     taxMetadata: { type: "object", maxProperties: 30 },
+    trackStock: { type: "boolean" },
+    stockQuantity: { type: "number", minimum: -1000000000, maximum: 1000000000 },
+    stockAlertThreshold: { type: ["number", "null"], minimum: 0, maximum: 1000000000 },
   },
 } as const;
 const UPDATE_BODY_SCHEMA = {
@@ -46,7 +53,7 @@ const UPDATE_BODY_SCHEMA = {
   properties: {
     workspaceId: { type: "string", minLength: 1 },
     name: { type: "string", minLength: 1, maxLength: 200 },
-    description: { type: "string", maxLength: 2000 },
+    description: { type: "string", maxLength: 5000 },
     priceCents: { type: "integer", minimum: 0 },
     currency: { type: "string", minLength: 3, maxLength: 3 },
     code: { type: ["string", "null"], maxLength: 60 },
@@ -59,6 +66,9 @@ const UPDATE_BODY_SCHEMA = {
     commissionType: { type: ["string", "null"], enum: ["percent", "fixed", null] },
     commissionValue: { type: ["integer", "null"], minimum: 0 },
     taxMetadata: { type: "object", maxProperties: 30 },
+    trackStock: { type: "boolean" },
+    stockQuantity: { type: "number", minimum: -1000000000, maximum: 1000000000 },
+    stockAlertThreshold: { type: ["number", "null"], minimum: 0, maximum: 1000000000 },
     active: { type: "boolean" },
   },
 } as const;
@@ -72,7 +82,12 @@ function translateProductError(error: unknown): never {
 /** Sales Engine — custo/comissão só para quem pode ver custo; preço mínimo só a gestão define
  * (senão o próprio vendedor afrouxaria o piso que dispara a aprovação). Campos sem permissão são
  * ignorados na escrita e omitidos na leitura. */
-type ProductRouteDeps = ProductUseCaseDeps & { salesConfigRepository?: SalesConfigRepositoryPort };
+type ProductRouteDeps = ProductUseCaseDeps & {
+  salesConfigRepository?: SalesConfigRepositoryPort;
+  /** Alerta de estoque baixo para a gestão (opcional — sem isto o ajuste só não notifica). */
+  membershipRepository?: TenantMembershipRepositoryPort;
+  notification?: Partial<NotificationUseCaseDeps>;
+};
 
 async function productVisibility(deps: ProductRouteDeps, principal: AuthPrincipal, workspaceId: string): Promise<SalesVisibility> {
   if (!deps.salesConfigRepository) return { canViewCost: true, canViewMargin: true, isManager: true };
@@ -91,7 +106,9 @@ function sanitizeProductWrite<T extends Record<string, unknown>>(body: T, visibi
   return clean as T;
 }
 
-const present = (product: Product, visibility: SalesVisibility) => ({ ...redactProduct(product, visibility.canViewCost), listPriceCents: product.priceCents, commissionValue: visibility.canViewCost ? product.commissionValue : undefined });
+const NO_MEMBERS = { listByTenant: async () => [] } as unknown as TenantMembershipRepositoryPort;
+
+const present = (product: Product, visibility: SalesVisibility) => ({ ...redactProduct(product, visibility.canViewCost), listPriceCents: product.priceCents, commissionValue: visibility.canViewCost ? product.commissionValue : undefined, lowStock: isLowStock(product) });
 
 export async function registerProductsRoutes(app: FastifyInstance, deps: ProductRouteDeps): Promise<void> {
   app.get("/products", { schema: { querystring: LIST_QUERY_SCHEMA } }, async (request) => {
@@ -138,7 +155,17 @@ export async function registerProductsRoutes(app: FastifyInstance, deps: Product
       const patch = sanitizeProductWrite(rawPatch, visibility);
       const existing = await getProduct(deps, { productId: id, tenantId: principal.tenantId, workspaceId });
       assertProductPricing(patch as never, existing);
-      const product = await updateProduct(deps, { productId: id, tenantId: principal.tenantId, workspaceId, patch: patch as never });
+      // Saldo de estoque muda só via movimento (auditável e com alerta), nunca por sobrescrita direta.
+      const { stockQuantity, ...rest } = patch as { stockQuantity?: number } & Record<string, unknown>;
+      let product = await updateProduct(deps, { productId: id, tenantId: principal.tenantId, workspaceId, patch: rest as never });
+      if (stockQuantity !== undefined && product.trackStock) {
+        product = await setStockQuantity(
+          { productRepository: deps.productRepository, membershipRepository: deps.membershipRepository ?? NO_MEMBERS, notification: deps.notification },
+          product,
+          stockQuantity,
+          principal.userId,
+        );
+      }
       return successEnvelope(present(product, visibility), request.id);
     } catch (error) {
       translateProductError(error);

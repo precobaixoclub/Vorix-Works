@@ -12,7 +12,7 @@ import { QuickCreateTaskModal } from "@/components/crm/QuickCreateTaskModal";
 import { EmptyState } from "@/components/EmptyState";
 import { ErrorState } from "@/components/ErrorState";
 import { FilterBar } from "@/components/FilterBar";
-import { Input, Label, Textarea } from "@/components/Field";
+import { Input, Label, MoneyInput, Textarea } from "@/components/Field";
 import { Modal } from "@/components/Modal";
 import { SearchableCombo } from "@/components/SearchableCombo";
 import { StatusBadge } from "@/components/StatusBadge";
@@ -23,7 +23,7 @@ import { useCurrentWorkspace } from "@/contexts/workspace-context";
 import { createProposal, moveDealStage, regenerateProposalLink, revokeProposalLink, sendProposal } from "@/features/crm/api";
 import { useContacts, useDeals, usePipelineStages, useProducts, useProposalTemplates, useProposalTimeline, useProposals } from "@/features/crm/hooks";
 import { useInboxConversations } from "@/features/inbox/hooks";
-import { centsFromCurrencyInput, PROPOSAL_STATUS_LABEL, timelineEventLabel } from "@/features/crm/presentation";
+import { PROPOSAL_STATUS_LABEL, centsFromCurrencyInput, currencyInputFromCents, timelineEventLabel } from "@/features/crm/presentation";
 import type { Contact, Deal, Product, Proposal, ProposalStatus } from "@/features/crm/types";
 import { formatCurrencyCents, formatDate, formatDateTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -346,11 +346,8 @@ function ProposalsView() {
               <div key={index} className="grid gap-2 rounded-xl border border-border/70 bg-muted/20 p-2 sm:grid-cols-[minmax(0,1fr)_80px_120px_auto] sm:items-center">
                 <Input value={item.name} onChange={(event) => updateItem(index, { name: event.target.value })} placeholder="Item" />
                 <Input type="number" min={1} value={item.quantity} onChange={(event) => updateItem(index, { quantity: Number(event.target.value) || 1 })} aria-label="Quantidade" />
-                <Input
-                  type="number"
-                  min={0}
-                  step="0.01"
-                  value={(item.unitPriceCents / 100).toFixed(2)}
+                <MoneyInput
+                  value={currencyInputFromCents(item.unitPriceCents)}
                   onChange={(event) => updateItem(index, { unitPriceCents: centsFromCurrencyInput(event.target.value) })}
                   aria-label="Valor unitario"
                 />
@@ -368,7 +365,7 @@ function ProposalsView() {
           <div className="mt-4 grid gap-3 sm:grid-cols-2">
             <div>
               <Label htmlFor="proposal-discount">Desconto</Label>
-              <Input id="proposal-discount" value={discountReais} onChange={(event) => setDiscountReais(event.target.value)} placeholder="0,00" inputMode="decimal" />
+              <MoneyInput id="proposal-discount" value={discountReais} onChange={(event) => setDiscountReais(event.target.value)} placeholder="0,00" />
             </div>
             <div>
               <Label htmlFor="proposal-valid-until">Validade</Label>

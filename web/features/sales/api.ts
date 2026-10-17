@@ -91,6 +91,8 @@ export const updateCustomField = (id: string, input: { workspaceId: string; labe
 // --- Metas, performance, forecast, relatórios, IA ---------------------------------------------
 export const listGoals = (workspaceId: string, params?: { year?: number; periodType?: GoalPeriod }) => apiClient.get<SalesGoal[]>(`/v1/sales-goals?${qs({ workspaceId, ...params })}`);
 export const upsertGoal = (input: { workspaceId: string; scopeType: GoalScope; scopeId?: string; metric: GoalMetric; periodType: GoalPeriod; periodStart: string; targetValue: number }) => apiClient.put<SalesGoal>("/v1/sales-goals", input);
+/** Define os 12 meses de uma vez (null = sem meta). Trimestres e ano são recalculados pela API. */
+export const setMonthlyGoals = (input: { workspaceId: string; scopeType: GoalScope; scopeId?: string; metric: GoalMetric; year: number; months: (number | null)[] }) => apiClient.put<SalesGoal[]>("/v1/sales-goals/monthly", input);
 export const deleteGoal = (id: string, workspaceId: string) => apiClient.delete<null>(`/v1/sales-goals/${q(id)}?workspaceId=${q(workspaceId)}`);
 export type PerformanceParams = { userId?: string; teamId?: string; periodType?: GoalPeriod; periodStart?: string };
 export const getPerformance = (workspaceId: string, params?: PerformanceParams) => apiClient.get<PerformanceReport>(`/v1/sales-performance?${qs({ workspaceId, ...params })}`);

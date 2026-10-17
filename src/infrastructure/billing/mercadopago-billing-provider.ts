@@ -17,6 +17,9 @@ import type {
   GetPaymentMethodResult,
   HandleWebhookInput,
   HandleWebhookResult,
+  OneTimeChargeInput,
+  OneTimeChargeResult,
+  OneTimeCheckoutInput,
   RemoveSubscriptionItemInput,
   ResumeSubscriptionInput,
   UpdateSubscriptionItemQuantityInput,
@@ -67,6 +70,16 @@ function decodeExternalReference(externalReference: string | undefined): Preappr
   }
 }
 
+function decodeOneTimeReference(externalReference: string | undefined): { tenantId: string; reference: string } | undefined {
+  if (!externalReference) return undefined;
+  try {
+    const parsed = JSON.parse(externalReference) as { kind?: string; tenantId?: string; reference?: string };
+    return parsed.kind === "one_time" && parsed.tenantId && parsed.reference ? { tenantId: parsed.tenantId, reference: parsed.reference } : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 /**
  * `MercadoPagoBillingProvider` — Pricing/Capacity Etapa C. Implementação REAL do
  * `BillingProviderPort` pra Mercado Pago, mesmo papel arquitetural de `StripeBillingProvider`
@@ -84,6 +97,9 @@ function decodeExternalReference(externalReference: string | undefined): Preappr
 export class MercadoPagoBillingProvider implements BillingProviderPort {
   readonly providerId = "mercadopago";
   readonly supportsNativeScheduledCancellation = false;
+  /** A API de preapproval não cobra um valor avulso no cartão do assinante — recarga é sempre
+   * pelo checkout de pagamento único (Checkout Pro). */
+  readonly supportsOffSessionCharge = false;
   private readonly accessTokenSource?: CredentialSource;
   private readonly webhookSecretSource?: CredentialSource;
   private readonly notificationUrlSource?: CredentialSource;
@@ -245,6 +261,27 @@ export class MercadoPagoBillingProvider implements BillingProviderPort {
     return { ok: true };
   }
 
+  async chargeOneTime(_input: OneTimeChargeInput): Promise<OneTimeChargeResult | BillingProviderFailure> {
+    return { ok: false, kind: "invalid_request", message: "Mercado Pago não cobra valores avulsos no cartão da assinatura — use o checkout de pagamento único." };
+  }
+
+  /** Checkout Pro (preferência de pagamento único). `external_reference` identifica a compra no
+   * webhook `payment`. */
+  async createOneTimeCheckout(input: OneTimeCheckoutInput): Promise<CreateCheckoutResult | BillingProviderFailure> {
+    const notificationUrl = await this.resolveNotificationUrl();
+    const result = await this.request<{ id: string; init_point: string }>("POST", "/checkout/preferences", {
+      items: [{ title: input.description, quantity: 1, unit_price: input.amountCents / 100, currency_id: input.currency }],
+      payer: { email: input.customerEmail },
+      back_urls: { success: input.successUrl, failure: input.cancelUrl, pending: input.successUrl },
+      auto_return: "approved",
+      external_reference: JSON.stringify({ kind: "one_time", tenantId: input.tenantId, reference: input.reference }),
+      notification_url: notificationUrl,
+    });
+    if (!result.ok) return result;
+    if (!result.data.init_point) return { ok: false, kind: "provider_unavailable", message: "Mercado Pago não devolveu um init_point de pagamento." };
+    return { ok: true, checkoutUrl: result.data.init_point, providerSessionId: result.data.id };
+  }
+
   /** Mercado Pago não expõe "meio de pagamento salvo do assinante" pela API de preapproval do
    * jeito que o Stripe expõe `paymentMethods.list` — devolve `undefined` explicitamente (nunca
    * inventa um cartão fake), a UI trata isso como "sem forma de pagamento visível aqui". */
@@ -330,8 +367,14 @@ export class MercadoPagoBillingProvider implements BillingProviderPort {
     }
 
     if (topic === "payment") {
-      const result = await this.request<{ id: string; status: string; transaction_amount?: number; currency_id?: string; date_approved?: string }>("GET", `/v1/payments/${dataId}`);
+      const result = await this.request<{ id: string; status: string; transaction_amount?: number; currency_id?: string; date_approved?: string; external_reference?: string }>("GET", `/v1/payments/${dataId}`);
       if (!result.ok) return result;
+      const oneTime = decodeOneTimeReference(result.data.external_reference);
+      if (oneTime) {
+        const status = result.data.status;
+        const eventType = status === "approved" ? "one_time_payment.succeeded" : status === "rejected" || status === "cancelled" ? "one_time_payment.failed" : "mercadopago.one_time_pending";
+        return { ok: true, event: { providerEventId: `mercadopago-payment-${dataId}-${status}`, eventType, data: { reference: oneTime.reference, tenantId: oneTime.tenantId, providerPaymentId: String(result.data.id) } } };
+      }
       const succeeded = result.data.status === "approved";
       return {
         ok: true,

@@ -18,6 +18,8 @@ import { recordProductEvent, type ProductAnalyticsUseCaseDeps } from "../product
  * sem mudar nada em Entitlements/expiração/conversão.
  */
 export type TrialUseCaseDeps = {
+  /** Créditos de IA liberados no teste (env `TRIAL_AI_CREDITS`). */
+  trialAiCredits?: number;
   subscriptionRepository: SubscriptionRepositoryPort;
   planVersionRepository: PlanVersionRepositoryPort;
   platformBillingRepository: PlatformBillingRepositoryPort;

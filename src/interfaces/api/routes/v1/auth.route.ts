@@ -195,6 +195,7 @@ export async function registerAuthRoutes(app: FastifyInstance, deps: { identity?
         now: () => new Date(),
         productAnalytics: deps.productAnalytics,
         trialEnabled: deps.config.billing.trialEnabled,
+        trialAiCredits: deps.config.billing.aiCredits.trialCredits,
       },
       {
         email: body.email,

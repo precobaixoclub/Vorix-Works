@@ -67,14 +67,46 @@ export type CapacitySnapshot = {
   includedWhatsappConnections: number | null;
   additionalWhatsappConnections: number;
   totalWhatsappConnections: number | null;
+  /** Gravações simultâneas do Vorix Meetings (0 = Meetings não contratado). */
+  concurrentRecordings: number;
   baseMonthlyAmount: number;
   addonsMonthlyAmount: number;
   totalMonthlyAmount: number;
 };
 
-export type CapacityPendingChange = { resource: PlanLimitResource; addonCode: string; targetQuantity: number; effectiveAt: string };
+export type CapacityResource = PlanLimitResource | "meetings_concurrent_recordings";
 
-export type CapacityState = { current: CapacitySnapshot; pending: readonly CapacityPendingChange[] };
+export type CapacityPendingChange = { id: string; resource: CapacityResource; addonCode: string; targetQuantity: number; effectiveAt: string };
+
+export type CapacityState = {
+  current: CapacitySnapshot;
+  pending: readonly CapacityPendingChange[];
+  nextCharge?: { at: string; amount: number; currency: string };
+  /** Assinatura paga real: aumentos entram na hora. Teste sem cartão precisa cadastrar o cartão. */
+  canChangeNow: boolean;
+  meetingsSellable: boolean;
+};
+
+export type AiCreditPurchase = { id: string; credits: number; amountCents: number; currency: string; status: "pending" | "paid" | "failed" | "cancelled"; method: "saved_card" | "checkout"; failureReason?: string; createdAt: string; paidAt?: string };
+
+export type AiCreditsOverview = {
+  remainingCredits: number;
+  monthlyQuota: number;
+  consumedThisMonth: number;
+  extraCredits: number;
+  subscriptionStatus: string;
+  pricing: { unitPriceCents: number; currency: string; minPurchase: number; maxPurchase: number; presets: number[] };
+  savedCard?: { brand?: string; last4?: string };
+  chargesSavedCard: boolean;
+  canPurchase: boolean;
+  blockedReason?: string;
+  purchases: AiCreditPurchase[];
+};
+
+export type PurchaseAiCreditsResult =
+  | { status: "paid"; purchase: AiCreditPurchase; remainingCredits: number }
+  | { status: "pending"; purchase: AiCreditPurchase }
+  | { status: "checkout"; purchase: AiCreditPurchase; checkoutUrl: string };
 
 export type CapacityCostBreakdown = {
   planCode: PlatformPlanCode;
@@ -86,6 +118,8 @@ export type CapacityCostBreakdown = {
   additionalWhatsappConnections: number;
   userAddonMonthlyAmount: number;
   whatsappAddonMonthlyAmount: number;
+  concurrentRecordings?: number;
+  meetingsMonthlyAmount?: number;
   addonsMonthlyAmount: number;
   totalMonthlyAmount: number;
   feasible: boolean;
@@ -95,6 +129,6 @@ export type PlanRecommendation = { options: CapacityCostBreakdown[]; recommended
 
 export type CapacityPreviewResult = { current: CapacitySnapshot; requestedOnCurrentPlan: CapacityCostBreakdown; recommendation: PlanRecommendation };
 
-export type CapacityChangeOutcome = { resource: PlanLimitResource; kind: "unchanged" | "increased" | "decrease_scheduled"; fromQuantity: number; toQuantity: number; effectiveAt?: string };
+export type CapacityChangeOutcome = { resource: CapacityResource; kind: "unchanged" | "increased" | "decrease_scheduled"; fromQuantity: number; toQuantity: number; effectiveAt?: string };
 
 export type CapacityChangeResult = { outcomes: CapacityChangeOutcome[] };

@@ -10,7 +10,7 @@ import { QuickCreateProposalModal } from "@/components/crm/QuickCreateProposalMo
 import { ProposalDetailModal } from "@/components/crm/ProposalDetailModal";
 import { DetailBlock, DetailModal } from "@/components/DetailModal";
 import { ErrorState } from "@/components/ErrorState";
-import { Input, Label } from "@/components/Field";
+import { Input, Label, MoneyInput } from "@/components/Field";
 import { Modal } from "@/components/Modal";
 import { SearchableCombo } from "@/components/SearchableCombo";
 import { StatusBadge } from "@/components/StatusBadge";
@@ -493,7 +493,7 @@ function EditDealModal({
         </div>
         <div>
           <Label htmlFor="edit-deal-value">{deal.valueMode === "calculated" ? "Valor (calculado pelos produtos)" : "Valor"}</Label>
-          <Input id="edit-deal-value" value={value} disabled={deal.valueMode === "calculated"} onChange={(event) => setValue(event.target.value)} inputMode="decimal" />
+          <MoneyInput id="edit-deal-value" value={value} disabled={deal.valueMode === "calculated"} onChange={(event) => setValue(event.target.value)} />
         </div>
         <div>
           <Label htmlFor="edit-deal-origin">Origem</Label>

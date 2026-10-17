@@ -56,6 +56,9 @@ function buildBindings(aiConfig: BuildAiGatewayOptions["aiConfig"]): AiOperation
     commercial_copilot_suggestions: { provider: "anthropic", modelId: aiConfig.anthropicCommercialCopilotModel },
     // Sales Engine — mesma família de modelo do Copiloto Comercial.
     deal_commercial_insights: { provider: "anthropic", modelId: aiConfig.anthropicCommercialCopilotModel },
+    // Relatórios — mesma família de modelo da IA comercial.
+    report_ai_analysis: { provider: "anthropic", modelId: aiConfig.anthropicCommercialCopilotModel },
+    report_template_builder: { provider: "anthropic", modelId: aiConfig.anthropicCommercialCopilotModel },
     // Vorix Meetings: modelo próprio (MEETINGS_AI_MODEL), padrão o Haiku já ativo no registro.
     meeting_ai_analysis: { provider: "anthropic", modelId: aiConfig.anthropicMeetingAnalysisModel ?? "claude-haiku-4-5-20251001" },
     meeting_question_answer: { provider: "anthropic", modelId: aiConfig.anthropicMeetingAnalysisModel ?? "claude-haiku-4-5-20251001" },

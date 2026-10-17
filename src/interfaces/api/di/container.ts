@@ -561,6 +561,10 @@ export type ApiContainer = {
     invoiceRepository: InvoiceRepositoryPort;
     billingEventRepository: BillingEventRepositoryPort;
     paymentWebhookEventRepository: PaymentWebhookEventRepositoryPort;
+    /** Relatórios — modelos do cliente. */
+    reportTemplateRepository: import("../../../application/ports/report-template-repository.port.js").ReportTemplateRepositoryPort;
+    /** Compras avulsas de créditos de IA. */
+    aiCreditPurchaseRepository: import("../../../application/ports/ai-credit-purchase-repository.port.js").AiCreditPurchaseRepositoryPort;
     /** Onboarding guiado — progresso por workspace. */
     workspaceOnboardingRepository: WorkspaceOnboardingRepositoryPort;
     /** Trial + Product Analytics — fundação de eventos de produto. */

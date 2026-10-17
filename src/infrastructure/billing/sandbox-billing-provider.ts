@@ -16,6 +16,9 @@ import type {
   GetPaymentMethodResult,
   HandleWebhookInput,
   HandleWebhookResult,
+  OneTimeChargeInput,
+  OneTimeChargeResult,
+  OneTimeCheckoutInput,
   RemoveSubscriptionItemInput,
   ResumeSubscriptionInput,
   UpdateSubscriptionItemQuantityInput,
@@ -33,6 +36,18 @@ import type {
 export class SandboxBillingProvider implements BillingProviderPort {
   readonly providerId = "sandbox";
   readonly supportsNativeScheduledCancellation = true;
+  readonly supportsOffSessionCharge = true;
+
+  async chargeOneTime(input: OneTimeChargeInput): Promise<OneTimeChargeResult> {
+    return { ok: true, status: "succeeded", providerPaymentId: `sandbox-pay-${input.reference}` };
+  }
+
+  async createOneTimeCheckout(input: OneTimeCheckoutInput): Promise<CreateCheckoutResult> {
+    const providerSessionId = `sandbox-pay-session-${randomUUID()}`;
+    const url = new URL(input.successUrl);
+    url.searchParams.set("sandbox_session_id", providerSessionId);
+    return { ok: true, checkoutUrl: url.toString(), providerSessionId };
+  }
 
   async createCheckout(input: CreateCheckoutInput): Promise<CreateCheckoutResult> {
     const providerSessionId = `sandbox-session-${randomUUID()}`;

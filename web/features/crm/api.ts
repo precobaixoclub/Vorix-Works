@@ -197,6 +197,9 @@ export type CreateProductInput = {
   billingType?: Product["billingType"];
   costCents?: number | null;
   minimumPriceCents?: number | null;
+  trackStock?: boolean;
+  stockQuantity?: number;
+  stockAlertThreshold?: number | null;
 };
 
 export function listProducts(workspaceId: string, params?: { search?: string; activeOnly?: boolean }): Promise<Product[]> {

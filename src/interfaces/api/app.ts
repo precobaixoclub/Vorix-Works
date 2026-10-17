@@ -159,6 +159,8 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       subscriptionItemRepository: identity.subscriptionItemRepository,
       addonDefinitionRepository: identity.addonDefinitionRepository,
       solutionEntitlementRepository: identity.solutionEntitlementRepository,
+      aiCreditPurchaseRepository: identity.aiCreditPurchaseRepository,
+      trialAiCredits: config.billing.aiCredits.trialCredits,
     });
   }
 

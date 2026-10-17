@@ -13,6 +13,9 @@ import {
 import { meetingQuestionAnswerPromptV1, type MeetingQuestionAnswerPromptContext } from "./prompts/meeting-question-answer.v1.js";
 import { meetingFollowUpPromptV1, type MeetingFollowUpPromptContext } from "./prompts/meeting-follow-up.v1.js";
 import { dealCommercialInsightsPromptV1, type DealInsightsPromptContext, type DealInsightsPromptMessage } from "./prompts/deal-commercial-insights.v1.js";
+import { reportAnalysisPromptV1, reportTemplatePromptV1, type ReportAnalysisPromptContext, type ReportTemplatePromptContext } from "./prompts/report-ai.v1.js";
+import { applyReportAnalysisSemanticValidation, REPORT_ANALYSIS_RESULT_SCHEMA_VERSION, REPORT_ANALYSIS_TOOL_INPUT_SCHEMA, validateReportAnalysisStructure, type ReportAnalysisResult } from "./schemas/report-analysis-result.v1.js";
+import { applyReportTemplateSemanticValidation, REPORT_TEMPLATE_RESULT_SCHEMA_VERSION, REPORT_TEMPLATE_TOOL_INPUT_SCHEMA, validateReportTemplateStructure, type ReportTemplateResult } from "./schemas/report-template-result.v1.js";
 import { applyDealCommercialInsightsSemanticValidation, DEAL_COMMERCIAL_INSIGHTS_RESULT_SCHEMA_VERSION, DEAL_COMMERCIAL_INSIGHTS_TOOL_INPUT_SCHEMA, validateDealCommercialInsightsStructure, type DealCommercialInsightsResult } from "./schemas/deal-commercial-insights-result.v1.js";
 import {
   applyMeetingQuestionAnswerSemanticValidation,
@@ -174,7 +177,44 @@ function buildMeetingFollowUpContext(input: Readonly<Record<string, unknown>>): 
   };
 }
 
+function buildReportAnalysisContext(input: Readonly<Record<string, unknown>>): ReportAnalysisPromptContext {
+  const sections = (Array.isArray(input.sections) ? (input.sections as unknown[]) : [])
+    .filter((entry): entry is Record<string, unknown> => typeof entry === "object" && entry !== null)
+    .map((entry) => ({ title: String(entry.title ?? ""), lines: Array.isArray(entry.lines) ? entry.lines.map(String) : [] }));
+  return { reportName: String(input.reportName ?? ""), periodLabel: String(input.periodLabel ?? ""), sections, ...(typeof input.focus === "string" && input.focus ? { focus: input.focus } : {}) };
+}
+
+function buildReportTemplateContext(input: Readonly<Record<string, unknown>>): ReportTemplatePromptContext {
+  const catalog = (Array.isArray(input.catalog) ? (input.catalog as unknown[]) : [])
+    .filter((entry): entry is Record<string, unknown> => typeof entry === "object" && entry !== null)
+    .map((entry) => ({ key: String(entry.key ?? ""), title: String(entry.title ?? ""), description: String(entry.description ?? "") }));
+  return { request: String(input.request ?? ""), catalog };
+}
+
 export const PROMPT_TEMPLATE_REGISTRY: Partial<Record<AiOperation, PromptTemplateRegistration>> = {
+  report_ai_analysis: {
+    template: reportAnalysisPromptV1 as PromptTemplate<unknown>,
+    buildContext: (input) => buildReportAnalysisContext(input),
+    toolName: "submit_report_analysis",
+    toolDescription: "Envia a leitura executiva do relatório, com destaques, riscos e recomendações — cada item com um trecho literal do relatório.",
+    toolInputSchema: REPORT_ANALYSIS_TOOL_INPUT_SCHEMA,
+    outputSchemaRef: { id: "report-analysis-result", version: REPORT_ANALYSIS_RESULT_SCHEMA_VERSION },
+    validateStructure: (raw) => validateReportAnalysisStructure(raw),
+    validateSemantics: (structural, sanitizedInput) => {
+      const sourceText = reportAnalysisPromptV1.buildUserInput(buildReportAnalysisContext(sanitizedInput));
+      return applyReportAnalysisSemanticValidation({ structural: structural as ReportAnalysisResult, sourceText });
+    },
+  },
+  report_template_builder: {
+    template: reportTemplatePromptV1 as PromptTemplate<unknown>,
+    buildContext: (input) => buildReportTemplateContext(input),
+    toolName: "submit_report_template",
+    toolDescription: "Envia o modelo de relatório: nome, descrição e as chaves das seções escolhidas do catálogo.",
+    toolInputSchema: REPORT_TEMPLATE_TOOL_INPUT_SCHEMA,
+    outputSchemaRef: { id: "report-template-result", version: REPORT_TEMPLATE_RESULT_SCHEMA_VERSION },
+    validateStructure: (raw) => validateReportTemplateStructure(raw),
+    validateSemantics: (structural) => applyReportTemplateSemanticValidation(structural as ReportTemplateResult),
+  },
   meeting_question_answer: {
     template: meetingQuestionAnswerPromptV1 as PromptTemplate<unknown>,
     buildContext: (input) => buildMeetingQuestionAnswerContext(input),

@@ -29,6 +29,7 @@ function translateCapacityError(error: unknown): never {
       error.message.startsWith("CAPACITY_ADDON_NOT_AVAILABLE") ||
       error.message.startsWith("CAPACITY_NOTHING_TO_REDUCE") ||
       error.message.endsWith("_NO_PROVIDER_SUBSCRIPTION") ||
+      error.message.startsWith("MEETINGS_NOT_CONTRACTABLE") ||
       error.message.startsWith("ADDON_")
     ) {
       throw new ValidationError(error.message);
@@ -44,6 +45,7 @@ const PREVIEW_BODY_SCHEMA = {
   properties: {
     users: { type: "integer", minimum: 0, maximum: 10_000 },
     whatsappConnections: { type: "integer", minimum: 0, maximum: 1_000 },
+    concurrentRecordings: { type: "integer", minimum: 0, maximum: 100 },
   },
 } as const;
 
@@ -53,6 +55,7 @@ const APPLY_BODY_SCHEMA = {
   properties: {
     users: { type: "integer", minimum: 0, maximum: 10_000 },
     whatsappConnections: { type: "integer", minimum: 0, maximum: 1_000 },
+    concurrentRecordings: { type: "integer", minimum: 0, maximum: 100 },
   },
 } as const;
 
@@ -72,14 +75,14 @@ export async function registerBillingCapacityRoutes(app: FastifyInstance, deps: 
 
   app.post("/billing/capacity/preview", { schema: { body: PREVIEW_BODY_SCHEMA } }, async (request) => {
     const principal = requirePrincipal(request);
-    const body = request.body as { users: number; whatsappConnections: number };
+    const body = request.body as { users: number; whatsappConnections: number; concurrentRecordings?: number };
     const result = await previewCapacityChange(deps, { tenantId: principal.tenantId, ...body }).catch(translateCapacityError);
     return successEnvelope(result, request.id);
   });
 
   app.post("/billing/capacity/apply", { schema: { body: APPLY_BODY_SCHEMA }, config: { idempotent: true } }, async (request) => {
     const principal = requirePrincipal(request);
-    const body = request.body as { users?: number; whatsappConnections?: number };
+    const body = request.body as { users?: number; whatsappConnections?: number; concurrentRecordings?: number };
     const result = await applyCapacityChange(deps, { tenantId: principal.tenantId, ...body }).catch(translateCapacityError);
     return successEnvelope(result, request.id);
   });

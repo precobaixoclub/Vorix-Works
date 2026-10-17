@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/Button";
-import { Input, Label } from "@/components/Field";
+import { Input, Label, MoneyInput } from "@/components/Field";
 import { Modal } from "@/components/Modal";
 import { SearchableCombo } from "@/components/SearchableCombo";
 import { TeamPicker } from "@/components/TeamPicker";
@@ -149,8 +149,8 @@ export function QuickCreateDealModal({
           <ProductLinesEditor products={products ?? []} lines={lines} onChange={setLines} showMargin={showMargin} />
           {lines.length === 0 ? (
             <div className="mt-3">
-              <Label htmlFor="quick-deal-value">Valor estimado (R$) — sem produtos</Label>
-              <Input id="quick-deal-value" value={valueReais} onChange={(event) => setValueReais(event.target.value)} placeholder="0,00" inputMode="decimal" />
+              <Label htmlFor="quick-deal-value">Valor estimado — sem produtos</Label>
+              <MoneyInput id="quick-deal-value" value={valueReais} onChange={(event) => setValueReais(event.target.value)} placeholder="0,00" />
             </div>
           ) : <p className="mt-1 text-[11px] text-muted-foreground">Com produtos, o valor da oportunidade é calculado automaticamente.</p>}
         </div>

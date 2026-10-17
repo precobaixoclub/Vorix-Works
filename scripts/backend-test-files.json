@@ -269,5 +269,9 @@
   "tests/public-product-catalog.test.mjs",
   "tests/inbox-start-conversation.test.mjs",
   "tests/inbox-service-rules.test.mjs",
-  "tests/meetings-intelligence.test.mjs"
+  "tests/meetings-intelligence.test.mjs",
+  "tests/product-stock.test.mjs",
+  "tests/ai-credits-purchase.test.mjs",
+  "tests/billing-capacity-recordings.test.mjs",
+  "tests/reports-ai.test.mjs"
 ]

@@ -78,7 +78,8 @@ export const SOLUTION_NAVIGATION: Readonly<Record<SolutionKey, SolutionNavigatio
         label: "RESULTADOS",
         items: [
           { href: "/performance", label: "Desempenho", icon: "analytics" },
-          { href: "/results", label: "Relatórios", icon: "results" },
+          { href: "/results", label: "Painel", icon: "results" },
+          { href: "/reports", label: "Relatórios", icon: "reports" },
         ],
       },
     ],
@@ -104,7 +105,10 @@ export const SOLUTION_NAVIGATION: Readonly<Record<SolutionKey, SolutionNavigatio
       },
       {
         label: "Resultados",
-        items: [{ href: "/results", label: "Relatórios", icon: "results" }],
+        items: [
+          { href: "/results", label: "Painel", icon: "results" },
+          { href: "/reports", label: "Relatórios", icon: "reports" },
+        ],
       },
       {
         label: "Conta",

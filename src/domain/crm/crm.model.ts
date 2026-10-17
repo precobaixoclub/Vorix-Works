@@ -229,7 +229,17 @@ export type Product = {
   /** `percent` em basis points; `fixed` em centavos. */
   commissionValue?: number;
   taxMetadata: Readonly<Record<string, unknown>>;
+  /** Controle de estoque — só vale quando `trackStock`. */
+  trackStock: boolean;
+  stockQuantity: number;
+  /** Ponto de reposição: quando o estoque chega a este valor (ou abaixo), o sistema alerta. */
+  stockAlertThreshold?: number;
 };
+
+/** Estoque no ponto de reposição (ou abaixo) — só para produtos com controle de estoque. */
+export function isLowStock(product: Pick<Product, "trackStock" | "stockQuantity" | "stockAlertThreshold">): boolean {
+  return product.trackStock && product.stockAlertThreshold !== undefined && product.stockQuantity <= product.stockAlertThreshold;
+}
 
 /**
  * CRM — Fase 5 (Inteligência). `LeadScore` é DETERMINÍSTICO — nunca calculado por IA, nunca

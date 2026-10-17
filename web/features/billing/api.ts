@@ -1,5 +1,5 @@
 import { apiClient } from "@/lib/api-client";
-import type { BillingInterval, BillingOverview, CapacityChangeResult, CapacityPreviewResult, CapacityState, DowngradePreview, PlatformPlanCode } from "./types";
+import type { BillingInterval, BillingOverview, CapacityChangeResult, CapacityPreviewResult, CapacityState, DowngradePreview, PlatformPlanCode, AiCreditsOverview, PurchaseAiCreditsResult } from "./types";
 
 /** Rotas `/v1/billing/*` — SaaS Commercialization, Fases 2-4. Escopadas ao tenant do usuário
  * autenticado (`requirePrincipal`); nenhum parâmetro de tenant é passado pelo cliente. */
@@ -53,7 +53,7 @@ export async function fetchCapacityState(): Promise<CapacityState> {
 }
 
 /** Preview NUNCA muda nada (seção 10-11 do pedido) — só o backend calcula, frontend só exibe. */
-export async function previewCapacity(input: { users: number; whatsappConnections: number }): Promise<CapacityPreviewResult> {
+export async function previewCapacity(input: { users: number; whatsappConnections: number; concurrentRecordings?: number }): Promise<CapacityPreviewResult> {
   return apiClient.post("/v1/billing/capacity/preview", input);
 }
 
@@ -62,8 +62,18 @@ export async function previewCapacity(input: { users: number; whatsappConnection
  * intenções reais; só o retry automático de uma MESMA chamada reusaria a mesma chave (o
  * `apiClient` não faz retry de POST sozinho hoje, então isto já cobre o caso prático de duplo
  * clique acidental no botão — cada clique gera sua própria chave). */
-export async function applyCapacity(input: { users?: number; whatsappConnections?: number }): Promise<CapacityChangeResult> {
+export async function applyCapacity(input: { users?: number; whatsappConnections?: number; concurrentRecordings?: number }): Promise<CapacityChangeResult> {
   return apiClient.post("/v1/billing/capacity/apply", input, { headers: { "Idempotency-Key": crypto.randomUUID() } });
+}
+
+/** Créditos de IA: saldo, preço por crédito e histórico de recargas. */
+export async function fetchAiCredits(): Promise<AiCreditsOverview> {
+  return apiClient.get<AiCreditsOverview>("/v1/billing/credits");
+}
+
+/** Recarga avulsa: cobra o cartão salvo na hora ou devolve a URL do checkout de pagamento único. */
+export async function purchaseAiCredits(input: { credits: number; returnPath?: string }): Promise<PurchaseAiCreditsResult> {
+  return apiClient.post("/v1/billing/credits/purchase", input, { headers: { "Idempotency-Key": crypto.randomUUID() } });
 }
 
 export async function cancelPendingCapacityChange(pendingChangeId: string): Promise<{ cancelled: true }> {

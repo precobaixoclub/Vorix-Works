@@ -38,6 +38,9 @@ export class CreditAccountingService {
     if (!billing) {
       return { ok: false, reason: "not_configured", message: "Tenant sem configuração de billing — contate o suporte." };
     }
+    if (billing.subscriptionStatus === "trial_expired") {
+      return { ok: false, reason: "account_blocked", message: "Seu teste gratuito terminou. Cadastre uma forma de pagamento para continuar usando a IA." };
+    }
     if (["suspended", "cancelled", "expired"].includes(billing.subscriptionStatus)) {
       const label = billing.subscriptionStatus === "suspended" ? "suspensa" : billing.subscriptionStatus === "expired" ? "com assinatura expirada" : "cancelada";
       return { ok: false, reason: "account_blocked", message: `Conta ${label}. Regularize para continuar usando a IA.` };

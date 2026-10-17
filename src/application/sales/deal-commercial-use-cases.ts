@@ -19,6 +19,7 @@ import { evaluateAutomationTrigger } from "../crm/automation-use-cases.js";
 import type { AutomationTrigger } from "../../domain/crm/crm.model.js";
 import { resolveProductPricing } from "./catalog-use-cases.js";
 import { applyApprovalDecisionToProposals } from "./proposal-sales-use-cases.js";
+import { deductStockForWonDeal, revertStockForDeal } from "./stock-use-cases.js";
 import {
   listManagerUserIds,
   loadCommercialSettings,
@@ -575,6 +576,7 @@ export async function winDeal(deps: SalesEngineDeps & { onDealWon?: DealClosedHo
   const moved = await moveToTerminalStage(deps, deal, "won");
   const won = await deps.dealRepository.setClosure(moved.id, closure);
   await recordDealEvent(deps, won, "deal_won", actor, { finalValueCents: closure.finalValueCents, finalMarginBp: closure.finalMarginBp, wonReason: closure.wonReason, proposalId: closure.wonProposalId, creditedOwnerUserId: closure.creditedOwnerUserId });
+  await deductStockForWonDeal(deps, won, actor.userId);
   await fireDealAutomation(deps, won, "deal_won");
   await deps.onDealWon?.(won).catch(() => undefined);
   return won;
@@ -622,6 +624,7 @@ export async function reopenDeal(deps: SalesEngineDeps, actor: SalesActor, input
     if (lastOpen) moved = await deps.dealRepository.moveStage(deal.id, { stageId: lastOpen.id, wonAt: null, lostAt: null, lossReason: null });
   }
   const reopened = await deps.dealRepository.setClosure(moved.id, REOPEN_CLOSURE);
+  if (deal.status === "won") await revertStockForDeal(deps, deal, actor.userId);
   await recordDealEvent(deps, reopened, "deal_reopened", actor, { fromStatus: deal.status });
   return reopened;
 }
@@ -641,16 +644,21 @@ export async function syncClosureWithStage(deps: SalesEngineDeps & { onDealWon?:
   if (stage.isWon && deal.status !== "won") {
     const won = await deps.dealRepository.setClosure(deal.id, await buildWonClosure(deps, deal, actorUserId, {}));
     await deps.timelineEventRepository.record({ tenantId: deal.tenantId, workspaceId: deal.workspaceId, entityType: "deal", entityId: deal.id, eventType: "deal_won", actorType: actorUserId ? "user" : "system", actorId: actorUserId, payload: { finalValueCents: won.finalValueCents, via: "stage" } });
+    await deductStockForWonDeal(deps, won, actorUserId);
     await fireDealAutomation(deps, won, "deal_won");
     await deps.onDealWon?.(won).catch(() => undefined);
     return won;
   }
   if (stage.isLost && deal.status !== "lost") {
+    if (deal.status === "won") await revertStockForDeal(deps, deal, actorUserId);
     const lost = await deps.dealRepository.setClosure(deal.id, { ...REOPEN_CLOSURE, status: "lost", forecastCategory: "omitted", closedAt: new Date().toISOString(), closedByUserId: actorUserId ?? null, creditedOwnerUserId: deal.ownerUserId ?? null, creditedTeamId: deal.teamId ?? null, lossReason: lossReason ?? deal.lossReason ?? null, closeComment: lossComment || null, finalValueCents: deal.valueCents });
     await fireDealAutomation(deps, lost, "deal_lost");
     return lost;
   }
-  if (!stage.isWon && !stage.isLost && deal.status !== "open") return deps.dealRepository.setClosure(deal.id, REOPEN_CLOSURE);
+  if (!stage.isWon && !stage.isLost && deal.status !== "open") {
+    if (deal.status === "won") await revertStockForDeal(deps, deal, actorUserId);
+    return deps.dealRepository.setClosure(deal.id, REOPEN_CLOSURE);
+  }
   return deal;
 }
 

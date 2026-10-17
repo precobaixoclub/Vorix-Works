@@ -32,6 +32,8 @@ import {
   getSalesReports,
   getTeamPerformance,
   listGoals,
+  deleteGoal,
+  setMonthlyGoals,
   upsertGoal,
 } from "../dist/application/sales/sales-performance-use-cases.js";
 import { normalizePeriodStart, paceAndProjection } from "../dist/domain/sales/goals.js";
@@ -164,18 +166,36 @@ test("Meta atingida notifica uma única vez", async () => {
   assert.equal(notes.filter((note) => note.sourceType === "sales_goal_reached").length, 1);
 });
 
-test("Metas sazonais por mês e meta anual com ritmo e projeção", async () => {
+test("Metas mensais: trimestre e ano são a soma dos meses (nunca digitados)", async () => {
   const { d, workspaceId, manager, seller } = await setup();
   const year = new Date().getUTCFullYear();
   await upsertGoal(d, manager, { workspaceId, scopeType: "company", metric: "sales_revenue", periodType: "monthly", periodStart: `${year}-01-15`, targetValue: 8_000_000 });
   await upsertGoal(d, manager, { workspaceId, scopeType: "company", metric: "sales_revenue", periodType: "monthly", periodStart: `${year}-03-01`, targetValue: 12_000_000 });
-  await upsertGoal(d, manager, { workspaceId, scopeType: "company", metric: "sales_revenue", periodType: "annual", periodStart: `${year}-06-01`, targetValue: 120_000_000 });
+  await assert.rejects(() => upsertGoal(d, manager, { workspaceId, scopeType: "company", metric: "sales_revenue", periodType: "annual", periodStart: `${year}-06-01`, targetValue: 120_000_000 }), /SALES_GOAL_INVALID/);
   const goals = await listGoals(d, seller, { workspaceId, year });
-  assert.deepEqual(goals.map((goal) => `${goal.periodType}:${goal.periodStart}:${goal.targetValue}`).sort(), [`annual:${year}-01-01:120000000`, `monthly:${year}-01-01:8000000`, `monthly:${year}-03-01:12000000`].sort());
+  assert.deepEqual(goals.map((goal) => `${goal.periodType}:${goal.periodStart}:${goal.targetValue}`).sort(), [`annual:${year}-01-01:20000000`, `monthly:${year}-01-01:8000000`, `monthly:${year}-03-01:12000000`, `quarterly:${year}-01-01:20000000`].sort());
   const pace = paceAndProjection("annual", `${year}-01-01`, 120_000_000, 30_000_000, new Date(Date.UTC(year, 3, 1)));
   assert.equal(pace.totalMonths, 12);
   assert.ok(pace.projectedValue > 30_000_000);
   assert.equal(pace.requiredPerRemainingMonth, 10_000_000);
+});
+
+test("Aplicar a todos os meses define os 12 meses e recalcula trimestres e ano; remover mês atualiza a soma", async () => {
+  const { d, workspaceId, manager, seller } = await setup();
+  const year = new Date().getUTCFullYear();
+  await setMonthlyGoals(d, manager, { workspaceId, scopeType: "company", metric: "sales_revenue", year, months: Array(12).fill(5_000_000) });
+  let goals = await listGoals(d, seller, { workspaceId, year });
+  assert.equal(goals.filter((goal) => goal.periodType === "monthly").length, 12);
+  assert.equal(goals.find((goal) => goal.periodType === "annual").targetValue, 60_000_000);
+  assert.deepEqual(goals.filter((goal) => goal.periodType === "quarterly").map((goal) => goal.targetValue), [15_000_000, 15_000_000, 15_000_000, 15_000_000]);
+  const december = goals.find((goal) => goal.periodType === "monthly" && goal.periodStart === `${year}-12-01`);
+  await deleteGoal(d, manager, { workspaceId, goalId: december.id });
+  goals = await listGoals(d, seller, { workspaceId, year });
+  assert.equal(goals.find((goal) => goal.periodType === "annual").targetValue, 55_000_000);
+  assert.equal(goals.find((goal) => goal.periodType === "quarterly" && goal.periodStart === `${year}-10-01`).targetValue, 10_000_000);
+  await setMonthlyGoals(d, manager, { workspaceId, scopeType: "company", metric: "sales_revenue", year, months: Array(12).fill(null) });
+  assert.equal((await listGoals(d, seller, { workspaceId, year })).length, 0);
+  await assert.rejects(() => setMonthlyGoals(d, seller, { workspaceId, scopeType: "company", metric: "sales_revenue", year, months: Array(12).fill(1) }), /SALES_REPORT_FORBIDDEN/);
 });
 
 test("Forecast trimestral separa ganho, commit, best case e pipeline ponderado", async () => {

@@ -1,5 +1,6 @@
 import { apiClient } from "@/lib/api-client";
 import type {
+  StockRiskReport,
   AutomationActionConfig,
   AutomationActionType,
   AutomationCondition,
@@ -200,7 +201,20 @@ export type CreateProductInput = {
   trackStock?: boolean;
   stockQuantity?: number;
   stockAlertThreshold?: number | null;
+  imageUrls?: string[];
 };
+
+/** Envia uma foto de produto (JPG/PNG/WEBP até 5 MB) e devolve a URL para salvar no produto. */
+export function uploadProductImage(workspaceId: string, file: File): Promise<{ url: string }> {
+  const formData = new FormData();
+  formData.append("file", file);
+  return apiClient.upload<{ url: string }>(`/v1/products/images?workspaceId=${encodeURIComponent(workspaceId)}`, formData);
+}
+
+/** Risco de estoque das oportunidades abertas (alertas laranja/vermelho). */
+export function getStockRisk(workspaceId: string): Promise<StockRiskReport> {
+  return apiClient.get<StockRiskReport>(`/v1/products/stock-risk?workspaceId=${encodeURIComponent(workspaceId)}`);
+}
 
 export function listProducts(workspaceId: string, params?: { search?: string; activeOnly?: boolean }): Promise<Product[]> {
   const query = new URLSearchParams({ workspaceId });

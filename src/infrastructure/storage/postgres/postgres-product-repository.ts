@@ -28,6 +28,7 @@ type ProductRow = {
   track_stock: boolean;
   stock_quantity: string;
   stock_alert_threshold: string | null;
+  image_urls: unknown;
 };
 
 function toDomain(row: ProductRow): Product {
@@ -55,6 +56,7 @@ function toDomain(row: ProductRow): Product {
     trackStock: row.track_stock,
     stockQuantity: Number(row.stock_quantity),
     stockAlertThreshold: row.stock_alert_threshold === null ? undefined : Number(row.stock_alert_threshold),
+    imageUrls: Array.isArray(row.image_urls) ? row.image_urls.filter((url): url is string => typeof url === "string") : [],
   };
 }
 
@@ -64,13 +66,13 @@ export class PostgresProductRepository implements ProductRepositoryPort {
   async create(input: CreateProductInput): Promise<Product> {
     const result = await this.pool.query<ProductRow>(
       `insert into products (id, tenant_id, workspace_id, name, description, price_cents, currency, code, category, item_type, unit, billing_type,
-         cost_cents, minimum_price_cents, commission_type, commission_value, tax_metadata, track_stock, stock_quantity, stock_alert_threshold)
-       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20) returning *`,
+         cost_cents, minimum_price_cents, commission_type, commission_value, tax_metadata, track_stock, stock_quantity, stock_alert_threshold, image_urls)
+       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21) returning *`,
       [
         productId(), input.tenantId, input.workspaceId, input.name, input.description ?? null, input.priceCents, input.currency ?? "BRL",
         input.code ?? null, input.category ?? null, input.itemType ?? "product", input.unit ?? null, input.billingType ?? "one_time",
         input.costCents ?? null, input.minimumPriceCents ?? null, input.commissionType ?? null, input.commissionValue ?? null, JSON.stringify(input.taxMetadata ?? {}),
-        input.trackStock ?? false, input.stockQuantity ?? 0, input.stockAlertThreshold ?? null,
+        input.trackStock ?? false, input.stockQuantity ?? 0, input.stockAlertThreshold ?? null, JSON.stringify(input.imageUrls ?? []),
       ],
     );
     return toDomain(result.rows[0]);
@@ -102,7 +104,7 @@ export class PostgresProductRepository implements ProductRepositoryPort {
     const result = await this.pool.query<ProductRow>(
       `update products set name = $2, description = $3, price_cents = $4, currency = $5, active = $6, code = $7, category = $8, item_type = $9,
          unit = $10, billing_type = $11, cost_cents = $12, minimum_price_cents = $13, commission_type = $14, commission_value = $15,
-         tax_metadata = $16, track_stock = $17, stock_quantity = $18, stock_alert_threshold = $19, updated_at = now()
+         tax_metadata = $16, track_stock = $17, stock_quantity = $18, stock_alert_threshold = $19, image_urls = $20, updated_at = now()
        where id = $1 returning *`,
       [
         id,
@@ -124,6 +126,7 @@ export class PostgresProductRepository implements ProductRepositoryPort {
         input.trackStock ?? existing.trackStock,
         input.stockQuantity ?? existing.stockQuantity,
         input.stockAlertThreshold !== undefined ? input.stockAlertThreshold : existing.stockAlertThreshold ?? null,
+        JSON.stringify(input.imageUrls ?? existing.imageUrls),
       ],
     );
     return toDomain(result.rows[0]);
@@ -131,6 +134,19 @@ export class PostgresProductRepository implements ProductRepositoryPort {
 
   async delete(id: string): Promise<void> {
     await this.pool.query("delete from products where id = $1", [id]);
+  }
+
+  async listOpenStockDemand(input: { tenantId: string; workspaceId: string }): Promise<{ dealId: string; productId: string; quantity: number }[]> {
+    const result = await this.pool.query<{ deal_id: string; product_id: string; quantity: string }>(
+      `select di.deal_id, di.product_id, sum(di.quantity) as quantity
+         from deal_items di
+         join deals d on d.id = di.deal_id
+         join products p on p.id = di.product_id
+        where di.tenant_id = $1 and di.workspace_id = $2 and d.status = 'open' and p.track_stock
+        group by di.deal_id, di.product_id`,
+      [input.tenantId, input.workspaceId],
+    );
+    return result.rows.map((row) => ({ dealId: row.deal_id, productId: row.product_id, quantity: Number(row.quantity) }));
   }
 
   async netStockByDeal(dealId: string): Promise<{ productId: string; delta: number }[]> {

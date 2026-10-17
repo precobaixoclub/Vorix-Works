@@ -191,6 +191,8 @@ export type Product = {
   stockAlertThreshold?: number;
   /** Calculado pela API: estoque no ponto de reposição ou abaixo. */
   lowStock?: boolean;
+  /** Fotos; a primeira é a capa. */
+  imageUrls?: string[];
 };
 
 export type BillingType = "one_time" | "monthly" | "quarterly" | "annual" | "per_unit" | "per_hour" | "custom";
@@ -364,3 +366,10 @@ export type CommercialSuggestion = {
   createdAt: string;
   resolvedAt?: string;
 };
+
+/** Risco de estoque das oportunidades abertas — laranja (atenção) e vermelho (revisar). */
+export type StockRiskLevel = "ok" | "warning" | "critical";
+export type ProductStockRisk = { productId: string; name: string; unit?: string; stockQuantity: number; openDemand: number; level: StockRiskLevel };
+export type DealStockRiskItem = { productId: string; name: string; unit?: string; quantity: number; available: number; openDemand: number; level: "warning" | "critical" };
+export type DealStockRisk = { dealId: string; level: "warning" | "critical"; items: DealStockRiskItem[] };
+export type StockRiskReport = { products: ProductStockRisk[]; deals: DealStockRisk[] };

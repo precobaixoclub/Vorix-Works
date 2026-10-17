@@ -15,10 +15,14 @@ mkdirSync(OUT, { recursive: true });
 const iso = (offsetDays = 0) => new Date(Date.now() + offsetDays * 86_400_000).toISOString();
 const year = new Date().getFullYear();
 
+const photo = (hue: number, label: string) => `data:image/svg+xml;utf8,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="400" height="400"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="hsl(${hue},70%,55%)"/><stop offset="1" stop-color="hsl(${hue + 40},70%,30%)"/></linearGradient></defs><rect width="400" height="400" fill="url(#g)"/><text x="200" y="215" font-family="Arial" font-size="44" fill="white" text-anchor="middle">${label}</text></svg>`)}`;
 const products = [
-  { id: "p1", tenantId: "t", workspaceId: WORKSPACE_ID, name: "Licença Enterprise", code: "ENT-01", category: "Software", itemType: "product", billingType: "monthly", unit: "licença", priceCents: 9500, listPriceCents: 9500, minimumPriceCents: 8000, costCents: 4000, currency: "BRL", active: true, createdAt: iso(), updatedAt: iso(), trackStock: true, stockQuantity: 3, stockAlertThreshold: 5, lowStock: true, description: "Licença anual com suporte." },
-  { id: "p2", tenantId: "t", workspaceId: WORKSPACE_ID, name: "Leitor de código", code: "LEI-2", category: "Hardware", itemType: "product", billingType: "one_time", unit: "un", priceCents: 45000, listPriceCents: 45000, currency: "BRL", active: true, createdAt: iso(), updatedAt: iso(), trackStock: true, stockQuantity: 42, stockAlertThreshold: 10, lowStock: false },
-  { id: "p3", tenantId: "t", workspaceId: WORKSPACE_ID, name: "Implantação", code: "IMP", category: "Serviço", itemType: "service", billingType: "one_time", priceCents: 150000, listPriceCents: 150000, currency: "BRL", active: true, createdAt: iso(), updatedAt: iso(), trackStock: false, stockQuantity: 0, lowStock: false },
+  { id: "p1", tenantId: "t", workspaceId: WORKSPACE_ID, name: "Licença Enterprise", code: "ENT-01", category: "Software", itemType: "product", billingType: "monthly", unit: "licença", priceCents: 9500, listPriceCents: 9500, minimumPriceCents: 8000, costCents: 4000, currency: "BRL", active: true, createdAt: iso(-40), updatedAt: iso(-1), trackStock: true, stockQuantity: 3, stockAlertThreshold: 5, lowStock: true, description: "Licença anual com suporte.", imageUrls: [photo(250, "Licença")] },
+  { id: "p2", tenantId: "t", workspaceId: WORKSPACE_ID, name: "Leitor de código", code: "LEI-2", category: "Hardware", itemType: "product", billingType: "one_time", unit: "un", priceCents: 45000, listPriceCents: 45000, currency: "BRL", active: true, createdAt: iso(-3), updatedAt: iso(-3), trackStock: true, stockQuantity: 42, stockAlertThreshold: 10, lowStock: false, imageUrls: [photo(190, "Leitor")] },
+  { id: "p4", tenantId: "t", workspaceId: WORKSPACE_ID, name: "Impressora térmica 80mm", code: "IMP-80", category: "Hardware", itemType: "product", billingType: "one_time", unit: "un", priceCents: 89000, listPriceCents: 89000, currency: "BRL", active: true, createdAt: iso(-60), updatedAt: iso(-2), trackStock: true, stockQuantity: 0, stockAlertThreshold: 2, lowStock: true, imageUrls: [photo(20, "Impressora")] },
+  { id: "p5", tenantId: "t", workspaceId: WORKSPACE_ID, name: "Gaveta de dinheiro", code: "GAV-1", category: "Hardware", itemType: "product", billingType: "one_time", unit: "un", priceCents: 32000, listPriceCents: 32000, currency: "BRL", active: true, createdAt: iso(-1), updatedAt: iso(-1), trackStock: true, stockQuantity: 15, stockAlertThreshold: 3, lowStock: false, imageUrls: [photo(140, "Gaveta")] },
+  { id: "p6", tenantId: "t", workspaceId: WORKSPACE_ID, name: "Suporte mensal premium", code: "SUP-P", category: "Serviço", itemType: "service", billingType: "monthly", priceCents: 29900, listPriceCents: 29900, currency: "BRL", active: true, createdAt: iso(-90), updatedAt: iso(-90), trackStock: false, stockQuantity: 0, lowStock: false },
+  { id: "p3", tenantId: "t", workspaceId: WORKSPACE_ID, name: "Implantação", code: "IMP", category: "Serviço", itemType: "service", billingType: "one_time", priceCents: 150000, listPriceCents: 150000, currency: "BRL", active: true, createdAt: iso(-20), updatedAt: iso(-5), trackStock: false, stockQuantity: 0, lowStock: false },
 ];
 
 const monthGoal = (month: number, value: number) => ({ id: `g-${month}`, tenantId: "t", workspaceId: WORKSPACE_ID, scopeType: "company", metric: "sales_revenue", periodType: "monthly", periodStart: `${year}-${String(month).padStart(2, "0")}-01`, targetValue: value, currency: "BRL", progress: { targetValue: value, realizedValue: month < 10 ? value * 0.8 : 0, attainmentBp: month < 10 ? 8000 : 0, remainingValue: value * 0.2, reached: false } });
@@ -53,6 +57,9 @@ const system = [
   { id: "system:proposals", name: "Propostas", description: "Do envio ao aceite.", sections: ["proposals_performance", "discounts_approvals", "commercial_overview"] },
 ];
 
+const deal = (id: string, title: string, stageId: string) => ({ id, tenantId: "t", workspaceId: WORKSPACE_ID, pipelineId: "pipe", stageId, title, valueCents: 950_000, currency: "BRL", ownerUserId: "user-qa", createdAt: iso(-3), updatedAt: iso(-1), lastStageChangedAt: iso(-1), status: "open", valueMode: "calculated", forecastCategory: "pipeline", discountCents: 0, customFields: {} });
+const deals = [deal("deal-red", "Rede Farma — 5 licenças", "st-2"), deal("deal-orange", "Clínica Sorriso — 2 licenças", "st-1"), deal("deal-ok", "Mercado Bom Preço", "st-1")];
+
 type Billing = { status: string; trialDaysRemaining: number | null; paymentMethod?: unknown };
 
 async function mockAll(page: Page, billing: Billing = { status: "active", trialDaysRemaining: null, paymentMethod: { providerPaymentMethodId: "pm", brand: "visa", last4: "4242", expMonth: 12, expYear: 2029 } }) {
@@ -64,6 +71,11 @@ async function mockAll(page: Page, billing: Billing = { status: "active", trialD
     if (path === "/v1/solutions") return ok({ solutions: [{ key: "conversations", name: "Conversas", internal: false }, { key: "meetings", name: "Meetings", internal: false }] });
     if (path === "/v1/workspaces/credits") return ok({ monthlyCreditsQuota: 2500, creditsConsumedThisMonth: 2420, creditsExtra: 0, remainingCredits: 80 });
     if (path === "/v1/products") return ok(products);
+    if (path === "/v1/products/stock-risk") return ok({ products: [{ productId: "p1", name: "Licença Enterprise", unit: "licença", stockQuantity: 3, openDemand: 7, level: "warning" }, { productId: "p2", name: "Leitor de código", unit: "un", stockQuantity: 42, openDemand: 2, level: "ok" }], deals: [{ dealId: "deal-red", level: "critical", items: [{ productId: "p1", name: "Licença Enterprise", unit: "licença", quantity: 5, available: 3, openDemand: 7, level: "critical" }] }, { dealId: "deal-orange", level: "warning", items: [{ productId: "p1", name: "Licença Enterprise", unit: "licença", quantity: 2, available: 3, openDemand: 7, level: "warning" }] }] });
+    if (path === "/v1/deals") return ok(deals);
+    if (path === "/v1/pipelines") return ok([{ id: "pipe", name: "Comercial", isDefault: true }]);
+    if (path.endsWith("/stages")) return ok([{ id: "st-1", pipelineId: "pipe", name: "Qualificação", position: 0, isWon: false, isLost: false }, { id: "st-2", pipelineId: "pipe", name: "Negociação", position: 1, isWon: false, isLost: false }, { id: "st-won", pipelineId: "pipe", name: "Ganho", position: 2, isWon: true, isLost: false }]);
+    if (["/v1/contacts", "/v1/tasks", "/v1/proposals", "/v1/deal-custom-fields", "/v1/sales-reasons"].includes(path)) return ok([]);
     if (path === "/v1/commercial-settings") return ok({ workspaceId: WORKSPACE_ID, visibility: { canViewCost: true, canViewMargin: true, isManager: true } });
     if (path.includes("/variants")) return ok([]);
     if (path === "/v1/sales-goals") return ok(goals);
@@ -95,23 +107,54 @@ async function capture(page: Page, slug: string, sizes = VIEWPORTS) {
 }
 
 test.describe("prova dos ajustes de produto", () => {
-  test("produtos: estoque baixo, máscara de moeda e observações largas", async ({ page, context }) => {
+  // Roda no projeto desktop: cada teste já captura também a largura de celular (390) via capture().
+  test.beforeEach(async ({}, testInfo) => {
+    test.skip(testInfo.project.name.startsWith("mobile"), "prova em desktop; capturas mobile feitas por viewport");
+  });
+  test("produtos: vitrine no menu, prateleiras, filtros e cadastro com fotos", async ({ page, context }) => {
     await loginCookie(context);
     await mockAll(page);
-    await page.goto(`/workspaces/${WORKSPACE_ID}/settings/products`);
-    await expect(page.getByText("1 produto chegou ao ponto de reposição")).toBeVisible();
-    await capture(page, "products-low-stock");
+    await page.goto(`/workspaces/${WORKSPACE_ID}/products`);
+    await expect(page.getByRole("heading", { name: "Produtos", exact: true })).toBeVisible();
+    await expect(page.getByRole("link", { name: "Produtos" }).first()).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Precisa repor" })).toBeVisible();
+    await capture(page, "products-catalog");
     await page.setViewportSize({ width: 1440, height: 900 });
-    await page.getByRole("button", { name: "Novo produto" }).click();
-    const price = page.getByLabel("Preço de tabela");
+    await page.getByRole("button", { name: /Precisa repor/ }).first().click();
+    await expect(page.getByRole("heading", { name: "Precisa repor" })).toBeVisible();
+    await capture(page, "products-filter-restock", [VIEWPORTS[0]]);
+    await page.getByRole("button", { name: "Lista" }).click();
+    await capture(page, "products-list", [VIEWPORTS[0]]);
+    await page.getByRole("button", { name: "Cadastrar produto" }).first().click();
+    await expect(page.getByLabel("Unidade (opcional)")).toHaveCount(0);
+    const price = page.getByLabel("Preço de venda");
     await price.click();
     await page.keyboard.type("123456");
     await expect(price).toHaveValue("1.234,56");
     await page.getByLabel("Controlar estoque").click();
-    await page.getByLabel(/Quantidade em estoque/).fill("25");
-    await page.getByLabel("Avisar para comprar quando chegar a").fill("5");
-    await page.getByLabel("Descrição e observações").fill("Produto importado. Prazo de reposição do fornecedor: 15 dias úteis. Conferir número de série na entrega e registrar no CRM do cliente.");
-    await capture(page, "product-form", [VIEWPORTS[0]]);
+    await page.getByLabel("Quantos tenho agora").fill("25");
+    await page.getByLabel("Avisar quando chegar a").fill("5");
+    await page.getByLabel("Unidade (opcional)").fill("un");
+    await page.getByLabel("Descrição e observações").fill("Produto importado. Prazo de reposição do fornecedor: 15 dias úteis.");
+    await capture(page, "product-form", [VIEWPORTS[0], VIEWPORTS[1]]);
+  });
+
+  test("oportunidades: quantidade por produto e alerta laranja/vermelho de estoque", async ({ page, context }) => {
+    await loginCookie(context);
+    await mockAll(page);
+    await page.goto(`/workspaces/${WORKSPACE_ID}/deals`);
+    await expect(page.locator(":text(\"Falta estoque\"):visible").first()).toBeVisible();
+    await expect(page.locator(":text(\"Estoque em risco\"):visible").first()).toBeVisible();
+    await capture(page, "deals-stock-alerts");
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.getByRole("button", { name: /Nova oportunidade/ }).first().click();
+    await page.getByRole("combobox").filter({ hasText: "Adicionar produto" }).click();
+    await page.getByRole("option", { name: /Licença Enterprise/ }).click();
+    await page.getByRole("button", { name: "Aumentar quantidade de Licença Enterprise" }).click();
+    await page.getByRole("button", { name: "Aumentar quantidade de Licença Enterprise" }).click();
+    await expect(page.getByRole("textbox", { name: "Quantidade de Licença Enterprise" })).toHaveValue("3");
+    await expect(page.getByText(/há 3 licença em estoque e/)).toBeVisible();
+    await capture(page, "deal-create-quantity", [VIEWPORTS[0]]);
   });
 
   test("metas: repetir em todos os meses e anual calculada", async ({ page, context }) => {

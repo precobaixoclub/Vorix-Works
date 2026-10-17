@@ -234,6 +234,8 @@ export type Product = {
   stockQuantity: number;
   /** Ponto de reposição: quando o estoque chega a este valor (ou abaixo), o sistema alerta. */
   stockAlertThreshold?: number;
+  /** Fotos (URLs canônicas do storage do workspace); a primeira é a capa. */
+  imageUrls: string[];
 };
 
 /** Estoque no ponto de reposição (ou abaixo) — só para produtos com controle de estoque. */

@@ -440,6 +440,8 @@ export async function registerV1Routes(app: FastifyInstance): Promise<void> {
       salesConfigRepository: identity.salesConfigRepository,
       membershipRepository: identity.membershipRepository,
       notification: { notificationRepository: app.zunoContainer.notificationRepository, realtimePublisher: app.zunoContainer.notificationRealtimePublisher },
+      objectStorage: app.zunoContainer.objectStorage,
+      maxUploadBytes: app.zunoConfig.objectStorage.maxUploadBytes,
     });
     const proposalUseCaseDeps = {
       proposalRepository: identity.proposalRepository,

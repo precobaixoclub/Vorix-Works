@@ -1,12 +1,13 @@
 "use client";
 
 import { useMemo } from "react";
-import { Trash2 } from "lucide-react";
+import { Minus, Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/Button";
 import { Input, MoneyInput } from "@/components/Field";
 import { SearchableCombo } from "@/components/SearchableCombo";
 import { centsFromCurrencyInput, currencyInputFromCents } from "@/features/crm/presentation";
-import type { BillingType, Product } from "@/features/crm/types";
+import type { BillingType, Product, ProductStockRisk } from "@/features/crm/types";
+import { StockLine } from "@/components/sales/StockRisk";
 import { BILLING_SUFFIX, bpFromPercentInput, formatBp, percentInputFromBp } from "@/features/sales/presentation";
 import { previewLine, previewTotals, priceFromDiscount } from "@/features/sales/preview";
 import { formatCurrencyCents } from "@/lib/format";
@@ -23,6 +24,7 @@ export type DraftLine = {
   unitCostCents?: number;
   quantity: string;
   priceInput: string;
+  unit?: string;
 };
 
 export function draftFromProduct(product: Product): DraftLine {
@@ -37,6 +39,7 @@ export function draftFromProduct(product: Product): DraftLine {
     unitCostCents: product.costCents,
     quantity: "1",
     priceInput: currencyInputFromCents(list),
+    unit: product.unit,
   };
 }
 
@@ -54,12 +57,15 @@ export function ProductLinesEditor({
   onChange,
   currency = "BRL",
   showMargin,
+  stock,
 }: {
   products: readonly Product[];
   lines: readonly DraftLine[];
   onChange: (lines: DraftLine[]) => void;
   currency?: string;
   showMargin: boolean;
+  /** Estoque e demanda em oportunidades abertas por produto (só produtos com controle). */
+  stock?: ReadonlyMap<string, ProductStockRisk>;
 }) {
   const options = useMemo(() => products.filter((product) => product.active).map((product) => ({ id: product.id, label: `${product.name}${product.code ? ` · ${product.code}` : ""} — ${formatCurrencyCents(product.listPriceCents ?? product.priceCents, product.currency)}${BILLING_SUFFIX[product.billingType ?? "one_time"] ?? ""}` })), [products]);
   const totals = previewTotals(lines.map((line) => ({ quantity: draftQuantity(line), listPriceCents: line.listPriceCents, proposedUnitPriceCents: draftPrice(line), unitCostCents: line.unitCostCents, minimumPriceCents: line.minimumPriceCents })));
@@ -83,10 +89,11 @@ export function ProductLinesEditor({
                 <Trash2 className="h-4 w-4" />
               </Button>
             </div>
-            <div className="mt-2 grid grid-cols-3 gap-2">
-              <label className="text-[11px] text-muted-foreground">Qtd.
-                <Input value={line.quantity} onChange={(event) => update(line.key, { quantity: event.target.value })} inputMode="decimal" />
-              </label>
+            <div className="mt-2 grid gap-2 sm:grid-cols-[auto_1fr_1fr]">
+              <div className="text-[11px] text-muted-foreground">
+                Quantidade{line.unit ? ` (${line.unit})` : ""}
+                <QuantityStepper value={line.quantity} onChange={(quantity) => update(line.key, { quantity })} label={line.name} />
+              </div>
               <label className="text-[11px] text-muted-foreground">Preço proposto
                 <MoneyInput value={line.priceInput} onChange={(event) => update(line.key, { priceInput: event.target.value })} />
               </label>
@@ -102,6 +109,7 @@ export function ProductLinesEditor({
                 />
               </label>
             </div>
+            <StockLine stock={stock?.get(line.productId)} quantity={draftQuantity(line)} unit={line.unit} name={line.name} />
             <p className={cn("mt-2 text-xs tabular-nums", preview.belowMinimum ? "font-medium text-rose-600 dark:text-rose-300" : "text-muted-foreground")}>
               Subtotal {formatCurrencyCents(preview.subtotal, currency)}
               {preview.discount > 0 ? ` · desconto ${formatCurrencyCents(preview.discount, currency)}` : ""}
@@ -133,6 +141,35 @@ export function ProductLinesEditor({
           {showMargin ? <Metric label="Margem" value={formatBp(totals.marginBp)} /> : null}
         </div>
       ) : null}
+    </div>
+  );
+}
+
+/** Quantidade grande e fácil de ajustar (− / +) — também aceita digitar. */
+export function QuantityStepper({ value, onChange, label, disabled, onCommit }: { value: string; onChange: (value: string) => void; label: string; disabled?: boolean; onCommit?: (value: string) => void }) {
+  const current = Math.max(0, Number(value.replace(",", ".")) || 0);
+  const set = (next: number) => {
+    const text = String(Math.max(1, Math.round(next * 1000) / 1000)).replace(".", ",");
+    onChange(text);
+    onCommit?.(text);
+  };
+  return (
+    <div className="mt-0.5 flex h-9 items-stretch overflow-hidden rounded-md border border-input bg-background">
+      <button type="button" disabled={disabled || current <= 1} onClick={() => set(current - 1)} aria-label={`Diminuir quantidade de ${label}`} className="flex w-9 items-center justify-center text-foreground hover:bg-surface-2 disabled:opacity-30">
+        <Minus className="h-4 w-4" />
+      </button>
+      <input
+        value={value}
+        disabled={disabled}
+        onChange={(event) => onChange(event.target.value.replace(/[^\d,.]/g, ""))}
+        onBlur={() => onCommit?.(value)}
+        inputMode="decimal"
+        aria-label={`Quantidade de ${label}`}
+        className="w-14 border-x border-input bg-transparent text-center text-sm font-semibold tabular-nums text-foreground outline-none focus-visible:bg-surface-2"
+      />
+      <button type="button" disabled={disabled} onClick={() => set(current + 1)} aria-label={`Aumentar quantidade de ${label}`} className="flex w-9 items-center justify-center text-foreground hover:bg-surface-2 disabled:opacity-30">
+        <Plus className="h-4 w-4" />
+      </button>
     </div>
   );
 }

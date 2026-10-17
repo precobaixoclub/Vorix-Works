@@ -119,6 +119,7 @@ test.describe("prova visual DS 2.0", () => {
   });
 
   test("Conversas: home, inbox, desempenho, produtos e regras", async ({ page, context }) => {
+    test.setTimeout(90_000); // percorre 9 telas em várias larguras
     await loginCookie(context);
     await mockEverything(page);
     await page.goto(`/workspaces/${WORKSPACE_ID}`);
@@ -133,8 +134,8 @@ test.describe("prova visual DS 2.0", () => {
     await page.goto(`/workspaces/${WORKSPACE_ID}/performance`);
     await expect(page.getByText("Desempenho comercial")).toBeVisible();
     await capture(page, "sales-performance", [VIEWPORTS[0], VIEWPORTS[2], VIEWPORTS[4]]);
-    await page.goto(`/workspaces/${WORKSPACE_ID}/settings/products`);
-    await expect(page.getByText("Licença Enterprise")).toBeVisible();
+    await page.goto(`/workspaces/${WORKSPACE_ID}/products`);
+    await expect(page.getByText("Licença Enterprise").first()).toBeVisible();
     await capture(page, "products", [VIEWPORTS[0], VIEWPORTS[4]]);
     await page.goto(`/workspaces/${WORKSPACE_ID}/settings/commercial`);
     await page.waitForLoadState("networkidle");

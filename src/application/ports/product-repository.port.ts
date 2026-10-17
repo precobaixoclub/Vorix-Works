@@ -20,6 +20,7 @@ export type CreateProductInput = {
   trackStock?: boolean;
   stockQuantity?: number;
   stockAlertThreshold?: number | null;
+  imageUrls?: string[];
 };
 
 export type UpdateProductInput = Partial<Omit<CreateProductInput, "tenantId" | "workspaceId">> & { active?: boolean };
@@ -38,4 +39,6 @@ export type ProductRepositoryPort = {
   adjustStock(input: AdjustStockInput): Promise<Product | undefined>;
   /** Saldo líquido de movimentos por produto causados por uma oportunidade (negativo = baixa feita). */
   netStockByDeal(dealId: string): Promise<{ productId: string; delta: number }[]>;
+  /** Quantidade pedida em oportunidades ABERTAS, por oportunidade e produto com controle de estoque. */
+  listOpenStockDemand(input: { tenantId: string; workspaceId: string }): Promise<{ dealId: string; productId: string; quantity: number }[]>;
 };

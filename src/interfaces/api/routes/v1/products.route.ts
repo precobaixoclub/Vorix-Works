@@ -6,8 +6,11 @@ import { loadCommercialSettings, resolveVisibility, type SalesVisibility } from 
 import type { SalesConfigRepositoryPort } from "../../../../application/ports/sales-engine-repository.port.js";
 import type { TenantMembershipRepositoryPort } from "../../../../application/ports/tenant-membership-repository.port.js";
 import type { NotificationUseCaseDeps } from "../../../../application/notification/notification-use-cases.js";
-import { setStockQuantity } from "../../../../application/sales/stock-use-cases.js";
+import { getOpenDealsStockRisk, setStockQuantity } from "../../../../application/sales/stock-use-cases.js";
 import { isLowStock } from "../../../../domain/crm/crm.model.js";
+import type { ObjectStoragePort } from "../../../../application/ports/object-storage.port.js";
+import { stripObjectUrlSignature } from "../../../../shared/utils/object-url-signing.js";
+import { randomUUID } from "node:crypto";
 import type { AuthPrincipal } from "../../../../domain/identity/identity.model.js";
 import type { Product } from "../../../../domain/crm/crm.model.js";
 import { NotFoundError, ValidationError } from "../../http/app-error.js";
@@ -44,6 +47,7 @@ const CREATE_BODY_SCHEMA = {
     trackStock: { type: "boolean" },
     stockQuantity: { type: "number", minimum: -1000000000, maximum: 1000000000 },
     stockAlertThreshold: { type: ["number", "null"], minimum: 0, maximum: 1000000000 },
+    imageUrls: { type: "array", maxItems: 6, items: { type: "string", minLength: 1, maxLength: 2000 } },
   },
 } as const;
 const UPDATE_BODY_SCHEMA = {
@@ -69,6 +73,7 @@ const UPDATE_BODY_SCHEMA = {
     trackStock: { type: "boolean" },
     stockQuantity: { type: "number", minimum: -1000000000, maximum: 1000000000 },
     stockAlertThreshold: { type: ["number", "null"], minimum: 0, maximum: 1000000000 },
+    imageUrls: { type: "array", maxItems: 6, items: { type: "string", minLength: 1, maxLength: 2000 } },
     active: { type: "boolean" },
   },
 } as const;
@@ -87,7 +92,24 @@ type ProductRouteDeps = ProductUseCaseDeps & {
   /** Alerta de estoque baixo para a gestão (opcional — sem isto o ajuste só não notifica). */
   membershipRepository?: TenantMembershipRepositoryPort;
   notification?: Partial<NotificationUseCaseDeps>;
+  /** Fotos do produto (upload para o storage do workspace). */
+  objectStorage?: ObjectStoragePort;
+  maxUploadBytes?: number;
 };
+
+const IMAGE_TYPES: Record<string, string> = { "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp" };
+const MAX_PRODUCT_IMAGE_BYTES = 5_000_000;
+
+/** Só fotos enviadas para a pasta de produtos DESTE workspace — nunca URL externa arbitrária. */
+function cleanImageUrls(deps: ProductRouteDeps, tenantId: string, workspaceId: string, urls: unknown): string[] | undefined {
+  if (urls === undefined) return undefined;
+  if (!Array.isArray(urls)) throw new ValidationError("PRODUCT_IMAGES_INVALID: lista de fotos inválida.");
+  if (!deps.objectStorage) throw new ValidationError("PRODUCT_IMAGES_INVALID: envio de fotos indisponível.");
+  const prefix = deps.objectStorage.resolvePublicUrl(`assets/${tenantId}/${workspaceId}/products/`);
+  const clean = [...new Set(urls.map((url) => stripObjectUrlSignature(String(url))))];
+  if (clean.some((url) => !url.startsWith(prefix))) throw new ValidationError("PRODUCT_IMAGES_INVALID: use apenas fotos enviadas pelo Vorix.");
+  return clean.slice(0, 6);
+}
 
 async function productVisibility(deps: ProductRouteDeps, principal: AuthPrincipal, workspaceId: string): Promise<SalesVisibility> {
   if (!deps.salesConfigRepository) return { canViewCost: true, canViewMargin: true, isManager: true };
@@ -119,11 +141,38 @@ export async function registerProductsRoutes(app: FastifyInstance, deps: Product
     return successEnvelope(products.map((product) => present(product, visibility)), request.id);
   });
 
+  /** Foto do produto: JPEG/PNG/WEBP até 5 MB, gravada na pasta de produtos do workspace. */
+  app.post("/products/images", { schema: { querystring: WORKSPACE_QUERY_SCHEMA } }, async (request) => {
+    const principal = requirePermission(request, "product:manage");
+    const { workspaceId } = request.query as { workspaceId: string };
+    if (!deps.objectStorage) throw new ValidationError("PRODUCT_IMAGES_INVALID: envio de fotos indisponível.");
+    const limit = Math.min(MAX_PRODUCT_IMAGE_BYTES, deps.maxUploadBytes ?? MAX_PRODUCT_IMAGE_BYTES);
+    const file = await request.file({ limits: { fileSize: limit } });
+    if (!file) throw new ValidationError("PRODUCT_IMAGE_MISSING: envie a foto.");
+    const extension = IMAGE_TYPES[file.mimetype];
+    if (!extension) throw new ValidationError("PRODUCT_IMAGE_TYPE: use uma foto JPG, PNG ou WEBP.");
+    const buffer = await file.toBuffer().catch(() => {
+      throw new ValidationError("PRODUCT_IMAGE_TOO_LARGE: a foto pode ter no máximo 5 MB.");
+    });
+    if (file.file.truncated) throw new ValidationError("PRODUCT_IMAGE_TOO_LARGE: a foto pode ter no máximo 5 MB.");
+    const { url } = await deps.objectStorage.put({ key: `assets/${principal.tenantId}/${workspaceId}/products/${randomUUID()}.${extension}`, body: buffer, contentType: file.mimetype });
+    return successEnvelope({ url }, request.id);
+  });
+
+  /** Risco de estoque das oportunidades abertas (laranja = atenção, vermelho = revisar). */
+  app.get("/products/stock-risk", { schema: { querystring: WORKSPACE_QUERY_SCHEMA } }, async (request) => {
+    const principal = requirePermission(request, "product:read");
+    const { workspaceId } = request.query as { workspaceId: string };
+    return successEnvelope(await getOpenDealsStockRisk(deps, { tenantId: principal.tenantId, workspaceId }), request.id);
+  });
+
   app.post("/products", { schema: { body: CREATE_BODY_SCHEMA }, config: { readOnlyGuard: true } }, async (request, reply) => {
     const principal = requirePermission(request, "product:manage");
     const raw = request.body as { workspaceId: string; name: string; description?: string; priceCents: number; currency?: string } & Record<string, unknown>;
     const visibility = await productVisibility(deps, principal, raw.workspaceId);
     const body = sanitizeProductWrite(raw, visibility);
+    const imageUrls = cleanImageUrls(deps, principal.tenantId, raw.workspaceId, raw.imageUrls);
+    if (imageUrls) (body as Record<string, unknown>).imageUrls = imageUrls;
     try {
       assertProductPricing(body as never);
       const product = await createProduct(deps, { tenantId: principal.tenantId, ...body } as never);
@@ -153,6 +202,8 @@ export async function registerProductsRoutes(app: FastifyInstance, deps: Product
     try {
       const visibility = await productVisibility(deps, principal, workspaceId);
       const patch = sanitizeProductWrite(rawPatch, visibility);
+      const imageUrls = cleanImageUrls(deps, principal.tenantId, workspaceId, rawPatch.imageUrls);
+      if (imageUrls) (patch as Record<string, unknown>).imageUrls = imageUrls;
       const existing = await getProduct(deps, { productId: id, tenantId: principal.tenantId, workspaceId });
       assertProductPricing(patch as never, existing);
       // Saldo de estoque muda só via movimento (auditável e com alerta), nunca por sobrescrita direta.

@@ -7,6 +7,7 @@ import {
   getDealTimeline,
   getCommercialMetrics,
   getLeadScore,
+  getStockRisk,
   getProposalTimeline,
   listAutomationRules,
   listAutomationRunLogs,
@@ -83,6 +84,10 @@ export function useTasks(workspaceId: string, params?: { contactId?: string; dea
     ["tasks", workspaceId, params?.contactId, params?.dealId, params?.ownerUserId, params?.status],
     () => listTasks(workspaceId, params),
   );
+}
+
+export function useStockRisk(workspaceId: string) {
+  return useSWR(workspaceId ? ["stock-risk", workspaceId] : null, () => getStockRisk(workspaceId));
 }
 
 export function useProducts(workspaceId: string, params?: { search?: string; activeOnly?: boolean }) {

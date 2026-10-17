@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/Button";
@@ -12,7 +12,7 @@ import { UserPicker } from "@/components/UserPicker";
 import { ProductLinesEditor, draftPrice, draftQuantity, type DraftLine } from "@/components/sales/ProductLinesEditor";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { createDeal } from "@/features/crm/api";
-import { useContacts, usePipelines, usePipelineStages, useProducts } from "@/features/crm/hooks";
+import { useContacts, usePipelines, usePipelineStages, useProducts, useStockRisk } from "@/features/crm/hooks";
 import { centsFromCurrencyInput } from "@/features/crm/presentation";
 import type { Deal } from "@/features/crm/types";
 import { addDealItem, findDuplicateDeals } from "@/features/sales/api";
@@ -45,6 +45,8 @@ export function QuickCreateDealModal({
 }) {
   const { data: pipelines } = usePipelines(workspaceId);
   const { data: products } = useProducts(workspaceId, { activeOnly: true });
+  const { data: stockRisk } = useStockRisk(workspaceId);
+  const stockByProduct = useMemo(() => new Map((stockRisk?.products ?? []).map((item) => [item.productId, item])), [stockRisk]);
   const { data: settings } = useCommercialSettings(workspaceId);
   const [pipelineId, setPipelineId] = useState<string | undefined>();
   useEffect(() => {
@@ -146,7 +148,7 @@ export function QuickCreateDealModal({
 
         <div>
           <Label>Produtos e serviços</Label>
-          <ProductLinesEditor products={products ?? []} lines={lines} onChange={setLines} showMargin={showMargin} />
+          <ProductLinesEditor products={products ?? []} lines={lines} onChange={setLines} showMargin={showMargin} stock={stockByProduct} />
           {lines.length === 0 ? (
             <div className="mt-3">
               <Label htmlFor="quick-deal-value">Valor estimado — sem produtos</Label>

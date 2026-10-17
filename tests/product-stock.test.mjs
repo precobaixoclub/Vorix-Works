@@ -21,7 +21,7 @@ import {
 import { ensureDefaultPipeline } from "../dist/application/crm/pipeline-use-cases.js";
 import { createDeal } from "../dist/application/crm/deal-use-cases.js";
 import { addDealItem, reopenDeal, winDeal } from "../dist/application/sales/deal-commercial-use-cases.js";
-import { setStockQuantity } from "../dist/application/sales/stock-use-cases.js";
+import { getOpenDealsStockRisk, setStockQuantity } from "../dist/application/sales/stock-use-cases.js";
 import { isLowStock } from "../dist/domain/crm/crm.model.js";
 import { startTestPostgres } from "./helpers/pglite-test-db.mjs";
 
@@ -126,4 +126,34 @@ test("ESTOQUE: ajuste manual registra movimento e alerta ao cruzar o ponto de re
   assert.equal((await notificationRepository.listActive({ tenantId, workspaceId, userId: manager.userId, limit: 10 })).length, 1);
   const unchanged = await setStockQuantity(d, after, 2, manager.userId);
   assert.equal(unchanged.stockQuantity, 2);
+});
+
+test("RISCO: oportunidades abertas — laranja quando a soma não cabe no estoque, vermelho quando a própria não cabe", async () => {
+  const { d, tenantId, workspaceId, seller, dealWith } = await setup();
+  const product = await d.productRepository.create({ tenantId, workspaceId, name: "Leitor", priceCents: 1_000, unit: "un", trackStock: true, stockQuantity: 10, stockAlertThreshold: 2 });
+  const untracked = await d.productRepository.create({ tenantId, workspaceId, name: "Serviço", priceCents: 1_000 });
+  const a = await dealWith(product, 6);
+  const b = await dealWith(product, 5);
+  await dealWith(untracked, 50);
+  let risk = await getOpenDealsStockRisk(d, { tenantId, workspaceId });
+  assert.deepEqual(risk.deals.map((deal) => deal.level).sort(), ["warning", "warning"], "6 + 5 = 11 > 10: atenção nas duas");
+  assert.equal(risk.products.find((item) => item.productId === product.id).openDemand, 11);
+  assert.equal(risk.products.some((item) => item.productId === untracked.id), false);
+
+  // Fechar A dá baixa (sobram 4): B (5) já não cabe → vermelho; A sai da lista (não está mais aberta).
+  await winDeal(d, seller, { workspaceId, dealId: a.id });
+  risk = await getOpenDealsStockRisk(d, { tenantId, workspaceId });
+  assert.deepEqual(risk.deals.map((deal) => [deal.dealId, deal.level]), [[b.id, "critical"]]);
+  assert.deepEqual(risk.deals[0].items[0], { productId: product.id, name: "Leitor", unit: "un", quantity: 5, available: 4, openDemand: 5, level: "critical" });
+});
+
+test("FOTOS: produto guarda as fotos na ordem (a primeira é a capa) e atualiza sem perder estoque", async () => {
+  const { d, tenantId, workspaceId } = await setup();
+  const product = await d.productRepository.create({ tenantId, workspaceId, name: "Leitor", priceCents: 1_000, trackStock: true, stockQuantity: 7, imageUrls: ["https://cdn.test/a.jpg", "https://cdn.test/b.jpg"] });
+  assert.deepEqual(product.imageUrls, ["https://cdn.test/a.jpg", "https://cdn.test/b.jpg"]);
+  const updated = await d.productRepository.update(product.id, { imageUrls: ["https://cdn.test/b.jpg"] });
+  assert.deepEqual(updated.imageUrls, ["https://cdn.test/b.jpg"]);
+  assert.equal(updated.stockQuantity, 7);
+  const untouched = await d.productRepository.update(product.id, { name: "Leitor 2" });
+  assert.deepEqual(untouched.imageUrls, ["https://cdn.test/b.jpg"]);
 });

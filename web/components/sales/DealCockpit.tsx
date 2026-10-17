@@ -11,7 +11,10 @@ import { Modal } from "@/components/Modal";
 import { SearchableCombo } from "@/components/SearchableCombo";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { useProducts } from "@/features/crm/hooks";
+import { useProducts, useStockRisk } from "@/features/crm/hooks";
+import { QuantityStepper } from "@/components/sales/ProductLinesEditor";
+import { StockLine, StockRiskBadge } from "@/components/sales/StockRisk";
+import type { ProductStockRisk } from "@/features/crm/types";
 import { centsFromCurrencyInput, currencyInputFromCents } from "@/features/crm/presentation";
 import type { Deal } from "@/features/crm/types";
 import { addDealItem, generateDealAiInsights, removeDealItem, requestApproval, updateDealCommercial, updateDealItem } from "@/features/sales/api";
@@ -234,6 +237,9 @@ export function DealProducts({ workspaceId, deal }: { workspaceId: string; deal:
   const { data, error, isLoading, mutate } = useDealCommercial(workspaceId, deal.id);
   const { data: products } = useProducts(workspaceId, { activeOnly: true });
   const invalidate = useInvalidateSales(workspaceId);
+  const { data: stockRisk, mutate: mutateStock } = useStockRisk(workspaceId);
+  const stockByProduct = useMemo(() => new Map((stockRisk?.products ?? []).map((entry) => [entry.productId, entry])), [stockRisk]);
+  const dealRisk = stockRisk?.deals?.find((entry) => entry.dealId === deal.id);
   const [adding, setAdding] = useState(false);
   const editable = deal.status === "open";
 
@@ -242,7 +248,7 @@ export function DealProducts({ workspaceId, deal }: { workspaceId: string; deal:
   async function run(action: () => Promise<unknown>, success?: string) {
     try {
       await action();
-      await Promise.all([mutate(), invalidate()]);
+      await Promise.all([mutate(), invalidate(), mutateStock()]);
       if (success) toast.success(success);
     } catch (cause) {
       toast.error("Não foi possível salvar", { description: errorMessage(cause) });
@@ -254,10 +260,10 @@ export function DealProducts({ workspaceId, deal }: { workspaceId: string; deal:
 
   return (
     <div className="space-y-6">
-      <DetailBlock label={`Produtos e serviços (${data.items.length})`}>
+      <DetailBlock label={`Produtos e serviços (${data.items.length})`} action={editable ? <StockRiskBadge risk={dealRisk} /> : undefined}>
         {data.items.length === 0 ? <p className="mb-3 text-sm text-muted-foreground">Nenhum produto. Sem produtos, o valor é o estimado manual.</p> : (
           <div className="mb-3 space-y-2">
-            {data.items.map((item) => <ItemRow key={item.id} item={item} currency={data.currency} summary={data} editable={editable} onSave={(patch) => run(() => updateDealItem(deal.id, item.id, { workspaceId, ...patch }))} onRemove={() => run(() => removeDealItem(deal.id, item.id, workspaceId), "Item removido")} />)}
+            {data.items.map((item) => <ItemRow key={item.id} item={item} currency={data.currency} summary={data} editable={editable} stock={editable && item.productId ? stockByProduct.get(item.productId) : undefined} onSave={(patch) => run(() => updateDealItem(deal.id, item.id, { workspaceId, ...patch }))} onRemove={() => run(() => removeDealItem(deal.id, item.id, workspaceId), "Item removido")} />)}
           </div>
         )}
         {editable ? (
@@ -269,7 +275,7 @@ export function DealProducts({ workspaceId, deal }: { workspaceId: string; deal:
               setAdding(true);
               void run(() => addDealItem(deal.id, { workspaceId, productId, quantity: 1 }), "Produto adicionado").finally(() => setAdding(false));
             }}
-            placeholder={productOptions.length ? "+ Adicionar produto ou serviço" : "Cadastre produtos em Configurações › Produtos"}
+            placeholder={productOptions.length ? "+ Adicionar produto ou serviço" : "Cadastre produtos no menu Produtos"}
             searchPlaceholder="Buscar por nome ou código..."
             emptyText="Nenhum produto encontrado."
             disabled={!productOptions.length}
@@ -281,13 +287,13 @@ export function DealProducts({ workspaceId, deal }: { workspaceId: string; deal:
   );
 }
 
-function ItemRow({ item, currency, summary, editable, onSave, onRemove }: { item: DealItem; currency: string; summary: DealCommercialSummary; editable: boolean; onSave: (patch: { quantity?: number; proposedUnitPriceCents?: number; discountBp?: number }) => Promise<void>; onRemove: () => Promise<void> }) {
+function ItemRow({ item, currency, summary, editable, stock, onSave, onRemove }: { item: DealItem; currency: string; summary: DealCommercialSummary; editable: boolean; stock?: ProductStockRisk; onSave: (patch: { quantity?: number; proposedUnitPriceCents?: number; discountBp?: number }) => Promise<void>; onRemove: () => Promise<void> }) {
   const [quantity, setQuantity] = useState(String(item.quantity).replace(".", ","));
   const [price, setPrice] = useState(currencyInputFromCents(item.proposedUnitPriceCents));
   const [discount, setDiscount] = useState(percentInputFromBp(item.subtotalListCents ? Math.round((item.discountCents * 10000) / item.subtotalListCents) : undefined));
   const belowMinimum = item.minimumPriceCentsSnapshot !== undefined && item.proposedUnitPriceCents < item.minimumPriceCentsSnapshot;
-  const save = () => {
-    const nextQuantity = Number(quantity.replace(",", "."));
+  const save = (quantityText = quantity) => {
+    const nextQuantity = Number(quantityText.replace(",", "."));
     const nextPrice = centsFromCurrencyInput(price);
     if (nextQuantity === item.quantity && nextPrice === item.proposedUnitPriceCents) return;
     void onSave({ quantity: nextQuantity, proposedUnitPriceCents: nextPrice });
@@ -306,8 +312,8 @@ function ItemRow({ item, currency, summary, editable, onSave, onRemove }: { item
         {editable ? <Button variant="ghost" size="icon" aria-label="Remover item" onClick={() => void onRemove()}><Trash2 className="h-4 w-4" /></Button> : null}
       </div>
       <div className="mt-2 grid grid-cols-3 gap-2">
-        <label className="text-[11px] text-muted-foreground">Qtd.<Input value={quantity} disabled={!editable} onChange={(event) => setQuantity(event.target.value)} onBlur={save} inputMode="decimal" /></label>
-        <label className="text-[11px] text-muted-foreground">Preço proposto<MoneyInput value={price} disabled={!editable} onChange={(event) => setPrice(event.target.value)} onBlur={save} /></label>
+        <div className="text-[11px] text-muted-foreground">Quantidade<QuantityStepper value={quantity} disabled={!editable} onChange={setQuantity} onCommit={(value) => save(value)} label={item.productNameSnapshot} /></div>
+        <label className="text-[11px] text-muted-foreground">Preço proposto<MoneyInput value={price} disabled={!editable} onChange={(event) => setPrice(event.target.value)} onBlur={() => save()} /></label>
         <label className="text-[11px] text-muted-foreground">Desconto %
           <Input
             value={discount}
@@ -323,6 +329,7 @@ function ItemRow({ item, currency, summary, editable, onSave, onRemove }: { item
           />
         </label>
       </div>
+      <StockLine stock={stock} quantity={Number(quantity.replace(",", ".")) || 0} unit={stock?.unit} name={item.productNameSnapshot} existingInDeal={item.quantity} />
       <p className={cn("mt-2 text-xs tabular-nums", belowMinimum ? "font-medium text-rose-600 dark:text-rose-300" : "text-muted-foreground")}>
         Subtotal {formatCurrencyCents(item.subtotalProposedCents, currency)}
         {item.discountCents > 0 ? ` · desconto ${formatCurrencyCents(item.discountCents, currency)}` : ""}

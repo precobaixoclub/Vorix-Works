@@ -70,6 +70,7 @@ export const SOLUTION_NAVIGATION: Readonly<Record<SolutionKey, SolutionNavigatio
         items: [
           { href: "/deals", label: "Oportunidades", icon: "deals" },
           { href: "/contacts", label: "Contatos", icon: "contacts" },
+          { href: "/products", label: "Produtos", icon: "products" },
           { href: "/tasks", label: "Tarefas", icon: "tasks" },
           { href: "/proposals", label: "Propostas", icon: "proposals" },
         ],
@@ -98,6 +99,7 @@ export const SOLUTION_NAVIGATION: Readonly<Record<SolutionKey, SolutionNavigatio
       {
         label: "Comercial",
         items: [
+          { href: "/products", label: "Produtos", icon: "products" },
           { href: "/tasks", label: "Tarefas", icon: "tasks" },
           { href: "/proposals", label: "Propostas", icon: "proposals" },
           { href: "/performance", label: "Desempenho", icon: "analytics" },
@@ -181,7 +183,6 @@ const SETTINGS_SUBPAGE_LABELS: Record<string, string> = {
   users: "Usuários",
   teams: "Equipes",
   plano: "Plano e cobrança",
-  products: "Produtos",
   commercial: "Regras comerciais",
   goals: "Metas",
   automations: "Automações",

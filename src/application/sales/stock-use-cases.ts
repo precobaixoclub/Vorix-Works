@@ -59,9 +59,50 @@ async function notifyLowStock(deps: AlertDeps, product: Product): Promise<void> 
     notifyBestEffort(deps.notification, {
       tenantId: product.tenantId, workspaceId: product.workspaceId, userId, title: "Estoque baixo — hora de repor",
       body: `${product.name}: ${product.stockQuantity.toLocaleString("pt-BR")}${unit} em estoque (alerta em ${product.stockAlertThreshold?.toLocaleString("pt-BR")}${unit}).`,
-      sourceType: "product_low_stock", sourceId: product.id, sourceUrl: `/workspaces/${product.workspaceId}/settings/products?lowStock=1`,
+      sourceType: "product_low_stock", sourceId: product.id, sourceUrl: `/workspaces/${product.workspaceId}/products?filtro=repor`,
     });
   }
+}
+
+export type StockRiskLevel = "ok" | "warning" | "critical";
+export type ProductStockRisk = { productId: string; name: string; unit?: string; stockQuantity: number; openDemand: number; level: StockRiskLevel };
+export type DealStockRisk = { dealId: string; level: Exclude<StockRiskLevel, "ok">; items: { productId: string; name: string; unit?: string; quantity: number; available: number; openDemand: number; level: Exclude<StockRiskLevel, "ok"> }[] };
+
+/**
+ * Risco de estoque das oportunidades em andamento. O saldo do produto já desconta as vendas
+ * fechadas (baixa no ganho), então:
+ * - crítico (vermelho): esta oportunidade sozinha pede mais do que há em estoque — revisar;
+ * - atenção (laranja): ela cabe no estoque, mas a soma das oportunidades abertas não cabe — se
+ *   as outras fecharem antes, vai faltar.
+ */
+export async function getOpenDealsStockRisk(deps: Pick<SalesEngineDeps, "productRepository">, input: { tenantId: string; workspaceId: string }): Promise<{ products: ProductStockRisk[]; deals: DealStockRisk[] }> {
+  const [products, demand] = await Promise.all([
+    deps.productRepository.listByWorkspace({ tenantId: input.tenantId, workspaceId: input.workspaceId }),
+    deps.productRepository.listOpenStockDemand(input),
+  ]);
+  const tracked = new Map(products.filter((product) => product.trackStock).map((product) => [product.id, product]));
+  const openByProduct = new Map<string, number>();
+  for (const row of demand) openByProduct.set(row.productId, (openByProduct.get(row.productId) ?? 0) + row.quantity);
+
+  const productRisks: ProductStockRisk[] = [...tracked.values()].map((product) => {
+    const openDemand = openByProduct.get(product.id) ?? 0;
+    const level: StockRiskLevel = openDemand === 0 ? "ok" : openDemand > product.stockQuantity ? (product.stockQuantity <= 0 ? "critical" : "warning") : "ok";
+    return { productId: product.id, name: product.name, unit: product.unit, stockQuantity: product.stockQuantity, openDemand, level };
+  });
+
+  const byDeal = new Map<string, DealStockRisk["items"]>();
+  for (const row of demand) {
+    const product = tracked.get(row.productId);
+    if (!product) continue;
+    const openDemand = openByProduct.get(row.productId) ?? 0;
+    const level = row.quantity > product.stockQuantity ? "critical" : openDemand > product.stockQuantity ? "warning" : undefined;
+    if (!level) continue;
+    const items = byDeal.get(row.dealId) ?? [];
+    items.push({ productId: product.id, name: product.name, unit: product.unit, quantity: row.quantity, available: product.stockQuantity, openDemand, level });
+    byDeal.set(row.dealId, items);
+  }
+  const deals: DealStockRisk[] = [...byDeal.entries()].map(([dealId, items]) => ({ dealId, level: items.some((item) => item.level === "critical") ? "critical" : "warning", items }));
+  return { products: productRisks, deals };
 }
 
 /** Estoque nunca impede fechar/reabrir uma venda — falha vira log, o saldo pode ser ajustado à mão. */

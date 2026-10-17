@@ -22,9 +22,10 @@ import { useAuth } from "@/contexts/auth-context";
 import { useCurrentWorkspace } from "@/contexts/workspace-context";
 import { moveDealStage } from "@/features/crm/api";
 import { QuickCreateDealModal } from "@/components/crm/QuickCreateDealModal";
-import { useContacts, useDeals, usePipelines, usePipelineStages, useProposals, useTasks } from "@/features/crm/hooks";
+import { useContacts, useDeals, usePipelines, usePipelineStages, useProposals, useStockRisk, useTasks } from "@/features/crm/hooks";
+import { StockRiskBadge } from "@/components/sales/StockRisk";
 import { nextPendingTask, TASK_TYPE_LABEL } from "@/features/crm/presentation";
-import type { Contact, Deal, PipelineStage, Task } from "@/features/crm/types";
+import type { Contact, Deal, DealStockRisk, PipelineStage, Task } from "@/features/crm/types";
 import { useTeams } from "@/features/identity/hooks";
 import type { Team } from "@/features/identity/types";
 import { markInboxConversationRead, markInboxConversationUnread } from "@/features/inbox/api";
@@ -108,6 +109,9 @@ function DealsView() {
     origin: origin.trim() || undefined,
   };
   const { data: deals, error, isLoading, mutate: mutateDeals } = useDeals(workspace.id, filterParams);
+  // Estoque × oportunidades abertas: laranja = atenção, vermelho = revisar (ver StockRisk.tsx).
+  const { data: stockRisk, mutate: mutateStockRisk } = useStockRisk(workspace.id);
+  const stockRiskByDeal = useMemo(() => new Map((stockRisk?.deals ?? []).map((entry) => [entry.dealId, entry])), [stockRisk]);
 
   const orderedStages = useMemo(() => [...(stages ?? [])].sort((a, b) => a.position - b.position), [stages]);
   const activePipeline = pipelines?.find((pipeline) => pipeline.id === pipelineId);
@@ -175,7 +179,7 @@ function DealsView() {
   const contactOptions = contactsList.map((contact) => ({ id: contact.id, label: contactLabel(contact) }));
 
   async function refresh() {
-    await Promise.all([mutateDeals(), mutateTasks()]);
+    await Promise.all([mutateDeals(), mutateTasks(), mutateStockRisk()]);
   }
 
   function requestMoveDeal(deal: Deal, targetStage: PipelineStage) {
@@ -246,6 +250,7 @@ function DealsView() {
       <DealCard
         key={deal.id}
         deal={deal}
+        stockRisk={deal.status === "open" ? stockRiskByDeal.get(deal.id) : undefined}
         contact={contactsList.find((item) => item.id === deal.contactId)}
         conversation={deal.contactId ? conversationByContactId.get(deal.contactId) : undefined}
         stages={orderedStages}
@@ -472,6 +477,7 @@ function DealsView() {
 
 function DealCard({
   deal,
+  stockRisk,
   contact,
   conversation,
   stages,
@@ -486,6 +492,8 @@ function DealCard({
   onToggleConversationRead,
 }: {
   deal: Deal;
+  /** Alerta de estoque desta oportunidade aberta (laranja/vermelho). */
+  stockRisk?: DealStockRisk;
   contact: Contact | undefined;
   /** Conversa (WhatsApp/Instagram) do Inbox vinculada ao contato deste negócio, se houver — pedido
    * explícito do usuário: ver e agir sobre ela direto no card, sem abrir o negócio. */
@@ -517,8 +525,11 @@ function DealCard({
         // verde até ser respondida ou marcada como lida" — abrir a conversa (`onOpenConversation`)
         // já marca como lida (ver `ConversationTimelinePane`), o que faz este destaque sumir sozinho.
         isUnread && "ring-2 ring-emerald-500 bg-emerald-50/70 hover:bg-emerald-50 dark:bg-emerald-500/10 dark:hover:bg-emerald-500/15",
+        !isUnread && stockRisk?.level === "critical" && "border-destructive/60 ring-1 ring-destructive/40 bg-destructive/[0.04]",
+        !isUnread && stockRisk?.level === "warning" && "border-orange-500/60 ring-1 ring-orange-500/40 bg-orange-500/[0.04]",
       )}
     >
+      {stockRisk ? <StockRiskBadge risk={stockRisk} className="mb-2" /> : null}
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <p className="truncate text-sm font-semibold text-foreground">{contact?.name ?? deal.title}</p>

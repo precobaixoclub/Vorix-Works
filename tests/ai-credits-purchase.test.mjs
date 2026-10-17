@@ -38,6 +38,20 @@ class CheckoutOnlyProvider extends SandboxBillingProvider {
   async createOneTimeCheckout(input) { this.checkouts.push(input); return { ok: true, checkoutUrl: "https://pay.test/c/1", providerSessionId: "pref_1" }; }
 }
 
+test("CHECKOUT: retorno permanece no produto, inclusive com barras, controles e URLs externas", async () => {
+  const tenantId = await paidTenant("safe-return");
+  const provider = new CheckoutOnlyProvider();
+  for (const returnPath of ["//external.invalid/checkout", "/\\external.invalid/checkout", "/\n/external.invalid/checkout", "https://external.invalid/checkout", "/workspaces/fixture/settings/plano?tab=credits"]) {
+    await purchaseAiCredits(deps(provider), { tenantId, userId: "fixture-admin", credits: 100, returnPath });
+    const checkout = provider.checkouts.at(-1);
+    for (const address of [checkout.successUrl, checkout.cancelUrl]) {
+      const url = new URL(address);
+      assert.equal(url.origin, "https://app.vorix.test");
+      assert.equal(url.pathname, returnPath.startsWith("/workspaces/") ? "/workspaces/fixture/settings/plano" : "/");
+    }
+  }
+});
+
 /** Cartão salvo recusado pelo gateway: cai no checkout. */
 class DecliningProvider extends SandboxBillingProvider {
   providerId = "declining";

@@ -120,9 +120,18 @@ export async function purchaseAiCredits(deps: AiCreditsDeps, input: { tenantId: 
   }
 
   const user = deps.userRepository ? await deps.userRepository.getById(input.userId) : undefined;
-  const returnPath = input.returnPath && input.returnPath.startsWith("/") ? input.returnPath : "/";
+  const appUrl = new URL(deps.appBaseUrl);
+  let returnUrl = new URL("/", appUrl);
+  if (input.returnPath?.startsWith("/") && !input.returnPath.startsWith("//")) {
+    try {
+      const candidate = new URL(input.returnPath, appUrl);
+      if (candidate.origin === appUrl.origin) returnUrl = candidate;
+    } catch {
+      // Caminho malformado: conserva a página inicial do produto.
+    }
+  }
   const back = (result: string) => {
-    const url = new URL(returnPath, deps.appBaseUrl);
+    const url = new URL(returnUrl);
     url.searchParams.set("creditos", result);
     return url.toString();
   };

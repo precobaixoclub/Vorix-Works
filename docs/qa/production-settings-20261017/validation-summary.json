@@ -1,0 +1,24 @@
+{
+  "applicationRevision": "43c567290a5260058ec798cf44d71c0c17521d37",
+  "backend": {
+    "files": 38,
+    "passed": 335,
+    "failed": 0,
+    "skipped": 0
+  },
+  "frontend": {
+    "files": 17,
+    "passed": 123,
+    "typecheck": "PASS"
+  },
+  "browser": {
+    "settingsDesktopMobile": 4,
+    "productFeedback": 5,
+    "backend": "CONTROLLED_FIXTURES"
+  },
+  "contracts": 49,
+  "notes": [
+    "Full backend selection rerun passed after fixing timestamp-tie assumptions in the audit test.",
+    "No production purchase, message, AI generation or automation activation was executed by validation."
+  ]
+}

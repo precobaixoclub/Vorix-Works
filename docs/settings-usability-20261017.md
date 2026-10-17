@@ -40,3 +40,5 @@ A ativação exige confirmação separada. Ajustar e salvar uma regra ativa a de
 - Capturas revisadas em `tmp/settings-usability/`; testes em `web/e2e/settings-usability.spec.ts`, executados com `playwright.sales-qa.config.ts`.
 
 Não foi aplicada migration nem ativada automação em produção. Esta revisão modifica o código local; não houve commit, push ou deploy desta etapa.
+
+Publicação posterior concluída em 17/10/2026: melhorias disponíveis em produção, com as automações de exemplo ainda dependentes da inclusão explícita e desativadas ao salvar. Consulte [production-settings-deploy-20261017.md](production-settings-deploy-20261017.md) para revisão publicada, validações e backups.

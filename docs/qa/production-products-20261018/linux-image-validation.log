@@ -1,0 +1,463 @@
+
+> zuno@1.0.0 build
+> npm run build:clean && tsc -p tsconfig.json && npm run build:copy-skill-manifests && npm run build:copy-remotion-assets && npm run build:copy-rendering-assets
+
+
+> zuno@1.0.0 build:clean
+> node -e "require('fs').rmSync('dist',{recursive:true,force:true})"
+
+
+> zuno@1.0.0 build:copy-skill-manifests
+> node scripts/copy-skill-manifests.mjs
+
+[copy-skill-manifests] 14 manifesto(s) copiado(s) para dist/skills.
+  - dist/skills/ana-social-publishing/skill.manifest.json
+  - dist/skills/bianca-social-media-design/skill.manifest.json
+  - dist/skills/bruno-video-script/skill.manifest.json
+  - dist/skills/diego-video-editing/skill.manifest.json
+  - dist/skills/eduardo-editorial-planning/skill.manifest.json
+  - dist/skills/joao-marketing-strategy/skill.manifest.json
+  - dist/skills/lucas-quality-review/skill.manifest.json
+  - dist/skills/maria-copywriting/skill.manifest.json
+  - dist/skills/motion-design-engine/skill.manifest.json
+  - dist/skills/nora-video-narration/skill.manifest.json
+  - dist/skills/pedro-image-generation/skill.manifest.json
+  - dist/skills/rafa-video-rendering/skill.manifest.json
+  - dist/skills/sofia-art-direction/skill.manifest.json
+  - dist/skills/vanessa-video-direction/skill.manifest.json
+
+> zuno@1.0.0 build:copy-remotion-assets
+> node scripts/copy-remotion-assets.mjs
+
+[copy-remotion-assets] 2 arquivo(s) .jsx copiado(s) para dist/infrastructure/motion-rendering/remotion.
+  - dist/infrastructure/motion-rendering/remotion/MotionSceneRenderer.jsx
+  - dist/infrastructure/motion-rendering/remotion/Root.jsx
+
+> zuno@1.0.0 build:copy-rendering-assets
+> node scripts/copy-rendering-assets.mjs
+
+[copy-rendering-assets] 2 fonte(s) .ttf copiada(s) para dist/infrastructure/rendering/assets.
+  - dist/infrastructure/rendering/assets/dm-serif-display-regular.ttf
+  - dist/infrastructure/rendering/assets/geist-regular.ttf
+npm notice
+npm notice New major version of npm available! 10.8.2 -> 12.2.0
+npm notice Changelog: https://github.com/npm/cli/releases/tag/v12.2.0
+npm notice To update run: npm install -g npm@12.2.0
+npm notice
+TAP version 13
+# Subtest: Migrations 0089-0093 aplicam sem erro; tabelas do CRM existem
+ok 1 - Migrations 0089-0093 aplicam sem erro; tabelas do CRM existem
+  ---
+  duration_ms: 11530.091376
+  ...
+# Subtest: Backfill: contato do WhatsApp já existente ganha um Contact + ContactIdentity, sem fusão
+ok 2 - Backfill: contato do WhatsApp já existente ganha um Contact + ContactIdentity, sem fusão
+  ---
+  duration_ms: 10.888297
+  ...
+# Subtest: Equipes: criar, adicionar/remover membro, editar e apagar
+ok 3 - Equipes: criar, adicionar/remover membro, editar e apagar
+  ---
+  duration_ms: 31.991339
+  ...
+# Subtest: Equipes: isolamento cross-tenant — equipe de outro tenant nunca é encontrada (404, não vaza existência)
+ok 4 - Equipes: isolamento cross-tenant — equipe de outro tenant nunca é encontrada (404, não vaza existência)
+  ---
+  duration_ms: 11.48536
+  ...
+# Subtest: Convite: convidar, aceitar (liga a um usuário existente pelo e-mail), e nunca aceitar duas vezes
+ok 5 - Convite: convidar, aceitar (liga a um usuário existente pelo e-mail), e nunca aceitar duas vezes
+  ---
+  duration_ms: 15.213328
+  ...
+# Subtest: Convite: e-mail não bate com o do usuário autenticado é recusado
+ok 6 - Convite: e-mail não bate com o do usuário autenticado é recusado
+  ---
+  duration_ms: 6.308161
+  ...
+# Subtest: Convite: revogar impede aceite posterior
+ok 7 - Convite: revogar impede aceite posterior
+  ---
+  duration_ms: 8.451126
+  ...
+# Subtest: Membro: trocar papel e remover
+ok 8 - Membro: trocar papel e remover
+  ---
+  duration_ms: 9.260063
+  ...
+# Subtest: Contato: criar registra evento na timeline
+ok 9 - Contato: criar registra evento na timeline
+  ---
+  duration_ms: 12.599607
+  ...
+# Subtest: ContactIdentity: ligar é idempotente por (channel, externalId) — segunda chamada não duplica
+ok 10 - ContactIdentity: ligar é idempotente por (channel, externalId) — segunda chamada não duplica
+  ---
+  duration_ms: 23.943341
+  ...
+# Subtest: ContactIdentity: nunca funde automaticamente — identidade já ligada a OUTRO contato é reportada como conflito
+ok 11 - ContactIdentity: nunca funde automaticamente — identidade já ligada a OUTRO contato é reportada como conflito
+  ---
+  duration_ms: 17.098155
+  ...
+# Subtest: Contato: isolamento cross-tenant — contato de outro tenant nunca é encontrado
+ok 12 - Contato: isolamento cross-tenant — contato de outro tenant nunca é encontrado
+  ---
+  duration_ms: 9.886816
+  ...
+# Subtest: Contato: atualizar campos preserva os não informados
+ok 13 - Contato: atualizar campos preserva os não informados
+  ---
+  duration_ms: 11.446116
+  ...
+# Subtest: resolvePublicUrl: publicBaseUrl explícito tem prioridade
+ok 14 - resolvePublicUrl: publicBaseUrl explícito tem prioridade
+  ---
+  duration_ms: 2.312089
+  ...
+# Subtest: resolvePublicUrl: endpoint com forcePathStyle usa /bucket/key (R2/Spaces path-style)
+ok 15 - resolvePublicUrl: endpoint com forcePathStyle usa /bucket/key (R2/Spaces path-style)
+  ---
+  duration_ms: 0.31015
+  ...
+# Subtest: resolvePublicUrl: endpoint sem forcePathStyle usa subdomínio do bucket (virtual-hosted style)
+ok 16 - resolvePublicUrl: endpoint sem forcePathStyle usa subdomínio do bucket (virtual-hosted style)
+  ---
+  duration_ms: 0.187623
+  ...
+# Subtest: resolvePublicUrl: sem endpoint nem publicBaseUrl, deriva a URL padrão do AWS S3
+ok 17 - resolvePublicUrl: sem endpoint nem publicBaseUrl, deriva a URL padrão do AWS S3
+  ---
+  duration_ms: 0.155205
+  ...
+# Subtest: DisabledObjectStorage: falha fechado com mensagem clara em put/delete, health reporta indisponível
+ok 18 - DisabledObjectStorage: falha fechado com mensagem clara em put/delete, health reporta indisponível
+  ---
+  duration_ms: 0.851469
+  ...
+# Subtest: LocalObjectStorage: salva em disco e devolve URL pública codificada
+ok 19 - LocalObjectStorage: salva em disco e devolve URL pública codificada
+  ---
+  duration_ms: 80.909598
+  ...
+# {"level":30,"time":1792324287453,"pid":123,"hostname":"17ec102bc0ac","reqId":"a42f012d-b054-4a27-b981-b76fc30be0ba","req":{"method":"GET","url":"/uploads/foto.png","hostname":"localhost","remoteAddress":"127.0.0.1"},"msg":"incoming request"}
+# {"level":40,"time":1792324287460,"pid":123,"hostname":"17ec102bc0ac","reqId":"a42f012d-b054-4a27-b981-b76fc30be0ba","uploadsAccessDenied":"PRIVATE_WITHOUT_SIGNATURE","msg":"uploads: acesso negado"}
+# {"level":40,"time":1792324287461,"pid":123,"hostname":"17ec102bc0ac","reqId":"a42f012d-b054-4a27-b981-b76fc30be0ba","err":{"type":"NotFoundError","message":"Arquivo não encontrado.","stack":"NotFoundError: Arquivo não encontrado.\\n    at notFound (file:///app/dist/interfaces/api/routes/uploads.route.js:22:20)\\n    at Object.<anonymous> (file:///app/dist/interfaces/api/routes/uploads.route.js:38:23)\\n    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)","code":"NOT_FOUND","statusCode":404,"recoverable":true,"name":"NotFoundError"},"code":"NOT_FOUND","msg":"Requisição terminou em erro de aplicação."}
+# {"level":30,"time":1792324287467,"pid":123,"hostname":"17ec102bc0ac","reqId":"a42f012d-b054-4a27-b981-b76fc30be0ba","res":{"statusCode":404},"responseTime":12.29543300000023,"msg":"request completed"}
+# {"level":30,"time":1792324287468,"pid":123,"hostname":"17ec102bc0ac","reqId":"64494e62-0be2-4687-8aec-49e9972056de","req":{"method":"GET","url":"/uploads/foto.png?exp=1792324950&sig=[REDACTED]","hostname":"localhost","remoteAddress":"127.0.0.1"},"msg":"incoming request"}
+# {"level":30,"time":1792324287536,"pid":123,"hostname":"17ec102bc0ac","reqId":"64494e62-0be2-4687-8aec-49e9972056de","res":{"statusCode":200},"responseTime":67.09236599999986,"msg":"request completed"}
+# Subtest: GET /uploads/*: privado — sem assinatura é 404; com URL assinada da chave serve o arquivo
+ok 20 - GET /uploads/*: privado — sem assinatura é 404; com URL assinada da chave serve o arquivo
+  ---
+  duration_ms: 3866.010318
+  ...
+# {"level":30,"time":1792324288359,"pid":123,"hostname":"17ec102bc0ac","reqId":"0350b9d3-da9e-4136-80e0-02ca160b7d65","req":{"method":"POST","url":"/v1/publication-media/upload?workspaceId=workspace-1","hostname":"localhost","remoteAddress":"127.0.0.1"},"msg":"incoming request"}
+# Subtest: POST /v1/publication-media/upload: sobe imagem válida e devolve URL pública
+ok 21 - POST /v1/publication-media/upload: sobe imagem válida e devolve URL pública
+  ---
+  duration_ms: 827.46603
+  ...
+# {"level":30,"time":1792324288771,"pid":123,"hostname":"17ec102bc0ac","reqId":"7e340a2c-7d40-4990-9ddf-e0f107998038","req":{"method":"POST","url":"/v1/publication-media/upload?workspaceId=workspace-of-other-tenant","hostname":"localhost","remoteAddress":"127.0.0.1"},"msg":"incoming request"}
+# Subtest: POST /v1/publication-media/upload: workspace que não é do tenant responde 404 e nada é gravado
+ok 22 - POST /v1/publication-media/upload: workspace que não é do tenant responde 404 e nada é gravado
+  ---
+  duration_ms: 404.932631
+  ...
+# {"level":30,"time":1792324289137,"pid":123,"hostname":"17ec102bc0ac","reqId":"42dc9afb-504b-465e-af43-f8ea859f463a","req":{"method":"POST","url":"/v1/publication-media/upload?workspaceId=workspace-1","hostname":"localhost","remoteAddress":"127.0.0.1"},"msg":"incoming request"}
+# {"level":30,"time":1792324288368,"pid":123,"hostname":"17ec102bc0ac","reqId":"0350b9d3-da9e-4136-80e0-02ca160b7d65","res":{"statusCode":200},"responseTime":9.175514000000476,"msg":"request completed"}
+# {"level":40,"time":1792324288772,"pid":123,"hostname":"17ec102bc0ac","reqId":"7e340a2c-7d40-4990-9ddf-e0f107998038","err":{"type":"NotFoundError","message":"Workspace nao encontrado.","stack":"NotFoundError: Workspace nao encontrado.\\n    at assertWorkspaceBelongsToTenant (file:///app/dist/interfaces/api/routes/v1/workspace-ownership.js:5:15)\\n    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)\\n    at async Object.<anonymous> (file:///app/dist/interfaces/api/routes/v1/publication-media.route.js:39:13)","code":"NOT_FOUND","statusCode":404,"recoverable":true,"name":"NotFoundError"},"code":"NOT_FOUND","msg":"Requisição terminou em erro de aplicação."}
+# {"level":30,"time":1792324288773,"pid":123,"hostname":"17ec102bc0ac","reqId":"7e340a2c-7d40-4990-9ddf-e0f107998038","res":{"statusCode":404},"responseTime":1.5615250000000742,"msg":"request completed"}
+# {"level":40,"time":1792324289143,"pid":123,"hostname":"17ec102bc0ac","reqId":"42dc9afb-504b-465e-af43-f8ea859f463a","err":{"type":"ValidationError","message":"MEDIA_UPLOAD_TYPE_UNSUPPORTED: tipo \\"text/plain\\" não é aceito (use JPEG, PNG, WEBP, MP4 ou MOV).","stack":"ValidationError: MEDIA_UPLOAD_TYPE_UNSUPPORTED: tipo \\"text/plain\\" não é aceito (use JPEG, PNG, WEBP, MP4 ou MOV).\\n    at translateMediaUploadError (file:///app/dist/interfaces/api/routes/v1/publication-media.route.js:11:19)\\n    at Object.<anonymous> (file:///app/dist/interfaces/api/routes/v1/publication-media.route.js:63:13)\\n    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)","code":"VALIDATION_ERROR","statusCode":400,"recoverable":true,"name":"ValidationError"},"code":"VALIDATION_ERROR","msg":"Requisição terminou em erro de aplicação."}
+# Subtest: POST /v1/publication-media/upload: tipo não suportado é rejeitado com 400
+ok 23 - POST /v1/publication-media/upload: tipo não suportado é rejeitado com 400
+  ---
+  duration_ms: 370.343721
+  ...
+# {"level":30,"time":1792324289463,"pid":123,"hostname":"17ec102bc0ac","reqId":"440878cd-7d97-435c-926c-1e3a67635c59","req":{"method":"POST","url":"/v1/publication-media/upload?workspaceId=workspace-1","hostname":"localhost","remoteAddress":"127.0.0.1"},"msg":"incoming request"}
+# Subtest: POST /v1/publication-media/upload: sem autenticação responde 401
+ok 24 - POST /v1/publication-media/upload: sem autenticação responde 401
+  ---
+  duration_ms: 320.69492
+  ...
+# {"level":30,"time":1792324289144,"pid":123,"hostname":"17ec102bc0ac","reqId":"42dc9afb-504b-465e-af43-f8ea859f463a","res":{"statusCode":400},"responseTime":7.081264999999803,"msg":"request completed"}
+# {"level":40,"time":1792324289464,"pid":123,"hostname":"17ec102bc0ac","reqId":"440878cd-7d97-435c-926c-1e3a67635c59","err":{"type":"UnauthorizedError","message":"Autenticação necessária.","stack":"UnauthorizedError: Autenticação necessária.\\n    at requirePrincipal (file:///app/dist/interfaces/api/http/require-principal.js:16:11)\\n    at requirePermission (file:///app/dist/interfaces/api/http/require-principal.js:20:23)\\n    at Object.<anonymous> (file:///app/dist/interfaces/api/routes/v1/publication-media.route.js:36:27)\\n    at preHandlerCallbackInner (/app/node_modules/fastify/lib/handle-request.js:175:24)\\n    at preHandlerCallback (/app/node_modules/fastify/lib/handle-request.js:140:5)\\n    at next (/app/node_modules/fastify/lib/hooks.js:236:9)\\n    at handleResolve (/app/node_modules/fastify/lib/hooks.js:253:7)\\n    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)","code":"UNAUTHORIZED","statusCode":401,"recoverable":true,"name":"UnauthorizedError"},"code":"UNAUTHORIZED","msg":"Requisição terminou em erro de aplicação."}
+# {"level":30,"time":1792324289465,"pid":123,"hostname":"17ec102bc0ac","reqId":"440878cd-7d97-435c-926c-1e3a67635c59","res":{"statusCode":401},"responseTime":1.2665670000005775,"msg":"request completed"}
+# Subtest: ESTOQUE: ganho dá baixa, cruzar o ponto de reposição alerta a gestão uma vez, reabrir devolve
+ok 25 - ESTOQUE: ganho dá baixa, cruzar o ponto de reposição alerta a gestão uma vez, reabrir devolve
+  ---
+  duration_ms: 11535.836442
+  ...
+# Subtest: ESTOQUE: produto sem controle não é tocado e não devolve o que nunca baixou
+ok 26 - ESTOQUE: produto sem controle não é tocado e não devolve o que nunca baixou
+  ---
+  duration_ms: 75.133587
+  ...
+# Subtest: ESTOQUE: ajuste manual registra movimento e alerta ao cruzar o ponto de reposição
+ok 27 - ESTOQUE: ajuste manual registra movimento e alerta ao cruzar o ponto de reposição
+  ---
+  duration_ms: 48.200163
+  ...
+# Subtest: RISCO: oportunidades abertas — laranja quando a soma não cabe no estoque, vermelho quando a própria não cabe
+ok 28 - RISCO: oportunidades abertas — laranja quando a soma não cabe no estoque, vermelho quando a própria não cabe
+  ---
+  duration_ms: 113.695963
+  ...
+# Subtest: FOTOS: produto guarda as fotos na ordem (a primeira é a capa) e atualiza sem perder estoque
+ok 29 - FOTOS: produto guarda as fotos na ordem (a primeira é a capa) e atualiza sem perder estoque
+  ---
+  duration_ms: 17.598187
+  ...
+# Subtest: Domínio: margem, desconto e espaço de negociação (cenário 147)
+ok 30 - Domínio: margem, desconto e espaço de negociação (cenário 147)
+  ---
+  duration_ms: 11522.818966
+  ...
+# Subtest: Domínio: acima da tabela é permitido e aumenta a margem (cenário 148)
+ok 31 - Domínio: acima da tabela é permitido e aumenta a margem (cenário 148)
+  ---
+  duration_ms: 1.884672
+  ...
+# Subtest: Domínio: recorrência gera MRR/ARR/TCV sem forçar contrato anual
+ok 32 - Domínio: recorrência gera MRR/ARR/TCV sem forçar contrato anual
+  ---
+  duration_ms: 0.441789
+  ...
+# Subtest: Item da oportunidade: snapshot nunca muda quando o catálogo muda (cenário 150)
+ok 33 - Item da oportunidade: snapshot nunca muda quando o catálogo muda (cenário 150)
+  ---
+  duration_ms: 74.852797
+  ...
+# Subtest: Multi-produto: quantidades, descontos, custo e margem determinísticos (cenário 151)
+ok 34 - Multi-produto: quantidades, descontos, custo e margem determinísticos (cenário 151)
+  ---
+  duration_ms: 107.789965
+  ...
+# Subtest: Visibilidade: vendedor sem permissão não recebe custo; margem conforme configuração
+ok 35 - Visibilidade: vendedor sem permissão não recebe custo; margem conforme configuração
+  ---
+  duration_ms: 63.748084
+  ...
+# Subtest: Abaixo do mínimo exige aprovação; envio bloqueado até aprovar (cenário 149)
+ok 36 - Abaixo do mínimo exige aprovação; envio bloqueado até aprovar (cenário 149)
+  ---
+  duration_ms: 96.189888
+  ...
+# Subtest: Política: margem mínima e desconto máximo por usuário sobrescrevem o workspace
+ok 37 - Política: margem mínima e desconto máximo por usuário sobrescrevem o workspace
+  ---
+  duration_ms: 44.948511
+  ...
+# Subtest: Ganho grava snapshot definitivo e credita o responsável do momento (cenário 152)
+ok 38 - Ganho grava snapshot definitivo e credita o responsável do momento (cenário 152)
+  ---
+  duration_ms: 63.164705
+  ...
+# Subtest: Perda exige motivo, registra concorrente e não conta como venda (cenário 153)
+ok 39 - Perda exige motivo, registra concorrente e não conta como venda (cenário 153)
+  ---
+  duration_ms: 67.298468
+  ...
+# Subtest: Kanban: mover para etapa de ganho fecha com snapshot; etapa exige campos configurados
+ok 40 - Kanban: mover para etapa de ganho fecha com snapshot; etapa exige campos configurados
+  ---
+  duration_ms: 43.463313
+  ...
+# Subtest: Tabela de preço e variação resolvem o preço; isolamento entre tenants
+ok 41 - Tabela de preço e variação resolvem o preço; isolamento entre tenants
+  ---
+  duration_ms: 39.802794
+  ...
+# Subtest: Visibilidade own/team e aviso de duplicidade
+ok 42 - Visibilidade own/team e aviso de duplicidade
+  ---
+  duration_ms: 19.27409
+  ...
+# {"level":30,"time":1792324292547,"pid":166,"hostname":"17ec102bc0ac","reqId":"2bd1d0aa-b664-4d9a-90bd-526330d29198","req":{"method":"POST","url":"/v1/files/sign","hostname":"localhost","remoteAddress":"127.0.0.1"},"msg":"incoming request"}
+# {"level":30,"time":1792324292565,"pid":166,"hostname":"17ec102bc0ac","reqId":"2bd1d0aa-b664-4d9a-90bd-526330d29198","res":{"statusCode":200},"responseTime":15.734274999999798,"msg":"request completed"}
+# {"level":30,"time":1792324292567,"pid":166,"hostname":"17ec102bc0ac","reqId":"076242fe-f72f-4a60-a72e-5c0db94a417c","req":{"method":"GET","url":"/uploads/assets/tenant-A/workspace-mvdrlul4-utjd7u/a.png?exp=1791723600&sig=[REDACTED]","hostname":"localhost","remoteAddress":"127.0.0.1"},"msg":"incoming request"}
+# {"level":30,"time":1792324292579,"pid":166,"hostname":"17ec102bc0ac","reqId":"076242fe-f72f-4a60-a72e-5c0db94a417c","res":{"statusCode":200},"responseTime":11.352667999999994,"msg":"request completed"}
+# Subtest: A: owner autenticado assina a própria chave e lê → 200 (cache privado)
+ok 43 - A: owner autenticado assina a própria chave e lê → 200 (cache privado)
+  ---
+  duration_ms: 1101.708608
+  ...
+# {"level":30,"time":1792324292580,"pid":166,"hostname":"17ec102bc0ac","reqId":"6846bccb-5d18-4dd8-8c3a-82a811791b91","req":{"method":"POST","url":"/v1/files/sign","hostname":"localhost","remoteAddress":"127.0.0.1"},"msg":"incoming request"}
+# {"level":30,"time":1792324292584,"pid":166,"hostname":"17ec102bc0ac","reqId":"6846bccb-5d18-4dd8-8c3a-82a811791b91","res":{"statusCode":200},"responseTime":3.6799269999996795,"msg":"request completed"}
+# {"level":30,"time":1792324292591,"pid":166,"hostname":"17ec102bc0ac","reqId":"1a52e663-f0e7-473f-a30f-406b728a6db9","req":{"method":"POST","url":"/v1/files/sign","hostname":"localhost","remoteAddress":"127.0.0.1"},"msg":"incoming request"}
+# {"level":40,"time":1792324292596,"pid":166,"hostname":"17ec102bc0ac","reqId":"1a52e663-f0e7-473f-a30f-406b728a6db9","err":{"type":"NotFoundError","message":"Arquivo não encontrado.","stack":"NotFoundError: Arquivo não encontrado.\\n    at Object.<anonymous> (file:///app/dist/interfaces/api/routes/v1/files.route.js:23:19)\\n    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)","code":"NOT_FOUND","statusCode":404,"recoverable":true,"name":"NotFoundError"},"code":"NOT_FOUND","msg":"Requisição terminou em erro de aplicação."}
+# {"level":30,"time":1792324292597,"pid":166,"hostname":"17ec102bc0ac","reqId":"1a52e663-f0e7-473f-a30f-406b728a6db9","res":{"statusCode":404},"responseTime":5.3197549999999865,"msg":"request completed"}
+# {"level":30,"time":1792324292598,"pid":166,"hostname":"17ec102bc0ac","reqId":"2a683c11-7446-4e05-ae94-61e6e34668ad","req":{"method":"POST","url":"/v1/files/sign","hostname":"localhost","remoteAddress":"127.0.0.1"},"msg":"incoming request"}
+# Subtest: B: mesmo tenant no prefixo, mas workspace de OUTRO tenant → 404
+ok 44 - B: mesmo tenant no prefixo, mas workspace de OUTRO tenant → 404
+  ---
+  duration_ms: 14.638205
+  ...
+# {"level":40,"time":1792324292600,"pid":166,"hostname":"17ec102bc0ac","reqId":"2a683c11-7446-4e05-ae94-61e6e34668ad","err":{"type":"NotFoundError","message":"Arquivo não encontrado.","stack":"NotFoundError: Arquivo não encontrado.\\n    at Object.<anonymous> (file:///app/dist/interfaces/api/routes/v1/files.route.js:23:19)\\n    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)","code":"NOT_FOUND","statusCode":404,"recoverable":true,"name":"NotFoundError"},"code":"NOT_FOUND","msg":"Requisição terminou em erro de aplicação."}
+# {"level":30,"time":1792324292600,"pid":166,"hostname":"17ec102bc0ac","reqId":"2a683c11-7446-4e05-ae94-61e6e34668ad","res":{"statusCode":404},"responseTime":2.5070270000001074,"msg":"request completed"}
+# {"level":30,"time":1792324292601,"pid":166,"hostname":"17ec102bc0ac","reqId":"8b811b44-0a12-4cdc-90b5-944749b25e3a","req":{"method":"POST","url":"/v1/files/sign","hostname":"localhost","remoteAddress":"127.0.0.1"},"msg":"incoming request"}
+# {"level":40,"time":1792324292604,"pid":166,"hostname":"17ec102bc0ac","reqId":"8b811b44-0a12-4cdc-90b5-944749b25e3a","err":{"type":"NotFoundError","message":"Arquivo não encontrado.","stack":"NotFoundError: Arquivo não encontrado.\\n    at Object.<anonymous> (file:///app/dist/interfaces/api/routes/v1/files.route.js:23:19)\\n    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)","code":"NOT_FOUND","statusCode":404,"recoverable":true,"name":"NotFoundError"},"code":"NOT_FOUND","msg":"Requisição terminou em erro de aplicação."}
+# {"level":30,"time":1792324292605,"pid":166,"hostname":"17ec102bc0ac","reqId":"8b811b44-0a12-4cdc-90b5-944749b25e3a","res":{"statusCode":404},"responseTime":3.1341190000002825,"msg":"request completed"}
+# {"level":30,"time":1792324292608,"pid":166,"hostname":"17ec102bc0ac","reqId":"6019de4b-0581-453f-a288-695811e67199","req":{"method":"POST","url":"/v1/files/sign","hostname":"localhost","remoteAddress":"127.0.0.1"},"msg":"incoming request"}
+# {"level":40,"time":1792324292610,"pid":166,"hostname":"17ec102bc0ac","reqId":"6019de4b-0581-453f-a288-695811e67199","err":{"type":"NotFoundError","message":"Arquivo não encontrado.","stack":"NotFoundError: Arquivo não encontrado.\\n    at Object.<anonymous> (file:///app/dist/interfaces/api/routes/v1/files.route.js:23:19)\\n    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)","code":"NOT_FOUND","statusCode":404,"recoverable":true,"name":"NotFoundError"},"code":"NOT_FOUND","msg":"Requisição terminou em erro de aplicação."}
+# {"level":30,"time":1792324292611,"pid":166,"hostname":"17ec102bc0ac","reqId":"6019de4b-0581-453f-a288-695811e67199","res":{"statusCode":404},"responseTime":2.9871640000001207,"msg":"request completed"}
+# {"level":30,"time":1792324292612,"pid":166,"hostname":"17ec102bc0ac","reqId":"cfcc1bf1-f3e5-45e6-bf95-85a452445b08","req":{"method":"POST","url":"/v1/files/sign","hostname":"localhost","remoteAddress":"127.0.0.1"},"msg":"incoming request"}
+# Subtest: C: outro tenant → 404 (nunca 403), e a resposta JSON não assina a chave alheia
+ok 45 - C: outro tenant → 404 (nunca 403), e a resposta JSON não assina a chave alheia
+  ---
+  duration_ms: 13.31167
+  ...
+# {"level":40,"time":1792324292613,"pid":166,"hostname":"17ec102bc0ac","reqId":"cfcc1bf1-f3e5-45e6-bf95-85a452445b08","err":{"type":"NotFoundError","message":"Arquivo não encontrado.","stack":"NotFoundError: Arquivo não encontrado.\\n    at Object.<anonymous> (file:///app/dist/interfaces/api/routes/v1/files.route.js:23:19)\\n    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)","code":"NOT_FOUND","statusCode":404,"recoverable":true,"name":"NotFoundError"},"code":"NOT_FOUND","msg":"Requisição terminou em erro de aplicação."}
+# {"level":30,"time":1792324292614,"pid":166,"hostname":"17ec102bc0ac","reqId":"cfcc1bf1-f3e5-45e6-bf95-85a452445b08","res":{"statusCode":404},"responseTime":1.9124790000000758,"msg":"request completed"}
+# {"level":30,"time":1792324292615,"pid":166,"hostname":"17ec102bc0ac","reqId":"1865ab50-97ef-4904-8ee1-b42641c91e61","req":{"method":"GET","url":"/uploads/assets/tenant-A/workspace-mvdrlul4-utjd7u/a.png","hostname":"localhost","remoteAddress":"127.0.0.1"},"msg":"incoming request"}
+# {"level":40,"time":1792324292616,"pid":166,"hostname":"17ec102bc0ac","reqId":"1865ab50-97ef-4904-8ee1-b42641c91e61","uploadsAccessDenied":"PRIVATE_WITHOUT_SIGNATURE","msg":"uploads: acesso negado"}
+# {"level":40,"time":1792324292616,"pid":166,"hostname":"17ec102bc0ac","reqId":"1865ab50-97ef-4904-8ee1-b42641c91e61","err":{"type":"NotFoundError","message":"Arquivo não encontrado.","stack":"NotFoundError: Arquivo não encontrado.\\n    at notFound (file:///app/dist/interfaces/api/routes/uploads.route.js:22:20)\\n    at Object.<anonymous> (file:///app/dist/interfaces/api/routes/uploads.route.js:38:23)\\n    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)","code":"NOT_FOUND","statusCode":404,"recoverable":true,"name":"NotFoundError"},"code":"NOT_FOUND","msg":"Requisição terminou em erro de aplicação."}
+# {"level":30,"time":1792324292617,"pid":166,"hostname":"17ec102bc0ac","reqId":"1865ab50-97ef-4904-8ee1-b42641c91e61","res":{"statusCode":404},"responseTime":1.5994879999998375,"msg":"request completed"}
+# {"level":30,"time":1792324292618,"pid":166,"hostname":"17ec102bc0ac","reqId":"94ce2130-dc60-4775-be34-75022d02b231","req":{"method":"POST","url":"/v1/files/sign","hostname":"localhost","remoteAddress":"127.0.0.1"},"msg":"incoming request"}
+# Subtest: D: arquivo privado sem auth/sem assinatura → bloqueado (404); assinar exige autenticação
+ok 46 - D: arquivo privado sem auth/sem assinatura → bloqueado (404); assinar exige autenticação
+  ---
+  duration_ms: 22.420915
+  ...
+# {"level":40,"time":1792324292635,"pid":166,"hostname":"17ec102bc0ac","reqId":"94ce2130-dc60-4775-be34-75022d02b231","err":{"type":"UnauthorizedError","message":"Autenticação necessária.","stack":"UnauthorizedError: Autenticação necessária.\\n    at requirePrincipal (file:///app/dist/interfaces/api/http/require-principal.js:16:11)\\n    at requirePermission (file:///app/dist/interfaces/api/http/require-principal.js:20:23)\\n    at Object.<anonymous> (file:///app/dist/interfaces/api/routes/v1/files.route.js:19:27)\\n    at preHandlerCallbackInner (/app/node_modules/fastify/lib/handle-request.js:175:24)\\n    at preHandlerCallback (/app/node_modules/fastify/lib/handle-request.js:140:5)\\n    at next (/app/node_modules/fastify/lib/hooks.js:236:9)\\n    at handleResolve (/app/node_modules/fastify/lib/hooks.js:253:7)\\n    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)","code":"UNAUTHORIZED","statusCode":401,"recoverable":true,"name":"UnauthorizedError"},"code":"UNAUTHORIZED","msg":"Requisição terminou em erro de aplicação."}
+# {"level":30,"time":1792324292636,"pid":166,"hostname":"17ec102bc0ac","reqId":"94ce2130-dc60-4775-be34-75022d02b231","res":{"statusCode":401},"responseTime":17.913848000000144,"msg":"request completed"}
+# {"level":30,"time":1792324292639,"pid":166,"hostname":"17ec102bc0ac","reqId":"5e9817a8-ed4b-4982-93c6-1ca8c9523c96","req":{"method":"GET","url":"/uploads/public-ok/tenant-A/banner.png","hostname":"localhost","remoteAddress":"127.0.0.1"},"msg":"incoming request"}
+# {"level":30,"time":1792324292645,"pid":166,"hostname":"17ec102bc0ac","reqId":"5e9817a8-ed4b-4982-93c6-1ca8c9523c96","res":{"statusCode":200},"responseTime":5.802822000000106,"msg":"request completed"}
+# Subtest: E: objeto público EXPLÍCITO (com motivo persistido) é servido sem assinatura; os demais continuam privados
+ok 47 - E: objeto público EXPLÍCITO (com motivo persistido) é servido sem assinatura; os demais continuam privados
+  ---
+  duration_ms: 12.438842
+  ...
+# {"level":30,"time":1792324292646,"pid":166,"hostname":"17ec102bc0ac","reqId":"8e44b579-4a90-466d-8278-ffc3d289a3d5","req":{"method":"GET","url":"/uploads/public-ok/tenant-A/banner.png","hostname":"localhost","remoteAddress":"127.0.0.1"},"msg":"incoming request"}
+# {"level":40,"time":1792324292648,"pid":166,"hostname":"17ec102bc0ac","reqId":"8e44b579-4a90-466d-8278-ffc3d289a3d5","uploadsAccessDenied":"PRIVATE_WITHOUT_SIGNATURE","msg":"uploads: acesso negado"}
+# {"level":40,"time":1792324292648,"pid":166,"hostname":"17ec102bc0ac","reqId":"8e44b579-4a90-466d-8278-ffc3d289a3d5","err":{"type":"NotFoundError","message":"Arquivo não encontrado.","stack":"NotFoundError: Arquivo não encontrado.\\n    at notFound (file:///app/dist/interfaces/api/routes/uploads.route.js:22:20)\\n    at Object.<anonymous> (file:///app/dist/interfaces/api/routes/uploads.route.js:38:23)\\n    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)","code":"NOT_FOUND","statusCode":404,"recoverable":true,"name":"NotFoundError"},"code":"NOT_FOUND","msg":"Requisição terminou em erro de aplicação."}
+# {"level":30,"time":1792324292649,"pid":166,"hostname":"17ec102bc0ac","reqId":"8e44b579-4a90-466d-8278-ffc3d289a3d5","res":{"statusCode":404},"responseTime":2.3501499999997577,"msg":"request completed"}
+# {"level":30,"time":1792324292651,"pid":166,"hostname":"17ec102bc0ac","reqId":"2df085e9-7f9e-44a0-b670-a92c2a962b87","req":{"method":"GET","url":"/uploads/assets/tenant-A/workspace-mvdrlul4-utjd7u/nao-existe.png?exp=1791720600&sig=[REDACTED]","hostname":"localhost","remoteAddress":"127.0.0.1"},"msg":"incoming request"}
+# Subtest: F: chave inexistente (mesmo assinada) → 404
+ok 48 - F: chave inexistente (mesmo assinada) → 404
+  ---
+  duration_ms: 4.946176
+  ...
+# Subtest: G/H: path traversal cru e codificado → bloqueado (404), nunca lê fora da raiz
+ok 49 - G/H: path traversal cru e codificado → bloqueado (404), nunca lê fora da raiz
+  ---
+  duration_ms: 16.578977
+  ...
+# {"level":40,"time":1792324292653,"pid":166,"hostname":"17ec102bc0ac","reqId":"2df085e9-7f9e-44a0-b670-a92c2a962b87","uploadsAccessDenied":"NOT_FOUND","msg":"uploads: acesso negado"}
+# {"level":40,"time":1792324292653,"pid":166,"hostname":"17ec102bc0ac","reqId":"2df085e9-7f9e-44a0-b670-a92c2a962b87","err":{"type":"NotFoundError","message":"Arquivo não encontrado.","stack":"NotFoundError: Arquivo não encontrado.\\n    at notFound (file:///app/dist/interfaces/api/routes/uploads.route.js:22:20)\\n    at Object.<anonymous> (file:///app/dist/interfaces/api/routes/uploads.route.js:43:19)","code":"NOT_FOUND","statusCode":404,"recoverable":true,"name":"NotFoundError"},"code":"NOT_FOUND","msg":"Requisição terminou em erro de aplicação."}
+# {"level":30,"time":1792324292654,"pid":166,"hostname":"17ec102bc0ac","reqId":"2df085e9-7f9e-44a0-b670-a92c2a962b87","res":{"statusCode":404},"responseTime":2.9985899999996946,"msg":"request completed"}
+# {"level":30,"time":1792324292655,"pid":166,"hostname":"17ec102bc0ac","reqId":"875dfe34-8c78-4833-a24c-c860186dfd38","req":{"method":"GET","url":"/etc/passwd","hostname":"localhost","remoteAddress":"127.0.0.1"},"msg":"incoming request"}
+# {"level":30,"time":1792324292657,"pid":166,"hostname":"17ec102bc0ac","reqId":"875dfe34-8c78-4833-a24c-c860186dfd38","res":{"statusCode":404},"responseTime":0.88857199999984,"msg":"request completed"}
+# {"level":30,"time":1792324292657,"pid":166,"hostname":"17ec102bc0ac","reqId":"e0787230-3dd1-4231-8e05-77a5a5756120","req":{"method":"GET","url":"/etc/passwd","hostname":"localhost","remoteAddress":"127.0.0.1"},"msg":"incoming request"}
+# {"level":30,"time":1792324292658,"pid":166,"hostname":"17ec102bc0ac","reqId":"e0787230-3dd1-4231-8e05-77a5a5756120","res":{"statusCode":404},"responseTime":0.9085700000000543,"msg":"request completed"}
+# {"level":30,"time":1792324292659,"pid":166,"hostname":"17ec102bc0ac","reqId":"fe154433-7515-4ea2-90f3-bddc9bee307c","req":{"method":"GET","url":"/uploads/assets/%2e%2e%2f%2e%2e%2fsecret","hostname":"localhost","remoteAddress":"127.0.0.1"},"msg":"incoming request"}
+# {"level":40,"time":1792324292660,"pid":166,"hostname":"17ec102bc0ac","reqId":"fe154433-7515-4ea2-90f3-bddc9bee307c","uploadsAccessDenied":"INVALID_PATH","msg":"uploads: acesso negado"}
+# {"level":40,"time":1792324292661,"pid":166,"hostname":"17ec102bc0ac","reqId":"fe154433-7515-4ea2-90f3-bddc9bee307c","err":{"type":"NotFoundError","message":"Arquivo não encontrado.","stack":"NotFoundError: Arquivo não encontrado.\\n    at notFound (file:///app/dist/interfaces/api/routes/uploads.route.js:22:20)\\n    at Object.<anonymous> (file:///app/dist/interfaces/api/routes/uploads.route.js:29:19)\\n    at preHandlerCallbackInner (/app/node_modules/fastify/lib/handle-request.js:175:24)\\n    at preHandlerCallback (/app/node_modules/fastify/lib/handle-request.js:140:5)\\n    at next (/app/node_modules/fastify/lib/hooks.js:236:9)\\n    at handleResolve (/app/node_modules/fastify/lib/hooks.js:253:7)\\n    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)","code":"NOT_FOUND","statusCode":404,"recoverable":true,"name":"NotFoundError"},"code":"NOT_FOUND","msg":"Requisição terminou em erro de aplicação."}
+# {"level":30,"time":1792324292661,"pid":166,"hostname":"17ec102bc0ac","reqId":"fe154433-7515-4ea2-90f3-bddc9bee307c","res":{"statusCode":404},"responseTime":1.6271449999999277,"msg":"request completed"}
+# {"level":30,"time":1792324292662,"pid":166,"hostname":"17ec102bc0ac","reqId":"dd949aab-8d84-4777-83f6-6c3e671f7e5a","req":{"method":"GET","url":"/uploads/..%5c..%5csecret","hostname":"localhost","remoteAddress":"127.0.0.1"},"msg":"incoming request"}
+# {"level":40,"time":1792324292662,"pid":166,"hostname":"17ec102bc0ac","reqId":"dd949aab-8d84-4777-83f6-6c3e671f7e5a","uploadsAccessDenied":"INVALID_PATH","msg":"uploads: acesso negado"}
+# {"level":40,"time":1792324292662,"pid":166,"hostname":"17ec102bc0ac","reqId":"dd949aab-8d84-4777-83f6-6c3e671f7e5a","err":{"type":"NotFoundError","message":"Arquivo não encontrado.","stack":"NotFoundError: Arquivo não encontrado.\\n    at notFound (file:///app/dist/interfaces/api/routes/uploads.route.js:22:20)\\n    at Object.<anonymous> (file:///app/dist/interfaces/api/routes/uploads.route.js:29:19)\\n    at preHandlerCallbackInner (/app/node_modules/fastify/lib/handle-request.js:175:24)\\n    at preHandlerCallback (/app/node_modules/fastify/lib/handle-request.js:140:5)\\n    at next (/app/node_modules/fastify/lib/hooks.js:236:9)\\n    at handleResolve (/app/node_modules/fastify/lib/hooks.js:253:7)\\n    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)","code":"NOT_FOUND","statusCode":404,"recoverable":true,"name":"NotFoundError"},"code":"NOT_FOUND","msg":"Requisição terminou em erro de aplicação."}
+# {"level":30,"time":1792324292663,"pid":166,"hostname":"17ec102bc0ac","reqId":"dd949aab-8d84-4777-83f6-6c3e671f7e5a","res":{"statusCode":404},"responseTime":1.1423359999998866,"msg":"request completed"}
+# {"level":30,"time":1792324292664,"pid":166,"hostname":"17ec102bc0ac","reqId":"f0bfb117-c52e-4dc8-b860-5ebcfa19c091","req":{"method":"GET","url":"/uploads/%00","hostname":"localhost","remoteAddress":"127.0.0.1"},"msg":"incoming request"}
+# {"level":40,"time":1792324292664,"pid":166,"hostname":"17ec102bc0ac","reqId":"f0bfb117-c52e-4dc8-b860-5ebcfa19c091","uploadsAccessDenied":"PRIVATE_WITHOUT_SIGNATURE","msg":"uploads: acesso negado"}
+# {"level":40,"time":1792324292664,"pid":166,"hostname":"17ec102bc0ac","reqId":"f0bfb117-c52e-4dc8-b860-5ebcfa19c091","err":{"type":"NotFoundError","message":"Arquivo não encontrado.","stack":"NotFoundError: Arquivo não encontrado.\\n    at notFound (file:///app/dist/interfaces/api/routes/uploads.route.js:22:20)\\n    at Object.<anonymous> (file:///app/dist/interfaces/api/routes/uploads.route.js:38:23)\\n    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)","code":"NOT_FOUND","statusCode":404,"recoverable":true,"name":"NotFoundError"},"code":"NOT_FOUND","msg":"Requisição terminou em erro de aplicação."}
+# {"level":30,"time":1792324292665,"pid":166,"hostname":"17ec102bc0ac","reqId":"f0bfb117-c52e-4dc8-b860-5ebcfa19c091","res":{"statusCode":404},"responseTime":0.8745589999998629,"msg":"request completed"}
+# {"level":30,"time":1792324292666,"pid":166,"hostname":"17ec102bc0ac","reqId":"f04b1727-4951-4bd3-b2f6-fcc24885daed","req":{"method":"GET","url":"/uploads/a/b","hostname":"localhost","remoteAddress":"127.0.0.1"},"msg":"incoming request"}
+# {"level":40,"time":1792324292666,"pid":166,"hostname":"17ec102bc0ac","reqId":"f04b1727-4951-4bd3-b2f6-fcc24885daed","uploadsAccessDenied":"PRIVATE_WITHOUT_SIGNATURE","msg":"uploads: acesso negado"}
+# {"level":40,"time":1792324292667,"pid":166,"hostname":"17ec102bc0ac","reqId":"f04b1727-4951-4bd3-b2f6-fcc24885daed","err":{"type":"NotFoundError","message":"Arquivo não encontrado.","stack":"NotFoundError: Arquivo não encontrado.\\n    at notFound (file:///app/dist/interfaces/api/routes/uploads.route.js:22:20)\\n    at Object.<anonymous> (file:///app/dist/interfaces/api/routes/uploads.route.js:38:23)\\n    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)","code":"NOT_FOUND","statusCode":404,"recoverable":true,"name":"NotFoundError"},"code":"NOT_FOUND","msg":"Requisição terminou em erro de aplicação."}
+# {"level":30,"time":1792324292668,"pid":166,"hostname":"17ec102bc0ac","reqId":"f04b1727-4951-4bd3-b2f6-fcc24885daed","res":{"statusCode":404},"responseTime":2.1518959999998515,"msg":"request completed"}
+# {"level":30,"time":1792324292669,"pid":166,"hostname":"17ec102bc0ac","reqId":"4e89113b-067a-4c24-8d4b-fe0aecdbec00","req":{"method":"POST","url":"/v1/files/sign","hostname":"localhost","remoteAddress":"127.0.0.1"},"msg":"incoming request"}
+# {"level":40,"time":1792324292670,"pid":166,"hostname":"17ec102bc0ac","reqId":"4e89113b-067a-4c24-8d4b-fe0aecdbec00","err":{"type":"NotFoundError","message":"Arquivo não encontrado.","stack":"NotFoundError: Arquivo não encontrado.\\n    at Object.<anonymous> (file:///app/dist/interfaces/api/routes/v1/files.route.js:23:19)\\n    at preHandlerCallbackInner (/app/node_modules/fastify/lib/handle-request.js:175:24)\\n    at preHandlerCallback (/app/node_modules/fastify/lib/handle-request.js:140:5)\\n    at next (/app/node_modules/fastify/lib/hooks.js:236:9)\\n    at handleResolve (/app/node_modules/fastify/lib/hooks.js:253:7)\\n    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)","code":"NOT_FOUND","statusCode":404,"recoverable":true,"name":"NotFoundError"},"code":"NOT_FOUND","msg":"Requisição terminou em erro de aplicação."}
+# {"level":30,"time":1792324292671,"pid":166,"hostname":"17ec102bc0ac","reqId":"4e89113b-067a-4c24-8d4b-fe0aecdbec00","res":{"statusCode":404},"responseTime":1.8362099999999373,"msg":"request completed"}
+# {"level":30,"time":1792324292673,"pid":166,"hostname":"17ec102bc0ac","reqId":"9c57a4dd-cd66-4d72-ab1d-ba80728830d1","req":{"method":"GET","url":"/uploads/escape/secret.txt?exp=1791720600&sig=[REDACTED]","hostname":"localhost","remoteAddress":"127.0.0.1"},"msg":"incoming request"}
+# {"level":40,"time":1792324292675,"pid":166,"hostname":"17ec102bc0ac","reqId":"9c57a4dd-cd66-4d72-ab1d-ba80728830d1","uploadsAccessDenied":"OUTSIDE_ROOT","msg":"uploads: acesso negado"}
+# Subtest: I: symlink/junção apontando para fora da raiz nunca é servido, mesmo com assinatura válida
+ok 50 - I: symlink/junção apontando para fora da raiz nunca é servido, mesmo com assinatura válida
+  ---
+  duration_ms: 5.097208
+  ...
+# {"level":40,"time":1792324292675,"pid":166,"hostname":"17ec102bc0ac","reqId":"9c57a4dd-cd66-4d72-ab1d-ba80728830d1","err":{"type":"NotFoundError","message":"Arquivo não encontrado.","stack":"NotFoundError: Arquivo não encontrado.\\n    at notFound (file:///app/dist/interfaces/api/routes/uploads.route.js:22:20)\\n    at Object.<anonymous> (file:///app/dist/interfaces/api/routes/uploads.route.js:45:19)","code":"NOT_FOUND","statusCode":404,"recoverable":true,"name":"NotFoundError"},"code":"NOT_FOUND","msg":"Requisição terminou em erro de aplicação."}
+# {"level":30,"time":1792324292676,"pid":166,"hostname":"17ec102bc0ac","reqId":"9c57a4dd-cd66-4d72-ab1d-ba80728830d1","res":{"statusCode":404},"responseTime":2.455304999999953,"msg":"request completed"}
+# {"level":30,"time":1792324292677,"pid":166,"hostname":"17ec102bc0ac","reqId":"c93a2d81-e0c8-4f59-a9fc-b0aca1ff286a","req":{"method":"GET","url":"/uploads/assets/tenant-A/workspace-mvdrlul4-utjd7u/a.png?exp=1791723600&sig=[REDACTED]","hostname":"localhost","remoteAddress":"127.0.0.1"},"msg":"incoming request"}
+# {"level":30,"time":1792324292682,"pid":166,"hostname":"17ec102bc0ac","reqId":"c93a2d81-e0c8-4f59-a9fc-b0aca1ff286a","res":{"statusCode":200},"responseTime":4.5973290000001725,"msg":"request completed"}
+# Subtest: J: URL assinada expirada → bloqueada
+ok 51 - J: URL assinada expirada → bloqueada
+  ---
+  duration_ms: 8.045142
+  ...
+# Subtest: K: assinatura do asset A aplicada ao asset B (ou exp alterado) → bloqueada
+ok 52 - K: assinatura do asset A aplicada ao asset B (ou exp alterado) → bloqueada
+  ---
+  duration_ms: 5.511258
+  ...
+# Subtest: L: consumidores internos assinam no uso — download do motor e image_url enviado à OpenAI
+ok 53 - L: consumidores internos assinam no uso — download do motor e image_url enviado à OpenAI
+  ---
+  duration_ms: 4.609361
+  ...
+# {"level":30,"time":1792324292683,"pid":166,"hostname":"17ec102bc0ac","reqId":"538ac7fb-f7b2-4bfc-bd26-2c1fdfd87d39","req":{"method":"GET","url":"/uploads/assets/tenant-A/workspace-mvdrlul4-utjd7u/a.png?exp=1791723600&sig=[REDACTED]","hostname":"localhost","remoteAddress":"127.0.0.1"},"msg":"incoming request"}
+# {"level":40,"time":1792324292683,"pid":166,"hostname":"17ec102bc0ac","reqId":"538ac7fb-f7b2-4bfc-bd26-2c1fdfd87d39","uploadsAccessDenied":"SIGNATURE_EXPIRED","msg":"uploads: acesso negado"}
+# {"level":40,"time":1792324292683,"pid":166,"hostname":"17ec102bc0ac","reqId":"538ac7fb-f7b2-4bfc-bd26-2c1fdfd87d39","err":{"type":"NotFoundError","message":"Arquivo não encontrado.","stack":"NotFoundError: Arquivo não encontrado.\\n    at notFound (file:///app/dist/interfaces/api/routes/uploads.route.js:22:20)\\n    at Object.<anonymous> (file:///app/dist/interfaces/api/routes/uploads.route.js:35:23)\\n    at preHandlerCallbackInner (/app/node_modules/fastify/lib/handle-request.js:175:24)\\n    at preHandlerCallback (/app/node_modules/fastify/lib/handle-request.js:140:5)\\n    at next (/app/node_modules/fastify/lib/hooks.js:236:9)\\n    at handleResolve (/app/node_modules/fastify/lib/hooks.js:253:7)\\n    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)","code":"NOT_FOUND","statusCode":404,"recoverable":true,"name":"NotFoundError"},"code":"NOT_FOUND","msg":"Requisição terminou em erro de aplicação."}
+# {"level":30,"time":1792324292684,"pid":166,"hostname":"17ec102bc0ac","reqId":"538ac7fb-f7b2-4bfc-bd26-2c1fdfd87d39","res":{"statusCode":404},"responseTime":1.0301730000001044,"msg":"request completed"}
+# {"level":30,"time":1792324292686,"pid":166,"hostname":"17ec102bc0ac","reqId":"97c03d13-8bc5-4163-8468-ed0dd92bfc53","req":{"method":"GET","url":"/uploads/assets/tenant-B/workspace-mvdrlul4-tpujy3/b.png?exp=1791720600&sig=[REDACTED]","hostname":"localhost","remoteAddress":"127.0.0.1"},"msg":"incoming request"}
+# {"level":40,"time":1792324292686,"pid":166,"hostname":"17ec102bc0ac","reqId":"97c03d13-8bc5-4163-8468-ed0dd92bfc53","uploadsAccessDenied":"SIGNATURE_INVALID","msg":"uploads: acesso negado"}
+# {"level":40,"time":1792324292687,"pid":166,"hostname":"17ec102bc0ac","reqId":"97c03d13-8bc5-4163-8468-ed0dd92bfc53","err":{"type":"NotFoundError","message":"Arquivo não encontrado.","stack":"NotFoundError: Arquivo não encontrado.\\n    at notFound (file:///app/dist/interfaces/api/routes/uploads.route.js:22:20)\\n    at Object.<anonymous> (file:///app/dist/interfaces/api/routes/uploads.route.js:35:23)\\n    at preHandlerCallbackInner (/app/node_modules/fastify/lib/handle-request.js:175:24)\\n    at preHandlerCallback (/app/node_modules/fastify/lib/handle-request.js:140:5)\\n    at next (/app/node_modules/fastify/lib/hooks.js:236:9)\\n    at handleResolve (/app/node_modules/fastify/lib/hooks.js:253:7)\\n    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)","code":"NOT_FOUND","statusCode":404,"recoverable":true,"name":"NotFoundError"},"code":"NOT_FOUND","msg":"Requisição terminou em erro de aplicação."}
+# {"level":30,"time":1792324292687,"pid":166,"hostname":"17ec102bc0ac","reqId":"97c03d13-8bc5-4163-8468-ed0dd92bfc53","res":{"statusCode":404},"responseTime":1.0847869999997783,"msg":"request completed"}
+# {"level":30,"time":1792324292688,"pid":166,"hostname":"17ec102bc0ac","reqId":"e5d162a8-d3ca-45eb-9324-c92909ba2416","req":{"method":"GET","url":"/uploads/assets/tenant-A/workspace-mvdrlul4-utjd7u/a.png?exp=1791724200&sig=[REDACTED]","hostname":"localhost","remoteAddress":"127.0.0.1"},"msg":"incoming request"}
+# {"level":40,"time":1792324292689,"pid":166,"hostname":"17ec102bc0ac","reqId":"e5d162a8-d3ca-45eb-9324-c92909ba2416","uploadsAccessDenied":"SIGNATURE_INVALID","msg":"uploads: acesso negado"}
+# {"level":40,"time":1792324292689,"pid":166,"hostname":"17ec102bc0ac","reqId":"e5d162a8-d3ca-45eb-9324-c92909ba2416","err":{"type":"NotFoundError","message":"Arquivo não encontrado.","stack":"NotFoundError: Arquivo não encontrado.\\n    at notFound (file:///app/dist/interfaces/api/routes/uploads.route.js:22:20)\\n    at Object.<anonymous> (file:///app/dist/interfaces/api/routes/uploads.route.js:35:23)\\n    at preHandlerCallbackInner (/app/node_modules/fastify/lib/handle-request.js:175:24)\\n    at preHandlerCallback (/app/node_modules/fastify/lib/handle-request.js:140:5)\\n    at next (/app/node_modules/fastify/lib/hooks.js:236:9)\\n    at handleResolve (/app/node_modules/fastify/lib/hooks.js:253:7)\\n    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)","code":"NOT_FOUND","statusCode":404,"recoverable":true,"name":"NotFoundError"},"code":"NOT_FOUND","msg":"Requisição terminou em erro de aplicação."}
+# {"level":30,"time":1792324292689,"pid":166,"hostname":"17ec102bc0ac","reqId":"e5d162a8-d3ca-45eb-9324-c92909ba2416","res":{"statusCode":404},"responseTime":0.9738810000003468,"msg":"request completed"}
+# {"level":30,"time":1792324292696,"pid":166,"hostname":"17ec102bc0ac","reqId":"2cabe58d-790c-4b09-a762-d39324dec7be","req":{"method":"POST","url":"/v1/assets","hostname":"localhost","remoteAddress":"127.0.0.1"},"msg":"incoming request"}
+# {"level":30,"time":1792324292703,"pid":166,"hostname":"17ec102bc0ac","reqId":"2cabe58d-790c-4b09-a762-d39324dec7be","res":{"statusCode":200},"responseTime":6.845205000000078,"msg":"request completed"}
+# {"level":30,"time":1792324292704,"pid":166,"hostname":"17ec102bc0ac","reqId":"e2787778-5a53-42cd-a866-39e74e069eba","req":{"method":"GET","url":"/v1/assets?workspaceId=workspace-mvdrlul4-utjd7u","hostname":"localhost","remoteAddress":"127.0.0.1"},"msg":"incoming request"}
+# {"level":30,"time":1792324292706,"pid":166,"hostname":"17ec102bc0ac","reqId":"e2787778-5a53-42cd-a866-39e74e069eba","res":{"statusCode":200},"responseTime":1.8964750000000095,"msg":"request completed"}
+# {"level":30,"time":1792324292731,"pid":166,"hostname":"17ec102bc0ac","reqId":"01d69671-f1ad-42ab-a9c0-b59628642efd","req":{"method":"GET","url":"/uploads/assets/tenant-A/workspace-mvdrlul4-utjd7u/a.png?exp=1791723600&sig=[REDACTED]","hostname":"localhost","remoteAddress":"127.0.0.1"},"msg":"incoming request"}
+# {"level":30,"time":1792324292735,"pid":166,"hostname":"17ec102bc0ac","reqId":"01d69671-f1ad-42ab-a9c0-b59628642efd","res":{"statusCode":200},"responseTime":3.150149000000056,"msg":"request completed"}
+# Subtest: M: Asset Library — registro grava a URL canônica; a listagem devolve URL assinada que abre (preview)
+ok 54 - M: Asset Library — registro grava a URL canônica; a listagem devolve URL assinada que abre (preview)
+  ---
+  duration_ms: 41.859491
+  ...
+# Subtest: Respostas JSON: só as chaves do próprio tenant saem assinadas; as alheias ficam canônicas (inacessíveis)
+ok 55 - Respostas JSON: só as chaves do próprio tenant saem assinadas; as alheias ficam canônicas (inacessíveis)
+  ---
+  duration_ms: 12.673014
+  ...
+# Subtest: classifyObjectKeyOwner: layout do storage → dono (workspace, tenant, QA, desconhecido)
+ok 56 - classifyObjectKeyOwner: layout do storage → dono (workspace, tenant, QA, desconhecido)
+  ---
+  duration_ms: 1.0131
+  ...
+# {"level":30,"time":1792324292735,"pid":166,"hostname":"17ec102bc0ac","reqId":"c4ed0de2-a0eb-4859-b76b-e602c35aa6b6","req":{"method":"GET","url":"/v1/assets?workspaceId=workspace-mvdrlul4-utjd7u","hostname":"localhost","remoteAddress":"127.0.0.1"},"msg":"incoming request"}
+# {"level":40,"time":1792324292736,"pid":166,"hostname":"17ec102bc0ac","reqId":"c4ed0de2-a0eb-4859-b76b-e602c35aa6b6","err":{"type":"NotFoundError","message":"Workspace nao encontrado.","stack":"NotFoundError: Workspace nao encontrado.\\n    at assertWorkspaceBelongsToTenant (file:///app/dist/interfaces/api/routes/v1/workspace-ownership.js:5:15)\\n    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)\\n    at async assertWorkspaceAccess (file:///app/dist/interfaces/api/routes/v1/assets.route.js:137:9)\\n    at async Object.<anonymous> (file:///app/dist/interfaces/api/routes/v1/assets.route.js:173:9)","code":"NOT_FOUND","statusCode":404,"recoverable":true,"name":"NotFoundError"},"code":"NOT_FOUND","msg":"Requisição terminou em erro de aplicação."}
+# {"level":30,"time":1792324292736,"pid":166,"hostname":"17ec102bc0ac","reqId":"c4ed0de2-a0eb-4859-b76b-e602c35aa6b6","res":{"statusCode":404},"responseTime":1.0925860000002103,"msg":"request completed"}
+# {"level":30,"time":1792324292885,"pid":166,"hostname":"17ec102bc0ac","reqId":"8817dfc5-68b4-42a8-b240-087f9cba785a","req":{"method":"GET","url":"/uploads/assets/tenant-A/workspace-mvdrlul4-utjd7u/products/4adffaa7-1b76-417a-9fa1-6eeef3cbcba8.png?exp=1791723600&sig=[REDACTED]","hostname":"localhost","remoteAddress":"127.0.0.1"},"msg":"incoming request"}
+# {"level":30,"time":1792324292888,"pid":166,"hostname":"17ec102bc0ac","reqId":"8817dfc5-68b4-42a8-b240-087f9cba785a","res":{"statusCode":200},"responseTime":2.441964999999982,"msg":"request completed"}
+# {"level":30,"time":1792324292889,"pid":166,"hostname":"17ec102bc0ac","reqId":"02d1896b-b4c2-4b1b-bc20-56a44060b6ca","req":{"method":"GET","url":"/uploads/assets/tenant-A/workspace-mvdrlul4-utjd7u/products/4adffaa7-1b76-417a-9fa1-6eeef3cbcba8.png","hostname":"localhost","remoteAddress":"127.0.0.1"},"msg":"incoming request"}
+# {"level":40,"time":1792324292890,"pid":166,"hostname":"17ec102bc0ac","reqId":"02d1896b-b4c2-4b1b-bc20-56a44060b6ca","uploadsAccessDenied":"PRIVATE_WITHOUT_SIGNATURE","msg":"uploads: acesso negado"}
+# {"level":40,"time":1792324292890,"pid":166,"hostname":"17ec102bc0ac","reqId":"02d1896b-b4c2-4b1b-bc20-56a44060b6ca","err":{"type":"NotFoundError","message":"Arquivo não encontrado.","stack":"NotFoundError: Arquivo não encontrado.\\n    at notFound (file:///app/dist/interfaces/api/routes/uploads.route.js:22:20)\\n    at Object.<anonymous> (file:///app/dist/interfaces/api/routes/uploads.route.js:38:23)\\n    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)","code":"NOT_FOUND","statusCode":404,"recoverable":true,"name":"NotFoundError"},"code":"NOT_FOUND","msg":"Requisição terminou em erro de aplicação."}
+# {"level":30,"time":1792324292890,"pid":166,"hostname":"17ec102bc0ac","reqId":"02d1896b-b4c2-4b1b-bc20-56a44060b6ca","res":{"statusCode":404},"responseTime":0.989292000000205,"msg":"request completed"}
+# {"level":30,"time":1792324292891,"pid":166,"hostname":"17ec102bc0ac","reqId":"4999547a-fad0-4e55-950b-c8050eac5620","req":{"method":"POST","url":"/v1/files/sign","hostname":"localhost","remoteAddress":"127.0.0.1"},"msg":"incoming request"}
+# {"level":40,"time":1792324292892,"pid":166,"hostname":"17ec102bc0ac","reqId":"4999547a-fad0-4e55-950b-c8050eac5620","err":{"type":"NotFoundError","message":"Arquivo não encontrado.","stack":"NotFoundError: Arquivo não encontrado.\\n    at Object.<anonymous> (file:///app/dist/interfaces/api/routes/v1/files.route.js:23:19)\\n    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)","code":"NOT_FOUND","statusCode":404,"recoverable":true,"name":"NotFoundError"},"code":"NOT_FOUND","msg":"Requisição terminou em erro de aplicação."}
+# {"level":30,"time":1792324292893,"pid":166,"hostname":"17ec102bc0ac","reqId":"4999547a-fad0-4e55-950b-c8050eac5620","res":{"statusCode":404},"responseTime":1.6038260000000264,"msg":"request completed"}
+# {"level":30,"time":1792324292894,"pid":166,"hostname":"17ec102bc0ac","reqId":"5a1b1976-261c-4399-87e1-cba5f4033d60","req":{"method":"POST","url":"/v1/files/sign","hostname":"localhost","remoteAddress":"127.0.0.1"},"msg":"incoming request"}
+# {"level":40,"time":1792324292895,"pid":166,"hostname":"17ec102bc0ac","reqId":"5a1b1976-261c-4399-87e1-cba5f4033d60","err":{"type":"NotFoundError","message":"Arquivo não encontrado.","stack":"NotFoundError: Arquivo não encontrado.\\n    at Object.<anonymous> (file:///app/dist/interfaces/api/routes/v1/files.route.js:23:19)\\n    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)","code":"NOT_FOUND","statusCode":404,"recoverable":true,"name":"NotFoundError"},"code":"NOT_FOUND","msg":"Requisição terminou em erro de aplicação."}
+# {"level":30,"time":1792324292896,"pid":166,"hostname":"17ec102bc0ac","reqId":"5a1b1976-261c-4399-87e1-cba5f4033d60","res":{"statusCode":404},"responseTime":1.8320189999999457,"msg":"request completed"}
+# Subtest: Fotos de produto: upload devolve preview assinado, mantém arquivo privado e impede assinatura por outro tenant
+ok 57 - Fotos de produto: upload devolve preview assinado, mantém arquivo privado e impede assinatura por outro tenant
+  ---
+  duration_ms: 205.6722
+  ...
+# Subtest: Log de acesso nunca grava a assinatura nem tokens de query (sig/media_token/avatar_token/stream_token)
+ok 58 - Log de acesso nunca grava a assinatura nem tokens de query (sig/media_token/avatar_token/stream_token)
+  ---
+  duration_ms: 0.966937
+  ...
+1..58
+# tests 58
+# suites 0
+# pass 58
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 12414.093436

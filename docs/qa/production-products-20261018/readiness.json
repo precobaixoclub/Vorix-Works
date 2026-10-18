@@ -1,0 +1,68 @@
+{
+  "ready": true,
+  "status": "degraded",
+  "generatedAt": "2026-10-18T12:16:41.912Z",
+  "checks": [
+    {
+      "id": "database",
+      "component": "database",
+      "status": "pass",
+      "safeMessage": "PostgreSQL acessivel.",
+      "observedAt": "2026-10-18T12:16:41.911Z",
+      "latencyMs": 2
+    },
+    {
+      "id": "secret_manager",
+      "component": "secrets",
+      "status": "pass",
+      "safeMessage": "Secret Manager de produção (Postgres, AES-256-GCM) disponível.",
+      "observedAt": "2026-10-18T12:16:41.912Z",
+      "latencyMs": 1,
+      "details": {
+        "provider": "production"
+      }
+    },
+    {
+      "id": "operational_state",
+      "component": "operations",
+      "status": "pass",
+      "safeMessage": "Repositorio operacional PostgreSQL disponivel.",
+      "observedAt": "2026-10-18T12:16:41.912Z",
+      "latencyMs": 0
+    },
+    {
+      "id": "production_guard",
+      "component": "release",
+      "status": "warn",
+      "safeMessage": "Production habilitado por configuracao.",
+      "observedAt": "2026-10-18T12:16:41.912Z",
+      "details": {
+        "environment": "production",
+        "productionEnabled": true,
+        "providerEnvironment": "production",
+        "canaryEnabled": true,
+        "canaryTenantCount": 1,
+        "canaryWorkspaceCount": 1,
+        "allowedProductionProviders": [
+          "instagram",
+          "facebook",
+          "linkedin",
+          "x",
+          "tiktok",
+          "youtube"
+        ]
+      }
+    },
+    {
+      "id": "publication_queue",
+      "component": "publication",
+      "status": "pass",
+      "safeMessage": "Fila local de publication com 0 jobs.",
+      "observedAt": "2026-10-18T12:16:41.912Z",
+      "latencyMs": 0,
+      "details": {
+        "size": 0
+      }
+    }
+  ]
+}

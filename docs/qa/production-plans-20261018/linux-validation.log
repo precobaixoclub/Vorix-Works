@@ -1,0 +1,1937 @@
+
+> zuno@1.0.0 build
+> npm run build:clean && tsc -p tsconfig.json && npm run build:copy-skill-manifests && npm run build:copy-remotion-assets && npm run build:copy-rendering-assets
+
+
+> zuno@1.0.0 build:clean
+> node -e "require('fs').rmSync('dist',{recursive:true,force:true})"
+
+
+> zuno@1.0.0 build:copy-skill-manifests
+> node scripts/copy-skill-manifests.mjs
+
+[copy-skill-manifests] 14 manifesto(s) copiado(s) para dist/skills.
+  - dist/skills/ana-social-publishing/skill.manifest.json
+  - dist/skills/bianca-social-media-design/skill.manifest.json
+  - dist/skills/bruno-video-script/skill.manifest.json
+  - dist/skills/diego-video-editing/skill.manifest.json
+  - dist/skills/eduardo-editorial-planning/skill.manifest.json
+  - dist/skills/joao-marketing-strategy/skill.manifest.json
+  - dist/skills/lucas-quality-review/skill.manifest.json
+  - dist/skills/maria-copywriting/skill.manifest.json
+  - dist/skills/motion-design-engine/skill.manifest.json
+  - dist/skills/nora-video-narration/skill.manifest.json
+  - dist/skills/pedro-image-generation/skill.manifest.json
+  - dist/skills/rafa-video-rendering/skill.manifest.json
+  - dist/skills/sofia-art-direction/skill.manifest.json
+  - dist/skills/vanessa-video-direction/skill.manifest.json
+
+> zuno@1.0.0 build:copy-remotion-assets
+> node scripts/copy-remotion-assets.mjs
+
+[copy-remotion-assets] 2 arquivo(s) .jsx copiado(s) para dist/infrastructure/motion-rendering/remotion.
+  - dist/infrastructure/motion-rendering/remotion/MotionSceneRenderer.jsx
+  - dist/infrastructure/motion-rendering/remotion/Root.jsx
+
+> zuno@1.0.0 build:copy-rendering-assets
+> node scripts/copy-rendering-assets.mjs
+
+[copy-rendering-assets] 2 fonte(s) .ttf copiada(s) para dist/infrastructure/rendering/assets.
+  - dist/infrastructure/rendering/assets/dm-serif-display-regular.ttf
+  - dist/infrastructure/rendering/assets/geist-regular.ttf
+npm notice
+npm notice New major version of npm available! 10.8.2 -> 12.2.0
+npm notice Changelog: https://github.com/npm/cli/releases/tag/v12.2.0
+npm notice To update run: npm install -g npm@12.2.0
+npm notice
+TAP version 13
+# Subtest: CHECKOUT: retorno permanece no produto, inclusive com barras, controles e URLs externas
+ok 1 - CHECKOUT: retorno permanece no produto, inclusive com barras, controles e URLs externas
+  ---
+  duration_ms: 10908.398798
+  ...
+# Subtest: COMPRA: cartão salvo é cobrado na hora, o saldo sobe exatamente a quantidade escolhida e fica no histórico
+ok 2 - COMPRA: cartão salvo é cobrado na hora, o saldo sobe exatamente a quantidade escolhida e fica no histórico
+  ---
+  duration_ms: 54.993006
+  ...
+# Subtest: COMPRA: quantidade fora dos limites e conta com teste vencido são recusadas
+ok 3 - COMPRA: quantidade fora dos limites e conta com teste vencido são recusadas
+  ---
+  duration_ms: 36.315058
+  ...
+# Subtest: CHECKOUT: sem cobrança direta abre o pagamento único; o webhook lança os créditos UMA vez
+ok 4 - CHECKOUT: sem cobrança direta abre o pagamento único; o webhook lança os créditos UMA vez
+  ---
+  duration_ms: 47.388011
+  ...
+# Subtest: CHECKOUT: cartão salvo recusado oferece o pagamento único e registra o motivo
+ok 5 - CHECKOUT: cartão salvo recusado oferece o pagamento único e registra o motivo
+  ---
+  duration_ms: 18.247402
+  ...
+# Subtest: TESTE GRÁTIS: só créditos de teste; vencido zera a cota e bloqueia a IA (créditos comprados continuam)
+ok 6 - TESTE GRÁTIS: só créditos de teste; vencido zera a cota e bloqueia a IA (créditos comprados continuam)
+  ---
+  duration_ms: 38.641066
+  ...
+# Subtest: Smoke (FakeAiProvider, app Fastify real via app.inject): campanha incompleta aciona a IA de ponta a ponta e devolve aiAssisted
+ok 7 - Smoke (FakeAiProvider, app Fastify real via app.inject): campanha incompleta aciona a IA de ponta a ponta e devolve aiAssisted
+  ---
+  duration_ms: 14781.510286
+  ...
+# Subtest: Smoke (Gateway desligado, app Fastify real): comportamento idêntico à Sprint 07 — sem campos de IA
+ok 8 - Smoke (Gateway desligado, app Fastify real): comportamento idêntico à Sprint 07 — sem campos de IA
+  ---
+  duration_ms: 2828.851158
+  ...
+# Subtest: AiGateway: caminho feliz — resultado validado, execução persistida como succeeded, telemetria registrada, traceId == id persistido
+ok 9 - AiGateway: caminho feliz — resultado validado, execução persistida como succeeded, telemetria registrada, traceId == id persistido
+  ---
+  duration_ms: 9.935331
+  ...
+# Subtest: AiGateway: saída estrutural inválida vira invalid_output, nunca é retentada
+ok 10 - AiGateway: saída estrutural inválida vira invalid_output, nunca é retentada
+  ---
+  duration_ms: 2.183413
+  ...
+# Subtest: AiGateway: timeout (retentável) seguido de sucesso — retryCount registrado corretamente
+ok 11 - AiGateway: timeout (retentável) seguido de sucesso — retryCount registrado corretamente
+  ---
+  duration_ms: 182.28418
+  ...
+# Subtest: AiGateway: falha não-retentável (authentication_failed) nunca tenta de novo
+ok 12 - AiGateway: falha não-retentável (authentication_failed) nunca tenta de novo
+  ---
+  duration_ms: 0.747513
+  ...
+# Subtest: AiGateway: content_blocked nunca é retentado
+ok 13 - AiGateway: content_blocked nunca é retentado
+  ---
+  duration_ms: 0.519305
+  ...
+# Subtest: AiGateway: rate limit bloqueia ANTES de qualquer chamada ao provider
+ok 14 - AiGateway: rate limit bloqueia ANTES de qualquer chamada ao provider
+  ---
+  duration_ms: 0.332882
+  ...
+# Subtest: AiGateway: circuit breaker aberto depois de falhas consecutivas passa a bloquear sem chamar o provider
+ok 15 - AiGateway: circuit breaker aberto depois de falhas consecutivas passa a bloquear sem chamar o provider
+  ---
+  duration_ms: 175.950758
+  ...
+# Subtest: AiGateway: provider não configurado (sem credencial) nunca é chamado
+ok 16 - AiGateway: provider não configurado (sem credencial) nunca é chamado
+  ---
+  duration_ms: 0.865139
+  ...
+# Subtest: AiGateway: sanitização roda DENTRO do Gateway antes do provider — input desproporcionalmente grande é rejeitado sem nenhuma chamada real
+ok 17 - AiGateway: sanitização roda DENTRO do Gateway antes do provider — input desproporcionalmente grande é rejeitado sem nenhuma chamada real
+  ---
+  duration_ms: 1.35556
+  ...
+# Subtest: Model Registry: nenhum alias implícito — modelId sempre explícito e versionado
+ok 18 - Model Registry: nenhum alias implícito — modelId sempre explícito e versionado
+  ---
+  duration_ms: 1.24661
+  ...
+# Subtest: Model Registry: listActiveEntriesForCapability só devolve entradas ativas com a capability
+ok 19 - Model Registry: listActiveEntriesForCapability só devolve entradas ativas com a capability
+  ---
+  duration_ms: 0.202483
+  ...
+# Subtest: AiModelRouter: operação não suportada devolve not_configured
+ok 20 - AiModelRouter: operação não suportada devolve not_configured
+  ---
+  duration_ms: 0.296541
+  ...
+# Subtest: AiModelRouter: capability da política incompatível com a operação é invalid_request
+ok 21 - AiModelRouter: capability da política incompatível com a operação é invalid_request
+  ---
+  duration_ms: 0.162232
+  ...
+# Subtest: AiModelRouter: provider ausente (sem binding configurado) devolve not_configured
+ok 22 - AiModelRouter: provider ausente (sem binding configurado) devolve not_configured
+  ---
+  duration_ms: 0.206683
+  ...
+# Subtest: AiModelRouter: provider configurado mas não presente na lista de providers devolve not_configured
+ok 23 - AiModelRouter: provider configurado mas não presente na lista de providers devolve not_configured
+  ---
+  duration_ms: 0.189001
+  ...
+# Subtest: AiModelRouter: circuit breaker aberto devolve provider_unavailable (retryable)
+ok 24 - AiModelRouter: circuit breaker aberto devolve provider_unavailable (retryable)
+  ---
+  duration_ms: 0.295687
+  ...
+# Subtest: AiModelRouter: binding para modelo fora do allowedModels é policy_violation
+ok 25 - AiModelRouter: binding para modelo fora do allowedModels é policy_violation
+  ---
+  duration_ms: 0.186099
+  ...
+# Subtest: AiModelRouter: caminho feliz devolve exatamente um candidato
+ok 26 - AiModelRouter: caminho feliz devolve exatamente um candidato
+  ---
+  duration_ms: 0.286074
+  ...
+# Subtest: Structured output: resposta válida passa na validação estrutural
+ok 27 - Structured output: resposta válida passa na validação estrutural
+  ---
+  duration_ms: 2.104731
+  ...
+# Subtest: Structured output: JSON com formato errado (não é objeto) falha estruturalmente
+ok 28 - Structured output: JSON com formato errado (não é objeto) falha estruturalmente
+  ---
+  duration_ms: 0.737386
+  ...
+# Subtest: Structured output: schemaVersion inválida falha estruturalmente
+ok 29 - Structured output: schemaVersion inválida falha estruturalmente
+  ---
+  duration_ms: 0.570626
+  ...
+# Subtest: Structured output: campo desconhecido no objeto (Zod strict) falha estruturalmente
+ok 30 - Structured output: campo desconhecido no objeto (Zod strict) falha estruturalmente
+  ---
+  duration_ms: 0.610713
+  ...
+# Subtest: Structured output: candidate com propriedade extra (Zod strict no nível do candidato) falha estruturalmente
+ok 31 - Structured output: candidate com propriedade extra (Zod strict no nível do candidato) falha estruturalmente
+  ---
+  duration_ms: 0.549085
+  ...
+# Subtest: Structured output: confidence fora de [0,1] falha estruturalmente
+ok 32 - Structured output: confidence fora de [0,1] falha estruturalmente
+  ---
+  duration_ms: 0.58947
+  ...
+# Subtest: Structured output: rationaleCode fora do enum fechado falha estruturalmente
+ok 33 - Structured output: rationaleCode fora do enum fechado falha estruturalmente
+  ---
+  duration_ms: 0.589182
+  ...
+# Subtest: Semântica: campo desconhecido no schema ativo é descartado (não invalida o lote inteiro)
+ok 34 - Semântica: campo desconhecido no schema ativo é descartado (não invalida o lote inteiro)
+  ---
+  duration_ms: 0.632418
+  ...
+# Subtest: Semântica: acceptedValue inválido para campo enum é descartado
+ok 35 - Semântica: acceptedValue inválido para campo enum é descartado
+  ---
+  duration_ms: 0.469857
+  ...
+# Subtest: Semântica: evidence que não aparece no texto original (alucinação) é descartada
+ok 36 - Semântica: evidence que não aparece no texto original (alucinação) é descartada
+  ---
+  duration_ms: 0.447091
+  ...
+# Subtest: Semântica: quando NADA sobra depois de filtrar, ainda é 'valid' (só um turno sem novidade) — nunca bloqueia o fluxo
+ok 37 - Semântica: quando NADA sobra depois de filtrar, ainda é 'valid' (só um turno sem novidade) — nunca bloqueia o fluxo
+  ---
+  duration_ms: 2.388108
+  ...
+# Subtest: Semântica: ambiguidade explícita nunca é tratada como erro — sobrevive à validação
+ok 38 - Semântica: ambiguidade explícita nunca é tratada como erro — sobrevive à validação
+  ---
+  duration_ms: 0.766311
+  ...
+# Subtest: Sanitizer: remove campos sensíveis por nome (senha, token, storageRef...)
+ok 39 - Sanitizer: remove campos sensíveis por nome (senha, token, storageRef...)
+  ---
+  duration_ms: 0.551226
+  ...
+# Subtest: Sanitizer: isola workspace — um workspaceId diferente do esperado é removido com alerta
+ok 40 - Sanitizer: isola workspace — um workspaceId diferente do esperado é removido com alerta
+  ---
+  duration_ms: 0.202483
+  ...
+# Subtest: Sanitizer: NUNCA trunca — input acima do limite é rejeitado inteiro
+ok 41 - Sanitizer: NUNCA trunca — input acima do limite é rejeitado inteiro
+  ---
+  duration_ms: 0.137613
+  ...
+# Subtest: Sanitizer: nada sobra depois de remover tudo sensível é rejeitado
+ok 42 - Sanitizer: nada sobra depois de remover tudo sensível é rejeitado
+  ---
+  duration_ms: 0.114045
+  ...
+# Subtest: Post-render check: detecta padrão de vazamento (bearer token) mesmo depois da sanitização de entrada
+ok 43 - Post-render check: detecta padrão de vazamento (bearer token) mesmo depois da sanitização de entrada
+  ---
+  duration_ms: 0.283265
+  ...
+# Subtest: Post-render check: prompt renderizado gigante é rejeitado mesmo com input sanitizado pequeno
+ok 44 - Post-render check: prompt renderizado gigante é rejeitado mesmo com input sanitizado pequeno
+  ---
+  duration_ms: 0.11704
+  ...
+# Subtest: AiCostCalculator: usa pricing versionado do Model Registry, considera tokens em cache
+ok 45 - AiCostCalculator: usa pricing versionado do Model Registry, considera tokens em cache
+  ---
+  duration_ms: 0.154143
+  ...
+# Subtest: AiUsage: providerReported=false quando o provider não informa tokens
+ok 46 - AiUsage: providerReported=false quando o provider não informa tokens
+  ---
+  duration_ms: 0.213887
+  ...
+# Subtest: Retry policy: só timeout/rate_limited/provider_unavailable são retentáveis por padrão
+ok 47 - Retry policy: só timeout/rate_limited/provider_unavailable são retentáveis por padrão
+  ---
+  duration_ms: 0.113561
+  ...
+# Subtest: Retry policy: backoff cresce com o número de tentativas
+ok 48 - Retry policy: backoff cresce com o número de tentativas
+  ---
+  duration_ms: 0.184272
+  ...
+# Subtest: Circuit breaker: abre depois do limiar de falhas consecutivas e bloqueia; sucesso fecha de novo
+ok 49 - Circuit breaker: abre depois do limiar de falhas consecutivas e bloqueia; sucesso fecha de novo
+  ---
+  duration_ms: 0.380791
+  ...
+# Subtest: Circuit breaker: half_open depois do cooldown, mas falha nele reabre imediatamente
+ok 50 - Circuit breaker: half_open depois do cooldown, mas falha nele reabre imediatamente
+  ---
+  duration_ms: 0.201393
+  ...
+# Subtest: Rate limiter: bloqueia depois do limite na janela, libera fora dela
+ok 51 - Rate limiter: bloqueia depois do limite na janela, libera fora dela
+  ---
+  duration_ms: 0.339572
+  ...
+# Subtest: AiExtractionDecision: feature desligada nunca chama IA, mesmo com lacunas
+ok 52 - AiExtractionDecision: feature desligada nunca chama IA, mesmo com lacunas
+  ---
+  duration_ms: 0.192356
+  ...
+# Subtest: AiExtractionDecision: extração determinística suficiente (nada faltando) não chama IA
+ok 53 - AiExtractionDecision: extração determinística suficiente (nada faltando) não chama IA
+  ---
+  duration_ms: 0.113695
+  ...
+# Subtest: AiExtractionDecision: NÃO é restrita a campo obrigatório faltante — ambiguidade e opcional de alto impacto também acionam
+ok 54 - AiExtractionDecision: NÃO é restrita a campo obrigatório faltante — ambiguidade e opcional de alto impacto também acionam
+  ---
+  duration_ms: 0.114848
+  ...
+# Subtest: POST /v1/auth/login: fluxo válido devolve accessToken e cookies HttpOnly
+ok 55 - POST /v1/auth/login: fluxo válido devolve accessToken e cookies HttpOnly
+  ---
+  duration_ms: 14478.211643
+  ...
+# Subtest: POST /v1/auth/login: senha errada responde 401 INVALID_CREDENTIALS
+ok 56 - POST /v1/auth/login: senha errada responde 401 INVALID_CREDENTIALS
+  ---
+  duration_ms: 2796.095866
+  ...
+# Subtest: GET /v1/workspaces: com access token válido responde 200; sem token responde 401
+ok 57 - GET /v1/workspaces: com access token válido responde 200; sem token responde 401
+  ---
+  duration_ms: 2150.146686
+  ...
+# Subtest: RBAC via JWT real: viewer não consegue criar workspace (403)
+ok 58 - RBAC via JWT real: viewer não consegue criar workspace (403)
+  ---
+  duration_ms: 2679.674814
+  ...
+# Subtest: Isolamento cross-tenant via JWT real: usuário do tenant B não acessa workspace do tenant A
+ok 59 - Isolamento cross-tenant via JWT real: usuário do tenant B não acessa workspace do tenant A
+  ---
+  duration_ms: 5308.438278
+  ...
+# Subtest: POST /v1/auth/refresh: sem header X-CSRF-Token responde 403 (mesmo com cookie válido)
+ok 60 - POST /v1/auth/refresh: sem header X-CSRF-Token responde 403 (mesmo com cookie válido)
+  ---
+  duration_ms: 2931.602534
+  ...
+# Subtest: POST /v1/auth/refresh: com CSRF correto rotaciona o refresh token e devolve accessToken novo
+ok 61 - POST /v1/auth/refresh: com CSRF correto rotaciona o refresh token e devolve accessToken novo
+  ---
+  duration_ms: 2145.311373
+  ...
+# Subtest: POST /v1/auth/logout: revoga a sessão e limpa os cookies
+ok 62 - POST /v1/auth/logout: revoga a sessão e limpa os cookies
+  ---
+  duration_ms: 2169.919229
+  ...
+# Subtest: POST /v1/auth/switch-tenant: usuário com múltiplos tenants troca de contexto
+ok 63 - POST /v1/auth/switch-tenant: usuário com múltiplos tenants troca de contexto
+  ---
+  duration_ms: 2347.223317
+  ...
+# Subtest: POST /v1/auth/switch-tenant: tenant sem acesso responde 403
+ok 64 - POST /v1/auth/switch-tenant: tenant sem acesso responde 403
+  ---
+  duration_ms: 3979.051976
+  ...
+# Subtest: CATÁLOGO: Meetings tem preço oficial (R$147 com 1 simultânea, +R$67 por adicional) e entra nos planos pagos
+ok 65 - CATÁLOGO: Meetings tem preço oficial (R$147 com 1 simultânea, +R$67 por adicional) e entra nos planos pagos
+  ---
+  duration_ms: 10909.599992
+  ...
+# Subtest: CHECKOUT: capacidade do configurador vira plano + adicionais com quantidade, 7 dias de teste e pedido gravado
+ok 66 - CHECKOUT: capacidade do configurador vira plano + adicionais com quantidade, 7 dias de teste e pedido gravado
+  ---
+  duration_ms: 54.221899
+  ...
+# Subtest: CHECKOUT: quem acabou de criar a conta (trial) mantém os dias que restam; trial vencido paga na hora
+ok 67 - CHECKOUT: quem acabou de criar a conta (trial) mantém os dias que restam; trial vencido paga na hora
+  ---
+  duration_ms: 35.934322
+  ...
+# Subtest: MEETINGS: checkout e compra de adicional bloqueados enquanto o gate comercial estiver fechado
+ok 68 - MEETINGS: checkout e compra de adicional bloqueados enquanto o gate comercial estiver fechado
+  ---
+  duration_ms: 56.293623
+  ...
+# Subtest: WEBHOOK: aplica exatamente o pedido (quantidades), é idempotente sob reenvio e libera a capacidade
+ok 69 - WEBHOOK: aplica exatamente o pedido (quantidades), é idempotente sob reenvio e libera a capacidade
+  ---
+  duration_ms: 68.271895
+  ...
+# Subtest: WEBHOOK + MEETINGS: assinatura com Meetings libera o acesso com as gravações simultâneas; cancelamento revoga; concessão interna intocada
+ok 70 - WEBHOOK + MEETINGS: assinatura com Meetings libera o acesso com as gravações simultâneas; cancelamento revoga; concessão interna intocada
+  ---
+  duration_ms: 99.650486
+  ...
+# Subtest: MERCADO PAGO: checkout com teste envia free_trial em dias; sem teste, não envia
+ok 71 - MERCADO PAGO: checkout com teste envia free_trial em dias; sem teste, não envia
+  ---
+  duration_ms: 0.865074
+  ...
+# Subtest: WEBHOOK: pagar um checkout antigo (já substituído) nunca aplica o pedido do checkout novo
+ok 72 - WEBHOOK: pagar um checkout antigo (já substituído) nunca aplica o pedido do checkout novo
+  ---
+  duration_ms: 64.228497
+  ...
+# Subtest: CHECKOUT: capacidade junto com adicionais avulsos é recusada
+ok 73 - CHECKOUT: capacidade junto com adicionais avulsos é recusada
+  ---
+  duration_ms: 5.60462
+  ...
+# Subtest: PREÇO: gravações simultâneas entram no custo (base R$147 com 1 + R$67 por adicional)
+ok 74 - PREÇO: gravações simultâneas entram no custo (base R$147 com 1 + R$67 por adicional)
+  ---
+  duration_ms: 9280.842957
+  ...
+# Subtest: ESTADO: assinatura paga mostra a próxima cobrança; teste sem cartão não aumenta na hora
+ok 75 - ESTADO: assinatura paga mostra a próxima cobrança; teste sem cartão não aumenta na hora
+  ---
+  duration_ms: 148.821118
+  ...
+# Subtest: APLICAR: Meetings bloqueado pelo gate comercial; usuários sobem e a redução agendada tem id cancelável
+ok 76 - APLICAR: Meetings bloqueado pelo gate comercial; usuários sobem e a redução agendada tem id cancelável
+  ---
+  duration_ms: 324.39737
+  ...
+# Subtest: PLANO PERSONALIZADO: estado traz o preço de cada usuário/número/gravação; contatos, armazenamento e automações ilimitados
+ok 77 - PLANO PERSONALIZADO: estado traz o preço de cada usuário/número/gravação; contatos, armazenamento e automações ilimitados
+  ---
+  duration_ms: 42.548066
+  ...
+# Subtest: startCheckout: devolve URL de checkout e NUNCA cria uma Subscription
+ok 78 - startCheckout: devolve URL de checkout e NUNCA cria uma Subscription
+  ---
+  duration_ms: 9906.796377
+  ...
+# Subtest: startCheckout: plano ENTERPRISE não é self-service
+ok 79 - startCheckout: plano ENTERPRISE não é self-service
+  ---
+  duration_ms: 1.511296
+  ...
+# Subtest: startCheckout: tenant já com assinatura ativa não pode iniciar novo checkout
+ok 80 - startCheckout: tenant já com assinatura ativa não pode iniciar novo checkout
+  ---
+  duration_ms: 69.532183
+  ...
+# Subtest: startCheckout: add-on fora do plano é rejeitado
+ok 81 - startCheckout: add-on fora do plano é rejeitado
+  ---
+  duration_ms: 5.244865
+  ...
+# Subtest: webhook checkout.session.completed: cria a Subscription real e recalcula tenant_billing a partir dela
+ok 82 - webhook checkout.session.completed: cria a Subscription real e recalcula tenant_billing a partir dela
+  ---
+  duration_ms: 114.690942
+  ...
+# Subtest: webhook: reentrega do MESMO evento nunca reaplica o efeito colateral (idempotência)
+ok 83 - webhook: reentrega do MESMO evento nunca reaplica o efeito colateral (idempotência)
+  ---
+  duration_ms: 98.182585
+  ...
+# Subtest: webhook: tipo de evento desconhecido é ignorado sem erro
+ok 84 - webhook: tipo de evento desconhecido é ignorado sem erro
+  ---
+  duration_ms: 4.936157
+  ...
+# Subtest: webhook customer.subscription.deleted: cancela SEM apagar nada, e uma reentrega não regride o estado
+ok 85 - webhook customer.subscription.deleted: cancela SEM apagar nada, e uma reentrega não regride o estado
+  ---
+  duration_ms: 119.36668
+  ...
+# Subtest: webhook invoice.payment_failed: marca past_due e registra a fatura, sem apagar nada
+ok 86 - webhook invoice.payment_failed: marca past_due e registra a fatura, sem apagar nada
+  ---
+  duration_ms: 159.0998
+  ...
+# Subtest: Migrations 0103-0109 aplicam sem erro; catálogo de planos e add-ons semeado
+ok 87 - Migrations 0103-0109 aplicam sem erro; catálogo de planos e add-ons semeado
+  ---
+  duration_ms: 13698.621982
+  ...
+# Subtest: Entitlements: tenant sem Subscription resolve como virtual, a partir de tenant_billing.plan_code (FREE)
+ok 88 - Entitlements: tenant sem Subscription resolve como virtual, a partir de tenant_billing.plan_code (FREE)
+  ---
+  duration_ms: 66.859997
+  ...
+# Subtest: Entitlements: uma Subscription real (PRO) muda virtual para false e usa os limites do PlanVersion dela
+ok 89 - Entitlements: uma Subscription real (PRO) muda virtual para false e usa os limites do PlanVersion dela
+  ---
+  duration_ms: 17.007853
+  ...
+# Subtest: Entitlements: add-on de usuário soma sobre o limite base do plano
+ok 90 - Entitlements: add-on de usuário soma sobre o limite base do plano
+  ---
+  duration_ms: 19.142451
+  ...
+# Subtest: Limite: assertWithinLimit lança USAGE_LIMIT_REACHED quando o uso real atinge o teto do plano
+ok 91 - Limite: assertWithinLimit lança USAGE_LIMIT_REACHED quando o uso real atinge o teto do plano
+  ---
+  duration_ms: 96.393923
+  ...
+# Subtest: Versionamento: publicar uma nova versão nunca sobrescreve nem afeta quem já está na anterior
+ok 92 - Versionamento: publicar uma nova versão nunca sobrescreve nem afeta quem já está na anterior
+  ---
+  duration_ms: 17.821761
+  ...
+# Subtest: Webhook de pagamento: registrar o mesmo (provider, providerEventId) duas vezes é idempotente
+ok 93 - Webhook de pagamento: registrar o mesmo (provider, providerEventId) duas vezes é idempotente
+  ---
+  duration_ms: 10.272175
+  ...
+# Subtest: ResourceCounterPort: conta usuários e workspaces reais do tenant (nunca uma lista paginada)
+ok 94 - ResourceCounterPort: conta usuários e workspaces reais do tenant (nunca uma lista paginada)
+  ---
+  duration_ms: 45.775715
+  ...
+# Subtest: SandboxBillingProvider cumpre o contrato do BillingProviderPort sem nenhuma chamada externa
+ok 95 - SandboxBillingProvider cumpre o contrato do BillingProviderPort sem nenhuma chamada externa
+  ---
+  duration_ms: 2.140604
+  ...
+# Subtest: POST /v1/billing/cancel + /v1/billing/reactivate: ciclo completo via HTTP
+ok 96 - POST /v1/billing/cancel + /v1/billing/reactivate: ciclo completo via HTTP
+  ---
+  duration_ms: 18500.236925
+  ...
+# Subtest: GET /v1/billing/downgrade-preview + POST /v1/billing/change-plan: downgrade com overage responde 409 com detalhe
+ok 97 - GET /v1/billing/downgrade-preview + POST /v1/billing/change-plan: downgrade com overage responde 409 com detalhe
+  ---
+  duration_ms: 3443.169839
+  ...
+# Subtest: POST /v1/billing/addons: compra e remove um add-on via HTTP
+ok 98 - POST /v1/billing/addons: compra e remove um add-on via HTTP
+  ---
+  duration_ms: 2665.966133
+  ...
+# Subtest: changePlan: upgrade START -> PRO troca o planVersionId e recalcula tenant_billing
+ok 99 - changePlan: upgrade START -> PRO troca o planVersionId e recalcula tenant_billing
+  ---
+  duration_ms: 13017.310121
+  ...
+# Subtest: changePlan: downgrade bloqueado quando o uso atual excede o novo teto (nenhuma chamada ao gateway, nenhum dado apagado)
+ok 100 - changePlan: downgrade bloqueado quando o uso atual excede o novo teto (nenhuma chamada ao gateway, nenhum dado apagado)
+  ---
+  duration_ms: 155.145618
+  ...
+# Subtest: addons: comprar soma sobre o limite base; remover volta ao limite original
+ok 101 - addons: comprar soma sobre o limite base; remover volta ao limite original
+  ---
+  duration_ms: 98.074409
+  ...
+# Subtest: addons: add-on fora da lista permitida do plano é rejeitado
+ok 102 - addons: add-on fora da lista permitida do plano é rejeitado
+  ---
+  duration_ms: 17.190047
+  ...
+# Subtest: cancelSubscriptionSelfService: sempre cancel_at_period_end, nunca cancelamento imediato
+ok 103 - cancelSubscriptionSelfService: sempre cancel_at_period_end, nunca cancelamento imediato
+  ---
+  duration_ms: 27.955982
+  ...
+# Subtest: reactivateSubscription: desfaz o cancel_at_period_end enquanto a assinatura ainda não terminou
+ok 104 - reactivateSubscription: desfaz o cancel_at_period_end enquanto a assinatura ainda não terminou
+  ---
+  duration_ms: 45.182298
+  ...
+# Subtest: reactivateSubscription: rejeita quando a assinatura não está agendada para cancelamento
+ok 105 - reactivateSubscription: rejeita quando a assinatura não está agendada para cancelamento
+  ---
+  duration_ms: 13.342115
+  ...
+# Subtest: modo somente-leitura: assinatura past_due bloqueia assertCanUse/assertWithinLimit, mas nunca apaga nem esconde o estado real
+ok 106 - modo somente-leitura: assinatura past_due bloqueia assertCanUse/assertWithinLimit, mas nunca apaga nem esconde o estado real
+  ---
+  duration_ms: 86.998702
+  ...
+# Subtest: GET /v1/billing/overview: tenant virtual (sem Subscription real) devolve o FREE com consumo real
+ok 107 - GET /v1/billing/overview: tenant virtual (sem Subscription real) devolve o FREE com consumo real
+  ---
+  duration_ms: 16406.556087
+  ...
+# Subtest: GET /v1/billing/overview: assinante real PRO com add-on mostra plano, add-ons e forma de pagamento sandbox
+ok 108 - GET /v1/billing/overview: assinante real PRO com add-on mostra plano, add-ons e forma de pagamento sandbox
+  ---
+  duration_ms: 4087.974385
+  ...
+# Subtest: POST /v1/billing/portal: sem providerCustomerId responde 400 com mensagem clara
+ok 109 - POST /v1/billing/portal: sem providerCustomerId responde 400 com mensagem clara
+  ---
+  duration_ms: 1526.745689
+  ...
+# Subtest: get(): singleton sempre existe (migração 0134), sem nenhuma credencial configurada
+ok 110 - get(): singleton sempre existe (migração 0134), sem nenhuma credencial configurada
+  ---
+  duration_ms: 11703.177511
+  ...
+# Subtest: update(): grava access token/webhook secret criptografados, expõe só last4; notification URL fica em claro (não é segredo)
+ok 111 - update(): grava access token/webhook secret criptografados, expõe só last4; notification URL fica em claro (não é segredo)
+  ---
+  duration_ms: 47.836293
+  ...
+# Subtest: update(): undefined mantém o valor atual; string vazia remove
+ok 112 - update(): undefined mantém o valor atual; string vazia remove
+  ---
+  duration_ms: 98.136034
+  ...
+# Subtest: updateBillingProviderSettings: rejeita Notification URL que não comece com https://
+ok 113 - updateBillingProviderSettings: rejeita Notification URL que não comece com https://
+  ---
+  duration_ms: 1.306593
+  ...
+# Subtest: getBillingProviderSettings: nunca devolve os segredos em claro, só has*/last4
+ok 114 - getBillingProviderSettings: nunca devolve os segredos em claro, só has*/last4
+  ---
+  duration_ms: 18.836507
+  ...
+# Subtest: MercadoPagoBillingProvider: credencial vinda de closure é cacheada por TTL, nunca reconsultada a cada chamada de API
+ok 115 - MercadoPagoBillingProvider: credencial vinda de closure é cacheada por TTL, nunca reconsultada a cada chamada de API
+  ---
+  duration_ms: 0.8064
+  ...
+# Subtest: MercadoPagoBillingProvider: credencial vinda de string fixa (env, comportamento histórico) funciona sem nenhuma chamada assíncrona extra
+ok 116 - MercadoPagoBillingProvider: credencial vinda de string fixa (env, comportamento histórico) funciona sem nenhuma chamada assíncrona extra
+  ---
+  duration_ms: 0.28707
+  ...
+# Subtest: POST /webhooks/billing/sandbox: checkout.session.completed ativa a Subscription real; reentrega responde 200 sem reaplicar
+ok 117 - POST /webhooks/billing/sandbox: checkout.session.completed ativa a Subscription real; reentrega responde 200 sem reaplicar
+  ---
+  duration_ms: 12324.62093
+  ...
+# Subtest: POST /webhooks/billing/sandbox: rota fica FORA do prefixo /v1
+ok 118 - POST /webhooks/billing/sandbox: rota fica FORA do prefixo /v1
+  ---
+  duration_ms: 1075.04361
+  ...
+# Subtest: Fase 5 — Timeline 360 agrega contato, negócio, tarefa, proposta e conversa numa lista só, mais recente primeiro
+ok 119 - Fase 5 — Timeline 360 agrega contato, negócio, tarefa, proposta e conversa numa lista só, mais recente primeiro
+  ---
+  duration_ms: 9313.150337
+  ...
+# Subtest: Fase 5 — recusa de proposta mantém negócio aberto e é registrada como ação do cliente
+ok 120 - Fase 5 — recusa de proposta mantém negócio aberto e é registrada como ação do cliente
+  ---
+  duration_ms: 124.699637
+  ...
+# Subtest: Fase 5 — contato sem negócio nenhum ainda mostra tarefa e conversa na Timeline
+ok 121 - Fase 5 — contato sem negócio nenhum ainda mostra tarefa e conversa na Timeline
+  ---
+  duration_ms: 87.296191
+  ...
+# Subtest: Fase 5 — funciona sem o módulo Conversas (inbox desligado) usando só eventos CRM
+ok 122 - Fase 5 — funciona sem o módulo Conversas (inbox desligado) usando só eventos CRM
+  ---
+  duration_ms: 23.05057
+  ...
+# Subtest: Fase 5 — isolamento multi-tenant: contato de um tenant nunca aparece pra outro
+ok 123 - Fase 5 — isolamento multi-tenant: contato de um tenant nunca aparece pra outro
+  ---
+  duration_ms: 71.38011
+  ...
+# Subtest: Fase 5 — reagendar tarefa gera task_rescheduled; negócio reaberto após Ganho vira deal_reopened
+ok 124 - Fase 5 — reagendar tarefa gera task_rescheduled; negócio reaberto após Ganho vira deal_reopened
+  ---
+  duration_ms: 76.626908
+  ...
+# Subtest: Fase 5 — eventos operacionais de baixo nível (assigned, IA) não viram ruído na Timeline salvo os listados
+ok 125 - Fase 5 — eventos operacionais de baixo nível (assigned, IA) não viram ruído na Timeline salvo os listados
+  ---
+  duration_ms: 50.895734
+  ...
+# Subtest: REGRA: celular brasileiro e internacional são telefone; LID (sufixo, prefixo ou 15 dígitos) não é
+ok 126 - REGRA: celular brasileiro e internacional são telefone; LID (sufixo, prefixo ou 15 dígitos) não é
+  ---
+  duration_ms: 9034.380853
+  ...
+# Subtest: LIMPEZA: remove só contatos LID sem venda/proposta; celular e quem tem oportunidade ficam; conversa continua
+ok 127 - LIMPEZA: remove só contatos LID sem venda/proposta; celular e quem tem oportunidade ficam; conversa continua
+  ---
+  duration_ms: 138.620569
+  ...
+# Subtest: CreditGatedAiGateway: bloqueia quando tenant sem billing
+ok 128 - CreditGatedAiGateway: bloqueia quando tenant sem billing
+  ---
+  duration_ms: 37.066523
+  ...
+# Subtest: CreditGatedAiGateway: bloqueia quando subscription_status é 'suspended'
+ok 129 - CreditGatedAiGateway: bloqueia quando subscription_status é 'suspended'
+  ---
+  duration_ms: 0.52247
+  ...
+# Subtest: CreditGatedAiGateway: bloqueia quando saldo total de créditos é insuficiente
+ok 130 - CreditGatedAiGateway: bloqueia quando saldo total de créditos é insuficiente
+  ---
+  duration_ms: 0.528471
+  ...
+# Subtest: CreditGatedAiGateway: chama inner e registra consumo dentro da cota mensal (sem tocar creditsExtra)
+ok 131 - CreditGatedAiGateway: chama inner e registra consumo dentro da cota mensal (sem tocar creditsExtra)
+  ---
+  duration_ms: 1.027948
+  ...
+# Subtest: CreditGatedAiGateway: tenant com priceMultiplier 1 (0% de lucro, ex.: conta interna própria) tem receita igual ao custo
+ok 132 - CreditGatedAiGateway: tenant com priceMultiplier 1 (0% de lucro, ex.: conta interna própria) tem receita igual ao custo
+  ---
+  duration_ms: 0.364088
+  ...
+# Subtest: CreditGatedAiGateway: consumo estoura a cota mensal e sangra em creditsExtra via applyCreditDelta
+ok 133 - CreditGatedAiGateway: consumo estoura a cota mensal e sangra em creditsExtra via applyCreditDelta
+  ---
+  duration_ms: 0.61929
+  ...
+# Subtest: API cria exemplos já desativados; não age até a ativação explícita
+ok 134 - API cria exemplos já desativados; não age até a ativação explícita
+  ---
+  duration_ms: 12152.480861
+  ...
+# Subtest: Migrations 0101-0102 aplicam sem erro; tabelas de automação existem
+ok 135 - Migrations 0101-0102 aplicam sem erro; tabelas de automação existem
+  ---
+  duration_ms: 5.186315
+  ...
+# Subtest: Regra: criar, listar, atualizar, apagar e isolamento cross-tenant
+ok 136 - Regra: criar, listar, atualizar, apagar e isolamento cross-tenant
+  ---
+  duration_ms: 23.314944
+  ...
+# Subtest: contact_created: regra com condição de origem só dispara quando a origem bate (E lógico)
+ok 137 - contact_created: regra com condição de origem só dispara quando a origem bate (E lógico)
+  ---
+  duration_ms: 28.464352
+  ...
+# Subtest: contact_created: assign_owner atribui um responsável fixo
+ok 138 - contact_created: assign_owner atribui um responsável fixo
+  ---
+  duration_ms: 45.307994
+  ...
+# Subtest: contact_created: assign_owner_least_loaded_in_team distribui pro membro com menos contatos do time
+ok 139 - contact_created: assign_owner_least_loaded_in_team distribui pro membro com menos contatos do time
+  ---
+  duration_ms: 49.181765
+  ...
+# Subtest: deal_stage_changed: move_deal_stage usa o repositório direto (nunca reentra em moveDealStage) e nunca move pra etapa de perda
+ok 140 - deal_stage_changed: move_deal_stage usa o repositório direto (nunca reentra em moveDealStage) e nunca move pra etapa de perda
+  ---
+  duration_ms: 165.208737
+  ...
+# Subtest: Falha de uma ação (config inválida) nunca derruba a ação de negócio que disparou o gatilho
+ok 141 - Falha de uma ação (config inválida) nunca derruba a ação de negócio que disparou o gatilho
+  ---
+  duration_ms: 12.997704
+  ...
+# Subtest: Vincular um inbox_contact (WhatsApp) a um Contact do CRM aparece em InboxContact.crmContactId e na listagem de conversas
+ok 142 - Vincular um inbox_contact (WhatsApp) a um Contact do CRM aparece em InboxContact.crmContactId e na listagem de conversas
+  ---
+  duration_ms: 11702.101911
+  ...
+# Subtest: Negócios filtrados por contactId retornam só os negócios daquele contato
+ok 143 - Negócios filtrados por contactId retornam só os negócios daquele contato
+  ---
+  duration_ms: 41.032891
+  ...
+# Subtest: Ponte automática: conversa direta com sinal mínimo de mensagens cria e vincula um Contact do CRM automaticamente
+ok 144 - Ponte automática: conversa direta com sinal mínimo de mensagens cria e vincula um Contact do CRM automaticamente
+  ---
+  duration_ms: 60.763035
+  ...
+# Subtest: Ponte automática: NUNCA dispara antes do sinal mínimo de mensagens (evita virar lixo por uma mensagem isolada)
+ok 145 - Ponte automática: NUNCA dispara antes do sinal mínimo de mensagens (evita virar lixo por uma mensagem isolada)
+  ---
+  duration_ms: 20.619673
+  ...
+# Subtest: Ponte automática: idempotente — chamar duas vezes para o mesmo InboxContact nunca cria um segundo Contact
+ok 146 - Ponte automática: idempotente — chamar duas vezes para o mesmo InboxContact nunca cria um segundo Contact
+  ---
+  duration_ms: 62.462232
+  ...
+# [commercial-bridge] corrida detectada ao vincular InboxContact "contact-mvdsghma-lctg89" — identidade já pertencia ao Contact "contact-mvdsghms-h2m2bt"; usando o vencedor da corrida, Contact "contact-mvdsghmv-9k6bvj" fica órfão (sem identidade, nunca fundido automaticamente).
+# Subtest: Ponte automática: simula uma corrida concorrente (duas chamadas em paralelo) — só um Contact sobrevive, nunca duas identidades divergentes
+ok 147 - Ponte automática: simula uma corrida concorrente (duas chamadas em paralelo) — só um Contact sobrevive, nunca duas identidades divergentes
+  ---
+  duration_ms: 44.338184
+  ...
+# Subtest: Ponte automática: contato de GRUPO nunca é chamado (grupo nunca tem InboxContact) — checagem estrutural do gatilho
+ok 148 - Ponte automática: contato de GRUPO nunca é chamado (grupo nunca tem InboxContact) — checagem estrutural do gatilho
+  ---
+  duration_ms: 26.603431
+  ...
+# Subtest: Ponte automática: multi-tenant — mesmo número de telefone em tenants diferentes nunca se cruza
+ok 149 - Ponte automática: multi-tenant — mesmo número de telefone em tenants diferentes nunca se cruza
+  ---
+  duration_ms: 151.77569
+  ...
+# Subtest: Migrations 0096-0098 aplicam sem erro; tabelas de tarefa/produto/proposta existem
+ok 150 - Migrations 0096-0098 aplicam sem erro; tabelas de tarefa/produto/proposta existem
+  ---
+  duration_ms: 11553.352624
+  ...
+# Subtest: Tarefa: criar, listar, atualizar, concluir e cancelar
+ok 151 - Tarefa: criar, listar, atualizar, concluir e cancelar
+  ---
+  duration_ms: 56.289593
+  ...
+# Subtest: Tarefa: isolamento cross-tenant nunca vaza existência (404)
+ok 152 - Tarefa: isolamento cross-tenant nunca vaza existência (404)
+  ---
+  duration_ms: 18.810315
+  ...
+# Subtest: Produto: criar, listar, atualizar (inclusive desativar) e excluir
+ok 153 - Produto: criar, listar, atualizar (inclusive desativar) e excluir
+  ---
+  duration_ms: 50.363473
+  ...
+# Subtest: Proposta: itens congelam quantidade x preço; total = subtotal - desconto
+ok 154 - Proposta: itens congelam quantidade x preço; total = subtotal - desconto
+  ---
+  duration_ms: 25.041375
+  ...
+# Subtest: Proposta: só edita em rascunho; enviar uma vez só
+ok 155 - Proposta: só edita em rascunho; enviar uma vez só
+  ---
+  duration_ms: 74.477301
+  ...
+# Subtest: Proposta pública: visualizar marca 'viewed', aceitar marca 'accepted' e move o negócio ligado pra Ganho
+ok 156 - Proposta pública: visualizar marca 'viewed', aceitar marca 'accepted' e move o negócio ligado pra Ganho
+  ---
+  duration_ms: 127.006129
+  ...
+# Subtest: Proposta pública: recusar marca 'rejected'; token inválido nunca vaza existência (404)
+ok 157 - Proposta pública: recusar marca 'rejected'; token inválido nunca vaza existência (404)
+  ---
+  duration_ms: 67.270432
+  ...
+# Subtest: Proposta: isolamento cross-tenant nunca vaza existência (404)
+ok 158 - Proposta: isolamento cross-tenant nunca vaza existência (404)
+  ---
+  duration_ms: 23.380505
+  ...
+# Subtest: Migrations 0089-0093 aplicam sem erro; tabelas do CRM existem
+ok 159 - Migrations 0089-0093 aplicam sem erro; tabelas do CRM existem
+  ---
+  duration_ms: 11515.812745
+  ...
+# Subtest: Backfill: contato do WhatsApp já existente ganha um Contact + ContactIdentity, sem fusão
+ok 160 - Backfill: contato do WhatsApp já existente ganha um Contact + ContactIdentity, sem fusão
+  ---
+  duration_ms: 11.606318
+  ...
+# Subtest: Equipes: criar, adicionar/remover membro, editar e apagar
+ok 161 - Equipes: criar, adicionar/remover membro, editar e apagar
+  ---
+  duration_ms: 32.152194
+  ...
+# Subtest: Equipes: isolamento cross-tenant — equipe de outro tenant nunca é encontrada (404, não vaza existência)
+ok 162 - Equipes: isolamento cross-tenant — equipe de outro tenant nunca é encontrada (404, não vaza existência)
+  ---
+  duration_ms: 6.164961
+  ...
+# Subtest: Convite: convidar, aceitar (liga a um usuário existente pelo e-mail), e nunca aceitar duas vezes
+ok 163 - Convite: convidar, aceitar (liga a um usuário existente pelo e-mail), e nunca aceitar duas vezes
+  ---
+  duration_ms: 42.871562
+  ...
+# Subtest: Convite: e-mail não bate com o do usuário autenticado é recusado
+ok 164 - Convite: e-mail não bate com o do usuário autenticado é recusado
+  ---
+  duration_ms: 7.889655
+  ...
+# Subtest: Convite: revogar impede aceite posterior
+ok 165 - Convite: revogar impede aceite posterior
+  ---
+  duration_ms: 6.665913
+  ...
+# Subtest: Membro: trocar papel e remover
+ok 166 - Membro: trocar papel e remover
+  ---
+  duration_ms: 8.294224
+  ...
+# Subtest: Contato: criar registra evento na timeline
+ok 167 - Contato: criar registra evento na timeline
+  ---
+  duration_ms: 9.702076
+  ...
+# Subtest: ContactIdentity: ligar é idempotente por (channel, externalId) — segunda chamada não duplica
+ok 168 - ContactIdentity: ligar é idempotente por (channel, externalId) — segunda chamada não duplica
+  ---
+  duration_ms: 14.041343
+  ...
+# Subtest: ContactIdentity: nunca funde automaticamente — identidade já ligada a OUTRO contato é reportada como conflito
+ok 169 - ContactIdentity: nunca funde automaticamente — identidade já ligada a OUTRO contato é reportada como conflito
+  ---
+  duration_ms: 45.057425
+  ...
+# Subtest: Contato: isolamento cross-tenant — contato de outro tenant nunca é encontrado
+ok 170 - Contato: isolamento cross-tenant — contato de outro tenant nunca é encontrado
+  ---
+  duration_ms: 8.824927
+  ...
+# Subtest: Contato: atualizar campos preserva os não informados
+ok 171 - Contato: atualizar campos preserva os não informados
+  ---
+  duration_ms: 9.186843
+  ...
+# Subtest: Migrations 0099-0100 aplicam sem erro; commercial_suggestions e a operação de IA existem
+ok 172 - Migrations 0099-0100 aplicam sem erro; commercial_suggestions e a operação de IA existem
+  ---
+  duration_ms: 9840.604474
+  ...
+# Subtest: computeLeadScore: interação recente + negócio aberto de alto valor + histórico de negócio ganho pontua quente, com fatores explicados
+ok 173 - computeLeadScore: interação recente + negócio aberto de alto valor + histórico de negócio ganho pontua quente, com fatores explicados
+  ---
+  duration_ms: 1.064706
+  ...
+# Subtest: computeLeadScore: sem interação há mais de 30 dias e tarefa atrasada esfria o lead
+ok 174 - computeLeadScore: sem interação há mais de 30 dias e tarefa atrasada esfria o lead
+  ---
+  duration_ms: 0.319552
+  ...
+# Subtest: getLeadScore: calcula a partir dos dados reais do contato (negócio + tarefa) e nunca de outro tenant
+ok 175 - getLeadScore: calcula a partir dos dados reais do contato (negócio + tarefa) e nunca de outro tenant
+  ---
+  duration_ms: 34.271083
+  ...
+# Subtest: Validação semântica anti-alucinação: descarta sugestão cuja evidência não aparece no texto-fonte, mantém a que aparece
+ok 176 - Validação semântica anti-alucinação: descarta sugestão cuja evidência não aparece no texto-fonte, mantém a que aparece
+  ---
+  duration_ms: 0.48043
+  ...
+# Subtest: Copiloto Comercial: gera sugestões via generator (fake), aceitar follow_up_task cria a Tarefa de verdade
+ok 177 - Copiloto Comercial: gera sugestões via generator (fake), aceitar follow_up_task cria a Tarefa de verdade
+  ---
+  duration_ms: 29.101348
+  ...
+# Subtest: Copiloto Comercial: dispensar marca 'dismissed' e nunca cria nada; falha do gateway propaga erro claro
+ok 178 - Copiloto Comercial: dispensar marca 'dismissed' e nunca cria nada; falha do gateway propaga erro claro
+  ---
+  duration_ms: 49.660596
+  ...
+# Subtest: Copiloto Comercial: isolamento cross-tenant nunca vaza existência (404)
+ok 179 - Copiloto Comercial: isolamento cross-tenant nunca vaza existência (404)
+  ---
+  duration_ms: 26.89178
+  ...
+# Subtest: Migrations 0094-0095 aplicam sem erro; tabelas de pipeline/deal existem
+ok 180 - Migrations 0094-0095 aplicam sem erro; tabelas de pipeline/deal existem
+  ---
+  duration_ms: 9542.052812
+  ...
+# Subtest: Pipeline padrão: criado sob demanda com 6 etapas, idempotente
+ok 181 - Pipeline padrão: criado sob demanda com 6 etapas, idempotente
+  ---
+  duration_ms: 35.93895
+  ...
+# Subtest: Pipeline: isolamento cross-tenant nunca vaza existência (404)
+ok 182 - Pipeline: isolamento cross-tenant nunca vaza existência (404)
+  ---
+  duration_ms: 8.628444
+  ...
+# Subtest: Negócio: criar exige que a etapa pertença ao pipeline informado
+ok 183 - Negócio: criar exige que a etapa pertença ao pipeline informado
+  ---
+  duration_ms: 61.803921
+  ...
+# Subtest: Negócio: mover para etapa de perda exige motivo; mover para etapa de ganho marca wonAt
+ok 184 - Negócio: mover para etapa de perda exige motivo; mover para etapa de ganho marca wonAt
+  ---
+  duration_ms: 40.238484
+  ...
+# Subtest: Negócio: reabrir (mover de volta a etapa aberta) limpa ganho/perda
+ok 185 - Negócio: reabrir (mover de volta a etapa aberta) limpa ganho/perda
+  ---
+  duration_ms: 53.823477
+  ...
+# Subtest: Negócio: isolamento cross-tenant nunca vaza existência (404)
+ok 186 - Negócio: isolamento cross-tenant nunca vaza existência (404)
+  ---
+  duration_ms: 23.314677
+  ...
+# Subtest: Negócio: updateDeal nunca muda a etapa (só moveDealStage pode)
+ok 187 - Negócio: updateDeal nunca muda a etapa (só moveDealStage pode)
+  ---
+  duration_ms: 21.025093
+  ...
+# Subtest: Negócios: listagem com filtro de responsável, e resumo por etapa (contagem + soma)
+ok 188 - Negócios: listagem com filtro de responsável, e resumo por etapa (contagem + soma)
+  ---
+  duration_ms: 65.793934
+  ...
+# Subtest: Fase 4 registra primeira/ultima abertura e quantidade sem dados invasivos
+ok 189 - Fase 4 registra primeira/ultima abertura e quantidade sem dados invasivos
+  ---
+  duration_ms: 9574.73091
+  ...
+# Subtest: Fase 4 lista propostas pelo status solicitado
+ok 190 - Fase 4 lista propostas pelo status solicitado
+  ---
+  duration_ms: 36.823622
+  ...
+# Subtest: Fase 4 rotaciona e revoga token; resposta repetida e idempotente
+ok 191 - Fase 4 rotaciona e revoga token; resposta repetida e idempotente
+  ---
+  duration_ms: 88.424562
+  ...
+# Subtest: Fase 4 modelos tem CRUD, duplicacao e isolamento multi-tenant
+ok 192 - Fase 4 modelos tem CRUD, duplicacao e isolamento multi-tenant
+  ---
+  duration_ms: 51.915321
+  ...
+# Subtest: Fase 4 reserva idempotente impede envio duplicado, inclusive em falha de publish
+ok 193 - Fase 4 reserva idempotente impede envio duplicado, inclusive em falha de publish
+  ---
+  duration_ms: 119.678578
+  ...
+# Subtest: Fase 4 aceite move Deal pra Ganho e e idempotente em duplo aceite
+ok 194 - Fase 4 aceite move Deal pra Ganho e e idempotente em duplo aceite
+  ---
+  duration_ms: 92.467072
+  ...
+# Subtest: Fase 4 tracking de visualização é preservado depois do aceite
+ok 195 - Fase 4 tracking de visualização é preservado depois do aceite
+  ---
+  duration_ms: 36.889079
+  ...
+# Subtest: Fase 4 template pré-preenche, mas Proposal já criada vira snapshot independente
+ok 196 - Fase 4 template pré-preenche, mas Proposal já criada vira snapshot independente
+  ---
+  duration_ms: 61.450125
+  ...
+# Subtest: Fase 4 recusa nunca move o Deal vinculado — negócio continua aberto
+ok 197 - Fase 4 recusa nunca move o Deal vinculado — negócio continua aberto
+  ---
+  duration_ms: 39.9645
+  ...
+# Subtest: Métricas comerciais: negócios criados, aberto, ganho/perdido, conversão, ticket médio e negócios sem próximo passo
+ok 198 - Métricas comerciais: negócios criados, aberto, ganho/perdido, conversão, ticket médio e negócios sem próximo passo
+  ---
+  duration_ms: 9623.552328
+  ...
+# Subtest: Métricas comerciais: aging por etapa, filtro por origem restringe o relatório
+ok 199 - Métricas comerciais: aging por etapa, filtro por origem restringe o relatório
+  ---
+  duration_ms: 106.635469
+  ...
+# Subtest: Métricas comerciais: propostas enviadas/aceitas e taxa de aceite
+ok 200 - Métricas comerciais: propostas enviadas/aceitas e taxa de aceite
+  ---
+  duration_ms: 52.593262
+  ...
+# Subtest: Métricas de atendimento: recebidas, backlog, IA vs. humano e tempo de primeira resposta
+ok 201 - Métricas de atendimento: recebidas, backlog, IA vs. humano e tempo de primeira resposta
+  ---
+  duration_ms: 38.171989
+  ...
+# Subtest: nova conversa por telefone nacional: cria contato + conversa no pivô E.164, atribui a quem iniciou e enfileira a 1ª mensagem
+ok 202 - nova conversa por telefone nacional: cria contato + conversa no pivô E.164, atribui a quem iniciou e enfileira a 1ª mensagem
+  ---
+  duration_ms: 9735.520175
+  ...
+# Subtest: nova conversa com contato já existente reaproveita a conversa e reabre se estava finalizada
+ok 203 - nova conversa com contato já existente reaproveita a conversa e reabre se estava finalizada
+  ---
+  duration_ms: 92.439511
+  ...
+# Subtest: nova conversa: rejeita telefone inválido, canal desconectado, Instagram e contato de outro workspace
+ok 204 - nova conversa: rejeita telefone inválido, canal desconectado, Instagram e contato de outro workspace
+  ---
+  duration_ms: 40.411201
+  ...
+# Subtest: respostas rápidas: normaliza atalho, impede duplicado sem diferenciar maiúsculas e isola por workspace
+ok 205 - respostas rápidas: normaliza atalho, impede duplicado sem diferenciar maiúsculas e isola por workspace
+  ---
+  duration_ms: 78.593015
+  ...
+# Subtest: nota interna vira evento da timeline e nunca é enviada ao contato
+ok 206 - nota interna vira evento da timeline e nunca é enviada ao contato
+  ---
+  duration_ms: 59.252827
+  ...
+# Subtest: nova conversa: número com +código de país nunca recebe 55
+ok 207 - nova conversa: número com +código de país nunca recebe 55
+  ---
+  duration_ms: 29.468144
+  ...
+# Subtest: figurinhas: salva a recebida (cópia própria, sem duplicar), envia em outra conversa e isola por workspace
+ok 208 - figurinhas: salva a recebida (cópia própria, sem duplicar), envia em outra conversa e isola por workspace
+  ---
+  duration_ms: 163.273384
+  ...
+# Subtest: MercadoPagoBillingProvider sem credenciais devolve not_configured em todo método, nunca lança
+ok 209 - MercadoPagoBillingProvider sem credenciais devolve not_configured em todo método, nunca lança
+  ---
+  duration_ms: 2.426445
+  ...
+# Subtest: createCheckout: cria preapproval com auto_recurring.transaction_amount do chamador, nunca recalcula, e devolve init_point
+ok 210 - createCheckout: cria preapproval com auto_recurring.transaction_amount do chamador, nunca recalcula, e devolve init_point
+  ---
+  duration_ms: 0.910948
+  ...
+# Subtest: createCheckout: sem amount/currency do chamador falha explicitamente, nunca cobra um valor inventado
+ok 211 - createCheckout: sem amount/currency do chamador falha explicitamente, nunca cobra um valor inventado
+  ---
+  duration_ms: 0.431478
+  ...
+# Subtest: changeSubscription/addSubscriptionItem/removeSubscriptionItem/updateSubscriptionItemQuantity: todos convergem para PUT /preapproval/{id} com o total recalculado pelo chamador
+ok 212 - changeSubscription/addSubscriptionItem/removeSubscriptionItem/updateSubscriptionItemQuantity: todos convergem para PUT /preapproval/{id} com o total recalculado pelo chamador
+  ---
+  duration_ms: 1.202908
+  ...
+# Subtest: cancelSubscription: atPeriodEnd:true é rejeitado (Mercado Pago não agenda nativamente — o chamador usa subscription_pending_changes); atPeriodEnd:false cancela de verdade
+ok 213 - cancelSubscription: atPeriodEnd:true é rejeitado (Mercado Pago não agenda nativamente — o chamador usa subscription_pending_changes); atPeriodEnd:false cancela de verdade
+  ---
+  duration_ms: 0.446647
+  ...
+# Subtest: resumeSubscription: PUT status=authorized
+ok 214 - resumeSubscription: PUT status=authorized
+  ---
+  duration_ms: 0.388403
+  ...
+# Subtest: getPaymentMethod: nunca inventa um cartão — devolve undefined explicitamente
+ok 215 - getPaymentMethod: nunca inventa um cartão — devolve undefined explicitamente
+  ---
+  duration_ms: 0.422688
+  ...
+# Subtest: createCustomerPortal: falha explícita — Mercado Pago não tem portal hospedado equivalente ao Stripe
+ok 216 - createCustomerPortal: falha explícita — Mercado Pago não tem portal hospedado equivalente ao Stripe
+  ---
+  duration_ms: 0.287648
+  ...
+# Subtest: handleWebhook: assinatura x-signature válida (manifest id/ts + HMAC-SHA256) é aceita; inválida é rejeitada
+ok 217 - handleWebhook: assinatura x-signature válida (manifest id/ts + HMAC-SHA256) é aceita; inválida é rejeitada
+  ---
+  duration_ms: 4.049212
+  ...
+# Subtest: handleWebhook: preapproval cancelled mapeia para customer.subscription.deleted (vocabulário canônico já usado pelo Stripe)
+ok 218 - handleWebhook: preapproval cancelled mapeia para customer.subscription.deleted (vocabulário canônico já usado pelo Stripe)
+  ---
+  duration_ms: 0.719764
+  ...
+# Subtest: handleWebhook: pagamento aprovado/rejeitado mapeia para invoice.payment_succeeded/failed
+ok 219 - handleWebhook: pagamento aprovado/rejeitado mapeia para invoice.payment_succeeded/failed
+  ---
+  duration_ms: 0.661833
+  ...
+# Subtest: handleWebhook: preapproval PENDING (checkout aberto, cartão não aprovado) nunca vira contratação; paused vira atualização
+ok 220 - handleWebhook: preapproval PENDING (checkout aberto, cartão não aprovado) nunca vira contratação; paused vira atualização
+  ---
+  duration_ms: 0.72823
+  ...
+# Subtest: createCheckout anual cobra a cada 12 meses
+ok 221 - createCheckout anual cobra a cada 12 meses
+  ---
+  duration_ms: 0.594203
+  ...
+# Subtest: POST /v1/onboarding/start + GET /v1/onboarding: ciclo básico via HTTP
+ok 222 - POST /v1/onboarding/start + GET /v1/onboarding: ciclo básico via HTTP
+  ---
+  duration_ms: 13224.455803
+  ...
+# Subtest: GET /v1/onboarding: workspace nunca iniciado devolve null, nunca inventa progresso vazio
+ok 223 - GET /v1/onboarding: workspace nunca iniciado devolve null, nunca inventa progresso vazio
+  ---
+  duration_ms: 1825.859783
+  ...
+# Subtest: RBAC: viewer não pode iniciar/avançar onboarding (403), mas PODE ler o progresso
+ok 224 - RBAC: viewer não pode iniciar/avançar onboarding (403), mas PODE ler o progresso
+  ---
+  duration_ms: 1381.518377
+  ...
+# Subtest: RBAC: editor pode avançar etapas (workspace:update) mas NÃO pode convidar nem conectar canal (admin-only)
+ok 225 - RBAC: editor pode avançar etapas (workspace:update) mas NÃO pode convidar nem conectar canal (admin-only)
+  ---
+  duration_ms: 2288.534635
+  ...
+# Subtest: POST /v1/onboarding/complete + GET /v1/onboarding: completar de propósito, e depois refletir status completed
+ok 226 - POST /v1/onboarding/complete + GET /v1/onboarding: completar de propósito, e depois refletir status completed
+  ---
+  duration_ms: 3061.75759
+  ...
+# Subtest: POST /v1/onboarding/connect-channel: módulo Conversas desligado responde 409 e nunca cria a conexão (CONVERSATIONS_MODULE_ENABLED ausente = desligado por padrão)
+ok 227 - POST /v1/onboarding/connect-channel: módulo Conversas desligado responde 409 e nunca cria a conexão (CONVERSATIONS_MODULE_ENABLED ausente = desligado por padrão)
+  ---
+  duration_ms: 1252.100924
+  ...
+# Subtest: GET /v1/onboarding: channelModuleEnabled reflete CONVERSATIONS_MODULE_ENABLED; conectar funciona quando ligado
+ok 228 - GET /v1/onboarding: channelModuleEnabled reflete CONVERSATIONS_MODULE_ENABLED; conectar funciona quando ligado
+  ---
+  duration_ms: 1578.841607
+  ...
+# Subtest: startOnboarding: novo workspace entra em onboarding; chamar duas vezes nunca duplica a linha
+ok 229 - startOnboarding: novo workspace entra em onboarding; chamar duas vezes nunca duplica a linha
+  ---
+  duration_ms: 9743.604697
+  ...
+# Subtest: startOnboarding: outro tenant não acessa o progresso do primeiro (mesma mensagem de NOT_FOUND)
+ok 230 - startOnboarding: outro tenant não acessa o progresso do primeiro (mesma mensagem de NOT_FOUND)
+  ---
+  duration_ms: 36.690688
+  ...
+# Subtest: multiworkspace: dois workspaces do MESMO tenant têm progresso totalmente independente
+ok 231 - multiworkspace: dois workspaces do MESMO tenant têm progresso totalmente independente
+  ---
+  duration_ms: 31.665026
+  ...
+# Subtest: saveCompanyStep: salva segmento/tamanho/objetivo, avança para 'channel', e resume preserva o que já foi digitado
+ok 232 - saveCompanyStep: salva segmento/tamanho/objetivo, avança para 'channel', e resume preserva o que já foi digitado
+  ---
+  duration_ms: 25.999868
+  ...
+# Subtest: advanceOnboardingStep: pular uma etapa avança o wizard mas NUNCA marca como concluída (distinção pro checklist da Home)
+ok 233 - advanceOnboardingStep: pular uma etapa avança o wizard mas NUNCA marca como concluída (distinção pro checklist da Home)
+  ---
+  duration_ms: 72.199242
+  ...
+# Subtest: advanceOnboardingStep: chamar duas vezes com o MESMO step é idempotente (nunca duplica no array nem regride currentStep)
+ok 234 - advanceOnboardingStep: chamar duas vezes com o MESMO step é idempotente (nunca duplica no array nem regride currentStep)
+  ---
+  duration_ms: 70.21451
+  ...
+# Subtest: completeOnboarding: idempotente — completar de novo nunca reseta completedAt nem regride o status
+ok 235 - completeOnboarding: idempotente — completar de novo nunca reseta completedAt nem regride o status
+  ---
+  duration_ms: 25.862841
+  ...
+# Subtest: inviteTeamMemberDuringOnboarding: reusa inviteMember de verdade; clicar duas vezes NUNCA cria dois convites pendentes
+ok 236 - inviteTeamMemberDuringOnboarding: reusa inviteMember de verdade; clicar duas vezes NUNCA cria dois convites pendentes
+  ---
+  duration_ms: 86.967105
+  ...
+# Subtest: inviteTeamMemberDuringOnboarding: respeita o limite de usuários do plano (FREE = 1 usuário)
+ok 237 - inviteTeamMemberDuringOnboarding: respeita o limite de usuários do plano (FREE = 1 usuário)
+  ---
+  duration_ms: 35.612701
+  ...
+# Subtest: connectChannelDuringOnboarding: reusa createConnection de verdade; chamar duas vezes reaproveita a MESMA conexão
+ok 238 - connectChannelDuringOnboarding: reusa createConnection de verdade; chamar duas vezes reaproveita a MESMA conexão
+  ---
+  duration_ms: 136.751677
+  ...
+# Subtest: modo somente-leitura (past_due): onboarding não permite convidar nem conectar canal, sem nenhuma checagem duplicada
+ok 239 - modo somente-leitura (past_due): onboarding não permite convidar nem conectar canal, sem nenhuma checagem duplicada
+  ---
+  duration_ms: 24.914228
+  ...
+# Subtest: connectChannelDuringOnboarding: feature flag do módulo Conversas é checada de forma INDEPENDENTE do entitlement
+ok 240 - connectChannelDuringOnboarding: feature flag do módulo Conversas é checada de forma INDEPENDENTE do entitlement
+  ---
+  duration_ms: 31.138126
+  ...
+# Subtest: plan catalog: FREE tem 50 créditos; PRO tem cota maior; PRO destacado; ENTERPRISE e FREE fora do público (aquisição self-service, seção 1: sem plano gratuito permanente)
+ok 241 - plan catalog: FREE tem 50 créditos; PRO tem cota maior; PRO destacado; ENTERPRISE e FREE fora do público (aquisição self-service, seção 1: sem plano gratuito permanente)
+  ---
+  duration_ms: 1.702182
+  ...
+# Subtest: getPlatformPlan retorna a definição; código desconhecido lança
+ok 242 - getPlatformPlan retorna a definição; código desconhecido lança
+  ---
+  duration_ms: 0.373077
+  ...
+# Subtest: periodOf retorna YYYY-MM em UTC (não local)
+ok 243 - periodOf retorna YYYY-MM em UTC (não local)
+  ---
+  duration_ms: 0.193063
+  ...
+# Subtest: applyMarkup: markup 2x dobra o custo; markup < 1 lança
+ok 244 - applyMarkup: markup 2x dobra o custo; markup < 1 lança
+  ---
+  duration_ms: 0.193304
+  ...
+# Subtest: profitOfMonthly: receita − custo, nunca negativo
+ok 245 - profitOfMonthly: receita − custo, nunca negativo
+  ---
+  duration_ms: 0.19584
+  ...
+# Subtest: calculateCustomerCharge é o mesmo que applyMarkup — API pública
+ok 246 - calculateCustomerCharge é o mesmo que applyMarkup — API pública
+  ---
+  duration_ms: 0.136115
+  ...
+# Subtest: changeTenantPlan aplica cotas do plano do catálogo
+ok 247 - changeTenantPlan aplica cotas do plano do catálogo
+  ---
+  duration_ms: 0.668263
+  ...
+# Subtest: adjustTenantCredits soma delta positivo e escreve ledger
+ok 248 - adjustTenantCredits soma delta positivo e escreve ledger
+  ---
+  duration_ms: 0.331266
+  ...
+# Subtest: adjustTenantCredits recusa delta = 0
+ok 249 - adjustTenantCredits recusa delta = 0
+  ---
+  duration_ms: 0.542746
+  ...
+# Subtest: suspendTenant e activateTenant alternam status
+ok 250 - suspendTenant e activateTenant alternam status
+  ---
+  duration_ms: 0.495788
+  ...
+# Subtest: setPriceMultiplier valida faixa 1..100
+ok 251 - setPriceMultiplier valida faixa 1..100
+  ---
+  duration_ms: 0.419295
+  ...
+# Subtest: listTenantsOverview retorna items com quotaUsagePercent computado
+ok 252 - listTenantsOverview retorna items com quotaUsagePercent computado
+  ---
+  duration_ms: 1.346832
+  ...
+# Subtest: getPlatformDashboard soma receita/custo/lucro do mês corrente
+ok 253 - getPlatformDashboard soma receita/custo/lucro do mês corrente
+  ---
+  duration_ms: 1.096756
+  ...
+# Subtest: getTenantDetail junta billing + workspaces + members + usage history de 6 meses
+ok 254 - getTenantDetail junta billing + workspaces + members + usage history de 6 meses
+  ---
+  duration_ms: 0.967125
+  ...
+# Subtest: Pricing math: catálogo real tem os 3 planos aprovados em BRL com a capacidade aprovada
+ok 255 - Pricing math: catálogo real tem os 3 planos aprovados em BRL com a capacidade aprovada
+  ---
+  duration_ms: 9170.954861
+  ...
+# Subtest: Pricing math: cenários da seção 41 do pedido, calculados contra o catálogo real
+ok 256 - Pricing math: cenários da seção 41 do pedido, calculados contra o catálogo real
+  ---
+  duration_ms: 14.533263
+  ...
+# Subtest: Pricing math: crossovers da seção 42 do pedido
+ok 257 - Pricing math: crossovers da seção 42 do pedido
+  ---
+  duration_ms: 8.819816
+  ...
+# Subtest: Catalog validation: START -> PRO -> BUSINESS passa a validação de coerência (nunca pacote mais caro que a alternativa avulsa)
+ok 258 - Catalog validation: START -> PRO -> BUSINESS passa a validação de coerência (nunca pacote mais caro que a alternativa avulsa)
+  ---
+  duration_ms: 7.25781
+  ...
+# Subtest: purchaseAddon: segunda compra do MESMO addon soma quantidade, nunca cria um segundo item
+ok 259 - purchaseAddon: segunda compra do MESMO addon soma quantidade, nunca cria um segundo item
+  ---
+  duration_ms: 164.821038
+  ...
+# Subtest: purchaseAddon: duas compras concorrentes do mesmo addon nunca se perdem uma na outra (incremento atômico)
+ok 260 - purchaseAddon: duas compras concorrentes do mesmo addon nunca se perdem uma na outra (incremento atômico)
+  ---
+  duration_ms: 108.808718
+  ...
+# Subtest: previewCapacityChange: nunca cria SubscriptionItem nem muda a assinatura
+ok 261 - previewCapacityChange: nunca cria SubscriptionItem nem muda a assinatura
+  ---
+  duration_ms: 90.89743
+  ...
+# Subtest: applyCapacityChange: aumento de usuários é imediato (compra o addon na hora)
+ok 262 - applyCapacityChange: aumento de usuários é imediato (compra o addon na hora)
+  ---
+  duration_ms: 115.418654
+  ...
+# Subtest: applyCapacityChange: redução NUNCA é imediata — agenda pro fim do ciclo, scheduler aplica depois
+ok 263 - applyCapacityChange: redução NUNCA é imediata — agenda pro fim do ciclo, scheduler aplica depois
+  ---
+  duration_ms: 309.665168
+  ...
+# Subtest: applyCapacityChange: cancelar uma redução pendente preserva a capacidade atual
+ok 264 - applyCapacityChange: cancelar uma redução pendente preserva a capacidade atual
+  ---
+  duration_ms: 272.723781
+  ...
+# Subtest: applyCapacityChange: reduzir abaixo do uso ativo é rejeitado, nunca desativa usuário/conexão sozinho
+ok 265 - applyCapacityChange: reduzir abaixo do uso ativo é rejeitado, nunca desativa usuário/conexão sozinho
+  ---
+  duration_ms: 116.093658
+  ...
+# Subtest: applyCapacityChange: não permite reduzir abaixo da capacidade incluída no plano (isso é downgrade de plano, não de addon)
+ok 266 - applyCapacityChange: não permite reduzir abaixo da capacidade incluída no plano (isso é downgrade de plano, não de addon)
+  ---
+  duration_ms: 6.581261
+  ...
+# Subtest: Capacidade: isolamento cross-tenant — mudanças de um tenant nunca aparecem em outro
+ok 267 - Capacidade: isolamento cross-tenant — mudanças de um tenant nunca aparecem em outro
+  ---
+  duration_ms: 93.245104
+  ...
+# Subtest: CRÍTICO: GET /v1/platform/plans devolve exatamente o preço/moeda da MESMA plan_version usada no checkout
+ok 268 - CRÍTICO: GET /v1/platform/plans devolve exatamente o preço/moeda da MESMA plan_version usada no checkout
+  ---
+  duration_ms: 2130.587026
+  ...
+# Subtest: CRÍTICO: FREE e ENTERPRISE nunca aparecem no catálogo público, mesmo lendo do banco agora
+ok 269 - CRÍTICO: FREE e ENTERPRISE nunca aparecem no catálogo público, mesmo lendo do banco agora
+  ---
+  duration_ms: 958.034299
+  ...
+# Subtest: POST /v1/platform/plans/simulate: simulador público (sem auth) recomenda o mesmo plano que o cálculo interno
+ok 270 - POST /v1/platform/plans/simulate: simulador público (sem auth) recomenda o mesmo plano que o cálculo interno
+  ---
+  duration_ms: 605.986657
+  ...
+# Subtest: resolveCommercialCapacity: expõe includedUsers/additionalUsers/totalUsers e o equivalente para números, sem duplicar o vocabulário de limits
+ok 271 - resolveCommercialCapacity: expõe includedUsers/additionalUsers/totalUsers e o equivalente para números, sem duplicar o vocabulário de limits
+  ---
+  duration_ms: 22.992097
+  ...
+# Subtest: ESTOQUE: ganho dá baixa, cruzar o ponto de reposição alerta a gestão uma vez, reabrir devolve
+ok 272 - ESTOQUE: ganho dá baixa, cruzar o ponto de reposição alerta a gestão uma vez, reabrir devolve
+  ---
+  duration_ms: 7563.648328
+  ...
+# Subtest: ESTOQUE: produto sem controle não é tocado e não devolve o que nunca baixou
+ok 273 - ESTOQUE: produto sem controle não é tocado e não devolve o que nunca baixou
+  ---
+  duration_ms: 59.928479
+  ...
+# Subtest: ESTOQUE: ajuste manual registra movimento e alerta ao cruzar o ponto de reposição
+ok 274 - ESTOQUE: ajuste manual registra movimento e alerta ao cruzar o ponto de reposição
+  ---
+  duration_ms: 35.115294
+  ...
+# Subtest: RISCO: oportunidades abertas — laranja quando a soma não cabe no estoque, vermelho quando a própria não cabe
+ok 275 - RISCO: oportunidades abertas — laranja quando a soma não cabe no estoque, vermelho quando a própria não cabe
+  ---
+  duration_ms: 109.796465
+  ...
+# Subtest: FOTOS: produto guarda as fotos na ordem (a primeira é a capa) e atualiza sem perder estoque
+ok 276 - FOTOS: produto guarda as fotos na ordem (a primeira é a capa) e atualiza sem perder estoque
+  ---
+  duration_ms: 13.97513
+  ...
+# Subtest: CATÁLOGO: modelos fixos só usam seções do catálogo e as operações de IA estão registradas
+ok 277 - CATÁLOGO: modelos fixos só usam seções do catálogo e as operações de IA estão registradas
+  ---
+  duration_ms: 7101.990735
+  ...
+# Subtest: MODELOS: cliente cria só com seções válidas; quem criou ou a gestão edita; outro tenant não vê
+ok 278 - MODELOS: cliente cria só com seções válidas; quem criou ou a gestão edita; outro tenant não vê
+  ---
+  duration_ms: 17.068438
+  ...
+# Subtest: IA: rascunho de modelo usa o catálogo e não salva nada; análise exige dados e repassa o relatório
+ok 279 - IA: rascunho de modelo usa o catálogo e não salva nada; análise exige dados e repassa o relatório
+  ---
+  duration_ms: 2.252516
+  ...
+# Subtest: ANTI-ALUCINAÇÃO: só sobrevive item com evidência literal do relatório; seção fora do catálogo cai
+ok 280 - ANTI-ALUCINAÇÃO: só sobrevive item com evidência literal do relatório; seção fora do catálogo cai
+  ---
+  duration_ms: 2.294527
+  ...
+# Subtest: Riscos determinísticos e explicações com números do backend (sem IA)
+ok 281 - Riscos determinísticos e explicações com números do backend (sem IA)
+  ---
+  duration_ms: 7995.764879
+  ...
+# Subtest: IA sob demanda recebe fatos calculados e conversa real; sem permissão de margem, margem não vai à IA
+ok 282 - IA sob demanda recebe fatos calculados e conversa real; sem permissão de margem, margem não vai à IA
+  ---
+  duration_ms: 105.421339
+  ...
+# Subtest: Validação anti-alucinação descarta risco/ação/resumo sem evidência literal
+ok 283 - Validação anti-alucinação descarta risco/ação/resumo sem evidência literal
+  ---
+  duration_ms: 2.554275
+  ...
+# Subtest: IA indisponível falha de forma explícita e segura
+ok 284 - IA indisponível falha de forma explícita e segura
+  ---
+  duration_ms: 39.536669
+  ...
+# Subtest: Realizado só conta GANHAS; impacto da oportunidade na meta (cenário 78/84)
+ok 285 - Realizado só conta GANHAS; impacto da oportunidade na meta (cenário 78/84)
+  ---
+  duration_ms: 7942.448607
+  ...
+# Subtest: Vendedor não vê performance alheia nem altera meta; gestão vê equipe
+ok 286 - Vendedor não vê performance alheia nem altera meta; gestão vê equipe
+  ---
+  duration_ms: 111.579265
+  ...
+# Subtest: Crédito é do responsável no momento do ganho, mesmo após transferência
+ok 287 - Crédito é do responsável no momento do ganho, mesmo após transferência
+  ---
+  duration_ms: 90.207351
+  ...
+# Subtest: Meta atingida notifica uma única vez
+ok 288 - Meta atingida notifica uma única vez
+  ---
+  duration_ms: 140.432747
+  ...
+# Subtest: Metas mensais: trimestre e ano são a soma dos meses (nunca digitados)
+ok 289 - Metas mensais: trimestre e ano são a soma dos meses (nunca digitados)
+  ---
+  duration_ms: 58.805416
+  ...
+# Subtest: Aplicar a todos os meses define os 12 meses e recalcula trimestres e ano; remover mês atualiza a soma
+ok 290 - Aplicar a todos os meses define os 12 meses e recalcula trimestres e ano; remover mês atualiza a soma
+  ---
+  duration_ms: 253.745284
+  ...
+# Subtest: Forecast trimestral separa ganho, commit, best case e pipeline ponderado
+ok 291 - Forecast trimestral separa ganho, commit, best case e pipeline ponderado
+  ---
+  duration_ms: 96.977689
+  ...
+# Subtest: Relatórios: produtos, perdas por motivo e conversão; margem só para autorizados
+ok 292 - Relatórios: produtos, perdas por motivo e conversão; margem só para autorizados
+  ---
+  duration_ms: 241.358952
+  ...
+# Subtest: Isolamento: metas e relatórios de outro tenant nunca aparecem
+ok 293 - Isolamento: metas e relatórios de outro tenant nunca aparecem
+  ---
+  duration_ms: 137.723772
+  ...
+# Subtest: Gerar proposta da oportunidade puxa cliente, itens e totais (número PROP-AAAA-NNN v1)
+ok 294 - Gerar proposta da oportunidade puxa cliente, itens e totais (número PROP-AAAA-NNN v1)
+  ---
+  duration_ms: 7879.7286
+  ...
+# Subtest: Abaixo do mínimo: proposta nasce aguardando aprovação; envio bloqueado até o gestor aprovar
+ok 295 - Abaixo do mínimo: proposta nasce aguardando aprovação; envio bloqueado até o gestor aprovar
+  ---
+  duration_ms: 161.687845
+  ...
+# Subtest: Nova versão substitui a anterior só quando enviada; link antigo não aceita mais
+ok 296 - Nova versão substitui a anterior só quando enviada; link antigo não aceita mais
+  ---
+  duration_ms: 144.993198
+  ...
+# Subtest: Visualização só pelo link real; alerta na 1ª abertura e no sinal quente, não a cada refresh
+ok 297 - Visualização só pelo link real; alerta na 1ª abertura e no sinal quente, não a cada refresh
+  ---
+  duration_ms: 164.632896
+  ...
+# Subtest: Aceite idempotente e auditado; padrão não ganha a oportunidade automaticamente
+ok 298 - Aceite idempotente e auditado; padrão não ganha a oportunidade automaticamente
+  ---
+  duration_ms: 86.701959
+  ...
+# Subtest: Com ganho automático configurado, o aceite fecha a venda com o valor da proposta
+ok 299 - Com ganho automático configurado, o aceite fecha a venda com o valor da proposta
+  ---
+  duration_ms: 160.820408
+  ...
+# Subtest: Recusa registra motivo e não perde a oportunidade; proposta vencida não é aceita
+ok 300 - Recusa registra motivo e não perde a oportunidade; proposta vencida não é aceita
+  ---
+  duration_ms: 144.042739
+  ...
+# Subtest: Follow-up: tarefa única para proposta enviada e não aberta em 24h (sem spam)
+ok 301 - Follow-up: tarefa única para proposta enviada e não aberta em 24h (sem spam)
+  ---
+  duration_ms: 195.345238
+  ...
+# Subtest: Mensagem do WhatsApp vem de modelo configurável e sempre leva o link
+ok 302 - Mensagem do WhatsApp vem de modelo configurável e sempre leva o link
+  ---
+  duration_ms: 0.519005
+  ...
+# Subtest: Domínio: margem, desconto e espaço de negociação (cenário 147)
+ok 303 - Domínio: margem, desconto e espaço de negociação (cenário 147)
+  ---
+  duration_ms: 7603.001794
+  ...
+# Subtest: Domínio: acima da tabela é permitido e aumenta a margem (cenário 148)
+ok 304 - Domínio: acima da tabela é permitido e aumenta a margem (cenário 148)
+  ---
+  duration_ms: 0.873109
+  ...
+# Subtest: Domínio: recorrência gera MRR/ARR/TCV sem forçar contrato anual
+ok 305 - Domínio: recorrência gera MRR/ARR/TCV sem forçar contrato anual
+  ---
+  duration_ms: 0.233227
+  ...
+# Subtest: Item da oportunidade: snapshot nunca muda quando o catálogo muda (cenário 150)
+ok 306 - Item da oportunidade: snapshot nunca muda quando o catálogo muda (cenário 150)
+  ---
+  duration_ms: 58.29149
+  ...
+# Subtest: Multi-produto: quantidades, descontos, custo e margem determinísticos (cenário 151)
+ok 307 - Multi-produto: quantidades, descontos, custo e margem determinísticos (cenário 151)
+  ---
+  duration_ms: 88.543632
+  ...
+# Subtest: Visibilidade: vendedor sem permissão não recebe custo; margem conforme configuração
+ok 308 - Visibilidade: vendedor sem permissão não recebe custo; margem conforme configuração
+  ---
+  duration_ms: 65.348001
+  ...
+# Subtest: Abaixo do mínimo exige aprovação; envio bloqueado até aprovar (cenário 149)
+ok 309 - Abaixo do mínimo exige aprovação; envio bloqueado até aprovar (cenário 149)
+  ---
+  duration_ms: 112.810443
+  ...
+# Subtest: Política: margem mínima e desconto máximo por usuário sobrescrevem o workspace
+ok 310 - Política: margem mínima e desconto máximo por usuário sobrescrevem o workspace
+  ---
+  duration_ms: 49.834352
+  ...
+# Subtest: Ganho grava snapshot definitivo e credita o responsável do momento (cenário 152)
+ok 311 - Ganho grava snapshot definitivo e credita o responsável do momento (cenário 152)
+  ---
+  duration_ms: 90.023173
+  ...
+# Subtest: Perda exige motivo, registra concorrente e não conta como venda (cenário 153)
+ok 312 - Perda exige motivo, registra concorrente e não conta como venda (cenário 153)
+  ---
+  duration_ms: 51.781803
+  ...
+# Subtest: Kanban: mover para etapa de ganho fecha com snapshot; etapa exige campos configurados
+ok 313 - Kanban: mover para etapa de ganho fecha com snapshot; etapa exige campos configurados
+  ---
+  duration_ms: 63.975413
+  ...
+# Subtest: Tabela de preço e variação resolvem o preço; isolamento entre tenants
+ok 314 - Tabela de preço e variação resolvem o preço; isolamento entre tenants
+  ---
+  duration_ms: 41.474885
+  ...
+# Subtest: Visibilidade own/team e aviso de duplicidade
+ok 315 - Visibilidade own/team e aviso de duplicidade
+  ---
+  duration_ms: 18.615017
+  ...
+# Subtest: DISPONIBILIDADE COMERCIAL: só o Vorix Conversas é público; Marketing é interno
+ok 316 - DISPONIBILIDADE COMERCIAL: só o Vorix Conversas é público; Marketing é interno
+  ---
+  duration_ms: 6396.044967
+  ...
+# Subtest: ACESSO: kill switch, entitlement e default são conceitos separados
+ok 317 - ACESSO: kill switch, entitlement e default são conceitos separados
+  ---
+  duration_ms: 0.510229
+  ...
+# Subtest: CONCESSÃO: solução não comercial só aceita origem interna
+ok 318 - CONCESSÃO: solução não comercial só aceita origem interna
+  ---
+  duration_ms: 0.586931
+  ...
+# Subtest: ROTAS: classificação por solução — Marketing barrado, Core e Conversas livres
+ok 319 - ROTAS: classificação por solução — Marketing barrado, Core e Conversas livres
+  ---
+  duration_ms: 0.617885
+  ...
+# Subtest: ONBOARDING: o wizard é só do Conversas — a etapa de marca (Marketing) saiu da sequência
+ok 320 - ONBOARDING: o wizard é só do Conversas — a etapa de marca (Marketing) saiu da sequência
+  ---
+  duration_ms: 0.216795
+  ...
+# Subtest: ENTITLEMENT: tenant comum tem Conversas e NÃO tem Marketing; concessão interna libera e fica auditada
+ok 321 - ENTITLEMENT: tenant comum tem Conversas e NÃO tem Marketing; concessão interna libera e fica auditada
+  ---
+  duration_ms: 19.166196
+  ...
+# Subtest: KILL SWITCH: desliga a solução para todos, inclusive quem tem concessão interna
+ok 322 - KILL SWITCH: desliga a solução para todos, inclusive quem tem concessão interna
+  ---
+  duration_ms: 5.301179
+  ...
+# Subtest: CACHE: uma concessão nova vale imediatamente no mesmo processo
+ok 323 - CACHE: uma concessão nova vale imediatamente no mesmo processo
+  ---
+  duration_ms: 4.829201
+  ...
+# Subtest: MIGRATION: quem já usa o Creative Engine mantém acesso interno ao Marketing; ninguém mais ganha
+ok 324 - MIGRATION: quem já usa o Creative Engine mantém acesso interno ao Marketing; ninguém mais ganha
+  ---
+  duration_ms: 9.45623
+  ...
+# Subtest: API: usuário comum (até owner) recebe 403 em TODA rota de Marketing — não é só a sidebar
+ok 325 - API: usuário comum (até owner) recebe 403 em TODA rota de Marketing — não é só a sidebar
+  ---
+  duration_ms: 428.70718
+  ...
+# Subtest: API: Conversas e Core seguem funcionando para o mesmo usuário comum
+ok 326 - API: Conversas e Core seguem funcionando para o mesmo usuário comum
+  ---
+  duration_ms: 256.343659
+  ...
+# Subtest: API: tenant com concessão INTERNA acessa o Marketing e vê as duas soluções
+ok 327 - API: tenant com concessão INTERNA acessa o Marketing e vê as duas soluções
+  ---
+  duration_ms: 231.883033
+  ...
+# Subtest: API: o guarda de solução não substitui o RBAC — viewer interno continua barrado pelo papel
+ok 328 - API: o guarda de solução não substitui o RBAC — viewer interno continua barrado pelo papel
+  ---
+  duration_ms: 157.706454
+  ...
+# Subtest: API: conceder solução é só de administrador da plataforma, e Marketing recusa origem comercial
+ok 329 - API: conceder solução é só de administrador da plataforma, e Marketing recusa origem comercial
+  ---
+  duration_ms: 307.203524
+  ...
+# Subtest: API: requisição sem autenticação não é decidida pelo guarda (webhooks/callbacks seguem com a própria rota)
+ok 330 - API: requisição sem autenticação não é decidida pelo guarda (webhooks/callbacks seguem com a própria rota)
+  ---
+  duration_ms: 116.198296
+  ...
+# Subtest: startTrial: cria uma Subscription real em status trial, com trialStart/trialEnd calculados a partir de PlanVersion.trialDays (7 do PRO desde a migration 0131), nunca hardcoded
+ok 331 - startTrial: cria uma Subscription real em status trial, com trialStart/trialEnd calculados a partir de PlanVersion.trialDays (7 do PRO desde a migration 0131), nunca hardcoded
+  ---
+  duration_ms: 6690.887489
+  ...
+# Subtest: startTrial: idempotente — chamar duas vezes devolve a MESMA Subscription, nunca cria duas
+ok 332 - startTrial: idempotente — chamar duas vezes devolve a MESMA Subscription, nunca cria duas
+  ---
+  duration_ms: 14.475585
+  ...
+# Subtest: startTrial: rejeita quando já existe assinatura real ativa (paga)
+ok 333 - startTrial: rejeita quando já existe assinatura real ativa (paga)
+  ---
+  duration_ms: 7.746844
+  ...
+# Subtest: startTrial: FREE não oferece trial (trialDays null) — rejeita com mensagem clara, nunca hardcoded 'plano X'
+ok 334 - startTrial: FREE não oferece trial (trialDays null) — rejeita com mensagem clara, nunca hardcoded 'plano X'
+  ---
+  duration_ms: 4.226246
+  ...
+# Subtest: startTrial: TRIAL_ENABLED é um kill switch independente de PlanVersion.trialDays
+ok 335 - startTrial: TRIAL_ENABLED é um kill switch independente de PlanVersion.trialDays
+  ---
+  duration_ms: 2.040477
+  ...
+# Subtest: Entitlements durante trial: usa os limites do PlanVersion normalmente, sem regra paralela — nunca readOnly enquanto o trial está ativo
+ok 336 - Entitlements durante trial: usa os limites do PlanVersion normalmente, sem regra paralela — nunca readOnly enquanto o trial está ativo
+  ---
+  duration_ms: 25.447406
+  ...
+# Subtest: expireTrials: transiciona trial vencido pra trial_expired sem apagar nada, e o modo somente-leitura JÁ EXISTENTE passa a se aplicar (nenhuma regra nova em entitlements)
+ok 337 - expireTrials: transiciona trial vencido pra trial_expired sem apagar nada, e o modo somente-leitura JÁ EXISTENTE passa a se aplicar (nenhuma regra nova em entitlements)
+  ---
+  duration_ms: 29.156062
+  ...
+# Subtest: Conversão trial -> pago: startCheckout é permitido pra quem está em trial (não bloqueia como 'já assinado'), e o webhook confirmado reusa a MESMA Subscription emitindo trial_converted
+ok 338 - Conversão trial -> pago: startCheckout é permitido pra quem está em trial (não bloqueia como 'já assinado'), e o webhook confirmado reusa a MESMA Subscription emitindo trial_converted
+  ---
+  duration_ms: 35.201428
+  ...
+# Subtest: Conversão trial -> pago: um trial JÁ VENCIDO (trial_expired) também pode ir a checkout normalmente
+ok 339 - Conversão trial -> pago: um trial JÁ VENCIDO (trial_expired) também pode ir a checkout normalmente
+  ---
+  duration_ms: 11.248525
+  ...
+# Subtest: startCheckout: tenant já PAGO (active) continua bloqueado de ir a um novo checkout (regressão)
+ok 340 - startCheckout: tenant já PAGO (active) continua bloqueado de ir a um novo checkout (regressão)
+  ---
+  duration_ms: 4.158523
+  ...
+# {"level":30,"time":1792325762785,"pid":550,"hostname":"73b844f196cf","reqId":"7158d97a-ab0c-4619-b898-940c4f62c44b","req":{"method":"POST","url":"/v1/files/sign","hostname":"localhost","remoteAddress":"127.0.0.1"},"msg":"incoming request"}
+# {"level":30,"time":1792325762798,"pid":550,"hostname":"73b844f196cf","reqId":"7158d97a-ab0c-4619-b898-940c4f62c44b","res":{"statusCode":200},"responseTime":11.874354999999923,"msg":"request completed"}
+# {"level":30,"time":1792325762799,"pid":550,"hostname":"73b844f196cf","reqId":"8a12dfa7-bfab-48af-ab1b-15c08da6b6a9","req":{"method":"GET","url":"/uploads/assets/tenant-A/workspace-mvdshcex-s5mhfw/a.png?exp=1791723600&sig=[REDACTED]","hostname":"localhost","remoteAddress":"127.0.0.1"},"msg":"incoming request"}
+# {"level":30,"time":1792325762806,"pid":550,"hostname":"73b844f196cf","reqId":"8a12dfa7-bfab-48af-ab1b-15c08da6b6a9","res":{"statusCode":200},"responseTime":5.6421299999997245,"msg":"request completed"}
+# Subtest: A: owner autenticado assina a própria chave e lê → 200 (cache privado)
+ok 341 - A: owner autenticado assina a própria chave e lê → 200 (cache privado)
+  ---
+  duration_ms: 1908.434306
+  ...
+# {"level":30,"time":1792325762807,"pid":550,"hostname":"73b844f196cf","reqId":"2703e0dd-91e5-4116-9658-7fb8492b207e","req":{"method":"POST","url":"/v1/files/sign","hostname":"localhost","remoteAddress":"127.0.0.1"},"msg":"incoming request"}
+# {"level":30,"time":1792325762811,"pid":550,"hostname":"73b844f196cf","reqId":"2703e0dd-91e5-4116-9658-7fb8492b207e","res":{"statusCode":200},"responseTime":3.7177820000001702,"msg":"request completed"}
+# {"level":30,"time":1792325762813,"pid":550,"hostname":"73b844f196cf","reqId":"c368527a-8ff2-4b89-849a-06a97507c34d","req":{"method":"POST","url":"/v1/files/sign","hostname":"localhost","remoteAddress":"127.0.0.1"},"msg":"incoming request"}
+# {"level":40,"time":1792325762815,"pid":550,"hostname":"73b844f196cf","reqId":"c368527a-8ff2-4b89-849a-06a97507c34d","err":{"type":"NotFoundError","message":"Arquivo não encontrado.","stack":"NotFoundError: Arquivo não encontrado.\\n    at Object.<anonymous> (file:///app/dist/interfaces/api/routes/v1/files.route.js:23:19)\\n    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)","code":"NOT_FOUND","statusCode":404,"recoverable":true,"name":"NotFoundError"},"code":"NOT_FOUND","msg":"Requisição terminou em erro de aplicação."}
+# {"level":30,"time":1792325762816,"pid":550,"hostname":"73b844f196cf","reqId":"c368527a-8ff2-4b89-849a-06a97507c34d","res":{"statusCode":404},"responseTime":3.5448429999996733,"msg":"request completed"}
+# {"level":30,"time":1792325762817,"pid":550,"hostname":"73b844f196cf","reqId":"9e82b67d-4df4-46fc-b965-87409f832ba7","req":{"method":"POST","url":"/v1/files/sign","hostname":"localhost","remoteAddress":"127.0.0.1"},"msg":"incoming request"}
+# Subtest: B: mesmo tenant no prefixo, mas workspace de OUTRO tenant → 404
+ok 342 - B: mesmo tenant no prefixo, mas workspace de OUTRO tenant → 404
+  ---
+  duration_ms: 6.623426
+  ...
+# {"level":40,"time":1792325762818,"pid":550,"hostname":"73b844f196cf","reqId":"9e82b67d-4df4-46fc-b965-87409f832ba7","err":{"type":"NotFoundError","message":"Arquivo não encontrado.","stack":"NotFoundError: Arquivo não encontrado.\\n    at Object.<anonymous> (file:///app/dist/interfaces/api/routes/v1/files.route.js:23:19)\\n    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)","code":"NOT_FOUND","statusCode":404,"recoverable":true,"name":"NotFoundError"},"code":"NOT_FOUND","msg":"Requisição terminou em erro de aplicação."}
+# {"level":30,"time":1792325762818,"pid":550,"hostname":"73b844f196cf","reqId":"9e82b67d-4df4-46fc-b965-87409f832ba7","res":{"statusCode":404},"responseTime":1.373634999999922,"msg":"request completed"}
+# {"level":30,"time":1792325762819,"pid":550,"hostname":"73b844f196cf","reqId":"f356288f-bd05-4f26-9470-c572b03444aa","req":{"method":"POST","url":"/v1/files/sign","hostname":"localhost","remoteAddress":"127.0.0.1"},"msg":"incoming request"}
+# {"level":40,"time":1792325762820,"pid":550,"hostname":"73b844f196cf","reqId":"f356288f-bd05-4f26-9470-c572b03444aa","err":{"type":"NotFoundError","message":"Arquivo não encontrado.","stack":"NotFoundError: Arquivo não encontrado.\\n    at Object.<anonymous> (file:///app/dist/interfaces/api/routes/v1/files.route.js:23:19)\\n    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)","code":"NOT_FOUND","statusCode":404,"recoverable":true,"name":"NotFoundError"},"code":"NOT_FOUND","msg":"Requisição terminou em erro de aplicação."}
+# {"level":30,"time":1792325762821,"pid":550,"hostname":"73b844f196cf","reqId":"f356288f-bd05-4f26-9470-c572b03444aa","res":{"statusCode":404},"responseTime":1.7994359999997869,"msg":"request completed"}
+# {"level":30,"time":1792325762821,"pid":550,"hostname":"73b844f196cf","reqId":"705b6b74-d80e-4e29-9b53-f2dc337fd903","req":{"method":"POST","url":"/v1/files/sign","hostname":"localhost","remoteAddress":"127.0.0.1"},"msg":"incoming request"}
+# Subtest: C: outro tenant → 404 (nunca 403), e a resposta JSON não assina a chave alheia
+ok 343 - C: outro tenant → 404 (nunca 403), e a resposta JSON não assina a chave alheia
+  ---
+  duration_ms: 5.484226
+  ...
+# Subtest: D: arquivo privado sem auth/sem assinatura → bloqueado (404); assinar exige autenticação
+ok 344 - D: arquivo privado sem auth/sem assinatura → bloqueado (404); assinar exige autenticação
+  ---
+  duration_ms: 3.40061
+  ...
+# {"level":40,"time":1792325762822,"pid":550,"hostname":"73b844f196cf","reqId":"705b6b74-d80e-4e29-9b53-f2dc337fd903","err":{"type":"NotFoundError","message":"Arquivo não encontrado.","stack":"NotFoundError: Arquivo não encontrado.\\n    at Object.<anonymous> (file:///app/dist/interfaces/api/routes/v1/files.route.js:23:19)\\n    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)","code":"NOT_FOUND","statusCode":404,"recoverable":true,"name":"NotFoundError"},"code":"NOT_FOUND","msg":"Requisição terminou em erro de aplicação."}
+# {"level":30,"time":1792325762822,"pid":550,"hostname":"73b844f196cf","reqId":"705b6b74-d80e-4e29-9b53-f2dc337fd903","res":{"statusCode":404},"responseTime":1.0572000000001935,"msg":"request completed"}
+# {"level":30,"time":1792325762823,"pid":550,"hostname":"73b844f196cf","reqId":"45987094-84e2-46e4-a5aa-d29f0b97f61d","req":{"method":"POST","url":"/v1/files/sign","hostname":"localhost","remoteAddress":"127.0.0.1"},"msg":"incoming request"}
+# {"level":40,"time":1792325762823,"pid":550,"hostname":"73b844f196cf","reqId":"45987094-84e2-46e4-a5aa-d29f0b97f61d","err":{"type":"NotFoundError","message":"Arquivo não encontrado.","stack":"NotFoundError: Arquivo não encontrado.\\n    at Object.<anonymous> (file:///app/dist/interfaces/api/routes/v1/files.route.js:23:19)\\n    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)","code":"NOT_FOUND","statusCode":404,"recoverable":true,"name":"NotFoundError"},"code":"NOT_FOUND","msg":"Requisição terminou em erro de aplicação."}
+# {"level":30,"time":1792325762824,"pid":550,"hostname":"73b844f196cf","reqId":"45987094-84e2-46e4-a5aa-d29f0b97f61d","res":{"statusCode":404},"responseTime":1.0230699999997341,"msg":"request completed"}
+# {"level":30,"time":1792325762824,"pid":550,"hostname":"73b844f196cf","reqId":"671f3cf5-0b70-48d3-9162-d60d69f9734a","req":{"method":"GET","url":"/uploads/assets/tenant-A/workspace-mvdshcex-s5mhfw/a.png","hostname":"localhost","remoteAddress":"127.0.0.1"},"msg":"incoming request"}
+# {"level":40,"time":1792325762825,"pid":550,"hostname":"73b844f196cf","reqId":"671f3cf5-0b70-48d3-9162-d60d69f9734a","uploadsAccessDenied":"PRIVATE_WITHOUT_SIGNATURE","msg":"uploads: acesso negado"}
+# {"level":40,"time":1792325762825,"pid":550,"hostname":"73b844f196cf","reqId":"671f3cf5-0b70-48d3-9162-d60d69f9734a","err":{"type":"NotFoundError","message":"Arquivo não encontrado.","stack":"NotFoundError: Arquivo não encontrado.\\n    at notFound (file:///app/dist/interfaces/api/routes/uploads.route.js:22:20)\\n    at Object.<anonymous> (file:///app/dist/interfaces/api/routes/uploads.route.js:38:23)\\n    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)","code":"NOT_FOUND","statusCode":404,"recoverable":true,"name":"NotFoundError"},"code":"NOT_FOUND","msg":"Requisição terminou em erro de aplicação."}
+# {"level":30,"time":1792325762825,"pid":550,"hostname":"73b844f196cf","reqId":"671f3cf5-0b70-48d3-9162-d60d69f9734a","res":{"statusCode":404},"responseTime":0.718703000000005,"msg":"request completed"}
+# {"level":30,"time":1792325762826,"pid":550,"hostname":"73b844f196cf","reqId":"c07bfc32-f065-4c1b-b3c8-7af09c02cd76","req":{"method":"POST","url":"/v1/files/sign","hostname":"localhost","remoteAddress":"127.0.0.1"},"msg":"incoming request"}
+# {"level":40,"time":1792325762827,"pid":550,"hostname":"73b844f196cf","reqId":"c07bfc32-f065-4c1b-b3c8-7af09c02cd76","err":{"type":"UnauthorizedError","message":"Autenticação necessária.","stack":"UnauthorizedError: Autenticação necessária.\\n    at requirePrincipal (file:///app/dist/interfaces/api/http/require-principal.js:16:11)\\n    at requirePermission (file:///app/dist/interfaces/api/http/require-principal.js:20:23)\\n    at Object.<anonymous> (file:///app/dist/interfaces/api/routes/v1/files.route.js:19:27)\\n    at preHandlerCallbackInner (/app/node_modules/fastify/lib/handle-request.js:175:24)\\n    at preHandlerCallback (/app/node_modules/fastify/lib/handle-request.js:140:5)\\n    at next (/app/node_modules/fastify/lib/hooks.js:236:9)\\n    at handleResolve (/app/node_modules/fastify/lib/hooks.js:253:7)\\n    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)","code":"UNAUTHORIZED","statusCode":401,"recoverable":true,"name":"UnauthorizedError"},"code":"UNAUTHORIZED","msg":"Requisição terminou em erro de aplicação."}
+# {"level":30,"time":1792325762827,"pid":550,"hostname":"73b844f196cf","reqId":"c07bfc32-f065-4c1b-b3c8-7af09c02cd76","res":{"statusCode":401},"responseTime":1.4263340000002245,"msg":"request completed"}
+# {"level":30,"time":1792325762828,"pid":550,"hostname":"73b844f196cf","reqId":"b6fa8e14-cd9d-4da3-84c7-d7a46b6f0196","req":{"method":"GET","url":"/uploads/public-ok/tenant-A/banner.png","hostname":"localhost","remoteAddress":"127.0.0.1"},"msg":"incoming request"}
+# {"level":30,"time":1792325762882,"pid":550,"hostname":"73b844f196cf","reqId":"b6fa8e14-cd9d-4da3-84c7-d7a46b6f0196","res":{"statusCode":200},"responseTime":54.13357199999973,"msg":"request completed"}
+# Subtest: E: objeto público EXPLÍCITO (com motivo persistido) é servido sem assinatura; os demais continuam privados
+ok 345 - E: objeto público EXPLÍCITO (com motivo persistido) é servido sem assinatura; os demais continuam privados
+  ---
+  duration_ms: 57.31887
+  ...
+# {"level":30,"time":1792325762883,"pid":550,"hostname":"73b844f196cf","reqId":"dc0ff42b-4fa7-49ff-8593-34464f2fc3e2","req":{"method":"GET","url":"/uploads/public-ok/tenant-A/banner.png","hostname":"localhost","remoteAddress":"127.0.0.1"},"msg":"incoming request"}
+# {"level":40,"time":1792325762884,"pid":550,"hostname":"73b844f196cf","reqId":"dc0ff42b-4fa7-49ff-8593-34464f2fc3e2","uploadsAccessDenied":"PRIVATE_WITHOUT_SIGNATURE","msg":"uploads: acesso negado"}
+# {"level":40,"time":1792325762884,"pid":550,"hostname":"73b844f196cf","reqId":"dc0ff42b-4fa7-49ff-8593-34464f2fc3e2","err":{"type":"NotFoundError","message":"Arquivo não encontrado.","stack":"NotFoundError: Arquivo não encontrado.\\n    at notFound (file:///app/dist/interfaces/api/routes/uploads.route.js:22:20)\\n    at Object.<anonymous> (file:///app/dist/interfaces/api/routes/uploads.route.js:38:23)\\n    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)","code":"NOT_FOUND","statusCode":404,"recoverable":true,"name":"NotFoundError"},"code":"NOT_FOUND","msg":"Requisição terminou em erro de aplicação."}
+# {"level":30,"time":1792325762885,"pid":550,"hostname":"73b844f196cf","reqId":"dc0ff42b-4fa7-49ff-8593-34464f2fc3e2","res":{"statusCode":404},"responseTime":1.0728089999993244,"msg":"request completed"}
+# {"level":30,"time":1792325762886,"pid":550,"hostname":"73b844f196cf","reqId":"363cf8e5-a5aa-4c64-ab10-be255272312e","req":{"method":"GET","url":"/uploads/assets/tenant-A/workspace-mvdshcex-s5mhfw/nao-existe.png?exp=1791720600&sig=[REDACTED]","hostname":"localhost","remoteAddress":"127.0.0.1"},"msg":"incoming request"}
+# Subtest: F: chave inexistente (mesmo assinada) → 404
+ok 346 - F: chave inexistente (mesmo assinada) → 404
+  ---
+  duration_ms: 4.399056
+  ...
+# Subtest: G/H: path traversal cru e codificado → bloqueado (404), nunca lê fora da raiz
+ok 347 - G/H: path traversal cru e codificado → bloqueado (404), nunca lê fora da raiz
+  ---
+  duration_ms: 10.315326
+  ...
+# {"level":40,"time":1792325762888,"pid":550,"hostname":"73b844f196cf","reqId":"363cf8e5-a5aa-4c64-ab10-be255272312e","uploadsAccessDenied":"NOT_FOUND","msg":"uploads: acesso negado"}
+# {"level":40,"time":1792325762888,"pid":550,"hostname":"73b844f196cf","reqId":"363cf8e5-a5aa-4c64-ab10-be255272312e","err":{"type":"NotFoundError","message":"Arquivo não encontrado.","stack":"NotFoundError: Arquivo não encontrado.\\n    at notFound (file:///app/dist/interfaces/api/routes/uploads.route.js:22:20)\\n    at Object.<anonymous> (file:///app/dist/interfaces/api/routes/uploads.route.js:43:19)","code":"NOT_FOUND","statusCode":404,"recoverable":true,"name":"NotFoundError"},"code":"NOT_FOUND","msg":"Requisição terminou em erro de aplicação."}
+# {"level":30,"time":1792325762889,"pid":550,"hostname":"73b844f196cf","reqId":"363cf8e5-a5aa-4c64-ab10-be255272312e","res":{"statusCode":404},"responseTime":2.8074610000003304,"msg":"request completed"}
+# {"level":30,"time":1792325762890,"pid":550,"hostname":"73b844f196cf","reqId":"b0b309b0-38fd-4c14-9560-daf23ef848c5","req":{"method":"GET","url":"/etc/passwd","hostname":"localhost","remoteAddress":"127.0.0.1"},"msg":"incoming request"}
+# {"level":30,"time":1792325762891,"pid":550,"hostname":"73b844f196cf","reqId":"b0b309b0-38fd-4c14-9560-daf23ef848c5","res":{"statusCode":404},"responseTime":0.7092229999998381,"msg":"request completed"}
+# {"level":30,"time":1792325762892,"pid":550,"hostname":"73b844f196cf","reqId":"91737ae0-bc9d-4cf8-874b-f7d9a84d81c2","req":{"method":"GET","url":"/etc/passwd","hostname":"localhost","remoteAddress":"127.0.0.1"},"msg":"incoming request"}
+# {"level":30,"time":1792325762893,"pid":550,"hostname":"73b844f196cf","reqId":"91737ae0-bc9d-4cf8-874b-f7d9a84d81c2","res":{"statusCode":404},"responseTime":0.5341749999997774,"msg":"request completed"}
+# {"level":30,"time":1792325762893,"pid":550,"hostname":"73b844f196cf","reqId":"633a22d8-97f3-458e-a880-01f0e99c97d0","req":{"method":"GET","url":"/uploads/assets/%2e%2e%2f%2e%2e%2fsecret","hostname":"localhost","remoteAddress":"127.0.0.1"},"msg":"incoming request"}
+# {"level":40,"time":1792325762894,"pid":550,"hostname":"73b844f196cf","reqId":"633a22d8-97f3-458e-a880-01f0e99c97d0","uploadsAccessDenied":"INVALID_PATH","msg":"uploads: acesso negado"}
+# {"level":40,"time":1792325762894,"pid":550,"hostname":"73b844f196cf","reqId":"633a22d8-97f3-458e-a880-01f0e99c97d0","err":{"type":"NotFoundError","message":"Arquivo não encontrado.","stack":"NotFoundError: Arquivo não encontrado.\\n    at notFound (file:///app/dist/interfaces/api/routes/uploads.route.js:22:20)\\n    at Object.<anonymous> (file:///app/dist/interfaces/api/routes/uploads.route.js:29:19)\\n    at preHandlerCallbackInner (/app/node_modules/fastify/lib/handle-request.js:175:24)\\n    at preHandlerCallback (/app/node_modules/fastify/lib/handle-request.js:140:5)\\n    at next (/app/node_modules/fastify/lib/hooks.js:236:9)\\n    at handleResolve (/app/node_modules/fastify/lib/hooks.js:253:7)\\n    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)","code":"NOT_FOUND","statusCode":404,"recoverable":true,"name":"NotFoundError"},"code":"NOT_FOUND","msg":"Requisição terminou em erro de aplicação."}
+# {"level":30,"time":1792325762894,"pid":550,"hostname":"73b844f196cf","reqId":"633a22d8-97f3-458e-a880-01f0e99c97d0","res":{"statusCode":404},"responseTime":0.7283299999999144,"msg":"request completed"}
+# {"level":30,"time":1792325762895,"pid":550,"hostname":"73b844f196cf","reqId":"f2ea84b6-a222-4b77-a843-1a441fa63e49","req":{"method":"GET","url":"/uploads/..%5c..%5csecret","hostname":"localhost","remoteAddress":"127.0.0.1"},"msg":"incoming request"}
+# {"level":40,"time":1792325762895,"pid":550,"hostname":"73b844f196cf","reqId":"f2ea84b6-a222-4b77-a843-1a441fa63e49","uploadsAccessDenied":"INVALID_PATH","msg":"uploads: acesso negado"}
+# {"level":40,"time":1792325762895,"pid":550,"hostname":"73b844f196cf","reqId":"f2ea84b6-a222-4b77-a843-1a441fa63e49","err":{"type":"NotFoundError","message":"Arquivo não encontrado.","stack":"NotFoundError: Arquivo não encontrado.\\n    at notFound (file:///app/dist/interfaces/api/routes/uploads.route.js:22:20)\\n    at Object.<anonymous> (file:///app/dist/interfaces/api/routes/uploads.route.js:29:19)\\n    at preHandlerCallbackInner (/app/node_modules/fastify/lib/handle-request.js:175:24)\\n    at preHandlerCallback (/app/node_modules/fastify/lib/handle-request.js:140:5)\\n    at next (/app/node_modules/fastify/lib/hooks.js:236:9)\\n    at handleResolve (/app/node_modules/fastify/lib/hooks.js:253:7)\\n    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)","code":"NOT_FOUND","statusCode":404,"recoverable":true,"name":"NotFoundError"},"code":"NOT_FOUND","msg":"Requisição terminou em erro de aplicação."}
+# {"level":30,"time":1792325762896,"pid":550,"hostname":"73b844f196cf","reqId":"f2ea84b6-a222-4b77-a843-1a441fa63e49","res":{"statusCode":404},"responseTime":0.695702999999412,"msg":"request completed"}
+# {"level":30,"time":1792325762896,"pid":550,"hostname":"73b844f196cf","reqId":"31c97bc1-eb3b-44cc-b755-50b44a882cd8","req":{"method":"GET","url":"/uploads/%00","hostname":"localhost","remoteAddress":"127.0.0.1"},"msg":"incoming request"}
+# {"level":40,"time":1792325762896,"pid":550,"hostname":"73b844f196cf","reqId":"31c97bc1-eb3b-44cc-b755-50b44a882cd8","uploadsAccessDenied":"PRIVATE_WITHOUT_SIGNATURE","msg":"uploads: acesso negado"}
+# {"level":40,"time":1792325762896,"pid":550,"hostname":"73b844f196cf","reqId":"31c97bc1-eb3b-44cc-b755-50b44a882cd8","err":{"type":"NotFoundError","message":"Arquivo não encontrado.","stack":"NotFoundError: Arquivo não encontrado.\\n    at notFound (file:///app/dist/interfaces/api/routes/uploads.route.js:22:20)\\n    at Object.<anonymous> (file:///app/dist/interfaces/api/routes/uploads.route.js:38:23)\\n    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)","code":"NOT_FOUND","statusCode":404,"recoverable":true,"name":"NotFoundError"},"code":"NOT_FOUND","msg":"Requisição terminou em erro de aplicação."}
+# {"level":30,"time":1792325762897,"pid":550,"hostname":"73b844f196cf","reqId":"31c97bc1-eb3b-44cc-b755-50b44a882cd8","res":{"statusCode":404},"responseTime":0.6053179999998974,"msg":"request completed"}
+# {"level":30,"time":1792325762897,"pid":550,"hostname":"73b844f196cf","reqId":"3c8796cc-f5bc-4c80-828d-f908db7be4d7","req":{"method":"GET","url":"/uploads/a/b","hostname":"localhost","remoteAddress":"127.0.0.1"},"msg":"incoming request"}
+# {"level":40,"time":1792325762897,"pid":550,"hostname":"73b844f196cf","reqId":"3c8796cc-f5bc-4c80-828d-f908db7be4d7","uploadsAccessDenied":"PRIVATE_WITHOUT_SIGNATURE","msg":"uploads: acesso negado"}
+# {"level":40,"time":1792325762898,"pid":550,"hostname":"73b844f196cf","reqId":"3c8796cc-f5bc-4c80-828d-f908db7be4d7","err":{"type":"NotFoundError","message":"Arquivo não encontrado.","stack":"NotFoundError: Arquivo não encontrado.\\n    at notFound (file:///app/dist/interfaces/api/routes/uploads.route.js:22:20)\\n    at Object.<anonymous> (file:///app/dist/interfaces/api/routes/uploads.route.js:38:23)\\n    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)","code":"NOT_FOUND","statusCode":404,"recoverable":true,"name":"NotFoundError"},"code":"NOT_FOUND","msg":"Requisição terminou em erro de aplicação."}
+# {"level":30,"time":1792325762898,"pid":550,"hostname":"73b844f196cf","reqId":"3c8796cc-f5bc-4c80-828d-f908db7be4d7","res":{"statusCode":404},"responseTime":0.6933119999994233,"msg":"request completed"}
+# {"level":30,"time":1792325762898,"pid":550,"hostname":"73b844f196cf","reqId":"455ef5a9-219d-4657-b051-231f77a00efe","req":{"method":"POST","url":"/v1/files/sign","hostname":"localhost","remoteAddress":"127.0.0.1"},"msg":"incoming request"}
+# {"level":40,"time":1792325762899,"pid":550,"hostname":"73b844f196cf","reqId":"455ef5a9-219d-4657-b051-231f77a00efe","err":{"type":"NotFoundError","message":"Arquivo não encontrado.","stack":"NotFoundError: Arquivo não encontrado.\\n    at Object.<anonymous> (file:///app/dist/interfaces/api/routes/v1/files.route.js:23:19)\\n    at preHandlerCallbackInner (/app/node_modules/fastify/lib/handle-request.js:175:24)\\n    at preHandlerCallback (/app/node_modules/fastify/lib/handle-request.js:140:5)\\n    at next (/app/node_modules/fastify/lib/hooks.js:236:9)\\n    at handleResolve (/app/node_modules/fastify/lib/hooks.js:253:7)\\n    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)","code":"NOT_FOUND","statusCode":404,"recoverable":true,"name":"NotFoundError"},"code":"NOT_FOUND","msg":"Requisição terminou em erro de aplicação."}
+# {"level":30,"time":1792325762900,"pid":550,"hostname":"73b844f196cf","reqId":"455ef5a9-219d-4657-b051-231f77a00efe","res":{"statusCode":404},"responseTime":1.047019999999975,"msg":"request completed"}
+# {"level":30,"time":1792325762901,"pid":550,"hostname":"73b844f196cf","reqId":"32651b73-2de6-4cd7-9611-a6c0f0a535d9","req":{"method":"GET","url":"/uploads/escape/secret.txt?exp=1791720600&sig=[REDACTED]","hostname":"localhost","remoteAddress":"127.0.0.1"},"msg":"incoming request"}
+# Subtest: I: symlink/junção apontando para fora da raiz nunca é servido, mesmo com assinatura válida
+ok 348 - I: symlink/junção apontando para fora da raiz nunca é servido, mesmo com assinatura válida
+  ---
+  duration_ms: 3.38343
+  ...
+# {"level":40,"time":1792325762902,"pid":550,"hostname":"73b844f196cf","reqId":"32651b73-2de6-4cd7-9611-a6c0f0a535d9","uploadsAccessDenied":"OUTSIDE_ROOT","msg":"uploads: acesso negado"}
+# {"level":40,"time":1792325762902,"pid":550,"hostname":"73b844f196cf","reqId":"32651b73-2de6-4cd7-9611-a6c0f0a535d9","err":{"type":"NotFoundError","message":"Arquivo não encontrado.","stack":"NotFoundError: Arquivo não encontrado.\\n    at notFound (file:///app/dist/interfaces/api/routes/uploads.route.js:22:20)\\n    at Object.<anonymous> (file:///app/dist/interfaces/api/routes/uploads.route.js:45:19)","code":"NOT_FOUND","statusCode":404,"recoverable":true,"name":"NotFoundError"},"code":"NOT_FOUND","msg":"Requisição terminou em erro de aplicação."}
+# {"level":30,"time":1792325762903,"pid":550,"hostname":"73b844f196cf","reqId":"32651b73-2de6-4cd7-9611-a6c0f0a535d9","res":{"statusCode":404},"responseTime":1.4185930000003282,"msg":"request completed"}
+# {"level":30,"time":1792325762904,"pid":550,"hostname":"73b844f196cf","reqId":"ac06ad1a-b791-4242-8ac0-18e07c0df822","req":{"method":"GET","url":"/uploads/assets/tenant-A/workspace-mvdshcex-s5mhfw/a.png?exp=1791723600&sig=[REDACTED]","hostname":"localhost","remoteAddress":"127.0.0.1"},"msg":"incoming request"}
+# {"level":30,"time":1792325762906,"pid":550,"hostname":"73b844f196cf","reqId":"ac06ad1a-b791-4242-8ac0-18e07c0df822","res":{"statusCode":200},"responseTime":2.4028440000001865,"msg":"request completed"}
+# Subtest: J: URL assinada expirada → bloqueada
+ok 349 - J: URL assinada expirada → bloqueada
+  ---
+  duration_ms: 5.014564
+  ...
+# Subtest: K: assinatura do asset A aplicada ao asset B (ou exp alterado) → bloqueada
+ok 350 - K: assinatura do asset A aplicada ao asset B (ou exp alterado) → bloqueada
+  ---
+  duration_ms: 4.96781
+  ...
+# Subtest: L: consumidores internos assinam no uso — download do motor e image_url enviado à OpenAI
+ok 351 - L: consumidores internos assinam no uso — download do motor e image_url enviado à OpenAI
+  ---
+  duration_ms: 3.568888
+  ...
+# {"level":30,"time":1792325762907,"pid":550,"hostname":"73b844f196cf","reqId":"251b60ce-18e3-4b08-ac4a-05fb72ea3378","req":{"method":"GET","url":"/uploads/assets/tenant-A/workspace-mvdshcex-s5mhfw/a.png?exp=1791723600&sig=[REDACTED]","hostname":"localhost","remoteAddress":"127.0.0.1"},"msg":"incoming request"}
+# {"level":40,"time":1792325762907,"pid":550,"hostname":"73b844f196cf","reqId":"251b60ce-18e3-4b08-ac4a-05fb72ea3378","uploadsAccessDenied":"SIGNATURE_EXPIRED","msg":"uploads: acesso negado"}
+# {"level":40,"time":1792325762907,"pid":550,"hostname":"73b844f196cf","reqId":"251b60ce-18e3-4b08-ac4a-05fb72ea3378","err":{"type":"NotFoundError","message":"Arquivo não encontrado.","stack":"NotFoundError: Arquivo não encontrado.\\n    at notFound (file:///app/dist/interfaces/api/routes/uploads.route.js:22:20)\\n    at Object.<anonymous> (file:///app/dist/interfaces/api/routes/uploads.route.js:35:23)\\n    at preHandlerCallbackInner (/app/node_modules/fastify/lib/handle-request.js:175:24)\\n    at preHandlerCallback (/app/node_modules/fastify/lib/handle-request.js:140:5)\\n    at next (/app/node_modules/fastify/lib/hooks.js:236:9)\\n    at handleResolve (/app/node_modules/fastify/lib/hooks.js:253:7)\\n    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)","code":"NOT_FOUND","statusCode":404,"recoverable":true,"name":"NotFoundError"},"code":"NOT_FOUND","msg":"Requisição terminou em erro de aplicação."}
+# {"level":30,"time":1792325762908,"pid":550,"hostname":"73b844f196cf","reqId":"251b60ce-18e3-4b08-ac4a-05fb72ea3378","res":{"statusCode":404},"responseTime":1.0797199999997247,"msg":"request completed"}
+# {"level":30,"time":1792325762909,"pid":550,"hostname":"73b844f196cf","reqId":"2d458d0b-ff73-4ea5-a87d-6a96881bb213","req":{"method":"GET","url":"/uploads/assets/tenant-B/workspace-mvdshcex-jwy74c/b.png?exp=1791720600&sig=[REDACTED]","hostname":"localhost","remoteAddress":"127.0.0.1"},"msg":"incoming request"}
+# {"level":40,"time":1792325762910,"pid":550,"hostname":"73b844f196cf","reqId":"2d458d0b-ff73-4ea5-a87d-6a96881bb213","uploadsAccessDenied":"SIGNATURE_INVALID","msg":"uploads: acesso negado"}
+# {"level":40,"time":1792325762910,"pid":550,"hostname":"73b844f196cf","reqId":"2d458d0b-ff73-4ea5-a87d-6a96881bb213","err":{"type":"NotFoundError","message":"Arquivo não encontrado.","stack":"NotFoundError: Arquivo não encontrado.\\n    at notFound (file:///app/dist/interfaces/api/routes/uploads.route.js:22:20)\\n    at Object.<anonymous> (file:///app/dist/interfaces/api/routes/uploads.route.js:35:23)\\n    at preHandlerCallbackInner (/app/node_modules/fastify/lib/handle-request.js:175:24)\\n    at preHandlerCallback (/app/node_modules/fastify/lib/handle-request.js:140:5)\\n    at next (/app/node_modules/fastify/lib/hooks.js:236:9)\\n    at handleResolve (/app/node_modules/fastify/lib/hooks.js:253:7)\\n    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)","code":"NOT_FOUND","statusCode":404,"recoverable":true,"name":"NotFoundError"},"code":"NOT_FOUND","msg":"Requisição terminou em erro de aplicação."}
+# {"level":30,"time":1792325762911,"pid":550,"hostname":"73b844f196cf","reqId":"2d458d0b-ff73-4ea5-a87d-6a96881bb213","res":{"statusCode":404},"responseTime":1.1355890000004365,"msg":"request completed"}
+# {"level":30,"time":1792325762911,"pid":550,"hostname":"73b844f196cf","reqId":"3daebf7c-0325-4cad-9138-04681c9c67f3","req":{"method":"GET","url":"/uploads/assets/tenant-A/workspace-mvdshcex-s5mhfw/a.png?exp=1791724200&sig=[REDACTED]","hostname":"localhost","remoteAddress":"127.0.0.1"},"msg":"incoming request"}
+# {"level":40,"time":1792325762912,"pid":550,"hostname":"73b844f196cf","reqId":"3daebf7c-0325-4cad-9138-04681c9c67f3","uploadsAccessDenied":"SIGNATURE_INVALID","msg":"uploads: acesso negado"}
+# {"level":40,"time":1792325762912,"pid":550,"hostname":"73b844f196cf","reqId":"3daebf7c-0325-4cad-9138-04681c9c67f3","err":{"type":"NotFoundError","message":"Arquivo não encontrado.","stack":"NotFoundError: Arquivo não encontrado.\\n    at notFound (file:///app/dist/interfaces/api/routes/uploads.route.js:22:20)\\n    at Object.<anonymous> (file:///app/dist/interfaces/api/routes/uploads.route.js:35:23)\\n    at preHandlerCallbackInner (/app/node_modules/fastify/lib/handle-request.js:175:24)\\n    at preHandlerCallback (/app/node_modules/fastify/lib/handle-request.js:140:5)\\n    at next (/app/node_modules/fastify/lib/hooks.js:236:9)\\n    at handleResolve (/app/node_modules/fastify/lib/hooks.js:253:7)\\n    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)","code":"NOT_FOUND","statusCode":404,"recoverable":true,"name":"NotFoundError"},"code":"NOT_FOUND","msg":"Requisição terminou em erro de aplicação."}
+# {"level":30,"time":1792325762913,"pid":550,"hostname":"73b844f196cf","reqId":"3daebf7c-0325-4cad-9138-04681c9c67f3","res":{"statusCode":404},"responseTime":1.0119910000003074,"msg":"request completed"}
+# {"level":30,"time":1792325762918,"pid":550,"hostname":"73b844f196cf","reqId":"7034696f-5cd6-427a-9055-606b8b16fc95","req":{"method":"POST","url":"/v1/assets","hostname":"localhost","remoteAddress":"127.0.0.1"},"msg":"incoming request"}
+# {"level":30,"time":1792325762923,"pid":550,"hostname":"73b844f196cf","reqId":"7034696f-5cd6-427a-9055-606b8b16fc95","res":{"statusCode":200},"responseTime":4.440661000000546,"msg":"request completed"}
+# {"level":30,"time":1792325762923,"pid":550,"hostname":"73b844f196cf","reqId":"4b8251a6-1463-46e2-ab13-4ee29bc50970","req":{"method":"GET","url":"/v1/assets?workspaceId=workspace-mvdshcex-s5mhfw","hostname":"localhost","remoteAddress":"127.0.0.1"},"msg":"incoming request"}
+# {"level":30,"time":1792325762924,"pid":550,"hostname":"73b844f196cf","reqId":"4b8251a6-1463-46e2-ab13-4ee29bc50970","res":{"statusCode":200},"responseTime":1.397345000000314,"msg":"request completed"}
+# {"level":30,"time":1792325762925,"pid":550,"hostname":"73b844f196cf","reqId":"6212df64-b624-4526-9470-48e1939367bd","req":{"method":"GET","url":"/uploads/assets/tenant-A/workspace-mvdshcex-s5mhfw/a.png?exp=1791723600&sig=[REDACTED]","hostname":"localhost","remoteAddress":"127.0.0.1"},"msg":"incoming request"}
+# {"level":30,"time":1792325762979,"pid":550,"hostname":"73b844f196cf","reqId":"6212df64-b624-4526-9470-48e1939367bd","res":{"statusCode":200},"responseTime":54.28237300000001,"msg":"request completed"}
+# Subtest: M: Asset Library — registro grava a URL canônica; a listagem devolve URL assinada que abre (preview)
+ok 352 - M: Asset Library — registro grava a URL canônica; a listagem devolve URL assinada que abre (preview)
+  ---
+  duration_ms: 64.041065
+  ...
+# Subtest: Respostas JSON: só as chaves do próprio tenant saem assinadas; as alheias ficam canônicas (inacessíveis)
+ok 353 - Respostas JSON: só as chaves do próprio tenant saem assinadas; as alheias ficam canônicas (inacessíveis)
+  ---
+  duration_ms: 6.827353
+  ...
+# Subtest: classifyObjectKeyOwner: layout do storage → dono (workspace, tenant, QA, desconhecido)
+ok 354 - classifyObjectKeyOwner: layout do storage → dono (workspace, tenant, QA, desconhecido)
+  ---
+  duration_ms: 0.93151
+  ...
+# {"level":30,"time":1792325762980,"pid":550,"hostname":"73b844f196cf","reqId":"46840751-2476-4333-b97b-55d5e6664e47","req":{"method":"GET","url":"/v1/assets?workspaceId=workspace-mvdshcex-s5mhfw","hostname":"localhost","remoteAddress":"127.0.0.1"},"msg":"incoming request"}
+# {"level":40,"time":1792325762980,"pid":550,"hostname":"73b844f196cf","reqId":"46840751-2476-4333-b97b-55d5e6664e47","err":{"type":"NotFoundError","message":"Workspace nao encontrado.","stack":"NotFoundError: Workspace nao encontrado.\\n    at assertWorkspaceBelongsToTenant (file:///app/dist/interfaces/api/routes/v1/workspace-ownership.js:5:15)\\n    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)\\n    at async assertWorkspaceAccess (file:///app/dist/interfaces/api/routes/v1/assets.route.js:137:9)\\n    at async Object.<anonymous> (file:///app/dist/interfaces/api/routes/v1/assets.route.js:173:9)","code":"NOT_FOUND","statusCode":404,"recoverable":true,"name":"NotFoundError"},"code":"NOT_FOUND","msg":"Requisição terminou em erro de aplicação."}
+# {"level":30,"time":1792325762981,"pid":550,"hostname":"73b844f196cf","reqId":"46840751-2476-4333-b97b-55d5e6664e47","res":{"statusCode":404},"responseTime":0.8781220000000758,"msg":"request completed"}
+# {"level":30,"time":1792325763032,"pid":550,"hostname":"73b844f196cf","reqId":"0391387a-36e5-4697-9498-6a951f0e971f","req":{"method":"GET","url":"/uploads/assets/tenant-A/workspace-mvdshcex-s5mhfw/products/91bff502-1add-459d-a54b-eb17b77dcea1.png?exp=1791723600&sig=[REDACTED]","hostname":"localhost","remoteAddress":"127.0.0.1"},"msg":"incoming request"}
+# {"level":30,"time":1792325763033,"pid":550,"hostname":"73b844f196cf","reqId":"0391387a-36e5-4697-9498-6a951f0e971f","res":{"statusCode":200},"responseTime":1.4525299999995696,"msg":"request completed"}
+# {"level":30,"time":1792325763034,"pid":550,"hostname":"73b844f196cf","reqId":"545f3a0a-b639-4b35-98c8-a6ece6ec8949","req":{"method":"GET","url":"/uploads/assets/tenant-A/workspace-mvdshcex-s5mhfw/products/91bff502-1add-459d-a54b-eb17b77dcea1.png","hostname":"localhost","remoteAddress":"127.0.0.1"},"msg":"incoming request"}
+# {"level":40,"time":1792325763034,"pid":550,"hostname":"73b844f196cf","reqId":"545f3a0a-b639-4b35-98c8-a6ece6ec8949","uploadsAccessDenied":"PRIVATE_WITHOUT_SIGNATURE","msg":"uploads: acesso negado"}
+# {"level":40,"time":1792325763034,"pid":550,"hostname":"73b844f196cf","reqId":"545f3a0a-b639-4b35-98c8-a6ece6ec8949","err":{"type":"NotFoundError","message":"Arquivo não encontrado.","stack":"NotFoundError: Arquivo não encontrado.\\n    at notFound (file:///app/dist/interfaces/api/routes/uploads.route.js:22:20)\\n    at Object.<anonymous> (file:///app/dist/interfaces/api/routes/uploads.route.js:38:23)\\n    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)","code":"NOT_FOUND","statusCode":404,"recoverable":true,"name":"NotFoundError"},"code":"NOT_FOUND","msg":"Requisição terminou em erro de aplicação."}
+# {"level":30,"time":1792325763034,"pid":550,"hostname":"73b844f196cf","reqId":"545f3a0a-b639-4b35-98c8-a6ece6ec8949","res":{"statusCode":404},"responseTime":0.4217500000004293,"msg":"request completed"}
+# {"level":30,"time":1792325763034,"pid":550,"hostname":"73b844f196cf","reqId":"382b18cc-966b-4324-847d-fa9dcd12da10","req":{"method":"POST","url":"/v1/files/sign","hostname":"localhost","remoteAddress":"127.0.0.1"},"msg":"incoming request"}
+# {"level":40,"time":1792325763035,"pid":550,"hostname":"73b844f196cf","reqId":"382b18cc-966b-4324-847d-fa9dcd12da10","err":{"type":"NotFoundError","message":"Arquivo não encontrado.","stack":"NotFoundError: Arquivo não encontrado.\\n    at Object.<anonymous> (file:///app/dist/interfaces/api/routes/v1/files.route.js:23:19)\\n    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)","code":"NOT_FOUND","statusCode":404,"recoverable":true,"name":"NotFoundError"},"code":"NOT_FOUND","msg":"Requisição terminou em erro de aplicação."}
+# {"level":30,"time":1792325763035,"pid":550,"hostname":"73b844f196cf","reqId":"382b18cc-966b-4324-847d-fa9dcd12da10","res":{"statusCode":404},"responseTime":0.5682120000001305,"msg":"request completed"}
+# {"level":30,"time":1792325763035,"pid":550,"hostname":"73b844f196cf","reqId":"3efea160-be89-41de-8f9f-2c073caa7dc3","req":{"method":"POST","url":"/v1/files/sign","hostname":"localhost","remoteAddress":"127.0.0.1"},"msg":"incoming request"}
+# {"level":40,"time":1792325763036,"pid":550,"hostname":"73b844f196cf","reqId":"3efea160-be89-41de-8f9f-2c073caa7dc3","err":{"type":"NotFoundError","message":"Arquivo não encontrado.","stack":"NotFoundError: Arquivo não encontrado.\\n    at Object.<anonymous> (file:///app/dist/interfaces/api/routes/v1/files.route.js:23:19)\\n    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)","code":"NOT_FOUND","statusCode":404,"recoverable":true,"name":"NotFoundError"},"code":"NOT_FOUND","msg":"Requisição terminou em erro de aplicação."}
+# {"level":30,"time":1792325763036,"pid":550,"hostname":"73b844f196cf","reqId":"3efea160-be89-41de-8f9f-2c073caa7dc3","res":{"statusCode":404},"responseTime":0.6384570000000167,"msg":"request completed"}
+# Subtest: Fotos de produto: upload devolve preview assinado, mantém arquivo privado e impede assinatura por outro tenant
+ok 355 - Fotos de produto: upload devolve preview assinado, mantém arquivo privado e impede assinatura por outro tenant
+  ---
+  duration_ms: 106.921557
+  ...
+# Subtest: Log de acesso nunca grava a assinatura nem tokens de query (sig/media_token/avatar_token/stream_token)
+ok 356 - Log de acesso nunca grava a assinatura nem tokens de query (sig/media_token/avatar_token/stream_token)
+  ---
+  duration_ms: 0.735565
+  ...
+1..356
+# tests 356
+# suites 0
+# pass 356
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 118982.767979

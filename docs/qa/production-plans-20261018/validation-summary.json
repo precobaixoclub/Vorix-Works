@@ -1,0 +1,46 @@
+{
+  "validatedAt": "2026-10-18T12:17:54.359Z",
+  "applicationRevision": "e7ac21615465e22d01d1cc4b6e8070702617f69d",
+  "backendSelection": {
+    "files": 40,
+    "tests": 356,
+    "pass": 356,
+    "fail": 0,
+    "skip": 0
+  },
+  "frontend": {
+    "files": 17,
+    "tests": 123,
+    "pass": 123,
+    "typecheck": "PASS"
+  },
+  "browserFixtures": {
+    "tests": 8,
+    "pass": 8,
+    "viewports": [
+      1440,
+      390
+    ]
+  },
+  "contracts": 49,
+  "architectureIsolation": [
+    "crm",
+    "inbox",
+    "ai-stack"
+  ],
+  "productionBuild": "PASS",
+  "archiveSha256": "0d63b4093308df094740e2a36f751a98180373094e5ff23e3f675458af99d1be",
+  "contactCleanupExecutedInProduction": false,
+  "realPaymentExecuted": false,
+  "realMessageSent": false,
+  "realGoogleLoginExecuted": false,
+  "productionBrowserSmoke": "PASS",
+  "migrations": {
+    "applied": 163,
+    "pending": 0
+  },
+  "commercialMigration": {
+    "inconsistentPlans": 0,
+    "deprecatedAddonsActive": 0
+  }
+}

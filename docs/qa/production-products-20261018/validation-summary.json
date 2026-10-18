@@ -1,0 +1,49 @@
+{
+  "validatedAt": "2026-10-18T11:53:07.206Z",
+  "applicationRevision": "3b6f6f725a8e5cf30807d618779c797267c0f34d",
+  "backendSelection": {
+    "files": 38,
+    "tests": 337,
+    "pass": 337,
+    "fail": 0,
+    "skip": 0
+  },
+  "imageFixRegression": {
+    "files": 5,
+    "tests": 58,
+    "pass": 58,
+    "fail": 0,
+    "skip": 0,
+    "overlapsBackendSelection": true
+  },
+  "frontend": {
+    "files": 17,
+    "tests": 123,
+    "pass": 123,
+    "typecheck": "PASS"
+  },
+  "browserFixtures": {
+    "tests": 6,
+    "pass": 6,
+    "viewports": [
+      1440,
+      390
+    ]
+  },
+  "contracts": 49,
+  "architectureIsolation": [
+    "crm",
+    "inbox",
+    "ai-stack"
+  ],
+  "productionBuild": "PASS",
+  "archiveSha256": "6e73813143a3ccfbfb560bb34218e336158ff9f1774ef148d9584052e6433d0e",
+  "realPaymentExecuted": false,
+  "realMessageSent": false,
+  "realGoogleLoginExecuted": false,
+  "productionBrowserSmoke": "PASS",
+  "migrations": {
+    "applied": 162,
+    "pending": 0
+  }
+}

@@ -7,6 +7,8 @@ import { Input, MoneyInput } from "@/components/Field";
 import { SearchableCombo } from "@/components/SearchableCombo";
 import { centsFromCurrencyInput, currencyInputFromCents } from "@/features/crm/presentation";
 import type { BillingType, Product, ProductStockRisk } from "@/features/crm/types";
+import { ProductVariantPicker } from "@/components/products/ProductVariantPicker";
+import type {ProductVariant} from "@/features/sales/types";
 import { StockLine } from "@/components/sales/StockRisk";
 import { BILLING_SUFFIX, bpFromPercentInput, formatBp, percentInputFromBp } from "@/features/sales/presentation";
 import { previewLine, previewTotals, priceFromDiscount } from "@/features/sales/preview";
@@ -17,6 +19,8 @@ import { cn } from "@/lib/utils";
 export type DraftLine = {
   key: string;
   productId: string;
+  variantId?:string;
+  variantStockQuantity?:number;
   name: string;
   billingType: BillingType;
   listPriceCents: number;
@@ -27,16 +31,17 @@ export type DraftLine = {
   unit?: string;
 };
 
-export function draftFromProduct(product: Product): DraftLine {
-  const list = product.listPriceCents ?? product.priceCents;
+export function draftFromProduct(product: Product,variant?:ProductVariant): DraftLine {
+  const list = variant&&variant.priceOverride!==false?variant.listPriceCents:product.listPriceCents??product.priceCents;
   return {
     key: `${product.id}-${Date.now().toString(36)}`,
     productId: product.id,
-    name: product.name,
+    variantId:variant?.id,variantStockQuantity:variant?Math.max(0,(variant.stockQuantity??0)-(variant.reservedQuantity??0)):undefined,
+    name:variant?`${product.name} — ${variant.name}`:product.name,
     billingType: product.billingType ?? "one_time",
     listPriceCents: list,
-    minimumPriceCents: product.minimumPriceCents,
-    unitCostCents: product.costCents,
+    minimumPriceCents:variant?.minimumPriceCents??product.minimumPriceCents,
+    unitCostCents:variant?.costCents??product.costCents,
     quantity: "1",
     priceInput: currencyInputFromCents(list),
     unit: product.unit,
@@ -52,6 +57,8 @@ export const draftPrice = (line: DraftLine) => centsFromCurrencyInput(line.price
  * O backend recalcula e valida tudo ao salvar — esta conta é só prévia.
  */
 export function ProductLinesEditor({
+  workspaceId,
+  stockByVariant,
   products,
   lines,
   onChange,
@@ -59,6 +66,8 @@ export function ProductLinesEditor({
   showMargin,
   stock,
 }: {
+  workspaceId:string;
+  stockByVariant?:ReadonlyMap<string,ProductStockRisk>;
   products: readonly Product[];
   lines: readonly DraftLine[];
   onChange: (lines: DraftLine[]) => void;
@@ -109,7 +118,7 @@ export function ProductLinesEditor({
                 />
               </label>
             </div>
-            <StockLine stock={stock?.get(line.productId)} quantity={draftQuantity(line)} unit={line.unit} name={line.name} />
+            <StockLine stock={line.variantId?(stockByVariant?.get(line.variantId)??{stockQuantity:line.variantStockQuantity??0,openDemand:0}):stock?.get(line.productId)} quantity={draftQuantity(line)} unit={line.unit} name={line.name} />
             <p className={cn("mt-2 text-xs tabular-nums", preview.belowMinimum ? "font-medium text-rose-600 dark:text-rose-300" : "text-muted-foreground")}>
               Subtotal {formatCurrencyCents(preview.subtotal, currency)}
               {preview.discount > 0 ? ` · desconto ${formatCurrencyCents(preview.discount, currency)}` : ""}
@@ -120,18 +129,7 @@ export function ProductLinesEditor({
         );
       })}
 
-      <SearchableCombo
-        items={options}
-        value=""
-        onValueChange={(productId) => {
-          const product = products.find((item) => item.id === productId);
-          if (product) onChange([...lines, draftFromProduct(product)]);
-        }}
-        placeholder={products.length ? "+ Adicionar produto ou serviço" : "Nenhum produto cadastrado"}
-        searchPlaceholder="Buscar por nome ou código..."
-        emptyText="Nenhum produto encontrado."
-        disabled={products.length === 0}
-      />
+      <ProductVariantPicker workspaceId={workspaceId} products={products} onPick={(product,variant)=>onChange([...lines,draftFromProduct(product,variant)])}/>
 
       {lines.length > 0 ? (
         <div className="grid grid-cols-2 gap-2 rounded-xl bg-muted/40 p-3 text-sm sm:grid-cols-4">

@@ -1,10 +1,15 @@
 import type { Pool } from "pg";
+import { defaultProductDetails, type ProductDetails } from "../../../domain/products/product-details.js";
 import type { AdjustStockInput, CreateProductInput, ProductRepositoryPort, UpdateProductInput } from "../../../application/ports/product-repository.port.js";
 import type { Product } from "../../../domain/crm/crm.model.js";
 
 const productId = () => `product-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 
 type ProductRow = {
+  details: ProductDetails;
+  category_id: string | null;
+  brand_id: string | null;
+  reserved_quantity: string;
   id: string;
   tenant_id: string;
   workspace_id: string;
@@ -33,6 +38,7 @@ type ProductRow = {
 
 function toDomain(row: ProductRow): Product {
   return {
+    details: row.details ?? defaultProductDetails(), categoryId: row.category_id ?? undefined, brandId: row.brand_id ?? undefined, reservedQuantity: Number(row.reserved_quantity ?? 0),
     id: row.id,
     tenantId: row.tenant_id,
     workspaceId: row.workspace_id,
@@ -66,13 +72,13 @@ export class PostgresProductRepository implements ProductRepositoryPort {
   async create(input: CreateProductInput): Promise<Product> {
     const result = await this.pool.query<ProductRow>(
       `insert into products (id, tenant_id, workspace_id, name, description, price_cents, currency, code, category, item_type, unit, billing_type,
-         cost_cents, minimum_price_cents, commission_type, commission_value, tax_metadata, track_stock, stock_quantity, stock_alert_threshold, image_urls)
-       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21) returning *`,
+         cost_cents, minimum_price_cents, commission_type, commission_value, tax_metadata, track_stock, stock_quantity, stock_alert_threshold, image_urls, details, category_id, brand_id)
+       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24) returning *`,
       [
         productId(), input.tenantId, input.workspaceId, input.name, input.description ?? null, input.priceCents, input.currency ?? "BRL",
         input.code ?? null, input.category ?? null, input.itemType ?? "product", input.unit ?? null, input.billingType ?? "one_time",
         input.costCents ?? null, input.minimumPriceCents ?? null, input.commissionType ?? null, input.commissionValue ?? null, JSON.stringify(input.taxMetadata ?? {}),
-        input.trackStock ?? false, input.stockQuantity ?? 0, input.stockAlertThreshold ?? null, JSON.stringify(input.imageUrls ?? []),
+        input.trackStock ?? false, input.stockQuantity ?? 0, input.stockAlertThreshold ?? null, JSON.stringify(input.imageUrls ?? []), JSON.stringify(input.details ?? defaultProductDetails()), input.categoryId ?? null, input.brandId ?? null,
       ],
     );
     return toDomain(result.rows[0]);
@@ -104,7 +110,7 @@ export class PostgresProductRepository implements ProductRepositoryPort {
     const result = await this.pool.query<ProductRow>(
       `update products set name = $2, description = $3, price_cents = $4, currency = $5, active = $6, code = $7, category = $8, item_type = $9,
          unit = $10, billing_type = $11, cost_cents = $12, minimum_price_cents = $13, commission_type = $14, commission_value = $15,
-         tax_metadata = $16, track_stock = $17, stock_quantity = $18, stock_alert_threshold = $19, image_urls = $20, updated_at = now()
+         tax_metadata = $16, track_stock = $17, stock_quantity = $18, stock_alert_threshold = $19, image_urls = $20, details = $21, category_id = $22, brand_id = $23, updated_at = now()
        where id = $1 returning *`,
       [
         id,
@@ -127,6 +133,7 @@ export class PostgresProductRepository implements ProductRepositoryPort {
         input.stockQuantity ?? existing.stockQuantity,
         input.stockAlertThreshold !== undefined ? input.stockAlertThreshold : existing.stockAlertThreshold ?? null,
         JSON.stringify(input.imageUrls ?? existing.imageUrls),
+        JSON.stringify(input.details ?? existing.details ?? defaultProductDetails()), input.categoryId !== undefined ? input.categoryId : existing.categoryId ?? null, input.brandId !== undefined ? input.brandId : existing.brandId ?? null,
       ],
     );
     return toDomain(result.rows[0]);
@@ -136,22 +143,22 @@ export class PostgresProductRepository implements ProductRepositoryPort {
     await this.pool.query("delete from products where id = $1", [id]);
   }
 
-  async listOpenStockDemand(input: { tenantId: string; workspaceId: string }): Promise<{ dealId: string; productId: string; quantity: number }[]> {
-    const result = await this.pool.query<{ deal_id: string; product_id: string; quantity: string }>(
-      `select di.deal_id, di.product_id, sum(di.quantity) as quantity
+  async listOpenStockDemand(input: { tenantId: string; workspaceId: string }): Promise<{ dealId: string; productId: string; variantId?:string; quantity: number }[]> {
+    const result = await this.pool.query<{ deal_id: string; product_id: string; variant_id: string|null; quantity: string }>(
+      `select di.deal_id, di.product_id, di.variant_id, sum(di.quantity) as quantity
          from deal_items di
          join deals d on d.id = di.deal_id
          join products p on p.id = di.product_id
         where di.tenant_id = $1 and di.workspace_id = $2 and d.status = 'open' and p.track_stock
-        group by di.deal_id, di.product_id`,
+        group by di.deal_id, di.product_id, di.variant_id`,
       [input.tenantId, input.workspaceId],
     );
-    return result.rows.map((row) => ({ dealId: row.deal_id, productId: row.product_id, quantity: Number(row.quantity) }));
+    return result.rows.map((row) => ({ dealId: row.deal_id, productId: row.product_id, variantId:row.variant_id??undefined, quantity: Number(row.quantity) }));
   }
 
   async netStockByDeal(dealId: string): Promise<{ productId: string; delta: number }[]> {
     const result = await this.pool.query<{ product_id: string; delta: string }>(
-      "select product_id, sum(delta) as delta from product_stock_movements where deal_id = $1 group by product_id",
+      "select product_id, sum(delta) as delta from product_stock_movements where deal_id = $1 and variant_id is null group by product_id",
       [dealId],
     );
     return result.rows.map((row) => ({ productId: row.product_id, delta: Number(row.delta) }));

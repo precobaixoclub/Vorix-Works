@@ -1,0 +1,11 @@
+import {apiClient} from "@/lib/api-client";
+import type {ProductMetadata,ProductCategory,ProductBrand,AttributeDefinition,InventoryKind} from "./types";
+import type {ProductVariant} from "@/features/sales/types";
+const q=encodeURIComponent;
+export const getProductMetadata=(workspaceId:string)=>apiClient.get<ProductMetadata>(`/v1/product-metadata?workspaceId=${q(workspaceId)}`);
+export const saveCategory=(workspaceId:string,input:Omit<ProductCategory,"id">&{id?:string})=>apiClient.post<ProductCategory>(`/v1/product-metadata/categories?workspaceId=${q(workspaceId)}`,input);
+export const saveBrand=(workspaceId:string,input:Omit<ProductBrand,"id">&{id?:string})=>apiClient.post<ProductBrand>(`/v1/product-metadata/brands?workspaceId=${q(workspaceId)}`,input);
+export const saveAttribute=(workspaceId:string,input:Omit<AttributeDefinition,"id">&{id?:string})=>apiClient.post<AttributeDefinition>(`/v1/product-metadata/attributes?workspaceId=${q(workspaceId)}`,input);
+export const generateVariantGrid=(workspaceId:string,productId:string)=>apiClient.post<ProductVariant[]>(`/v1/products/${q(productId)}/variant-grid`,{workspaceId});
+export const moveInventory=(workspaceId:string,productId:string,input:{variantId?:string;kind:InventoryKind;quantity:number;operationKey:string})=>apiClient.post<{quantity:number;reserved:number;replay:boolean}>(`/v1/products/${q(productId)}/inventory?workspaceId=${q(workspaceId)}`,input);
+export const listInventory=(workspaceId:string,productId:string)=>apiClient.get<{id:string;variant_id?:string;delta:string;quantity_after:string;movement_type:string;created_at:string}[]>(`/v1/products/${q(productId)}/inventory?workspaceId=${q(workspaceId)}`);

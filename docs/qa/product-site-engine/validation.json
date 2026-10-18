@@ -1,0 +1,97 @@
+{
+  "verifiedAt": "2026-10-18T17:22:35.467Z",
+  "scope": "Local Product Engine + Site Engine + sales integration",
+  "backend": {
+    "files": 41,
+    "tests": 388,
+    "pass": 388,
+    "fail": 0,
+    "skip": 0,
+    "newProductSiteScenarios": 32
+  },
+  "frontend": {
+    "files": 17,
+    "tests": 123,
+    "pass": 123
+  },
+  "browser": {
+    "projects": [
+      "desktop 1440x1000",
+      "mobile 390x844"
+    ],
+    "tests": 16,
+    "pass": 16,
+    "fail": 0,
+    "retries": 0,
+    "fixture": "Ephemeral PGlite, real JWT/API/frontend/local object storage; fictional .invalid identities only"
+  },
+  "contracts": 49,
+  "build": "PASS",
+  "typecheck": "PASS",
+  "migrations": [
+    "0164_product_engine",
+    "0165_site_engine",
+    "0166_site_capabilities"
+  ],
+  "legacyUpgrade": "0163 to 0166 preserved data; repeat applied nothing",
+  "status": {
+    "BAMBILU_AUDITED": "PASS",
+    "VORIX_PRODUCT_AUDITED": "PASS",
+    "REUSE_MAP_COMPLETED": "PASS",
+    "PRODUCT_ENGINE": "PASS",
+    "LEGACY_PRODUCTS_PRESERVED": "PASS",
+    "PRODUCT_TYPES": "PASS",
+    "GENERAL_PRODUCT": "PASS",
+    "APPAREL_PRODUCT": "PASS",
+    "VEHICLE_PRODUCT": "PASS",
+    "DYNAMIC_ATTRIBUTES": "PASS",
+    "CATEGORY_ENGINE": "PASS",
+    "BRANDS": "PASS",
+    "PRODUCT_MEDIA": "PASS",
+    "VARIANT_ENGINE": "PASS",
+    "VARIANT_STOCK": "PASS",
+    "INVENTORY_ENGINE": "PASS",
+    "COMMERCIAL_PRICING": "PASS",
+    "MINIMUM_SALE_PRICE": "PASS",
+    "MARGIN_CALCULATION": "PASS",
+    "OPPORTUNITY_INTEGRATION": "PASS",
+    "PROPOSAL_INTEGRATION": "PASS",
+    "SITE_ENGINE": "PASS",
+    "SITE_SELF_SERVICE": "PASS",
+    "SITE_MULTI_TENANT": "PASS",
+    "SITE_CATALOG": "PASS",
+    "SITE_TEMPLATES": "PASS",
+    "CUSTOM_DOMAIN_ARCHITECTURE": "PASS",
+    "SITE_ENTITLEMENT": "PASS",
+    "COMMERCE_SEPARATED": "PASS",
+    "COMMERCE_ARCHITECTURE_PREPARED": "PASS",
+    "RBAC": "PASS",
+    "TENANT_ISOLATION": "PASS",
+    "BAMBILU_TESTS_REUSED": "PARTIAL",
+    "BUILD": "PASS",
+    "TYPECHECK": "PASS",
+    "TESTS": "PASS",
+    "BROWSER_PROOF": "PASS"
+  },
+  "screenshots": [
+    "desktop-public-variant-contact.png",
+    "mobile-public-variant-contact.png",
+    "desktop-product-general.png",
+    "desktop-apparel-grid.png",
+    "mobile-apparel-grid.png",
+    "desktop-vehicle-fields.png",
+    "desktop-opportunity-variant.png",
+    "desktop-site-editor.png",
+    "mobile-site-editor.png",
+    "desktop-domain-ownership.png",
+    "desktop-module-pricing.png",
+    "desktop-site-logo.png"
+  ],
+  "deployment": "NOT_PERFORMED",
+  "externalCommerce": "NOT_IMPLEMENTED; domain and provider ports only",
+  "remainingOperationalSteps": [
+    "Pricing configuration and explicit release decision",
+    "Authorized deployment",
+    "DNS, reverse proxy and TLS for customer domains"
+  ]
+}

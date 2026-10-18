@@ -55,6 +55,8 @@ const MARKETING_BACKSTAGE: readonly WorkspaceNavItem[] = [
 ] as const;
 
 export const SOLUTION_NAVIGATION: Readonly<Record<SolutionKey, SolutionNavigation>> = {
+  site:{home:{href:"/site",label:"Meu site",icon:"home"},sections:[{label:"SITE",items:[{href:"/site",label:"Editor do site",icon:"settings"},{href:"/site/products",label:"Produtos",icon:"products"}]}],backstage:[],mobilePrimary:[{href:"/site",label:"Meu site",icon:"home"},{href:"/site/products",label:"Produtos",icon:"products"}],mobileMenu:[]},
+  commerce:{home:{href:"/commerce",label:"Commerce",icon:"home"},sections:[],backstage:[],mobilePrimary:[{href:"/commerce",label:"Commerce",icon:"home"}],mobileMenu:[]},
   conversations: {
     home: CONVERSATIONS_HOME,
     sections: [

@@ -1,3 +1,4 @@
+import type {UpdateProductVariantInput} from "../../../application/ports/sales-engine-repository.port.js";
 import type { Pool } from "pg";
 import type {
   CommercialApprovalRepositoryPort,
@@ -34,9 +35,9 @@ const iso = (value: Date | null | undefined): string | undefined => value?.toISO
 // Catálogo: variações e tabelas de preço
 // --------------------------------------------------------------------------------------------
 
-type VariantRow = { id: string; tenant_id: string; workspace_id: string; product_id: string; name: string; code: string | null; cost_cents: string | null; list_price_cents: string; minimum_price_cents: string | null; active: boolean; position: number; created_at: Date; updated_at: Date };
+type VariantRow = {price_override:boolean; option_values: Record<string,string>; stock_quantity: string; reserved_quantity: string; image_url: string | null; id: string; tenant_id: string; workspace_id: string; product_id: string; name: string; code: string | null; cost_cents: string | null; list_price_cents: string; minimum_price_cents: string | null; active: boolean; position: number; created_at: Date; updated_at: Date };
 const toVariant = (row: VariantRow): ProductVariant => ({
-  id: row.id, tenantId: row.tenant_id, workspaceId: row.workspace_id, productId: row.product_id, name: row.name, code: row.code ?? undefined,
+  id: row.id, tenantId: row.tenant_id, workspaceId: row.workspace_id, productId: row.product_id, name: row.name, code: row.code ?? undefined, priceOverride:row.price_override??true, optionValues: row.option_values ?? {}, stockQuantity: Number(row.stock_quantity ?? 0), reservedQuantity: Number(row.reserved_quantity ?? 0), imageUrl: row.image_url ?? undefined,
   costCents: num(row.cost_cents), listPriceCents: Number(row.list_price_cents), minimumPriceCents: num(row.minimum_price_cents),
   active: row.active, position: row.position, createdAt: row.created_at.toISOString(), updatedAt: row.updated_at.toISOString(),
 });
@@ -67,22 +68,29 @@ export class PostgresSalesCatalogRepository implements SalesCatalogRepositoryPor
   }
 
   async createVariant(input: CreateProductVariantInput): Promise<ProductVariant> {
-    const result = await this.pool.query<VariantRow>(
-      `insert into product_variants (id, tenant_id, workspace_id, product_id, name, code, cost_cents, list_price_cents, minimum_price_cents, active, position)
-       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) returning *`,
-      [newId("variant"), input.tenantId, input.workspaceId, input.productId, input.name, input.code ?? null, input.costCents ?? null, input.listPriceCents, input.minimumPriceCents ?? null, input.active ?? true, input.position ?? 0],
+    return this.insertVariant(this.pool,input);
+  }
+  private async insertVariant(db:Pick<Pool,"query">,input:CreateProductVariantInput):Promise<ProductVariant>{
+    const result = await db.query<VariantRow>(
+      `insert into product_variants (id, tenant_id, workspace_id, product_id, name, code, cost_cents, list_price_cents, minimum_price_cents, active, position, option_values, stock_quantity, image_url, price_override)
+       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15) returning *`,
+      [newId("variant"), input.tenantId, input.workspaceId, input.productId, input.name, input.code ?? null, input.costCents ?? null, input.listPriceCents, input.minimumPriceCents ?? null, input.active ?? true, input.position ?? 0, JSON.stringify(input.optionValues ?? {}), input.stockQuantity ?? 0, input.imageUrl ?? null, input.priceOverride??true],
     );
     return toVariant(result.rows[0]);
   }
 
-  async updateVariant(id: string, patch: Partial<Pick<ProductVariant, "name" | "code" | "costCents" | "listPriceCents" | "minimumPriceCents" | "active" | "position">>): Promise<ProductVariant> {
+  async createVariantGrid(inputs:CreateProductVariantInput[]):Promise<ProductVariant[]>{
+    const client=await this.pool.connect();try{await client.query("begin");const variants:ProductVariant[]=[];for(const input of inputs)variants.push(await this.insertVariant(client,input));await client.query("commit");return variants;}catch(error){await client.query("rollback");throw error;}finally{client.release();}
+  }
+
+  async updateVariant(id: string, patch: UpdateProductVariantInput): Promise<ProductVariant> {
     const existing = await this.getVariant(id);
     if (!existing) throw new Error(`PRODUCT_VARIANT_NOT_FOUND: variação "${id}" não existe.`);
     const merged = { ...existing, ...patch };
     const result = await this.pool.query<VariantRow>(
-      `update product_variants set name = $2, code = $3, cost_cents = $4, list_price_cents = $5, minimum_price_cents = $6, active = $7, position = $8, updated_at = now()
+      `update product_variants set name = $2, code = $3, cost_cents = $4, list_price_cents = $5, minimum_price_cents = $6, active = $7, position = $8, option_values = $9, image_url = $10, price_override = $11, updated_at = now()
        where id = $1 returning *`,
-      [id, merged.name, merged.code ?? null, merged.costCents ?? null, merged.listPriceCents, merged.minimumPriceCents ?? null, merged.active, merged.position],
+      [id, merged.name, merged.code ?? null, merged.costCents ?? null, merged.listPriceCents, merged.minimumPriceCents ?? null, merged.active, merged.position, JSON.stringify(merged.optionValues ?? {}), merged.imageUrl ?? null,merged.priceOverride??true],
     );
     return toVariant(result.rows[0]);
   }
@@ -159,7 +167,7 @@ export class PostgresSalesCatalogRepository implements SalesCatalogRepositoryPor
 // Itens da oportunidade
 // --------------------------------------------------------------------------------------------
 
-type DealItemRow = {
+type DealItemRow = { product_context_snapshot: DealItem["productContextSnapshot"];
   id: string; tenant_id: string; workspace_id: string; deal_id: string; product_id: string | null; variant_id: string | null; position: number;
   product_name_snapshot: string; product_code_snapshot: string | null; billing_type_snapshot: BillingType; unit_snapshot: string | null; quantity: string;
   unit_cost_cents_snapshot: string | null; list_price_cents_snapshot: string; minimum_price_cents_snapshot: string | null; proposed_unit_price_cents: string;
@@ -168,7 +176,7 @@ type DealItemRow = {
 };
 const toDealItem = (row: DealItemRow): DealItem => ({
   id: row.id, tenantId: row.tenant_id, workspaceId: row.workspace_id, dealId: row.deal_id, productId: row.product_id ?? undefined, variantId: row.variant_id ?? undefined,
-  position: row.position, productNameSnapshot: row.product_name_snapshot, productCodeSnapshot: row.product_code_snapshot ?? undefined,
+  productContextSnapshot:row.product_context_snapshot, position: row.position, productNameSnapshot: row.product_name_snapshot, productCodeSnapshot: row.product_code_snapshot ?? undefined,
   billingTypeSnapshot: row.billing_type_snapshot, unitSnapshot: row.unit_snapshot ?? undefined, quantity: Number(row.quantity),
   unitCostCentsSnapshot: num(row.unit_cost_cents_snapshot), listPriceCentsSnapshot: Number(row.list_price_cents_snapshot),
   minimumPriceCentsSnapshot: num(row.minimum_price_cents_snapshot), proposedUnitPriceCents: Number(row.proposed_unit_price_cents),
@@ -178,12 +186,12 @@ const toDealItem = (row: DealItemRow): DealItem => ({
   createdAt: row.created_at.toISOString(), updatedAt: row.updated_at.toISOString(),
 });
 
-const DEAL_ITEM_COLUMNS = "product_id, variant_id, position, product_name_snapshot, product_code_snapshot, billing_type_snapshot, unit_snapshot, quantity, unit_cost_cents_snapshot, list_price_cents_snapshot, minimum_price_cents_snapshot, proposed_unit_price_cents, subtotal_list_cents, subtotal_proposed_cents, subtotal_cost_cents, discount_cents, gross_profit_cents, gross_margin_bp, commission_type_snapshot, commission_value_snapshot";
+const DEAL_ITEM_COLUMNS = "product_id, variant_id, position, product_name_snapshot, product_code_snapshot, billing_type_snapshot, unit_snapshot, quantity, unit_cost_cents_snapshot, list_price_cents_snapshot, minimum_price_cents_snapshot, proposed_unit_price_cents, subtotal_list_cents, subtotal_proposed_cents, subtotal_cost_cents, discount_cents, gross_profit_cents, gross_margin_bp, commission_type_snapshot, commission_value_snapshot, product_context_snapshot";
 const dealItemValues = (input: CreateDealItemInput): unknown[] => [
   input.productId ?? null, input.variantId ?? null, input.position, input.productNameSnapshot, input.productCodeSnapshot ?? null, input.billingTypeSnapshot,
   input.unitSnapshot ?? null, input.quantity, input.unitCostCentsSnapshot ?? null, input.listPriceCentsSnapshot, input.minimumPriceCentsSnapshot ?? null,
   input.proposedUnitPriceCents, input.subtotalListCents, input.subtotalProposedCents, input.subtotalCostCents ?? null, input.discountCents,
-  input.grossProfitCents ?? null, input.grossMarginBp ?? null, input.commissionTypeSnapshot ?? null, input.commissionValueSnapshot ?? null,
+  input.grossProfitCents ?? null, input.grossMarginBp ?? null, input.commissionTypeSnapshot ?? null, input.commissionValueSnapshot ?? null, JSON.stringify(input.productContextSnapshot??{}),
 ];
 
 export class PostgresDealItemRepository implements DealItemRepositoryPort {

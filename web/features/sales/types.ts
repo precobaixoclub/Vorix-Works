@@ -134,7 +134,7 @@ export type DealParticipant = { id: string; dealId: string; contactId: string; r
 
 export type PriceBook = { id: string; name: string; description?: string; currency: string; active: boolean };
 export type PriceBookItem = { id: string; priceBookId: string; productId: string; variantId?: string; listPriceCents: number; minimumPriceCents?: number };
-export type ProductVariant = { id: string; productId: string; name: string; code?: string; costCents?: number; listPriceCents: number; minimumPriceCents?: number; active: boolean; position: number };
+export type ProductVariant = {priceOverride?:boolean; id: string; productId: string; name: string; code?: string; costCents?: number; listPriceCents: number; minimumPriceCents?: number; active: boolean; position: number;optionValues?:Record<string,string>;stockQuantity?:number;reservedQuantity?:number;imageUrl?:string };
 
 export type GoalScope = "user" | "team" | "company";
 export type GoalMetric = "sales_revenue" | "gross_margin" | "won_opportunities" | "mrr";

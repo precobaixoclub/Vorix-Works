@@ -10,7 +10,7 @@
  * digite a URL na mão.
  */
 
-export type SolutionKey = "conversations" | "meetings" | "marketing";
+export type SolutionKey = "conversations" | "meetings" | "marketing" | "site" | "commerce";
 
 export type SolutionSummary = {
   key: SolutionKey;
@@ -20,6 +20,7 @@ export type SolutionSummary = {
 };
 
 export const SOLUTION_SHORT_NAME: Record<SolutionKey, string> = {
+  site:"Site",commerce:"Commerce",
   conversations: "Conversas",
   meetings: "Meetings",
   marketing: "Marketing",
@@ -27,6 +28,7 @@ export const SOLUTION_SHORT_NAME: Record<SolutionKey, string> = {
 
 /** Para onde o seletor de soluções leva (caminho relativo ao workspace). */
 export const SOLUTION_HOME_PATH: Record<SolutionKey, string> = {
+  site:"/site",commerce:"/commerce",
   conversations: "",
   meetings: "/meetings",
   marketing: "/production",
@@ -72,6 +74,8 @@ export type RouteOwner = SolutionKey | "core";
 export function routeOwner(pathname: string, workspaceBase: string): RouteOwner {
   if (!pathname.startsWith(workspaceBase)) return "core";
   const segment = pathname.slice(workspaceBase.length).split("/").filter(Boolean)[0] ?? "";
+  if(segment==="site")return "site";
+  if(segment==="commerce")return "commerce";
   if (MARKETING_SEGMENTS.has(segment)) return "marketing";
   if (MEETINGS_SEGMENTS.has(segment)) return "meetings";
   if (CONVERSATIONS_SEGMENTS.has(segment)) return "conversations";

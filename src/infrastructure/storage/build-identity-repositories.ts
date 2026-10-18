@@ -57,6 +57,9 @@ import { PostgresPlatformAiSettingsRepository } from "./postgres/postgres-platfo
 import { PostgresBillingProviderSettingsRepository } from "./postgres/postgres-billing-provider-settings-repository.js";
 import { PostgresPlatformBillingRepository } from "./postgres/postgres-platform-billing-repository.js";
 import { PostgresProductRepository } from "./postgres/postgres-product-repository.js";
+import { PostgresProductEngineRepository } from "./postgres/postgres-product-engine-repository.js";
+import { PostgresSiteRepository } from "./postgres/postgres-site-repository.js";
+import type { ProductEngineRepositoryPort } from "../../application/ports/product-engine-repository.port.js";
 import { PostgresReportTemplateRepository } from "./postgres/postgres-report-template-repository.js";
 import type { ReportTemplateRepositoryPort } from "../../application/ports/report-template-repository.port.js";
 import { PostgresAiCreditPurchaseRepository } from "./postgres/postgres-ai-credit-purchase-repository.js";
@@ -121,6 +124,8 @@ export type IdentityRepositories = {
   /** CRM/Comercial (Fase 3) — Tarefas, Catálogo de produtos, Propostas (com link público). */
   taskRepository: TaskRepositoryPort;
   productRepository: ProductRepositoryPort;
+  productEngineRepository: ProductEngineRepositoryPort;
+  siteRepository: import("../../application/ports/site-repository.port.js").SiteRepositoryPort;
   proposalRepository: ProposalRepositoryPort;
   proposalTemplateRepository: ProposalTemplateRepositoryPort;
   /** CRM/Comercial (Fase 5) — Sugestões do Copiloto Comercial (IA). */
@@ -193,6 +198,8 @@ export function buildIdentityRepositories(options: { databaseUrl: string; secret
     dealRepository: new PostgresDealRepository(pool),
     taskRepository: new PostgresTaskRepository(pool),
     productRepository: new PostgresProductRepository(pool),
+    productEngineRepository: new PostgresProductEngineRepository(pool),
+    siteRepository: new PostgresSiteRepository(pool),
     aiCreditPurchaseRepository: new PostgresAiCreditPurchaseRepository(pool),
     reportTemplateRepository: new PostgresReportTemplateRepository(pool),
     proposalRepository: new PostgresProposalRepository(pool),

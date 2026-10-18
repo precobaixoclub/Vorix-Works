@@ -103,7 +103,7 @@ export function QuickCreateDealModal({
       const failures: string[] = [];
       for (const line of lines) {
         try {
-          await addDealItem(deal.id, { workspaceId, productId: line.productId, quantity: draftQuantity(line), proposedUnitPriceCents: draftPrice(line) });
+          await addDealItem(deal.id, { workspaceId, productId: line.productId,variantId:line.variantId, quantity: draftQuantity(line), proposedUnitPriceCents: draftPrice(line) });
         } catch (cause) {
           failures.push(`${line.name}: ${cause instanceof Error ? cause.message : "erro"}`);
         }
@@ -148,7 +148,7 @@ export function QuickCreateDealModal({
 
         <div>
           <Label>Produtos e serviços</Label>
-          <ProductLinesEditor products={products ?? []} lines={lines} onChange={setLines} showMargin={showMargin} stock={stockByProduct} />
+          <ProductLinesEditor workspaceId={workspaceId} stockByVariant={new Map((stockRisk?.variants??[]).filter(item=>item.variantId).map(item=>[item.variantId!,item]))} products={products ?? []} lines={lines} onChange={setLines} showMargin={showMargin} stock={stockByProduct} />
           {lines.length === 0 ? (
             <div className="mt-3">
               <Label htmlFor="quick-deal-value">Valor estimado — sem produtos</Label>

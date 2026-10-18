@@ -30,6 +30,8 @@ export type PlanVersionRepositoryPort = {
 };
 
 export type AddonDefinitionRepositoryPort = {
+  saveModule(input:Omit<AddonDefinition,"createdAt">):Promise<AddonDefinition>;
+  listModules():Promise<AddonDefinition[]>;
   getByCode(code: string): Promise<AddonDefinition | undefined>;
   listActive(): Promise<AddonDefinition[]>;
 };

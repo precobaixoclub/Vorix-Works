@@ -1,0 +1,6 @@
+import type {CommerceOrderOrigin,CommerceOrderLine,CommerceProviderReference} from "../../domain/commerce/commerce.model.js";
+/** Providers são resolvidos POR tenant, usando referências do SecretManager existente. Nenhum
+ * gateway/frete é dependência do Site e nenhum segredo é carregado do projeto de referência. */
+export type CommercePaymentProviderPort={createPayment(input:{origin:CommerceOrderOrigin;orderId:string;amountCents:number;currency:string;idempotencyKey:string;secretRef:string}):Promise<{providerReference:string;checkoutUrl?:string}>;refund(input:{orderId:string;providerReference:string;amountCents:number;idempotencyKey:string;secretRef:string}):Promise<void>};
+export type CommerceShippingProviderPort={quote(input:{tenantId:string;workspaceId:string;destinationPostalCode:string;lines:readonly CommerceOrderLine[];secretRef?:string}):Promise<readonly {code:string;amountCents:number;currency:string;estimatedDays?:number;expiresAt:string}[]>};
+export type CommerceProviderRegistryPort={configuration(tenantId:string):Promise<CommerceProviderReference|undefined>;payment(providerKey:string):CommercePaymentProviderPort|undefined;shipping(providerKey:string):CommerceShippingProviderPort|undefined};

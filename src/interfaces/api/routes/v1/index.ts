@@ -43,6 +43,8 @@ import { registerPipelinesRoutes } from "./pipelines.route.js";
 import { registerDealsRoutes } from "./deals.route.js";
 import { registerTasksRoutes } from "./tasks.route.js";
 import { registerProductsRoutes } from "./products.route.js";
+import { registerProductEngineRoutes } from "./product-engine.route.js";
+import { registerSiteRoutes } from "./sites.route.js";
 import { registerCommercialSuggestionsRoutes } from "./commercial-suggestions.route.js";
 import { registerAutomationRulesRoutes } from "./automation-rules.route.js";
 import { registerCommercialMetricsRoutes } from "./commercial-metrics.route.js";
@@ -107,6 +109,7 @@ export async function registerV1Routes(app: FastifyInstance): Promise<void> {
     : undefined;
 
   await registerHealthRoutes(app);
+  if(app.zunoContainer.siteEngine)await registerSiteRoutes(app,{...app.zunoContainer.siteEngine,workspaceRepository:app.zunoContainer.workspaceRepository,objectStorage:app.zunoContainer.objectStorage,publicBaseDomain:app.zunoConfig.sitePublicBaseDomain});
   // Soluções da plataforma (Core) — sempre registrada: é ela que diz ao frontend quais soluções
   // este tenant enxerga.
   await registerSolutionRoutes(app, { solutionAccess: app.zunoContainer.solutionAccess });
@@ -441,6 +444,8 @@ export async function registerV1Routes(app: FastifyInstance): Promise<void> {
     await registerTasksRoutes(app, { taskRepository: identity.taskRepository, timelineEventRepository: identity.timelineEventRepository });
     await registerProductsRoutes(app, {
       productRepository: identity.productRepository,
+      productEngineRepository: identity.productEngineRepository,
+      salesCatalogRepository: identity.salesCatalogRepository,
       workspaceRepository: app.zunoContainer.workspaceRepository,
       salesConfigRepository: identity.salesConfigRepository,
       membershipRepository: identity.membershipRepository,
@@ -448,6 +453,7 @@ export async function registerV1Routes(app: FastifyInstance): Promise<void> {
       objectStorage: app.zunoContainer.objectStorage,
       maxUploadBytes: app.zunoConfig.objectStorage.maxUploadBytes,
     });
+    if(identity.productEngineRepository) await registerProductEngineRoutes(app,{repository:identity.productEngineRepository,productRepository:identity.productRepository,workspaceRepository:app.zunoContainer.workspaceRepository,objectStorage:app.zunoContainer.objectStorage});
     const proposalUseCaseDeps = {
       proposalRepository: identity.proposalRepository,
       timelineEventRepository: identity.timelineEventRepository,

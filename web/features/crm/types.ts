@@ -162,6 +162,10 @@ export type Task = {
 };
 
 export type Product = {
+  details?: import("../product-engine/types").ProductDetails;
+  categoryId?: string;
+  brandId?: string;
+  reservedQuantity?: number;
   id: string;
   tenantId: string;
   workspaceId: string;
@@ -369,7 +373,7 @@ export type CommercialSuggestion = {
 
 /** Risco de estoque das oportunidades abertas — laranja (atenção) e vermelho (revisar). */
 export type StockRiskLevel = "ok" | "warning" | "critical";
-export type ProductStockRisk = { productId: string; name: string; unit?: string; stockQuantity: number; openDemand: number; level: StockRiskLevel };
+export type ProductStockRisk = { productId: string;variantId?:string; name: string; unit?: string; stockQuantity: number; openDemand: number; level: StockRiskLevel };
 export type DealStockRiskItem = { productId: string; name: string; unit?: string; quantity: number; available: number; openDemand: number; level: "warning" | "critical" };
 export type DealStockRisk = { dealId: string; level: "warning" | "critical"; items: DealStockRiskItem[] };
-export type StockRiskReport = { products: ProductStockRisk[]; deals: DealStockRisk[] };
+export type StockRiskReport = { variants?:ProductStockRisk[]; products: ProductStockRisk[]; deals: DealStockRisk[] };

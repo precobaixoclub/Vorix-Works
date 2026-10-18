@@ -7,6 +7,12 @@ import type { ApprovalReason, BillingType } from "./pricing.js";
  */
 
 export type ProductVariant = {
+  /** Variantes legadas mantêm preço próprio; grades novas podem herdar o preço atual do Product. */
+  priceOverride?:boolean;
+  optionValues?: Record<string, string>;
+  stockQuantity?: number;
+  reservedQuantity?: number;
+  imageUrl?: string;
   id: string;
   tenantId: string;
   workspaceId: string;
@@ -45,6 +51,7 @@ export type PriceBookItem = {
 
 /** Item da oportunidade com SNAPSHOT comercial: mudar o catálogo depois nunca altera o histórico. */
 export type DealItem = {
+  productContextSnapshot?: { attributes?:Record<string,string|number|boolean>; options?:Record<string,string>;optionLabels?:Record<string,string>; imageUrl?:string };
   id: string;
   tenantId: string;
   workspaceId: string;

@@ -13,6 +13,14 @@ const REFRESH_COOKIE_NAME = "zuno_refresh_token";
 export function proxy(request: NextRequest) {
   const hasRefreshCookie = request.cookies.has(REFRESH_COOKIE_NAME);
   const { pathname } = request.nextUrl;
+  const hostname=(request.headers.get("host")??"").split(":")[0].toLowerCase();
+  const siteBase=process.env.SITE_PUBLIC_BASE_DOMAIN?.toLowerCase();
+  const appHostname=process.env.SITE_APP_HOST?.toLowerCase();
+  const isSiteSubdomain=siteBase&&hostname.endsWith(`.${siteBase}`)&&hostname.slice(0,-siteBase.length-1).indexOf(".")===-1;
+  const isCustomSite=process.env.SITE_CUSTOM_DOMAIN_ROUTING==="true"&&appHostname&&hostname!==appHostname&&!/^(localhost|127\.)/.test(hostname);
+  if((isSiteSubdomain||isCustomSite)&&!pathname.startsWith("/_next/")&&!pathname.startsWith("/api/")&&!pathname.startsWith("/site-domain/")){
+    const url=request.nextUrl.clone();url.pathname=`/site-domain/${encodeURIComponent(hostname)}${pathname==="/"?"":pathname}`;return NextResponse.rewrite(url);
+  }
 
   // "/" é a landing page pública (marketing) — nunca exige sessão.
   if (pathname === "/") return NextResponse.next();
@@ -31,6 +39,9 @@ export function proxy(request: NextRequest) {
   // Páginas públicas exigidas por plataformas externas (Meta/TikTok/YouTube) e por visitantes.
   if (
     pathname.startsWith("/p/") ||
+    pathname.startsWith("/s/") ||
+    pathname.startsWith("/site-domain/") ||
+    pathname.startsWith("/api/tenant-site/") ||
     // Link compartilhado de reunião do Vorix Meetings (o token é a autorização).
     pathname.startsWith("/r/") ||
     pathname.startsWith("/product-shots/") ||

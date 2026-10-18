@@ -13,7 +13,7 @@ const { Pool } = pg;
 export async function startTestPostgres(_options = {}) {
   const db = new PGlite();
   // The OS assigns a free port, avoiding other test workers and local databases.
-  const server = new PGLiteSocketServer({ db, port: 0, host: "127.0.0.1", maxConnections: 10 });
+  const server = new PGLiteSocketServer({ db, port: 0, host: "127.0.0.1", maxConnections: _options.maxConnections ?? 10 });
   await server.start();
   const port = Number(server.getServerConn().split(":").at(-1));
 

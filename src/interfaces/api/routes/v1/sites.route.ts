@@ -1,0 +1,62 @@
+import type {Site,SiteSnapshot} from "../../../../domain/sites/site.model.js";
+import {signOwnedUrl,OBJECT_URL_TTL} from "../../../../shared/utils/object-url-signing.js";
+import type {FastifyInstance,FastifyRequest} from "fastify";
+import {z} from "zod";
+import {requirePermission} from "../../http/require-principal.js";
+import {AppError,NotFoundError,ValidationError,ForbiddenError,ConflictError} from "../../http/app-error.js";
+import {successEnvelope} from "../../http/response-envelope.js";
+import {assertWorkspaceBelongsToTenant} from "./workspace-ownership.js";
+import {mustSite,publicSite,publishSite,validateSiteSnapshot,verifySiteDomain,type SiteEngineDeps} from "../../../../application/sites/site-use-cases.js";
+import {normalizeSiteHostname,siteImageUrls} from "../../../../domain/sites/site.model.js";
+import type {WorkspaceRepositoryPort} from "../../../../application/ports/workspace-repository.port.js";
+import type {ObjectStoragePort} from "../../../../application/ports/object-storage.port.js";
+import {canonicalWorkspaceImages,uploadWorkspaceImage} from "../../http/workspace-images.js";
+import {parseOwnedObjectUrl,stripObjectUrlSignature} from "../../../../shared/utils/object-url-signing.js";
+import type {Permission} from "../../../../domain/identity/identity.model.js";
+export type SiteRouteDeps=SiteEngineDeps&{workspaceRepository:WorkspaceRepositoryPort;objectStorage:ObjectStoragePort;publicBaseDomain?:string};
+const id=z.string().min(1).max(160);
+export async function registerSiteRoutes(app:FastifyInstance,deps:SiteRouteDeps):Promise<void>{
+ const guard=async<T>(run:()=>Promise<T>)=>{try{return await run();}catch(error){
+  if(error instanceof z.ZodError)throw new ValidationError(error.issues.map(issue=>issue.message).join(" "));
+  if(error instanceof Error){if(error.message.startsWith("SITE_NOT_FOUND"))throw new NotFoundError();if(error.message.startsWith("SITE_ENTITLEMENT"))throw new ForbiddenError(error.message);if(error.message.startsWith("SITE_REVISION"))throw new ConflictError(error.message);if(error.message.startsWith("SITE_VALIDATION"))throw new ValidationError(error.message);}
+  if((error as {code?:string})?.code==="23505")throw new ConflictError("Esse endereço já está em uso.");throw error;
+ }};
+ const scope=async(request:FastifyRequest,permission:Permission="site:read",allowUnentitled=false)=>{
+  const principal=requirePermission(request,permission);const workspaceId=z.object({workspaceId:id}).parse(request.query).workspaceId;
+  await assertWorkspaceBelongsToTenant(deps.workspaceRepository,{tenantId:principal.tenantId,workspaceId});
+  if(!allowUnentitled&&!await deps.hasAccess(principal.tenantId))throw new ForbiddenError("Vorix Site não está habilitado nesta conta. Consulte seu plano ou administrador.");
+  return {tenantId:principal.tenantId,workspaceId,actorUserId:principal.userId};
+ };
+ const owned=async(request:FastifyRequest,permission:Permission="site:read",allowUnentitled=false)=>{const context=await scope(request,permission,allowUnentitled);const site=await mustSite(deps,{...context,id:(request.params as {id:string}).id});return {site,context};};
+ const presentSite=(site:Site)=>{const sign=(snapshot:SiteSnapshot):SiteSnapshot=>{const urls=new Set(siteImageUrls(snapshot));return JSON.parse(JSON.stringify(snapshot,(_key,value)=>typeof value==="string"&&urls.has(value)?signOwnedUrl(value,OBJECT_URL_TTL.preview):value));};return {...site,draft:sign(site.draft),published:site.published?sign(site.published):undefined};};
+ const cleanSnapshot=(raw:unknown,tenantId:string,workspaceId:string)=>{
+  const snapshot=validateSiteSnapshot(raw);const urls=siteImageUrls(snapshot),canonical=canonicalWorkspaceImages(deps.objectStorage,{tenantId,workspaceId},urls);const replacements=new Map(urls.map((url,index)=>[url,canonical[index]]));return validateSiteSnapshot(JSON.parse(JSON.stringify(snapshot,(key,value)=>typeof value==="string"&&replacements.has(value)?replacements.get(value):value)));
+ };
+ app.get("/sites",async request=>guard(async()=>{const context=await scope(request);return successEnvelope({sites:(await deps.repository.list(context.tenantId,context.workspaceId)).map(presentSite),publicBaseDomain:deps.publicBaseDomain??null},request.id);}));
+ app.post("/sites",{config:{readOnlyGuard:true}},async request=>guard(async()=>{
+  const context=await scope(request,"site:manage");const raw=z.object({slug:z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/).min(3).max(80),draft:z.unknown()}).strict().parse(request.body);
+  if(["api","app","www","admin","mail","static"].includes(raw.slug))throw new ValidationError("Esse endereço está reservado. Escolha outro.");
+  return successEnvelope(presentSite(await deps.repository.create({...context,slug:raw.slug,draft:cleanSnapshot(raw.draft,context.tenantId,context.workspaceId)})),request.id);
+ }));
+ app.get("/sites/:id",async request=>guard(async()=>successEnvelope(presentSite((await owned(request)).site),request.id)));
+ app.put("/sites/:id",{config:{readOnlyGuard:true}},async request=>guard(async()=>{const {site,context}=await owned(request,"site:manage");const raw=z.object({revision:z.number().int().positive(),draft:z.unknown()}).strict().parse(request.body);const saved=await deps.repository.saveDraft({id:site.id,tenantId:site.tenantId,revision:raw.revision,draft:cleanSnapshot(raw.draft,context.tenantId,context.workspaceId)});if(!saved)throw new ConflictError("O site mudou. Atualize a tela antes de salvar.");return successEnvelope(presentSite(saved),request.id);}));
+ app.get("/sites/:id/preview",async request=>guard(async()=>{const {site}=await owned(request);return successEnvelope(await publicSite(deps,{},site),request.id);}));
+ app.post("/sites/:id/publish",{config:{readOnlyGuard:true}},async request=>guard(async()=>{const {site,context}=await owned(request,"site:publish",true);const raw=z.object({revision:z.number().int().positive(),unpublish:z.boolean().optional()}).strict().parse(request.body);return successEnvelope(presentSite(await publishSite(deps,{...context,...raw,id:site.id})),request.id);}));
+ app.post("/sites/:id/images",{config:{readOnlyGuard:true}},async request=>guard(async()=>{const {context}=await owned(request,"site:manage");return successEnvelope(await uploadWorkspaceImage(request,deps.objectStorage,context),request.id);}));
+ app.get("/sites/:id/domains",async request=>guard(async()=>{const {site}=await owned(request);return successEnvelope(await deps.repository.domains(site.id,site.tenantId),request.id);}));
+ app.post("/sites/:id/domains",{config:{readOnlyGuard:true}},async request=>guard(async()=>{const {site}=await owned(request,"site:publish");const hostname=normalizeSiteHostname(z.object({hostname:z.string()}).strict().parse(request.body).hostname);if(deps.publicBaseDomain&&(hostname===deps.publicBaseDomain||hostname.endsWith(`.${deps.publicBaseDomain}`)))throw new ValidationError("Use o endereço padrão do site para subdomínios da plataforma.");const domain=await deps.repository.claimDomain({siteId:site.id,tenantId:site.tenantId,hostname});if(!domain)throw new ConflictError("Este domínio já está vinculado a outro site.");return successEnvelope(domain,request.id);}));
+ app.post("/sites/:id/domains/:domainId/verify",async request=>guard(async()=>{const {site}=await owned(request,"site:publish");return successEnvelope(await verifySiteDomain(deps,{siteId:site.id,tenantId:site.tenantId,id:(request.params as {domainId:string}).domainId}),request.id);}));
+ app.delete("/sites/:id/domains/:domainId",async(request,reply)=>guard(async()=>{const {site}=await owned(request,"site:publish");await deps.repository.removeDomain({siteId:site.id,tenantId:site.tenantId,id:(request.params as {domainId:string}).domainId});reply.code(204);return null;}));
+ const publicLookup=(request:FastifyRequest)=>{const slug=(request.params as {slug?:string})?.slug;if(slug)return {slug};return {hostname:normalizeSiteHostname(z.object({hostname:z.string()}).parse(request.query).hostname)};};
+ app.get("/public/sites/resolve",async request=>guard(async()=>successEnvelope(await publicSite(deps,publicLookup(request)),request.id)));
+ app.get("/public/sites/:slug",async request=>guard(async()=>successEnvelope(await publicSite(deps,publicLookup(request)),request.id)));
+ app.post("/public/sites/:slug/inquiries",async request=>guard(async()=>{
+  const input=z.object({name:z.string().trim().min(2).max(160),email:z.email().max(320).optional(),phone:z.string().regex(/^\+?\d{10,15}$/).optional(),message:z.string().trim().min(3).max(4000),productId:id.optional(),variantId:id.optional(),requestKey:z.string().uuid(),website:z.literal("").optional()}).strict().parse(request.body);
+  if(!input.email&&!input.phone)throw new ValidationError("Informe seu e-mail ou telefone.");
+  const lookup=publicLookup(request);const data=await publicSite(deps,lookup);const site=await deps.repository.findPublic(lookup);
+  if(!site||!data.content.contactForm)throw new NotFoundError();
+  const product=input.productId?data.products.find(item=>item.id===input.productId):undefined;
+  if(input.productId&&!product||input.variantId&&!product?.variants.some(item=>item.id===input.variantId))throw new NotFoundError();
+  return successEnvelope(await deps.repository.addInquiry({...input,site}),request.id);
+ }));
+}

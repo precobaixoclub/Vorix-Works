@@ -16,6 +16,7 @@ const DEFAULT_ANTHROPIC_COMMERCIAL_COPILOT_MODEL = "claude-haiku-4-5-20251001";
  * `NoopAuthAdapter` da Sprint 02/03), nunca o padrão silencioso.
  */
 export type ApiConfig = {
+  sitePublicBaseDomain?: string;
   port: number;
   host: string;
   persistenceDriver: PersistenceDriver;
@@ -509,6 +510,7 @@ export function loadApiConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
   return {
     port,
     host,
+    sitePublicBaseDomain: env.SITE_PUBLIC_BASE_DOMAIN?.trim() || undefined,
     persistenceDriver,
     databaseUrl,
     logLevel,

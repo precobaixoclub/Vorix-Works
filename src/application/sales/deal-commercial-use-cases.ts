@@ -175,6 +175,7 @@ export async function addDealItem(deps: SalesEngineDeps, actor: SalesActor, inpu
       listPriceCents: pricing.listPriceCents, minimumPriceCents: pricing.minimumPriceCents, proposedUnitPriceCents: proposedFrom(pricing.listPriceCents, input),
       commissionType: pricing.commissionType, commissionValue: pricing.commissionValue,
     });
+    record.productContextSnapshot=pricing.productContext;
   } else {
     const name = input.name?.trim();
     const listPriceCents = input.listPriceCents ?? input.proposedUnitPriceCents;
@@ -209,6 +210,7 @@ export async function updateDealItem(deps: SalesEngineDeps, actor: SalesActor, i
     unitCostCents: item.unitCostCentsSnapshot, listPriceCents: item.listPriceCentsSnapshot, minimumPriceCents: item.minimumPriceCentsSnapshot,
     proposedUnitPriceCents: proposed, commissionType: item.commissionTypeSnapshot, commissionValue: item.commissionValueSnapshot,
   });
+  record.productContextSnapshot=item.productContextSnapshot;
   const updated = await deps.dealItemRepository.replace(item.id, record);
   await recalculateDealValue(deps, deal);
   if (proposed !== item.proposedUnitPriceCents || quantity !== item.quantity) {

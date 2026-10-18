@@ -149,6 +149,9 @@ import { CreditGatedAiGateway } from "../../../application/ai-gateway/credit-gat
 import { PostgresMeetingInsightsRepository } from "../../../infrastructure/storage/postgres/postgres-meeting-insights-repository.js";
 import { ZoomIntegration } from "../../../infrastructure/meetings/zoom-integration.js";
 import { SolutionAccessService } from "../../../application/solutions/solution-access.service.js";
+import { resolveEffectiveEntitlements } from "../../../application/billing/entitlement-use-cases.js";
+import { resolveTxt } from "node:dns/promises";
+import type { SiteEngineDeps } from "../../../application/sites/site-use-cases.js";
 import { limitsFromEntitlement, type MeetingUseCaseDeps } from "../../../application/meetings/meeting-use-cases.js";
 import { ObjectStorageMeetingMedia } from "../../../infrastructure/meetings/object-storage-meeting-media.js";
 import type { CalendarUseCaseDeps } from "../../../application/calendar/calendar-event-use-cases.js";
@@ -497,6 +500,7 @@ export type ApiContainer = {
   qualityFeedback: QualityFeedbackCenter;
   /** Presente quando `persistenceDriver === "postgres"` — `app.ts` fecha isto no hook `onClose`. */
   pool?: pg.Pool;
+  siteEngine?: SiteEngineDeps;
 
   identity?: {
     userRepository: UserRepositoryPort;
@@ -532,6 +536,8 @@ export type ApiContainer = {
     /** CRM/Comercial (Fase 3) — Tarefas, Catálogo de produtos, Propostas (com link público). */
     taskRepository: TaskRepositoryPort;
     productRepository: ProductRepositoryPort;
+    productEngineRepository: import("../../../application/ports/product-engine-repository.port.js").ProductEngineRepositoryPort;
+    siteRepository: import("../../../application/ports/site-repository.port.js").SiteRepositoryPort;
     proposalRepository: ProposalRepositoryPort;
     proposalTemplateRepository: ProposalTemplateRepositoryPort;
     /** CRM/Comercial (Fase 5) — Sugestões do Copiloto Comercial (IA). */
@@ -1629,8 +1635,10 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
     // e `GET /v1/solutions`. Kill switches vêm do ambiente; a concessão por tenant, do banco.
     const solutionAccess = new SolutionAccessService({
       repository: new PostgresSolutionEntitlementRepository(identityRepositories.pool),
+      includedCapabilities:async tenantId=>{const access=await resolveEffectiveEntitlements(identityRepositories,tenantId);return {site:!access.readOnly&&access.capabilities.site,commerce:!access.readOnly&&access.capabilities.commerce};},
       killSwitches: new Set<SolutionKey>((config.solutions?.killSwitches ?? []).filter(isSolutionKey)),
     });
+    const siteEngine:SiteEngineDeps={publicBaseDomain:config.sitePublicBaseDomain,repository:identityRepositories.siteRepository,productRepository:identityRepositories.productRepository,productEngineRepository:identityRepositories.productEngineRepository,salesCatalogRepository:identityRepositories.salesCatalogRepository,hasAccess:tenantId=>solutionAccess.hasAccess(tenantId,"site"),canPublish:async tenantId=>!(await resolveEffectiveEntitlements(identityRepositories,tenantId)).readOnly,resolveTxt};
     // Vorix Meetings: repositório próprio, gravações no storage privado do Core, limites
     // comerciais lidos do entitlement da solução `meetings`.
     const meetings: MeetingUseCaseDeps & { maxUploadBytes: number; zoom?: ZoomIntegration } = {
@@ -1698,6 +1706,7 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
       aiMediaProviderRegistry,
       mediaGenerationService,
       solutionAccess,
+      siteEngine,
       meetings,
       meetingsAgenda,
       executionHandlers,

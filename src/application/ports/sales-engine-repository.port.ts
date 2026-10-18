@@ -19,11 +19,14 @@ import type { ApprovalReason } from "../../domain/sales/pricing.js";
 
 export type CreateProductVariantInput = Omit<ProductVariant, "id" | "createdAt" | "updatedAt" | "active" | "position"> & { active?: boolean; position?: number };
 
+export type UpdateProductVariantInput = Partial<Pick<ProductVariant, "name" | "code" | "listPriceCents" | "active" | "position" | "optionValues" | "priceOverride">> & {costCents?:number|null;minimumPriceCents?:number|null;imageUrl?:string|null};
+
 export type SalesCatalogRepositoryPort = {
   listVariants(productId: string): Promise<ProductVariant[]>;
   getVariant(id: string): Promise<ProductVariant | undefined>;
   createVariant(input: CreateProductVariantInput): Promise<ProductVariant>;
-  updateVariant(id: string, patch: Partial<Pick<ProductVariant, "name" | "code" | "costCents" | "listPriceCents" | "minimumPriceCents" | "active" | "position">>): Promise<ProductVariant>;
+  createVariantGrid(input: CreateProductVariantInput[]): Promise<ProductVariant[]>;
+  updateVariant(id: string, patch: UpdateProductVariantInput): Promise<ProductVariant>;
   deleteVariant(id: string): Promise<void>;
   listPriceBooks(input: { tenantId: string; workspaceId: string }): Promise<PriceBook[]>;
   getPriceBook(id: string): Promise<PriceBook | undefined>;

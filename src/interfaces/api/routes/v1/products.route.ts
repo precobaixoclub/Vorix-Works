@@ -12,7 +12,7 @@ import type { ObjectStoragePort } from "../../../../application/ports/object-sto
 import { parseOwnedObjectUrl, stripObjectUrlSignature } from "../../../../shared/utils/object-url-signing.js";
 import type { WorkspaceRepositoryPort } from "../../../../application/ports/workspace-repository.port.js";
 import { assertWorkspaceBelongsToTenant } from "./workspace-ownership.js";
-import { randomUUID } from "node:crypto";
+import { canonicalWorkspaceImages, uploadWorkspaceImage } from "../../http/workspace-images.js";
 import type { AuthPrincipal } from "../../../../domain/identity/identity.model.js";
 import type { Product } from "../../../../domain/crm/crm.model.js";
 import { NotFoundError, ValidationError } from "../../http/app-error.js";
@@ -50,6 +50,7 @@ const CREATE_BODY_SCHEMA = {
     stockQuantity: { type: "number", minimum: -1000000000, maximum: 1000000000 },
     stockAlertThreshold: { type: ["number", "null"], minimum: 0, maximum: 1000000000 },
     imageUrls: { type: "array", maxItems: 6, items: { type: "string", minLength: 1, maxLength: 2000 } },
+    details: { type: "object", maxProperties: 16 }, categoryId: { type: ["string", "null"], maxLength: 160 }, brandId: { type: ["string", "null"], maxLength: 160 },
   },
 } as const;
 const UPDATE_BODY_SCHEMA = {
@@ -76,11 +77,14 @@ const UPDATE_BODY_SCHEMA = {
     stockQuantity: { type: "number", minimum: -1000000000, maximum: 1000000000 },
     stockAlertThreshold: { type: ["number", "null"], minimum: 0, maximum: 1000000000 },
     imageUrls: { type: "array", maxItems: 6, items: { type: "string", minLength: 1, maxLength: 2000 } },
+    details: { type: "object", maxProperties: 16 }, categoryId: { type: ["string", "null"], maxLength: 160 }, brandId: { type: ["string", "null"], maxLength: 160 },
     active: { type: "boolean" },
   },
 } as const;
 
 function translateProductError(error: unknown): never {
+  if(error instanceof Error && /PRODUCT_VALIDATION/.test(error.message)) throw new ValidationError(error.message);
+  if((error as {code?:string})?.code === "23505") throw new ValidationError("Esse slug ou código já está em uso.");
   if (error instanceof Error && error.message.startsWith("PRODUCT_NOT_FOUND")) throw new NotFoundError(error.message);
   if (error instanceof Error && error.message.startsWith("PRODUCT_PRICING_INVALID")) throw new ValidationError(error.message);
   throw error;
@@ -100,23 +104,14 @@ type ProductRouteDeps = ProductUseCaseDeps & {
   workspaceRepository?: WorkspaceRepositoryPort;
 };
 
-const IMAGE_TYPES: Record<string, string> = { "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp" };
+
 const MAX_PRODUCT_IMAGE_BYTES = 5_000_000;
 
 /** Só fotos enviadas para a pasta de produtos DESTE workspace — nunca URL externa arbitrária. */
 function cleanImageUrls(deps: ProductRouteDeps, tenantId: string, workspaceId: string, urls: unknown): string[] | undefined {
   if (urls === undefined) return undefined;
   if (!Array.isArray(urls)) throw new ValidationError("PRODUCT_IMAGES_INVALID: lista de fotos inválida.");
-  if (urls.length === 0) return [];
-  if (!deps.objectStorage) throw new ValidationError("PRODUCT_IMAGES_INVALID: envio de fotos indisponível.");
-  const prefix = `assets/${tenantId}/${workspaceId}/products/`;
-  const base = deps.objectStorage.resolvePublicUrl("");
-  const clean = [...new Set(urls.map((url) => stripObjectUrlSignature(String(url))))];
-  if (clean.some((url) => {
-    const parsed = parseOwnedObjectUrl(url, base);
-    return !parsed || !parsed.key.startsWith(prefix) || !/^[A-Za-z0-9_-]+\.(?:jpg|png|webp)$/.test(parsed.key.slice(prefix.length));
-  })) throw new ValidationError("PRODUCT_IMAGES_INVALID: use apenas fotos enviadas pelo Vorix.");
-  return clean.slice(0, 6);
+  return [...new Set(canonicalWorkspaceImages(deps.objectStorage,{tenantId,workspaceId},urls.map(String)))];
 }
 
 async function productVisibility(deps: ProductRouteDeps, principal: AuthPrincipal, workspaceId: string): Promise<SalesVisibility> {
@@ -140,13 +135,18 @@ const NO_MEMBERS = { listByTenant: async () => [] } as unknown as TenantMembersh
 
 const present = (product: Product, visibility: SalesVisibility) => ({ ...redactProduct(product, visibility.canViewCost), listPriceCents: product.priceCents, commissionValue: visibility.canViewCost ? product.commissionValue : undefined, lowStock: isLowStock(product) });
 
+async function presentWithStock(deps:ProductRouteDeps,product:Product,visibility:SalesVisibility):Promise<ReturnType<typeof present>>{
+ if(product.details?.options.length&&deps.salesCatalogRepository){const variants=(await deps.salesCatalogRepository.listVariants(product.id)).filter(variant=>variant.active);product={...product,stockQuantity:variants.reduce((total,variant)=>total+(variant.stockQuantity??0),0),reservedQuantity:variants.reduce((total,variant)=>total+(variant.reservedQuantity??0),0)};}
+ return present(product,visibility);
+}
+
 export async function registerProductsRoutes(app: FastifyInstance, deps: ProductRouteDeps): Promise<void> {
   app.get("/products", { schema: { querystring: LIST_QUERY_SCHEMA } }, async (request) => {
     const principal = requirePermission(request, "product:read");
     const { workspaceId, search, activeOnly } = request.query as { workspaceId: string; search?: string; activeOnly?: boolean };
     const products = await listProducts(deps, { tenantId: principal.tenantId, workspaceId, search, activeOnly });
     const visibility = await productVisibility(deps, principal, workspaceId);
-    return successEnvelope(products.map((product) => present(product, visibility)), request.id);
+    return successEnvelope(await Promise.all(products.map((product) => presentWithStock(deps,product,visibility))), request.id);
   });
 
   /** Foto do produto: JPEG/PNG/WEBP até 5 MB, gravada na pasta de produtos do workspace. */
@@ -155,17 +155,7 @@ export async function registerProductsRoutes(app: FastifyInstance, deps: Product
     const { workspaceId } = request.query as { workspaceId: string };
     if (deps.workspaceRepository) await assertWorkspaceBelongsToTenant(deps.workspaceRepository, { tenantId: principal.tenantId, workspaceId });
     if (!deps.objectStorage) throw new ValidationError("PRODUCT_IMAGES_INVALID: envio de fotos indisponível.");
-    const limit = Math.min(MAX_PRODUCT_IMAGE_BYTES, deps.maxUploadBytes ?? MAX_PRODUCT_IMAGE_BYTES);
-    const file = await request.file({ limits: { fileSize: limit } });
-    if (!file) throw new ValidationError("PRODUCT_IMAGE_MISSING: envie a foto.");
-    const extension = IMAGE_TYPES[file.mimetype];
-    if (!extension) throw new ValidationError("PRODUCT_IMAGE_TYPE: use uma foto JPG, PNG ou WEBP.");
-    const buffer = await file.toBuffer().catch(() => {
-      throw new ValidationError("PRODUCT_IMAGE_TOO_LARGE: a foto pode ter no máximo 5 MB.");
-    });
-    if (file.file.truncated) throw new ValidationError("PRODUCT_IMAGE_TOO_LARGE: a foto pode ter no máximo 5 MB.");
-    const { url } = await deps.objectStorage.put({ key: `assets/${principal.tenantId}/${workspaceId}/products/${randomUUID()}.${extension}`, body: buffer, contentType: file.mimetype });
-    return successEnvelope({ url }, request.id);
+    return successEnvelope(await uploadWorkspaceImage(request,deps.objectStorage,{tenantId:principal.tenantId,workspaceId},deps.maxUploadBytes),request.id);
   });
 
   /** Risco de estoque das oportunidades abertas (laranja = atenção, vermelho = revisar). */
@@ -186,7 +176,7 @@ export async function registerProductsRoutes(app: FastifyInstance, deps: Product
       assertProductPricing(body as never);
       const product = await createProduct(deps, { tenantId: principal.tenantId, ...body } as never);
       reply.code(201);
-      return successEnvelope(present(product, visibility), request.id);
+      return successEnvelope(await presentWithStock(deps,product,visibility), request.id);
     } catch (error) {
       translateProductError(error);
     }
@@ -217,6 +207,7 @@ export async function registerProductsRoutes(app: FastifyInstance, deps: Product
       assertProductPricing(patch as never, existing);
       // Saldo de estoque muda só via movimento (auditável e com alerta), nunca por sobrescrita direta.
       const { stockQuantity, ...rest } = patch as { stockQuantity?: number } & Record<string, unknown>;
+      if(stockQuantity!==undefined&&((patch.details as {options?:unknown[]}|undefined)?.options??existing.details?.options)?.length)throw new ValidationError("Ajuste o estoque de cada variante.");
       let product = await updateProduct(deps, { productId: id, tenantId: principal.tenantId, workspaceId, patch: rest as never });
       if (stockQuantity !== undefined && product.trackStock) {
         product = await setStockQuantity(
@@ -226,7 +217,7 @@ export async function registerProductsRoutes(app: FastifyInstance, deps: Product
           principal.userId,
         );
       }
-      return successEnvelope(present(product, visibility), request.id);
+      return successEnvelope(await presentWithStock(deps,product,visibility), request.id);
     } catch (error) {
       translateProductError(error);
     }

@@ -1,6 +1,10 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { createContext, useContext, useRef, useState } from "react";
+import { PageSubnav } from "@/components/PageSubnav";
+import { ProductEngineEditor, PRODUCT_SECTIONS } from "@/components/products/ProductEngineEditor";
+import { newProductDetails } from "@/features/product-engine/types";
+const FormSectionContext=createContext("geral");
 import { ImagePlus, Loader2, Star, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/Button";
@@ -11,8 +15,8 @@ import { Switch } from "@/components/ui/switch";
 import { createProduct, updateProduct, uploadProductImage, type CreateProductInput } from "@/features/crm/api";
 import { centsFromCurrencyInput, currencyInputFromCents } from "@/features/crm/presentation";
 import type { BillingType, Product } from "@/features/crm/types";
-import { createVariant, deleteVariant } from "@/features/sales/api";
-import { useVariants } from "@/features/sales/hooks";
+
+
 import { BILLING_TYPE_LABEL, formatBp } from "@/features/sales/presentation";
 import { formatCurrencyCents } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -25,6 +29,10 @@ const MAX_PHOTOS = 6;
  * unidade) e descrição. Usado no menu Produtos (vitrine) e em Configurações.
  */
 export function ProductFormModal({ workspaceId, product, canViewCost, isManager, onClose, onSaved }: { workspaceId: string; product?: Product; canViewCost: boolean; isManager: boolean; onClose: () => void; onSaved: (product: Product) => Promise<void> | void }) {
+  const [section,setSection]=useState("geral");
+  const [details,setDetails]=useState(product?.details??newProductDetails());
+  const [categoryId,setCategoryId]=useState(product?.categoryId);
+  const [brandId,setBrandId]=useState(product?.brandId);
   const [name, setName] = useState(product?.name ?? "");
   const [code, setCode] = useState(product?.code ?? "");
   const [category, setCategory] = useState(product?.category ?? "");
@@ -72,6 +80,7 @@ export function ProductFormModal({ workspaceId, product, canViewCost, isManager,
     setBusy(true);
     setError(undefined);
     const payload: Omit<CreateProductInput, "workspaceId"> = {
+      details:{...details,media:photos.map(url=>({url,alt:details.media.find(item=>item.url===url)?.alt??""}))},categoryId:categoryId??null,brandId:brandId??null,
       name: name.trim(),
       description: description.trim() || undefined,
       priceCents: listCents,
@@ -83,7 +92,7 @@ export function ProductFormModal({ workspaceId, product, canViewCost, isManager,
       ...(canViewCost ? { costCents: costCents ?? null } : {}),
       ...(isManager ? { minimumPriceCents: minimum.trim() ? centsFromCurrencyInput(minimum) : null } : {}),
       trackStock,
-      ...(trackStock ? { stockQuantity: quantityFromInput(stock) ?? 0, stockAlertThreshold: quantityFromInput(alertAt) ?? null } : {}),
+      ...(trackStock ? { ...(details.options.length?{}:{stockQuantity:quantityFromInput(stock)??0}),stockAlertThreshold:quantityFromInput(alertAt)??null } : {}),
       imageUrls: photos,
     };
     try {
@@ -98,8 +107,8 @@ export function ProductFormModal({ workspaceId, product, canViewCost, isManager,
   }
 
   return (
-    <Modal title={product ? "Editar produto" : "Cadastrar produto"} onClose={onClose} maxWidthClass="sm:max-w-3xl">
-      <div className="space-y-5">
+    <Modal title={product ? "Editar produto" : "Cadastrar produto"} onClose={onClose} maxWidthClass="sm:max-w-6xl">
+      <FormSectionContext.Provider value={section}><PageSubnav className="min-w-0 max-w-full" items={PRODUCT_SECTIONS} value={section} onValueChange={setSection}><div className="min-w-0 space-y-5">
         {error ? <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</p> : null}
 
         <FormSection step={1} title="Fotos" hint="A primeira foto é a capa. Até 6 fotos (JPG, PNG ou WEBP, até 5 MB).">
@@ -187,7 +196,7 @@ export function ProductFormModal({ workspaceId, product, canViewCost, isManager,
             <div className="mt-3 grid gap-3 sm:grid-cols-3">
               <div>
                 <Label htmlFor="product-stock">Quantos tenho agora</Label>
-                <Input id="product-stock" value={stock} onChange={(event) => setStock(event.target.value.replace(/[^\d.,-]/g, ""))} inputMode="decimal" placeholder="0" />
+                <Input id="product-stock" disabled={details.options.length>0} value={details.options.length?"Por combinação":stock} onChange={(event) => setStock(event.target.value.replace(/[^\d.,-]/g, ""))} inputMode="decimal" placeholder="0" />
               </div>
               <div>
                 <Label htmlFor="product-alert">Avisar quando chegar a</Label>
@@ -203,81 +212,32 @@ export function ProductFormModal({ workspaceId, product, canViewCost, isManager,
         </FormSection>
 
         <FormSection step={5} title="Descrição e observações">
-          <Textarea id="product-description" rows={6} value={description} onChange={(event) => setDescription(event.target.value)} className="min-h-32 resize-y leading-relaxed" placeholder="Detalhes do produto, condições, observações internas..." maxLength={5000} aria-label="Descrição e observações" />
+          <Textarea id="product-description" rows={6} value={description} onChange={(event) => setDescription(event.target.value)} className="min-h-32 resize-y leading-relaxed" placeholder="Detalhes e condições do produto. Se publicado no site, este texto ficará visível." maxLength={5000} aria-label="Descrição e observações" />
           <p className="mt-1 text-right text-[11px] text-muted-foreground tabular-nums">{description.length}/5000</p>
         </FormSection>
 
-        {product && isManager ? <VariantsEditor workspaceId={workspaceId} product={product} canViewCost={canViewCost} /> : null}
+        <ProductEngineEditor section={section} workspaceId={workspaceId} product={product} details={details} onChange={setDetails} categoryId={categoryId} onCategory={setCategoryId} brandId={brandId} onBrand={setBrandId} photos={photos} isManager={isManager} canViewCost={canViewCost}/>
 
         <div className="sticky bottom-0 -mx-1 flex justify-end gap-2 bg-popover px-1 pt-2">
           <Button variant="secondary" onClick={onClose} disabled={busy}>Cancelar</Button>
           <Button onClick={handleSave} loading={busy} disabled={!name.trim() || busy || uploading}>{product ? "Salvar alterações" : "Cadastrar produto"}</Button>
         </div>
-      </div>
+      </div></PageSubnav></FormSectionContext.Provider>
     </Modal>
   );
 }
 
 function FormSection({ step, title, hint, children }: { step: number; title: string; hint?: string; children: React.ReactNode }) {
+  const section=useContext(FormSectionContext);
+  if(section!==({1:"midia",2:"geral",3:"precos",4:"estoque",5:"geral"} as Record<number,string>)[step])return null;
   return (
     <section className="space-y-2">
       <div className="flex items-baseline gap-2">
-        <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-solution/15 text-[11px] font-semibold text-solution">{step}</span>
         <h3 className="text-sm font-semibold text-foreground">{title}</h3>
         {hint ? <p className="text-xs text-muted-foreground">{hint}</p> : null}
       </div>
       {children}
     </section>
-  );
-}
-
-function VariantsEditor({ workspaceId, product, canViewCost }: { workspaceId: string; product: Product; canViewCost: boolean }) {
-  const { data: variants, mutate } = useVariants(workspaceId, product.id);
-  const [name, setName] = useState("");
-  const [price, setPrice] = useState("");
-  const [minimum, setMinimum] = useState("");
-  const [cost, setCost] = useState("");
-  const [busy, setBusy] = useState(false);
-  return (
-    <div className="space-y-2 border-t border-border/60 pt-3">
-      <p className="text-sm font-medium">Variações (ex.: 10 / 20 / 50 usuários)</p>
-      {(variants ?? []).map((variant) => (
-        <div key={variant.id} className="flex items-center justify-between gap-2 rounded-lg border border-border/60 px-3 py-2 text-sm">
-          <span>{variant.name}</span>
-          <span className="flex items-center gap-3 tabular-nums text-muted-foreground">
-            {formatCurrencyCents(variant.listPriceCents, product.currency)}
-            {variant.minimumPriceCents !== undefined ? ` · mín. ${formatCurrencyCents(variant.minimumPriceCents, product.currency)}` : ""}
-            <Button variant="ghost" size="icon" aria-label="Remover variação" onClick={async () => { await deleteVariant(product.id, variant.id, workspaceId); await mutate(); }}><Trash2 className="h-4 w-4" /></Button>
-          </span>
-        </div>
-      ))}
-      <div className="grid gap-2 sm:grid-cols-5">
-        <Input value={name} onChange={(event) => setName(event.target.value)} placeholder="Nome" className="sm:col-span-2" />
-        <MoneyInput value={price} onChange={(event) => setPrice(event.target.value)} placeholder="Tabela" aria-label="Preço de tabela da variação" />
-        <MoneyInput value={minimum} onChange={(event) => setMinimum(event.target.value)} placeholder="Mínimo" aria-label="Preço mínimo da variação" />
-        {canViewCost ? <MoneyInput value={cost} onChange={(event) => setCost(event.target.value)} placeholder="Custo" aria-label="Custo da variação" /> : null}
-      </div>
-      <Button
-        variant="secondary"
-        size="sm"
-        loading={busy}
-        disabled={!name.trim() || !price.trim()}
-        onClick={async () => {
-          setBusy(true);
-          try {
-            await createVariant(product.id, { workspaceId, name: name.trim(), listPriceCents: centsFromCurrencyInput(price), minimumPriceCents: minimum.trim() ? centsFromCurrencyInput(minimum) : undefined, costCents: canViewCost && cost.trim() ? centsFromCurrencyInput(cost) : undefined });
-            setName(""); setPrice(""); setMinimum(""); setCost("");
-            await mutate();
-          } catch (cause) {
-            toast.error("Não foi possível criar a variação", { description: cause instanceof Error ? cause.message : undefined });
-          } finally {
-            setBusy(false);
-          }
-        }}
-      >
-        + Adicionar variação
-      </Button>
-    </div>
   );
 }
 

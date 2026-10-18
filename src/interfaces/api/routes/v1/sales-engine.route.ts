@@ -18,6 +18,7 @@ import {
 import {
   createPriceBook,
   createVariant,
+  generateVariantGrid,
   deletePriceBook,
   deletePriceBookItem,
   deleteVariant,
@@ -74,6 +75,8 @@ const CONFLICT = ["APPROVAL_ALREADY_DECIDED", "DEAL_CUSTOM_FIELD_DUPLICATE", "CO
 const INVALID = ["DEAL_CLOSED", "DEAL_ITEM_INVALID", "PRODUCT_INACTIVE", "PRODUCT_PRICING_INVALID", "DEAL_VALUE_CALCULATED", "APPROVAL_NOT_REQUIRED", "APPROVAL_REASON_REQUIRED", "DEAL_FINAL_VALUE_REQUIRED", "DEAL_LOSS_REASON_REQUIRED", "COMMERCIAL_SETTINGS_INVALID", "COMMERCIAL_POLICY_INVALID", "SALES_COMPETITOR_INVALID", "DEAL_CUSTOM_FIELD_INVALID"];
 
 function translate(error: unknown): never {
+  if(error instanceof Error&&/^(PRODUCT_VALIDATION|PRODUCT_VARIANT_REQUIRED|INVENTORY_INSUFFICIENT|INVENTORY_VARIANT_UNAVAILABLE)/.test(error.message))throw new ValidationError(error.message);
+  if((error as {code?:string})?.code==="23505")throw new ConflictError("Essa combinação ou código já existe.");
   if (error instanceof Error) {
     const code = error.message.split(":")[0];
     if (NOT_FOUND.includes(code)) throw new NotFoundError(error.message);
@@ -302,8 +305,12 @@ export async function registerSalesEngineRoutes(app: FastifyInstance, deps: Sale
     const visibility = resolveVisibility(actor, await loadCommercialSettings(deps, actor.tenantId, workspaceId));
     return successEnvelope(await guard(() => listVariants(deps, { tenantId: actor.tenantId, workspaceId, productId: id, canViewCost: visibility.canViewCost })), request.id);
   });
+  app.post("/products/:id/variant-grid",{schema:{params:ID_PARAMS,body:body([],{})},config:{readOnlyGuard:true}},async request=>{
+    const actor=managerFor(request,"product:manage");const {id}=request.params as {id:string};const {workspaceId}=request.body as {workspaceId:string};
+    return successEnvelope(await guard(()=>generateVariantGrid(deps,{tenantId:actor.tenantId,workspaceId,productId:id})),request.id);
+  });
 
-  const VARIANT_FIELDS = { name: { type: "string", minLength: 1, maxLength: 120 }, code: { type: "string", maxLength: 60 }, costCents: MONEY, listPriceCents: MONEY, minimumPriceCents: MONEY, active: { type: "boolean" }, position: { type: "integer", minimum: 0 } };
+  const VARIANT_FIELDS = { name: { type: "string", minLength: 1, maxLength: 120 }, code: { type: "string", maxLength: 60 }, costCents: MONEY, listPriceCents: MONEY, minimumPriceCents: MONEY, active: { type: "boolean" }, position: { type: "integer", minimum: 0 }, priceOverride:{type:"boolean"},optionValues:{type:"object",maxProperties:4,additionalProperties:{type:"string",maxLength:160}}, stockQuantity:{type:"number",minimum:0,maximum:1e9},imageUrl:{type:"string",maxLength:2000} };
   app.post("/products/:id/variants", { schema: { params: ID_PARAMS, body: body(["name", "listPriceCents"], VARIANT_FIELDS) }, config: { readOnlyGuard: true } }, async (request, reply) => {
     const actor = managerFor(request, "product:manage");
     const { id } = request.params as { id: string };
@@ -313,7 +320,7 @@ export async function registerSalesEngineRoutes(app: FastifyInstance, deps: Sale
     return successEnvelope(variant, request.id);
   });
 
-  app.patch("/products/:id/variants/:variantId", { schema: { params: ID_SUB_PARAMS("variantId"), body: body([], VARIANT_FIELDS) } }, async (request) => {
+  app.patch("/products/:id/variants/:variantId", { schema: { params: ID_SUB_PARAMS("variantId"), body: body([], {...Object.fromEntries(Object.entries(VARIANT_FIELDS).filter(([key])=>key!=="stockQuantity")),costCents:{anyOf:[MONEY,{type:"null"}]},minimumPriceCents:{anyOf:[MONEY,{type:"null"}]},imageUrl:{anyOf:[VARIANT_FIELDS.imageUrl,{type:"null"}]}}) } }, async (request) => {
     const actor = managerFor(request, "product:manage");
     const { id, variantId } = request.params as { id: string; variantId: string };
     const { workspaceId, ...patch } = request.body as { workspaceId: string } & Record<string, unknown>;

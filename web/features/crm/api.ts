@@ -186,6 +186,9 @@ export function cancelTask(taskId: string, workspaceId: string): Promise<Task> {
 }
 
 export type CreateProductInput = {
+  details?: import("../product-engine/types").ProductDetails;
+  categoryId?: string|null;
+  brandId?: string|null;
   workspaceId: string;
   name: string;
   description?: string;

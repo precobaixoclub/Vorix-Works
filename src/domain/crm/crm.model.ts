@@ -204,6 +204,10 @@ export type Task = {
 };
 
 export type Product = {
+  details?: import("../products/product-details.js").ProductDetails;
+  categoryId?: string;
+  brandId?: string;
+  reservedQuantity?: number;
   id: string;
   tenantId: string;
   workspaceId: string;

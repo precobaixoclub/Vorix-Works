@@ -46,7 +46,7 @@ export async function registerSolutionRoutes(app: FastifyInstance, deps: Solutio
     const principal = requirePrincipal(request);
     const access = deps.solutionAccess
       ? await deps.solutionAccess.listAccess(principal.tenantId)
-      : SOLUTION_KEYS.map((key) => ({ key, name: SOLUTIONS[key].name, enabled: true, internal: !isSolutionContractable(SOLUTIONS[key]) }));
+      : SOLUTION_KEYS.map((key) => ({ key, name: SOLUTIONS[key].name, enabled: key!=="site"&&key!=="commerce", internal: !isSolutionContractable(SOLUTIONS[key]) }));
     return successEnvelope({ solutions: access.filter((solution) => solution.enabled).map(({ key, name, internal }) => ({ key, name, internal })) }, request.id);
   });
 

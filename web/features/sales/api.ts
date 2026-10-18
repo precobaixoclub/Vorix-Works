@@ -62,7 +62,7 @@ export const cancelApproval = (approvalId: string, workspaceId: string) => apiCl
 // --- Catálogo: variações e tabelas -----------------------------------------------------------
 export const listVariants = (productId: string, workspaceId: string) => apiClient.get<ProductVariant[]>(`/v1/products/${q(productId)}/variants?workspaceId=${q(workspaceId)}`);
 export const createVariant = (productId: string, input: { workspaceId: string; name: string; code?: string; costCents?: number; listPriceCents: number; minimumPriceCents?: number }) => apiClient.post<ProductVariant>(`/v1/products/${q(productId)}/variants`, input);
-export const updateVariant = (productId: string, variantId: string, input: { workspaceId: string } & Partial<Omit<ProductVariant, "id" | "productId">>) => apiClient.patch<ProductVariant>(`/v1/products/${q(productId)}/variants/${q(variantId)}`, input);
+export const updateVariant = (productId: string, variantId: string, input: { workspaceId: string } & Partial<Omit<ProductVariant, "id" | "productId" | "costCents" | "minimumPriceCents" | "imageUrl">> & {costCents?:number|null;minimumPriceCents?:number|null;imageUrl?:string|null}) => apiClient.patch<ProductVariant>(`/v1/products/${q(productId)}/variants/${q(variantId)}`, input);
 export const deleteVariant = (productId: string, variantId: string, workspaceId: string) => apiClient.delete<null>(`/v1/products/${q(productId)}/variants/${q(variantId)}?workspaceId=${q(workspaceId)}`);
 export const listPriceBooks = (workspaceId: string) => apiClient.get<PriceBook[]>(`/v1/price-books?workspaceId=${q(workspaceId)}`);
 export const createPriceBook = (input: { workspaceId: string; name: string; description?: string }) => apiClient.post<PriceBook>("/v1/price-books", input);

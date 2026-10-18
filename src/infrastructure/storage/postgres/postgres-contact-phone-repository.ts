@@ -28,7 +28,7 @@ export class PostgresContactPhoneRepository implements ContactPhoneRepositoryPor
     const result = await this.pool.query<Row>(
       `select c.id as contact_id, c.name,
               ci.external_id as identity_external_id,
-              ic.id as inbox_contact_id, ic.phone_normalized, ic.whatsapp_pn, ic.whatsapp_lid,
+              ic.id as inbox_contact_id, coalesce(ic.phone_normalized,c.custom_fields->>'phone') as phone_normalized, ic.whatsapp_pn, ic.whatsapp_lid,
               exists (select 1 from deals d where d.contact_id = c.id) as has_deals,
               exists (select 1 from proposals p where p.contact_id = c.id) as has_proposals
          from contacts c

@@ -32,7 +32,7 @@ export type EntitlementUseCaseDeps = {
  * criado antes da Fase 2 (checkout) já funcione com `canUse`/`limit` sem nenhum backfill —
  * ver `docs/saas-commercialization-audit.md`, seção 2.4.
  */
-export async function resolveEffectiveEntitlements(deps: EntitlementUseCaseDeps, tenantId: string): Promise<EffectiveEntitlements> {
+export async function resolveEffectiveEntitlements(deps: Pick<EntitlementUseCaseDeps,"subscriptionRepository"|"subscriptionItemRepository"|"planVersionRepository"|"addonDefinitionRepository"|"platformBillingRepository">, tenantId: string): Promise<EffectiveEntitlements> {
   const subscription = await deps.subscriptionRepository.getActiveByTenant(tenantId);
 
   if (subscription) {
@@ -42,14 +42,16 @@ export async function resolveEffectiveEntitlements(deps: EntitlementUseCaseDeps,
     }
     const items = await deps.subscriptionItemRepository.listBySubscription(subscription.id);
     const limits = { ...planVersion.limits };
+    const capabilities = { ...planVersion.capabilities };
     for (const item of items) {
       const addon = await deps.addonDefinitionRepository.getByCode(item.addonCode);
+      if(addon&&(addon.resource==="site"||addon.resource==="commerce")&&item.quantity>0){capabilities[addon.resource]=true;continue;}
       if (!addon || !isPlanLimitResource(addon.resource)) continue; // gravações do Meetings não são limite de plano
       const current = limits[addon.resource];
       if (current !== null) limits[addon.resource] = current + addon.increment * item.quantity;
     }
     const readOnly = isReadOnlyStatus(subscription.status);
-    return { tenantId, planCode: planVersion.planCode, planVersionId: planVersion.id, capabilities: planVersion.capabilities, limits, virtual: false, readOnly };
+    return { tenantId, planCode: planVersion.planCode, planVersionId: planVersion.id, capabilities, limits, virtual: false, readOnly };
   }
 
   const billing = await deps.platformBillingRepository.getTenantBilling(tenantId);

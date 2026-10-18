@@ -32,6 +32,7 @@ export function registerSolutionAccessMiddleware(app: FastifyInstance, service: 
     if (!solutionKey) return;
 
     if (await service.hasAccess(principal.tenantId, solutionKey)) return;
+    if(solutionKey==="conversations"&&/^\/v1\/(?:products|product-metadata)(?:\/|\?|$)/.test(request.url)&&await service.hasAccess(principal.tenantId,"site"))return;
 
     throw new AppError({
       code: "SOLUTION_ACCESS_DENIED",

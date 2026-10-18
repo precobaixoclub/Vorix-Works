@@ -23,7 +23,7 @@
  * continuam valendo por cima, cada um no seu lugar.
  */
 
-export const SOLUTION_KEYS = ["conversations", "meetings", "marketing"] as const;
+export const SOLUTION_KEYS = ["conversations", "meetings", "marketing", "site", "commerce"] as const;
 export type SolutionKey = (typeof SOLUTION_KEYS)[number];
 
 /**
@@ -88,6 +88,8 @@ export const SOLUTIONS: Readonly<Record<SolutionKey, SolutionDefinition>> = Obje
   // transcrição, concorrência e smoke controlado em produção. Contratável SEM Conversas.
   meetings: { key: "meetings", name: "Vorix Meetings", commercialAvailability: "internal", defaultEntitlement: false },
   marketing: { key: "marketing", name: "Vorix Marketing", commercialAvailability: "internal", defaultEntitlement: false },
+  site: { key: "site", name: "Vorix Site", commercialAvailability: "internal", defaultEntitlement: false },
+  commerce: { key: "commerce", name: "Vorix Commerce", commercialAvailability: "internal", defaultEntitlement: false },
 });
 
 export function isSolutionKey(value: unknown): value is SolutionKey {
@@ -214,6 +216,7 @@ export const CONVERSATIONS_ROUTE_PREFIXES: readonly string[] = [
   "proposal-templates",
   "tasks",
   "products",
+  "product-metadata",
   "automation-rules",
   "commercial-suggestions",
   "commercial-metrics",

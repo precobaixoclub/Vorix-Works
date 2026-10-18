@@ -8,6 +8,7 @@ import { DetailBlock } from "@/components/DetailModal";
 import { ErrorState } from "@/components/ErrorState";
 import { Input, Label, MoneyInput, Textarea } from "@/components/Field";
 import { Modal } from "@/components/Modal";
+import { ProductVariantPicker } from "@/components/products/ProductVariantPicker";
 import { SearchableCombo } from "@/components/SearchableCombo";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -263,23 +264,11 @@ export function DealProducts({ workspaceId, deal }: { workspaceId: string; deal:
       <DetailBlock label={`Produtos e serviços (${data.items.length})`} action={editable ? <StockRiskBadge risk={dealRisk} /> : undefined}>
         {data.items.length === 0 ? <p className="mb-3 text-sm text-muted-foreground">Nenhum produto. Sem produtos, o valor é o estimado manual.</p> : (
           <div className="mb-3 space-y-2">
-            {data.items.map((item) => <ItemRow key={item.id} item={item} currency={data.currency} summary={data} editable={editable} stock={editable && item.productId ? stockByProduct.get(item.productId) : undefined} onSave={(patch) => run(() => updateDealItem(deal.id, item.id, { workspaceId, ...patch }))} onRemove={() => run(() => removeDealItem(deal.id, item.id, workspaceId), "Item removido")} />)}
+            {data.items.map((item) => <ItemRow key={item.id} item={item} currency={data.currency} summary={data} editable={editable} stock={editable && item.productId ? (item.variantId?stockRisk?.variants?.find(entry=>entry.variantId===item.variantId):stockByProduct.get(item.productId)) : undefined} onSave={(patch) => run(() => updateDealItem(deal.id, item.id, { workspaceId, ...patch }))} onRemove={() => run(() => removeDealItem(deal.id, item.id, workspaceId), "Item removido")} />)}
           </div>
         )}
         {editable ? (
-          <SearchableCombo
-            items={productOptions}
-            value=""
-            loading={adding}
-            onValueChange={(productId) => {
-              setAdding(true);
-              void run(() => addDealItem(deal.id, { workspaceId, productId, quantity: 1 }), "Produto adicionado").finally(() => setAdding(false));
-            }}
-            placeholder={productOptions.length ? "+ Adicionar produto ou serviço" : "Cadastre produtos no menu Produtos"}
-            searchPlaceholder="Buscar por nome ou código..."
-            emptyText="Nenhum produto encontrado."
-            disabled={!productOptions.length}
-          />
+          <ProductVariantPicker workspaceId={workspaceId} products={products??[]} loading={adding} onPick={(product,variant)=>{setAdding(true);void run(()=>addDealItem(deal.id,{workspaceId,productId:product.id,variantId:variant?.id,quantity:1}),"Produto adicionado").finally(()=>setAdding(false));}}/>
         ) : <p className="text-xs text-muted-foreground">Oportunidade fechada — reabra para alterar os termos.</p>}
       </DetailBlock>
       <DealTermsBlock workspaceId={workspaceId} deal={deal} summary={data} editable={editable} onSaved={() => Promise.all([mutate(), invalidate()]).then(() => undefined)} />

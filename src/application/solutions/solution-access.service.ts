@@ -11,6 +11,7 @@ import {
 import type { SolutionEntitlementRepositoryPort } from "../ports/solution-entitlement-repository.port.js";
 
 export type SolutionAccessServiceDeps = {
+  includedCapabilities?: (tenantId:string)=>Promise<Partial<Record<"site"|"commerce",boolean>>>;
   repository: SolutionEntitlementRepositoryPort;
   /** Kill switches de ambiente — soluções desligadas para TODOS, inclusive acesso interno. */
   killSwitches?: ReadonlySet<SolutionKey>;
@@ -27,6 +28,7 @@ const DEFAULT_CACHE_TTL_MS = 30_000;
  * kill switch + entitlement; RBAC e feature flags continuam sendo checados onde sempre foram.
  */
 export class SolutionAccessService {
+  private readonly capabilitiesCache=new Map<string,{at:number;value:Partial<Record<"site"|"commerce",boolean>>}>();
   private readonly cache = new Map<string, { at: number; entitlements: SolutionEntitlement[] }>();
 
   constructor(private readonly deps: SolutionAccessServiceDeps) {}
@@ -44,10 +46,13 @@ export class SolutionAccessService {
   /** Todas as soluções conhecidas, com o acesso efetivo deste tenant. */
   async listAccess(tenantId: string): Promise<SolutionAccess[]> {
     const entitlements = await this.entitlementsOf(tenantId);
+    const now=this.deps.now?.()??Date.now(),cached=this.capabilitiesCache.get(tenantId),ttl=this.deps.cacheTtlMs??DEFAULT_CACHE_TTL_MS;
+    const included=cached&&now-cached.at<ttl?cached.value:await this.deps.includedCapabilities?.(tenantId)??{};
+    if(ttl>0)this.capabilitiesCache.set(tenantId,{at:now,value:included});
     return SOLUTION_KEYS.map((key) =>
       resolveSolutionAccess({
         solution: SOLUTIONS[key],
-        entitlement: entitlements.find((entry) => entry.solutionKey === key),
+        entitlement: entitlements.find((entry) => entry.solutionKey === key) ?? ((key==="site"||key==="commerce")&&included[key]?{enabled:true,source:"subscription"}:undefined),
         killSwitchOn: this.deps.killSwitches?.has(key) ?? false,
       }),
     );
@@ -70,6 +75,7 @@ export class SolutionAccessService {
     assertGrantSourceAllowed(SOLUTIONS[input.solutionKey], input.source);
     const saved = await this.deps.repository.set(input);
     this.cache.delete(input.tenantId);
+    this.capabilitiesCache.delete(input.tenantId);
     return saved;
   }
 }

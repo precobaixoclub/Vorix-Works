@@ -1,9 +1,22 @@
+import type {UpdateProductVariantInput} from "../ports/sales-engine-repository.port.js";
 import type { Product } from "../../domain/crm/crm.model.js";
 import type { BillingType } from "../../domain/sales/pricing.js";
 import type { PriceBook, PriceBookItem, ProductVariant } from "../../domain/sales/sales.model.js";
 import type { SalesEngineDeps } from "./sales-context.js";
+import { optionCombinations, validateVariantSelection } from "../../domain/products/product-details.js";
+import { stripObjectUrlSignature } from "../../shared/utils/object-url-signing.js";
 
 type CatalogDeps = Pick<SalesEngineDeps, "productRepository" | "salesCatalogRepository">;
+
+export async function generateVariantGrid(deps:CatalogDeps,input:{tenantId:string;workspaceId:string;productId:string}):Promise<ProductVariant[]>{
+ const product=await mustProductInWorkspace(deps,input.productId,input.tenantId,input.workspaceId);
+ const options=product.details?.options??[];if(!options.length)throw Error("PRODUCT_VALIDATION: cadastre as opções antes de gerar combinações.");
+ const existing=await deps.salesCatalogRepository.listVariants(product.id);
+ const signature=(values:Record<string,string>)=>JSON.stringify(Object.entries(values).sort(([a],[b])=>a.localeCompare(b)));
+ const known=new Set(existing.filter(variant=>Object.keys(variant.optionValues??{}).length).map(variant=>signature(variant.optionValues!)));
+ const missing=optionCombinations(options).filter(values=>!known.has(signature(values)));
+ return deps.salesCatalogRepository.createVariantGrid(missing.map((values,index)=>({...input,name:options.map(option=>`${option.name}: ${values[option.key]}`).join(" / "),code:product.code?`${product.code.slice(0,25)}-${Object.values(values).join("-").slice(0,25)}-${existing.length+index+1}`:undefined,listPriceCents:product.priceCents,priceOverride:false,optionValues:values,stockQuantity:0,position:existing.length+index})));
+}
 
 /** Regras do catálogo: preços nunca negativos e mínimo nunca acima da tabela (senão todo preço de
  * tabela já nasceria "abaixo do mínimo"). Custo acima da tabela é permitido (produto em prejuízo
@@ -45,27 +58,33 @@ export async function mustPriceBookInWorkspace(deps: Pick<CatalogDeps, "salesCat
 }
 
 export async function listVariants(deps: CatalogDeps, input: { tenantId: string; workspaceId: string; productId: string; canViewCost: boolean }): Promise<ProductVariant[]> {
-  await mustProductInWorkspace(deps, input.productId, input.tenantId, input.workspaceId);
-  return (await deps.salesCatalogRepository.listVariants(input.productId)).map((variant) => redactVariant(variant, input.canViewCost));
+  const product=await mustProductInWorkspace(deps, input.productId, input.tenantId, input.workspaceId);
+  return (await deps.salesCatalogRepository.listVariants(input.productId)).map((variant) => redactVariant({...variant,listPriceCents:variant.priceOverride===false?product.priceCents:variant.listPriceCents}, input.canViewCost));
 }
 
-export async function createVariant(deps: CatalogDeps, input: { tenantId: string; workspaceId: string; productId: string; name: string; code?: string; costCents?: number; listPriceCents: number; minimumPriceCents?: number; position?: number }): Promise<ProductVariant> {
-  await mustProductInWorkspace(deps, input.productId, input.tenantId, input.workspaceId);
+export async function createVariant(deps: CatalogDeps, input: { tenantId: string; workspaceId: string; productId: string; name: string; code?: string; costCents?: number; listPriceCents: number; minimumPriceCents?: number; position?: number; priceOverride?:boolean; optionValues?:Record<string,string>; stockQuantity?:number; imageUrl?:string }): Promise<ProductVariant> {
+  const product=await mustProductInWorkspace(deps, input.productId, input.tenantId, input.workspaceId);
+  validateVariantSelection(product.details?.options??[],input.optionValues??{});
+  if(input.imageUrl){input.imageUrl=stripObjectUrlSignature(input.imageUrl);if(!product.imageUrls.includes(input.imageUrl))throw Error("PRODUCT_VALIDATION: use uma foto da galeria do produto.");}
   assertProductPricing({ priceCents: input.listPriceCents, minimumPriceCents: input.minimumPriceCents, costCents: input.costCents });
   return deps.salesCatalogRepository.createVariant(input);
 }
 
-export async function updateVariant(deps: CatalogDeps, input: { tenantId: string; workspaceId: string; productId: string; variantId: string; patch: Partial<Pick<ProductVariant, "name" | "code" | "costCents" | "listPriceCents" | "minimumPriceCents" | "active" | "position">> }): Promise<ProductVariant> {
+export async function updateVariant(deps: CatalogDeps, input: { tenantId: string; workspaceId: string; productId: string; variantId: string; patch: UpdateProductVariantInput }): Promise<ProductVariant> {
   const product = await mustProductInWorkspace(deps, input.productId, input.tenantId, input.workspaceId);
   const variant = await mustVariantOfProduct(deps, input.variantId, product);
-  assertProductPricing({ priceCents: input.patch.listPriceCents, minimumPriceCents: input.patch.minimumPriceCents }, { priceCents: variant.listPriceCents, minimumPriceCents: variant.minimumPriceCents });
+  if(input.patch.optionValues)validateVariantSelection(product.details?.options??[],input.patch.optionValues);
+  if(input.patch.imageUrl){input.patch.imageUrl=stripObjectUrlSignature(input.patch.imageUrl);if(!product.imageUrls.includes(input.patch.imageUrl))throw Error("PRODUCT_VALIDATION: use uma foto da galeria do produto.");}
+  const override=input.patch.priceOverride??variant.priceOverride??true;
+  const effectivePrice=override?(input.patch.listPriceCents??variant.listPriceCents):product.priceCents;
+  assertProductPricing({priceCents:effectivePrice,minimumPriceCents:input.patch.minimumPriceCents===null?product.minimumPriceCents:input.patch.minimumPriceCents??variant.minimumPriceCents??product.minimumPriceCents});
   return deps.salesCatalogRepository.updateVariant(variant.id, input.patch);
 }
 
 export async function deleteVariant(deps: CatalogDeps, input: { tenantId: string; workspaceId: string; productId: string; variantId: string }): Promise<void> {
   const product = await mustProductInWorkspace(deps, input.productId, input.tenantId, input.workspaceId);
   const variant = await mustVariantOfProduct(deps, input.variantId, product);
-  await deps.salesCatalogRepository.deleteVariant(variant.id);
+  try{await deps.salesCatalogRepository.deleteVariant(variant.id);}catch(error){if((error as {code?:string}).code==="23503")throw Error("PRODUCT_VALIDATION: esta combinação possui histórico. Desative-a para preservar os registros.");throw error;}
 }
 
 export async function listPriceBooks(deps: CatalogDeps, input: { tenantId: string; workspaceId: string }): Promise<PriceBook[]> {
@@ -107,6 +126,7 @@ export async function deletePriceBookItem(deps: CatalogDeps, input: { tenantId: 
 }
 
 export type ResolvedPricing = {
+  productContext?: import("../../domain/sales/sales.model.js").DealItem["productContextSnapshot"];
   productId: string;
   variantId?: string;
   name: string;
@@ -129,7 +149,11 @@ export async function resolveProductPricing(deps: CatalogDeps, input: { tenantId
   const product = await mustProductInWorkspace(deps, input.productId, input.tenantId, input.workspaceId);
   if (!product.active) throw new Error("PRODUCT_INACTIVE: este produto está inativo e não pode ser adicionado.");
   const variant = input.variantId ? await mustVariantOfProduct(deps, input.variantId, product) : undefined;
+  if(product.details?.options.length&&!variant)throw Error("PRODUCT_VARIANT_REQUIRED: escolha a combinação deste produto.");
+  if(product.details?.options.length&&variant)validateVariantSelection(product.details.options,variant.optionValues??{});
+  if(variant&&!variant.active)throw Error("PRODUCT_INACTIVE: esta variante está inativa.");
   let resolved: ResolvedPricing = {
+    productContext:{attributes:product.details?.attributes,options:variant?.optionValues,optionLabels:Object.fromEntries((product.details?.options??[]).map(item=>[item.key,item.name])),imageUrl:variant?.imageUrl??product.imageUrls[0]},
     productId: product.id,
     variantId: variant?.id,
     name: variant ? `${product.name} — ${variant.name}` : product.name,
@@ -137,12 +161,12 @@ export async function resolveProductPricing(deps: CatalogDeps, input: { tenantId
     unit: product.unit,
     billingType: product.billingType,
     costCents: variant?.costCents ?? product.costCents,
-    listPriceCents: variant?.listPriceCents ?? product.priceCents,
-    minimumPriceCents: variant ? variant.minimumPriceCents : product.minimumPriceCents,
+    listPriceCents: variant&&variant.priceOverride!==false?variant.listPriceCents:product.priceCents,
+    minimumPriceCents: variant?.minimumPriceCents ?? product.minimumPriceCents,
     commissionType: product.commissionType,
     commissionValue: product.commissionValue,
     currency: product.currency,
-    priceSource: variant ? "variant" : "product",
+    priceSource: variant&&variant.priceOverride!==false ? "variant" : "product",
   };
   if (input.priceBookId) {
     const book = await mustPriceBookInWorkspace(deps, input.priceBookId, input.tenantId, input.workspaceId);

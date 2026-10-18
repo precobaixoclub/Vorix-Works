@@ -169,6 +169,13 @@ export const PERMISSIONS = [
   "task:manage",
   "product:read",
   "product:manage",
+  "inventory:read",
+  "inventory:manage",
+  "site:read",
+  "site:manage",
+  "site:publish",
+  "commerce:read",
+  "commerce:manage",
   "proposal:read",
   "proposal:manage",
   "proposal:send",
@@ -234,9 +241,9 @@ const CALENDAR_EVENT_READ_PERMISSIONS: readonly Permission[] = ["calendar_event:
 const CALENDAR_EVENT_WRITE_PERMISSIONS: readonly Permission[] = ["calendar_event:write"];
 const INBOX_OPERATOR_PERMISSIONS: readonly Permission[] = ["inbox:reply", "inbox:assign"];
 const INBOX_ADMIN_PERMISSIONS: readonly Permission[] = ["inbox:manage_connections", "inbox:manage_ai", "inbox:delete_conversations", "inbox:delete_connections"];
-const CRM_READ_PERMISSIONS: readonly Permission[] = ["contact:read", "deal:read", "task:read", "product:read", "proposal:read"];
-const CRM_OPERATOR_PERMISSIONS: readonly Permission[] = ["contact:manage", "deal:manage", "task:manage", "product:manage", "proposal:manage", "proposal:send"];
-const CRM_ADMIN_PERMISSIONS: readonly Permission[] = ["tenant_member:manage", "team:manage", "automation:manage", "product:view_cost", "deal:view_margin", "deal:approve_discount", "goal:manage", "sales_report:read_team"];
+const CRM_READ_PERMISSIONS: readonly Permission[] = ["inventory:read", "site:read", "commerce:read", "contact:read", "deal:read", "task:read", "product:read", "proposal:read"];
+const CRM_OPERATOR_PERMISSIONS: readonly Permission[] = ["inventory:manage", "site:manage", "contact:manage", "deal:manage", "task:manage", "product:manage", "proposal:manage", "proposal:send"];
+const CRM_ADMIN_PERMISSIONS: readonly Permission[] = ["site:publish", "commerce:manage", "tenant_member:manage", "team:manage", "automation:manage", "product:view_cost", "deal:view_margin", "deal:approve_discount", "goal:manage", "sales_report:read_team"];
 const SALES_READ_PERMISSIONS: readonly Permission[] = ["goal:read"];
 const SALES_OPERATOR_PERMISSIONS: readonly Permission[] = ["deal:close"];
 const MEETING_READ_PERMISSIONS: readonly Permission[] = ["meeting:read"];

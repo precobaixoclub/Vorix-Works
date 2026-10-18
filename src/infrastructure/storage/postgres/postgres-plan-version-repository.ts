@@ -136,6 +136,13 @@ function addonToDomain(row: AddonRow): AddonDefinition {
 export class PostgresAddonDefinitionRepository implements AddonDefinitionRepositoryPort {
   constructor(private readonly pool: Pool) {}
 
+  async listModules():Promise<AddonDefinition[]>{return(await this.pool.query<AddonRow>("select * from addon_definitions where resource in ('site','commerce') order by name")).rows.map(addonToDomain);}
+  async saveModule(input:Omit<AddonDefinition,"createdAt">):Promise<AddonDefinition>{
+    const {rows}=await this.pool.query<AddonRow>(`insert into addon_definitions(code,name,description,monthly_price_usd,yearly_price_usd,currency,resource,increment,active,monthly_provider_price_ref,yearly_provider_price_ref)
+      values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) on conflict(code) do update set name=excluded.name,description=excluded.description,monthly_price_usd=excluded.monthly_price_usd,yearly_price_usd=excluded.yearly_price_usd,currency=excluded.currency,active=excluded.active,monthly_provider_price_ref=excluded.monthly_provider_price_ref,yearly_provider_price_ref=excluded.yearly_provider_price_ref where addon_definitions.resource=excluded.resource and addon_definitions.resource in ('site','commerce') returning *`,[input.code,input.name,input.description,input.monthlyPriceUsd,input.yearlyPriceUsd,input.currency,input.resource,input.increment,input.active,input.monthlyProviderPriceRef??null,input.yearlyProviderPriceRef??null]);
+    if(!rows[0])throw Error("MODULE_RESOURCE_CONFLICT");return addonToDomain(rows[0]);
+  }
+
   async getByCode(code: string): Promise<AddonDefinition | undefined> {
     const result = await this.pool.query<AddonRow>("select * from addon_definitions where code = $1", [code]);
     return result.rows[0] ? addonToDomain(result.rows[0]) : undefined;

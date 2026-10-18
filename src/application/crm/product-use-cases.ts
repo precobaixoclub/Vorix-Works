@@ -1,7 +1,10 @@
 import type { CreateProductInput, ProductRepositoryPort, UpdateProductInput } from "../ports/product-repository.port.js";
 import type { Product } from "../../domain/crm/crm.model.js";
+import { validateProductExtension } from "../products/product-engine-use-cases.js";
 
 export type ProductUseCaseDeps = {
+  productEngineRepository?: import("../ports/product-engine-repository.port.js").ProductEngineRepositoryPort;
+  salesCatalogRepository?: import("../ports/sales-engine-repository.port.js").SalesCatalogRepositoryPort;
   productRepository: ProductRepositoryPort;
 };
 
@@ -15,6 +18,7 @@ export async function mustProductBelongToTenantAndWorkspace(deps: ProductUseCase
 }
 
 export async function createProduct(deps: ProductUseCaseDeps, input: CreateProductInput): Promise<Product> {
+  await validateProductExtension(deps,input,input);
   return deps.productRepository.create(input);
 }
 
@@ -27,7 +31,8 @@ export async function getProduct(deps: ProductUseCaseDeps, input: { productId: s
 }
 
 export async function updateProduct(deps: ProductUseCaseDeps, input: { productId: string; tenantId: string; workspaceId: string; patch: UpdateProductInput }): Promise<Product> {
-  await mustProductBelongToTenantAndWorkspace(deps, input.productId, input.tenantId, input.workspaceId);
+  const existing=await mustProductBelongToTenantAndWorkspace(deps, input.productId, input.tenantId, input.workspaceId);
+  await validateProductExtension(deps,input.patch,input,existing);
   return deps.productRepository.update(input.productId, input.patch);
 }
 

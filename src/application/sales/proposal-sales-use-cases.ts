@@ -44,7 +44,7 @@ export async function createProposalFromDeal(deps: SalesProposalDeps, actor: Sal
   const dealItems = await deps.dealItemRepository.listByDeal(deal.id);
   const items: ProposalItem[] = dealItems.length > 0
     ? dealItems.map((item) => ({
-      productId: item.productId, variantId: item.variantId, name: item.productNameSnapshot, quantity: item.quantity, unitPriceCents: item.proposedUnitPriceCents,
+      productId: item.productId, variantId: item.variantId, description:Object.entries({...item.productContextSnapshot?.options,...item.productContextSnapshot?.attributes}).map(([key,value])=>`${item.productContextSnapshot?.optionLabels?.[key]??key}: ${value}`).join(" · ")||undefined, name: item.productNameSnapshot, quantity: item.quantity, unitPriceCents: item.proposedUnitPriceCents,
       subtotalCents: item.subtotalProposedCents, billingType: item.billingTypeSnapshot, listPriceCents: item.listPriceCentsSnapshot,
       minimumPriceCents: item.minimumPriceCentsSnapshot, unitCostCents: item.unitCostCentsSnapshot,
     }))

@@ -8,15 +8,17 @@ import {
 } from "../../../../application/billing/plan-version-use-cases.js";
 import type { PlanVersionUseCaseDeps } from "../../../../application/billing/plan-version-use-cases.js";
 import { PLAN_CAPABILITIES, PLAN_LIMIT_RESOURCES } from "../../../../domain/platform-billing/plan-entitlements.model.js";
+import {z} from "zod";
+import {ValidationError} from "../../http/app-error.js";
 import { PLATFORM_PLAN_CODES } from "../../../../domain/platform-billing/platform-plan-catalog.js";
 import { requirePlatformAdmin } from "../../http/require-principal.js";
 import { successEnvelope } from "../../http/response-envelope.js";
 
 const CAPABILITIES_SCHEMA = {
   type: "object",
-  required: [...PLAN_CAPABILITIES],
+  required: PLAN_CAPABILITIES.filter(capability=>capability!=="site"&&capability!=="commerce"),
   additionalProperties: false,
-  properties: Object.fromEntries(PLAN_CAPABILITIES.map((capability) => [capability, { type: "boolean" }])),
+  properties: Object.fromEntries(PLAN_CAPABILITIES.map((capability) => [capability, { type: "boolean", ...((capability==="site"||capability==="commerce")?{default:false}:{}) }])),
 } as const;
 
 const LIMITS_SCHEMA = {
@@ -88,5 +90,13 @@ export async function registerAdminPlanVersionsRoutes(app: FastifyInstance, deps
     requirePlatformAdmin(request);
     const addons = await listActiveAddons(deps);
     return successEnvelope(addons, request.id);
+  });
+  app.get("/admin/site-commerce-modules",async request=>{requirePlatformAdmin(request);return successEnvelope(await deps.addonDefinitionRepository.listModules(),request.id);});
+  app.put("/admin/site-commerce-modules",async request=>{
+    requirePlatformAdmin(request);
+    const parsed=z.object({code:z.string().regex(/^[a-z][a-z0-9_]{2,79}$/),name:z.string().trim().min(1).max(160),description:z.string().max(1000),monthlyPriceUsd:z.number().positive().max(1e6),yearlyPriceUsd:z.number().positive().max(1e7),currency:z.string().regex(/^[A-Z]{3}$/),resource:z.enum(["site","commerce"]),increment:z.literal(1),active:z.boolean(),monthlyProviderPriceRef:z.string().max(200).optional(),yearlyProviderPriceRef:z.string().max(200).optional()}).strict().safeParse(request.body);
+    if(!parsed.success)throw new ValidationError("Informe código, moeda e preços mensal/anual válidos.");
+    if(parsed.data.resource==="commerce"&&parsed.data.active)throw new ValidationError("Commerce está preparado para uma próxima etapa; mantenha o adicional desativado.");
+    try{return successEnvelope(await deps.addonDefinitionRepository.saveModule(parsed.data),request.id);}catch(error){if(error instanceof Error&&error.message==="MODULE_RESOURCE_CONFLICT")throw new ValidationError("Esse código já pertence a outro recurso.");throw error;}
   });
 }

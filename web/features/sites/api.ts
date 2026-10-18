@@ -1,0 +1,13 @@
+import {apiClient} from "@/lib/api-client";
+import type {TenantSite,SiteDomain,SiteSnapshot,PublicTenantSite} from "./types";
+const q=encodeURIComponent;
+export const listSites=(workspaceId:string)=>apiClient.get<{sites:TenantSite[];publicBaseDomain?:string}>(`/v1/sites?workspaceId=${q(workspaceId)}`);
+export const createSite=(workspaceId:string,slug:string,draft:SiteSnapshot)=>apiClient.post<TenantSite>(`/v1/sites?workspaceId=${q(workspaceId)}`,{slug,draft});
+export const saveSite=(site:TenantSite,draft:SiteSnapshot)=>apiClient.put<TenantSite>(`/v1/sites/${q(site.id)}?workspaceId=${q(site.workspaceId)}`,{revision:site.revision,draft});
+export const publishSite=(site:TenantSite,unpublish=false)=>apiClient.post<TenantSite>(`/v1/sites/${q(site.id)}/publish?workspaceId=${q(site.workspaceId)}`,{revision:site.revision,unpublish});
+export const previewSite=(site:TenantSite)=>apiClient.get<PublicTenantSite>(`/v1/sites/${q(site.id)}/preview?workspaceId=${q(site.workspaceId)}`);
+export const uploadSiteImage=(site:TenantSite,file:File)=>{const data=new FormData();data.append("file",file);return apiClient.upload<{url:string}>(`/v1/sites/${q(site.id)}/images?workspaceId=${q(site.workspaceId)}`,data);};
+export const listDomains=(site:TenantSite)=>apiClient.get<SiteDomain[]>(`/v1/sites/${q(site.id)}/domains?workspaceId=${q(site.workspaceId)}`);
+export const claimDomain=(site:TenantSite,hostname:string)=>apiClient.post<SiteDomain>(`/v1/sites/${q(site.id)}/domains?workspaceId=${q(site.workspaceId)}`,{hostname});
+export const verifyDomain=(site:TenantSite,domain:SiteDomain)=>apiClient.post<SiteDomain>(`/v1/sites/${q(site.id)}/domains/${q(domain.id)}/verify?workspaceId=${q(site.workspaceId)}`,{});
+export const removeDomain=(site:TenantSite,domain:SiteDomain)=>apiClient.delete<null>(`/v1/sites/${q(site.id)}/domains/${q(domain.id)}?workspaceId=${q(site.workspaceId)}`);

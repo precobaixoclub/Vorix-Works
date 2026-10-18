@@ -7,6 +7,8 @@
  */
 
 export const PLAN_CAPABILITIES = [
+  "site",
+  "commerce",
   "crm",
   "conversations",
   "marketing",

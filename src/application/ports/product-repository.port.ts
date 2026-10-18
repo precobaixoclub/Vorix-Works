@@ -1,6 +1,9 @@
 import type { Product } from "../../domain/crm/crm.model.js";
 
 export type CreateProductInput = {
+  details?: import("../../domain/products/product-details.js").ProductDetails;
+  categoryId?: string | null;
+  brandId?: string | null;
   tenantId: string;
   workspaceId: string;
   name: string;
@@ -40,5 +43,5 @@ export type ProductRepositoryPort = {
   /** Saldo líquido de movimentos por produto causados por uma oportunidade (negativo = baixa feita). */
   netStockByDeal(dealId: string): Promise<{ productId: string; delta: number }[]>;
   /** Quantidade pedida em oportunidades ABERTAS, por oportunidade e produto com controle de estoque. */
-  listOpenStockDemand(input: { tenantId: string; workspaceId: string }): Promise<{ dealId: string; productId: string; quantity: number }[]>;
+  listOpenStockDemand(input: { tenantId: string; workspaceId: string }): Promise<{ dealId: string; productId: string; variantId?:string; quantity: number }[]>;
 };

@@ -74,7 +74,7 @@ export type CapacitySnapshot = {
   totalMonthlyAmount: number;
 };
 
-export type CapacityResource = PlanLimitResource | "meetings_concurrent_recordings" | "site" | "commerce";
+export type CapacityResource = PlanLimitResource | "meetings_concurrent_recordings" | "site";
 
 export type CapacityPendingChange = { id: string; resource: CapacityResource; addonCode: string; targetQuantity: number; effectiveAt: string };
 

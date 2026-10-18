@@ -1,1 +1,2 @@
-export default function CommercePage(){return <section className="space-y-3"><h1 className="text-2xl font-semibold">Vorix Commerce</h1><p className="text-sm text-muted-foreground">O catálogo é compartilhado com Produtos e Site. Carrinho, pedidos, pagamento e frete serão habilitados em uma etapa própria.</p></section>;}
+import {redirect} from "next/navigation";
+export default async function LegacyCommercePage({params}:{params:Promise<{workspaceId:string}>}){const {workspaceId}=await params;redirect(`/workspaces/${encodeURIComponent(workspaceId)}/site`);}

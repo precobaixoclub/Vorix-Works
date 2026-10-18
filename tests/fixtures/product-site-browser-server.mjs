@@ -29,6 +29,7 @@ try{
  app.addHook("onError",async(request,_reply,error)=>{console.error("FIXTURE_API_ERROR",request.method,request.url.split("?")[0],error.message);});
  app.get("/fixture-only/scope",async()=>info);
  await registerUser({...app.zunoContainer.identity,passwordHasher:app.zunoContainer.identity.passwordHasher},{tenantId,email,password,name:"Administrador de fixture",role:"owner"});
+ await app.zunoContainer.identity.platformBillingRepository.ensureTenantBilling({tenantId,now:new Date().toISOString()});
  await db.pool.query("update users set is_platform_admin=true where email=$1",[email]);
  await app.zunoContainer.solutionAccess.setEntitlement({tenantId,solutionKey:"site",enabled:true,source:"internal",reason:"Fixture local controlada — nunca produção"});
  const login=await app.inject({method:"POST",url:"/v1/auth/login",payload:{email,password}});if(login.statusCode!==200)throw Error(login.body);

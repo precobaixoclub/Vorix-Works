@@ -5,6 +5,7 @@ import { useState } from "react";
 import { ArrowUpRight, Check, Layers3, MessageSquare, Video } from "lucide-react";
 import { formatPublicPrice, type PublicProduct, type PublicProductCatalog } from "@/features/public-site/catalog";
 import { formatCapacityLine } from "@/features/platform-plans/api";
+import { SiteProductSection } from "./SiteProductSection";
 import { PlanConfigurator } from "./PlanConfigurator";
 
 /** Preços: três pontos de entrada simples + "Monte seu Vorix" para ajustar a capacidade. */
@@ -19,7 +20,7 @@ export function PricingSection({ catalog, standalone = false }: { catalog: Publi
     {!products.find(product => product.key === "meetings")?.contractable ? <p className="public-pricing-availability">O Vorix Meetings estará disponível para contratação em breve. Conversas já pode ser contratado agora, direto pelo site.</p> : null}
 
     <div className="public-config-heading"><span className="public-eyebrow">Monte seu Vorix</span><h2>Ajuste a capacidade, veja o valor na hora.</h2><p>Escolha a capacidade, cadastre o cartão e comece a usar. Sem negociação, sem esperar aprovação.</p></div>
-    <PlanConfigurator catalog={catalog} />
+    <PlanConfigurator catalog={catalog} />{standalone ? <SiteProductSection/> : null}
     <p className="public-pricing-disclaimer">Créditos de IA, gravações adicionais e recursos avançados podem variar conforme o plano e o uso.</p>
     {!standalone ? <Link href="/precos" className="public-text-link public-pricing-more">Comparar planos e capacidades <ArrowUpRight size={16} aria-hidden="true" /></Link> : null}
   </div></section>;

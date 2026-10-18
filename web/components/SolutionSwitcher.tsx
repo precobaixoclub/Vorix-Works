@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, ChevronsUpDown, MessagesSquare, Video } from "lucide-react";
+import { Check, ChevronsUpDown, MessagesSquare, Video, Globe } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Logo } from "@/components/Logo";
@@ -37,7 +37,7 @@ export function SolutionSwitcher({ workspaceBase, active, solutions, collapsed }
   );
 
   const className = cn("mb-3 flex w-full min-w-0 items-center gap-2 rounded-lg py-1.5 text-foreground", collapsed ? "justify-center px-0" : "px-2");
-  const icon = (key: SolutionKey) => (key === "meetings" ? <Video className="h-4 w-4" /> : <MessagesSquare className="h-4 w-4" />);
+  const icon = (key: SolutionKey) => (key === "site" ? <Globe className="h-4 w-4" /> : key === "meetings" ? <Video className="h-4 w-4" /> : <MessagesSquare className="h-4 w-4" />);
 
   if (!canSwitch) {
     return (

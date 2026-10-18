@@ -1637,8 +1637,8 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
     // e `GET /v1/solutions`. Kill switches vêm do ambiente; a concessão por tenant, do banco.
     const solutionAccess = new SolutionAccessService({
       repository: new PostgresSolutionEntitlementRepository(identityRepositories.pool),
-      includedCapabilities:async tenantId=>{const access=await resolveEffectiveEntitlements(identityRepositories,tenantId);return {site:!access.readOnly&&access.capabilities.site,commerce:!access.readOnly&&access.capabilities.commerce};},
-      killSwitches: new Set<SolutionKey>((config.solutions?.killSwitches ?? []).filter(isSolutionKey)),
+      includedCapabilities:async tenantId=>{const access=await resolveEffectiveEntitlements(identityRepositories,tenantId);return {site:!access.readOnly&&access.capabilities.site};},
+      killSwitches: new Set<SolutionKey>((config.solutions?.killSwitches ?? []).map(key=>key==="commerce"?"site":key).filter(isSolutionKey)),
     });
     const siteEngine:SiteEngineDeps={publicBaseDomain:config.sitePublicBaseDomain,repository:identityRepositories.siteRepository,productRepository:identityRepositories.productRepository,productEngineRepository:identityRepositories.productEngineRepository,salesCatalogRepository:identityRepositories.salesCatalogRepository,hasAccess:tenantId=>solutionAccess.hasAccess(tenantId,"site"),canPublish:async tenantId=>!(await resolveEffectiveEntitlements(identityRepositories,tenantId)).readOnly,resolveTxt};
     // Vorix Meetings: repositório próprio, gravações no storage privado do Core, limites

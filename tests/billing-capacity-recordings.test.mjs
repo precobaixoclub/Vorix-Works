@@ -80,11 +80,11 @@ test("ESTADO: assinatura paga mostra a próxima cobrança; teste sem cartão nã
   assert.equal(trialState.nextCharge, undefined);
 });
 
-test("APLICAR: Meetings bloqueado pelo gate comercial; usuários sobem e a redução agendada tem id cancelável", async () => {
+test("APLICAR: Meetings público permite ampliar gravações; usuários sobem e a redução agendada tem id cancelável", async () => {
   const { d, tenantId } = await tenantWith({ providerSubscriptionId: "sub_paid_2", label: "apply" });
   const preview = await previewCapacityChange(d, { tenantId, users: 3, whatsappConnections: 1, concurrentRecordings: 2 });
   assert.equal(preview.requestedOnCurrentPlan.meetingsMonthlyAmount, 147 + 67);
-  await assert.rejects(applyCapacityChange(d, { tenantId, concurrentRecordings: 2 }), /MEETINGS_NOT_CONTRACTABLE/);
+  await applyCapacityChange(d, { tenantId, concurrentRecordings: 2 });assert.equal((await getCapacityState(d,tenantId)).current.concurrentRecordings,2);
 
   const state = await getCapacityState(d, tenantId);
   const users = (state.current.totalUsers ?? 0) + 2;

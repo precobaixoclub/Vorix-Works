@@ -23,7 +23,7 @@
  * continuam valendo por cima, cada um no seu lugar.
  */
 
-export const SOLUTION_KEYS = ["conversations", "meetings", "marketing", "site", "commerce"] as const;
+export const SOLUTION_KEYS = ["conversations", "meetings", "marketing", "site"] as const;
 export type SolutionKey = (typeof SOLUTION_KEYS)[number];
 
 /**
@@ -43,9 +43,8 @@ export type MeetingsCommercialReadiness = {
 };
 
 /**
- * Registro de RELEASE (decisão operacional), não resultado de teste calculado em runtime: só muda
- * num commit explícito de liberação, com evidência da homologação Google/recorder real. Afeta
- * apenas contratação/exibição comercial — nunca entitlement, RBAC, kill switch ou uso interno.
+ * Evidência técnica da homologação. A disponibilidade dos produtos é uma decisão de produto,
+ * definida em SOLUTIONS; publicar Meetings não transforma testes Google pendentes em PASS.
  */
 export const MEETINGS_COMMERCIAL_READINESS: Readonly<MeetingsCommercialReadiness> = Object.freeze({
   selfServiceProvisioning: "PARTIAL",
@@ -68,8 +67,7 @@ export function meetingsCommercialBlockers(readiness: MeetingsCommercialReadines
 }
 
 export function isSolutionContractable(solution: SolutionDefinition): boolean {
-  return solution.commercialAvailability === "public" &&
-    (solution.key !== "meetings" || meetingsCommercialBlockers(MEETINGS_COMMERCIAL_READINESS).length === 0);
+  return solution.commercialAvailability === "public";
 }
 
 export type SolutionDefinition = {
@@ -84,12 +82,9 @@ export type SolutionDefinition = {
 
 export const SOLUTIONS: Readonly<Record<SolutionKey, SolutionDefinition>> = Object.freeze({
   conversations: { key: "conversations", name: "Vorix Conversas", commercialAvailability: "public", defaultEntitlement: true },
-  // Meetings nasce INTERNA (sem site, sem preço, sem contratação) até passar gravação real,
-  // transcrição, concorrência e smoke controlado em produção. Contratável SEM Conversas.
-  meetings: { key: "meetings", name: "Vorix Meetings", commercialAvailability: "internal", defaultEntitlement: false },
+  meetings: { key: "meetings", name: "Vorix Meetings", commercialAvailability: "public", defaultEntitlement: false },
   marketing: { key: "marketing", name: "Vorix Marketing", commercialAvailability: "internal", defaultEntitlement: false },
-  site: { key: "site", name: "Vorix Site", commercialAvailability: "internal", defaultEntitlement: false },
-  commerce: { key: "commerce", name: "Vorix Commerce", commercialAvailability: "internal", defaultEntitlement: false },
+  site: { key: "site", name: "Vorix Site", commercialAvailability: "public", defaultEntitlement: false },
 });
 
 export function isSolutionKey(value: unknown): value is SolutionKey {

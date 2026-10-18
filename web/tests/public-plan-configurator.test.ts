@@ -80,6 +80,13 @@ describe("configurador — preço", () => {
 });
 
 describe("configurador — Meetings e Suite", () => {
+  it("Meetings público oferece configuração na conta e explica o plano base", () => {
+    const quote=composeQuote({state:{...initialConfiguratorState(released.plans[0]),conversations:false,meetings:true},catalog:released,conversationsQuote:null});
+    expect(quote.contractable).toBe(true);
+    expect(quote.primaryCta).toEqual({label:"Configurar Meetings na minha conta",href:"/login"});
+    expect(quote.notes.join(" ")).toContain("plano base");
+    expect(quote.notes.join(" ")).not.toContain("em breve");
+  });
   const suiteState = { ...initialConfiguratorState(catalog.plans[0]), meetings: true, recordings: 2 };
   const startQuote = includedPlanQuote(catalog.plans[0]);
   it("Conversas + Meetings vira Suite Vorix com os dois produtos no resumo", () => {

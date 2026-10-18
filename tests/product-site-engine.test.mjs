@@ -36,14 +36,14 @@ const apparel=async(c,colors=true)=>{
 const stock=async(c,product,variant,quantity,kind="IN",operationKey=randomUUID())=>c.d.productEngineRepository.move({...c.scope,productId:product.id,variantId:variant?.id,kind,quantity,operationKey,userId:c.actor.userId});
 const newSite=async(c)=>c.siteDeps.repository.create({...c.scope,slug:"fixture-"+randomUUID(),draft:draft()});
 
-test("upgrade 0163 → 0167 preserva produto, variante comercial e oportunidade existentes; repetição é vazia",async()=>{
+test("upgrade 0163 → 0168 preserva produto, variante comercial e oportunidade existentes; repetição é vazia",async()=>{
  const directory=await mkdtemp(join(tmpdir(),"vorix-product-upgrade-fixture-"));const legacy=await startTestPostgres();
  try{
   const migrations=join(process.cwd(),"db/migrations");for(const file of await readdir(migrations))if(file.endsWith(".sql")&&Number(file.slice(0,4))<=163)await copyFile(join(migrations,file),join(directory,file));
   await applyMigrations(legacy.pool,directory);const c=await productSiteContext(legacy.pool);const productId="legacy-fixture-"+randomUUID();
   await legacy.pool.query("insert into products(id,tenant_id,workspace_id,name,price_cents,cost_cents,minimum_price_cents,stock_quantity) values($1,$2,$3,'Produto anterior à evolução',15000,5000,12000,9)",[productId,c.tenantId,c.workspaceId]);
   const variant=await legacy.pool.query("insert into product_variants(id,tenant_id,workspace_id,product_id,name,list_price_cents) values($1,$2,$3,$4,'Variante comercial anterior',16000) returning id",[randomUUID(),c.tenantId,c.workspaceId,productId]);const deal=await c.deal();
-  const applied=await applyMigrations(legacy.pool,migrations);assert.equal(applied.applied.length,4);const restored=await c.d.productRepository.getById(productId);assert.equal(restored.id,productId);assert.equal(restored.details.type,"GENERAL");assert.equal(restored.stockQuantity,9);assert.equal(restored.costCents,5000);assert.equal(restored.minimumPriceCents,12000);assert.equal((await c.d.salesCatalogRepository.getVariant(variant.rows[0].id)).priceOverride,true);assert.equal((await c.d.dealRepository.getById(deal.id)).id,deal.id);assert.deepEqual((await applyMigrations(legacy.pool,migrations)).applied,[]);
+  const applied=await applyMigrations(legacy.pool,migrations);assert.equal(applied.applied.length,5);const restored=await c.d.productRepository.getById(productId);assert.equal(restored.id,productId);assert.equal(restored.details.type,"GENERAL");assert.equal(restored.stockQuantity,9);assert.equal(restored.costCents,5000);assert.equal(restored.minimumPriceCents,12000);assert.equal((await c.d.salesCatalogRepository.getVariant(variant.rows[0].id)).priceOverride,true);assert.equal((await c.d.dealRepository.getById(deal.id)).id,deal.id);assert.deepEqual((await applyMigrations(legacy.pool,migrations)).applied,[]);
  }finally{await legacy.stop();const absolute=resolve(directory);assert.equal(dirname(absolute),resolve(tmpdir()));assert.ok(absolute.startsWith(join(resolve(tmpdir()),"vorix-product-upgrade-fixture-")));await rm(absolute,{recursive:true,force:true});}
 });
 
@@ -70,15 +70,15 @@ test("atributo obrigatório herdado da categoria pai e definição desativada pr
 test("entitlement Site: padrão fechado, plano, revogação explícita e kill switch",async()=>{
  let entries=[];const repository={listByTenant:async()=>entries};const service=new SolutionAccessService({repository,cacheTtlMs:0,includedCapabilities:async tenantId=>({site:tenantId==="paid"})});assert.equal(await service.hasAccess("free","site"),false);assert.equal(await service.hasAccess("paid","site"),true);assert.equal(await service.hasAccess("paid","commerce"),false);entries=[{solutionKey:"site",enabled:false,source:"internal"}];assert.equal(await service.hasAccess("paid","site"),false);entries=[];assert.equal(await new SolutionAccessService({repository,cacheTtlMs:0,includedCapabilities:async()=>({site:true}),killSwitches:new Set(["site"])}).hasAccess("paid","site"),false);
 });
-test("adicional Site pago amplia capability sem habilitar Commerce nem alterar plano",async()=>{
- const plan={id:"fixture-plan",planCode:"FIXTURE",capabilities:{site:false,commerce:false},limits:{users:2}};
+test("adicional Site pago amplia capability do produto unificado sem alterar plano",async()=>{
+ const plan={id:"fixture-plan",planCode:"FIXTURE",capabilities:{site:false},limits:{users:2}};
  const deps={subscriptionRepository:{getActiveByTenant:async()=>({id:"subscription",planVersionId:plan.id,status:"active"})},planVersionRepository:{getById:async()=>plan},subscriptionItemRepository:{listBySubscription:async()=>[{addonCode:"site_fixture",quantity:1}]},addonDefinitionRepository:{getByCode:async()=>({resource:"site"})}};
- const effective=await resolveEffectiveEntitlements(deps,"fixture");assert.equal(effective.capabilities.site,true);assert.equal(effective.capabilities.commerce,false);assert.equal(plan.capabilities.site,false);
+ const effective=await resolveEffectiveEntitlements(deps,"fixture");assert.equal(effective.capabilities.site,true);assert.equal(effective.capabilities.commerce,undefined);assert.equal(plan.capabilities.site,false);
 });
 test("Commerce: estados finais e notificações repetidas não reabrem pedidos",()=>{
  assertCommerceTransition("pending","confirmed");assertCommerceTransition("delivered","delivered");assert.throws(()=>assertCommerceTransition("delivered","pending"),/COMMERCE_TRANSITION_INVALID/);assert.throws(()=>assertCommerceTransition("cancelled","confirmed"),/COMMERCE_TRANSITION_INVALID/);
 });
-test("preço configurável: somente plataforma, preserva recurso e Commerce permanece inativo",async()=>{
+test("preço configurável: somente plataforma, preserva recurso e só cadastra o produto Site",async()=>{
  const repository=new PostgresAddonDefinitionRepository(db.pool);const app=Fastify();app.decorateRequest("zunoContext",null);app.addHook("onRequest",async request=>{request.zunoContext={principal:{tenantId:"fixture-platform",role:"owner",userId:"fixture-owner",isPlatformAdmin:request.headers["x-fixture-platform-admin"]==="true"}};});await registerAdminPlanVersionsRoutes(app,{addonDefinitionRepository:repository});
  const input={code:"site_"+randomUUID().replaceAll("-",""),name:"Site configurado em fixture",description:"Preço controlado, nunca oferta real",monthlyPriceUsd:139,yearlyPriceUsd:1390,currency:"BRL",resource:"site",increment:1,active:true};const headers={"x-fixture-platform-admin":"true"};
  try{assert.equal((await app.inject({method:"PUT",url:"/admin/site-commerce-modules",payload:input})).statusCode,403);let response=await app.inject({method:"PUT",url:"/admin/site-commerce-modules",payload:input,headers});assert.equal(response.statusCode,200,response.body);assert.equal((await repository.getByCode(input.code)).monthlyPriceUsd,139);assert.equal((await app.inject({method:"PUT",url:"/admin/site-commerce-modules",payload:{...input,resource:"commerce"},headers})).statusCode,400);assert.equal((await app.inject({method:"PUT",url:"/admin/site-commerce-modules",payload:{...input,code:input.code+"_future",resource:"commerce"},headers})).statusCode,400);assert.equal((await app.inject({method:"PUT",url:"/admin/site-commerce-modules",payload:{...input,monthlyPriceUsd:-1},headers})).statusCode,400);}
@@ -151,7 +151,7 @@ test("16 reserva, liberação e replay seguro não vendem a última unidade duas
 test("17 Site publica apenas Product ativo/visível e não expõe custo, mínimo ou comissão",async()=>{
  const c=await setup();const visible=await c.product({name:"Público",details:profile({siteVisible:true})});await c.product({name:"Privado",details:profile({siteVisible:false})});const site=await newSite(c);await publishSite(c.siteDeps,{...c.scope,id:site.id,revision:site.revision,actorUserId:c.actor.userId});const result=await publicSite(c.siteDeps,{slug:site.slug});assert.equal(result.products.length,1);assert.equal(result.products[0].id,visible.id);for(const field of["costCents","minimumPriceCents","commissionValue","unitCostCents"])assert.equal(JSON.stringify(result).includes(field),false);await updateProduct(c.d,{...c.scope,productId:visible.id,patch:{details:profile({siteVisible:false})}});assert.equal((await publicSite(c.siteDeps,{slug:site.slug})).products.length,0);
 });
-test("18 Site funciona sem Commerce e bloqueia tenant sem entitlement para publicar e ler",async()=>{
+test("18 Site unificado funciona e bloqueia tenant sem entitlement para publicar e ler",async()=>{
  const c=await setup();const site=await newSite(c);c.allowed.clear();await assert.rejects(publishSite(c.siteDeps,{...c.scope,id:site.id,revision:site.revision,actorUserId:c.actor.userId}),/SITE_ENTITLEMENT_REQUIRED/);c.allowed.add(c.tenantId);await publishSite(c.siteDeps,{...c.scope,id:site.id,revision:site.revision,actorUserId:c.actor.userId});assert.equal((await publicSite(c.siteDeps,{slug:site.slug})).commerceEnabled,false);c.allowed.clear();await assert.rejects(publicSite(c.siteDeps,{slug:site.slug}),/SITE_NOT_FOUND/);
 });
 test("19 template muda sem apagar conteúdo, catálogo ou publicação anterior",async()=>{

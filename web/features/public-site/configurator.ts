@@ -151,7 +151,8 @@ export function composeQuote(input: {
   const notes: string[] = [];
   if (input.quoteFailed && state.conversations) notes.push("Não conseguimos calcular o valor agora. Tente de novo em instantes.");
   if (state.meetings && !meetingsContractable) notes.push("O Vorix Meetings estará disponível para contratação em breve.");
-  if (contractable) notes.push(trialDays ? `Você cadastra o cartão no próximo passo. A primeira cobrança só acontece depois de ${trialDays} dias de teste.` : "Você cadastra o cartão no próximo passo.");
+  if (contractable && !state.conversations && state.meetings) notes.push("Ative o Meetings em Plano e cobrança da sua conta Vorix. O valor acima é da gravação; o plano base da conta é cobrado separadamente.");
+  else if (contractable) notes.push(trialDays ? `Você cadastra o cartão no próximo passo. A primeira cobrança só acontece depois de ${trialDays} dias de teste.` : "Você cadastra o cartão no próximo passo.");
 
   let primaryCta: Quote["primaryCta"];
   let secondaryCta: Quote["secondaryCta"] = null;
@@ -161,8 +162,7 @@ export function composeQuote(input: {
     primaryCta = { label: "Meetings disponível em breve", href: "", disabled: true };
     if (state.conversations && conversationsContractable && quote) secondaryCta = { label: "Contratar só Conversas agora", href: signupHref(quote.planCode, state, false) };
   } else if (state.meetings && !state.conversations) {
-    // Meetings sem Conversas: contratação própria chega junto da liberação comercial.
-    primaryCta = { label: "Contratação do Meetings em breve", href: "", disabled: true };
+    primaryCta = { label: "Configurar Meetings na minha conta", href: "/login" };
   } else {
     primaryCta = { label: input.quoteFailed ? "Valor indisponível no momento" : "Calculando…", href: "", disabled: true };
   }

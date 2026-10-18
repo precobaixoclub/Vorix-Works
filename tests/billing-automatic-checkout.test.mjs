@@ -78,7 +78,7 @@ test("CATÁLOGO: Meetings tem preço oficial (R$147 com 1 simultânea, +R$67 por
   const response = await app.inject({ method: "GET", url: "/platform/plans" });
   const data = response.json().data;
   assert.deepEqual(data.meetingsOffer, { currency: "BRL", baseMonthlyPrice: 147, baseYearlyPrice: 1470, includedConcurrentRecordings: 1, additionalRecordingMonthlyPrice: 67, additionalRecordingYearlyPrice: 670 });
-  assert.equal(data.solutions.find((solution) => solution.key === "meetings").contractable, false);
+  assert.equal(data.solutions.find((solution) => solution.key === "meetings").contractable, true);
   await app.close();
 });
 
@@ -114,15 +114,15 @@ test("CHECKOUT: quem acabou de criar a conta (trial) mantém os dias que restam;
   assert.equal(later.calls[0].trialDays, undefined, "nunca um segundo teste");
 });
 
-test("MEETINGS: checkout e compra de adicional bloqueados enquanto o gate comercial estiver fechado", async () => {
+test("MEETINGS: checkout público calcula base e extras e conserva a validação de itens", async () => {
   const r = repos();
   const tenantId = nextTenant("gate");
   await r.platformBillingRepository.ensureTenantBilling({ tenantId, now: new Date().toISOString() });
-  await assert.rejects(startCheckout({ ...r, billingProvider: new RecordingProvider() }, checkoutInput(tenantId, { capacity: { users: 2, concurrentRecordings: 2 } })), /MEETINGS_NOT_CONTRACTABLE/);
-  await assert.rejects(startCheckout({ ...r, billingProvider: new RecordingProvider() }, checkoutInput(tenantId, { items: [{ addonCode: "meetings_base", quantity: 1 }] })), /MEETINGS_NOT_CONTRACTABLE/);
+  const provider=new RecordingProvider();await startCheckout({ ...r, billingProvider: provider }, checkoutInput(tenantId, { capacity: { users: 2, concurrentRecordings: 2 } }));assert.equal(provider.calls[0].amount,149+147+67);
+  await startCheckout({ ...r, billingProvider: provider }, checkoutInput(tenantId, { items: [{ addonCode: "meetings_base", quantity: 1 }] }));assert.equal(provider.calls[1].amount,149+147);
   const subscription = await r.subscriptionRepository.create({ tenantId, planVersionId: (await r.planVersionRepository.getActiveVersion("START")).id, status: "active", billingProvider: "sandbox", providerSubscriptionId: "sub-gate", billingInterval: "monthly" });
   assert.ok(subscription);
-  await assert.rejects(purchaseAddon({ ...r, billingProvider: new SandboxBillingProvider(), subscriptionPendingChangeRepository: new PostgresSubscriptionPendingChangeRepository(db.pool) }, { tenantId, addonCode: "meetings_extra_recording", quantity: 1, billingInterval: "monthly" }), /MEETINGS_NOT_CONTRACTABLE/);
+  await assert.rejects(purchaseAddon({ ...r, billingProvider: new SandboxBillingProvider(), subscriptionPendingChangeRepository: new PostgresSubscriptionPendingChangeRepository(db.pool) }, { tenantId, addonCode: "meetings_extra_recording", quantity: 1, billingInterval: "monthly" }), /CHECKOUT_MEETINGS_INVALID/);
 });
 
 test("WEBHOOK: aplica exatamente o pedido (quantidades), é idempotente sob reenvio e libera a capacidade", async () => {

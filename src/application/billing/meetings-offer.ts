@@ -9,8 +9,8 @@ import { isSolutionContractable, SOLUTIONS } from "../../domain/solutions/soluti
  * - `meetings_extra_recording`: +1 gravação simultânea por unidade.
  * Contas de gravação conectadas pelo cliente são infraestrutura e nunca entram na cobrança.
  *
- * A venda obedece ao gate comercial (`isSolutionContractable`): enquanto a gravação não funcionar
- * em produção, nenhum checkout ou compra de adicional do Meetings é aceito.
+ * A venda obedece à disponibilidade do produto (`isSolutionContractable`). Entitlement,
+ * isolamento, saúde das contas e capacidade continuam obrigatórios no uso.
  */
 export const MEETINGS_BASE_ADDON = "meetings_base";
 export const MEETINGS_EXTRA_RECORDING_ADDON = "meetings_extra_recording";

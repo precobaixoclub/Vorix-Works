@@ -15,7 +15,7 @@ const MEETINGS_DEFAULT_LIMITS = { maxConcurrentRecordings: 1, monthlyRecordingMi
 
 /**
  * Admin da plataforma: liga/desliga cada solução (Conversas, Meetings, Marketing) para a conta.
- * Solução ainda não comercial (ex.: Meetings) só aceita concessão "interna".
+ * Solução ainda não comercial (Marketing) só aceita concessão "interna".
  */
 export function TenantSolutionsCard({ tenantId }: { tenantId: string }) {
   const { data, error, mutate } = useSWR(["admin-tenant-solutions", tenantId], () => apiClient.get<{ solutions: TenantSolution[] }>(`/v1/admin/tenants/${encodeURIComponent(tenantId)}/solutions`));

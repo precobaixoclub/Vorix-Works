@@ -29,7 +29,7 @@ type Envelope<T> = { ok: true; data: T } | { ok: false; error: { code: string; m
  * pela compra real dentro do produto, nunca um valor hardcoded na página. */
 export type PublicCapacityAddon = { code: string; name: string; monthlyPriceUsd: number; currency: string; resource: "users" | "messaging_connections" };
 
-export type PublicCommercialState = { key: "conversations" | "meetings"; name: string; contractable: boolean };
+export type PublicCommercialState = { key: "conversations" | "meetings" | "site"; name: string; contractable: boolean };
 /** Oferta oficial do Vorix Meetings (catálogo de billing): base com 1 gravação simultânea + preço
  * de cada gravação simultânea adicional. */
 export type PublicMeetingsOffer = { currency: string; baseMonthlyPrice: number; baseYearlyPrice: number; includedConcurrentRecordings: number; additionalRecordingMonthlyPrice: number; additionalRecordingYearlyPrice: number };
@@ -38,8 +38,9 @@ export type PublicBillingCatalog = { plans: readonly PublicPlan[]; addons: reado
 export async function fetchPublicCatalog(): Promise<PublicBillingCatalog> {
   const response = await fetch(`${getApiBaseUrl()}/v1/platform/plans`, {
     method: "GET",
-    // Cache no cliente: revalida a cada 5min. Landing muitas vezes é servida a usuários anônimos.
-    next: { revalidate: 300 },
+    // Preços e disponibilidade comercial devem refletir a API depois de publicar uma versão.
+    // O build do site pode ocorrer enquanto a API anterior ainda está atendendo.
+    cache: "no-store",
     signal: AbortSignal.timeout(5000),
   });
   const body = (await response.json().catch(() => undefined)) as Envelope<{ plans: Partial<PublicPlan>[]; addons: PublicCapacityAddon[]; solutions?: PublicCommercialState[]; meetingsOffer?: PublicMeetingsOffer | null; priceSource?: string }> | undefined;

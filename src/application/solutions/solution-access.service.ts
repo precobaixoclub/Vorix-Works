@@ -11,7 +11,7 @@ import {
 import type { SolutionEntitlementRepositoryPort } from "../ports/solution-entitlement-repository.port.js";
 
 export type SolutionAccessServiceDeps = {
-  includedCapabilities?: (tenantId:string)=>Promise<Partial<Record<"site"|"commerce",boolean>>>;
+  includedCapabilities?: (tenantId:string)=>Promise<Partial<Record<"site",boolean>>>;
   repository: SolutionEntitlementRepositoryPort;
   /** Kill switches de ambiente — soluções desligadas para TODOS, inclusive acesso interno. */
   killSwitches?: ReadonlySet<SolutionKey>;
@@ -28,7 +28,7 @@ const DEFAULT_CACHE_TTL_MS = 30_000;
  * kill switch + entitlement; RBAC e feature flags continuam sendo checados onde sempre foram.
  */
 export class SolutionAccessService {
-  private readonly capabilitiesCache=new Map<string,{at:number;value:Partial<Record<"site"|"commerce",boolean>>}>();
+  private readonly capabilitiesCache=new Map<string,{at:number;value:Partial<Record<"site",boolean>>}>();
   private readonly cache = new Map<string, { at: number; entitlements: SolutionEntitlement[] }>();
 
   constructor(private readonly deps: SolutionAccessServiceDeps) {}
@@ -52,7 +52,7 @@ export class SolutionAccessService {
     return SOLUTION_KEYS.map((key) =>
       resolveSolutionAccess({
         solution: SOLUTIONS[key],
-        entitlement: entitlements.find((entry) => entry.solutionKey === key) ?? ((key==="site"||key==="commerce")&&included[key]?{enabled:true,source:"subscription"}:undefined),
+        entitlement: entitlements.find((entry) => entry.solutionKey === key) ?? (key==="site"&&included[key]?{enabled:true,source:"subscription"}:undefined),
         killSwitchOn: this.deps.killSwitches?.has(key) ?? false,
       }),
     );

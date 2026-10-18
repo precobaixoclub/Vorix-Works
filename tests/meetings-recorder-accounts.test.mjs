@@ -718,7 +718,7 @@ test("VIEWER: mesmo com token vazado, outro tenant/usuário não abre navegador;
   } finally { await rig.close(); }
 });
 
-test("COMERCIAL: cada blocker impede contratação; mudar apenas public não libera Meetings", () => {
+test("COMERCIAL: diagnóstico técnico permanece honesto; disponibilidade segue decisão de produto", () => {
   const ready = { selfServiceProvisioning: "PASS", customerDependsOnVorixOperator: false, cliOnlyRequiredForCustomer: false, recorderAccountTenantIsolation: "PASS", identityConflictRuntimeCheck: "PASS", sessionEncryption: "PASS" };
   assert.deepEqual(meetingsCommercialBlockers(ready), []);
   for (const [field, value] of Object.entries(ready)) {
@@ -726,11 +726,11 @@ test("COMERCIAL: cada blocker impede contratação; mudar apenas public não lib
     assert.equal(meetingsCommercialBlockers(blocked).length, 1, field);
   }
   const prematurelyPublic = { key: "meetings", name: "Vorix Meetings", commercialAvailability: "public", defaultEntitlement: false };
-  assert.equal(isSolutionContractable(prematurelyPublic), false);
-  assert.throws(() => assertGrantSourceAllowed(prematurelyPublic, "subscription"), /SOLUTION_NOT_CONTRACTABLE/);
+  assert.equal(isSolutionContractable(prematurelyPublic), true);
+  assert.doesNotThrow(() => assertGrantSourceAllowed(prematurelyPublic, "subscription"));
   // Conceitos separados: o gate comercial não mexe em entitlement, kill switch nem uso interno.
   const internal = resolveSolutionAccess({ solution: SOLUTIONS.meetings, entitlement: { enabled: true, source: "internal" }, killSwitchOn: false });
-  assert.deepEqual([internal.enabled, internal.internal], [true, true], "homologação/uso interno continua funcionando");
+  assert.deepEqual([internal.enabled, internal.internal], [true, false], "homologação/uso interno continua funcionando");
   assert.equal(resolveSolutionAccess({ solution: SOLUTIONS.meetings, entitlement: { enabled: true, source: "internal" }, killSwitchOn: true }).enabled, false, "kill switch é independente");
   assert.equal(resolveSolutionAccess({ solution: SOLUTIONS.meetings, killSwitchOn: false }).enabled, false, "sem concessão: fail-closed");
   assert.equal(resolveSolutionAccess({ solution: SOLUTIONS.conversations, killSwitchOn: false }).enabled, true);

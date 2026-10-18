@@ -4,11 +4,12 @@ import Link from "next/link";
 import { useState } from "react";
 import * as Popover from "@radix-ui/react-popover";
 import * as Dialog from "@radix-ui/react-dialog";
-import { ArrowUpRight, ChevronDown, Menu, MessageSquare, Video, X } from "lucide-react";
+import { ArrowUpRight, ChevronDown, Menu, MessageSquare, Video, Globe, X } from "lucide-react";
 import { Logo } from "@/components/Logo";
 import { useAuth } from "@/contexts/auth-context";
 
 const PRODUCTS = [
+  { href: "/produtos/site", name: "Vorix Site", description: "Site e catálogo da empresa", Icon: Globe, tone: "green" },
   { href: "/produtos/conversas", name: "Vorix Conversas", description: "Atendimento e vendas", Icon: MessageSquare, tone: "green" },
   { href: "/produtos/meetings", name: "Vorix Meetings", description: "Reuniões inteligentes", Icon: Video, tone: "violet" },
 ];

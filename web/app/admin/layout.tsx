@@ -78,7 +78,7 @@ function AdminShell({ children }: { children: ReactNode }) {
           <SidebarLink href="/admin/meetings-bots" active={isActive("/admin/meetings-bots")}>
             Contas de gravação
           </SidebarLink>
-          <SidebarLink href="/admin/site-commerce" active={isActive("/admin/site-commerce")}>Site e Commerce</SidebarLink>
+          <SidebarLink href="/admin/site" active={isActive("/admin/site")}>Vorix Site</SidebarLink>
           <SidebarLink href="/admin/billing-provider" active={isActive("/admin/billing-provider")}>
             Mercado Pago
           </SidebarLink>
@@ -108,7 +108,7 @@ function AdminShell({ children }: { children: ReactNode }) {
           <SidebarLink href="/admin/meetings-bots" active={isActive("/admin/meetings-bots")}>
             Contas de gravação
           </SidebarLink>
-          <SidebarLink href="/admin/site-commerce" active={isActive("/admin/site-commerce")}>Site e Commerce</SidebarLink>
+          <SidebarLink href="/admin/site" active={isActive("/admin/site")}>Vorix Site</SidebarLink>
           <SidebarLink href="/admin/billing-provider" active={isActive("/admin/billing-provider")}>
             Mercado Pago (billing)
           </SidebarLink>

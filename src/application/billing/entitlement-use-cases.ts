@@ -46,7 +46,7 @@ export async function resolveEffectiveEntitlements(deps: Pick<EntitlementUseCase
     const capabilities = { ...planVersion.capabilities };
     for (const item of items) {
       const addon = await deps.addonDefinitionRepository.getByCode(item.addonCode);
-      if(addon&&(addon.resource==="site"||addon.resource==="commerce")&&item.quantity>0){capabilities[addon.resource]=true;continue;}
+      if(addon&&addon.resource==="site"&&item.quantity>0){capabilities[addon.resource]=true;continue;}
       if (!addon || !isPlanLimitResource(addon.resource)) continue; // gravações do Meetings não são limite de plano
       const current = limits[addon.resource];
       if (current !== null) limits[addon.resource] = current + addon.increment * item.quantity;

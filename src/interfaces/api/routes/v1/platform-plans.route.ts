@@ -59,17 +59,16 @@ function isHighlighted(planCode: string): boolean {
  */
 export async function registerPlatformPlansRoutes(app: FastifyInstance, deps: PlatformPlansRoutesDeps = {}): Promise<void> {
   app.get("/platform/plans", async (request) => {
-    // Public presentation can describe Meetings without promoting it for purchase.
-    // Commercial eligibility remains exclusively owned by the existing solution gate.
+    // Oferta pública: Conversas, Meetings e Site. Marketing permanece interno.
     const { SOLUTIONS } = solutionCatalog;
     // Older deployed domain modules have only the commercialAvailability flag. During a staged
-    // rollout, never promote Meetings without its readiness gate. Current modules use that gate.
+    // rollout, use the same product availability decision as the current domain.
     const gate = (solutionCatalog as typeof solutionCatalog & {
       isSolutionContractable?: (solution: (typeof SOLUTIONS)[keyof typeof SOLUTIONS]) => boolean;
     }).isSolutionContractable;
-    const solutions = (["conversations", "meetings"] as const).map((key) => ({
+    const solutions = (["conversations", "meetings", "site"] as const).map((key) => ({
       key, name: SOLUTIONS[key].name,
-      contractable: gate ? gate(SOLUTIONS[key]) : key === "conversations" && SOLUTIONS[key].commercialAvailability === "public",
+      contractable: gate ? gate(SOLUTIONS[key]) : SOLUTIONS[key].commercialAvailability === "public",
     }));
     if (!deps.planVersionRepository) {
       return successEnvelope({ plans: listPublicPlans(), addons: [], solutions, priceSource: "legacy_development" }, request.id);

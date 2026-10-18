@@ -22,6 +22,14 @@ export function proxy(request: NextRequest) {
     const url=request.nextUrl.clone();url.pathname=`/site-domain/${encodeURIComponent(hostname)}${pathname==="/"?"":pathname}`;return NextResponse.rewrite(url);
   }
 
+  // Unificação dos produtos: resolve aliases antes de renderizar os layouts autenticados.
+  const legacyWorkspace = pathname.match(/^\/workspaces\/([^/]+)\/commerce\/?$/);
+  if (pathname === "/admin/site-commerce" || legacyWorkspace) {
+    const url = request.nextUrl.clone();
+    url.pathname = legacyWorkspace ? `/workspaces/${legacyWorkspace[1]}/site` : "/admin/site";
+    return NextResponse.redirect(url);
+  }
+
   // "/" é a landing page pública (marketing) — nunca exige sessão.
   if (pathname === "/") return NextResponse.next();
 
@@ -50,6 +58,7 @@ export function proxy(request: NextRequest) {
     pathname === "/precos" ||
     pathname === "/produtos/conversas" ||
     pathname === "/produtos/meetings" ||
+    pathname === "/produtos/site" ||
     pathname === "/public-og" ||
     pathname === "/privacy" ||
     pathname === "/terms" ||

@@ -5,6 +5,15 @@ import { SOLUTION_HOME_PATH, isRouteBlocked, resolveActiveSolution, routeOwner }
 const BASE = "/workspaces/ws-1";
 
 describe("routeOwner", () => {
+  it("Site e o endereço antigo de Commerce pertencem ao mesmo produto", () => {
+    expect(routeOwner(`${BASE}/site`, BASE)).toBe("site");
+    expect(routeOwner(`${BASE}/site/products`, BASE)).toBe("site");
+    expect(routeOwner(`${BASE}/commerce`, BASE)).toBe("site");
+    expect(Object.keys(SOLUTION_HOME_PATH)).toEqual(["site", "conversations", "meetings", "marketing"]);
+    expect(Object.keys(SOLUTION_NAVIGATION)).not.toContain("commerce");
+    expect(isRouteBlocked("site", ["conversations"])).toBe(true);
+    expect(isRouteBlocked("site", ["site"])).toBe(false);
+  });
   it("classifica as telas do Vorix Conversas", () => {
     for (const path of ["", "/conversas", "/kanban", "/contacts", "/deals", "/tasks", "/proposals", "/results", "/deals/abc"]) {
       expect(routeOwner(`${BASE}${path}`, BASE)).toBe("conversations");

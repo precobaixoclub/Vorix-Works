@@ -58,8 +58,7 @@ export function buildPublicProductCatalog(billing: PublicBillingCatalog | null):
   const eligible = (key: "conversations" | "meetings") => billing?.solutions.find(solution => solution.key === key)?.contractable === true;
   const meetingsOffer = official ? billing?.meetingsOffer ?? null : null;
   const conversationsContractable = eligible("conversations") && !!start;
-  // Meetings só é vendável com preço oficial no catálogo E o gate comercial aberto (gravação em
-  // produção). Suite = Conversas + Meetings, cobrada pela soma das partes (sem preço próprio).
+  // Meetings usa disponibilidade pública e preço oficial do catálogo. Suite = Conversas + Meetings, cobrada pela soma das partes (sem preço próprio).
   const meetingsContractable = eligible("meetings") && !!meetingsOffer;
   const products: PublicProduct[] = (["conversations", "meetings", "suite"] as const).map(key => {
     const plan = key === "conversations" ? start : null;
@@ -76,7 +75,7 @@ export function buildPublicProductCatalog(billing: PublicBillingCatalog | null):
       cta: key === "conversations"
         ? (contractable ? { label: "Contratar Conversas", href: `/signup?plan=${encodeURIComponent(plan!.code)}` } : { label: "Falar com o time", href: PUBLIC_CONTACT })
         : key === "meetings"
-          ? (contractable ? { label: "Contratar Meetings", href: "#monte" } : { label: "Conhecer Meetings", href: COPY.meetings.productHref })
+          ? (contractable ? { label: "Contratar Meetings", href: "/precos#monte" } : { label: "Conhecer Meetings", href: COPY.meetings.productHref })
           : { label: "Monte sua Suite", href: "#monte" },
       plan, includes: key === "suite" ? ["conversations", "meetings"] : [key],
     };
@@ -90,12 +89,13 @@ export function formatPublicPrice(product: Pick<PublicProduct, "currency" | "mon
 }
 
 export const PUBLIC_FAQ = [
+  ["Site e loja online são produtos separados?", "Não. O Vorix Site reúne o site da empresa, o catálogo e a área de loja online. Carrinho, pagamentos e frete estão em preparação dentro desse mesmo produto."],
   ["Conversas e Meetings são produtos separados?", "Sim. Cada solução tem sua própria operação. As duas compartilham a mesma conta, empresa, equipe e workspace na plataforma Vorix."],
-  ["Posso contratar somente uma solução?", "Sim. Conversas já tem planos disponíveis. Meetings é independente de Conversas, mas sua contratação ainda depende da liberação comercial."],
+  ["Posso contratar somente uma solução?", "Conversas, Meetings e Site são produtos públicos. O acesso depende do plano ou dos adicionais contratados para sua empresa."],
   ["Posso adicionar outro produto depois?", "A plataforma foi construída para isso. Novas soluções podem ser adicionadas à mesma empresa conforme a disponibilidade comercial, sem criar outra conta."],
-  ["O Meetings funciona sem Conversas?", "Sim, a arquitetura do Meetings é independente. Sua disponibilidade comercial e os critérios de integração com Google ainda estão em validação."],
+  ["O Meetings funciona sem Conversas?", "Sim. O acesso ao Meetings é independente do acesso ao Conversas. Conecte contas de gravação e ajuste a capacidade conforme sua operação."],
   ["Como funciona a inteligência artificial?", "A IA ajuda a extrair informações e transformar contexto em ação. O uso de créditos e os recursos disponíveis dependem do plano e da operação."],
-  ["Como funcionam as gravações simultâneas?", "No Meetings, a capacidade depende do plano e das contas de gravação saudáveis e disponíveis. Uma conta de gravação atende uma reunião por vez. A oferta comercial ainda está em validação."],
+  ["Como funcionam as gravações simultâneas?", "No Meetings, a capacidade depende do plano e das contas de gravação saudáveis e disponíveis. Uma conta de gravação atende uma reunião por vez."],
   ["Como funciona o preço do Vorix?", "Você parte de um plano e ajusta a capacidade de cada produto. Em Conversas, usuários e números conectados; no Meetings, gravações simultâneas. Os valores de Conversas vêm do mesmo catálogo usado na contratação."],
   ["Contas de gravação são cobradas como licença?", "Não. O que define a capacidade do Meetings são as gravações simultâneas do plano. As contas Google de gravação que você conecta são infraestrutura: uma conta a mais pode ficar como reserva."],
   ["Os dados da minha empresa ficam separados?", "O Vorix aplica isolamento por empresa e permissões de acesso por usuário. A equipe trabalha no contexto dos workspaces aos quais tem acesso."],

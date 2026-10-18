@@ -8,7 +8,7 @@ import { TrackPageView } from "@/components/TrackPageView";
 import { formatCapacityLine, formatCreditsQuota, formatPlanPrice, getPublicPlanTagline } from "@/features/platform-plans/api";
 import { getPublicProductCatalog } from "@/features/public-site/server";
 import { publicMetadata } from "@/features/public-site/metadata";
-export const revalidate = 300;
+export const dynamic = "force-dynamic";
 export const metadata = publicMetadata("Preços Vorix — Escolha a solução para sua operação", "Compare Conversas, conheça Meetings e explore a proposta Vorix Suite. Valores e condições de Conversas integrados ao catálogo de contratação.", "/precos");
 
 export default async function Page() {

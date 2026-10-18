@@ -44,7 +44,7 @@ export function prepareRecurringCapacity(context:RecurringCapacityContext,input:
  for(const [code,value] of Object.entries(input.addonQuantities??{})){
   const addon=definitions.find(addon=>addon.code===code);if(!addon)throw Error("CAPACITY_ADDON_NOT_AVAILABLE: adicional não encontrado.");
   if(["users","messaging_connections","meetings_concurrent_recordings"].includes(addon.resource))throw Error("CAPACITY_INVALID: ajuste usuários, WhatsApp e gravações nos campos correspondentes.");
-  if((addon.resource==="site"||addon.resource==="commerce")&&value>1)throw Error("CAPACITY_INVALID: esse módulo permite somente uma contratação.");
+  if(addon.resource==="site"&&value>1)throw Error("CAPACITY_INVALID: esse módulo permite somente uma contratação.");
   set(code,value);
  }
  const desired:SubscriptionItem[]=[];

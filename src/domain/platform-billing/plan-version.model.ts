@@ -35,7 +35,7 @@ export type PlanVersion = {
 
 /** Recurso de um adicional: limite de plano (Conversas/Core) ou capacidade de uma solução vendida
  * como adicional — hoje só gravações simultâneas do Vorix Meetings (nunca contas de gravação). */
-export type AddonResource = import("./plan-entitlements.model.js").PlanLimitResource | "meetings_concurrent_recordings" | "site" | "commerce";
+export type AddonResource = import("./plan-entitlements.model.js").PlanLimitResource | "meetings_concurrent_recordings" | "site";
 
 export type AddonDefinition = {
   code: string;

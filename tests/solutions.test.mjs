@@ -38,12 +38,12 @@ after(async () => {
 
 // --- Modelo -----------------------------------------------------------------------------------
 
-test("DISPONIBILIDADE COMERCIAL: só o Vorix Conversas é público; Marketing é interno", () => {
-  assert.deepEqual(listPublicSolutions().map((solution) => solution.key), ["conversations"]);
+test("DISPONIBILIDADE COMERCIAL: Conversas, Meetings e Site públicos; somente Marketing interno", () => {
+  assert.deepEqual(listPublicSolutions().map((solution) => solution.key), ["conversations", "meetings", "site"]);
   assert.equal(SOLUTIONS.marketing.commercialAvailability, "internal");
   assert.equal(SOLUTIONS.marketing.defaultEntitlement, false, "Marketing é fail-closed");
   assert.equal(SOLUTIONS.conversations.defaultEntitlement, true, "nenhum cliente atual perde o Conversas por falta de linha");
-  assert.equal(SOLUTIONS.meetings.commercialAvailability, "internal", "Meetings nasce interno até a homologação");
+  assert.equal(SOLUTIONS.meetings.commercialAvailability, "public", "Meetings é um produto público");
   assert.equal(SOLUTIONS.meetings.defaultEntitlement, false, "Meetings é fail-closed");
 });
 
@@ -103,7 +103,7 @@ function makeService(options = {}) {
 test("ENTITLEMENT: tenant comum tem Conversas e NÃO tem Marketing; concessão interna libera e fica auditada", async () => {
   const service = makeService();
   const tenantId = "tenant-sol-1";
-  assert.deepEqual((await service.listAccess(tenantId)).map((a) => [a.key, a.enabled]), [["conversations", true], ["meetings", false], ["marketing", false], ["site", false], ["commerce", false]]);
+  assert.deepEqual((await service.listAccess(tenantId)).map((a) => [a.key, a.enabled]), [["conversations", true], ["meetings", false], ["marketing", false], ["site", false]]);
   assert.equal(await service.hasAccess(tenantId, "marketing"), false);
 
   await assert.rejects(() => service.setEntitlement({ tenantId, solutionKey: "marketing", enabled: true, source: "subscription" }), /SOLUTION_NOT_CONTRACTABLE/);
@@ -264,7 +264,7 @@ test("API: conceder solução é só de administrador da plataforma, e Marketing
   assert.equal(granted.statusCode, 200);
   assert.equal(await service.hasAccess("tenant-api-dono", "marketing"), true);
   const listed = await adminApp.inject({ method: "GET", url: "/v1/admin/tenants/tenant-api-dono/solutions" });
-  assert.deepEqual(listed.json().data.solutions.map((s) => [s.key, s.enabled, s.commercialAvailability]), [["conversations", true, "public"], ["meetings", false, "internal"], ["marketing", true, "internal"], ["site", false, "internal"], ["commerce", false, "internal"]]);
+  assert.deepEqual(listed.json().data.solutions.map((s) => [s.key, s.enabled, s.commercialAvailability]), [["conversations", true, "public"], ["meetings", false, "public"], ["marketing", true, "internal"], ["site", false, "public"]]);
   await adminApp.close();
 });
 

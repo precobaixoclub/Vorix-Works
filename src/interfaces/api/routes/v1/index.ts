@@ -437,6 +437,7 @@ export async function registerV1Routes(app: FastifyInstance): Promise<void> {
     await registerTasksRoutes(app, { taskRepository: identity.taskRepository, timelineEventRepository: identity.timelineEventRepository });
     await registerProductsRoutes(app, {
       productRepository: identity.productRepository,
+      workspaceRepository: app.zunoContainer.workspaceRepository,
       salesConfigRepository: identity.salesConfigRepository,
       membershipRepository: identity.membershipRepository,
       notification: { notificationRepository: app.zunoContainer.notificationRepository, realtimePublisher: app.zunoContainer.notificationRealtimePublisher },

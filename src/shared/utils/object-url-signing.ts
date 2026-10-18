@@ -159,7 +159,8 @@ export function classifyObjectKeyOwner(objectKey: string): ObjectKeyOwner | unde
     return { kind: "tenant", tenantId: segments[1]! };
   }
   const scoped = segments[0] === "assets" ? segments.slice(1) : segments;
-  if (scoped.length === 3 && ID.test(scoped[0]!) && scoped[0]!.startsWith("tenant-") && ID.test(scoped[1]!)) {
+  const isProductImage = segments[0] === "assets" && scoped.length === 4 && scoped[2] === "products" && /^[A-Za-z0-9_-]+\.(?:jpg|png|webp)$/.test(scoped[3]!);
+  if ((scoped.length === 3 || isProductImage) && ID.test(scoped[0]!) && scoped[0]!.startsWith("tenant-") && ID.test(scoped[1]!)) {
     return { kind: "workspace", tenantId: scoped[0]!, workspaceId: scoped[1]! };
   }
   return undefined;

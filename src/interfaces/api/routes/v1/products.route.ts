@@ -9,7 +9,9 @@ import type { NotificationUseCaseDeps } from "../../../../application/notificati
 import { getOpenDealsStockRisk, setStockQuantity } from "../../../../application/sales/stock-use-cases.js";
 import { isLowStock } from "../../../../domain/crm/crm.model.js";
 import type { ObjectStoragePort } from "../../../../application/ports/object-storage.port.js";
-import { stripObjectUrlSignature } from "../../../../shared/utils/object-url-signing.js";
+import { parseOwnedObjectUrl, stripObjectUrlSignature } from "../../../../shared/utils/object-url-signing.js";
+import type { WorkspaceRepositoryPort } from "../../../../application/ports/workspace-repository.port.js";
+import { assertWorkspaceBelongsToTenant } from "./workspace-ownership.js";
 import { randomUUID } from "node:crypto";
 import type { AuthPrincipal } from "../../../../domain/identity/identity.model.js";
 import type { Product } from "../../../../domain/crm/crm.model.js";
@@ -95,6 +97,7 @@ type ProductRouteDeps = ProductUseCaseDeps & {
   /** Fotos do produto (upload para o storage do workspace). */
   objectStorage?: ObjectStoragePort;
   maxUploadBytes?: number;
+  workspaceRepository?: WorkspaceRepositoryPort;
 };
 
 const IMAGE_TYPES: Record<string, string> = { "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp" };
@@ -104,10 +107,15 @@ const MAX_PRODUCT_IMAGE_BYTES = 5_000_000;
 function cleanImageUrls(deps: ProductRouteDeps, tenantId: string, workspaceId: string, urls: unknown): string[] | undefined {
   if (urls === undefined) return undefined;
   if (!Array.isArray(urls)) throw new ValidationError("PRODUCT_IMAGES_INVALID: lista de fotos inválida.");
+  if (urls.length === 0) return [];
   if (!deps.objectStorage) throw new ValidationError("PRODUCT_IMAGES_INVALID: envio de fotos indisponível.");
-  const prefix = deps.objectStorage.resolvePublicUrl(`assets/${tenantId}/${workspaceId}/products/`);
+  const prefix = `assets/${tenantId}/${workspaceId}/products/`;
+  const base = deps.objectStorage.resolvePublicUrl("");
   const clean = [...new Set(urls.map((url) => stripObjectUrlSignature(String(url))))];
-  if (clean.some((url) => !url.startsWith(prefix))) throw new ValidationError("PRODUCT_IMAGES_INVALID: use apenas fotos enviadas pelo Vorix.");
+  if (clean.some((url) => {
+    const parsed = parseOwnedObjectUrl(url, base);
+    return !parsed || !parsed.key.startsWith(prefix) || !/^[A-Za-z0-9_-]+\.(?:jpg|png|webp)$/.test(parsed.key.slice(prefix.length));
+  })) throw new ValidationError("PRODUCT_IMAGES_INVALID: use apenas fotos enviadas pelo Vorix.");
   return clean.slice(0, 6);
 }
 
@@ -145,6 +153,7 @@ export async function registerProductsRoutes(app: FastifyInstance, deps: Product
   app.post("/products/images", { schema: { querystring: WORKSPACE_QUERY_SCHEMA } }, async (request) => {
     const principal = requirePermission(request, "product:manage");
     const { workspaceId } = request.query as { workspaceId: string };
+    if (deps.workspaceRepository) await assertWorkspaceBelongsToTenant(deps.workspaceRepository, { tenantId: principal.tenantId, workspaceId });
     if (!deps.objectStorage) throw new ValidationError("PRODUCT_IMAGES_INVALID: envio de fotos indisponível.");
     const limit = Math.min(MAX_PRODUCT_IMAGE_BYTES, deps.maxUploadBytes ?? MAX_PRODUCT_IMAGE_BYTES);
     const file = await request.file({ limits: { fileSize: limit } });

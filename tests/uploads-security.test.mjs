@@ -6,9 +6,11 @@ import { mkdtemp, mkdir, rm, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import Fastify from "fastify";
+import multipart from "@fastify/multipart";
 
 import { buildApp } from "../dist/interfaces/api/app.js";
 import { loadApiConfig } from "../dist/interfaces/api/config/api-config.js";
+import { registerProductsRoutes } from "../dist/interfaces/api/routes/v1/products.route.js";
 import { registerSignedObjectUrlResponses, createObjectKeyReadAuthorizer } from "../dist/interfaces/api/object-url-access.js";
 import { configureObjectUrlSigning, signObjectKey, signOwnedUrl, stripObjectUrlSignature, parseOwnedObjectUrl, verifyObjectSignature, classifyObjectKeyOwner, OBJECT_URL_TTL } from "../dist/shared/utils/object-url-signing.js";
 import { fetchAsBuffer } from "../dist/application/creative-engine/run-gpt-creative-engine.js";
@@ -262,6 +264,58 @@ test("classifyObjectKeyOwner: layout do storage → dono (workspace, tenant, QA,
   assert.deepEqual(classifyObjectKeyOwner("qa-assets/editorial/logo.png"), { kind: "system_qa", namespace: "editorial" });
   assert.equal(classifyObjectKeyOwner("random/file.png"), undefined);
   assert.equal(classifyObjectKeyOwner("assets/not-a-tenant/ws/a.png"), undefined);
+  assert.deepEqual(classifyObjectKeyOwner("assets/tenant-A/ws-1/products/photo.jpg"), { kind: "workspace", tenantId: "tenant-A", workspaceId: "ws-1" });
+  for (const key of ["assets/tenant-A/ws-1/private/photo.jpg", "assets/tenant-A/ws-1/products/../photo.jpg", "assets/tenant-A/ws-1/products/photo.svg", "assets/tenant-A/ws-1/products/nested/photo.jpg"]) {
+    assert.equal(classifyObjectKeyOwner(key), undefined, key);
+  }
+});
+
+test("Fotos de produto: upload devolve preview assinado, mantém arquivo privado e impede assinatura por outro tenant", async () => {
+  const mini = Fastify();
+  try {
+    await mini.register(multipart);
+    mini.decorateRequest("zunoContext", null);
+    mini.addHook("onRequest", async (request) => {
+      request.zunoContext = { principal: request.headers.authorization ? { userId: "u", tenantId: "tenant-A", role: request.headers.authorization === "Bearer viewer" ? "viewer" : "owner" } : undefined };
+    });
+    registerSignedObjectUrlResponses(mini, { publicBaseUrl: BASE, authorize: createObjectKeyReadAuthorizer({ workspaceRepository: app.zunoContainer.workspaceRepository, qaTenantIds: [] }) });
+    const storedProducts = [];
+    await registerProductsRoutes(mini, { objectStorage: app.zunoContainer.objectStorage, workspaceRepository: app.zunoContainer.workspaceRepository, productRepository: { create: async (input) => { storedProducts.push(input); return { id: "product-fixture", ...input }; } } });
+    const upload = async (contentType = "image/png", body = Buffer.from("fixture-photo"), token = "owner", workspaceId = wsA1) => mini.inject({
+      method: "POST", url: `/products/images?workspaceId=${workspaceId}`,
+      headers: { ...(token ? { authorization: `Bearer ${token}` } : {}), "content-type": "multipart/form-data; boundary=product-photo" },
+      payload: Buffer.concat([Buffer.from(`--product-photo\r\nContent-Disposition: form-data; name="file"; filename="photo.png"\r\nContent-Type: ${contentType}\r\n\r\n`), body, Buffer.from("\r\n--product-photo--\r\n")]),
+    });
+    const response = await upload();
+    assert.equal(response.statusCode, 200, response.body);
+    const url = response.json().data.url;
+    assert.match(url, /\?exp=\d+&sig=[A-Za-z0-9_-]{43}$/);
+    assert.match(stripObjectUrlSignature(url), new RegExp(`/assets/tenant-A/${wsA1}/products/[a-f0-9-]+\\.png$`));
+    const read = await app.inject({ method: "GET", url: pathOf(url) });
+    assert.equal(read.statusCode, 200, read.body);
+    assert.equal(read.body, "fixture-photo");
+    assert.equal((await app.inject({ method: "GET", url: pathOf(stripObjectUrlSignature(url)) })).statusCode, 404);
+    assert.equal((await sign("tenant-B", stripObjectUrlSignature(url))).statusCode, 404);
+    assert.equal((await sign("tenant-A", canonical(`assets/tenant-A/${wsB1}/products/forged.png`))).statusCode, 404);
+    assert.equal((await upload("image/svg+xml")).statusCode, 400);
+    assert.equal((await upload("image/png", Buffer.alloc(5_000_001))).statusCode, 400);
+    assert.equal((await upload("image/png", undefined, "viewer")).statusCode, 403);
+    assert.equal((await upload("image/png", undefined, "")).statusCode, 401);
+    assert.equal((await upload("image/png", undefined, "owner", wsB1)).statusCode, 404);
+    assert.equal((await upload("image/png", undefined, "owner", "missing-workspace")).statusCode, 404);
+
+    const save = async (imageUrls) => mini.inject({ method: "POST", url: "/products", headers: { authorization: "Bearer owner" }, payload: { workspaceId: wsA1, name: "Fixture", priceCents: 100, imageUrls } });
+    const saved = await save([url, url]);
+    assert.equal(saved.statusCode, 201, saved.body);
+    assert.deepEqual(storedProducts[0].imageUrls, [stripObjectUrlSignature(url)]);
+    for (const invalid of [canonical(`assets/tenant-A/${wsA2}/products/photo.png`), canonical(`assets/tenant-B/${wsB1}/products/photo.png`), canonical(`assets/tenant-A/${wsA1}/products/../a.png`), canonical(`assets/tenant-A/${wsA1}/products/%2e%2e/a.png`), "https://outside.test/photo.png"]) {
+      assert.equal((await save([invalid])).statusCode, 400, invalid);
+    }
+    assert.equal(storedProducts.length, 1, "URLs inválidas não gravam produto");
+    assert.equal((await save([])).statusCode, 201);
+  } finally {
+    await mini.close();
+  }
 });
 
 test("Log de acesso nunca grava a assinatura nem tokens de query (sig/media_token/avatar_token/stream_token)", async () => {

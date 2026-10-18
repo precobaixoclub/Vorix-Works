@@ -1,3 +1,4 @@
+import { classifyContactPhone } from "../../domain/crm/contact-phone.js";
 import { createContact, linkContactIdentity, type ContactUseCaseDeps } from "../crm/contact-use-cases.js";
 import type { InboxContactRepositoryPort } from "../ports/inbox-contact-repository.port.js";
 import type { InboxMessageRepositoryPort } from "../ports/inbox-message-repository.port.js";
@@ -81,6 +82,9 @@ export async function ensureCrmContactForInboxContact(
   // chama deveria estar operando sobre o vencedor da fusão, não o perdedor.
   if (inboxContact.mergeStatus === "merged") return undefined;
   if (inboxContact.crmContactId) return { contactId: inboxContact.crmContactId, created: false };
+  // O celular é o pivô do CRM: enquanto o WhatsApp só informou o LID (sem número real), não cria
+  // contato — ele nasce quando o número chegar (próxima mensagem com o alias de telefone).
+  if (classifyContactPhone([{ phoneNormalized: inboxContact.phoneNormalized, whatsappPn: inboxContact.whatsappPn, whatsappLid: inboxContact.whatsappLid }]).kind !== "phone") return undefined;
 
   const existingIdentity = await deps.contact.contactIdentityRepository.findByChannelAndExternalId("whatsapp", input.inboxContactId);
   if (existingIdentity) {

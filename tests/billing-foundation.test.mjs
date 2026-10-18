@@ -148,11 +148,11 @@ test("Limite: assertWithinLimit lança USAGE_LIMIT_REACHED quando o uso real ati
     timelineEventRepository: new PostgresTimelineEventRepository(db.pool),
   };
 
-  // FREE permite 200 contatos — não deveria bloquear ainda.
+  // Contatos são ilimitados em todos os planos (migration 0163) — nunca bloqueia.
   await createContact(contactDeps, { tenantId, workspaceId: workspace.id, name: "Contato 1" });
   const { used, max } = await getLimit(deps, { tenantId, resource: "contacts" });
   assert.equal(used, 1);
-  assert.equal(max, 200);
+  assert.equal(max, null);
   await assertWithinLimit(deps, { tenantId, resource: "contacts" });
 
   // Publica uma versão de teste do FREE com limite de 1 contato só, e migra o tenant pra ela via

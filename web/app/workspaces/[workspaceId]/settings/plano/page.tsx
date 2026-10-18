@@ -231,11 +231,12 @@ export default function BillingSettingsPage() {
         <CardHeader>
           <div>
             <p className="text-sm font-semibold text-foreground">Uso do plano</p>
-            <p className="mt-1 text-xs text-muted-foreground">Somente limites medidos pelo backend aparecem aqui.</p>
+            <p className="mt-1 text-xs text-muted-foreground">O que o seu plano limita: usuários, números de WhatsApp e workspaces.</p>
           </div>
         </CardHeader>
         <CardBody className="grid gap-4 md:grid-cols-2">
-          {data.consumption.map((item) => <ConsumptionBar key={item.resource} label={RESOURCE_LABELS[item.resource]} used={item.used} max={item.max} />)}
+          {data.consumption.filter((item) => PLAN_USAGE_RESOURCES.includes(item.resource)).map((item) => <ConsumptionBar key={item.resource} label={RESOURCE_LABELS[item.resource]} used={item.used} max={item.max} />)}
+          <p className="text-xs text-muted-foreground md:col-span-2">Contatos, armazenamento e automações são ilimitados em todos os planos. O uso de IA é cobrado em créditos (veja acima).</p>
         </CardBody>
       </Card>
 
@@ -305,6 +306,8 @@ export default function BillingSettingsPage() {
     </SettingsShell>
   );
 }
+
+const PLAN_USAGE_RESOURCES: readonly string[] = ["users", "messaging_connections", "workspaces"];
 
 function formatAmount(amount: number, currency: string): string {
   return new Intl.NumberFormat("pt-BR", { style: "currency", currency }).format(amount);
@@ -398,6 +401,18 @@ function CapacityCard({ canManage, onNeedPaymentMethod }: { canManage: boolean; 
   const nextTotal = dirty ? preview?.requestedOnCurrentPlan.totalMonthlyAmount : current.totalMonthlyAmount;
   const meetingsAmount = dirty ? preview?.requestedOnCurrentPlan.meetingsMonthlyAmount : undefined;
   const showRecordings = state.meetingsSellable || current.concurrentRecordings > 0;
+  // Prévia na tela (o valor oficial vem do preview da API): preço de cada unidade × quanto muda.
+  const unit = state.unitPrices ?? { interval: "monthly" as const };
+  const cycle = unit.interval === "yearly" ? "/ano" : "/mês";
+  const stepCost = (diff: number, price?: { amount: number; increment: number }) => (price && diff !== 0 ? Math.sign(diff) * Math.ceil(Math.abs(diff) / Math.max(1, price.increment)) * price.amount : 0);
+  const recordingCost = (n: number) => (n <= 0 ? 0 : (unit.meetingsBase ?? 0) + Math.max(0, n - 1) * (unit.meetingsExtraRecording ?? 0));
+  const lines = [
+    { key: "users", label: "Usuários de atendimento", from: current.totalUsers ?? 0, to: users, delta: stepCost(users - (current.totalUsers ?? 0), unit.user) },
+    { key: "whatsapp", label: "Números de WhatsApp", from: current.totalWhatsappConnections ?? 0, to: whatsappConnections, delta: stepCost(whatsappConnections - (current.totalWhatsappConnections ?? 0), unit.whatsappConnection) },
+    ...(showRecordings ? [{ key: "recordings", label: "Gravações simultâneas", from: current.concurrentRecordings, to: recordings, delta: recordingCost(recordings) - recordingCost(current.concurrentRecordings) }] : []),
+  ];
+  const totalDelta = lines.reduce((sum, line) => sum + line.delta, 0);
+  const estimatedTotal = current.totalMonthlyAmount + totalDelta;
   const pendingLabel = (pending: CapacityPendingChange) => {
     if (pending.resource === "meetings_concurrent_recordings") return `gravações simultâneas passam a ser ${pending.targetQuantity + 1}`;
     const included = pending.resource === "users" ? (current.includedUsers ?? 0) : (current.includedWhatsappConnections ?? 0);
@@ -409,7 +424,7 @@ function CapacityCard({ canManage, onNeedPaymentMethod }: { canManage: boolean; 
       <CardHeader>
         <div>
           <p className="text-sm font-semibold text-foreground">Sua estrutura</p>
-          <p className="mt-1 text-xs text-muted-foreground">Aumente ou reduza usuários de atendimento, números de WhatsApp e gravações simultâneas — a próxima cobrança já sai com o novo valor.</p>
+          <p className="mt-1 text-xs text-muted-foreground">Monte o seu plano: escolha quantos usuários, números de WhatsApp e gravações você quer. Você vê o preço de cada um e quanto a mensalidade aumenta ou diminui antes de confirmar.</p>
         </div>
       </CardHeader>
       <CardBody className="space-y-5">
@@ -425,24 +440,27 @@ function CapacityCard({ canManage, onNeedPaymentMethod }: { canManage: boolean; 
         <div className={cn("grid gap-5", showRecordings ? "sm:grid-cols-3" : "sm:grid-cols-2")}>
           <CapacityStepper
             label="Usuários de atendimento"
-            hint={`${current.includedUsers ?? 0} incluídos · ${current.additionalUsers} adicionais`}
+            hint={`${current.includedUsers ?? 0} no plano · ${current.additionalUsers} adicionais`}
+            price={unit.user ? `${formatAmount(unit.user.amount, current.currency)} por usuário${cycle}` : "O plano não vende usuários adicionais"}
             value={users}
             min={current.includedUsers ?? 0}
             onChange={setUsers}
-            disabled={!canManage}
+            disabled={!canManage || !unit.user}
           />
           <CapacityStepper
             label="Números de WhatsApp"
-            hint={`${current.includedWhatsappConnections ?? 0} incluídos · ${current.additionalWhatsappConnections} adicionais`}
+            hint={`${current.includedWhatsappConnections ?? 0} no plano · ${current.additionalWhatsappConnections} adicionais`}
+            price={unit.whatsappConnection ? `${formatAmount(unit.whatsappConnection.amount, current.currency)} por número${cycle}` : "O plano não vende números adicionais"}
             value={whatsappConnections}
             min={current.includedWhatsappConnections ?? 0}
             onChange={setWhatsappConnections}
-            disabled={!canManage}
+            disabled={!canManage || !unit.whatsappConnection}
           />
           {showRecordings ? (
             <CapacityStepper
               label="Gravações simultâneas (Meetings)"
               hint={current.concurrentRecordings > 0 ? `${current.concurrentRecordings} contratada(s)` : "Vorix Meetings não contratado"}
+              price={unit.meetingsBase !== undefined ? `1ª ${formatAmount(unit.meetingsBase, current.currency)} · demais ${formatAmount(unit.meetingsExtraRecording ?? 0, current.currency)}${cycle}` : ""}
               value={recordings}
               min={current.concurrentRecordings > 0 ? 1 : 0}
               onChange={setRecordings}
@@ -452,18 +470,49 @@ function CapacityCard({ canManage, onNeedPaymentMethod }: { canManage: boolean; 
         </div>
 
         <div className="rounded-lg border border-border bg-muted/20 p-4 text-sm">
-          <div className="flex items-center justify-between">
-            <span className="text-muted-foreground">Plano {current.planCode}</span>
-            <span className="font-medium tabular-nums text-foreground">{formatAmount(current.baseMonthlyAmount, current.currency)}</span>
-          </div>
-          <div className="mt-1 flex items-center justify-between">
-            <span className="text-muted-foreground">Adicionais{meetingsAmount ? ` (Meetings ${formatAmount(meetingsAmount, current.currency)})` : ""}</span>
-            <span className="font-medium tabular-nums text-foreground">{formatAmount((dirty ? preview?.requestedOnCurrentPlan.addonsMonthlyAmount : current.addonsMonthlyAmount) ?? current.addonsMonthlyAmount, current.currency)}</span>
+          <p className="mb-2 font-semibold text-foreground">{dirty ? "O que muda na sua mensalidade" : "Sua mensalidade hoje"}</p>
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[420px] text-sm">
+              <thead>
+                <tr className="text-left text-[11px] uppercase tracking-wide text-muted-foreground">
+                  <th className="pb-1.5 font-medium">Item</th>
+                  <th className="pb-1.5 text-right font-medium">Hoje</th>
+                  <th className="pb-1.5 text-right font-medium">Novo</th>
+                  <th className="pb-1.5 text-right font-medium">Diferença{cycle}</th>
+                </tr>
+              </thead>
+              <tbody className="tabular-nums">
+                <tr className="border-t border-border/60">
+                  <td className="py-1.5 text-muted-foreground">Plano {current.planCode}</td>
+                  <td className="py-1.5 text-right" colSpan={2}>{formatAmount(current.baseMonthlyAmount, current.currency)}</td>
+                  <td className="py-1.5 text-right text-muted-foreground">—</td>
+                </tr>
+                {lines.map((line) => (
+                  <tr key={line.key} className="border-t border-border/60">
+                    <td className="py-1.5 text-foreground">{line.label}</td>
+                    <td className="py-1.5 text-right">{line.from}</td>
+                    <td className={cn("py-1.5 text-right", line.to !== line.from && "font-semibold text-foreground")}>{line.to}</td>
+                    <td className={cn("py-1.5 text-right font-medium", line.delta > 0 ? "text-orange-600 dark:text-orange-300" : line.delta < 0 ? "text-success" : "text-muted-foreground")}>
+                      {line.delta === 0 ? "—" : `${line.delta > 0 ? "+" : "−"} ${formatAmount(Math.abs(line.delta), current.currency)}`}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
           <div className="mt-2 flex items-center justify-between border-t border-border pt-2 text-base">
-            <span className="font-semibold text-foreground">{dirty ? "Novo valor mensal" : "Valor mensal"}</span>
-            <span className="font-semibold tabular-nums text-foreground">{previewing ? "Calculando..." : formatAmount(nextTotal ?? current.totalMonthlyAmount, current.currency)}</span>
+            <span className="font-semibold text-foreground">{dirty ? "Nova mensalidade" : "Mensalidade"}</span>
+            <span className="text-right font-semibold tabular-nums text-foreground">
+              {previewing ? "Calculando..." : formatAmount(nextTotal ?? estimatedTotal, current.currency)}
+              {dirty && totalDelta !== 0 ? (
+                <span className={cn("ml-2 text-sm", totalDelta > 0 ? "text-orange-600 dark:text-orange-300" : "text-success")}>
+                  ({totalDelta > 0 ? "aumenta" : "diminui"} {formatAmount(Math.abs(totalDelta), current.currency)})
+                </span>
+              ) : null}
+            </span>
           </div>
+          {dirty && totalDelta < 0 ? <p className="mt-1 text-xs text-muted-foreground">Reduções valem a partir da próxima fatura{state.nextCharge ? ` (${formatDate(state.nextCharge.at)})` : ""} — até lá, você continua com a estrutura atual.</p> : null}
+          {dirty && totalDelta > 0 ? <p className="mt-1 text-xs text-muted-foreground">Aumentos valem na hora; neste ciclo você paga só a parte proporcional aos dias restantes.</p> : null}
           {state.nextCharge ? (
             <p className="mt-2 text-xs text-muted-foreground">
               Próxima cobrança em {formatDate(state.nextCharge.at)}: <span className="font-medium tabular-nums text-foreground">{formatAmount(dirty && nextTotal !== undefined ? nextTotal : state.nextCharge.amount, state.nextCharge.currency)}</span>
@@ -617,32 +666,32 @@ function AiCreditsCard({ canManage, workspaceId }: { canManage: boolean; workspa
   );
 }
 
-function CapacityStepper({ label, hint, value, min, onChange, disabled }: { label: string; hint: string; value: number; min: number; onChange: (value: number) => void; disabled: boolean }) {
+function CapacityStepper({ label, hint, price, value, min, onChange, disabled }: { label: string; hint: string; price?: string; value: number; min: number; onChange: (value: number) => void; disabled: boolean }) {
   return (
     <div>
-      <p className="text-sm text-foreground">{label}</p>
+      <p className="text-sm font-medium text-foreground">{label}</p>
       <p className="text-xs text-muted-foreground">{hint}</p>
-      <div className="mt-2 flex items-center gap-3">
-        <button
-          type="button"
-          disabled={disabled || value <= min}
-          onClick={() => onChange(Math.max(min, value - 1))}
-          className="flex h-9 w-9 items-center justify-center rounded-lg border border-border text-foreground hover:bg-muted disabled:opacity-40"
-          aria-label={`Diminuir ${label}`}
-        >
+      <div className="mt-2 flex items-center gap-2">
+        <button type="button" disabled={disabled || value <= min} onClick={() => onChange(Math.max(min, value - 1))} aria-label={`Diminuir ${label}`} className="flex h-9 w-9 items-center justify-center rounded-md border border-border text-foreground hover:bg-surface-2 disabled:opacity-30">
           <Minus className="h-4 w-4" />
         </button>
-        <span className="w-10 text-center text-lg font-semibold tabular-nums">{value}</span>
-        <button
-          type="button"
+        <input
+          type="text"
+          inputMode="numeric"
+          value={value}
           disabled={disabled}
-          onClick={() => onChange(value + 1)}
-          className="flex h-9 w-9 items-center justify-center rounded-lg border border-border text-foreground hover:bg-muted disabled:opacity-40"
-          aria-label={`Aumentar ${label}`}
-        >
+          aria-label={`Quantidade de ${label}`}
+          onChange={(event) => {
+            const next = Number(event.target.value.replace(/\D/g, ""));
+            onChange(Number.isFinite(next) ? Math.max(min, Math.min(999, next)) : min);
+          }}
+          className="h-9 w-16 rounded-md border border-input bg-background text-center text-base font-semibold tabular-nums text-foreground outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/20 disabled:opacity-60"
+        />
+        <button type="button" disabled={disabled || value >= 999} onClick={() => onChange(value + 1)} aria-label={`Aumentar ${label}`} className="flex h-9 w-9 items-center justify-center rounded-md border border-border text-foreground hover:bg-surface-2 disabled:opacity-30">
           <Plus className="h-4 w-4" />
         </button>
       </div>
+      {price ? <p className="mt-1.5 text-xs font-medium text-foreground">{price}</p> : null}
     </div>
   );
 }

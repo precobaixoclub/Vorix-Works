@@ -85,6 +85,8 @@ export type CapacityState = {
   /** Assinatura paga real: aumentos entram na hora. Teste sem cartão precisa cadastrar o cartão. */
   canChangeNow: boolean;
   meetingsSellable: boolean;
+  /** Preço de cada unidade adicional no ciclo da assinatura. */
+  unitPrices?: { interval: "monthly" | "yearly"; user?: { amount: number; increment: number }; whatsappConnection?: { amount: number; increment: number }; meetingsBase?: number; meetingsExtraRecording?: number };
 };
 
 export type AiCreditPurchase = { id: string; credits: number; amountCents: number; currency: string; status: "pending" | "paid" | "failed" | "cancelled"; method: "saved_card" | "checkout"; failureReason?: string; createdAt: string; paidAt?: string };

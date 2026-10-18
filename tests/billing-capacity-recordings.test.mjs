@@ -98,3 +98,22 @@ test("APLICAR: Meetings bloqueado pelo gate comercial; usuários sobem e a redu�
   await cancelPendingCapacityChange(d, { tenantId, pendingChangeId: pending[0].id });
   assert.equal((await getCapacityState(d, tenantId)).pending.length, 0);
 });
+
+test("PLANO PERSONALIZADO: estado traz o preço de cada usuário/número/gravação; contatos, armazenamento e automações ilimitados", async () => {
+  const { d, tenantId } = await tenantWith({ providerSubscriptionId: "sub_paid_units", label: "units" });
+  const state = await getCapacityState(d, tenantId);
+  assert.equal(state.unitPrices.interval, "monthly");
+  assert.ok(state.unitPrices.user.amount > 0 && state.unitPrices.user.increment >= 1);
+  assert.ok(state.unitPrices.whatsappConnection.amount > 0);
+  assert.equal(state.unitPrices.meetingsBase, 147);
+  assert.equal(state.unitPrices.meetingsExtraRecording, 67);
+
+  const plans = await d.planVersionRepository.listActivePlans();
+  for (const plan of plans) {
+    assert.equal(plan.limits.contacts, null, `${plan.planCode}: contatos ilimitados`);
+    assert.equal(plan.limits.storage_mb, null, `${plan.planCode}: armazenamento ilimitado`);
+    assert.equal(plan.limits.automations, null, `${plan.planCode}: automações ilimitadas`);
+  }
+  const active = await d.addonDefinitionRepository.listActive();
+  assert.equal(active.some((addon) => ["contacts", "storage_mb", "automations"].includes(addon.resource) || addon.code === "extra_ai_credits_1000"), false);
+});

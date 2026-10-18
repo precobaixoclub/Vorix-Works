@@ -37,6 +37,8 @@ import { registerInboxMetricsRoutes } from "./inbox-metrics.route.js";
 import { registerTeamsRoutes } from "./teams.route.js";
 import { registerTenantMembersRoutes } from "./tenant-members.route.js";
 import { registerContactsRoutes } from "./contacts.route.js";
+import { registerContactPhonesRoutes } from "./contact-phones.route.js";
+import { PostgresContactPhoneRepository } from "../../../../infrastructure/storage/postgres/postgres-contact-phone-repository.js";
 import { registerPipelinesRoutes } from "./pipelines.route.js";
 import { registerDealsRoutes } from "./deals.route.js";
 import { registerTasksRoutes } from "./tasks.route.js";
@@ -355,6 +357,8 @@ export async function registerV1Routes(app: FastifyInstance): Promise<void> {
       workspaceRepository: app.zunoContainer.workspaceRepository,
       productAnalytics: productAnalyticsDeps,
     });
+    // Celular é o pivô do CRM: telefone na lista de contatos e limpeza dos contatos só com LID.
+    await registerContactPhonesRoutes(app, { contactPhoneRepository: new PostgresContactPhoneRepository(identity.pool) });
     await registerContactsRoutes(app, {
       contactRepository: identity.contactRepository,
       contactIdentityRepository: identity.contactIdentityRepository,

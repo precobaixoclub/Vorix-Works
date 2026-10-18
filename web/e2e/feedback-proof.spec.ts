@@ -60,6 +60,8 @@ const system = [
 const deal = (id: string, title: string, stageId: string) => ({ id, tenantId: "t", workspaceId: WORKSPACE_ID, pipelineId: "pipe", stageId, title, valueCents: 950_000, currency: "BRL", ownerUserId: "user-qa", createdAt: iso(-3), updatedAt: iso(-1), lastStageChangedAt: iso(-1), status: "open", valueMode: "calculated", forecastCategory: "pipeline", discountCents: 0, customFields: {} });
 const deals = [deal("deal-red", "Rede Farma — 5 licenças", "st-2"), deal("deal-orange", "Clínica Sorriso — 2 licenças", "st-1"), deal("deal-ok", "Mercado Bom Preço", "st-1")];
 
+const contactsFixture = [["c-1", "Ana Souza", "Clínica Sorriso"], ["c-2", "102938475610293", undefined], ["c-3", "Cliente LID com venda", undefined], ["c-4", "Bruno Lima", "Rede Farma"]].map(([id, name, company]) => ({ id, tenantId: "t", workspaceId: WORKSPACE_ID, name, company, tags: [], customFields: {}, createdAt: iso(-5), updatedAt: iso(-1) }));
+
 type Billing = { status: string; trialDaysRemaining: number | null; paymentMethod?: unknown };
 
 async function mockAll(page: Page, billing: Billing = { status: "active", trialDaysRemaining: null, paymentMethod: { providerPaymentMethodId: "pm", brand: "visa", last4: "4242", expMonth: 12, expYear: 2029 } }) {
@@ -75,12 +77,15 @@ async function mockAll(page: Page, billing: Billing = { status: "active", trialD
     if (path === "/v1/deals") return ok(deals);
     if (path === "/v1/pipelines") return ok([{ id: "pipe", name: "Comercial", isDefault: true }]);
     if (path.endsWith("/stages")) return ok([{ id: "st-1", pipelineId: "pipe", name: "Qualificação", position: 0, isWon: false, isLost: false }, { id: "st-2", pipelineId: "pipe", name: "Negociação", position: 1, isWon: false, isLost: false }, { id: "st-won", pipelineId: "pipe", name: "Ganho", position: 2, isWon: true, isLost: false }]);
+    if (path === "/v1/contacts/phones") return ok({ "c-1": { kind: "phone", phone: "+5511987654321" }, "c-2": { kind: "lid_only" }, "c-3": { kind: "lid_only" }, "c-4": { kind: "phone", phone: "+5521998877665" } });
+    if (path === "/v1/contacts/lid-cleanup") return ok({ removable: [{ contactId: "c-2", name: "102938475610293" }], protected: [{ contactId: "c-3", name: "Cliente LID com venda", reason: "tem oportunidade" }], withPhone: 2, withoutAnyNumber: 0 });
+    if (path === "/v1/contacts") return ok(contactsFixture);
     if (["/v1/contacts", "/v1/tasks", "/v1/proposals", "/v1/deal-custom-fields", "/v1/sales-reasons"].includes(path)) return ok([]);
     if (path === "/v1/commercial-settings") return ok({ workspaceId: WORKSPACE_ID, visibility: { canViewCost: true, canViewMargin: true, isManager: true } });
     if (path.includes("/variants")) return ok([]);
     if (path === "/v1/sales-goals") return ok(goals);
-    if (path === "/v1/billing/overview") return ok({ planCode: "PRO", planName: "Pro", virtual: false, readOnly: billing.status === "trial_expired", billingInterval: "monthly", status: billing.status, cancelAtPeriodEnd: false, currentPeriodEnd: billing.status === "active" ? iso(12) : null, trialEnd: billing.status.startsWith("trial") ? iso(billing.trialDaysRemaining ?? -1) : null, trialDaysRemaining: billing.trialDaysRemaining, allowedAddonCodes: [], addons: [], availableAddons: [], consumption: [{ resource: "users", used: 4, max: 5 }, { resource: "messaging_connections", used: 2, max: 2 }], paymentMethod: billing.paymentMethod, recentInvoices: [] });
-    if (path === "/v1/billing/capacity") return ok({ current: { planCode: "PRO", currency: "BRL", includedUsers: 5, additionalUsers: 1, totalUsers: 6, includedWhatsappConnections: 2, additionalWhatsappConnections: 0, totalWhatsappConnections: 2, concurrentRecordings: 2, baseMonthlyAmount: 297, addonsMonthlyAmount: 253, totalMonthlyAmount: 550 }, pending: [], nextCharge: billing.status === "active" ? { at: iso(12), amount: 550, currency: "BRL" } : undefined, canChangeNow: billing.status === "active", meetingsSellable: true });
+    if (path === "/v1/billing/overview") return ok({ planCode: "PRO", planName: "Pro", virtual: false, readOnly: billing.status === "trial_expired", billingInterval: "monthly", status: billing.status, cancelAtPeriodEnd: false, currentPeriodEnd: billing.status === "active" ? iso(12) : null, trialEnd: billing.status.startsWith("trial") ? iso(billing.trialDaysRemaining ?? -1) : null, trialDaysRemaining: billing.trialDaysRemaining, allowedAddonCodes: [], addons: [], availableAddons: [], consumption: [{ resource: "users", used: 4, max: 5 }, { resource: "messaging_connections", used: 2, max: 2 }, { resource: "contacts", used: 900, max: 1000 }, { resource: "automations", used: 3, max: 5 }, { resource: "workspaces", used: 1, max: 1 }], paymentMethod: billing.paymentMethod, recentInvoices: [] });
+    if (path === "/v1/billing/capacity") return ok({ current: { planCode: "PRO", currency: "BRL", includedUsers: 5, additionalUsers: 1, totalUsers: 6, includedWhatsappConnections: 2, additionalWhatsappConnections: 0, totalWhatsappConnections: 2, concurrentRecordings: 2, baseMonthlyAmount: 297, addonsMonthlyAmount: 253, totalMonthlyAmount: 550 }, pending: [], nextCharge: billing.status === "active" ? { at: iso(12), amount: 550, currency: "BRL" } : undefined, canChangeNow: billing.status === "active", meetingsSellable: true, unitPrices: { interval: "monthly", user: { amount: 39, increment: 1 }, whatsappConnection: { amount: 79, increment: 1 }, meetingsBase: 147, meetingsExtraRecording: 67 } });
     if (path === "/v1/billing/capacity/preview") return ok({ current: {}, requestedOnCurrentPlan: { planCode: "PRO", currency: "BRL", baseMonthlyAmount: 297, includedUsers: 5, includedWhatsappConnections: 2, additionalUsers: 1, additionalWhatsappConnections: 1, userAddonMonthlyAmount: 39, whatsappAddonMonthlyAmount: 79, concurrentRecordings: 3, meetingsMonthlyAmount: 281, addonsMonthlyAmount: 399, totalMonthlyAmount: 696, feasible: true }, recommendation: { options: [], recommended: undefined } });
     if (path === "/v1/billing/credits") return ok({ remainingCredits: 80, monthlyQuota: 2500, consumedThisMonth: 2420, extraCredits: 0, subscriptionStatus: billing.status, pricing: { unitPriceCents: 10, currency: "BRL", minPurchase: 100, maxPurchase: 100000, presets: [500, 1000, 2500, 5000] }, savedCard: billing.paymentMethod ? { brand: "visa", last4: "4242" } : undefined, chargesSavedCard: Boolean(billing.paymentMethod), canPurchase: billing.status !== "trial_expired", purchases: [{ id: "aicp-1", credits: 1000, amountCents: 10000, currency: "BRL", status: "paid", method: "saved_card", createdAt: iso(-12), paidAt: iso(-12) }] });
     if (path === "/v1/platform/plans") return ok({ plans: [{ code: "PRO", name: "Pro", tagline: "Para times em crescimento", monthlyPriceUsd: 297, yearlyPriceUsd: 2970, currency: "BRL", includedUsers: 5, includedWhatsappConnections: 2, monthlyCreditsQuota: 2500, highlighted: true, trialDays: 7 }], addons: [], solutions: [], priceSource: "plan_versions" });
@@ -155,6 +160,33 @@ test.describe("prova dos ajustes de produto", () => {
     await expect(page.getByRole("textbox", { name: "Quantidade de Licença Enterprise" })).toHaveValue("3");
     await expect(page.getByText(/há 3 licença em estoque e/)).toBeVisible();
     await capture(page, "deal-create-quantity", [VIEWPORTS[0]]);
+  });
+
+  test("plano personalizado: preço por unidade e diferença na mensalidade", async ({ page, context }) => {
+    await loginCookie(context);
+    await mockAll(page);
+    await page.goto(`/workspaces/${WORKSPACE_ID}/settings/plano`);
+    await expect(page.getByText("R$ 39,00 por usuário/mês")).toBeVisible();
+    await page.getByRole("textbox", { name: "Quantidade de Usuários de atendimento" }).fill("9");
+    await page.getByRole("button", { name: "Aumentar Números de WhatsApp" }).click();
+    await expect(page.getByText(/aumenta R\$.196,00/)).toBeVisible();
+    await page.getByText("Sua estrutura").scrollIntoViewIfNeeded();
+    await capture(page, "billing-custom-plan", [VIEWPORTS[0], VIEWPORTS[1]]);
+    await page.getByText("Uso do plano").scrollIntoViewIfNeeded();
+    await expect(page.getByText("Contatos, armazenamento e automações são ilimitados")).toBeVisible();
+    await capture(page, "billing-usage", [VIEWPORTS[0]]);
+  });
+
+  test("contatos: celular em destaque e remoção dos contatos só com LID", async ({ page, context }) => {
+    await loginCookie(context);
+    await mockAll(page);
+    await page.goto(`/workspaces/${WORKSPACE_ID}/contacts`);
+    await expect(page.getByText("+55 (11) 98765-4321")).toBeVisible();
+    await expect(page.getByText("2 contatos estão sem número de celular")).toBeVisible();
+    await capture(page, "contacts-phones", [VIEWPORTS[0], VIEWPORTS[1]]);
+    await page.getByRole("button", { name: "Remover contatos sem número" }).click();
+    await expect(page.getByRole("button", { name: "Remover 1 contato" })).toBeVisible();
+    await capture(page, "contacts-lid-cleanup", [VIEWPORTS[0]]);
   });
 
   test("metas: repetir em todos os meses e anual calculada", async ({ page, context }) => {

@@ -273,5 +273,6 @@
   "tests/product-stock.test.mjs",
   "tests/ai-credits-purchase.test.mjs",
   "tests/billing-capacity-recordings.test.mjs",
-  "tests/reports-ai.test.mjs"
+  "tests/reports-ai.test.mjs",
+  "tests/contact-phone-lid.test.mjs"
 ]

@@ -1,7 +1,10 @@
 "use client";
 
 import { Suspense, useMemo, useState, type ReactNode } from "react";
-import { BriefcaseBusiness, ClipboardCheck, FileText, History, Info, MessageSquareText, Search, SlidersHorizontal } from "lucide-react";
+import { BriefcaseBusiness, ClipboardCheck, FileText, History, Info, MessageSquareText, Phone, PhoneOff, Search, SlidersHorizontal } from "lucide-react";
+import useSWR from "swr";
+import { LidCleanupDialog } from "@/components/crm/LidCleanupDialog";
+import { useAuth } from "@/contexts/auth-context";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { Button } from "@/components/Button";
@@ -25,7 +28,7 @@ import { Badge } from "@/components/ui/badge";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useCurrentWorkspace } from "@/contexts/workspace-context";
-import { completeTask, createContact, linkContactIdentity, moveDealStage, updateContact } from "@/features/crm/api";
+import { completeTask, createContact, getContactPhones, linkContactIdentity, moveDealStage, updateContact, type ContactPhoneSummary } from "@/features/crm/api";
 import { groupDealsByStatus } from "@/features/crm/deal-resolution";
 import { useContactActivity, useContacts, useDeals, useLeadScore, usePipelineStages, usePipelines, useProposals, useStagesByPipeline, useTasks } from "@/features/crm/hooks";
 import { activityActorLabel, isTaskOverdue, nextPendingTask, PROPOSAL_STATUS_LABEL, TASK_TYPE_LABEL } from "@/features/crm/presentation";
@@ -93,6 +96,14 @@ function ContactsView() {
   const pathname = usePathname();
 
   const contactsList = contacts ?? [];
+  // Celular é o pivô do CRM: número real de cada contato (ou só LID do WhatsApp).
+  const contactIdsKey = contactsList.map((contact) => contact.id).join(",");
+  const { data: phones, mutate: mutatePhones } = useSWR(contactIdsKey ? ["contact-phones", workspace.id, contactIdsKey] : null, () => getContactPhones(workspace.id, contactsList.map((contact) => contact.id)));
+  const { state: authState } = useAuth();
+  const canCleanup = authState.status === "authenticated" && (authState.role === "owner" || authState.role === "admin");
+  const [cleanupOpen, setCleanupOpen] = useState(false);
+  const [onlyWithoutNumber, setOnlyWithoutNumber] = useState(false);
+  const lidCount = contactsList.filter((contact) => phones?.[contact.id]?.kind === "lid_only").length;
   const dealsList = deals ?? [];
   const tasksList = tasks ?? [];
   const proposalsList = proposals ?? [];
@@ -137,7 +148,7 @@ function ContactsView() {
   const selectedDealPipeline = selectedDeal ? pipelines?.find((pipeline) => pipeline.id === selectedDeal.pipelineId) : undefined;
   const { data: selectedDealStages } = usePipelineStages(selectedDeal?.pipelineId, workspace.id);
 
-  const visibleContacts = contactsList;
+  const visibleContacts = onlyWithoutNumber ? contactsList.filter((contact) => phones?.[contact.id]?.kind !== "phone") : contactsList;
 
   function requestMoveDeal(deal: Deal, stage: PipelineStage) {
     if (stage.isLost) {
@@ -208,8 +219,39 @@ function ContactsView() {
           <h1 className="text-2xl font-semibold tracking-tight text-foreground">Contatos</h1>
           <p className="mt-1 max-w-2xl text-sm text-muted-foreground">Visao 360 de clientes, canais, oportunidades, tarefas, propostas e historico.</p>
         </div>
-        <Button onClick={() => setCreateOpen(true)}>Novo contato</Button>
+        <div className="flex flex-wrap gap-2">
+          {canCleanup ? <Button variant="secondary" onClick={() => setCleanupOpen(true)}><PhoneOff className="h-4 w-4" />Remover contatos sem número</Button> : null}
+          <Button onClick={() => setCreateOpen(true)}>Novo contato</Button>
+        </div>
       </div>
+
+      {lidCount > 0 && !onlyWithoutNumber ? (
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-orange-500/40 bg-orange-500/10 px-4 py-3 text-sm">
+          <span className="flex items-center gap-2 text-foreground"><PhoneOff className="h-4 w-4 text-orange-500" />{lidCount === 1 ? "1 contato está sem número de celular (só o código do WhatsApp)." : `${lidCount} contatos estão sem número de celular (só o código do WhatsApp).`}</span>
+          <div className="flex gap-2">
+            <Button variant="ghost" size="sm" onClick={() => setOnlyWithoutNumber(true)}>Ver quais</Button>
+            {canCleanup ? <Button variant="secondary" size="sm" onClick={() => setCleanupOpen(true)}>Remover</Button> : null}
+          </div>
+        </div>
+      ) : null}
+      {onlyWithoutNumber ? (
+        <div className="mb-4 flex items-center justify-between gap-3 rounded-xl border border-border/70 px-4 py-2 text-sm">
+          <span className="text-muted-foreground">Mostrando só contatos sem número de celular.</span>
+          <Button variant="ghost" size="sm" onClick={() => setOnlyWithoutNumber(false)}>Mostrar todos</Button>
+        </div>
+      ) : null}
+
+      {cleanupOpen ? (
+        <LidCleanupDialog
+          workspaceId={workspace.id}
+          onClose={() => setCleanupOpen(false)}
+          onDone={async () => {
+            setCleanupOpen(false);
+            setOnlyWithoutNumber(false);
+            await Promise.all([mutate(), mutatePhones()]);
+          }}
+        />
+      ) : null}
 
       <FilterBar summary={`${visibleContacts.length} contatos`}>
         <div className="relative min-w-[220px] flex-1 sm:max-w-sm">
@@ -251,6 +293,7 @@ function ContactsView() {
             <ContactCard
               key={contact.id}
               contact={contact}
+              phone={phones?.[contact.id]}
               deals={dealsList.filter((deal) => deal.contactId === contact.id)}
               tasks={tasksList.filter((task) => task.contactId === contact.id)}
               proposals={proposalsList.filter((proposal) => proposal.contactId === contact.id)}
@@ -350,6 +393,7 @@ function ContactsView() {
 
 function ContactCard({
   contact,
+  phone,
   deals,
   tasks,
   proposals,
@@ -359,6 +403,7 @@ function ContactCard({
   onOpen,
 }: {
   contact: Contact;
+  phone?: ContactPhoneSummary;
   deals: readonly Deal[];
   tasks: readonly Task[];
   proposals: readonly Proposal[];
@@ -380,6 +425,13 @@ function ContactCard({
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-semibold text-foreground">{contact.name}</p>
           <p className="truncate text-xs text-muted-foreground">{contact.company ?? "Sem empresa"}</p>
+          {phone?.kind === "phone" && phone.phone ? (
+            <p className="mt-0.5 flex items-center gap-1 text-xs font-medium tabular-nums text-foreground"><Phone className="h-3 w-3 text-solution" />{formatPhone(phone.phone)}</p>
+          ) : phone?.kind === "lid_only" ? (
+            <p className="mt-0.5 flex items-center gap-1 text-xs font-medium text-orange-600 dark:text-orange-300"><PhoneOff className="h-3 w-3" />Sem número (só código do WhatsApp)</p>
+          ) : phone ? (
+            <p className="mt-0.5 flex items-center gap-1 text-xs text-muted-foreground"><PhoneOff className="h-3 w-3" />Sem celular cadastrado</p>
+          ) : null}
         </div>
         {conversations.length > 0 ? <Badge variant="info">WhatsApp</Badge> : null}
       </div>
@@ -957,4 +1009,15 @@ function contactLabel(contact: Contact): string {
 function ReactChildrenCount(children: ReactNode): number {
   if (Array.isArray(children)) return children.filter(Boolean).length;
   return children ? 1 : 0;
+}
+
+/** "+5511987654321" → "+55 (11) 98765-4321"; outros países ficam como vieram. */
+function formatPhone(e164: string): string {
+  const digits = e164.replace(/\D/g, "");
+  if (digits.startsWith("55") && (digits.length === 12 || digits.length === 13)) {
+    const ddd = digits.slice(2, 4);
+    const rest = digits.slice(4);
+    return `+55 (${ddd}) ${rest.slice(0, rest.length - 4)}-${rest.slice(-4)}`;
+  }
+  return e164;
 }

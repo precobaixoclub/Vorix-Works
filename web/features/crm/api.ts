@@ -389,3 +389,20 @@ export function getCommercialMetrics(workspaceId: string, params?: CommercialMet
   if (params?.dateTo) query.set("dateTo", params.dateTo);
   return apiClient.get<CommercialMetricsReport>(`/v1/commercial-metrics?${query.toString()}`);
 }
+
+/** Celular de cada contato: `phone` (número real) ou só LID do WhatsApp / nenhum número. */
+export type ContactPhoneSummary = { kind: "phone" | "lid_only" | "none"; phone?: string };
+export function getContactPhones(workspaceId: string, contactIds: readonly string[]): Promise<Record<string, ContactPhoneSummary>> {
+  const query = new URLSearchParams({ workspaceId, ids: contactIds.join(",") });
+  return apiClient.get<Record<string, ContactPhoneSummary>>(`/v1/contacts/phones?${query.toString()}`);
+}
+
+export type LidCleanupPreview = { removable: { contactId: string; name: string }[]; protected: { contactId: string; name: string; reason: string }[]; withPhone: number; withoutAnyNumber: number };
+/** Prévia da limpeza dos contatos só com LID (nada é apagado). */
+export function previewLidCleanup(workspaceId: string): Promise<LidCleanupPreview> {
+  return apiClient.get<LidCleanupPreview>(`/v1/contacts/lid-cleanup?workspaceId=${encodeURIComponent(workspaceId)}`);
+}
+/** Remove os contatos só com LID sem oportunidade/proposta. A conversa no WhatsApp continua. */
+export function runLidCleanup(workspaceId: string): Promise<{ removed: number; protected: number }> {
+  return apiClient.post<{ removed: number; protected: number }>("/v1/contacts/lid-cleanup", { workspaceId, confirm: true });
+}

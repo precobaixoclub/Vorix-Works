@@ -39,6 +39,15 @@ export type CapacityStateResult = {
   /** Só com assinatura paga real dá para aumentar na hora (trial sem cartão precisa cadastrar). */
   canChangeNow: boolean;
   meetingsSellable: boolean;
+  /** Preço de cada unidade adicional no ciclo da assinatura — a tela mostra "cada usuário custa X"
+   * e quanto a próxima fatura sobe/desce. `undefined` = o plano não vende esse adicional. */
+  unitPrices: {
+    interval: "monthly" | "yearly";
+    user?: { amount: number; increment: number };
+    whatsappConnection?: { amount: number; increment: number };
+    meetingsBase?: number;
+    meetingsExtraRecording?: number;
+  };
 };
 
 /** Estado atual de capacidade de um tenant — leitura pura, nunca escreve nada. Funciona mesmo sem
@@ -65,6 +74,19 @@ export async function getCapacityState(deps: CapacityUseCaseDeps, tenantId: stri
       return { id: change.id, resource: (addon?.resource ?? "users") as CapacityPendingItem["resource"], addonCode: change.addonCode as string, targetQuantity: change.targetQuantity as number, effectiveAt: change.effectiveAt };
     });
 
+  const interval = subscription?.billingInterval ?? "monthly";
+  const priceOf = (addon: AddonDefinition | undefined) => (addon ? (interval === "yearly" ? addon.yearlyPriceUsd : addon.monthlyPriceUsd) : undefined);
+  const userAddon = findAddonByResource(addons, planVersion.allowedAddonCodes, "users");
+  const whatsappAddon = findAddonByResource(addons, planVersion.allowedAddonCodes, "messaging_connections");
+  const meetingsBase = addons.find((addon) => addon.code === MEETINGS_BASE_ADDON && planVersion.allowedAddonCodes.includes(addon.code));
+  const meetingsExtra = addons.find((addon) => addon.code === MEETINGS_EXTRA_RECORDING_ADDON && planVersion.allowedAddonCodes.includes(addon.code));
+  const unitPrices: CapacityStateResult["unitPrices"] = {
+    interval,
+    ...(userAddon ? { user: { amount: priceOf(userAddon)!, increment: userAddon.increment } } : {}),
+    ...(whatsappAddon ? { whatsappConnection: { amount: priceOf(whatsappAddon)!, increment: whatsappAddon.increment } } : {}),
+    ...(meetingsBase ? { meetingsBase: priceOf(meetingsBase) } : {}),
+    ...(meetingsExtra ? { meetingsExtraRecording: priceOf(meetingsExtra) } : {}),
+  };
   const paid = Boolean(subscription?.providerSubscriptionId) && (subscription?.status === "active" || subscription?.status === "trial");
   const nextChargeAt = subscription?.currentPeriodEnd ?? subscription?.trialEnd;
   return {
@@ -73,6 +95,7 @@ export async function getCapacityState(deps: CapacityUseCaseDeps, tenantId: stri
     nextCharge: paid && nextChargeAt ? { at: nextChargeAt, amount: current.totalMonthlyAmount, currency: current.currency } : undefined,
     canChangeNow: paid,
     meetingsSellable: isMeetingsSellable(),
+    unitPrices,
   };
 }
 

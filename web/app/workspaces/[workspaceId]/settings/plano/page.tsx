@@ -255,10 +255,10 @@ export default function BillingSettingsPage() {
             {data.addons.map((addon) => (
               <div key={addon.subscriptionItemId} className="flex items-center justify-between gap-3 rounded-lg border border-border px-3 py-2 text-sm">
                 <span className="text-foreground">{addon.name}{addon.quantity > 1 ? ` × ${addon.quantity}` : ""}</span>
-                <GuardedButton variant="ghost" className="text-destructive hover:text-destructive" disabled={busy || data.readOnly} allowed={canManage} blockedReason={RBAC_COPY.manageBilling} onClick={() => setConfirmRemoveAddon({ subscriptionItemId: addon.subscriptionItemId, name: addon.name })}>Remover</GuardedButton>
+                <a href="#quantidades-plano" className="text-sm underline">Ajustar quantidade acima</a>
               </div>
             ))}
-            {data.availableAddons.map((addon) => <AddonRow key={addon.code} addon={addon} currency={currentPlan?.currency ?? "BRL"} interval={interval} busy={busy || data.readOnly} canManage={canManage} onPurchase={() => run(() => purchaseAddon({ addonCode: addon.code, quantity: 1, billingInterval: interval }), "Add-on adicionado.")} />)}
+            {data.availableAddons.filter(addon=>!["users","messaging_connections","workspaces"].includes(addon.resource)).map((addon) => <AddonRow key={addon.code} addon={addon} currency={currentPlan?.currency ?? "BRL"} interval={interval} busy={busy || data.readOnly} canManage={canManage} onPurchase={() => run(() => purchaseAddon({ addonCode: addon.code, quantity: 1, billingInterval: interval }), "Add-on adicionado.")} />)}
           </CardBody>
         </Card>
       ) : null}
@@ -320,6 +320,9 @@ function formatAmount(amount: number, currency: string): string {
  */
 function CapacityCard({ canManage, onNeedPaymentMethod }: { canManage: boolean; onNeedPaymentMethod: () => void }) {
   const { data: state, error, isLoading, mutate } = useCapacityState();
+  const {mutate:refreshGlobal}=useSWRConfig();
+  const [addonQuantities,setAddonQuantities]=useState<Record<string,number>>({});
+  const [previewError,setPreviewError]=useState<string>();
   const [users, setUsers] = useState<number | undefined>();
   const [whatsappConnections, setWhatsappConnections] = useState<number | undefined>();
   const [recordings, setRecordings] = useState<number | undefined>();
@@ -330,14 +333,15 @@ function CapacityCard({ canManage, onNeedPaymentMethod }: { canManage: boolean; 
 
   useEffect(() => {
     if (!state) return;
-    setUsers((current) => current ?? state.current.totalUsers ?? 0);
-    setWhatsappConnections((current) => current ?? state.current.totalWhatsappConnections ?? 0);
-    setRecordings((current) => current ?? state.current.concurrentRecordings ?? 0);
+    setUsers((current) => current ?? (state.next??state.current).totalUsers ?? 0);
+    setWhatsappConnections((current) => current ?? (state.next??state.current).totalWhatsappConnections ?? 0);
+    setRecordings((current) => current ?? (state.next??state.current).concurrentRecordings ?? 0);
+    setAddonQuantities(current=>Object.fromEntries((state.adjustableAddons??[]).map(item=>[item.addonCode,current[item.addonCode]??item.quantity])));
   }, [state]);
 
   const dirty = Boolean(
     state && users !== undefined && whatsappConnections !== undefined && recordings !== undefined &&
-    (users !== state.current.totalUsers || whatsappConnections !== state.current.totalWhatsappConnections || recordings !== state.current.concurrentRecordings),
+    (users !== (state.next??state.current).totalUsers || whatsappConnections !== (state.next??state.current).totalWhatsappConnections || recordings !== (state.next??state.current).concurrentRecordings || (state.adjustableAddons??[]).some(item=>(addonQuantities[item.addonCode]??item.quantity)!==item.quantity)),
   );
 
   useEffect(() => {
@@ -346,14 +350,14 @@ function CapacityCard({ canManage, onNeedPaymentMethod }: { canManage: boolean; 
       return;
     }
     let cancelled = false;
-    setPreviewing(true);
-    previewCapacity({ users, whatsappConnections, concurrentRecordings: recordings })
+    setPreviewing(true);setPreview(undefined);setPreviewError(undefined);
+    previewCapacity({ users, whatsappConnections, concurrentRecordings: recordings,addonQuantities })
       .then((result) => { if (!cancelled) setPreview(result); })
-      .catch(() => { if (!cancelled) setPreview(undefined); })
+      .catch(error => { if (!cancelled){setPreview(undefined);setPreviewError(error instanceof Error?error.message.replace(/^[A-Z_]+:\s*/,""):"Não foi possível calcular. Tente novamente.");} })
       .finally(() => { if (!cancelled) setPreviewing(false); });
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dirty, users, whatsappConnections, recordings]);
+  }, [dirty, users, whatsappConnections, recordings,addonQuantities]);
 
   async function handleConfirm() {
     if (!state || users === undefined || whatsappConnections === undefined || recordings === undefined) return;
@@ -363,15 +367,12 @@ function CapacityCard({ canManage, onNeedPaymentMethod }: { canManage: boolean; 
     }
     setApplying(true);
     try {
-      const result = await applyCapacity({
-        ...(users !== state.current.totalUsers ? { users } : {}),
-        ...(whatsappConnections !== state.current.totalWhatsappConnections ? { whatsappConnections } : {}),
-        ...(recordings !== state.current.concurrentRecordings ? { concurrentRecordings: recordings } : {}),
-      });
-      await mutate();
+      const result = await applyCapacity({users,whatsappConnections,concurrentRecordings:recordings,addonQuantities});
+      const fresh=await mutate();
+      if(fresh){const next=fresh.next??fresh.current;setUsers(next.totalUsers??0);setWhatsappConnections(next.totalWhatsappConnections??0);setRecordings(next.concurrentRecordings);setAddonQuantities(Object.fromEntries((fresh.adjustableAddons??[]).map(item=>[item.addonCode,item.quantity])));}
+      await refreshGlobal(["billing","overview"]);
       setPreview(undefined);
-      const scheduled = result.outcomes.filter((outcome) => outcome.kind === "decrease_scheduled");
-      toast.success(scheduled.length ? `Estrutura atualizada. Reduções valem a partir de ${formatDate(scheduled[0]!.effectiveAt)}.` : "Estrutura atualizada — a diferença proporcional entra na próxima cobrança.");
+      toast.success("Quantidades salvas",{description:result.nextCharge?`Próxima renovação: ${formatAmount(result.nextCharge.amount,result.nextCharge.currency)}, em ${formatDate(result.nextCharge.at)}.`:"O valor recorrente foi atualizado."});
     } catch (err) {
       toast.error("Não foi possível atualizar a estrutura", { description: err instanceof Error ? err.message.replace(/^[A-Z_]+(\([^)]*\))?:\s*/, "") : "Tente novamente." });
     } finally {
@@ -383,8 +384,9 @@ function CapacityCard({ canManage, onNeedPaymentMethod }: { canManage: boolean; 
     setCancellingId(pendingChangeId);
     try {
       await cancelPendingCapacityChange(pendingChangeId);
-      await mutate();
-      toast.success("Alteração agendada cancelada.");
+      const fresh=await mutate();
+      if(fresh){const next=fresh.next??fresh.current;setUsers(next.totalUsers??0);setWhatsappConnections(next.totalWhatsappConnections??0);setRecordings(next.concurrentRecordings);setAddonQuantities(Object.fromEntries((fresh.adjustableAddons??[]).map(item=>[item.addonCode,item.quantity])));}
+      toast.success("Alteração cancelada e valor da próxima renovação atualizado.");
     } catch (err) {
       toast.error("Não foi possível cancelar", { description: err instanceof Error ? err.message : "Tente novamente." });
     } finally {
@@ -411,19 +413,22 @@ function CapacityCard({ canManage, onNeedPaymentMethod }: { canManage: boolean; 
     { key: "whatsapp", label: "Números de WhatsApp", from: current.totalWhatsappConnections ?? 0, to: whatsappConnections, delta: stepCost(whatsappConnections - (current.totalWhatsappConnections ?? 0), unit.whatsappConnection) },
     ...(showRecordings ? [{ key: "recordings", label: "Gravações simultâneas", from: current.concurrentRecordings, to: recordings, delta: recordingCost(recordings) - recordingCost(current.concurrentRecordings) }] : []),
   ];
+  for(const item of state.adjustableAddons??[]){const target=addonQuantities[item.addonCode]??item.quantity;lines.push({key:item.addonCode,label:item.name,from:item.currentQuantity,to:target,delta:(target-item.currentQuantity)*item.unitPrice});}
   const totalDelta = lines.reduce((sum, line) => sum + line.delta, 0);
   const estimatedTotal = current.totalMonthlyAmount + totalDelta;
   const pendingLabel = (pending: CapacityPendingChange) => {
     if (pending.resource === "meetings_concurrent_recordings") return `gravações simultâneas passam a ser ${pending.targetQuantity + 1}`;
-    const included = pending.resource === "users" ? (current.includedUsers ?? 0) : (current.includedWhatsappConnections ?? 0);
+    const included = pending.resource === "users" ? (current.includedUsers ?? 0) : pending.resource==="messaging_connections"?(current.includedWhatsappConnections??0):0;
+    const label=state.adjustableAddons?.find(item=>item.addonCode===pending.addonCode)?.name;
+    if(label)return `${label}: quantidade passa a ser ${pending.targetQuantity}`;
     return `${(RESOURCE_LABELS as Record<string, string>)[pending.resource] ?? pending.resource} passa a ser ${pending.targetQuantity + included}`;
   };
 
   return (
-    <Card className="mt-5">
+    <Card id="quantidades-plano" className="mt-5">
       <CardHeader>
         <div>
-          <p className="text-sm font-semibold text-foreground">Sua estrutura</p>
+          <p className="text-sm font-semibold text-foreground">Quantidades do seu plano</p>
           <p className="mt-1 text-xs text-muted-foreground">Monte o seu plano: escolha quantos usuários, números de WhatsApp e gravações você quer. Você vê o preço de cada um e quanto a mensalidade aumenta ou diminui antes de confirmar.</p>
         </div>
       </CardHeader>
@@ -445,7 +450,7 @@ function CapacityCard({ canManage, onNeedPaymentMethod }: { canManage: boolean; 
             value={users}
             min={current.includedUsers ?? 0}
             onChange={setUsers}
-            disabled={!canManage || !unit.user}
+            disabled={!canManage || !unit.user || current.totalUsers===null}
           />
           <CapacityStepper
             label="Números de WhatsApp"
@@ -454,7 +459,7 @@ function CapacityCard({ canManage, onNeedPaymentMethod }: { canManage: boolean; 
             value={whatsappConnections}
             min={current.includedWhatsappConnections ?? 0}
             onChange={setWhatsappConnections}
-            disabled={!canManage || !unit.whatsappConnection}
+            disabled={!canManage || !unit.whatsappConnection || current.totalWhatsappConnections===null}
           />
           {showRecordings ? (
             <CapacityStepper
@@ -464,20 +469,21 @@ function CapacityCard({ canManage, onNeedPaymentMethod }: { canManage: boolean; 
               value={recordings}
               min={current.concurrentRecordings > 0 ? 1 : 0}
               onChange={setRecordings}
-              disabled={!canManage || (!state.meetingsSellable && recordings >= current.concurrentRecordings)}
+              disabled={!canManage} max={!state.meetingsSellable?current.concurrentRecordings:undefined}
             />
           ) : null}
         </div>
 
+        {(state.adjustableAddons??[]).length?<div className="grid gap-5 sm:grid-cols-2">{state.adjustableAddons!.map(item=><CapacityStepper key={item.addonCode} label={item.name} hint={`${item.currentQuantity} contratado(s) hoje`} price={`${formatAmount(item.unitPrice,current.currency)} por unidade${cycle}`} value={addonQuantities[item.addonCode]??item.quantity} min={0} max={item.canIncrease?item.maxQuantity:item.currentQuantity} onChange={value=>setAddonQuantities(current=>({...current,[item.addonCode]:value}))} disabled={!canManage}/>)}</div>:null}
         <div className="rounded-lg border border-border bg-muted/20 p-4 text-sm">
-          <p className="mb-2 font-semibold text-foreground">{dirty ? "O que muda na sua mensalidade" : "Sua mensalidade hoje"}</p>
+          <p className="mb-2 font-semibold text-foreground">{dirty ? "O que muda no valor da renovação" : "Valor atual do seu plano"}</p>
           <div className="overflow-x-auto">
             <table className="w-full min-w-[420px] text-sm">
               <thead>
                 <tr className="text-left text-[11px] uppercase tracking-wide text-muted-foreground">
                   <th className="pb-1.5 font-medium">Item</th>
                   <th className="pb-1.5 text-right font-medium">Hoje</th>
-                  <th className="pb-1.5 text-right font-medium">Novo</th>
+                  <th className="pb-1.5 text-right font-medium">Próximo ciclo</th>
                   <th className="pb-1.5 text-right font-medium">Diferença{cycle}</th>
                 </tr>
               </thead>
@@ -501,7 +507,7 @@ function CapacityCard({ canManage, onNeedPaymentMethod }: { canManage: boolean; 
             </table>
           </div>
           <div className="mt-2 flex items-center justify-between border-t border-border pt-2 text-base">
-            <span className="font-semibold text-foreground">{dirty ? "Nova mensalidade" : "Mensalidade"}</span>
+            <span className="font-semibold text-foreground">{dirty ? "Novo valor por ciclo" : "Valor atual por ciclo"}</span>
             <span className="text-right font-semibold tabular-nums text-foreground">
               {previewing ? "Calculando..." : formatAmount(nextTotal ?? estimatedTotal, current.currency)}
               {dirty && totalDelta !== 0 ? (
@@ -512,11 +518,11 @@ function CapacityCard({ canManage, onNeedPaymentMethod }: { canManage: boolean; 
             </span>
           </div>
           {dirty && totalDelta < 0 ? <p className="mt-1 text-xs text-muted-foreground">Reduções valem a partir da próxima fatura{state.nextCharge ? ` (${formatDate(state.nextCharge.at)})` : ""} — até lá, você continua com a estrutura atual.</p> : null}
-          {dirty && totalDelta > 0 ? <p className="mt-1 text-xs text-muted-foreground">Aumentos valem na hora; neste ciclo você paga só a parte proporcional aos dias restantes.</p> : null}
+          {dirty && totalDelta > 0 ? <p className="mt-1 text-xs text-muted-foreground">Aumentos liberam a capacidade agora. O novo valor será cobrado a partir da próxima renovação, sem cobrança proporcional nesta alteração.</p> : null}
           {state.nextCharge ? (
             <p className="mt-2 text-xs text-muted-foreground">
               Próxima cobrança em {formatDate(state.nextCharge.at)}: <span className="font-medium tabular-nums text-foreground">{formatAmount(dirty && nextTotal !== undefined ? nextTotal : state.nextCharge.amount, state.nextCharge.currency)}</span>
-              {dirty ? " — aumentos valem agora e a diferença proporcional deste ciclo entra nessa cobrança; reduções valem a partir dela." : ""}
+              {dirty ? " — este é o novo valor recorrente. Aumentos liberam capacidade agora; reduções valem na renovação." : ""}
             </p>
           ) : null}
 
@@ -530,11 +536,12 @@ function CapacityCard({ canManage, onNeedPaymentMethod }: { canManage: boolean; 
             <p className="mt-3 rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-xs text-foreground">Para aumentar a estrutura, cadastre primeiro uma forma de pagamento — o valor novo é cobrado junto com o plano.</p>
           ) : null}
 
+          {previewError&&dirty?<p role="alert" className="mt-3 text-sm text-destructive">{previewError}</p>:null}
           {dirty ? (
             <div className="mt-3 flex justify-end gap-2">
-              <Button variant="secondary" disabled={applying} onClick={() => { setUsers(current.totalUsers ?? 0); setWhatsappConnections(current.totalWhatsappConnections ?? 0); setRecordings(current.concurrentRecordings); }}>Cancelar</Button>
-              <GuardedButton loading={applying} disabled={previewing} onClick={handleConfirm} allowed={canManage} blockedReason={RBAC_COPY.manageBilling}>
-                {state.canChangeNow ? "Confirmar e atualizar cobrança" : "Cadastrar forma de pagamento"}
+              <Button variant="secondary" disabled={applying} onClick={() => { setUsers((state.next??current).totalUsers ?? 0); setWhatsappConnections((state.next??current).totalWhatsappConnections ?? 0); setRecordings((state.next??current).concurrentRecordings);setAddonQuantities(Object.fromEntries((state.adjustableAddons??[]).map(item=>[item.addonCode,item.quantity]))); }}>Cancelar</Button>
+              <GuardedButton loading={applying} disabled={previewing||!preview||!!previewError} onClick={handleConfirm} allowed={canManage} blockedReason={RBAC_COPY.manageBilling}>
+                {state.canChangeNow ? "Salvar quantidades" : "Cadastrar forma de pagamento"}
               </GuardedButton>
             </div>
           ) : null}
@@ -666,7 +673,7 @@ function AiCreditsCard({ canManage, workspaceId }: { canManage: boolean; workspa
   );
 }
 
-function CapacityStepper({ label, hint, price, value, min, onChange, disabled }: { label: string; hint: string; price?: string; value: number; min: number; onChange: (value: number) => void; disabled: boolean }) {
+function CapacityStepper({ label, hint, price, value, min, max=999, onChange, disabled }: { label: string; hint: string; price?: string; value: number; min: number; max?:number; onChange: (value: number) => void; disabled: boolean }) {
   return (
     <div>
       <p className="text-sm font-medium text-foreground">{label}</p>
@@ -683,11 +690,11 @@ function CapacityStepper({ label, hint, price, value, min, onChange, disabled }:
           aria-label={`Quantidade de ${label}`}
           onChange={(event) => {
             const next = Number(event.target.value.replace(/\D/g, ""));
-            onChange(Number.isFinite(next) ? Math.max(min, Math.min(999, next)) : min);
+            onChange(Number.isFinite(next) ? Math.max(min, Math.min(max, next)) : min);
           }}
           className="h-9 w-16 rounded-md border border-input bg-background text-center text-base font-semibold tabular-nums text-foreground outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/20 disabled:opacity-60"
         />
-        <button type="button" disabled={disabled || value >= 999} onClick={() => onChange(value + 1)} aria-label={`Aumentar ${label}`} className="flex h-9 w-9 items-center justify-center rounded-md border border-border text-foreground hover:bg-surface-2 disabled:opacity-30">
+        <button type="button" disabled={disabled || value >= max} onClick={() => onChange(Math.min(max,value + 1))} aria-label={`Aumentar ${label}`} className="flex h-9 w-9 items-center justify-center rounded-md border border-border text-foreground hover:bg-surface-2 disabled:opacity-30">
           <Plus className="h-4 w-4" />
         </button>
       </div>

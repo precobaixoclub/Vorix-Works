@@ -40,7 +40,7 @@ export type CapacitySnapshot = {
  * o preço CAPTURADO em cada item (`unitPriceUsd`, congelado no momento da compra) para o valor
  * mensal, nunca o preço atual do `AddonDefinition` (que pode já ter mudado desde então — nunca
  * reescreve histórico, seção 3 do pedido). */
-export function resolveCommercialCapacity(planVersion: PlanVersion, addonDefinitions: readonly AddonDefinition[], items: readonly SubscriptionItem[]): CapacitySnapshot {
+export function resolveCommercialCapacity(planVersion: PlanVersion, addonDefinitions: readonly AddonDefinition[], items: readonly SubscriptionItem[], billingInterval:"monthly"|"yearly"="monthly"): CapacitySnapshot {
   const definitionByCode = new Map(addonDefinitions.map((addon) => [addon.code, addon]));
   let additionalUsers = 0;
   let additionalWhatsapp = 0;
@@ -48,13 +48,13 @@ export function resolveCommercialCapacity(planVersion: PlanVersion, addonDefinit
   let addonsMonthlyAmount = 0;
 
   for (const item of items) {
+    addonsMonthlyAmount += item.unitPriceUsd * item.quantity;
     const addon = definitionByCode.get(item.addonCode);
     if (!addon) continue;
     const increment = addon.increment * item.quantity;
     if (addon.resource === USER_RESOURCE) additionalUsers += increment;
     if (addon.resource === WHATSAPP_RESOURCE) additionalWhatsapp += increment;
     if (addon.resource === RECORDING_RESOURCE) concurrentRecordings += increment;
-    addonsMonthlyAmount += item.unitPriceUsd * item.quantity;
   }
 
   const includedUsers = planVersion.limits[USER_RESOURCE];
@@ -70,9 +70,9 @@ export function resolveCommercialCapacity(planVersion: PlanVersion, addonDefinit
     additionalWhatsappConnections: additionalWhatsapp,
     totalWhatsappConnections: includedWhatsapp === null ? null : includedWhatsapp + additionalWhatsapp,
     concurrentRecordings,
-    baseMonthlyAmount: planVersion.monthlyPriceUsd,
+    baseMonthlyAmount: billingInterval==="yearly"?planVersion.yearlyPriceUsd:planVersion.monthlyPriceUsd,
     addonsMonthlyAmount,
-    totalMonthlyAmount: planVersion.monthlyPriceUsd + addonsMonthlyAmount,
+    totalMonthlyAmount: Math.round(((billingInterval==="yearly"?planVersion.yearlyPriceUsd:planVersion.monthlyPriceUsd) + addonsMonthlyAmount)*100)/100,
   };
 }
 

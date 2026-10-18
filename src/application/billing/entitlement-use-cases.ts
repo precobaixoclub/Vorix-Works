@@ -1,5 +1,5 @@
 import type { AddonDefinitionRepositoryPort, PlanVersionRepositoryPort } from "../ports/plan-version-repository.port.js";
-import type { SubscriptionItemRepositoryPort, SubscriptionRepositoryPort } from "../ports/subscription-repository.port.js";
+import type { SubscriptionItemRepositoryPort, SubscriptionRepositoryPort, SubscriptionPendingChangeRepositoryPort } from "../ports/subscription-repository.port.js";
 import type { PlatformBillingRepositoryPort } from "../ports/platform-billing-repository.port.js";
 import type { UsageCounterRepositoryPort } from "../ports/usage-counter-repository.port.js";
 import type { ResourceCounterPort } from "../ports/resource-counter.port.js";
@@ -16,6 +16,7 @@ function isReadOnlyStatus(status: PlatformSubscriptionStatus | undefined): boole
 }
 
 export type EntitlementUseCaseDeps = {
+  subscriptionPendingChangeRepository?:SubscriptionPendingChangeRepositoryPort;
   subscriptionRepository: SubscriptionRepositoryPort;
   subscriptionItemRepository: SubscriptionItemRepositoryPort;
   planVersionRepository: PlanVersionRepositoryPort;
@@ -113,6 +114,17 @@ export async function assertCanUse(deps: EntitlementUseCaseDeps, input: { tenant
 export async function assertWithinLimit(deps: EntitlementUseCaseDeps, input: { tenantId: string; resource: PlanLimitResource; increment?: number }): Promise<void> {
   await assertNotReadOnly(deps, input.tenantId);
   const { used, max } = await getLimit(deps, input);
+  if(max!==null&&deps.subscriptionPendingChangeRepository){
+    const subscription=await deps.subscriptionRepository.getActiveByTenant(input.tenantId);
+    if(subscription){const items=await deps.subscriptionItemRepository.listBySubscription(subscription.id);let futureMax=max;
+      for(const change of await deps.subscriptionPendingChangeRepository.listPendingByTenant(input.tenantId)){
+        if(change.subscriptionId!==subscription.id||change.changeType!=="capacity_decrease"||change.targetQuantity===undefined||!change.addonCode)continue;
+        const addon=await deps.addonDefinitionRepository.getByCode(change.addonCode),item=items.find(item=>item.addonCode===change.addonCode);
+        if(addon?.resource===input.resource&&item)futureMax-=Math.max(0,item.quantity-change.targetQuantity)*addon.increment;
+      }
+      if(futureMax<max&&used+(input.increment??1)>futureMax)throw new Error(`USAGE_LIMIT_REACHED: a quantidade disponível após a redução agendada é ${futureMax}. Cancele a redução ou ajuste o plano para adicionar mais.`);
+    }
+  }
   const increment = input.increment ?? 1;
   if (max !== null && used + increment > max) {
     throw new Error(`USAGE_LIMIT_REACHED: limite de "${input.resource}" atingido (${used}/${max}).`);

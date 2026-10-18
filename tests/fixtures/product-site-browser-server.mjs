@@ -3,6 +3,7 @@ import {join} from "node:path";
 import {tmpdir} from "node:os";
 import {mkdtemp,mkdir,writeFile} from "node:fs/promises";
 import {randomUUID} from "node:crypto";
+import pg from "pg";
 import {startTestPostgres} from "../helpers/pglite-test-db.mjs";
 import {applyMigrations} from "../../dist/infrastructure/storage/postgres/migration-runner.js";
 import {buildApp} from "../../dist/interfaces/api/app.js";
@@ -13,14 +14,18 @@ import {siteContentSchema,siteThemeSchema} from "../../dist/domain/sites/site.mo
 
 if(process.env.NODE_ENV==="production")throw Error("FIXTURE_ONLY: nunca iniciar em produção.");
 const port=3390,webOrigin="http://127.0.0.1:3391",root=await mkdtemp(join(tmpdir(),"vorix-product-site-fixture-"));
-const db=await startTestPostgres({maxConnections:30});let app,closed=false;
+const realPg=process.env.VORIX_CAPACITY_FIXTURE_PG_URL;
+if(realPg&&!/^\/vorix_capacity_fixture/.test(new URL(realPg).pathname))throw Error("CAPACITY_FIXTURE_DATABASE_REQUIRED");
+if(process.argv.includes("--capacity")&&!realPg)throw Error("CAPACITY_BROWSER_REQUIRES_DISPOSABLE_POSTGRES");
+const fixturePool=realPg?new pg.Pool({connectionString:realPg}):undefined;
+const db=fixturePool?{pool:fixturePool,connectionString:realPg,stop:()=>fixturePool.end()}:await startTestPostgres({maxConnections:30});let app,closed=false;
 async function close(){if(closed)return;closed=true;await app?.close();await db.stop();}
 for(const signal of["SIGINT","SIGTERM"])process.on(signal,()=>void close().then(()=>process.exit(0)));
 try{
  await applyMigrations(db.pool,join(process.cwd(),"db/migrations"));
- app=await buildApp({config:loadApiConfig({AUTH_MODE:"jwt",JWT_SECRET:"public-fixture-only-product-site-jwt-key",DATABASE_URL:db.connectionString,PERSISTENCE_DRIVER:"postgres",API_CORS_ORIGIN:webOrigin,COOKIE_SECURE:"false",ZUNO_LOG_LEVEL:"silent",OPERATIONAL_RATE_LIMIT_DEFAULT:"10000",AI_GATEWAY_ENABLED:"false",OBJECT_STORAGE_ENABLED:"true",OBJECT_STORAGE_DRIVER:"local",OBJECT_STORAGE_LOCAL_DIR:root,OBJECT_STORAGE_PUBLIC_BASE_URL:`http://127.0.0.1:${port}/uploads`,MEETINGS_REAL_RECORDING_ENABLED:"false",SITE_PUBLIC_BASE_DOMAIN:"fixture.example.com"})});
+ app=await buildApp({config:loadApiConfig({AUTH_MODE:"jwt",JWT_SECRET:"public-fixture-only-product-site-jwt-key",DATABASE_URL:db.connectionString,PERSISTENCE_DRIVER:"postgres",BILLING_PROVIDER:"sandbox",API_CORS_ORIGIN:webOrigin,COOKIE_SECURE:"false",ZUNO_LOG_LEVEL:"silent",OPERATIONAL_RATE_LIMIT_DEFAULT:"10000",AI_GATEWAY_ENABLED:"false",OBJECT_STORAGE_ENABLED:"true",OBJECT_STORAGE_DRIVER:"local",OBJECT_STORAGE_LOCAL_DIR:root,OBJECT_STORAGE_PUBLIC_BASE_URL:`http://127.0.0.1:${port}/uploads`,MEETINGS_REAL_RECORDING_ENABLED:"false",SITE_PUBLIC_BASE_DOMAIN:"fixture.example.com"})});
  const tenantId="tenant-site-browser-"+randomUUID(),email="owner@product-site-fixture.invalid",password="Fixture-only-product-site-2026!";
- const info={fixtureOnly:true,database:"ephemeral-pglite",email,password,tenantId,workspaceId:"",slug:"product-site-fixture",productId:"",variantId:"",vehicleId:"",generalId:"",siteId:""};
+ const info={fixtureOnly:true,database:realPg?"disposable-postgresql":"ephemeral-pglite",email,password,tenantId,workspaceId:"",slug:"product-site-fixture",productId:"",variantId:"",vehicleId:"",generalId:"",siteId:""};
  app.addHook("onError",async(request,_reply,error)=>{console.error("FIXTURE_API_ERROR",request.method,request.url.split("?")[0],error.message);});
  app.get("/fixture-only/scope",async()=>info);
  await registerUser({...app.zunoContainer.identity,passwordHasher:app.zunoContainer.identity.passwordHasher},{tenantId,email,password,name:"Administrador de fixture",role:"owner"});
@@ -30,6 +35,17 @@ try{
  const headers={authorization:`Bearer ${login.json().data.accessToken}`};
  const api=async(method,url,payload)=>{const result=await app.inject({method,url,headers,payload});if(result.statusCode>=300)throw Error(`${method} ${url}: ${result.body}`);return result.json().data;};
  const workspace=await api("POST","/v1/workspaces",{name:"Empresa de fixture — Product e Site"});info.workspaceId=workspace.id;
+ if(process.argv.includes("--capacity")){
+  const repositories=app.zunoContainer.identity;
+  if(app.zunoContainer.billingProvider.providerId!=="sandbox")throw Error("CAPACITY_FIXTURE_REQUIRES_SANDBOX");
+  const plan=await repositories.planVersionRepository.getActiveVersion("START");
+  const subscription=await repositories.subscriptionRepository.create({tenantId,planVersionId:plan.id,status:"active",billingProvider:"sandbox",billingInterval:"monthly",providerCustomerId:"fixture-customer",providerSubscriptionId:"fixture-subscription"});
+  await repositories.subscriptionRepository.update(subscription.id,{currentPeriodEnd:new Date(Date.now()+20*86400000).toISOString()});
+  for(const [addonCode,quantity,unitPriceUsd] of[["extra_user",2,39],["extra_whatsapp_connection",2,79]])await repositories.subscriptionItemRepository.create({subscriptionId:subscription.id,addonCode,quantity,unitPriceUsd,currency:"BRL",providerItemId:"fixture-item-"+addonCode});
+  const code="site_capacity_fixture";await repositories.addonDefinitionRepository.saveModule({code,name:"Site de fixture",description:"Somente dados fictícios",resource:"site",increment:1,monthlyPriceUsd:29,yearlyPriceUsd:290,currency:"BRL",active:false});await repositories.subscriptionItemRepository.create({subscriptionId:subscription.id,addonCode:code,quantity:1,unitPriceUsd:29,currency:"BRL",providerItemId:"fixture-site"});
+  info.capacityFixture=true;info.billingProvider="sandbox";info.fixtureAddonCode=code;
+  const original=app.zunoContainer.billingProvider.setRecurringItems.bind(app.zunoContainer.billingProvider);app.zunoContainer.billingProvider.setRecurringItems=async input=>{const result=await original(input);if(result.ok)info.lastProviderAmount=input.amount;return result;};
+ }
  const ws=`?workspaceId=${workspace.id}`;
  const category=await api("POST","/v1/product-metadata/categories"+ws,{name:"Vestuário",slug:"vestuario",active:true,siteVisible:true,position:0});
  const png=Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+j3ioAAAAASUVORK5CYII=","base64");

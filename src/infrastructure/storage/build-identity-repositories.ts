@@ -1,3 +1,5 @@
+import {PostgresCapacityMutationRepository} from "./postgres/postgres-capacity-mutation-repository.js";
+import type {CapacityMutationRepositoryPort} from "../../application/ports/capacity-mutation-repository.port.js";
 import type { CheckoutIntentRepositoryPort } from "../../application/ports/checkout-intent-repository.port.js";
 import type { SolutionEntitlementRepositoryPort } from "../../application/ports/solution-entitlement-repository.port.js";
 import { PostgresCheckoutIntentRepository } from "./postgres/postgres-checkout-intent-repository.js";
@@ -153,6 +155,7 @@ export type IdentityRepositories = {
   /** Acesso por solução (Core) — o webhook concede Meetings a partir da assinatura. */
   solutionEntitlementRepository: SolutionEntitlementRepositoryPort;
   /** Pricing/Capacity Etapa B — reduções de capacidade agendadas pro fim do ciclo. */
+  capacityMutationRepository:CapacityMutationRepositoryPort;
   subscriptionPendingChangeRepository: SubscriptionPendingChangeRepositoryPort;
   usageCounterRepository: UsageCounterRepositoryPort;
   paymentMethodRepository: PaymentMethodRepositoryPort;
@@ -220,6 +223,7 @@ export function buildIdentityRepositories(options: { databaseUrl: string; secret
     subscriptionItemRepository: new PostgresSubscriptionItemRepository(pool),
     checkoutIntentRepository: new PostgresCheckoutIntentRepository(pool),
     solutionEntitlementRepository: new PostgresSolutionEntitlementRepository(pool),
+    capacityMutationRepository:new PostgresCapacityMutationRepository(pool),
     subscriptionPendingChangeRepository: new PostgresSubscriptionPendingChangeRepository(pool),
     usageCounterRepository: new PostgresUsageCounterRepository(pool),
     paymentMethodRepository: new PostgresPaymentMethodRepository(pool),

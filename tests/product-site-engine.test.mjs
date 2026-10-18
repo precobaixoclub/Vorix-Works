@@ -36,14 +36,14 @@ const apparel=async(c,colors=true)=>{
 const stock=async(c,product,variant,quantity,kind="IN",operationKey=randomUUID())=>c.d.productEngineRepository.move({...c.scope,productId:product.id,variantId:variant?.id,kind,quantity,operationKey,userId:c.actor.userId});
 const newSite=async(c)=>c.siteDeps.repository.create({...c.scope,slug:"fixture-"+randomUUID(),draft:draft()});
 
-test("upgrade 0163 → 0166 preserva produto, variante comercial e oportunidade existentes; repetição é vazia",async()=>{
+test("upgrade 0163 → 0167 preserva produto, variante comercial e oportunidade existentes; repetição é vazia",async()=>{
  const directory=await mkdtemp(join(tmpdir(),"vorix-product-upgrade-fixture-"));const legacy=await startTestPostgres();
  try{
   const migrations=join(process.cwd(),"db/migrations");for(const file of await readdir(migrations))if(file.endsWith(".sql")&&Number(file.slice(0,4))<=163)await copyFile(join(migrations,file),join(directory,file));
   await applyMigrations(legacy.pool,directory);const c=await productSiteContext(legacy.pool);const productId="legacy-fixture-"+randomUUID();
   await legacy.pool.query("insert into products(id,tenant_id,workspace_id,name,price_cents,cost_cents,minimum_price_cents,stock_quantity) values($1,$2,$3,'Produto anterior à evolução',15000,5000,12000,9)",[productId,c.tenantId,c.workspaceId]);
   const variant=await legacy.pool.query("insert into product_variants(id,tenant_id,workspace_id,product_id,name,list_price_cents) values($1,$2,$3,$4,'Variante comercial anterior',16000) returning id",[randomUUID(),c.tenantId,c.workspaceId,productId]);const deal=await c.deal();
-  const applied=await applyMigrations(legacy.pool,migrations);assert.equal(applied.applied.length,3);const restored=await c.d.productRepository.getById(productId);assert.equal(restored.id,productId);assert.equal(restored.details.type,"GENERAL");assert.equal(restored.stockQuantity,9);assert.equal(restored.costCents,5000);assert.equal(restored.minimumPriceCents,12000);assert.equal((await c.d.salesCatalogRepository.getVariant(variant.rows[0].id)).priceOverride,true);assert.equal((await c.d.dealRepository.getById(deal.id)).id,deal.id);assert.deepEqual((await applyMigrations(legacy.pool,migrations)).applied,[]);
+  const applied=await applyMigrations(legacy.pool,migrations);assert.equal(applied.applied.length,4);const restored=await c.d.productRepository.getById(productId);assert.equal(restored.id,productId);assert.equal(restored.details.type,"GENERAL");assert.equal(restored.stockQuantity,9);assert.equal(restored.costCents,5000);assert.equal(restored.minimumPriceCents,12000);assert.equal((await c.d.salesCatalogRepository.getVariant(variant.rows[0].id)).priceOverride,true);assert.equal((await c.d.dealRepository.getById(deal.id)).id,deal.id);assert.deepEqual((await applyMigrations(legacy.pool,migrations)).applied,[]);
  }finally{await legacy.stop();const absolute=resolve(directory);assert.equal(dirname(absolute),resolve(tmpdir()));assert.ok(absolute.startsWith(join(resolve(tmpdir()),"vorix-product-upgrade-fixture-")));await rm(absolute,{recursive:true,force:true});}
 });
 

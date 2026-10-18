@@ -85,6 +85,9 @@ export type ResumeSubscriptionInput = { providerSubscriptionId: string };
 export type AddSubscriptionItemInput = { providerSubscriptionId: string; providerPriceRef: string; quantity: number; amount?: number; currency?: string };
 export type AddSubscriptionItemResult = { ok: true; providerItemId: string };
 export type RemoveSubscriptionItemInput = { providerItemId: string; providerSubscriptionId?: string; amount?: number; currency?: string };
+export type SetRecurringItemsInput = {providerSubscriptionId:string;amount:number;currency:string;operationKey:string;items:readonly {addonCode:string;providerItemId?:string;providerPriceRef?:string;unitPriceCents?:number;quantity:number}[]};
+export type SetRecurringItemsResult={ok:true;providerItemIds:Record<string,string>;providerPriceRefs?:Record<string,string>};
+
 export type UpdateSubscriptionItemQuantityInput = { providerItemId: string; quantity: number; providerSubscriptionId?: string; amount?: number; currency?: string };
 
 export type PaymentMethodSnapshot = { providerPaymentMethodId: string; brand?: string; last4?: string; expMonth?: number; expYear?: number };
@@ -156,6 +159,7 @@ export type BillingProviderPort = {
   addSubscriptionItem(input: AddSubscriptionItemInput): Promise<AddSubscriptionItemResult | BillingProviderFailure>;
   removeSubscriptionItem(input: RemoveSubscriptionItemInput): Promise<{ ok: true } | BillingProviderFailure>;
   updateSubscriptionItemQuantity(input: UpdateSubscriptionItemQuantityInput): Promise<{ ok: true } | BillingProviderFailure>;
+  setRecurringItems(input:SetRecurringItemsInput):Promise<SetRecurringItemsResult|BillingProviderFailure>;
   getPaymentMethod(input: GetPaymentMethodInput): Promise<GetPaymentMethodResult | BillingProviderFailure>;
   createCustomerPortal(input: CreateCustomerPortalInput): Promise<CreateCustomerPortalResult | BillingProviderFailure>;
   /** `true` quando o gateway consegue cobrar a forma de pagamento salva sem o cliente presente. */

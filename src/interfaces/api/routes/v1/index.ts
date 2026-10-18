@@ -531,6 +531,7 @@ export async function registerV1Routes(app: FastifyInstance): Promise<void> {
     await registerCommercialMetricsRoutes(app, { commercialMetricsRepository: identity.commercialMetricsRepository });
     // SaaS Commercialization (Fase 1) — Billing Foundation: canUse()/limit() centralizados.
     const entitlementDeps = {
+      subscriptionPendingChangeRepository:identity.subscriptionPendingChangeRepository,
       subscriptionRepository: identity.subscriptionRepository,
       subscriptionItemRepository: identity.subscriptionItemRepository,
       planVersionRepository: identity.planVersionRepository,
@@ -593,6 +594,7 @@ export async function registerV1Routes(app: FastifyInstance): Promise<void> {
       ...entitlementDeps,
       billingProvider: app.zunoContainer.billingProvider,
       billingEventRepository: identity.billingEventRepository,
+      capacityMutationRepository:identity.capacityMutationRepository,
       subscriptionPendingChangeRepository: identity.subscriptionPendingChangeRepository,
       productAnalytics: productAnalyticsDeps,
     });

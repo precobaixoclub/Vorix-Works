@@ -1,3 +1,4 @@
+import type {CapacityMutationRepositoryPort} from "../../../application/ports/capacity-mutation-repository.port.js";
 import type { CheckoutIntentRepositoryPort } from "../../../application/ports/checkout-intent-repository.port.js";
 import type { SolutionEntitlementRepositoryPort } from "../../../application/ports/solution-entitlement-repository.port.js";
 import { createHmac, randomBytes } from "node:crypto";
@@ -561,6 +562,7 @@ export type ApiContainer = {
     subscriptionItemRepository: SubscriptionItemRepositoryPort;
     checkoutIntentRepository: CheckoutIntentRepositoryPort;
     solutionEntitlementRepository: SolutionEntitlementRepositoryPort;
+    capacityMutationRepository:CapacityMutationRepositoryPort;
     subscriptionPendingChangeRepository: SubscriptionPendingChangeRepositoryPort;
     usageCounterRepository: UsageCounterRepositoryPort;
     paymentMethodRepository: PaymentMethodRepositoryPort;

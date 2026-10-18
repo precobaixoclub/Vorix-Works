@@ -57,6 +57,7 @@ export type CreateSubscriptionItemInput = {
   unitPriceUsd: number;
   currency: string;
   providerItemId?: string;
+  providerPriceRef?:string;
 };
 
 export type SubscriptionItemRepositoryPort = {
@@ -75,6 +76,7 @@ export type SubscriptionItemRepositoryPort = {
    * também precisa ser atômica, não só o incremento em si). Em conflito, `providerItemId`/
    * `unitPriceUsd`/`currency` do item já existente são preservados (nunca sobrescritos). */
   upsertIncrement(input: CreateSubscriptionItemInput): Promise<SubscriptionItem>;
+  updateProviderItemId(id:string,providerItemId:string,providerPriceRef?:string):Promise<void>;
   delete(id: string): Promise<void>;
 };
 
@@ -88,6 +90,7 @@ export type CreateSubscriptionPendingChangeInput = {
   subscriptionItemId?: string;
   fromQuantity?: number;
   targetQuantity?: number;
+  billingSynced?:boolean;
   effectiveAt: string;
 };
 

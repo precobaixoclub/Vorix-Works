@@ -273,7 +273,8 @@ test("applyCapacityChange: redução NUNCA é imediata — agenda pro fim do cic
 test("applyCapacityChange: cancelar uma redução pendente preserva a capacidade atual", async () => {
   const deps = capacityDeps();
   const tenantId = "tenant-capacity-cancel-pending";
-  await makeRealSubscriber(deps, tenantId, "PRO");
+  const subscriber=await makeRealSubscriber(deps, tenantId, "PRO");
+  await deps.subscriptionRepository.update(subscriber.id,{currentPeriodEnd:new Date(Date.now()+20*86400000).toISOString()});
   await applyCapacityChange(deps, { tenantId, users: 7 });
   await applyCapacityChange(deps, { tenantId, users: 6 });
 

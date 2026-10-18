@@ -6,7 +6,7 @@ import {
   previewCapacityChange,
   type CapacityUseCaseDeps,
 } from "../../../../application/billing/capacity-use-cases.js";
-import { ConflictError, NotFoundError, ValidationError } from "../../http/app-error.js";
+import { ConflictError, NotFoundError, ValidationError, ForbiddenError } from "../../http/app-error.js";
 import { requirePrincipal } from "../../http/require-principal.js";
 import { successEnvelope } from "../../http/response-envelope.js";
 
@@ -25,6 +25,8 @@ function translateCapacityError(error: unknown): never {
       throw new ConflictError(error.message);
     }
     if (
+      error.message.startsWith("CAPACITY_INVALID") ||
+      error.message.startsWith("CHECKOUT_PRICE_NOT_CONFIGURED") ||
       error.message.startsWith("CAPACITY_BELOW_PLAN_MINIMUM") ||
       error.message.startsWith("CAPACITY_ADDON_NOT_AVAILABLE") ||
       error.message.startsWith("CAPACITY_NOTHING_TO_REDUCE") ||
@@ -46,6 +48,7 @@ const PREVIEW_BODY_SCHEMA = {
     users: { type: "integer", minimum: 0, maximum: 10_000 },
     whatsappConnections: { type: "integer", minimum: 0, maximum: 1_000 },
     concurrentRecordings: { type: "integer", minimum: 0, maximum: 100 },
+    addonQuantities:{type:"object",maxProperties:30,propertyNames:{pattern:"^[a-zA-Z0-9_-]{1,100}$"},additionalProperties:{type:"integer",minimum:0,maximum:10000}},
   },
 } as const;
 
@@ -56,6 +59,7 @@ const APPLY_BODY_SCHEMA = {
     users: { type: "integer", minimum: 0, maximum: 10_000 },
     whatsappConnections: { type: "integer", minimum: 0, maximum: 1_000 },
     concurrentRecordings: { type: "integer", minimum: 0, maximum: 100 },
+    addonQuantities:{type:"object",maxProperties:30,propertyNames:{pattern:"^[a-zA-Z0-9_-]{1,100}$"},additionalProperties:{type:"integer",minimum:0,maximum:10000}},
   },
 } as const;
 
@@ -83,6 +87,7 @@ export async function registerBillingCapacityRoutes(app: FastifyInstance, deps: 
   app.post("/billing/capacity/apply", { schema: { body: APPLY_BODY_SCHEMA }, config: { idempotent: true } }, async (request) => {
     const principal = requirePrincipal(request);
     const body = request.body as { users?: number; whatsappConnections?: number; concurrentRecordings?: number };
+    if(principal.role!=="owner"&&principal.role!=="admin")throw new ForbiddenError("Somente o dono ou um administrador pode alterar a cobrança.");
     const result = await applyCapacityChange(deps, { tenantId: principal.tenantId, ...body }).catch(translateCapacityError);
     return successEnvelope(result, request.id);
   });
@@ -90,6 +95,7 @@ export async function registerBillingCapacityRoutes(app: FastifyInstance, deps: 
   app.post("/billing/capacity/pending/:id/cancel", { schema: { params: CANCEL_PENDING_PARAMS_SCHEMA } }, async (request) => {
     const principal = requirePrincipal(request);
     const { id } = request.params as { id: string };
+    if(principal.role!=="owner"&&principal.role!=="admin")throw new ForbiddenError("Somente o dono ou um administrador pode alterar a cobrança.");
     await cancelPendingCapacityChange(deps, { tenantId: principal.tenantId, pendingChangeId: id }).catch(translateCapacityError);
     return successEnvelope({ cancelled: true }, request.id);
   });

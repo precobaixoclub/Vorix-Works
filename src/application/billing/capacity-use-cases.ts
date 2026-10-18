@@ -1,3 +1,5 @@
+import type {CapacityMutationRepositoryPort} from "../ports/capacity-mutation-repository.port.js";
+import {loadRecurringCapacity,prepareRecurringCapacity,saveRecurringCapacity,cancelRecurringCapacityReduction,withCapacityMutation} from "./recurring-capacity-change.js";
 import type { BillingProviderPort } from "../ports/billing-provider.port.js";
 import type { BillingEventRepositoryPort } from "../ports/billing-ops-repository.port.js";
 import type { SubscriptionPendingChangeRepositoryPort } from "../ports/subscription-repository.port.js";
@@ -20,6 +22,8 @@ import type { AddonDefinition } from "../../domain/platform-billing/plan-version
 import type { PlanLimitResource } from "../../domain/platform-billing/plan-entitlements.model.js";
 
 export type CapacityUseCaseDeps = EntitlementUseCaseDeps & {
+  beginCapacityWrite?:()=>Promise<void>;
+  capacityMutationRepository?:CapacityMutationRepositoryPort;
   billingProvider: BillingProviderPort;
   billingEventRepository: BillingEventRepositoryPort;
   subscriptionPendingChangeRepository: SubscriptionPendingChangeRepositoryPort;
@@ -30,9 +34,11 @@ function findAddonByResource(addons: readonly AddonDefinition[], allowedCodes: r
   return addons.find((addon) => addon.resource === resource && allowedCodes.includes(addon.code));
 }
 
-export type CapacityPendingItem = { id: string; resource: PlanLimitResource | typeof MEETINGS_RESOURCE; addonCode: string; targetQuantity: number; effectiveAt: string };
+export type CapacityPendingItem = { id: string; resource: AddonDefinition["resource"]; addonCode: string; targetQuantity: number; effectiveAt: string };
 export type CapacityStateResult = {
   current: CapacitySnapshot;
+  next?:CapacitySnapshot;
+  adjustableAddons?:{addonCode:string;name:string;resource:string;quantity:number;currentQuantity:number;unitPrice:number;canIncrease:boolean;maxQuantity?:number}[];
   pending: readonly CapacityPendingItem[];
   /** Próxima cobrança: data (fim do ciclo) e valor recorrente com tudo que está contratado hoje. */
   nextCharge?: { at: string; amount: number; currency: string };
@@ -61,7 +67,8 @@ export async function getCapacityState(deps: CapacityUseCaseDeps, tenantId: stri
   const subscription = await deps.subscriptionRepository.getActiveByTenant(tenantId);
   const items = subscription ? await deps.subscriptionItemRepository.listBySubscription(subscription.id) : [];
   const addons = await deps.addonDefinitionRepository.listActive();
-  const current = resolveCommercialCapacity(planVersion, addons, items);
+  for(const item of items)if(!addons.some(addon=>addon.code===item.addonCode)){const definition=await deps.addonDefinitionRepository.getByCode(item.addonCode);if(definition)addons.push(definition);}
+  const current = resolveCommercialCapacity(planVersion, addons, items,subscription?.billingInterval??"monthly");
 
   // `changeType:"cancellation"` (Etapa C/Mercado Pago) não é uma mudança de CAPACIDADE — o
   // cancelamento agendado já é visível via `Subscription.cancelAtPeriodEnd`/`currentPeriodEnd`;
@@ -75,7 +82,7 @@ export async function getCapacityState(deps: CapacityUseCaseDeps, tenantId: stri
     });
 
   const interval = subscription?.billingInterval ?? "monthly";
-  const priceOf = (addon: AddonDefinition | undefined) => (addon ? (interval === "yearly" ? addon.yearlyPriceUsd : addon.monthlyPriceUsd) : undefined);
+  const priceOf = (addon: AddonDefinition | undefined) => (addon ? (items.find(item=>item.addonCode===addon.code)?.unitPriceUsd??(interval === "yearly" ? addon.yearlyPriceUsd : addon.monthlyPriceUsd)) : undefined);
   const userAddon = findAddonByResource(addons, planVersion.allowedAddonCodes, "users");
   const whatsappAddon = findAddonByResource(addons, planVersion.allowedAddonCodes, "messaging_connections");
   const meetingsBase = addons.find((addon) => addon.code === MEETINGS_BASE_ADDON && planVersion.allowedAddonCodes.includes(addon.code));
@@ -87,19 +94,23 @@ export async function getCapacityState(deps: CapacityUseCaseDeps, tenantId: stri
     ...(meetingsBase ? { meetingsBase: priceOf(meetingsBase) } : {}),
     ...(meetingsExtra ? { meetingsExtraRecording: priceOf(meetingsExtra) } : {}),
   };
-  const paid = Boolean(subscription?.providerSubscriptionId) && (subscription?.status === "active" || subscription?.status === "trial");
+  const paid = !subscription?.cancelAtPeriodEnd && !entitlements.readOnly && Boolean(subscription?.providerSubscriptionId) && (subscription?.status === "active" || subscription?.status === "trial");
   const nextChargeAt = subscription?.currentPeriodEnd ?? subscription?.trialEnd;
+  const context=subscription?await loadRecurringCapacity(deps,tenantId,subscription,planVersion):undefined;
+  const next=context?resolveCommercialCapacity(planVersion,context.definitions,context.future,interval):current;
+  const adjustableAddons=context?.items.filter(item=>!new Set(["users","messaging_connections","meetings_concurrent_recordings"]).has(context.definitions.find(addon=>addon.code===item.addonCode)?.resource??"")).map(item=>{const addon=context.definitions.find(addon=>addon.code===item.addonCode);return {addonCode:item.addonCode,name:addon?.name??item.addonCode,resource:addon?.resource??"unknown",quantity:context.future.find(next=>next.addonCode===item.addonCode)?.quantity??item.quantity,currentQuantity:item.quantity,unitPrice:item.unitPriceUsd,canIncrease:!!addon?.active&&planVersion.allowedAddonCodes.includes(item.addonCode),maxQuantity:addon?.resource==="site"||addon?.resource==="commerce"?1:undefined};});
+  if(context)for(const addon of context.definitions.filter(addon=>addon.resource==="workspaces"&&addon.active&&planVersion.allowedAddonCodes.includes(addon.code)&&!context.items.some(item=>item.addonCode===addon.code))){adjustableAddons?.push({addonCode:addon.code,name:addon.name,resource:addon.resource,quantity:0,currentQuantity:0,unitPrice:priceOf(addon)!,canIncrease:true,maxQuantity:undefined});}
   return {
-    current,
+    current,next,adjustableAddons,
     pending,
-    nextCharge: paid && nextChargeAt ? { at: nextChargeAt, amount: current.totalMonthlyAmount, currency: current.currency } : undefined,
+    nextCharge: paid && nextChargeAt ? { at: nextChargeAt, amount: next.totalMonthlyAmount, currency: current.currency } : undefined,
     canChangeNow: paid,
     meetingsSellable: isMeetingsSellable(),
     unitPrices,
   };
 }
 
-export type CapacityPreviewInput = { tenantId: string; users: number; whatsappConnections: number; concurrentRecordings?: number };
+export type CapacityPreviewInput = { tenantId: string; users: number; whatsappConnections: number; concurrentRecordings?: number;addonQuantities?:Record<string,number> };
 export type CapacityPreviewResult = { current: CapacitySnapshot; requestedOnCurrentPlan: CapacityCostBreakdown; recommendation: PlanRecommendation };
 
 /** Preview financeiro — NUNCA muda nada (seção 10-11 do pedido: "nenhuma mudança acontece no
@@ -117,7 +128,8 @@ export async function previewCapacityChange(deps: CapacityUseCaseDeps, input: Ca
 
   const requirement: CapacityRequirement = { users: input.users, whatsappConnections: input.whatsappConnections, concurrentRecordings: input.concurrentRecordings ?? current.concurrentRecordings };
   const interval = subscription?.billingInterval ?? "monthly";
-  const requestedOnCurrentPlan = computeCapacityCost(planVersion, addons, requirement, interval);
+  let requestedOnCurrentPlan = computeCapacityCost(planVersion, addons, requirement, interval);
+  if(subscription){const context=await loadRecurringCapacity(deps,input.tenantId,subscription,planVersion);const prepared=prepareRecurringCapacity(context,input,false);const usersPrice=prepared.desired.filter(item=>context.definitions.find(addon=>addon.code===item.addonCode)?.resource==="users").reduce((sum,item)=>sum+item.quantity*item.unitPriceUsd,0);const waPrice=prepared.desired.filter(item=>context.definitions.find(addon=>addon.code===item.addonCode)?.resource==="messaging_connections").reduce((sum,item)=>sum+item.quantity*item.unitPriceUsd,0);requestedOnCurrentPlan={...requestedOnCurrentPlan,...prepared.snapshot,userAddonMonthlyAmount:usersPrice,whatsappAddonMonthlyAmount:waPrice};}
 
   const allActivePlans = await deps.planVersionRepository.listActivePlans();
   // A recomendação compara só o pacote (usuários/números) — Meetings custa igual em qualquer plano.
@@ -130,9 +142,9 @@ export async function previewCapacityChange(deps: CapacityUseCaseDeps, input: Ca
   return { current, requestedOnCurrentPlan, recommendation };
 }
 
-export type CapacityChangeInput = { tenantId: string; users?: number; whatsappConnections?: number; concurrentRecordings?: number };
-export type CapacityChangeOutcome = { resource: PlanLimitResource | typeof MEETINGS_RESOURCE; kind: "unchanged" | "increased" | "decrease_scheduled"; fromQuantity: number; toQuantity: number; effectiveAt?: string };
-export type CapacityChangeResult = { outcomes: CapacityChangeOutcome[] };
+export type CapacityChangeInput = { tenantId: string; users?: number; whatsappConnections?: number; concurrentRecordings?: number;addonQuantities?:Record<string,number> };
+export type CapacityChangeOutcome = { resource: AddonDefinition["resource"]; kind: "unchanged" | "increased" | "decrease_scheduled"; fromQuantity: number; toQuantity: number; effectiveAt?: string };
+export type CapacityChangeResult = { outcomes: CapacityChangeOutcome[];nextCharge?:{at:string;amount:number;currency:string} };
 
 /**
  * Aplica uma mudança de capacidade confirmada (seção 11/21-23 do pedido — só chamado DEPOIS do
@@ -144,154 +156,25 @@ export type CapacityChangeResult = { outcomes: CapacityChangeOutcome[] };
  * automaticamente (isso é responsabilidade operacional do administrador, checada aqui só como
  * trava: reduzir NUNCA pode deixar a capacidade abaixo do uso ativo).
  */
-export async function applyCapacityChange(deps: CapacityUseCaseDeps, input: CapacityChangeInput): Promise<CapacityChangeResult> {
-  const subscription = await getRealActiveSubscription(deps, input.tenantId);
-  const planVersion = await deps.planVersionRepository.getById(subscription.planVersionId);
-  if (!planVersion) throw new Error("CAPACITY_PLAN_VERSION_NOT_FOUND: versão de plano não encontrada.");
-  const addons = await deps.addonDefinitionRepository.listActive();
+export async function applyCapacityChange(deps:CapacityUseCaseDeps,input:CapacityChangeInput):Promise<CapacityChangeResult>{return saveRecurringCapacity(deps,input);}
 
-  const outcomes: CapacityChangeOutcome[] = [];
-
-  const targets: { resource: PlanLimitResource; target: number | undefined }[] = [
-    { resource: "users", target: input.users },
-    { resource: "messaging_connections", target: input.whatsappConnections },
-  ];
-
-  for (const { resource, target } of targets) {
-    if (target === undefined) continue;
-    const addon = findAddonByResource(addons, planVersion.allowedAddonCodes, resource);
-    const included = planVersion.limits[resource];
-    if (included === null) continue; // ilimitado — nada a fazer
-
-    const items = await deps.subscriptionItemRepository.listBySubscription(subscription.id);
-    const existing = addon ? items.find((item) => item.addonCode === addon.code) : undefined;
-    const currentAdditional = existing ? existing.quantity * (addon?.increment ?? 1) : 0;
-    const currentTotal = included + currentAdditional;
-
-    if (target === currentTotal) {
-      outcomes.push({ resource, kind: "unchanged", fromQuantity: currentTotal, toQuantity: currentTotal });
-      continue;
-    }
-
-    if (target > currentTotal) {
-      if (!addon) throw new Error(`CAPACITY_ADDON_NOT_AVAILABLE: o plano atual não tem um adicional para "${resource}".`);
-      const extraNeeded = target - currentTotal;
-      const units = Math.ceil(extraNeeded / addon.increment);
-      await purchaseAddon(deps, { tenantId: input.tenantId, addonCode: addon.code, quantity: units, billingInterval: subscription.billingInterval });
-      const toQuantity = currentTotal + units * addon.increment;
-      outcomes.push({ resource, kind: "increased", fromQuantity: currentTotal, toQuantity });
-      if (deps.productAnalytics) {
-        await recordProductEvent(deps.productAnalytics, { eventName: "capacity_increased", source: "server", tenantId: input.tenantId, properties: { resource, fromQuantity: currentTotal, toQuantity } });
-      }
-      continue;
-    }
-
-    // Redução — nunca imediata, sempre agendada (seção 15/22 do pedido).
-    if (target < included) {
-      throw new Error(`CAPACITY_BELOW_PLAN_MINIMUM: a capacidade de "${resource}" não pode ficar abaixo do incluído no plano (${included}).`);
-    }
-    if (!addon || !existing) {
-      throw new Error(`CAPACITY_NOTHING_TO_REDUCE: não há adicional de "${resource}" contratado para reduzir.`);
-    }
-    const { used } = await getLimit(deps, { tenantId: input.tenantId, resource });
-    if (used > target) {
-      throw new Error(`CAPACITY_REDUCTION_BELOW_USAGE: você tem ${used} em uso de "${resource}", mas pediu para reduzir para ${target}. Libere capacidade antes de reduzir.`);
-    }
-    const targetAddonQuantity = Math.max(0, Math.floor((target - included) / addon.increment));
-    const effectiveAt = subscription.currentPeriodEnd ?? new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
-
-    const alreadyPending = (await deps.subscriptionPendingChangeRepository.listPendingByTenant(input.tenantId)).find(
-      (change) => change.changeType === "capacity_decrease" && change.addonCode === addon.code,
-    );
-    if (alreadyPending) {
-      throw new Error(`CAPACITY_PENDING_CHANGE_EXISTS: já existe uma redução agendada para "${resource}" — cancele-a antes de pedir outra.`);
-    }
-
-    await deps.subscriptionPendingChangeRepository.create({
-      subscriptionId: subscription.id,
-      tenantId: input.tenantId,
-      changeType: "capacity_decrease",
-      addonCode: addon.code,
-      subscriptionItemId: existing.id,
-      fromQuantity: existing.quantity,
-      targetQuantity: targetAddonQuantity,
-      effectiveAt,
-    });
-    outcomes.push({ resource, kind: "decrease_scheduled", fromQuantity: currentTotal, toQuantity: target, effectiveAt });
-    if (deps.productAnalytics) {
-      await recordProductEvent(deps.productAnalytics, { eventName: "capacity_decrease_scheduled", source: "server", tenantId: input.tenantId, properties: { resource, fromQuantity: currentTotal, toQuantity: target, effectiveAt } });
-    }
-  }
-
-  if (input.concurrentRecordings !== undefined) {
-    outcomes.push(await changeConcurrentRecordings(deps, { tenantId: input.tenantId, subscription, target: input.concurrentRecordings }));
-  }
-
-  return { outcomes };
-}
-
-/**
- * Gravações simultâneas do Vorix Meetings: aumentar contrata na hora (base + extras, gate
- * comercial respeitado); reduzir agenda para o fim do ciclo, como usuários/números. Nunca vai a 0
- * por aqui — deixar de ter o Meetings é cancelamento do produto, não ajuste de capacidade.
- */
-async function changeConcurrentRecordings(
-  deps: CapacityUseCaseDeps,
-  input: { tenantId: string; subscription: Awaited<ReturnType<typeof getRealActiveSubscription>>; target: number },
-): Promise<CapacityChangeOutcome> {
-  const items = await deps.subscriptionItemRepository.listBySubscription(input.subscription.id);
-  const base = items.find((item) => item.addonCode === MEETINGS_BASE_ADDON);
-  const extra = items.find((item) => item.addonCode === MEETINGS_EXTRA_RECORDING_ADDON);
-  const currentTotal = base ? 1 + (extra?.quantity ?? 0) : 0;
-  const target = Math.max(0, Math.floor(input.target));
-  if (target === currentTotal) return { resource: MEETINGS_RESOURCE, kind: "unchanged", fromQuantity: currentTotal, toQuantity: currentTotal };
-
-  if (target > currentTotal) {
-    assertMeetingsSellable();
-    if (!base) await purchaseAddon(deps, { tenantId: input.tenantId, addonCode: MEETINGS_BASE_ADDON, quantity: 1, billingInterval: input.subscription.billingInterval });
-    const extrasNeeded = target - Math.max(1, currentTotal);
-    if (extrasNeeded > 0) await purchaseAddon(deps, { tenantId: input.tenantId, addonCode: MEETINGS_EXTRA_RECORDING_ADDON, quantity: extrasNeeded, billingInterval: input.subscription.billingInterval });
-    if (deps.productAnalytics) {
-      await recordProductEvent(deps.productAnalytics, { eventName: "capacity_increased", source: "server", tenantId: input.tenantId, properties: { resource: MEETINGS_RESOURCE, fromQuantity: currentTotal, toQuantity: target } });
-    }
-    return { resource: MEETINGS_RESOURCE, kind: "increased", fromQuantity: currentTotal, toQuantity: target };
-  }
-
-  if (target < 1) throw new Error("CAPACITY_BELOW_PLAN_MINIMUM: o Vorix Meetings inclui ao menos 1 gravação simultânea — para deixar de usar o Meetings, fale com o suporte.");
-  if (!extra) throw new Error(`CAPACITY_NOTHING_TO_REDUCE: não há gravações adicionais contratadas para reduzir.`);
-  const alreadyPending = (await deps.subscriptionPendingChangeRepository.listPendingByTenant(input.tenantId)).find((change) => change.changeType === "capacity_decrease" && change.addonCode === MEETINGS_EXTRA_RECORDING_ADDON);
-  if (alreadyPending) throw new Error("CAPACITY_PENDING_CHANGE_EXISTS: já existe uma redução agendada para as gravações simultâneas — cancele-a antes de pedir outra.");
-  const effectiveAt = input.subscription.currentPeriodEnd ?? new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
-  await deps.subscriptionPendingChangeRepository.create({
-    subscriptionId: input.subscription.id,
-    tenantId: input.tenantId,
-    changeType: "capacity_decrease",
-    addonCode: MEETINGS_EXTRA_RECORDING_ADDON,
-    subscriptionItemId: extra.id,
-    fromQuantity: extra.quantity,
-    targetQuantity: target - 1,
-    effectiveAt,
-  });
-  return { resource: MEETINGS_RESOURCE, kind: "decrease_scheduled", fromQuantity: currentTotal, toQuantity: target, effectiveAt };
-}
-
-/** Cancela uma redução agendada ainda não aplicada (seção 23 do pedido) — a capacidade continua
- * como está hoje, nunca reduz. */
-export async function cancelPendingCapacityChange(deps: CapacityUseCaseDeps, input: { tenantId: string; pendingChangeId: string }): Promise<void> {
-  const pending = await deps.subscriptionPendingChangeRepository.getById(input.pendingChangeId);
-  if (!pending || pending.tenantId !== input.tenantId) {
-    throw new Error("CAPACITY_PENDING_CHANGE_NOT_FOUND: alteração agendada não encontrada.");
-  }
-  if (pending.appliedAt) {
-    throw new Error("CAPACITY_PENDING_CHANGE_ALREADY_APPLIED: esta alteração já foi aplicada, não pode mais ser cancelada.");
-  }
-  await deps.subscriptionPendingChangeRepository.markCancelled(pending.id);
-}
+export async function cancelPendingCapacityChange(deps:CapacityUseCaseDeps,input:{tenantId:string;pendingChangeId:string}):Promise<void>{await cancelRecurringCapacityReduction(deps,input);}
 
 /** Varredura periódica (mesmo padrão de `expireTrials`) — aplica reduções de capacidade E
  * cancelamentos agendados (`changeType`, Etapa C/Mercado Pago) cujo `effectiveAt` já passou. Cada
  * pendência isolada: uma falha nunca impede as outras de serem aplicadas. */
-export async function applyDuePendingCapacityChanges(deps: CapacityUseCaseDeps, now: () => Date = () => new Date()): Promise<{ appliedCount: number; failedIds: string[] }> {
+export async function applyDuePendingCapacityChanges(deps:CapacityUseCaseDeps,now:()=>Date=()=>new Date()):Promise<{appliedCount:number;failedIds:string[]}>{
+ const due=await deps.subscriptionPendingChangeRepository.listDueForApplication(now().toISOString());let appliedCount=0;const failedIds:string[]=[];
+ for(const candidate of due){try{const count=await withCapacityMutation(deps,candidate.tenantId,async locked=>{
+  const repository=locked.subscriptionPendingChangeRepository,current=await repository.getById(candidate.id);
+  if(!current||current.appliedAt||current.cancelledAt)return 0;
+  const scoped={create:repository.create.bind(repository),getById:repository.getById.bind(repository),listPendingByTenant:repository.listPendingByTenant.bind(repository),markApplied:repository.markApplied.bind(repository),markCancelled:repository.markCancelled.bind(repository),listDueForApplication:async()=>[current]};
+  const result=await applyDuePendingCapacityChangesOnce({...locked,subscriptionPendingChangeRepository:scoped},now);if(result.failedIds.length)throw Error("CAPACITY_SCHEDULER_FAILED");return result.appliedCount;
+ });appliedCount+=count;}catch{failedIds.push(candidate.id);}}
+ return {appliedCount,failedIds};
+}
+
+async function applyDuePendingCapacityChangesOnce(deps: CapacityUseCaseDeps, now: () => Date = () => new Date()): Promise<{ appliedCount: number; failedIds: string[] }> {
   const due = await deps.subscriptionPendingChangeRepository.listDueForApplication(now().toISOString());
   let appliedCount = 0;
   const failedIds: string[] = [];
@@ -312,6 +195,7 @@ export async function applyDuePendingCapacityChanges(deps: CapacityUseCaseDeps, 
         // Mesmo efeito de `handleSubscriptionUpdated(deps, event, deleted:true)` em
         // `webhook-use-cases.ts` — se o webhook assíncrono do provider chegar depois confirmando
         // o mesmo cancelamento, é um no-op idempotente (mesmo status, mesmo plano FREE).
+        await deps.beginCapacityWrite?.();
         await deps.subscriptionRepository.update(subscription.id, { status: "cancelled", canceledAt: now().toISOString() });
         const freeVersion = await deps.planVersionRepository.getActiveVersion("FREE");
         if (freeVersion) {
@@ -338,10 +222,10 @@ export async function applyDuePendingCapacityChanges(deps: CapacityUseCaseDeps, 
           targetQuantity <= 0
             ? items.filter((candidate) => candidate.id !== change.subscriptionItemId)
             : items.map((candidate) => (candidate.id === change.subscriptionItemId ? { ...candidate, quantity: targetQuantity } : candidate));
-        const projectedCapacity = planVersion ? resolveCommercialCapacity(planVersion, allAddons, projectedItems) : undefined;
+        const projectedCapacity = planVersion ? resolveCommercialCapacity(planVersion, allAddons, projectedItems,subscription?.billingInterval??"monthly") : undefined;
 
         if (targetQuantity <= 0) {
-          if (item?.providerItemId) {
+          if (item?.providerItemId&&!change.billingSynced) {
             const result = await deps.billingProvider.removeSubscriptionItem({
               providerItemId: item.providerItemId,
               providerSubscriptionId: subscription?.providerSubscriptionId,
@@ -350,9 +234,10 @@ export async function applyDuePendingCapacityChanges(deps: CapacityUseCaseDeps, 
             });
             if (!result.ok) throw new Error(`CAPACITY_SCHEDULER_PROVIDER_ERROR(${result.kind}): ${result.message}`);
           }
+          await deps.beginCapacityWrite?.();
           await deps.subscriptionItemRepository.delete(change.subscriptionItemId);
         } else {
-          if (item?.providerItemId) {
+          if (item?.providerItemId&&!change.billingSynced) {
             const result = await deps.billingProvider.updateSubscriptionItemQuantity({
               providerItemId: item.providerItemId,
               quantity: targetQuantity,
@@ -362,9 +247,11 @@ export async function applyDuePendingCapacityChanges(deps: CapacityUseCaseDeps, 
             });
             if (!result.ok) throw new Error(`CAPACITY_SCHEDULER_PROVIDER_ERROR(${result.kind}): ${result.message}`);
           }
+          await deps.beginCapacityWrite?.();
           await deps.subscriptionItemRepository.updateQuantity(change.subscriptionItemId, targetQuantity);
         }
       }
+      await deps.beginCapacityWrite?.();
       await deps.subscriptionPendingChangeRepository.markApplied(change.id);
       await deps.billingEventRepository.record({ tenantId: change.tenantId, subscriptionId: change.subscriptionId, eventType: "addon_removed", payload: { addonCode: change.addonCode, scheduledReduction: true, targetQuantity: change.targetQuantity } });
       appliedCount += 1;

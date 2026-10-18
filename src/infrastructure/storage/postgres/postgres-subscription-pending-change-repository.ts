@@ -16,6 +16,7 @@ type PendingChangeRow = {
   subscription_item_id: string | null;
   from_quantity: number | null;
   target_quantity: number | null;
+  billing_synced:boolean;
   effective_at: Date;
   applied_at: Date | null;
   cancelled_at: Date | null;
@@ -32,6 +33,7 @@ function toDomain(row: PendingChangeRow): SubscriptionPendingChange {
     subscriptionItemId: row.subscription_item_id ?? undefined,
     fromQuantity: row.from_quantity ?? undefined,
     targetQuantity: row.target_quantity ?? undefined,
+    billingSynced:row.billing_synced,
     effectiveAt: row.effective_at.toISOString(),
     appliedAt: row.applied_at?.toISOString(),
     cancelledAt: row.cancelled_at?.toISOString(),
@@ -44,8 +46,8 @@ export class PostgresSubscriptionPendingChangeRepository implements Subscription
 
   async create(input: CreateSubscriptionPendingChangeInput): Promise<SubscriptionPendingChange> {
     const result = await this.pool.query<PendingChangeRow>(
-      `insert into subscription_pending_changes (id, subscription_id, tenant_id, change_type, addon_code, subscription_item_id, from_quantity, target_quantity, effective_at)
-       values ($1, $2, $3, $4, $5, $6, $7, $8, $9) returning *`,
+      `insert into subscription_pending_changes (id, subscription_id, tenant_id, change_type, addon_code, subscription_item_id, from_quantity, target_quantity, effective_at,billing_synced)
+       values ($1, $2, $3, $4, $5, $6, $7, $8, $9,$10) returning *`,
       [
         pendingChangeId(),
         input.subscriptionId,
@@ -55,7 +57,7 @@ export class PostgresSubscriptionPendingChangeRepository implements Subscription
         input.subscriptionItemId ?? null,
         input.fromQuantity ?? null,
         input.targetQuantity ?? null,
-        input.effectiveAt,
+        input.effectiveAt,input.billingSynced??false,
       ],
     );
     return toDomain(result.rows[0]);

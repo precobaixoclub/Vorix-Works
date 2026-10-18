@@ -44,6 +44,7 @@ export type SubscriptionItem = {
    * atual do `AddonDefinition` pode já ter mudado desde então — nunca reescrito aqui). */
   currency: string;
   providerItemId?: string;
+  providerPriceRef?:string;
   createdAt: string;
   updatedAt: string;
 };
@@ -73,6 +74,7 @@ export type SubscriptionPendingChange = {
   subscriptionItemId: string | undefined;
   fromQuantity: number | undefined;
   targetQuantity: number | undefined;
+  billingSynced?:boolean;
   effectiveAt: string;
   appliedAt?: string;
   cancelledAt?: string;

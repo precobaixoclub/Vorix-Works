@@ -74,12 +74,14 @@ export type CapacitySnapshot = {
   totalMonthlyAmount: number;
 };
 
-export type CapacityResource = PlanLimitResource | "meetings_concurrent_recordings";
+export type CapacityResource = PlanLimitResource | "meetings_concurrent_recordings" | "site" | "commerce";
 
 export type CapacityPendingChange = { id: string; resource: CapacityResource; addonCode: string; targetQuantity: number; effectiveAt: string };
 
 export type CapacityState = {
   current: CapacitySnapshot;
+  next?:CapacitySnapshot;
+  adjustableAddons?:{addonCode:string;name:string;resource:string;quantity:number;currentQuantity:number;unitPrice:number;canIncrease:boolean;maxQuantity?:number}[];
   pending: readonly CapacityPendingChange[];
   nextCharge?: { at: string; amount: number; currency: string };
   /** Assinatura paga real: aumentos entram na hora. Teste sem cartão precisa cadastrar o cartão. */
@@ -133,4 +135,4 @@ export type CapacityPreviewResult = { current: CapacitySnapshot; requestedOnCurr
 
 export type CapacityChangeOutcome = { resource: CapacityResource; kind: "unchanged" | "increased" | "decrease_scheduled"; fromQuantity: number; toQuantity: number; effectiveAt?: string };
 
-export type CapacityChangeResult = { outcomes: CapacityChangeOutcome[] };
+export type CapacityChangeResult = { outcomes: CapacityChangeOutcome[];nextCharge?:{at:string;amount:number;currency:string} };

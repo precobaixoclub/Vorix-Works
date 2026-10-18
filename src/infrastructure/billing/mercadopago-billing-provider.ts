@@ -1,3 +1,4 @@
+import type {SetRecurringItemsInput,SetRecurringItemsResult} from "../../application/ports/billing-provider.port.js";
 import { createHmac, timingSafeEqual } from "node:crypto";
 import type {
   AddSubscriptionItemInput,
@@ -285,6 +286,13 @@ export class MercadoPagoBillingProvider implements BillingProviderPort {
   /** Mercado Pago não expõe "meio de pagamento salvo do assinante" pela API de preapproval do
    * jeito que o Stripe expõe `paymentMethods.list` — devolve `undefined` explicitamente (nunca
    * inventa um cartão fake), a UI trata isso como "sem forma de pagamento visível aqui". */
+  async setRecurringItems(input:SetRecurringItemsInput):Promise<SetRecurringItemsResult|BillingProviderFailure>{
+   if(!Number.isFinite(input.amount)||input.amount<=0)return {ok:false,kind:"invalid_request",message:"Valor recorrente inválido."};
+   const result=await this.request("PUT",`/preapproval/${input.providerSubscriptionId}`,{auto_recurring:{transaction_amount:input.amount,currency_id:input.currency}});
+   if(!result.ok)return result;
+   return {ok:true,providerItemIds:Object.fromEntries(input.items.filter(item=>item.quantity>0).map(item=>[item.addonCode,`mercadopago-virtual-item-${input.providerSubscriptionId}-${item.addonCode}`]))};
+  }
+
   async getPaymentMethod(_input: GetPaymentMethodInput): Promise<GetPaymentMethodResult | BillingProviderFailure> {
     return { ok: true, paymentMethod: undefined };
   }

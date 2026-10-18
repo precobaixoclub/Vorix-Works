@@ -1,3 +1,4 @@
+import type {SetRecurringItemsInput,SetRecurringItemsResult} from "../../application/ports/billing-provider.port.js";
 import { randomUUID } from "node:crypto";
 import type {
   AddSubscriptionItemInput,
@@ -84,6 +85,8 @@ export class SandboxBillingProvider implements BillingProviderPort {
   async updateSubscriptionItemQuantity(_input: UpdateSubscriptionItemQuantityInput): Promise<{ ok: true }> {
     return { ok: true };
   }
+
+  async setRecurringItems(input:SetRecurringItemsInput):Promise<SetRecurringItemsResult>{return {ok:true,providerItemIds:Object.fromEntries(input.items.filter(item=>item.quantity>0).map(item=>[item.addonCode,item.providerItemId??`sandbox-item-${item.addonCode}`]))};}
 
   async getPaymentMethod(_input: GetPaymentMethodInput): Promise<GetPaymentMethodResult> {
     return { ok: true, paymentMethod: { providerPaymentMethodId: "sandbox-pm-0000", brand: "sandbox", last4: "4242", expMonth: 12, expYear: 2099 } };

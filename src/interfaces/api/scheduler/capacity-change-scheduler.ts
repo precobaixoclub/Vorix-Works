@@ -35,7 +35,8 @@ export function registerCapacityChangeScheduler(app: FastifyInstance, container:
         }),
         billingProvider: container.billingProvider,
         billingEventRepository: identity.billingEventRepository,
-        subscriptionPendingChangeRepository: identity.subscriptionPendingChangeRepository,
+        capacityMutationRepository:identity.capacityMutationRepository,
+      subscriptionPendingChangeRepository: identity.subscriptionPendingChangeRepository,
       });
       if (result.appliedCount > 0 || result.failedIds.length > 0) {
         app.log.info({ appliedCount: result.appliedCount, failedIds: result.failedIds }, "capacity change scheduler tick");

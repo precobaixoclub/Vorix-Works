@@ -1,3 +1,4 @@
+import type {SetRecurringItemsInput,SetRecurringItemsResult} from "../../application/ports/billing-provider.port.js";
 import Stripe from "stripe";
 import type {
   AddSubscriptionItemInput,
@@ -166,6 +167,26 @@ export class StripeBillingProvider implements BillingProviderPort {
     } catch (error) {
       return { ok: false, kind: "invalid_request", message: error instanceof Error ? error.message : String(error) };
     }
+  }
+
+  async setRecurringItems(input:SetRecurringItemsInput):Promise<SetRecurringItemsResult|BillingProviderFailure>{
+   if(!this.client)return NOT_CONFIGURED;
+   try{
+    const current=await this.client.subscriptions.retrieve(input.providerSubscriptionId);
+    const changes:import("stripe").default.SubscriptionUpdateParams.Item[]=[];
+    const providerPriceRefs:Record<string,string>={};
+    for(const item of input.items){
+     const existing=current.items.data.find(candidate=>candidate.id===item.providerItemId)||current.items.data.find(candidate=>item.providerPriceRef&&candidate.price.id===item.providerPriceRef);
+     if(existing)providerPriceRefs[item.addonCode]=existing.price.id;else if(item.providerPriceRef)providerPriceRefs[item.addonCode]=item.providerPriceRef;
+     if(existing&&item.unitPriceCents!==undefined&&existing.price.unit_amount!==undefined&&existing.price.unit_amount!==null&&existing.price.unit_amount!==item.unitPriceCents)return {ok:false,kind:"invalid_request",message:"O preço no gateway diverge do valor contratado. Nenhuma alteração foi salva."};
+     if(existing){if(item.quantity===0)changes.push({id:existing.id,deleted:true});else changes.push({id:existing.id,quantity:item.quantity});}
+     else if(item.quantity>0){if(!item.providerPriceRef)return {ok:false,kind:"invalid_request",message:`Configure a referência de preço de ${item.addonCode}.`};changes.push({price:item.providerPriceRef,quantity:item.quantity});}
+    }
+    const updated=changes.length?await this.client.subscriptions.update(input.providerSubscriptionId,{items:changes,proration_behavior:"none"},{idempotencyKey:input.operationKey}):current;
+    const providerItemIds:Record<string,string>={};
+    for(const item of input.items.filter(item=>item.quantity>0)){const stored=updated.items.data.find(candidate=>candidate.id===item.providerItemId)||updated.items.data.find(candidate=>candidate.price.id===item.providerPriceRef);if(stored)providerItemIds[item.addonCode]=stored.id;}
+    return {ok:true,providerItemIds,providerPriceRefs};
+   }catch(error){return {ok:false,kind:"provider_unavailable",message:error instanceof Error?error.message:String(error)};}
   }
 
   async getPaymentMethod(input: GetPaymentMethodInput): Promise<GetPaymentMethodResult | BillingProviderFailure> {

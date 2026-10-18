@@ -138,6 +138,7 @@ type SubscriptionItemRow = {
   unit_price_usd: string;
   currency: string;
   provider_item_id: string | null;
+  provider_price_ref:string|null;
   created_at: Date;
   updated_at: Date;
 };
@@ -150,7 +151,7 @@ function itemToDomain(row: SubscriptionItemRow): SubscriptionItem {
     quantity: row.quantity,
     unitPriceUsd: Number(row.unit_price_usd),
     currency: row.currency,
-    providerItemId: row.provider_item_id ?? undefined,
+    providerItemId: row.provider_item_id ?? undefined,providerPriceRef:row.provider_price_ref??undefined,
     createdAt: row.created_at.toISOString(),
     updatedAt: row.updated_at.toISOString(),
   };
@@ -161,9 +162,9 @@ export class PostgresSubscriptionItemRepository implements SubscriptionItemRepos
 
   async create(input: CreateSubscriptionItemInput): Promise<SubscriptionItem> {
     const result = await this.pool.query<SubscriptionItemRow>(
-      `insert into subscription_items (id, subscription_id, addon_code, quantity, unit_price_usd, currency, provider_item_id)
-       values ($1, $2, $3, $4, $5, $6, $7) returning *`,
-      [subscriptionItemId(), input.subscriptionId, input.addonCode, input.quantity, input.unitPriceUsd, input.currency ?? "USD", input.providerItemId ?? null],
+      `insert into subscription_items (id, subscription_id, addon_code, quantity, unit_price_usd, currency, provider_item_id,provider_price_ref)
+       values ($1, $2, $3, $4, $5, $6, $7,$8) returning *`,
+      [subscriptionItemId(), input.subscriptionId, input.addonCode, input.quantity, input.unitPriceUsd, input.currency ?? "USD", input.providerItemId ?? null,input.providerPriceRef??null],
     );
     return itemToDomain(result.rows[0]);
   }
@@ -206,6 +207,7 @@ export class PostgresSubscriptionItemRepository implements SubscriptionItemRepos
     return itemToDomain(result.rows[0]);
   }
 
+  async updateProviderItemId(id:string,providerItemId:string,providerPriceRef?:string):Promise<void>{await this.pool.query("update subscription_items set provider_item_id=$2,provider_price_ref=coalesce($3,provider_price_ref) where id=$1",[id,providerItemId,providerPriceRef??null]);}
   async delete(id: string): Promise<void> {
     await this.pool.query("delete from subscription_items where id = $1", [id]);
   }

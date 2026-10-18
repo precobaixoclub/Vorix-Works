@@ -10,7 +10,7 @@ export async function fetchBillingOverview(): Promise<BillingOverview> {
 
 /** `capacity`: o que a pessoa configurou no site (usuários, números, gravações simultâneas) — o
  * servidor traduz em plano + adicionais e cobra pelo catálogo oficial. */
-export async function startCheckout(input: { planCode: PlatformPlanCode; billingInterval: BillingInterval; capacity?: { users?: number; whatsappConnections?: number; concurrentRecordings?: number }; successPath?: string; cancelPath?: string }): Promise<{ checkoutUrl: string; providerSessionId: string }> {
+export async function startCheckout(input: { planCode: PlatformPlanCode; billingInterval: BillingInterval; capacity?: { users?: number; whatsappConnections?: number; concurrentRecordings?: number;addonQuantities?:Record<string,number> }; successPath?: string; cancelPath?: string }): Promise<{ checkoutUrl: string; providerSessionId: string }> {
   return apiClient.post("/v1/billing/checkout", input);
 }
 
@@ -53,7 +53,7 @@ export async function fetchCapacityState(): Promise<CapacityState> {
 }
 
 /** Preview NUNCA muda nada (seção 10-11 do pedido) — só o backend calcula, frontend só exibe. */
-export async function previewCapacity(input: { users: number; whatsappConnections: number; concurrentRecordings?: number }): Promise<CapacityPreviewResult> {
+export async function previewCapacity(input: { users: number; whatsappConnections: number; concurrentRecordings?: number;addonQuantities?:Record<string,number> }): Promise<CapacityPreviewResult> {
   return apiClient.post("/v1/billing/capacity/preview", input);
 }
 
@@ -62,7 +62,7 @@ export async function previewCapacity(input: { users: number; whatsappConnection
  * intenções reais; só o retry automático de uma MESMA chamada reusaria a mesma chave (o
  * `apiClient` não faz retry de POST sozinho hoje, então isto já cobre o caso prático de duplo
  * clique acidental no botão — cada clique gera sua própria chave). */
-export async function applyCapacity(input: { users?: number; whatsappConnections?: number; concurrentRecordings?: number }): Promise<CapacityChangeResult> {
+export async function applyCapacity(input: { users?: number; whatsappConnections?: number; concurrentRecordings?: number;addonQuantities?:Record<string,number> }): Promise<CapacityChangeResult> {
   return apiClient.post("/v1/billing/capacity/apply", input, { headers: { "Idempotency-Key": crypto.randomUUID() } });
 }
 

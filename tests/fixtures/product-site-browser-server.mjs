@@ -59,7 +59,17 @@ try{
  const vehicle=await create({name:"SUV de fixture",priceCents:12500000,costCents:9000000,minimumPriceCents:11500000,details:{...defaultProductDetails(),type:"VEHICLE",siteVisible:true,slug:"suv-fixture",vehicle:{make:"Montadora fixture",model:"Modelo de teste",version:"LX",manufactureYear:2024,modelYear:2025,mileage:18000,fuel:"Flex",transmission:"Automática",color:"Prata",doors:4,condition:"used",features:["Ar-condicionado"]}}});info.vehicleId=vehicle.id;
  await create({name:"PRODUTO PRIVADO DA FIXTURE",details:defaultProductDetails()});
  const content=siteContentSchema.parse({name:"Empresa de fixture",description:"Site local de teste",whatsapp:"5511999990000",seo:{title:"Empresa de fixture — catálogo",description:"Catálogo controlado do Product e Site Engine."},blocks:[{id:"hero",type:"hero",title:"Produtos para sua empresa",text:"Dados fictícios, apenas para validação local."},{id:"catalog",type:"catalog",title:"Nosso catálogo"},{id:"contact",type:"contact",title:"Fale com nossa equipe"}],pages:[{slug:"sobre",title:"Sobre a empresa",published:true,blocks:[{id:"about",type:"text",title:"Nossa história",text:"Empresa inteiramente fictícia."}]}]});
- const site=await api("POST","/v1/sites"+ws,{slug:info.slug,draft:{content,theme:siteThemeSchema.parse({})}});info.siteId=site.id;
+ let fixtureContent=content,fixtureTheme=siteThemeSchema.parse({});
+ if(process.argv.includes("--site-builder")){
+  const {createSiteBuilderContent}=await import("./site-builder-content.mjs");
+  const visual=await createSiteBuilderContent({storage:app.zunoContainer.objectStorage,tenantId,workspaceId:workspace.id,create,apparel,content});
+  await api("PATCH",`/v1/products/${apparel.id}`,{workspaceId:workspace.id,imageUrls:[visual.apparelImage]});
+  fixtureContent=siteContentSchema.parse(visual.content);
+  fixtureTheme=siteThemeSchema.parse({template:"catalog",primary:"#425B48",secondary:"#B97C5B",background:"#FFFEFA",foreground:"#283C30",surface:"#F1EEE5",headerBackground:"#FFFEFA",footerBackground:"#283C30",footerForeground:"#F7F3E9",headingFont:"editorial",bodyFont:"modern",headerLayout:"center",buttonStyle:"pill",sectionSpacing:"comfortable",rounded:true,catalog:{columns:4,mobileColumns:2,imageRatio:"portrait",cardStyle:"minimal",showPrice:true,showSku:false,showAvailability:false,showFilters:true,showSearch:true,sort:"manual",pageSize:12}});
+  info.siteBuilderFixture=true;
+ }
+ const site=await api("POST","/v1/sites"+ws,{slug:info.slug,draft:{content:fixtureContent,theme:fixtureTheme}});info.siteId=site.id;
+ if(info.siteBuilderFixture)info.initialSiteSnapshot=site.draft;
  await api("POST",`/v1/sites/${site.id}/publish${ws}`,{revision:site.revision});
  await mkdir("tmp/product-site-browser",{recursive:true});await writeFile("tmp/product-site-browser/fixture.json",JSON.stringify(info,null,2));
  await app.listen({host:"127.0.0.1",port});console.log(`FIXTURE_READY http://127.0.0.1:${port} — banco efêmero; somente dados fictícios .invalid`);

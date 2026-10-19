@@ -16,6 +16,11 @@ const nextConfig = {
   // que ele mesmo sobe) — o badge de dev do Next ("stale version"/Turbopack, canto inferior)
   // intercepta cliques na sidebar recolhida por baixo dele; nunca desligado no dev normal.
   ...(process.env.PLAYWRIGHT_TEST ? { devIndicators: false } : {}),
+  // Cache exclusivo de cada rodada do editor: evita disputar .next com o dev/build
+  // e a limpeza de diretórios antigos bloqueados pelo OneDrive no Windows.
+  ...(process.env.PLAYWRIGHT_TEST && /^\.next-site-qa-[a-f0-9-]+$/.test(process.env.SITE_BUILDER_QA_DIST_DIR ?? "")
+    ? { distDir: process.env.SITE_BUILDER_QA_DIST_DIR, typescript: { tsconfigPath: ".tsconfig-site-qa.json" } }
+    : {}),
 };
 
 export default nextConfig;

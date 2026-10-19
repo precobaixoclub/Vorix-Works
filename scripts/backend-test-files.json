@@ -277,5 +277,6 @@
   "tests/contact-phone-lid.test.mjs",
   "tests/product-site-engine.test.mjs",
   "tests/capacity-renewal.test.mjs",
-  "tests/unified-site-product.test.mjs"
+  "tests/unified-site-product.test.mjs",
+  "tests/site-customization.test.mjs"
 ]

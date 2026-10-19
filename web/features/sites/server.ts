@@ -10,8 +10,8 @@ export async function fetchTenantSite(lookup:{slug?:string;hostname?:string}):Pr
 }
 export function tenantSiteMetadata(site:PublicTenantSite|null,path:string[]=[]):Metadata{
  if(!site)return {title:"Site indisponível",robots:{index:false,follow:false}};
- const product=path[0]==="produto"?site.products.find(item=>item.slug===path[1]):undefined;
- const page=path.length&&path[0]!=="produto"?site.content.pages.find(item=>item.slug===path[0]):undefined;
+ const product=path.length===2&&path[0]==="produto"?site.products.find(item=>item.slug===path[1]):undefined;
+ const page=path.length===1?site.content.pages.find(item=>item.slug===path[0]):undefined;
  const title=product?.seo.title||product?.name||page?.title||site.content.seo.title||site.content.name;
  const description=product?.seo.description||product?.description||page?.seoDescription||site.content.seo.description||site.content.description;
  return {title:{absolute:title},description,icons:site.content.faviconUrl?{icon:site.content.faviconUrl}:undefined,openGraph:{title,description,images:product?.imageUrls[0]?[product.imageUrls[0]]:site.content.logoUrl?[site.content.logoUrl]:[]}};

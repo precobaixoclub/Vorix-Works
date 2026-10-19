@@ -20,5 +20,5 @@ test("admin classifica somente Marketing como interno e libera Meetings por conc
 });
 
 test("endereço antigo e loja online usam o único produto Site",async({page},info)=>{
- await login(page);await page.goto(`/workspaces/${scope.workspaceId}/commerce`);await expect(page).toHaveURL(new RegExp(`/workspaces/${scope.workspaceId}/site$`));await page.goto(`/workspaces/${scope.workspaceId}/site?section=loja`);await expect(page.getByRole("heading",{name:"Loja online",exact:true})).toBeVisible();await expect(page.getByRole("switch",{name:"Ativar compra online"})).toBeDisabled();await expect(page.getByText("Vorix Commerce",{exact:true})).toHaveCount(0);await proof(page,"unified-shop",info.project.name);
+ await login(page);await page.goto(`/workspaces/${scope.workspaceId}/commerce`);await expect(page).toHaveURL(new RegExp(`/workspaces/${scope.workspaceId}/site$`));await page.goto(`/workspaces/${scope.workspaceId}/site?section=loja`);await expect(page.getByRole("heading",{name:"Loja online",exact:true})).toBeVisible();await expect(page.getByRole("button",{name:"Ativar compra online"})).toBeDisabled();await expect(page.getByText("Vorix Commerce",{exact:true})).toHaveCount(0);await proof(page,"unified-shop",info.project.name);
 });

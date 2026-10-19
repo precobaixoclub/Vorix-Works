@@ -28,7 +28,7 @@ try{
  let ready=false;
  for(let attempt=0;attempt<30;attempt++){const command=windows?"wsl.exe":"docker",args=["exec",name,"pg_isready","-U","fixture"];const check=spawnSync(command,windows?["-u","root","--","docker",...args]:args,{encoding:"utf8"});if(check.status===0){ready=true;break;}await pause();}
  if(!ready)throw Error("PostgreSQL de fixture não iniciou.");
- fixture=spawn(process.execPath,["tests/fixtures/product-site-browser-server.mjs","--capacity","--site-builder"],{stdio:["ignore",serverLog,serverLog],env:{...process.env,VORIX_CAPACITY_FIXTURE_PG_URL:`postgres://fixture:fixture-only@127.0.0.1:${pgPort}/vorix_capacity_fixture_site_builder`}});
+ fixture=spawn(process.execPath,["tests/fixtures/product-site-browser-server.mjs","--capacity","--site-builder",...(process.env.PRODUCT_VERTICALS_QA?["--product-verticals"]:[])],{stdio:["ignore",serverLog,serverLog],env:{...process.env,VORIX_CAPACITY_FIXTURE_PG_URL:`postgres://fixture:fixture-only@127.0.0.1:${pgPort}/vorix_capacity_fixture_site_builder`}});
  ready=false;
  for(let attempt=0;attempt<90;attempt++){
   if(fixture.exitCode!==null)throw Error("Fixture interrompida. Consulte tmp/site-builder-browser/server.log.");

@@ -18,6 +18,10 @@ export async function validateProductExtension(deps: ProductUseCaseDeps, input: 
    }
   }
  }
+ const effectiveDetails=input.details??existing?.details;
+ if(effectiveDetails?.type==="REAL_ESTATE"){
+  input.itemType="product";input.trackStock=false;input.billingType=effectiveDetails.realEstate?.purpose==="rent"?"monthly":"one_time";
+ }
  if(!deps.productEngineRepository)return;
  const metadata=await deps.productEngineRepository.metadata(scope);
  const categoryId=input.categoryId===undefined?existing?.categoryId:input.categoryId;

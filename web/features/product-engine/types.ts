@@ -1,6 +1,7 @@
 export type ProductOption={key:string;name:string;values:string[]};
-export type VehicleDetails={make:string;model:string;version?:string;manufactureYear?:number;modelYear?:number;mileage?:number;fuel?:string;transmission?:string;color?:string;doors?:number;condition?:"new"|"used";features:string[];notes?:string};
-export type ProductDetails={type:"GENERAL"|"APPAREL"|"VEHICLE";slug?:string;attributes:Record<string,string|number|boolean>;options:ProductOption[];apparel?:{gender?:string;collection?:string;material?:string};vehicle?:VehicleDetails;siteVisible:boolean;catalogVisible:boolean;canPurchaseOnline:boolean;seo:{title?:string;description?:string};media:{url:string;alt:string}[]};
+import type {VehicleDetails,RealEstateDetails} from "./specializations";
+export type {VehicleDetails,RealEstateDetails} from "./specializations";
+export type ProductDetails={type:"GENERAL"|"APPAREL"|"VEHICLE"|"REAL_ESTATE";slug?:string;attributes:Record<string,string|number|boolean>;options:ProductOption[];apparel?:{gender?:string;collection?:string;material?:string};vehicle?:VehicleDetails;realEstate?:RealEstateDetails;siteVisible:boolean;catalogVisible:boolean;canPurchaseOnline:boolean;seo:{title?:string;description?:string};media:{url:string;alt:string}[]};
 export const newProductDetails=():ProductDetails=>({type:"GENERAL",attributes:{},options:[],siteVisible:false,catalogVisible:true,canPurchaseOnline:false,seo:{},media:[]});
 export type ProductCategory={id:string;name:string;slug:string;parentId?:string;active:boolean;siteVisible:boolean;position:number;imageUrl?:string};
 export type ProductBrand={id:string;name:string;slug:string;active:boolean;logoUrl?:string};

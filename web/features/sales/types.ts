@@ -10,6 +10,7 @@ export type DealItem = {
   position: number;
   productNameSnapshot: string;
   productCodeSnapshot?: string;
+  productContextSnapshot?:{attributes?:Record<string,string|number|boolean>;options?:Record<string,string>;optionLabels?:Record<string,string>;imageUrl?:string;type?:string;summary?:string};
   billingTypeSnapshot: BillingType;
   unitSnapshot?: string;
   quantity: number;

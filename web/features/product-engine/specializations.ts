@@ -1,0 +1,27 @@
+export const BRAZIL_STATES=["AC","AL","AP","AM","BA","CE","DF","ES","GO","MA","MT","MS","MG","PA","PB","PR","PE","PI","RJ","RN","RS","RO","RR","SC","SP","SE","TO"] as const;
+export const VEHICLE_KIND_LABELS={car:"Automóvel",motorcycle:"Moto",pickup:"Picape",van:"Van / utilitário",truck:"Caminhão",bus:"Ônibus",other:"Outro veículo"};
+export const PROPERTY_KIND_LABELS={house:"Casa",condo_house:"Casa em condomínio",townhouse:"Sobrado",apartment:"Apartamento",studio:"Studio / kitnet",land:"Terreno / lote",commercial:"Sala / loja comercial",warehouse:"Galpão",rural:"Chácara / sítio / fazenda"};
+export const PROPERTY_STATUS_LABELS={available:"Disponível",reserved:"Reservado",sold:"Vendido",rented:"Alugado",inactive:"Indisponível"};
+export type VehicleDetails={make:string;model:string;version?:string;kind?:keyof typeof VEHICLE_KIND_LABELS;bodyType?:string;manufactureYear?:number;modelYear?:number;mileage?:number;fuel?:string;transmission?:string;color?:string;doors?:number;seats?:number;condition?:"new"|"used"|"semi_new";engine?:string;engineDisplacementCc?:number;powerHp?:number;driveType?:string;plateEnding?:string;fipeCode?:string;city?:string;state?:typeof BRAZIL_STATES[number];firstOwner?:boolean;armoured?:boolean;ipvaPaid?:boolean;licensed?:boolean;auctionHistory?:boolean;accidentHistory?:boolean;acceptsTrade?:boolean;acceptsFinancing?:boolean;features:string[];notes?:string;internalNotes?:string};
+export type RealEstateDetails={kind:keyof typeof PROPERTY_KIND_LABELS;purpose:"sale"|"rent";status:keyof typeof PROPERTY_STATUS_LABELS;address:{postalCode?:string;state:typeof BRAZIL_STATES[number];city:string;neighborhood?:string;street?:string;number?:string;complement?:string;showExactAddress:boolean};usableArea?:number;builtArea?:number;landArea?:number;totalArea?:number;bedrooms?:number;suites?:number;bathrooms?:number;parkingSpaces?:number;floor?:number;floors?:number;constructionYear?:number;furnishing?:"unfurnished"|"partly_furnished"|"furnished";condition?:"new"|"used"|"under_construction"|"renovated";sunPosition?:string;condominiumCents?:number;propertyTaxCents?:number;propertyTaxPeriod?:"monthly"|"yearly";petsAllowed?:boolean;acceptsFinancing?:boolean;acceptsTrade?:boolean;features:string[];condominiumFeatures:string[];notes?:string;internalNotes?:string};
+export type PublicRealEstateDetails=Omit<RealEstateDetails,"internalNotes"|"address">&{address:Pick<RealEstateDetails["address"],"state"|"city"|"neighborhood">&Partial<Pick<RealEstateDetails["address"],"street"|"number"|"complement">>};
+export const VEHICLE_FEATURES=["Ar-condicionado","Direção elétrica","Direção hidráulica","Câmbio automático","Airbags","Freios ABS","Controle de estabilidade","Controle de tração","Câmera de ré","Sensor de estacionamento","Central multimídia","Bancos de couro","Teto solar","Piloto automático","Rodas de liga leve","Partida por botão","Faróis LED","Computador de bordo"];
+export const PROPERTY_FEATURES=["Varanda","Quintal","Jardim","Piscina privativa","Churrasqueira","Área de serviço","Armários planejados","Ar-condicionado","Escritório","Lavabo","Closet","Acessibilidade","Aquecimento solar","Energia solar","Portão eletrônico"];
+export const CONDOMINIUM_FEATURES=["Elevador","Portaria 24 horas","Piscina","Academia","Salão de festas","Churrasqueira","Playground","Quadra esportiva","Espaço gourmet","Bicicletário","Coworking","Acessibilidade","Segurança / monitoramento"];
+export const defaultRealEstate=():RealEstateDetails=>({kind:"house",purpose:"sale",status:"available",address:{state:"" as RealEstateDetails["address"]["state"],city:"",showExactAddress:false},features:[],condominiumFeatures:[]});
+export const isResidential=(kind:RealEstateDetails["kind"])=>["house","condo_house","townhouse","apartment","studio","rural"].includes(kind);
+export function isProductAvailable(product:{active:boolean;details?:{type:string;realEstate?:{status:string}}}){return product.active&&!(product.details?.type==="REAL_ESTATE"&&product.details.realEstate&&["sold","rented","inactive"].includes(product.details.realEstate.status));}
+export function productPriceLabel(product:{realEstate?:PublicRealEstateDetails;vehicle?:unknown}){return product.realEstate?.purpose==="rent"?"/mês":"";}
+export function validateSpecializedForm(details:{type:string;vehicle?:VehicleDetails;realEstate?:RealEstateDetails}):{section:string;message:string}|undefined{
+ if(details.type==="VEHICLE"){
+  const v=details.vehicle;if(!v?.make.trim()||!v.model.trim())return {section:"ficha",message:"Preencha a marca e o modelo do veículo."};
+  if(v.manufactureYear&&v.modelYear&&v.modelYear<v.manufactureYear)return {section:"ficha",message:"O ano do modelo não pode ser anterior ao ano de fabricação."};
+ }
+ if(details.type==="REAL_ESTATE"){
+  const r=details.realEstate;if(!r?.address.city.trim()||!r.address.state)return {section:"localizacao",message:"Preencha a cidade e o estado do imóvel."};
+  const areas=r.kind==="land"?[r.landArea,r.totalArea]:["apartment","studio","commercial"].includes(r.kind)?[r.usableArea,r.totalArea]:[r.usableArea,r.builtArea,r.landArea,r.totalArea];
+  if(!areas.some(value=>value!==undefined&&value>0))return {section:"ficha",message:"Informe ao menos uma área do imóvel em m²."};
+  if(isResidential(r.kind)&&r.suites!==undefined&&r.bedrooms!==undefined&&r.suites>r.bedrooms)return {section:"ficha",message:"O número de suítes não pode superar o total de quartos."};
+  if(r.propertyTaxCents!==undefined&&!r.propertyTaxPeriod)return {section:"precos",message:"Informe se o IPTU é mensal ou anual."};
+ }
+}

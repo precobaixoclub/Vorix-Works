@@ -94,7 +94,8 @@ export class PostgresProductRepository implements ProductRepositoryPort {
     const params: unknown[] = [input.tenantId, input.workspaceId];
     if (input.search) {
       params.push(`%${input.search}%`);
-      conditions.push(`(name ilike $${params.length} or code ilike $${params.length} or category ilike $${params.length})`);
+      const searchParam=`$${params.length}`;
+      conditions.push(`(name ilike ${searchParam} or code ilike ${searchParam} or category ilike ${searchParam} or (details->'vehicle'->>'make') ilike ${searchParam} or (details->'vehicle'->>'model') ilike ${searchParam} or (details->'vehicle'->>'city') ilike ${searchParam} or (details->'realEstate'->'address'->>'city') ilike ${searchParam} or (details->'realEstate'->'address'->>'neighborhood') ilike ${searchParam})`);
     }
     if (input.activeOnly) conditions.push("active");
     const result = await this.pool.query<ProductRow>(

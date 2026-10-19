@@ -1,25 +1,50 @@
 import { z } from "zod";
+import {vehicleDetailsSchema,realEstateDetailsSchema} from "./product-specializations.js";
 
-export const PRODUCT_TYPES = ["GENERAL", "APPAREL", "VEHICLE"] as const;
+export const PRODUCT_TYPES = ["GENERAL", "APPAREL", "VEHICLE", "REAL_ESTATE"] as const;
 const short = z.string().trim().max(160);
 export const productOptionSchema = z.object({ key: z.string().regex(/^[a-z][a-z0-9_]{0,39}$/), name: short.min(1), values: z.array(short.min(1)).min(1).max(50) }).strict();
 const attributeValue = z.union([short, z.number().finite(), z.boolean()]);
-export const productDetailsSchema = z.object({
+export const productDetailsSchema = z.preprocess(raw=>{
+ if(!raw||typeof raw!=="object"||Array.isArray(raw))return raw;
+ const value={...raw} as Record<string,unknown>,type=value.type??"GENERAL";
+ if(type!=="VEHICLE")delete value.vehicle;
+ if(type!=="REAL_ESTATE")delete value.realEstate;
+ if(type!=="APPAREL")delete value.apparel;
+ if(type==="VEHICLE"&&value.vehicle&&typeof value.vehicle==="object"){
+  const vehicle={...value.vehicle} as Record<string,unknown>;
+  if(vehicle.kind==="motorcycle")for(const key of["doors","seats","bodyType","driveType","armoured"])delete vehicle[key];
+  value.vehicle=vehicle;
+ }
+ if(type==="REAL_ESTATE"&&value.realEstate&&typeof value.realEstate==="object"){
+  const estate={...value.realEstate} as Record<string,unknown>,kind=estate.kind;
+  if(!["house","condo_house","townhouse","apartment","studio","rural"].includes(String(kind)))for(const key of["bedrooms","suites","furnishing","petsAllowed"])delete estate[key];
+  if(kind==="land")for(const key of["usableArea","builtArea","bathrooms","parkingSpaces","floor","floors","constructionYear","sunPosition","features"])delete estate[key];
+  if(["apartment","studio","commercial"].includes(String(kind)))for(const key of["landArea","builtArea","floors"])delete estate[key];
+  else delete estate.floor;
+  if(estate.purpose==="rent")for(const key of["acceptsFinancing","acceptsTrade"])delete estate[key];
+  value.realEstate=estate;
+ }
+ return value;
+},z.object({
   type: z.enum(PRODUCT_TYPES).default("GENERAL"),
   slug: z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/).max(160).optional(),
   attributes: z.record(z.string().regex(/^[a-z][a-z0-9_]{0,39}$/), attributeValue).default({}),
   options: z.array(productOptionSchema).max(4).default([]),
   apparel: z.object({ gender: short.optional(), collection: short.optional(), material: short.optional() }).strict().optional(),
-  vehicle: z.object({ make: short.min(1), model: short.min(1), version: short.optional(), manufactureYear: z.number().int().min(1886).max(2200).optional(), modelYear: z.number().int().min(1886).max(2200).optional(), mileage: z.number().nonnegative().max(1e9).optional(), fuel: short.optional(), transmission: short.optional(), color: short.optional(), doors: z.number().int().min(1).max(10).optional(), condition: z.enum(["new", "used"]).optional(), features: z.array(short).max(50).default([]), notes: z.string().max(4000).optional() }).strict().optional(),
+  vehicle: vehicleDetailsSchema.optional(),
+  realEstate: realEstateDetailsSchema.optional(),
   siteVisible: z.boolean().default(false), catalogVisible: z.boolean().default(true), canPurchaseOnline: z.boolean().default(false),
   seo: z.object({ title: z.string().max(160).optional(), description: z.string().max(320).optional() }).strict().default({}),
-  media: z.array(z.object({ url: z.string().max(2000), alt: z.string().max(200).default("") }).strict()).max(6).default([]),
+  media: z.array(z.object({ url: z.string().max(2000), alt: z.string().max(200).default("") }).strict()).max(30).default([]),
 }).strict().superRefine((value, ctx) => {
   if (new Set(value.options.map(option => option.key)).size !== value.options.length) ctx.addIssue({ code: "custom", message: "Cada opção precisa de uma chave diferente.", path: ["options"] });
   for (const option of value.options) if (new Set(option.values).size !== option.values.length) ctx.addIssue({ code: "custom", message: "Remova valores repetidos da opção.", path: ["options"] });
   if (value.options.reduce((n, option) => n * option.values.length, 1) > 500) ctx.addIssue({ code: "custom", message: "Use no máximo 500 combinações por produto.", path: ["options"] });
   if (value.type === "VEHICLE" && !value.vehicle) ctx.addIssue({ code: "custom", message: "Informe marca e modelo do veículo.", path: ["vehicle"] });
-});
+  if (value.type === "REAL_ESTATE" && !value.realEstate) ctx.addIssue({code:"custom",message:"Preencha a ficha do imóvel.",path:["realEstate"]});
+  if ((value.type==="REAL_ESTATE"||value.type==="VEHICLE")&&value.options.length)ctx.addIssue({code:"custom",message:"Veículos e imóveis devem ter um cadastro próprio por unidade, sem combinações de tamanho ou cor.",path:["options"]});
+}));
 export type ProductDetails = z.infer<typeof productDetailsSchema>;
 export const defaultProductDetails = (): ProductDetails => productDetailsSchema.parse({});
 export const slugifyProductText = (text: string): string => text.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 160);

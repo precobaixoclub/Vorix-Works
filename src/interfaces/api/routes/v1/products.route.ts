@@ -49,7 +49,7 @@ const CREATE_BODY_SCHEMA = {
     trackStock: { type: "boolean" },
     stockQuantity: { type: "number", minimum: -1000000000, maximum: 1000000000 },
     stockAlertThreshold: { type: ["number", "null"], minimum: 0, maximum: 1000000000 },
-    imageUrls: { type: "array", maxItems: 6, items: { type: "string", minLength: 1, maxLength: 2000 } },
+    imageUrls: { type: "array", maxItems: 30, items: { type: "string", minLength: 1, maxLength: 2000 } },
     details: { type: "object", maxProperties: 16 }, categoryId: { type: ["string", "null"], maxLength: 160 }, brandId: { type: ["string", "null"], maxLength: 160 },
   },
 } as const;
@@ -76,7 +76,7 @@ const UPDATE_BODY_SCHEMA = {
     trackStock: { type: "boolean" },
     stockQuantity: { type: "number", minimum: -1000000000, maximum: 1000000000 },
     stockAlertThreshold: { type: ["number", "null"], minimum: 0, maximum: 1000000000 },
-    imageUrls: { type: "array", maxItems: 6, items: { type: "string", minLength: 1, maxLength: 2000 } },
+    imageUrls: { type: "array", maxItems: 30, items: { type: "string", minLength: 1, maxLength: 2000 } },
     details: { type: "object", maxProperties: 16 }, categoryId: { type: ["string", "null"], maxLength: 160 }, brandId: { type: ["string", "null"], maxLength: 160 },
     active: { type: "boolean" },
   },

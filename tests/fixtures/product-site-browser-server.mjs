@@ -68,6 +68,14 @@ try{
   fixtureTheme=siteThemeSchema.parse({template:"catalog",primary:"#425B48",secondary:"#B97C5B",background:"#FFFEFA",foreground:"#283C30",surface:"#F1EEE5",headerBackground:"#FFFEFA",footerBackground:"#283C30",footerForeground:"#F7F3E9",headingFont:"editorial",bodyFont:"modern",headerLayout:"center",buttonStyle:"pill",sectionSpacing:"comfortable",rounded:true,catalog:{columns:4,mobileColumns:2,imageRatio:"portrait",cardStyle:"minimal",showPrice:true,showSku:false,showAvailability:false,showFilters:true,showSearch:true,sort:"manual",pageSize:12}});
   info.siteBuilderFixture=true;
  }
+ if(process.argv.includes("--product-verticals")){
+  const base={type:"REAL_ESTATE",siteVisible:true};
+  const property={kind:"house",purpose:"sale",status:"available",address:{state:"SP",city:"Campinas",neighborhood:"Jardim das Flores",street:"RUA PRIVADA FIXTURE",number:"987",postalCode:"13000-000",showExactAddress:false},builtArea:120,landArea:250,bedrooms:3,suites:1,bathrooms:2,parkingSpaces:2,features:["Quintal"],condominiumFeatures:[],internalNotes:"NOTA INTERNA PRIVADA FIXTURE"};
+  const house=await create({name:"Casa de fixture",priceCents:65000000,imageUrls:[uploaded.url],details:{...defaultProductDetails(),...base,slug:"casa-fixture",realEstate:property}});info.houseId=house.id;
+  const rental=await create({name:"Apartamento de aluguel fixture",priceCents:250000,imageUrls:[uploaded.url],details:{...defaultProductDetails(),...base,slug:"apartamento-aluguel-fixture",realEstate:{...property,kind:"apartment",purpose:"rent",usableArea:70,bedrooms:2,parkingSpaces:1,condominiumCents:45000,propertyTaxCents:120000,propertyTaxPeriod:"yearly",furnishing:"furnished"}}});info.rentalId=rental.id;
+  fixtureContent=siteContentSchema.parse({...fixtureContent,blocks:fixtureContent.blocks.map(block=>block.type==="catalog"?{...block,productIds:[]}:block)});
+  info.productVerticalsFixture=true;
+ }
  const site=await api("POST","/v1/sites"+ws,{slug:info.slug,draft:{content:fixtureContent,theme:fixtureTheme}});info.siteId=site.id;
  if(info.siteBuilderFixture)info.initialSiteSnapshot=site.draft;
  await api("POST",`/v1/sites/${site.id}/publish${ws}`,{revision:site.revision});

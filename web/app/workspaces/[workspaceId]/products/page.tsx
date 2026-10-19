@@ -22,6 +22,7 @@ import { useProducts, useStockRisk } from "@/features/crm/hooks";
 import type { Product, ProductStockRisk } from "@/features/crm/types";
 import { useCommercialSettings } from "@/features/sales/hooks";
 import { BILLING_SUFFIX, BILLING_TYPE_LABEL, formatBp } from "@/features/sales/presentation";
+import { PROPERTY_STATUS_LABELS } from "@/features/product-engine/specializations";
 import { formatCurrencyCents, formatRelativeTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
@@ -49,6 +50,7 @@ export default function ProductsCatalogPage() {
   const visibility = settings?.visibility ?? { canViewCost: false, canViewMargin: false, isManager: false };
   const [editing, setEditing] = useState<Product | "new" | undefined>();
   const [search, setSearch] = useState(searchParams.get("q") ?? "");
+  const [productType,setProductType]=useState("all");
   const [category, setCategory] = useState<string>("todas");
   const [sort, setSort] = useState<Sort>("recentes");
   const [showInactive, setShowInactive] = useState(false);
@@ -78,8 +80,9 @@ export default function ProductsCatalogPage() {
     if (filter === "sem-estoque") list = list.filter(outOfStock);
     if (filter === "risco") list = list.filter((product) => (riskByProduct.get(product.id)?.level ?? "ok") !== "ok");
     if (filter === "novos") list = list.filter(isNew);
+    if(productType!=="all")list=list.filter(product=>(product.details?.type??"GENERAL")===productType);
     if (category !== "todas") list = list.filter((product) => product.category === category);
-    if (query) list = list.filter((product) => [product.name, product.code, product.category, product.description].some((value) => value?.toLowerCase().includes(query)));
+    if (query) list = list.filter((product) => [product.name, product.code, product.category, product.description,product.details?.vehicle?.make,product.details?.vehicle?.model,product.details?.vehicle?.city,product.details?.realEstate?.address.city,product.details?.realEstate?.address.neighborhood].some((value) => value?.toLowerCase().includes(query)));
     const price = (product: Product) => product.listPriceCents ?? product.priceCents;
     const sorted = [...list];
     sorted.sort((a, b) => {
@@ -94,9 +97,9 @@ export default function ProductsCatalogPage() {
     });
     return sorted;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [all, search, category, sort, showInactive, filter, riskByProduct]);
+  }, [all, search, category, productType, sort, showInactive, filter, riskByProduct]);
 
-  const showShelves = filter === "todos" && !search.trim() && category === "todas" && active.length > 0;
+  const showShelves = filter === "todos" && !search.trim() && category === "todas" && productType==="all" && active.length > 0;
   const recentlyUpdated = [...active].filter((product) => product.updatedAt !== product.createdAt).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).slice(0, 10);
 
   async function toggleActive(product: Product) {
@@ -179,8 +182,9 @@ export default function ProductsCatalogPage() {
               <CardBody className="flex flex-wrap items-center gap-3 p-3">
                 <div className="relative min-w-[200px] flex-1">
                   <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                  <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar por nome, código ou categoria" aria-label="Buscar produto" className="pl-9" />
+                  <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar nome, código, modelo ou localização" aria-label="Buscar produto" className="pl-9" />
                 </div>
+                <div className="w-44"><Select value={productType} onValueChange={setProductType}><SelectTrigger aria-label="Tipo de produto"><SelectValue/></SelectTrigger><SelectContent><SelectItem value="all">Todos os tipos</SelectItem><SelectItem value="GENERAL">Geral</SelectItem><SelectItem value="APPAREL">Vestuário</SelectItem><SelectItem value="VEHICLE">Veículos</SelectItem><SelectItem value="REAL_ESTATE">Imóveis</SelectItem></SelectContent></Select></div>
                 <div className="w-44">
                   <Select value={category} onValueChange={setCategory}>
                     <SelectTrigger aria-label="Categoria"><SelectValue /></SelectTrigger>
@@ -326,7 +330,7 @@ function ProductCard({ product, risk, onOpen }: { product: Product; risk?: Produ
       </div>
       <div className="flex flex-1 flex-col gap-1 p-3">
         <p className="line-clamp-2 text-sm font-semibold leading-snug text-foreground">{product.name}</p>
-        <p className="truncate text-[11px] text-muted-foreground">{product.category ?? (product.itemType === "service" ? "Serviço" : "Produto")}</p>
+        <p className="truncate text-[11px] text-muted-foreground">{product.category ?? (product.details?.type==="REAL_ESTATE"?"Imóvel":product.details?.type==="VEHICLE"?"Veículo":product.itemType === "service" ? "Serviço" : "Produto")}</p>
         <p className="mt-auto pt-1 text-base font-semibold tabular-nums text-foreground">
           {formatCurrencyCents(price, product.currency)}
           <span className="text-xs font-normal text-muted-foreground">{BILLING_SUFFIX[product.billingType ?? "one_time"] ?? ""}</span>
@@ -357,6 +361,7 @@ function ProductThumb({ product, className }: { product: Product; className?: st
 }
 
 function StockBadge({ product }: { product: Product }) {
+  if(product.details?.type==="REAL_ESTATE"&&product.details.realEstate)return <span className="text-[11px] font-medium text-muted-foreground">{PROPERTY_STATUS_LABELS[product.details.realEstate.status]}</span>;
   if (!product.trackStock) return <span className="text-[11px] text-muted-foreground">{product.itemType === "service" ? "Serviço" : "Sem controle de estoque"}</span>;
   const amount = qty(product.stockQuantity ?? 0, product.unit);
   if (outOfStock(product)) return <span className="inline-flex w-fit items-center gap-1 rounded-full bg-destructive/15 px-2 py-0.5 text-[11px] font-semibold text-destructive"><PackageX className="h-3 w-3" />Sem estoque</span>;

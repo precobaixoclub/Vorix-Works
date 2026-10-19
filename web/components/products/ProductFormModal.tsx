@@ -3,7 +3,8 @@
 import { createContext, useContext, useRef, useState } from "react";
 import { PageSubnav } from "@/components/PageSubnav";
 import { ProductEngineEditor, PRODUCT_SECTIONS } from "@/components/products/ProductEngineEditor";
-import { newProductDetails } from "@/features/product-engine/types";
+import { newProductDetails,type ProductDetails } from "@/features/product-engine/types";
+import {defaultRealEstate,validateSpecializedForm} from "@/features/product-engine/specializations";
 const FormSectionContext=createContext("geral");
 import { ImagePlus, Loader2, Star, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
@@ -21,7 +22,7 @@ import { BILLING_TYPE_LABEL, formatBp } from "@/features/sales/presentation";
 import { formatCurrencyCents } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
-const MAX_PHOTOS = 6;
+const MAX_PHOTOS = 30;
 
 /**
  * Cadastro de produto/serviço em blocos simples, na ordem em que a pessoa pensa: fotos, o que é,
@@ -31,6 +32,10 @@ const MAX_PHOTOS = 6;
 export function ProductFormModal({ workspaceId, product, canViewCost, isManager, onClose, onSaved }: { workspaceId: string; product?: Product; canViewCost: boolean; isManager: boolean; onClose: () => void; onSaved: (product: Product) => Promise<void> | void }) {
   const [section,setSection]=useState("geral");
   const [details,setDetails]=useState(product?.details??newProductDetails());
+  const familyDrafts=useRef<Partial<Record<ProductDetails["type"],ProductDetails>>>({});
+  const specialized=details.type==="VEHICLE"||details.type==="REAL_ESTATE";
+  const sections=PRODUCT_SECTIONS.filter(item=>item.value!=="variacoes"||!specialized).map(item=>item.value==="estoque"&&details.type==="REAL_ESTATE"?{...item,label:"Disponibilidade"}:item);
+  if(specialized)sections.splice(1,0,{value:"ficha",label:details.type==="VEHICLE"?"Ficha do veículo":"Ficha do imóvel"},{value:"localizacao",label:"Localização"});
   const [categoryId,setCategoryId]=useState(product?.categoryId);
   const [brandId,setBrandId]=useState(product?.brandId);
   const [name, setName] = useState(product?.name ?? "");
@@ -76,7 +81,17 @@ export function ProductFormModal({ workspaceId, product, canViewCost, isManager,
     }
   }
 
+  function changeType(type:ProductDetails["type"]) {
+    if(type===details.type)return;
+    if(product?.details?.options.length&&(type==="VEHICLE"||type==="REAL_ESTATE")){setError("Este produto possui combinações já cadastradas. Cadastre o veículo ou imóvel como um novo produto para preservar as negociações e o estoque.");return;}
+    familyDrafts.current[details.type]=details;
+    const stored=familyDrafts.current[type];
+    const next=stored??{...details,type,options:[],apparel:undefined,vehicle:undefined,realEstate:undefined,...(type==="VEHICLE"?{vehicle:{make:"",model:"",kind:"car" as const,features:[]}}:{}),...(type==="REAL_ESTATE"?{realEstate:defaultRealEstate()}:{}),...(type==="APPAREL"?{options:[{key:"size",name:"Tamanho",values:["P","M","G"]}]}:{})};
+    setDetails(next);setError(undefined);if(type==="VEHICLE"||type==="REAL_ESTATE"){setItemType("product");setBillingType(next.realEstate?.purpose==="rent"?"monthly":"one_time");}
+  }
+
   async function handleSave() {
+    const problem=validateSpecializedForm(details);if(problem){setError(problem.message);setSection(problem.section);return;}
     setBusy(true);
     setError(undefined);
     const payload: Omit<CreateProductInput, "workspaceId"> = {
@@ -86,13 +101,13 @@ export function ProductFormModal({ workspaceId, product, canViewCost, isManager,
       priceCents: listCents,
       code: code.trim() || null,
       category: category.trim() || null,
-      itemType,
-      billingType,
+      itemType:specialized?"product":itemType,
+      billingType:details.type==="REAL_ESTATE"?(details.realEstate?.purpose==="rent"?"monthly":"one_time"):billingType,
       unit: trackStock ? unit.trim() || null : product?.unit ?? null,
       ...(canViewCost ? { costCents: costCents ?? null } : {}),
       ...(isManager ? { minimumPriceCents: minimum.trim() ? centsFromCurrencyInput(minimum) : null } : {}),
-      trackStock,
-      ...(trackStock ? { ...(details.options.length?{}:{stockQuantity:quantityFromInput(stock)??0}),stockAlertThreshold:quantityFromInput(alertAt)??null } : {}),
+      trackStock:details.type==="REAL_ESTATE"?false:trackStock,
+      ...(trackStock && details.type!=="REAL_ESTATE" ? { ...(details.options.length?{}:{stockQuantity:quantityFromInput(stock)??0}),stockAlertThreshold:quantityFromInput(alertAt)??null } : {}),
       imageUrls: photos,
     };
     try {
@@ -108,10 +123,12 @@ export function ProductFormModal({ workspaceId, product, canViewCost, isManager,
 
   return (
     <Modal title={product ? "Editar produto" : "Cadastrar produto"} onClose={onClose} maxWidthClass="sm:max-w-6xl">
-      <FormSectionContext.Provider value={section}><PageSubnav className="min-w-0 max-w-full" items={PRODUCT_SECTIONS} value={section} onValueChange={setSection}><div className="min-w-0 space-y-5">
+      <FormSectionContext.Provider value={section}><PageSubnav className="min-w-0 max-w-full" items={sections} value={section} onValueChange={value=>{setSection(value);setError(undefined);}}><div className="min-w-0 space-y-5">
         {error ? <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</p> : null}
 
-        <FormSection step={1} title="Fotos" hint="A primeira foto é a capa. Até 6 fotos (JPG, PNG ou WEBP, até 5 MB).">
+        {section==="geral"?<div className="space-y-2"><Label htmlFor="product-engine-type">O que você vai cadastrar?</Label><select id="product-engine-type" className="h-9 w-full rounded-md border border-border bg-background px-3 text-sm" value={details.type} onChange={event=>changeType(event.target.value as ProductDetails["type"])}><option value="GENERAL">Geral — produto ou serviço</option><option value="APPAREL">Vestuário — roupas e acessórios</option><option value="VEHICLE">Veículos — automóveis, motos e utilitários</option><option value="REAL_ESTATE">Imóveis — casas, apartamentos e terrenos</option></select><p className="text-xs text-muted-foreground">Os campos e as seções se ajustam ao tipo escolhido. Fotos e descrição são comuns a todos.</p></div>:null}
+
+        <FormSection step={1} title="Fotos" hint="A primeira foto é a capa. Até 30 fotos (JPG, PNG ou WEBP, até 5 MB cada).">
           <div className="flex flex-wrap gap-3">
             {photos.map((url, index) => (
               <div key={url} className={cn("group relative h-24 w-24 overflow-hidden rounded-xl border bg-surface-2", index === 0 ? "border-solution ring-2 ring-solution/30" : "border-border/70")}>
@@ -147,21 +164,21 @@ export function ProductFormModal({ workspaceId, product, canViewCost, isManager,
 
         <FormSection step={2} title="O que é">
           <div className="grid gap-3 sm:grid-cols-2">
-            <div className="sm:col-span-2"><Label htmlFor="product-name">Nome</Label><Input id="product-name" value={name} onChange={(event) => setName(event.target.value)} autoFocus placeholder="Ex.: Leitor de código de barras" /></div>
-            <div>
+            <div className="sm:col-span-2"><Label htmlFor="product-name">Nome</Label><Input id="product-name" value={name} onChange={(event) => setName(event.target.value)} autoFocus placeholder={details.type==="REAL_ESTATE"?"Ex.: Casa com 3 quartos no Centro":details.type==="VEHICLE"?"Ex.: Honda Civic EXL 2022":"Ex.: Leitor de código de barras"} /></div>
+            {!specialized?<div>
               <Label>É um produto ou um serviço?</Label>
               <Select value={itemType} onValueChange={(value) => setItemType(value as "product" | "service")}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent><SelectItem value="product">Produto</SelectItem><SelectItem value="service">Serviço</SelectItem></SelectContent>
               </Select>
-            </div>
-            <div>
+            </div>:null}
+            {!specialized?<div>
               <Label>Como é cobrado?</Label>
               <Select value={billingType} onValueChange={(value) => setBillingType(value as BillingType)}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>{(Object.keys(BILLING_TYPE_LABEL) as BillingType[]).map((key) => <SelectItem key={key} value={key}>{BILLING_TYPE_LABEL[key]}</SelectItem>)}</SelectContent>
               </Select>
-            </div>
+            </div>:null}
             <div><Label htmlFor="product-category">Categoria (opcional)</Label><Input id="product-category" value={category} onChange={(event) => setCategory(event.target.value)} placeholder="Ex.: Equipamentos" /></div>
             <div><Label htmlFor="product-code">Código/SKU (opcional)</Label><Input id="product-code" value={code} onChange={(event) => setCode(event.target.value)} /></div>
           </div>
@@ -169,7 +186,7 @@ export function ProductFormModal({ workspaceId, product, canViewCost, isManager,
 
         <FormSection step={3} title="Preço">
           <div className="grid gap-3 sm:grid-cols-3">
-            <div><Label htmlFor="product-list">Preço de venda</Label><MoneyInput id="product-list" value={list} onChange={(event) => setList(event.target.value)} placeholder="0,00" /></div>
+            <div><Label htmlFor="product-list">{details.type==="REAL_ESTATE"?(details.realEstate?.purpose==="rent"?"Aluguel mensal":"Valor de venda"):"Preço de venda"}</Label><MoneyInput id="product-list" value={list} onChange={(event) => setList(event.target.value)} placeholder="0,00" /></div>
             <div>
               <Label htmlFor="product-min">Menor preço sem aprovação</Label>
               <MoneyInput id="product-min" value={minimum} onChange={(event) => setMinimum(event.target.value)} disabled={!isManager} placeholder={isManager ? "Sem limite" : "Definido pela gestão"} />
@@ -184,7 +201,7 @@ export function ProductFormModal({ workspaceId, product, canViewCost, isManager,
           </div>
         </FormSection>
 
-        <FormSection step={4} title="Estoque">
+        {details.type!=="REAL_ESTATE"?<FormSection step={4} title="Estoque">
           <label className="flex items-center justify-between gap-3 rounded-lg border border-border/70 px-3 py-2.5">
             <span>
               <span className="block text-sm font-medium text-foreground">Quero controlar o estoque deste produto</span>
@@ -209,14 +226,14 @@ export function ProductFormModal({ workspaceId, product, canViewCost, isManager,
               <p className="text-[11px] text-muted-foreground sm:col-span-3">Ao chegar no número de aviso, a gestão recebe um alerta para comprar mais.</p>
             </div>
           ) : null}
-        </FormSection>
+        </FormSection>:null}
 
         <FormSection step={5} title="Descrição e observações">
           <Textarea id="product-description" rows={6} value={description} onChange={(event) => setDescription(event.target.value)} className="min-h-32 resize-y leading-relaxed" placeholder="Detalhes e condições do produto. Se publicado no site, este texto ficará visível." maxLength={5000} aria-label="Descrição e observações" />
           <p className="mt-1 text-right text-[11px] text-muted-foreground tabular-nums">{description.length}/5000</p>
         </FormSection>
 
-        <ProductEngineEditor section={section} workspaceId={workspaceId} product={product} details={details} onChange={setDetails} categoryId={categoryId} onCategory={setCategoryId} brandId={brandId} onBrand={setBrandId} photos={photos} isManager={isManager} canViewCost={canViewCost}/>
+        <ProductEngineEditor section={section} workspaceId={workspaceId} product={product} details={details} onChange={value=>{setDetails(value);setError(undefined);}} categoryId={categoryId} onCategory={setCategoryId} brandId={brandId} onBrand={setBrandId} photos={photos} isManager={isManager} canViewCost={canViewCost}/>
 
         <div className="sticky bottom-0 -mx-1 flex justify-end gap-2 bg-popover px-1 pt-2">
           <Button variant="secondary" onClick={onClose} disabled={busy}>Cancelar</Button>

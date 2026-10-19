@@ -1,3 +1,4 @@
+import {productSpecializationSummary} from "../../domain/products/product-summary.js";
 import type {UpdateProductVariantInput} from "../ports/sales-engine-repository.port.js";
 import type { Product } from "../../domain/crm/crm.model.js";
 import type { BillingType } from "../../domain/sales/pricing.js";
@@ -6,7 +7,7 @@ import type { SalesEngineDeps } from "./sales-context.js";
 import { optionCombinations, validateVariantSelection } from "../../domain/products/product-details.js";
 import { stripObjectUrlSignature } from "../../shared/utils/object-url-signing.js";
 
-type CatalogDeps = Pick<SalesEngineDeps, "productRepository" | "salesCatalogRepository">;
+export type CatalogDeps = Pick<SalesEngineDeps, "productRepository" | "salesCatalogRepository">;
 
 export async function generateVariantGrid(deps:CatalogDeps,input:{tenantId:string;workspaceId:string;productId:string}):Promise<ProductVariant[]>{
  const product=await mustProductInWorkspace(deps,input.productId,input.tenantId,input.workspaceId);
@@ -148,12 +149,13 @@ export type ResolvedPricing = {
 export async function resolveProductPricing(deps: CatalogDeps, input: { tenantId: string; workspaceId: string; productId: string; variantId?: string; priceBookId?: string }): Promise<ResolvedPricing> {
   const product = await mustProductInWorkspace(deps, input.productId, input.tenantId, input.workspaceId);
   if (!product.active) throw new Error("PRODUCT_INACTIVE: este produto está inativo e não pode ser adicionado.");
+  if(product.details?.type==="REAL_ESTATE"&&product.details.realEstate&&["sold","rented","inactive"].includes(product.details.realEstate.status))throw Error("PRODUCT_INACTIVE: este imóvel não está disponível para novas negociações.");
   const variant = input.variantId ? await mustVariantOfProduct(deps, input.variantId, product) : undefined;
   if(product.details?.options.length&&!variant)throw Error("PRODUCT_VARIANT_REQUIRED: escolha a combinação deste produto.");
   if(product.details?.options.length&&variant)validateVariantSelection(product.details.options,variant.optionValues??{});
   if(variant&&!variant.active)throw Error("PRODUCT_INACTIVE: esta variante está inativa.");
   let resolved: ResolvedPricing = {
-    productContext:{attributes:product.details?.attributes,options:variant?.optionValues,optionLabels:Object.fromEntries((product.details?.options??[]).map(item=>[item.key,item.name])),imageUrl:variant?.imageUrl??product.imageUrls[0]},
+    productContext:{type:product.details?.type,summary:productSpecializationSummary(product.details),attributes:product.details?.attributes,options:variant?.optionValues,optionLabels:Object.fromEntries((product.details?.options??[]).map(item=>[item.key,item.name])),imageUrl:variant?.imageUrl??product.imageUrls[0]},
     productId: product.id,
     variantId: variant?.id,
     name: variant ? `${product.name} — ${variant.name}` : product.name,

@@ -7,6 +7,27 @@ import { notifyBestEffort } from "../notification/notification-use-cases.js";
 import { createProposal, type ProposalBuyerEvent, type ProposalUseCaseDeps } from "../crm/proposal-use-cases.js";
 import { assertTermsApproved, itemsToPricingLines, requestCommercialApproval, termsFingerprint, winDeal } from "./deal-commercial-use-cases.js";
 import { loadCommercialSettings, mustDealInWorkspace, resolveEffectivePolicy, type SalesActor, type SalesEngineDeps } from "./sales-context.js";
+import {mustProductInWorkspace,resolveProductPricing,type CatalogDeps} from "./catalog-use-cases.js";
+import {productSpecializationSummary} from "../../domain/products/product-summary.js";
+
+/** O formulário manual também precisa preservar a finalidade e a disponibilidade
+ * de veículos/imóveis. Itens existentes mantêm o snapshot da proposta. */
+export async function resolveSpecializedProposalItems(
+ deps:CatalogDeps,
+ scope:{tenantId:string;workspaceId:string},
+ items:readonly ProposalItem[],
+ previousItems:readonly ProposalItem[]=[],
+):Promise<ProposalItem[]>{
+ return Promise.all(items.map(async item=>{
+  if(!item.productId)return item;
+  const product=await mustProductInWorkspace(deps,item.productId,scope.tenantId,scope.workspaceId);
+  if(product.details?.type!=="VEHICLE"&&product.details?.type!=="REAL_ESTATE")return item;
+  const previous=previousItems.find(previous=>previous.productId===item.productId&&previous.variantId===item.variantId);
+  if(previous)return {...item,billingType:previous.billingType??product.billingType,description:item.description??previous.description};
+  const pricing=await resolveProductPricing(deps,{...scope,productId:item.productId,variantId:item.variantId});
+  return {...item,billingType:pricing.billingType,description:[productSpecializationSummary(product.details),item.description].filter(Boolean).join(" · ")||undefined};
+ }));
+}
 
 export type SalesProposalDeps = SalesEngineDeps & {
   proposalRepository: ProposalRepositoryPort;
@@ -44,7 +65,7 @@ export async function createProposalFromDeal(deps: SalesProposalDeps, actor: Sal
   const dealItems = await deps.dealItemRepository.listByDeal(deal.id);
   const items: ProposalItem[] = dealItems.length > 0
     ? dealItems.map((item) => ({
-      productId: item.productId, variantId: item.variantId, description:Object.entries({...item.productContextSnapshot?.options,...item.productContextSnapshot?.attributes}).map(([key,value])=>`${item.productContextSnapshot?.optionLabels?.[key]??key}: ${value}`).join(" · ")||undefined, name: item.productNameSnapshot, quantity: item.quantity, unitPriceCents: item.proposedUnitPriceCents,
+      productId: item.productId, variantId: item.variantId, description:[item.productContextSnapshot?.summary,...Object.entries({...item.productContextSnapshot?.options,...item.productContextSnapshot?.attributes}).map(([key,value])=>`${item.productContextSnapshot?.optionLabels?.[key]??key}: ${value}`)].filter(Boolean).join(" · ")||undefined, name: item.productNameSnapshot, quantity: item.quantity, unitPriceCents: item.proposedUnitPriceCents,
       subtotalCents: item.subtotalProposedCents, billingType: item.billingTypeSnapshot, listPriceCents: item.listPriceCentsSnapshot,
       minimumPriceCents: item.minimumPriceCentsSnapshot, unitCostCents: item.unitCostCentsSnapshot,
     }))

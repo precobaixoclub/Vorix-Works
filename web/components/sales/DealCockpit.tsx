@@ -292,6 +292,7 @@ function ItemRow({ item, currency, summary, editable, stock, onSave, onRemove }:
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <p className="truncate text-sm font-medium">{item.productNameSnapshot}{item.productCodeSnapshot ? <span className="text-muted-foreground"> · {item.productCodeSnapshot}</span> : null}</p>
+          {item.productContextSnapshot?.summary?<p className="mt-1 text-xs text-muted-foreground">{item.productContextSnapshot.summary}</p>:null}
           <p className="text-xs text-muted-foreground tabular-nums">
             Tabela {formatCurrencyCents(item.listPriceCentsSnapshot, currency)}{BILLING_SUFFIX[item.billingTypeSnapshot] ?? ""}
             {item.minimumPriceCentsSnapshot !== undefined ? ` · mínimo ${formatCurrencyCents(item.minimumPriceCentsSnapshot, currency)}` : ""}

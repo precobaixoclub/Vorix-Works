@@ -51,7 +51,7 @@ export type PriceBookItem = {
 
 /** Item da oportunidade com SNAPSHOT comercial: mudar o catálogo depois nunca altera o histórico. */
 export type DealItem = {
-  productContextSnapshot?: { attributes?:Record<string,string|number|boolean>; options?:Record<string,string>;optionLabels?:Record<string,string>; imageUrl?:string };
+  productContextSnapshot?: { attributes?:Record<string,string|number|boolean>; options?:Record<string,string>;optionLabels?:Record<string,string>; imageUrl?:string;type?:string;summary?:string };
   id: string;
   tenantId: string;
   workspaceId: string;

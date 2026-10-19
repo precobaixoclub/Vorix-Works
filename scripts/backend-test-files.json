@@ -278,5 +278,6 @@
   "tests/product-site-engine.test.mjs",
   "tests/capacity-renewal.test.mjs",
   "tests/unified-site-product.test.mjs",
-  "tests/site-customization.test.mjs"
+  "tests/site-customization.test.mjs",
+  "tests/product-specializations.test.mjs"
 ]

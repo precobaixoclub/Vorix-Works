@@ -1,4 +1,5 @@
 import useSWR from "swr";
+import {isProductAvailable} from "@/features/product-engine/specializations";
 import {
   getContact,
   getContactActivity,
@@ -91,7 +92,10 @@ export function useStockRisk(workspaceId: string) {
 }
 
 export function useProducts(workspaceId: string, params?: { search?: string; activeOnly?: boolean }) {
-  return useSWR(["products", workspaceId, params?.search, params?.activeOnly], () => listProducts(workspaceId, params));
+  return useSWR(["products", workspaceId, params?.search, params?.activeOnly], async () => {
+    const products=await listProducts(workspaceId,params);
+    return params?.activeOnly?products.filter(isProductAvailable):products;
+  });
 }
 
 export function useProposals(workspaceId: string, params?: { dealId?: string; contactId?: string; status?: ProposalStatus }) {

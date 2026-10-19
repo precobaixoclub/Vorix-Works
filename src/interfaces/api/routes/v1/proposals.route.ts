@@ -21,9 +21,9 @@ import {
   sendProposalReminderThroughInbox,
   type ProposalDeliveryDeps,
 } from "../../../../application/commercial/proposal-delivery-use-cases.js";
-import { createProposalFromDeal, type SalesProposalDeps } from "../../../../application/sales/proposal-sales-use-cases.js";
+import { createProposalFromDeal, resolveSpecializedProposalItems, type SalesProposalDeps } from "../../../../application/sales/proposal-sales-use-cases.js";
 import { loadCommercialSettings, resolveVisibility } from "../../../../application/sales/sales-context.js";
-import { PROPOSAL_STATUSES, type Proposal } from "../../../../domain/crm/crm.model.js";
+import { PROPOSAL_STATUSES, type Proposal, type ProposalItem } from "../../../../domain/crm/crm.model.js";
 import { ConflictError, NotFoundError, ValidationError } from "../../http/app-error.js";
 import { requirePermission } from "../../http/require-principal.js";
 import { successEnvelope } from "../../http/response-envelope.js";
@@ -78,10 +78,10 @@ const SEND_BODY_SCHEMA = {
   properties: { workspaceId: { type: "string" }, conversationId: { type: "string" }, message: { type: "string", maxLength: 4000 }, idempotencyKey: { type: "string", minLength: 8, maxLength: 200 } },
 } as const;
 
-const VALIDATION = ["PROPOSAL_NOT_EDITABLE", "PROPOSAL_NOT_SENDABLE", "PROPOSAL_LINK_NOT_AVAILABLE", "PROPOSAL_CONTEXT_INVALID", "PROPOSAL_SEND_", "DEAL_CLOSED"];
+const VALIDATION = ["PROPOSAL_NOT_EDITABLE", "PROPOSAL_NOT_SENDABLE", "PROPOSAL_LINK_NOT_AVAILABLE", "PROPOSAL_CONTEXT_INVALID", "PROPOSAL_SEND_", "DEAL_CLOSED", "PRODUCT_INACTIVE", "PRODUCT_VARIANT_REQUIRED", "PRODUCT_VALIDATION"];
 function translateProposalError(error: unknown): never {
   if (error instanceof Error) {
-    if (error.message.startsWith("PROPOSAL_NOT_FOUND") || error.message.startsWith("DEAL_NOT_FOUND") || error.message.startsWith("PROPOSAL_TEMPLATE_NOT_FOUND")) throw new NotFoundError(error.message);
+    if (error.message.startsWith("PROPOSAL_NOT_FOUND") || error.message.startsWith("DEAL_NOT_FOUND") || error.message.startsWith("PROPOSAL_TEMPLATE_NOT_FOUND") || error.message.startsWith("PRODUCT_NOT_FOUND")) throw new NotFoundError(error.message);
     if (error.message.startsWith("COMMERCIAL_APPROVAL_REQUIRED")) throw new ConflictError(error.message);
     if (VALIDATION.some((code) => error.message.startsWith(code))) throw new ValidationError(error.message);
   }
@@ -112,6 +112,7 @@ export async function registerProposalsRoutes(app: FastifyInstance, deps: Propos
     const principal = requirePermission(request, "proposal:manage");
     const body = request.body as Record<string, unknown> & { workspaceId: string; title: string; items: unknown[] };
     try {
+      if(deps.sales)body.items=await resolveSpecializedProposalItems(deps.sales,{tenantId:principal.tenantId,workspaceId:body.workspaceId},body.items as ProposalItem[]);
       const { proposal, rawToken } = await createProposal(deps, { tenantId: principal.tenantId, ...body, createdByUserId: principal.userId } as never);
       reply.code(201);
       return successEnvelope({ ...(await present(request, body.workspaceId, proposal)), publicToken: rawToken }, request.id);
@@ -155,6 +156,10 @@ export async function registerProposalsRoutes(app: FastifyInstance, deps: Propos
     const { id } = request.params as { id: string };
     const { workspaceId, ...patch } = request.body as { workspaceId: string } & Record<string, unknown>;
     try {
+      if(deps.sales&&Array.isArray(patch.items)){
+        const previous=await getProposal(deps,{proposalId:id,tenantId:principal.tenantId,workspaceId});
+        patch.items=await resolveSpecializedProposalItems(deps.sales,{tenantId:principal.tenantId,workspaceId},patch.items as ProposalItem[],previous.items);
+      }
       const proposal = await updateProposal(deps, { proposalId: id, tenantId: principal.tenantId, workspaceId, patch: patch as never });
       return successEnvelope(await present(request, workspaceId, proposal), request.id);
     } catch (error) {
@@ -170,6 +175,10 @@ export async function registerProposalsRoutes(app: FastifyInstance, deps: Propos
     const { id } = request.params as { id: string };
     const { workspaceId, ...overrides } = request.body as { workspaceId: string } & Record<string, unknown>;
     try {
+      if(deps.sales&&Array.isArray(overrides.items)){
+        const previous=await getProposal(deps,{proposalId:id,tenantId:principal.tenantId,workspaceId});
+        overrides.items=await resolveSpecializedProposalItems(deps.sales,{tenantId:principal.tenantId,workspaceId},overrides.items as ProposalItem[],previous.items);
+      }
       const { proposal, rawToken } = await createProposalVersion(deps, { proposalId: id, tenantId: principal.tenantId, workspaceId, actorUserId: principal.userId, overrides: overrides as never });
       reply.code(201);
       return successEnvelope({ ...(await present(request, workspaceId, proposal)), publicToken: rawToken }, request.id);

@@ -4,6 +4,7 @@ import type {ProductEngineRepositoryPort} from "../ports/product-engine-reposito
 import type {SalesCatalogRepositoryPort} from "../ports/sales-engine-repository.port.js";
 import {normalizeSiteHostname,siteContentSchema,siteThemeSchema,siteImageUrls,type Site,type SiteSnapshot} from "../../domain/sites/site.model.js";
 import {signOwnedUrl,OBJECT_URL_TTL} from "../../shared/utils/object-url-signing.js";
+import {publicVehicleDetails,publicRealEstateDetails} from "../../domain/products/product-specializations.js";
 export type SiteEngineDeps={repository:SiteRepositoryPort;productRepository:ProductRepositoryPort;productEngineRepository:ProductEngineRepositoryPort;salesCatalogRepository:SalesCatalogRepositoryPort;hasAccess:(tenantId:string)=>Promise<boolean>;canPublish:(tenantId:string)=>Promise<boolean>;resolveTxt:(hostname:string)=>Promise<string[][]>;publicBaseDomain?:string};
 export async function mustSite(deps:Pick<SiteEngineDeps,"repository">,input:{id:string;tenantId:string;workspaceId:string}):Promise<Site>{
  const site=await deps.repository.get(input.id);if(!site||site.tenantId!==input.tenantId||site.workspaceId!==input.workspaceId)throw Error("SITE_NOT_FOUND: site não encontrado.");return site;
@@ -30,13 +31,13 @@ export async function publicSite(deps:SiteEngineDeps,lookup:{slug?:string;hostna
   const visited=new Set<string>();while(id){if(visited.has(id))return false;visited.add(id);const category=metadata.categories.find(item=>item.id===id);if(!category||!category.active||!category.siteVisible)return false;id=category.parentId;}return true;
  };
  const products=await deps.productRepository.listByWorkspace({...site,activeOnly:true});
- const catalog=await Promise.all(products.filter(product=>product.active&&product.details?.siteVisible&&product.details.catalogVisible&&visibleCategory(product.categoryId)).map(async product=>{
+ const catalog=await Promise.all(products.filter(product=>product.active&&product.details?.siteVisible&&product.details.catalogVisible&&!(product.details.type==="REAL_ESTATE"&&product.details.realEstate&&["sold","rented","inactive"].includes(product.details.realEstate.status))&&visibleCategory(product.categoryId)).map(async product=>{
   const variants=(await deps.salesCatalogRepository.listVariants(product.id)).filter(variant=>variant.active&&(!product.details?.options.length||(Object.keys(variant.optionValues??{}).length===product.details.options.length&&product.details.options.every(option=>option.values.includes(variant.optionValues?.[option.key]??"")))));
   const details=product.details!;
   return {id:product.id,name:product.name,description:product.description,sku:product.code,slug:details.slug??product.id,type:details.type,categoryId:product.categoryId,brandId:product.brandId,priceCents:product.priceCents,currency:product.currency,unit:product.unit,
-   imageUrls:product.imageUrls.map(url=>signOwnedUrl(url,OBJECT_URL_TTL.preview)),media:details.media.map(item=>({...item,url:signOwnedUrl(item.url,OBJECT_URL_TTL.preview)})),attributes:details.attributes,attributeLabels:Object.fromEntries(metadata.attributes.filter(item=>item.active).map(item=>[item.key,item.unit?`${item.label} (${item.unit})`:item.label])),apparel:details.apparel,vehicle:details.vehicle,options:details.options,seo:details.seo,
+   imageUrls:product.imageUrls.map(url=>signOwnedUrl(url,OBJECT_URL_TTL.preview)),media:details.media.map(item=>({...item,url:signOwnedUrl(item.url,OBJECT_URL_TTL.preview)})),attributes:details.attributes,attributeLabels:Object.fromEntries(metadata.attributes.filter(item=>item.active).map(item=>[item.key,item.unit?`${item.label} (${item.unit})`:item.label])),apparel:details.type==="APPAREL"?details.apparel:undefined,vehicle:details.type==="VEHICLE"?publicVehicleDetails(details.vehicle):undefined,realEstate:details.type==="REAL_ESTATE"?publicRealEstateDetails(details.realEstate):undefined,billingType:product.billingType,options:details.options,seo:details.seo,
    availableQuantity:product.trackStock?(details.options.length?variants.reduce((n,item)=>n+Math.max(0,(item.stockQuantity??0)-(item.reservedQuantity??0)),0):Math.max(0,product.stockQuantity-(product.reservedQuantity??0))):undefined,
-   // Commerce é outra capacidade. O Site nunca habilita checkout por um booleano do Product.
+   // Compra online depende do fluxo de checkout do Site, não de um booleano do produto.
    canPurchaseOnline:false,
    variants:variants.map(variant=>({id:variant.id,name:variant.name,sku:variant.code,optionValues:variant.optionValues??{},priceCents:variant.priceOverride===false?product.priceCents:variant.listPriceCents,imageUrl:variant.imageUrl?signOwnedUrl(variant.imageUrl,OBJECT_URL_TTL.preview):undefined,availableQuantity:product.trackStock?Math.max(0,(variant.stockQuantity??0)-(variant.reservedQuantity??0)):undefined})),
   };

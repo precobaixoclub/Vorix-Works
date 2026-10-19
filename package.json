@@ -13,7 +13,7 @@
     "test:meetings": "npm run build && node --test tests/meetings.test.mjs tests/meetings-agenda.test.mjs tests/meetings-processing.test.mjs tests/meetings-recorder.test.mjs tests/meetings-recorder-accounts.test.mjs",
     "test:solutions": "npm run build && node --test tests/solutions.test.mjs tests/onboarding.test.mjs tests/onboarding-route.test.mjs",
     "typecheck": "tsc --noEmit",
-    "architecture:check": "npm run build && node scripts/verify-skills-discovery.mjs && node scripts/check-legacy-chat-imports.mjs && node scripts/check-contract-drift.mjs && node scripts/check-ai-stack-isolation.mjs && node scripts/check-inbox-conversation-isolation.mjs && node scripts/check-crm-isolation.mjs && node scripts/check-planning-isolation.mjs && node scripts/check-runtime-isolation.mjs && node scripts/check-execution-isolation.mjs && node scripts/check-publication-isolation.mjs",
+    "architecture:check": "npm run build && node scripts/verify-skills-discovery.mjs && node scripts/check-legacy-chat-imports.mjs && node scripts/check-contract-drift.mjs && node scripts/check-ai-stack-isolation.mjs && node scripts/check-inbox-conversation-isolation.mjs && node scripts/check-crm-isolation.mjs && node scripts/check-planning-isolation.mjs && node scripts/check-runtime-isolation.mjs && node scripts/check-execution-isolation.mjs && node scripts/check-publication-isolation.mjs && node scripts/sync-site-template-registry.mjs --check",
     "zuno": "npm run build && node dist/interfaces/cli/index.js",
     "zuno:api": "npm run build && node dist/interfaces/api/server.js",
     "zuno:worker": "npm run build && node dist/interfaces/worker/inbox-worker.js",
@@ -44,7 +44,8 @@
     "test:operations": "npm run build && node --test tests/operational-hardening.test.mjs",
     "test:inbox": "npm run build && node --test tests/inbox-persistence.test.mjs tests/inbox-attendance.test.mjs tests/inbox-attendance-http.test.mjs tests/inbox-ai-responder.test.mjs tests/inbox-resilience.test.mjs tests/backup-restore-drill.test.mjs tests/crm-fundacao.test.mjs tests/crm-pipelines-deals.test.mjs tests/crm-execucao-comercial.test.mjs tests/crm-conversas-integration.test.mjs tests/crm-inteligencia.test.mjs tests/crm-automacao.test.mjs tests/crm-resultados.test.mjs tests/billing-foundation.test.mjs tests/billing-checkout-webhook.test.mjs tests/billing-webhook-route.test.mjs tests/billing-lifecycle.test.mjs tests/billing-lifecycle-route.test.mjs tests/billing-overview-route.test.mjs tests/messaging-provider-capabilities.test.mjs tests/onboarding.test.mjs tests/onboarding-route.test.mjs tests/trial.test.mjs tests/product-analytics.test.mjs tests/product-events-route.test.mjs tests/inbox-security-hardening.test.mjs tests/inbox-migrations-clean-run.test.mjs tests/inbox-stream-token-hardening.test.mjs tests/wuzapi-event-mapper-media.test.mjs tests/wuzapi-client-media-download.test.mjs tests/inbox-media-inbound.test.mjs tests/inbox-media-outbound.test.mjs tests/inbox-media-proxy.test.mjs tests/whatsapp-identity.test.mjs",
     "build:clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
-    "test:product-site": "npm run build && node --test tests/product-site-engine.test.mjs tests/product-stock.test.mjs tests/uploads-security.test.mjs"
+    "test:product-site": "npm run build && node --test tests/product-site-engine.test.mjs tests/product-stock.test.mjs tests/uploads-security.test.mjs",
+    "test:website-builder": "npm run build && node scripts/sync-site-template-registry.mjs --check && node --test tests/website-builder-templates.test.mjs tests/site-customization.test.mjs tests/product-site-engine.test.mjs"
   },
   "devDependencies": {
     "@electric-sql/pglite": "^0.5.4",

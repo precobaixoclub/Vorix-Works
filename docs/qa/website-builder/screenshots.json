@@ -1,0 +1,219 @@
+[
+  {
+    "file": "aura-desktop.webp",
+    "width": 1440,
+    "height": 5361,
+    "bytes": 359348,
+    "source": "Captura Playwright da implementação real, fixtures isoladas."
+  },
+  {
+    "file": "aura-hero-desktop.webp",
+    "width": 1440,
+    "height": 1000,
+    "bytes": 75368,
+    "source": "Captura Playwright da implementação real, fixtures isoladas."
+  },
+  {
+    "file": "aura-hero-mobile.webp",
+    "width": 390,
+    "height": 844,
+    "bytes": 40616,
+    "source": "Captura Playwright da implementação real, fixtures isoladas."
+  },
+  {
+    "file": "aura-mobile.webp",
+    "width": 390,
+    "height": 5923,
+    "bytes": 198544,
+    "source": "Captura Playwright da implementação real, fixtures isoladas."
+  },
+  {
+    "file": "aura-product-mobile.webp",
+    "width": 390,
+    "height": 2728,
+    "bytes": 75372,
+    "source": "Captura Playwright da implementação real, fixtures isoladas."
+  },
+  {
+    "file": "aura-product.webp",
+    "width": 1440,
+    "height": 2835,
+    "bytes": 183160,
+    "source": "Captura Playwright da implementação real, fixtures isoladas."
+  },
+  {
+    "file": "aura-tablet.webp",
+    "width": 768,
+    "height": 4913,
+    "bytes": 233460,
+    "source": "Captura Playwright da implementação real, fixtures isoladas."
+  },
+  {
+    "file": "desktop-customer-preview.webp",
+    "width": 1440,
+    "height": 1409,
+    "bytes": 62528,
+    "source": "Captura Playwright da implementação real, fixtures isoladas."
+  },
+  {
+    "file": "desktop-editor.webp",
+    "width": 1440,
+    "height": 1563,
+    "bytes": 75488,
+    "source": "Captura Playwright da implementação real, fixtures isoladas."
+  },
+  {
+    "file": "desktop-gallery.webp",
+    "width": 1440,
+    "height": 1409,
+    "bytes": 120402,
+    "source": "Captura Playwright da implementação real, fixtures isoladas."
+  },
+  {
+    "file": "desktop-recovery-draft.webp",
+    "width": 1440,
+    "height": 1563,
+    "bytes": 74732,
+    "source": "Captura Playwright da implementação real, fixtures isoladas."
+  },
+  {
+    "file": "desktop-template-switch.webp",
+    "width": 1440,
+    "height": 1321,
+    "bytes": 116714,
+    "source": "Captura Playwright da implementação real, fixtures isoladas."
+  },
+  {
+    "file": "mobile-customer-preview.webp",
+    "width": 390,
+    "height": 3214,
+    "bytes": 94200,
+    "source": "Captura Playwright da implementação real, fixtures isoladas."
+  },
+  {
+    "file": "mobile-editor.webp",
+    "width": 390,
+    "height": 1819,
+    "bytes": 46352,
+    "source": "Captura Playwright da implementação real, fixtures isoladas."
+  },
+  {
+    "file": "mobile-gallery.webp",
+    "width": 390,
+    "height": 3214,
+    "bytes": 101830,
+    "source": "Captura Playwright da implementação real, fixtures isoladas."
+  },
+  {
+    "file": "mobile-recovery-draft.webp",
+    "width": 390,
+    "height": 1819,
+    "bytes": 46750,
+    "source": "Captura Playwright da implementação real, fixtures isoladas."
+  },
+  {
+    "file": "mobile-template-switch.webp",
+    "width": 390,
+    "height": 3111,
+    "bytes": 98916,
+    "source": "Captura Playwright da implementação real, fixtures isoladas."
+  },
+  {
+    "file": "nexus-desktop.webp",
+    "width": 1440,
+    "height": 5555,
+    "bytes": 386964,
+    "source": "Captura Playwright da implementação real, fixtures isoladas."
+  },
+  {
+    "file": "nexus-hero-desktop.webp",
+    "width": 1440,
+    "height": 1000,
+    "bytes": 67744,
+    "source": "Captura Playwright da implementação real, fixtures isoladas."
+  },
+  {
+    "file": "nexus-hero-mobile.webp",
+    "width": 390,
+    "height": 844,
+    "bytes": 28888,
+    "source": "Captura Playwright da implementação real, fixtures isoladas."
+  },
+  {
+    "file": "nexus-mobile.webp",
+    "width": 390,
+    "height": 8269,
+    "bytes": 273728,
+    "source": "Captura Playwright da implementação real, fixtures isoladas."
+  },
+  {
+    "file": "nexus-product-mobile.webp",
+    "width": 390,
+    "height": 2615,
+    "bytes": 69468,
+    "source": "Captura Playwright da implementação real, fixtures isoladas."
+  },
+  {
+    "file": "nexus-product.webp",
+    "width": 1440,
+    "height": 2653,
+    "bytes": 162202,
+    "source": "Captura Playwright da implementação real, fixtures isoladas."
+  },
+  {
+    "file": "nexus-tablet.webp",
+    "width": 768,
+    "height": 5053,
+    "bytes": 240374,
+    "source": "Captura Playwright da implementação real, fixtures isoladas."
+  },
+  {
+    "file": "pulse-desktop.webp",
+    "width": 1440,
+    "height": 4596,
+    "bytes": 382830,
+    "source": "Captura Playwright da implementação real, fixtures isoladas."
+  },
+  {
+    "file": "pulse-hero-desktop.webp",
+    "width": 1440,
+    "height": 1000,
+    "bytes": 105916,
+    "source": "Captura Playwright da implementação real, fixtures isoladas."
+  },
+  {
+    "file": "pulse-hero-mobile.webp",
+    "width": 390,
+    "height": 844,
+    "bytes": 47032,
+    "source": "Captura Playwright da implementação real, fixtures isoladas."
+  },
+  {
+    "file": "pulse-mobile.webp",
+    "width": 390,
+    "height": 5787,
+    "bytes": 217680,
+    "source": "Captura Playwright da implementação real, fixtures isoladas."
+  },
+  {
+    "file": "pulse-product-mobile.webp",
+    "width": 390,
+    "height": 2726,
+    "bytes": 74256,
+    "source": "Captura Playwright da implementação real, fixtures isoladas."
+  },
+  {
+    "file": "pulse-product.webp",
+    "width": 1440,
+    "height": 2700,
+    "bytes": 168340,
+    "source": "Captura Playwright da implementação real, fixtures isoladas."
+  },
+  {
+    "file": "pulse-tablet.webp",
+    "width": 768,
+    "height": 4898,
+    "bytes": 283754,
+    "source": "Captura Playwright da implementação real, fixtures isoladas."
+  }
+]

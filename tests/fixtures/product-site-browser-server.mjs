@@ -49,7 +49,7 @@ try{
  }
  const ws=`?workspaceId=${workspace.id}`;
  const category=await api("POST","/v1/product-metadata/categories"+ws,{name:"Vestuário",slug:"vestuario",active:true,siteVisible:true,position:0});
- const png=Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+j3ioAAAAASUVORK5CYII=","base64");
+ const png=Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAQAAAAECAYAAACp8Z5+AAAACXBIWXMAAAPoAAAD6AG1e1JrAAAAEklEQVQImWNYtfvMf2TMQLoAAL4eMwFtMcU2AAAAAElFTkSuQmCC","base64");
  const uploaded=await app.zunoContainer.objectStorage.put({key:`assets/${tenantId}/${workspace.id}/products/fixture-product.png`,body:png,contentType:"image/png"});
  const create=async(input)=>api("POST","/v1/products",{workspaceId:workspace.id,name:"Fixture",priceCents:10000,costCents:4000,minimumPriceCents:8000,details:defaultProductDetails(),...input});
  const general=await create({name:"Pulverizador de fixture",imageUrls:[uploaded.url],details:{...defaultProductDetails(),type:"GENERAL",siteVisible:true,slug:"pulverizador-fixture"}});info.generalId=general.id;

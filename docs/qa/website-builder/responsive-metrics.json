@@ -1,0 +1,125 @@
+{
+  "metrics": [
+    {
+      "template": "nexus",
+      "width": 320,
+      "overflow": false
+    },
+    {
+      "template": "nexus",
+      "width": 360,
+      "overflow": false
+    },
+    {
+      "template": "nexus",
+      "width": 375,
+      "overflow": false
+    },
+    {
+      "template": "nexus",
+      "width": 390,
+      "overflow": false
+    },
+    {
+      "template": "nexus",
+      "width": 430,
+      "overflow": false
+    },
+    {
+      "template": "nexus",
+      "width": 768,
+      "overflow": false
+    },
+    {
+      "template": "nexus",
+      "width": 1024,
+      "overflow": false
+    },
+    {
+      "template": "nexus",
+      "width": 1440,
+      "overflow": false
+    },
+    {
+      "template": "aura",
+      "width": 320,
+      "overflow": false
+    },
+    {
+      "template": "aura",
+      "width": 360,
+      "overflow": false
+    },
+    {
+      "template": "aura",
+      "width": 375,
+      "overflow": false
+    },
+    {
+      "template": "aura",
+      "width": 390,
+      "overflow": false
+    },
+    {
+      "template": "aura",
+      "width": 430,
+      "overflow": false
+    },
+    {
+      "template": "aura",
+      "width": 768,
+      "overflow": false
+    },
+    {
+      "template": "aura",
+      "width": 1024,
+      "overflow": false
+    },
+    {
+      "template": "aura",
+      "width": 1440,
+      "overflow": false
+    },
+    {
+      "template": "pulse",
+      "width": 320,
+      "overflow": false
+    },
+    {
+      "template": "pulse",
+      "width": 360,
+      "overflow": false
+    },
+    {
+      "template": "pulse",
+      "width": 375,
+      "overflow": false
+    },
+    {
+      "template": "pulse",
+      "width": 390,
+      "overflow": false
+    },
+    {
+      "template": "pulse",
+      "width": 430,
+      "overflow": false
+    },
+    {
+      "template": "pulse",
+      "width": 768,
+      "overflow": false
+    },
+    {
+      "template": "pulse",
+      "width": 1024,
+      "overflow": false
+    },
+    {
+      "template": "pulse",
+      "width": 1440,
+      "overflow": false
+    }
+  ],
+  "pageErrors": []
+}

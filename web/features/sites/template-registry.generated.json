@@ -1,0 +1,542 @@
+[
+  {
+    "id": "catalog",
+    "slug": "catalog",
+    "name": "Catálogo",
+    "description": "Vitrine acolhedora, produtos em destaque e navegação simples.",
+    "version": 1,
+    "legacy": true,
+    "thumbnail": "/site-assets/templates/catalog-desktop.webp",
+    "previewImages": {
+      "desktop": "/site-assets/templates/catalog-desktop.webp",
+      "mobile": "/site-assets/templates/catalog-mobile.webp"
+    },
+    "supportedSections": [
+      "hero",
+      "text",
+      "catalog",
+      "categories",
+      "contact",
+      "image",
+      "faq",
+      "features",
+      "image_text",
+      "gallery",
+      "cta",
+      "stats",
+      "testimonials",
+      "logos",
+      "video",
+      "divider"
+    ],
+    "capabilities": {
+      "search": true,
+      "categories": true,
+      "announcement": true,
+      "stickyHeader": true,
+      "heroVariants": [
+        "signature",
+        "compact"
+      ],
+      "productGallery": [
+        "split",
+        "stacked"
+      ],
+      "configurableImageRatio": true
+    },
+    "defaultTheme": {
+      "rounded": true,
+      "bodyFont": "modern",
+      "headingFont": "editorial",
+      "fontSize": "normal",
+      "headerLayout": "center",
+      "buttonStyle": "pill",
+      "contentWidth": "standard",
+      "sectionSpacing": "comfortable",
+      "catalog": {
+        "columns": 4,
+        "mobileColumns": 2,
+        "imageRatio": "portrait",
+        "cardStyle": "minimal",
+        "showPrice": true,
+        "showSku": false,
+        "showAvailability": true,
+        "showFilters": true,
+        "showSearch": true,
+        "sort": "manual",
+        "pageSize": 12
+      },
+      "primary": "#284B43",
+      "secondary": "#B57F50",
+      "background": "#FFFEFC",
+      "foreground": "#25352F",
+      "surface": "#F3F1EA",
+      "headerBackground": "#FFFEFC",
+      "footerBackground": "#203D35",
+      "footerForeground": "#FFFFFF",
+      "template": "catalog"
+    },
+    "defaultSections": [
+      "hero",
+      "categories",
+      "catalog",
+      "image_text",
+      "features",
+      "contact"
+    ],
+    "characteristics": [
+      "Modelo anterior preservado"
+    ]
+  },
+  {
+    "id": "studio",
+    "slug": "studio",
+    "name": "Institucional",
+    "description": "Apresente a empresa, seus serviços e o que torna seu trabalho especial.",
+    "version": 1,
+    "legacy": true,
+    "thumbnail": "/site-assets/templates/studio-desktop.webp",
+    "previewImages": {
+      "desktop": "/site-assets/templates/studio-desktop.webp",
+      "mobile": "/site-assets/templates/studio-mobile.webp"
+    },
+    "supportedSections": [
+      "hero",
+      "text",
+      "catalog",
+      "categories",
+      "contact",
+      "image",
+      "faq",
+      "features",
+      "image_text",
+      "gallery",
+      "cta",
+      "stats",
+      "testimonials",
+      "logos",
+      "video",
+      "divider"
+    ],
+    "capabilities": {
+      "search": true,
+      "categories": true,
+      "announcement": true,
+      "stickyHeader": true,
+      "heroVariants": [
+        "signature",
+        "compact"
+      ],
+      "productGallery": [
+        "split",
+        "stacked"
+      ],
+      "configurableImageRatio": true
+    },
+    "defaultTheme": {
+      "rounded": true,
+      "bodyFont": "modern",
+      "headingFont": "modern",
+      "fontSize": "normal",
+      "headerLayout": "split",
+      "buttonStyle": "rounded",
+      "contentWidth": "standard",
+      "sectionSpacing": "spacious",
+      "catalog": {
+        "columns": 3,
+        "mobileColumns": 2,
+        "imageRatio": "landscape",
+        "cardStyle": "bordered",
+        "showPrice": true,
+        "showSku": false,
+        "showAvailability": true,
+        "showFilters": true,
+        "showSearch": true,
+        "sort": "manual",
+        "pageSize": 12
+      },
+      "primary": "#3155D9",
+      "secondary": "#517F92",
+      "background": "#FFFFFF",
+      "foreground": "#162443",
+      "surface": "#F1F4F9",
+      "headerBackground": "#FFFFFF",
+      "footerBackground": "#162443",
+      "footerForeground": "#FFFFFF",
+      "template": "studio"
+    },
+    "defaultSections": [
+      "hero",
+      "categories",
+      "catalog",
+      "image_text",
+      "features",
+      "contact"
+    ],
+    "characteristics": [
+      "Modelo anterior preservado"
+    ]
+  },
+  {
+    "id": "showcase",
+    "slug": "showcase",
+    "name": "Vitrine editorial",
+    "description": "Imagens amplas, títulos marcantes e espaço para contar sua história.",
+    "version": 1,
+    "legacy": true,
+    "thumbnail": "/site-assets/templates/showcase-desktop.webp",
+    "previewImages": {
+      "desktop": "/site-assets/templates/showcase-desktop.webp",
+      "mobile": "/site-assets/templates/showcase-mobile.webp"
+    },
+    "supportedSections": [
+      "hero",
+      "text",
+      "catalog",
+      "categories",
+      "contact",
+      "image",
+      "faq",
+      "features",
+      "image_text",
+      "gallery",
+      "cta",
+      "stats",
+      "testimonials",
+      "logos",
+      "video",
+      "divider"
+    ],
+    "capabilities": {
+      "search": true,
+      "categories": true,
+      "announcement": true,
+      "stickyHeader": true,
+      "heroVariants": [
+        "signature",
+        "compact"
+      ],
+      "productGallery": [
+        "split",
+        "stacked"
+      ],
+      "configurableImageRatio": true
+    },
+    "defaultTheme": {
+      "rounded": false,
+      "bodyFont": "modern",
+      "headingFont": "editorial",
+      "fontSize": "normal",
+      "headerLayout": "compact",
+      "buttonStyle": "square",
+      "contentWidth": "standard",
+      "sectionSpacing": "spacious",
+      "catalog": {
+        "columns": 3,
+        "mobileColumns": 2,
+        "imageRatio": "portrait",
+        "cardStyle": "minimal",
+        "showPrice": true,
+        "showSku": false,
+        "showAvailability": true,
+        "showFilters": true,
+        "showSearch": true,
+        "sort": "manual",
+        "pageSize": 12
+      },
+      "primary": "#A4472E",
+      "secondary": "#897553",
+      "background": "#FAF7F1",
+      "foreground": "#342D28",
+      "surface": "#EFE9DE",
+      "headerBackground": "#FAF7F1",
+      "footerBackground": "#342D28",
+      "footerForeground": "#FAF7F1",
+      "template": "showcase"
+    },
+    "defaultSections": [
+      "hero",
+      "categories",
+      "catalog",
+      "image_text",
+      "features",
+      "contact"
+    ],
+    "characteristics": [
+      "Modelo anterior preservado"
+    ]
+  },
+  {
+    "id": "nexus",
+    "slug": "nexus",
+    "name": "Nexus",
+    "description": "Tecnologia encontra presença. Uma experiência imersiva, escura e sofisticada.",
+    "version": 1,
+    "legacy": false,
+    "thumbnail": "/site-assets/templates/nexus-desktop.webp",
+    "previewImages": {
+      "desktop": "/site-assets/templates/nexus-desktop.webp",
+      "mobile": "/site-assets/templates/nexus-mobile.webp"
+    },
+    "supportedSections": [
+      "hero",
+      "text",
+      "catalog",
+      "categories",
+      "contact",
+      "image",
+      "faq",
+      "features",
+      "image_text",
+      "gallery",
+      "cta",
+      "stats",
+      "testimonials",
+      "logos",
+      "video",
+      "divider"
+    ],
+    "capabilities": {
+      "search": true,
+      "categories": true,
+      "announcement": true,
+      "stickyHeader": true,
+      "heroVariants": [
+        "signature",
+        "compact"
+      ],
+      "productGallery": [
+        "split",
+        "stacked"
+      ],
+      "configurableImageRatio": false
+    },
+    "defaultTheme": {
+      "rounded": true,
+      "bodyFont": "modern",
+      "headingFont": "modern",
+      "fontSize": "normal",
+      "headerLayout": "split",
+      "buttonStyle": "pill",
+      "contentWidth": "wide",
+      "sectionSpacing": "spacious",
+      "catalog": {
+        "columns": 3,
+        "mobileColumns": 1,
+        "imageRatio": "square",
+        "cardStyle": "minimal",
+        "showPrice": true,
+        "showSku": false,
+        "showAvailability": false,
+        "showFilters": true,
+        "showSearch": true,
+        "sort": "manual",
+        "pageSize": 12
+      },
+      "primary": "#D5F67A",
+      "secondary": "#ADB6C5",
+      "background": "#0B0D10",
+      "foreground": "#F4F5F7",
+      "surface": "#15191F",
+      "headerBackground": "#0B0D10",
+      "footerBackground": "#11151A",
+      "footerForeground": "#F4F5F7",
+      "template": "nexus"
+    },
+    "defaultSections": [
+      "hero",
+      "categories",
+      "catalog",
+      "image_text",
+      "features",
+      "contact"
+    ],
+    "characteristics": [
+      "Imersivo e tecnológico",
+      "Produtos em grande escala",
+      "Dark com contraste preciso"
+    ]
+  },
+  {
+    "id": "aura",
+    "slug": "aura",
+    "name": "Aura",
+    "description": "O essencial, extraordinário. Um catálogo editorial com alma e elegância.",
+    "version": 1,
+    "legacy": false,
+    "thumbnail": "/site-assets/templates/aura-desktop.webp",
+    "previewImages": {
+      "desktop": "/site-assets/templates/aura-desktop.webp",
+      "mobile": "/site-assets/templates/aura-mobile.webp"
+    },
+    "supportedSections": [
+      "hero",
+      "text",
+      "catalog",
+      "categories",
+      "contact",
+      "image",
+      "faq",
+      "features",
+      "image_text",
+      "gallery",
+      "cta",
+      "stats",
+      "testimonials",
+      "logos",
+      "video",
+      "divider"
+    ],
+    "capabilities": {
+      "search": true,
+      "categories": true,
+      "announcement": true,
+      "stickyHeader": true,
+      "heroVariants": [
+        "signature",
+        "compact"
+      ],
+      "productGallery": [
+        "split",
+        "stacked"
+      ],
+      "configurableImageRatio": true
+    },
+    "defaultTheme": {
+      "rounded": false,
+      "bodyFont": "modern",
+      "headingFont": "editorial",
+      "fontSize": "normal",
+      "headerLayout": "center",
+      "buttonStyle": "square",
+      "contentWidth": "standard",
+      "sectionSpacing": "spacious",
+      "catalog": {
+        "columns": 3,
+        "mobileColumns": 2,
+        "imageRatio": "portrait",
+        "cardStyle": "minimal",
+        "showPrice": true,
+        "showSku": false,
+        "showAvailability": false,
+        "showFilters": true,
+        "showSearch": true,
+        "sort": "manual",
+        "pageSize": 12
+      },
+      "primary": "#544434",
+      "secondary": "#7A5A40",
+      "background": "#F7F4EE",
+      "foreground": "#302D27",
+      "surface": "#EBE6DC",
+      "headerBackground": "#F7F4EE",
+      "footerBackground": "#E9E3D7",
+      "footerForeground": "#302D27",
+      "template": "aura"
+    },
+    "defaultSections": [
+      "hero",
+      "categories",
+      "catalog",
+      "image_text",
+      "features",
+      "contact"
+    ],
+    "characteristics": [
+      "Tipografia editorial",
+      "Composição assimétrica",
+      "Imagens protagonistas"
+    ]
+  },
+  {
+    "id": "pulse",
+    "slug": "pulse",
+    "name": "Pulse",
+    "description": "Sua próxima descoberta começa aqui. Energia, curadoria e navegação ágil.",
+    "version": 1,
+    "legacy": false,
+    "thumbnail": "/site-assets/templates/pulse-desktop.webp",
+    "previewImages": {
+      "desktop": "/site-assets/templates/pulse-desktop.webp",
+      "mobile": "/site-assets/templates/pulse-mobile.webp"
+    },
+    "supportedSections": [
+      "hero",
+      "text",
+      "catalog",
+      "categories",
+      "contact",
+      "image",
+      "faq",
+      "features",
+      "image_text",
+      "gallery",
+      "cta",
+      "stats",
+      "testimonials",
+      "logos",
+      "video",
+      "divider"
+    ],
+    "capabilities": {
+      "search": true,
+      "categories": true,
+      "announcement": true,
+      "stickyHeader": true,
+      "heroVariants": [
+        "signature",
+        "compact"
+      ],
+      "productGallery": [
+        "split",
+        "stacked"
+      ],
+      "configurableImageRatio": false
+    },
+    "defaultTheme": {
+      "rounded": true,
+      "bodyFont": "modern",
+      "headingFont": "modern",
+      "fontSize": "normal",
+      "headerLayout": "compact",
+      "buttonStyle": "pill",
+      "contentWidth": "wide",
+      "sectionSpacing": "comfortable",
+      "catalog": {
+        "columns": 4,
+        "mobileColumns": 2,
+        "imageRatio": "square",
+        "cardStyle": "bordered",
+        "showPrice": true,
+        "showSku": false,
+        "showAvailability": false,
+        "showFilters": true,
+        "showSearch": true,
+        "sort": "manual",
+        "pageSize": 12
+      },
+      "primary": "#ECFF49",
+      "secondary": "#5E43CD",
+      "background": "#F9F9F5",
+      "foreground": "#191B19",
+      "surface": "#EEEFE9",
+      "headerBackground": "#191B19",
+      "footerBackground": "#191B19",
+      "footerForeground": "#F9F9F5",
+      "template": "pulse"
+    },
+    "defaultSections": [
+      "hero",
+      "categories",
+      "catalog",
+      "image_text",
+      "features",
+      "contact"
+    ],
+    "characteristics": [
+      "Categorias em destaque",
+      "Descoberta rápida",
+      "Banners comerciais"
+    ]
+  }
+]

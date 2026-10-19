@@ -2,7 +2,7 @@ import type {SiteRepositoryPort} from "../ports/site-repository.port.js";
 import type {ProductRepositoryPort} from "../ports/product-repository.port.js";
 import type {ProductEngineRepositoryPort} from "../ports/product-engine-repository.port.js";
 import type {SalesCatalogRepositoryPort} from "../ports/sales-engine-repository.port.js";
-import {normalizeSiteHostname,siteContentSchema,siteThemeSchema,siteImageUrls,type Site,type SiteSnapshot} from "../../domain/sites/site.model.js";
+import {normalizeSiteHostname,siteContentSchema,siteThemeSchema,siteSnapshotSchema,captureSiteTemplateConfig,siteImageUrls,type Site,type SiteSnapshot} from "../../domain/sites/site.model.js";
 import {signOwnedUrl,OBJECT_URL_TTL} from "../../shared/utils/object-url-signing.js";
 import {publicVehicleDetails,publicRealEstateDetails} from "../../domain/products/product-specializations.js";
 export type SiteEngineDeps={repository:SiteRepositoryPort;productRepository:ProductRepositoryPort;productEngineRepository:ProductEngineRepositoryPort;salesCatalogRepository:SalesCatalogRepositoryPort;hasAccess:(tenantId:string)=>Promise<boolean>;canPublish:(tenantId:string)=>Promise<boolean>;resolveTxt:(hostname:string)=>Promise<string[][]>;publicBaseDomain?:string};
@@ -11,7 +11,7 @@ export async function mustSite(deps:Pick<SiteEngineDeps,"repository">,input:{id:
 }
 export function validateSiteSnapshot(raw:unknown):SiteSnapshot{
  if(JSON.stringify(raw??{}).length>500_000)throw Error("SITE_VALIDATION: o site excedeu o limite de conteúdo. Reduza textos ou quantidade de seções.");
- const data=raw as SiteSnapshot;return {content:siteContentSchema.parse(data?.content),theme:siteThemeSchema.parse(data?.theme)};
+ return captureSiteTemplateConfig(siteSnapshotSchema.parse(raw));
 }
 export async function publishSite(deps:SiteEngineDeps,input:{id:string;tenantId:string;workspaceId:string;revision:number;actorUserId:string;unpublish?:boolean}):Promise<Site>{
  const current=await mustSite(deps,input);
@@ -47,7 +47,7 @@ export async function publicSite(deps:SiteEngineDeps,lookup:{slug?:string;hostna
  const signed=<T>(value:T):T=>JSON.parse(JSON.stringify(value,(_key,value)=>typeof value==="string"&&ownedImages.has(value)?signOwnedUrl(value,OBJECT_URL_TTL.preview):value));
  const blocks=(items:SiteSnapshot["content"]["blocks"])=>items.filter(item=>item.enabled).map(item=>signed({...item,slides:item.slides?.filter(slide=>slide.enabled&&(preview||(!slide.startsAt||Date.parse(slide.startsAt)<=Date.now())&&(!slide.endsAt||Date.parse(slide.endsAt)>Date.now()))),productIds:item.productIds.filter(id=>ids.has(id))}));
  const content={...snapshot.content,logoUrl:snapshot.content.logoUrl?signOwnedUrl(snapshot.content.logoUrl,OBJECT_URL_TTL.preview):undefined,faviconUrl:snapshot.content.faviconUrl?signOwnedUrl(snapshot.content.faviconUrl,OBJECT_URL_TTL.preview):undefined,blocks:blocks(snapshot.content.blocks),pages:snapshot.content.pages.filter(page=>preview||page.published).map(page=>({...page,blocks:blocks(page.blocks)}))};
- return {id:site.id,slug:site.slug,content,theme:snapshot.theme,publishedAt:site.publishedAt,products:catalog,categories:metadata.categories.filter(category=>category.active&&category.siteVisible&&visibleCategory(category.id)).map(({id,name,slug,parentId,position,imageUrl})=>({id,name,slug,parentId,position,imageUrl:imageUrl?signOwnedUrl(imageUrl,OBJECT_URL_TTL.preview):undefined})),brands:metadata.brands.filter(brand=>brand.active).map(({id,name,slug,logoUrl})=>({id,name,slug,logoUrl:logoUrl?signOwnedUrl(logoUrl,OBJECT_URL_TTL.preview):undefined})),commerceEnabled:false};
+ return {id:site.id,slug:site.slug,content,theme:snapshot.theme,activeTemplateId:snapshot.activeTemplateId??snapshot.theme.template,templateVersion:snapshot.templateConfigs?.[snapshot.theme.template]?.templateVersion??1,layoutConfig:signed(snapshot.layoutConfig??{heroVariant:"signature",productGallery:"split"}),publishedAt:site.publishedAt,products:catalog,categories:metadata.categories.filter(category=>category.active&&category.siteVisible&&visibleCategory(category.id)).map(({id,name,slug,parentId,position,imageUrl})=>({id,name,slug,parentId,position,imageUrl:imageUrl?signOwnedUrl(imageUrl,OBJECT_URL_TTL.preview):undefined})),brands:metadata.brands.filter(brand=>brand.active).map(({id,name,slug,logoUrl})=>({id,name,slug,logoUrl:logoUrl?signOwnedUrl(logoUrl,OBJECT_URL_TTL.preview):undefined})),commerceEnabled:false};
 }
 export async function verifySiteDomain(deps:SiteEngineDeps,input:{siteId:string;tenantId:string;id:string}){
  const domains=await deps.repository.domains(input.siteId,input.tenantId);const domain=domains.find(item=>item.id===input.id);

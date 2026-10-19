@@ -4,7 +4,7 @@ export type SiteRepositoryPort={
  get(id:string):Promise<Site|undefined>;
  findPublic(input:{slug?:string;hostname?:string}):Promise<Site|undefined>;
  create(input:{tenantId:string;workspaceId:string;slug:string;draft:SiteSnapshot}):Promise<Site>;
- saveDraft(input:{id:string;tenantId:string;revision:number;draft:SiteSnapshot}):Promise<Site|undefined>;
+ saveDraft(input:{id:string;tenantId:string;revision:number;draft:SiteSnapshot;actorUserId?:string}):Promise<Site|undefined>;
  publish(input:{id:string;tenantId:string;revision:number;actorUserId:string;unpublish?:boolean}):Promise<Site|undefined>;
  domains(siteId:string,tenantId:string):Promise<SiteDomain[]>;
  claimDomain(input:{siteId:string;tenantId:string;hostname:string}):Promise<SiteDomain|undefined>;

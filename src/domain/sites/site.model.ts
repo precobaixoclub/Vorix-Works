@@ -1,4 +1,5 @@
 import { z } from "zod";
+import {SITE_TEMPLATE_IDS,siteTemplate} from "./site-template-registry.js";
 const text=z.string().trim().max(4000);
 const safeLink=z.string().max(2000).refine(value=>{
  if(!value)return true;
@@ -36,11 +37,23 @@ export const siteContentSchema=z.object({
  if(new Set(value.pages.map(page=>page.slug)).size!==value.pages.length)ctx.addIssue({code:"custom",message:"Cada página precisa de um endereço diferente.",path:["pages"]});
  for(const page of value.pages)if(new Set(page.blocks.map(block=>block.id)).size!==page.blocks.length)ctx.addIssue({code:"custom",message:"As seções da página não podem repetir identificadores.",path:["pages"]});
 });
-export const siteThemeSchema=z.object({template:z.enum(["catalog","studio","showcase"]).default("catalog"),primary:color.default("#2563eb"),background:color.default("#ffffff"),foreground:color.default("#111827"),rounded:z.boolean().default(true),secondary:color.optional(),surface:color.optional(),headerBackground:color.optional(),footerBackground:color.optional(),footerForeground:color.optional(),bodyFont:z.enum(["modern","classic","rounded","editorial"]).optional(),headingFont:z.enum(["modern","classic","rounded","editorial"]).optional(),fontSize:z.enum(["normal","large"]).optional(),headerLayout:z.enum(["split","center","compact"]).optional(),logoWidth:z.number().int().min(80).max(260).optional(),buttonStyle:z.enum(["rounded","pill","square"]).optional(),contentWidth:z.enum(["standard","wide"]).optional(),sectionSpacing:z.enum(["compact","comfortable","spacious"]).optional(),catalog:z.object({columns:z.number().int().min(2).max(4),mobileColumns:z.union([z.literal(1),z.literal(2)]),imageRatio:z.enum(["square","portrait","landscape"]),cardStyle:z.enum(["minimal","bordered","elevated"]),showPrice:z.boolean(),showSku:z.boolean(),showAvailability:z.boolean(),showFilters:z.boolean(),showSearch:z.boolean(),sort:z.enum(["manual","name","price_asc","price_desc"]),pageSize:z.union([z.literal(8),z.literal(12),z.literal(24)])}).strict().optional()}).strict();
+export const siteThemeSchema=z.object({template:z.enum(SITE_TEMPLATE_IDS).default("catalog"),primary:color.default("#2563eb"),background:color.default("#ffffff"),foreground:color.default("#111827"),rounded:z.boolean().default(true),secondary:color.optional(),surface:color.optional(),headerBackground:color.optional(),footerBackground:color.optional(),footerForeground:color.optional(),bodyFont:z.enum(["modern","classic","rounded","editorial"]).optional(),headingFont:z.enum(["modern","classic","rounded","editorial"]).optional(),fontSize:z.enum(["normal","large"]).optional(),headerLayout:z.enum(["split","center","compact"]).optional(),logoWidth:z.number().int().min(80).max(260).optional(),buttonStyle:z.enum(["rounded","pill","square"]).optional(),contentWidth:z.enum(["standard","wide"]).optional(),sectionSpacing:z.enum(["compact","comfortable","spacious"]).optional(),catalog:z.object({columns:z.number().int().min(2).max(4),mobileColumns:z.union([z.literal(1),z.literal(2)]),imageRatio:z.enum(["square","portrait","landscape"]),cardStyle:z.enum(["minimal","bordered","elevated"]),showPrice:z.boolean(),showSku:z.boolean(),showAvailability:z.boolean(),showFilters:z.boolean(),showSearch:z.boolean(),sort:z.enum(["manual","name","price_asc","price_desc"]),pageSize:z.union([z.literal(8),z.literal(12),z.literal(24)])}).strict().optional()}).strict();
 export type SiteContent=z.infer<typeof siteContentSchema>;
 export type SiteTheme=z.infer<typeof siteThemeSchema>;
-export type SiteSnapshot={content:SiteContent;theme:SiteTheme};
-export type Site={id:string;tenantId:string;workspaceId:string;slug:string;draft:SiteSnapshot;published?:SiteSnapshot;revision:number;publishedAt?:string;updatedAt:string};
+const sectionLayout=z.object({id:z.string().max(100),enabled:z.boolean(),style:siteBlockSchema.shape.style}).strict();
+export const siteLayoutSchema=z.object({heroVariant:z.enum(["signature","compact"]).default("signature"),productGallery:z.enum(["split","stacked"]).default("split"),heroImageUrl:image.optional(),heroMobileImageUrl:image.optional(),featuredProductId:z.string().max(160).optional()}).strict();
+export const siteTemplateConfigSchema=z.object({templateVersion:z.number().int().positive(),themeConfig:siteThemeSchema,sectionConfig:z.object({home:z.array(sectionLayout).max(40),pages:z.record(z.string().max(120),z.array(sectionLayout).max(30)).default({})}).strict(),layoutConfig:siteLayoutSchema}).strict();
+export const siteSnapshotSchema=z.object({content:siteContentSchema,theme:siteThemeSchema,activeTemplateId:z.enum(SITE_TEMPLATE_IDS).optional(),templateConfigs:z.record(z.string().max(80),siteTemplateConfigSchema).optional(),layoutConfig:siteLayoutSchema.optional()}).strict().superRefine((value,ctx)=>{
+ if(value.activeTemplateId&&value.activeTemplateId!==value.theme.template)ctx.addIssue({code:"custom",path:["activeTemplateId"],message:"O modelo selecionado não corresponde à aparência do rascunho."});
+ if(Object.keys(value.templateConfigs??{}).length>50)ctx.addIssue({code:"custom",message:"Limite de modelos configurados excedido."});
+ for(const [id,config] of Object.entries(value.templateConfigs??{})){
+  const template=siteTemplate(id);
+  if(!template||config.themeConfig.template!==id||config.templateVersion!==template.version)ctx.addIssue({code:"custom",path:["templateConfigs",id],message:"Modelo ou versão de configuração não suportado."});
+  for(const entries of[config.sectionConfig.home,...Object.values(config.sectionConfig.pages)])if(new Set(entries.map(entry=>entry.id)).size!==entries.length)ctx.addIssue({code:"custom",path:["templateConfigs",id],message:"A ordem das seções não pode repetir identificadores."});
+ }
+});
+export type SiteSnapshot=z.infer<typeof siteSnapshotSchema>;
+export type Site={id:string;tenantId:string;workspaceId:string;slug:string;draft:SiteSnapshot;published?:SiteSnapshot;previousPublished?:SiteSnapshot;updatedByUserId?:string;publishedByUserId?:string;revision:number;publishedAt?:string;updatedAt:string};
 export type SiteDomain={id:string;siteId:string;tenantId:string;hostname:string;challenge:string;verifiedAt?:string;expiresAt:string};
 
 export function normalizeSiteHostname(input:string):string{
@@ -48,4 +61,12 @@ export function normalizeSiteHostname(input:string):string{
  if(hostname.length>253||!hostname.includes(".")||!hostname.split(".").every(label=>/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(label))||/^(?:\d+\.){3}\d+$/.test(hostname)||/\.(?:localhost|local|internal|invalid|test)$/.test(hostname))throw Error("SITE_VALIDATION: informe um domínio público válido, sem protocolo ou caminho.");
  return hostname;
 }
-export function siteImageUrls(snapshot:SiteSnapshot):string[]{const blocks=[...snapshot.content.blocks,...snapshot.content.pages.flatMap(page=>page.blocks)];return [...new Set([snapshot.content.logoUrl,snapshot.content.faviconUrl,...blocks.flatMap(block=>[block.imageUrl,...(block.slides??[]).flatMap(slide=>[slide.imageUrl,slide.mobileImageUrl]),...(block.images??[]).map(image=>image.url),...block.items.map(item=>item.imageUrl)])].filter((url):url is string=>Boolean(url)))];}
+export function siteImageUrls(snapshot:SiteSnapshot):string[]{const blocks=[...snapshot.content.blocks,...snapshot.content.pages.flatMap(page=>page.blocks)];return [...new Set([snapshot.content.logoUrl,snapshot.content.faviconUrl,snapshot.layoutConfig?.heroImageUrl,snapshot.layoutConfig?.heroMobileImageUrl,...Object.values(snapshot.templateConfigs??{}).flatMap(config=>[config.layoutConfig.heroImageUrl,config.layoutConfig.heroMobileImageUrl]),...blocks.flatMap(block=>[block.imageUrl,...(block.slides??[]).flatMap(slide=>[slide.imageUrl,slide.mobileImageUrl]),...(block.images??[]).map(image=>image.url),...block.items.map(item=>item.imageUrl)])].filter((url):url is string=>Boolean(url)))];}
+
+export function captureSiteTemplateConfig(snapshot:SiteSnapshot):SiteSnapshot{
+ const template=siteTemplate(snapshot.theme.template)!;
+ if(template.legacy&&!snapshot.activeTemplateId&&!snapshot.templateConfigs)return snapshot;
+ const sections=(blocks:SiteSnapshot["content"]["blocks"])=>blocks.map(({id,enabled,style})=>({id,enabled,...(style?{style}:{})}));
+ const layoutConfig=snapshot.layoutConfig??{heroVariant:"signature" as const,productGallery:"split" as const};
+ return {...snapshot,activeTemplateId:template.id,layoutConfig,templateConfigs:{...snapshot.templateConfigs,[template.id]:{templateVersion:template.version,themeConfig:snapshot.theme,sectionConfig:{home:sections(snapshot.content.blocks),pages:Object.fromEntries(snapshot.content.pages.map(page=>[page.slug,sections(page.blocks)]))},layoutConfig}}};
+}

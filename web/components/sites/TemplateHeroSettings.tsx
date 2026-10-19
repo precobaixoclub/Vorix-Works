@@ -1,0 +1,13 @@
+"use client";
+import {SearchableCombo} from "@/components/SearchableCombo";
+import {Label} from "@/components/Field";
+import {useProducts} from "@/features/crm/hooks";
+import type {SiteSnapshot,SiteLayoutConfig} from "@/features/sites/types";
+import {DEFAULT_SITE_LAYOUT} from "@/features/sites/template-state";
+import {ImageField} from "./SiteEditorFields";
+export function TemplateHeroSettings({draft,workspaceId,onChange,onUpload,disabled}:{draft:SiteSnapshot;workspaceId:string;onChange:(snapshot:SiteSnapshot)=>void;onUpload:(file:File|undefined,onUrl:(url:string)=>void)=>void;disabled:boolean}){
+ const {data:products}=useProducts(workspaceId);
+ const patch=(value:Partial<SiteLayoutConfig>)=>onChange({...draft,layoutConfig:{...DEFAULT_SITE_LAYOUT,...draft.layoutConfig,...value}});
+ const images=[...new Set([draft.content.logoUrl,...draft.content.blocks.map(block=>block.imageUrl),...Object.values(draft.templateConfigs??{}).map(config=>config.layoutConfig.heroImageUrl),...(products??[]).flatMap(product=>product.imageUrls??[])].filter((url):url is string=>!!url))];
+ return <section className="space-y-4 rounded-xl border border-border/60 p-4"><div><h3 className="text-sm font-semibold">Destaque deste modelo</h3><p className="mt-1 text-xs leading-relaxed text-muted-foreground">O produto e as imagens escolhidos aqui ficam salvos somente neste modelo. Textos e catálogo são compartilhados.</p></div><div><Label>Produto em destaque no banner</Label><SearchableCombo value={draft.layoutConfig?.featuredProductId??""} items={(products??[]).filter(product=>product.active).map(product=>({id:product.id,label:product.name}))} extraOption={{value:"",label:"Usar o banner do site"}} onValueChange={id=>patch({featuredProductId:id||undefined})} placeholder="Usar o banner do site" disabled={disabled}/></div><ImageField label="Imagem exclusiva deste modelo" url={draft.layoutConfig?.heroImageUrl} disabled={disabled} onUpload={file=>onUpload(file,heroImageUrl=>patch({heroImageUrl}))} onRemove={()=>patch({heroImageUrl:undefined})}/><ImageField label="Imagem exclusiva para celular" url={draft.layoutConfig?.heroMobileImageUrl} disabled={disabled} onUpload={file=>onUpload(file,heroMobileImageUrl=>patch({heroMobileImageUrl}))} onRemove={()=>patch({heroMobileImageUrl:undefined})}/>{images.length?<div><Label>Reutilizar uma imagem já enviada</Label><SearchableCombo value="" items={images.map((url,index)=>({id:url,label:`Imagem ${index+1}${products?.find(product=>product.imageUrls?.includes(url))?` — ${products.find(product=>product.imageUrls?.includes(url))!.name}`:" — site"}`}))} onValueChange={heroImageUrl=>patch({heroImageUrl})} placeholder="Escolher da biblioteca do site e produtos" disabled={disabled}/></div>:null}</section>;
+}

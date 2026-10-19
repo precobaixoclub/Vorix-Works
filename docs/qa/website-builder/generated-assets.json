@@ -1,0 +1,37 @@
+{
+  "tool": "built-in image_gen",
+  "assets": [
+    {
+      "path": "web/public/site-assets/templates/nexus-hero.webp",
+      "prompt": "Use case: product-mockup. Asset type: premium website hero photography, wide landscape 1536x1024. Create an original luxury campaign photograph of sculptural graphite over-ear wireless headphones on a dark charcoal architectural plinth. Exquisite satin metal, woven ear cushions, subtle cool white rim lighting, deep almost-black studio background, restrained pool of light, sophisticated industrial design. Headphones dominate the right-center, ample calm dark negative space on the left for HTML typography. Realistic premium product photography, crisp materials, quiet expensive mood, no gamer RGB, no cyberpunk. No words, numbers, logos, UI, frames or watermarks. This is a photo asset only, not a web page."
+    },
+    {
+      "path": "web/public/site-assets/templates/aura-hero.webp",
+      "prompt": "Use case: photorealistic-natural. Premium editorial website hero, landscape 1536x1024. An original sophisticated interior campaign photograph: a sculptural curved walnut lounge chair with cream boucle cushion, travertine side table with a small ceramic vase, gauzy linen curtain and warm pale plaster walls, dappled morning sun, beautiful broad calm shadows, tactile expensive natural materials. Chair is the protagonist, composition offset right, plenty of understated cream negative space left. Architectural Digest level photography, restrained warm beige and walnut palette. No text, logos, people, watermarks or UI. Photo asset only."
+    },
+    {
+      "path": "web/public/site-assets/templates/pulse-hero.webp",
+      "prompt": "Use case: product-mockup. Original premium retail campaign photography, landscape 1536x1024. Sculptural ivory and charcoal contemporary running sneaker suspended diagonally above a vibrant chartreuse yellow architectural block, cobalt blue small sphere and clean warm ivory studio background. Dynamic precise shadow, fashion art direction, tactile woven mesh, beautiful rubber detailing, striking modern commercial image, strong graphic silhouette, expensive lighting. Shoe dominates center-right, clean left area for typography. No text, logos, labels, watermarks or UI. Photo asset only."
+    },
+    {
+      "path": "web/public/site-assets/templates/speaker.webp",
+      "prompt": "Use case: product-mockup. Original square professional product photo for a premium catalogue. A beautiful compact graphite cylindrical wireless speaker with finely woven acoustic fabric and brushed aluminum top on a dark charcoal studio surface. Centered whole object, generous breathing room, subtle cool rim light and realistic grounded shadow. Expensive industrial design. No text, logos, words, labels, watermark or UI."
+    },
+    {
+      "path": "web/public/site-assets/templates/perfume.webp",
+      "prompt": "Use case: product-mockup. Original square luxury perfume product photograph. An elegant amber glass perfume bottle with sculptural off-white stone cap, no label or text, standing on warm ivory travertine. Soft angled sunlight and long beautifully diffused shadows, warm cream background, tactile editorial still life, centered entire bottle with space around. Absolutely no text, logo, labels, watermarks or UI."
+    },
+    {
+      "path": "web/public/site-assets/templates/bag.webp",
+      "prompt": "Use case: product-mockup. Original square luxury product photography of a beautifully made caramel leather shoulder bag with sculptural curved silhouette and minimal brushed brass hardware. Centered complete product on warm beige studio backdrop, soft sculptural shadows, leather grain and stitches beautifully resolved. Editorial premium fashion catalogue quality. No logos, text, watermark or UI."
+    },
+    {
+      "path": "web/public/site-assets/templates/lamp.webp",
+      "prompt": "Use case: product-mockup. Original square high-end home design product photo. A sculptural portable mushroom table lamp in warm ivory matte aluminum, gently illuminated, on natural light gray limestone podium. Minimal warm gray studio background, dramatic but soft architectural shadow, centered whole object with negative space around, tactile materials. No text, numbers, logos, watermark or UI."
+    },
+    {
+      "path": "web/public/site-assets/templates/watch.webp",
+      "prompt": "Use case: product-mockup. Original square high-end product photograph of a minimalist graphite smartwatch with black woven sport strap floating at a clean three-quarter angle above dark graphite studio background. Blank subtle dark watchface with a simple analog luminous line dial, no numbers, no branding, no lettering. Brushed metal edges, clean premium rim lighting, accurate natural proportions. Centered whole object with ample space, no logos, watermark or UI."
+    }
+  ]
+}

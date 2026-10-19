@@ -279,5 +279,6 @@
   "tests/capacity-renewal.test.mjs",
   "tests/unified-site-product.test.mjs",
   "tests/site-customization.test.mjs",
-  "tests/product-specializations.test.mjs"
+  "tests/product-specializations.test.mjs",
+  "tests/website-builder-templates.test.mjs"
 ]

@@ -30,7 +30,7 @@ test("novo automóvel salva ficha, zero km, documentação e sete fotos",async({
  await dialog.getByLabel("Condição do veículo",{exact:true}).selectOption("new");await dialog.getByLabel("Ano de fabricação",{exact:true}).fill("2026");await dialog.getByLabel("Ano do modelo",{exact:true}).fill("2027");await dialog.getByLabel("Quilometragem (km)",{exact:true}).fill("0");await dialog.getByLabel("IPVA pago",{exact:true}).selectOption("false");
  await proof(page,"vehicle-specialized-form",info.project.name);
  await section(dialog,"Preços");await dialog.getByLabel("Preço de venda",{exact:true}).fill("125000,00");
- await section(dialog,"Fotos");const png=Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+j3ioAAAAASUVORK5CYII=","base64");
+ await section(dialog,"Fotos");const png=Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAQAAAAECAYAAACp8Z5+AAAACXBIWXMAAAPoAAAD6AG1e1JrAAAAEklEQVQImWNYtfvMf2TMQLoAAL4eMwFtMcU2AAAAAElFTkSuQmCC","base64");
  await dialog.getByLabel("Escolher fotos do produto",{exact:true}).setInputFiles(Array.from({length:7},(_,i)=>({name:`car-${i}.png`,mimeType:"image/png",buffer:png})));
  await expect(dialog.getByRole("button",{name:"Remover foto",exact:true})).toHaveCount(7);
  await dialog.getByRole("button",{name:"Cadastrar produto",exact:true}).click();await expect(dialog).toHaveCount(0);

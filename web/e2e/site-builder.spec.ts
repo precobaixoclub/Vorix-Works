@@ -30,7 +30,7 @@ async function section(page:Page,name:string){await page.getByRole("navigation",
 async function preview(page:Page){await page.getByRole("button",{name:"Pré-visualizar",exact:true}).click();return page.getByRole("dialog",{name:"Prévia do seu site"}).frameLocator('iframe[title="Prévia do seu site"]');}
 async function closePreview(page:Page){await page.keyboard.press("Escape");await expect(page.getByRole("dialog",{name:"Prévia do seu site"})).toHaveCount(0);}
 async function save(page:Page){await page.getByRole("button",{name:"Salvar rascunho",exact:true}).click();await expect(page.getByText("Rascunho salvo",{exact:true})).toBeVisible();}
-async function publish(page:Page){await page.getByRole("button",{name:"Publicar site",exact:true}).click();await page.getByRole("alertdialog").getByRole("button",{name:"Publicar agora",exact:true}).click();await expect(page.getByRole("alertdialog")).toHaveCount(0);}
+async function publish(page:Page){await page.getByRole("button",{name:"Publicar site",exact:true}).click();await page.getByRole("alertdialog").getByRole("button",{name:/^(Publicar agora|Publicar este modelo)$/}).click();await expect(page.getByRole("alertdialog")).toHaveCount(0);}
 async function proof(page:Page,name:string,project:string){const dir=path.resolve("../tmp/site-builder-browser/evidence");await mkdir(dir,{recursive:true});await page.evaluate(async()=>{for(let y=0;y<document.documentElement.scrollHeight;y+=innerHeight){window.scrollTo(0,y);await new Promise(ok=>setTimeout(ok,70));}window.scrollTo(0,0);});await page.screenshot({path:path.join(dir,`${project}-${name}.png`),fullPage:true});}
 
 test("prévia interativa usa o rascunho sem mudar o site público",async({page,context},info)=>{
@@ -45,9 +45,9 @@ test("prévia interativa usa o rascunho sem mudar o site público",async({page,c
 
 test("três modelos, cores e fontes mudam o resultado mantendo conteúdo",async({page,context},info)=>{
  await login(page,"aparencia");
- for(const [label,template] of [["Catálogo","catalog"],["Institucional","studio"],["Vitrine","showcase"]]){
-  await page.getByRole("button",{name:new RegExp(`^${label}`)}).and(page.locator("[aria-pressed]")).click();await save(page);await publish(page);
-  const visitor=await context.newPage();await visitor.goto(`/s/${scope.slug}`);await expect(visitor.locator(`.tenant-site-${template}`)).toBeVisible();await expect(visitor.getByRole("heading",{name:"Nosso catálogo",exact:true})).toBeVisible();await expect(visitor.locator(".ts-hero img")).toBeVisible();
+ for(const [label,template] of [["Nexus","nexus"],["Aura","aura"],["Pulse","pulse"]]){
+  await section(page,"Modelos");await page.getByTestId(`template-card-${template}`).getByRole("button",{name:`Personalizar ${label}`,exact:true}).click();await save(page);await publish(page);
+  const visitor=await context.newPage();await visitor.goto(`/s/${scope.slug}`);await expect(visitor.locator(`.tenant-site-${template}`)).toBeVisible();await expect(visitor.getByRole("heading",{name:"Nosso catálogo",exact:true})).toBeVisible();await expect(visitor.locator(`.${template}-hero img`)).toBeVisible();
   expect(await visitor.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);await proof(visitor,`public-${template}`,info.project.name);await visitor.close();
  }
  await page.getByLabel("Cor principal",{exact:true}).fill("#8B3159");await page.getByLabel("Fonte dos títulos",{exact:true}).selectOption("classic");
@@ -83,7 +83,7 @@ test("páginas de rascunho têm prévia e ficam fora da publicação",async({pag
 
 test("banners têm imagens diferentes para celular, carrossel e agendamento",async({page},info)=>{
  await login(page,"banners");const first=page.locator("details").filter({has:page.locator("summary").filter({hasText:/^Banner 1:/})}).last();if(await first.getAttribute("open")===null)await first.locator("summary").first().click();
- const image=Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+j3ioAAAAASUVORK5CYII=","base64");await page.getByLabel("Enviar banner 1 para celular",{exact:true}).setInputFiles({name:"mobile-fixture.png",mimeType:"image/png",buffer:image});await expect(page.getByRole("img",{name:"Banner 1 para celular",exact:true})).toBeVisible();
+ const image=Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAQAAAAECAYAAACp8Z5+AAAACXBIWXMAAAPoAAAD6AG1e1JrAAAAEklEQVQImWNYtfvMf2TMQLoAAL4eMwFtMcU2AAAAAElFTkSuQmCC","base64");await page.getByLabel("Enviar banner 1 para celular",{exact:true}).setInputFiles({name:"mobile-fixture.png",mimeType:"image/png",buffer:image});await expect(page.getByRole("img",{name:"Banner 1 para celular",exact:true})).toBeVisible();
  await page.getByRole("button",{name:"Adicionar banner",exact:true}).click();await page.locator("summary").filter({hasText:/^Banner 2:/}).click();await page.getByLabel("Título do banner 2",{exact:true}).fill("Próxima coleção");await page.getByLabel("Mostrar a partir de (opcional)").last().fill("2099-01-01T09:00");await page.getByLabel("Ocultar depois de (opcional)").last().fill("2099-02-01T09:00");
  const frame=await preview(page);await frame.getByRole("button",{name:"Mostrar banner 2",exact:true}).click();await expect(frame.getByRole("heading",{name:"Próxima coleção",exact:true})).toBeVisible();await page.getByRole("dialog").getByRole("button",{name:"Prévia em celular",exact:true}).click();await expect(page.getByRole("dialog").locator("iframe")).toHaveCSS("width","390px");await proof(page,"mobile-preview",info.project.name);await closePreview(page);await save(page);
 });

@@ -3,7 +3,7 @@ import {randomUUID} from "node:crypto";
 import type {SiteRepositoryPort} from "../../../application/ports/site-repository.port.js";
 import type {Site,SiteDomain} from "../../../domain/sites/site.model.js";
 type Row=Record<string,any>;
-const site=(row:Row):Site=>({id:row.id,tenantId:row.tenant_id,workspaceId:row.workspace_id,slug:row.slug,draft:row.draft,published:row.published??undefined,revision:row.revision,publishedAt:row.published_at?.toISOString(),updatedAt:row.updated_at.toISOString()});
+const site=(row:Row):Site=>({id:row.id,tenantId:row.tenant_id,workspaceId:row.workspace_id,slug:row.slug,draft:row.draft,published:row.published??undefined,previousPublished:row.previous_published??undefined,updatedByUserId:row.updated_by_user_id??undefined,publishedByUserId:row.published_by_user_id??undefined,revision:row.revision,publishedAt:row.published_at?.toISOString(),updatedAt:row.updated_at.toISOString()});
 const domain=(row:Row):SiteDomain=>({id:row.id,siteId:row.site_id,tenantId:row.tenant_id,hostname:row.hostname,challenge:row.challenge,verifiedAt:row.verified_at?.toISOString(),expiresAt:row.expires_at.toISOString()});
 export class PostgresSiteRepository implements SiteRepositoryPort{
  constructor(private readonly pool:Pool){}
@@ -14,10 +14,10 @@ export class PostgresSiteRepository implements SiteRepositoryPort{
   return rows[0]?site(rows[0]):undefined;
  }
  async create(input:Parameters<SiteRepositoryPort["create"]>[0]){return site((await this.pool.query("insert into tenant_sites(id,tenant_id,workspace_id,slug,draft) values($1,$2,$3,$4,$5) returning *",["site-"+randomUUID(),input.tenantId,input.workspaceId,input.slug,JSON.stringify(input.draft)])).rows[0]);}
- async saveDraft(input:Parameters<SiteRepositoryPort["saveDraft"]>[0]){const {rows}=await this.pool.query("update tenant_sites set draft=$4,revision=revision+1,updated_at=now() where id=$1 and tenant_id=$2 and revision=$3 returning *",[input.id,input.tenantId,input.revision,JSON.stringify(input.draft)]);return rows[0]?site(rows[0]):undefined;}
+ async saveDraft(input:Parameters<SiteRepositoryPort["saveDraft"]>[0]){const {rows}=await this.pool.query("update tenant_sites set draft=$4,updated_by_user_id=coalesce($5,updated_by_user_id),revision=revision+1,updated_at=now() where id=$1 and tenant_id=$2 and revision=$3 returning *",[input.id,input.tenantId,input.revision,JSON.stringify(input.draft),input.actorUserId??null]);return rows[0]?site(rows[0]):undefined;}
  async publish(input:Parameters<SiteRepositoryPort["publish"]>[0]){
   const client=await this.pool.connect();try{await client.query("begin");
-   const {rows}=await client.query(`update tenant_sites set published=${input.unpublish?"null":"draft"},published_at=${input.unpublish?"null":"now()"},revision=revision+1,updated_at=now() where id=$1 and tenant_id=$2 and revision=$3 returning *`,[input.id,input.tenantId,input.revision]);
+   const {rows}=await client.query(`update tenant_sites set previous_published=case when published is not null and (published is distinct from draft or ${input.unpublish?"true":"false"}) then published else previous_published end,published_by_user_id=$4,updated_by_user_id=$4,published=${input.unpublish?"null":"draft"},published_at=${input.unpublish?"null":"now()"},revision=revision+1,updated_at=now() where id=$1 and tenant_id=$2 and revision=$3 returning *`,[input.id,input.tenantId,input.revision,input.actorUserId]);
    if(!rows[0]){await client.query("rollback");return undefined;}
    await client.query("insert into site_publication_events(id,site_id,tenant_id,revision,actor_user_id,event_type) values($1,$2,$3,$4,$5,$6)",["site-event-"+randomUUID(),input.id,input.tenantId,rows[0].revision,input.actorUserId,input.unpublish?"unpublished":"published"]);
    await client.query("commit");return site(rows[0]);

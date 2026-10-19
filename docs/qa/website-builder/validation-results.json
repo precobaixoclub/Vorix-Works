@@ -1,0 +1,68 @@
+{
+  "date": "2026-10-19",
+  "scope": "Website Builder local, sem deploy",
+  "backendSelected": {
+    "files": 45,
+    "passed": 428,
+    "failed": 0,
+    "skipped": 0
+  },
+  "backendFocused": {
+    "passed": 47,
+    "failed": 0,
+    "skipped": 0
+  },
+  "frontend": {
+    "files": 20,
+    "passed": 154,
+    "failed": 0
+  },
+  "browserFull": {
+    "passed": 35,
+    "failed": 0,
+    "skipped": 1,
+    "reason": "Matriz de oito larguras roda uma vez no projeto desktop."
+  },
+  "browserRecoveryReview": {
+    "passed": 7,
+    "failed": 0,
+    "skipped": 1
+  },
+  "architecture": {
+    "contracts": 49,
+    "result": "PASS"
+  },
+  "build": {
+    "backend": "PASS",
+    "frontend": "PASS"
+  },
+  "typecheck": {
+    "backend": "PASS",
+    "frontend": "PASS"
+  },
+  "responsive": {
+    "templates": 3,
+    "widths": [
+      320,
+      360,
+      375,
+      390,
+      430,
+      768,
+      1024,
+      1440
+    ],
+    "horizontalOverflow": 0
+  },
+  "screenshots": 31,
+  "migration": "0169_site_template_publication_recovery.sql",
+  "migrationAppliedToProduction": false,
+  "pushed": false,
+  "deployed": false,
+  "notes": [
+    "O total de 47 focados se sobrepõe à seleção de 428; não somar como testes distintos.",
+    "Os 7 testes de revisão repetem o subconjunto novo após corrigir recuperação.",
+    "Ajuste final de imagens desktop/mobile validado por teste de renderização e build/typecheck.",
+    "A suíte completa do backend não foi executada nesta rodada."
+  ]
+}

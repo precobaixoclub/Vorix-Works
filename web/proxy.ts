@@ -48,6 +48,7 @@ export function proxy(request: NextRequest) {
   if (
     pathname.startsWith("/p/") ||
     pathname.startsWith("/s/") ||
+    pathname.startsWith("/modelos/") ||
     pathname.startsWith("/site-domain/") ||
     pathname.startsWith("/api/tenant-site/") ||
     // Link compartilhado de reunião do Vorix Meetings (o token é a autorização).

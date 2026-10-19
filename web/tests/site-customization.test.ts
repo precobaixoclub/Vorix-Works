@@ -14,7 +14,7 @@ describe("personalização do Site",()=>{
   expect(original.theme.template).toBe("catalog");
  });
  it("paletas e composições dos três modelos são diferentes, sem criar afirmações comerciais fictícias",()=>{
-  expect(new Set(TEMPLATE_PRESETS.map(item=>item.theme.primary)).size).toBe(3);expect(new Set(TEMPLATE_PRESETS.map(item=>item.theme.headerLayout)).size).toBe(3);
+  expect(TEMPLATE_PRESETS).toHaveLength(6);expect(new Set(TEMPLATE_PRESETS.map(item=>item.theme.primary)).size).toBe(6);expect(new Set(TEMPLATE_PRESETS.map(item=>item.theme.headerLayout)).size).toBe(3);
   for(const preset of TEMPLATE_PRESETS){const snapshot=initialSiteSnapshot("Minha empresa",preset.id);expect(snapshot.content.name).toBe("Minha empresa");expect(snapshot.content.blocks.some(block=>block.type==="testimonials"||block.type==="stats")).toBe(false);}
  });
  it("desfazer e refazer mantêm o estado salvo e descartam o futuro após nova edição",()=>{

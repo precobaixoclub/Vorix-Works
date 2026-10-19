@@ -1,0 +1,102 @@
+{
+  "automatedReview": "Controle de nomes acessíveis, labels, alt, h1, teclado e contraste do CTA. Não substitui auditoria WCAG completa nem Lighthouse.",
+  "results": [
+    {
+      "id": "nexus",
+      "h1": 1,
+      "missingInputLabels": [],
+      "unnamedControls": [],
+      "missingAlt": [],
+      "heroButtonContrast": 15.54935709158601,
+      "keyboardMenu": "PASS"
+    },
+    {
+      "id": "aura",
+      "h1": 1,
+      "missingInputLabels": [],
+      "unnamedControls": [],
+      "missingAlt": [],
+      "heroButtonContrast": 12.500411249479775,
+      "keyboardMenu": "PASS"
+    },
+    {
+      "id": "pulse",
+      "h1": 1,
+      "missingInputLabels": [],
+      "unnamedControls": [],
+      "missingAlt": [],
+      "heroButtonContrast": 16.4144806384953,
+      "keyboardMenu": "PASS"
+    }
+  ],
+  "assets": [
+    {
+      "file": "aura-desktop.webp",
+      "bytes": 103020
+    },
+    {
+      "file": "aura-hero-mobile.webp",
+      "bytes": 113890
+    },
+    {
+      "file": "aura-hero.webp",
+      "bytes": 210170
+    },
+    {
+      "file": "aura-mobile.webp",
+      "bytes": 183028
+    },
+    {
+      "file": "bag.webp",
+      "bytes": 60776
+    },
+    {
+      "file": "lamp.webp",
+      "bytes": 49542
+    },
+    {
+      "file": "nexus-desktop.webp",
+      "bytes": 109784
+    },
+    {
+      "file": "nexus-hero-mobile.webp",
+      "bytes": 62552
+    },
+    {
+      "file": "nexus-hero.webp",
+      "bytes": 93050
+    },
+    {
+      "file": "nexus-mobile.webp",
+      "bytes": 248498
+    },
+    {
+      "file": "perfume.webp",
+      "bytes": 75800
+    },
+    {
+      "file": "pulse-desktop.webp",
+      "bytes": 109676
+    },
+    {
+      "file": "pulse-hero-mobile.webp",
+      "bytes": 97788
+    },
+    {
+      "file": "pulse-hero.webp",
+      "bytes": 146756
+    },
+    {
+      "file": "pulse-mobile.webp",
+      "bytes": 198974
+    },
+    {
+      "file": "speaker.webp",
+      "bytes": 82506
+    },
+    {
+      "file": "watch.webp",
+      "bytes": 43234
+    }
+  ]
+}

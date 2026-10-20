@@ -12,6 +12,8 @@ import type { InboxConversationListFilter, InboxConversationListItem, InboxConve
 import type { InboxIdentityLinkRepositoryPort } from "../ports/inbox-identity-link-repository.port.js";
 import type { InboxMediaStoragePort } from "../ports/inbox-media-storage.port.js";
 import type { InboxMessageRepositoryPort } from "../ports/inbox-message-repository.port.js";
+import type { UserRepositoryPort } from "../ports/user-repository.port.js";
+import type { MessageEditReceived } from "./inbox-events.js";
 import type { InboxMetricsRecorder } from "../ports/inbox-metrics.port.js";
 import type { InboxTagRepositoryPort } from "../ports/inbox-tag-repository.port.js";
 import type { InboxQuickReplyRepositoryPort } from "../ports/inbox-quick-reply-repository.port.js";
@@ -40,6 +42,7 @@ import { mustTeamBelongToTenantAndWorkspace, resolveNextTeamMember } from "../id
  * outro tenant/workspace responde "not found", nunca "forbidden" — evita vazar existência entre tenants.
  */
 export type InboxUseCaseDeps = {
+  userRepository?: UserRepositoryPort;
   connectionRepository: MessagingConnectionRepositoryPort;
   contactRepository: InboxContactRepositoryPort;
   conversationRepository: InboxConversationRepositoryPort;
@@ -430,7 +433,25 @@ export type ListConversationMessagesInput = { tenantId: string; workspaceId: str
 export async function listConversationMessages(deps: InboxUseCaseDeps, input: ListConversationMessagesInput): Promise<InboxMessage[]> {
   await mustConversationBelongToTenantAndWorkspace(deps, input.conversationId, input.tenantId, input.workspaceId);
   // Teto de 500 por página: o histórico "carregar anteriores" cresce o limite, nunca sem fim.
-  return deps.messageRepository.listByConversation({ ...input, limit: Math.min(Math.max(Math.floor(input.limit ?? 50), 1), 500) });
+  const messages = await deps.messageRepository.listByConversation({ ...input, limit: Math.min(Math.max(Math.floor(input.limit ?? 50), 1), 500) });
+  // Mensagens antigas também identificam o autor real; nunca usa o atendente atribuído hoje.
+  const ids = [...new Set(messages.filter((message) => message.sentByUserId).map((message) => message.sentByUserId!))];
+  const senders = new Map(await Promise.all(ids.map(async (id) => [id, await outboundSender(deps, id)] as const)));
+  return messages.map((message) => {
+    const sender = message.sentByUserId ? senders.get(message.sentByUserId) : undefined;
+    return sender ? { ...message, senderDisplayName: message.senderDisplayName ?? sender.name, metadata: { ...message.metadata, senderAvatarUrl: sender.avatarUrl } } : message;
+  });
+}
+
+export async function updateConnectionSettings(deps: InboxUseCaseDeps, input: { tenantId: string; workspaceId: string; connectionId: string; sendAgentName: boolean }): Promise<MessagingConnection> {
+  await mustConnectionBelongToTenantAndWorkspace(deps, input.connectionId, input.tenantId, input.workspaceId);
+  return deps.connectionRepository.updateSettings(input.connectionId, { sendAgentName: input.sendAgentName });
+}
+
+async function outboundSender(deps: Pick<InboxUseCaseDeps, "userRepository">, userId: string | undefined): Promise<{ name: string; avatarUrl?: string } | undefined> {
+  if (!userId || userId === INBOX_AI_ACTOR || userId === INBOX_SYSTEM_ACTOR) return undefined;
+  const user = await deps.userRepository?.getById(userId);
+  return user ? { name: user.name, avatarUrl: user.avatarUrl } : undefined;
 }
 
 export type MarkConversationReadInput = { tenantId: string; workspaceId: string; conversationId: string };
@@ -1251,6 +1272,7 @@ export async function sendInboxMessage(deps: InboxUseCaseDeps, input: SendInboxM
     type: "text",
     status: "queued",
     body,
+    senderDisplayName: (await outboundSender(deps, input.sentByUserId))?.name,
     scheduledAt: scheduledAt?.toISOString(),
     sentByUserId: input.sentByUserId,
     sentByAi: input.sentByAi ?? false,
@@ -1424,6 +1446,7 @@ export async function sendInboxMediaMessage(deps: InboxUseCaseDeps, input: SendI
     type: input.type,
     status: "queued",
     body: input.caption,
+    senderDisplayName: (await outboundSender(deps, input.sentByUserId))?.name,
     mediaStorageRef: { provider: "inbox-media", objectKey, metadata: { tenantId: input.tenantId } },
     mimeType: input.mimeType,
     metadata,
@@ -1541,6 +1564,7 @@ export async function sendInboxContactCardMessage(deps: InboxUseCaseDeps, input:
     direction: "outbound",
     type: "contact",
     status: "queued",
+    senderDisplayName: (await outboundSender(deps, input.sentByUserId))?.name,
     metadata: { contactName, contactPhone, vcard },
     sentByUserId: input.sentByUserId,
   });
@@ -2038,6 +2062,17 @@ export async function applyMessageStatusChanged(deps: InboxUseCaseDeps, input: A
   await deps.messageRepository.updateStatusByExternalId(input);
 }
 
+/** Não passa pelo registro inbound: edição não incrementa não lidas nem aciona IA/automações. */
+export async function applyMessageEdit(deps: Pick<InboxUseCaseDeps, "messageRepository">, input: Omit<MessageEditReceived, "type">): Promise<{ applied: boolean; conversationId?: string }> {
+  const message = await deps.messageRepository.findByExternalId({ connectionId: input.connectionId, externalMessageId: input.targetExternalMessageId });
+  // Filas distintas podem entregar a edição antes da persistência do original. Usa a escada
+  // de retry do worker em vez de perder o evento ou criar uma bolha sem mensagem-alvo.
+  if (!message) throw new MessagingProviderError("transient", "INBOX_EDIT_TARGET_NOT_FOUND: aguardando a mensagem original.");
+  if (message.tenantId !== input.tenantId || message.workspaceId !== input.workspaceId || (message.direction === "outbound") !== input.fromMe) return { applied: false };
+  const applied = await deps.messageRepository.updateContent(message.id, { body: input.body, editedAt: input.occurredAt });
+  return { applied, conversationId: message.conversationId };
+}
+
 export type ApplyMessageReactionInput = {
   connectionId: string;
   targetExternalMessageId: string;
@@ -2157,9 +2192,14 @@ export type ProcessOutboundMessageInput = { messageId: string };
  */
 async function sendOutboundByType(
   deps: InboxUseCaseDeps,
-  input: { provider: MessagingProvider; externalSessionId: string; to: string; message: InboxMessage },
+  input: { provider: MessagingProvider; externalSessionId: string; to: string; message: InboxMessage; sendAgentName?: boolean },
 ): Promise<{ externalMessageId: string }> {
   const { message, provider } = input;
+  const humanSender = !message.sentByAi && !message.sentByAutomation && message.sentByUserId;
+  const senderName = humanSender ? message.senderDisplayName ?? (await outboundSender(deps, message.sentByUserId))?.name : undefined;
+  // Só o payload do provider recebe a assinatura. O corpo persistido fica intacto para citação,
+  // reentregas, histórico e edição; o canal é consultado pelo worker no momento do envio.
+  const body = input.sendAgentName && senderName ? `*${senderName.replace(/[\r\n*]/g, " ").trim()}*\n${message.body ?? ""}`.trimEnd() : message.body;
   if (message.type === "text") {
     // Bloco "responder mensagem específica" — `quotedMessage` já é o mesmo snapshot usado pra
     // exibir respostas RECEBIDAS (ver `registerInboundMessage`); aqui, reaproveitado pra CONSTRUIR
@@ -2167,7 +2207,7 @@ async function sendOutboundByType(
     const replyTo = message.quotedMessage?.externalMessageId
       ? { externalMessageId: message.quotedMessage.externalMessageId, participantJid: message.quotedMessage.senderId, quotedText: message.quotedMessage.body }
       : undefined;
-    return provider.sendText({ externalSessionId: input.externalSessionId, to: input.to, body: message.body ?? "", replyTo });
+    return provider.sendText({ externalSessionId: input.externalSessionId, to: input.to, body: body ?? "", replyTo });
   }
   if (message.type === "contact") {
     const contactName = message.metadata?.contactName as string | undefined;
@@ -2181,9 +2221,9 @@ async function sendOutboundByType(
   if (!stored) throw new MessagingProviderError("permanent", `Mídia da mensagem "${message.id}" não encontrada no storage.`);
   const dataUri = `data:${stored.contentType};base64,${stored.body.toString("base64")}`;
 
-  if (message.type === "image") return provider.sendImage({ externalSessionId: input.externalSessionId, to: input.to, mediaUrl: dataUri, caption: message.body });
+  if (message.type === "image") return provider.sendImage({ externalSessionId: input.externalSessionId, to: input.to, mediaUrl: dataUri, caption: body });
   if (message.type === "audio") return provider.sendAudio({ externalSessionId: input.externalSessionId, to: input.to, mediaUrl: dataUri });
-  if (message.type === "video") return provider.sendVideo({ externalSessionId: input.externalSessionId, to: input.to, mediaUrl: dataUri, caption: message.body });
+  if (message.type === "video") return provider.sendVideo({ externalSessionId: input.externalSessionId, to: input.to, mediaUrl: dataUri, caption: body });
   if (message.type === "document") {
     const fileName = (message.metadata?.fileName as string | undefined) ?? "documento";
     return provider.sendDocument({ externalSessionId: input.externalSessionId, to: input.to, mediaUrl: dataUri, fileName });
@@ -2299,7 +2339,7 @@ export async function processOutboundMessage(deps: InboxUseCaseDeps, input: Proc
     // identidade de conversa), e usar o remetente da ÚLTIMA mensagem recebida como destino
     // (em vez do chat) mandaria a resposta pro participante errado, nunca pro grupo. Ver
     // docs/conversas-canonical-chat-identity.md.
-    const result = await sendOutboundByType(deps, { provider: resolveProvider(deps, connection.provider), externalSessionId: connection.externalSessionId, to: conversation.externalChatId, message });
+    const result = await sendOutboundByType(deps, { provider: resolveProvider(deps, connection.provider), externalSessionId: connection.externalSessionId, to: conversation.externalChatId, message, sendAgentName: connection.sendAgentName });
     if (deps.circuitBreaker) await deps.circuitBreaker.recordSuccess(circuitKey);
     deps.metrics?.incMessageOutbound();
     return await deps.messageRepository.markSent(message.id, { externalMessageId: result.externalMessageId, sentAt: new Date().toISOString() });

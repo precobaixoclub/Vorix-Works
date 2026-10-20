@@ -59,6 +59,8 @@ export type InboxMessageRepositoryPort = {
    * `undefined` no `create()` seria ambíguo com "nunca existiu") de "isto é uma mensagem nova que o
    * próprio número mandou por fora do Vorix (direto do celular pareado)". */
   findByExternalId(input: { connectionId: string; externalMessageId: string }): Promise<InboxMessage | undefined>;
+  /** Atualiza só o corpo e metadata.editedAt. Edições antigas/reentregues são ignoradas atomicamente. */
+  updateContent(id: string, input: { body: string; editedAt: string }): Promise<boolean>;
   /**
    * Redesign operacional (mídia real) — preenche `mediaStorageRef`/`mimeType`/`metadata` DEPOIS
    * que a mensagem já foi criada (best-effort/assíncrono: a mensagem aparece imediatamente com

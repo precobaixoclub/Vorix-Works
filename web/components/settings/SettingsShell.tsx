@@ -5,11 +5,11 @@ import { Boxes, CreditCard, Palette, PlugZap, Scale, Settings, Target, UsersRoun
 import { PageHeader } from "@/components/PageHeader";
 import { PageSubnav } from "@/components/PageSubnav";
 import { useCurrentWorkspace } from "@/contexts/workspace-context";
-import { useSolutions } from "@/features/solutions/hooks";
+import { useActiveSolution } from "@/features/solutions/hooks";
 import type { SolutionKey } from "@/lib/solutions";
 
 // Três escopos, nunca misturados: "Conta" é do Core (vale para qualquer solução); cada solução
-// tem o próprio grupo, que só aparece para quem tem a solução.
+// tem o próprio grupo, que só aparece quando essa solução está ativa.
 const GLOBAL_GROUP = "Conta";
 const SETTINGS_SECTIONS: ReadonlyArray<{ value: string; label: string; href: string; icon: typeof Settings; group: string; solution?: SolutionKey }> = [
   { value: "general", label: "Geral", href: "/settings", icon: Settings, group: GLOBAL_GROUP },
@@ -40,9 +40,11 @@ export function SettingsShell({
   const workspace = useCurrentWorkspace();
   const router = useRouter();
   const pathname = usePathname();
-  const { available, isLoading: solutionsLoading } = useSolutions();
+  const { active: activeSolution, available, isLoading: solutionsLoading } = useActiveSolution(pathname, `/workspaces/${workspace.id}`);
   // Enquanto as soluções carregam, o grupo do Conversas (solução padrão) já aparece; o do Marketing não.
-  const sections = SETTINGS_SECTIONS.filter((section) => !section.solution || available.includes(section.solution) || (solutionsLoading && section.solution === "conversations"));
+  const sections = SETTINGS_SECTIONS.filter(({ solution }) =>
+    !solution || (solution === activeSolution && (available.includes(solution) || (solutionsLoading && solution === "conversations"))),
+  );
 
   function navigate(value: string) {
     const item = sections.find((section) => section.value === value);

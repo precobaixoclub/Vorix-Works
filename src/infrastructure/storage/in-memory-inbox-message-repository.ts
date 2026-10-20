@@ -67,6 +67,15 @@ export class InMemoryInboxMessageRepository implements InboxMessageRepositoryPor
     );
   }
 
+  async updateContent(id: string, input: { body: string; editedAt: string }): Promise<boolean> {
+    const existing = this.rows.get(id);
+    if (!existing) return false;
+    const editedAt = existing.metadata?.editedAt;
+    if (typeof editedAt === "string" && new Date(editedAt).getTime() >= new Date(input.editedAt).getTime()) return false;
+    this.rows.set(id, { ...existing, body: input.body, metadata: { ...existing.metadata, editedAt: input.editedAt } });
+    return true;
+  }
+
   async attachMedia(id: string, input: { mediaStorageRef: InboxMediaStorageRef; mimeType?: string; metadata?: Record<string, unknown> }): Promise<void> {
     const existing = this.rows.get(id);
     if (!existing) return;

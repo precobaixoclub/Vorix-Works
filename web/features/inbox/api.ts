@@ -24,6 +24,10 @@ export function createInboxConnection(workspaceId: string, displayName: string):
   return apiClient.post<MessagingConnection>("/v1/inbox/connections", { workspaceId, displayName });
 }
 
+export function updateInboxConnectionSettings(workspaceId: string, connectionId: string, sendAgentName: boolean): Promise<MessagingConnection> {
+  return apiClient.patch<MessagingConnection>(`/v1/inbox/connections/${encodeURIComponent(connectionId)}/settings`, { workspaceId, sendAgentName });
+}
+
 export function getInboxConnectionQrCode(workspaceId: string, connectionId: string): Promise<{ qrCode: string; expiresAt: string }> {
   const query = new URLSearchParams({ workspaceId });
   return apiClient.get<{ qrCode: string; expiresAt: string }>(`/v1/inbox/connections/${encodeURIComponent(connectionId)}/qr?${query.toString()}`);

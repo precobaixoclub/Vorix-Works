@@ -37,6 +37,7 @@ import { useTeams } from "@/features/identity/hooks";
 import { useInboxConversationMessages } from "@/features/inbox/hooks";
 import type { InboxConversation, InboxTenantMember } from "@/features/inbox/types";
 import { formatCurrencyCents, formatDateTime } from "@/lib/format";
+import { useInvalidateSales } from "@/features/sales/hooks";
 import { canOperateWorkspace, RBAC_COPY } from "@/lib/rbac";
 import { cn } from "@/lib/utils";
 
@@ -120,6 +121,7 @@ function LinkedCrmSection({
   canOperate: boolean;
 }) {
   const router = useRouter();
+  const invalidateSales = useInvalidateSales(workspaceId);
   const { data: contact, error: contactError, mutate: mutateContact } = useContact(contactId, workspaceId);
   const { data: deals, mutate: mutateDeals } = useDeals(workspaceId, { contactId });
   // Todas as tarefas do contato (não só pendentes) — alimenta a seção "Próxima ação" (via
@@ -504,7 +506,7 @@ function LinkedCrmSection({
               setLossPrompt({ deal, stage });
               return;
             }
-            void moveDealStage(deal.id, workspaceId, stage.id).then(() => mutateDeals());
+            void moveDealStage(deal.id, workspaceId, stage.id).then(() => Promise.all([mutateDeals(), invalidateSales()]));
           }}
         />
       ) : null}
@@ -515,7 +517,7 @@ function LinkedCrmSection({
           onConfirm={async (reason, comment) => {
             if (!lossPrompt) return;
             await moveDealStage(lossPrompt.deal.id, workspaceId, lossPrompt.stage.id, reason, comment);
-            await mutateDeals();
+            await Promise.all([mutateDeals(), invalidateSales()]);
             setLossPrompt(undefined);
           }}
         />

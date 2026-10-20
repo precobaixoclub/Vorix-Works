@@ -30,6 +30,7 @@ export type MessagingConnectionRepositoryPort = {
    * evento de fila — nunca exposto a uma rota HTTP. */
   listAllActive(): Promise<MessagingConnection[]>;
   updateStatus(id: string, input: UpdateMessagingConnectionStatusInput): Promise<MessagingConnection>;
+  updateSettings(id: string, input: { sendAgentName: boolean }): Promise<MessagingConnection>;
   /** Exclusão de canal (pedido explícito do usuário) — permanente, cascateia conversas/mensagens/
    * eventos/tags/roteamento (`db/migrations/0082`/`0083`/`0084`/`0123`/`0129`, todos `on delete
    * cascade` a partir de `messaging_connections`). NUNCA cascateia `inbox_contacts` (não é FK

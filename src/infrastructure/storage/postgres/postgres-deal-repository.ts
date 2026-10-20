@@ -1,6 +1,8 @@
 import type { Pool } from "pg";
 import type {
   CreateDealInput,
+  ContactOpenDealsFilter,
+  ContactOpenDealsSummary,
   DealRepositoryPort,
   DealClosureInput,
   ListDealsFilter,
@@ -280,6 +282,19 @@ export class PostgresDealRepository implements DealRepositoryPort {
       [input.tenantId, input.workspaceId, input.contactId ?? null, input.pipelineId, input.title.trim(), input.limit ?? 5],
     );
     return result.rows.map(toDomain);
+  }
+
+  async summarizeOpenByContact(filter: ContactOpenDealsFilter): Promise<ContactOpenDealsSummary[]> {
+    const params: unknown[] = [filter.tenantId, filter.workspaceId];
+    const conditions = buildFilterConditions({ ...filter, status: "open" }, params);
+    conditions.push("contact_id is not null", "won_at is null", "lost_at is null");
+    const result = await this.pool.query<{ contact_id: string; currency: string; count: string; value_cents_sum: string }>(
+      `select contact_id, currency, count(*) as count, coalesce(sum(value_cents), 0) as value_cents_sum
+       from deals where ${conditions.join(" and ")}
+       group by contact_id, currency order by contact_id, currency`,
+      params,
+    );
+    return result.rows.map((row) => ({ contactId: row.contact_id, currency: row.currency, count: Number(row.count), valueCentsSum: Number(row.value_cents_sum) }));
   }
 
   async summaryByPipeline(filter: Omit<ListDealsFilter, "cursor" | "limit" | "stageId"> & { pipelineId: string }): Promise<DealStageSummary[]> {

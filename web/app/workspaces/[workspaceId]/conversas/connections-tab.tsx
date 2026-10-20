@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { Switch } from "@/components/ui/switch";
+import { updateInboxConnectionSettings } from "@/features/inbox/api";
 import { ChevronDown, ChevronUp, Users } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -330,6 +332,7 @@ function ConnectionRow({
             </GuardedButton>
           </div>
         </div>
+        <ChannelSignatureSettings workspaceId={workspaceId} connection={connection} canManage={canDelete} />
         {routingOpen ? <ChannelRoutingPanel workspaceId={workspaceId} connectionId={connection.id} canOperate={canOperate} /> : null}
         {connection.status === "disconnected" ? (
           <p className="text-sm text-muted-foreground">Canal desconectado. Clique em "Conectar" e escaneie um novo QR Code para voltar a receber mensagens.</p>
@@ -345,6 +348,36 @@ function ConnectionRow({
 /** Bloco "roteamento por equipe" (réplica adaptada do CMDesk, pedido explícito do usuário) —
  * versão simplificada: equipes vinculadas ao canal + equipe padrão + distribuição fixa vs rodízio
  * entre elas. Sem menu hierárquico/sticky-pinned (fora de escopo desta rodada). */
+function ChannelSignatureSettings({ workspaceId, connection, canManage }: { workspaceId: string; connection: MessagingConnection; canManage: boolean }) {
+  const { mutate } = useInboxConnections(workspaceId);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string>();
+  async function save(checked: boolean) {
+    if (!canManage || saving) return;
+    setSaving(true);
+    setError(undefined);
+    try {
+      await updateInboxConnectionSettings(workspaceId, connection.id, checked);
+      await mutate();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Não foi possível salvar a identificação do atendente.");
+    } finally { setSaving(false); }
+  }
+  return (
+    <div className="rounded-lg border border-border/60 p-3">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <label htmlFor={`agent-name-${connection.id}`} className="text-sm font-medium">Enviar nome do atendente ao cliente</label>
+          <p className="mt-1 text-xs text-muted-foreground">Inclui o nome nas mensagens de texto e nas legendas de fotos e vídeos. Internamente, o autor sempre aparece, mesmo com esta opção desligada.</p>
+        </div>
+        <Switch id={`agent-name-${connection.id}`} checked={connection.sendAgentName ?? false} disabled={!canManage || saving} onCheckedChange={(checked) => void save(checked)} />
+      </div>
+      {connection.sendAgentName ? <p className="mt-2 text-xs text-muted-foreground">Exemplo: <strong>Maria</strong> · Olá! Como posso ajudar?</p> : null}
+      {error ? <p role="alert" className="mt-2 text-xs text-destructive">{error}</p> : null}
+    </div>
+  );
+}
+
 function ChannelRoutingPanel({ workspaceId, connectionId, canOperate }: { workspaceId: string; connectionId: string; canOperate: boolean }) {
   const { data: teams } = useTeams(workspaceId);
   const { data: routing, error, isLoading, mutate } = useChannelRouting(workspaceId, connectionId);

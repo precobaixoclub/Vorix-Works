@@ -1,7 +1,11 @@
 import type { FastifyInstance } from "fastify";
 import { acceptInvite, inviteMember, listTenantInvites, listTenantMembers, removeMember, revokeInvite, updateMemberRole } from "../../../../application/identity/invite-use-cases.js";
 import type { InviteUseCaseDeps } from "../../../../application/identity/invite-use-cases.js";
-import { NotFoundError, ValidationError } from "../../http/app-error.js";
+import { registerUser } from "../../../../application/identity/register-user.usecase.js";
+import { updateMemberProfile } from "../../../../application/identity/member-profile-use-cases.js";
+import type { PasswordHasherPort } from "../../../../application/ports/password-hasher.port.js";
+import { normalizeUserAvatar } from "../../../../infrastructure/auth/user-avatar.js";
+import { ConflictError, NotFoundError, ValidationError } from "../../http/app-error.js";
 import { requirePermission, requirePrincipal } from "../../http/require-principal.js";
 import { successEnvelope } from "../../http/response-envelope.js";
 
@@ -15,9 +19,20 @@ const UPDATE_ROLE_BODY_SCHEMA = { type: "object", required: ["role"], additional
 const ACCEPT_BODY_SCHEMA = { type: "object", required: ["token"], additionalProperties: false, properties: { token: { type: "string", minLength: 1 } } } as const;
 const USER_ID_PARAMS_SCHEMA = { type: "object", required: ["userId"], properties: { userId: { type: "string", minLength: 1 } } } as const;
 const INVITE_ID_PARAMS_SCHEMA = { type: "object", required: ["id"], properties: { id: { type: "string", minLength: 1 } } } as const;
+const PROFILE_PROPERTIES = {
+  name: { type: "string", minLength: 1, maxLength: 150 },
+  email: { type: "string", format: "email", maxLength: 320 },
+  avatarUrl: { type: ["string", "null"], maxLength: 2_800_000 },
+} as const;
+const PROFILE_SCHEMA = { type: "object", required: ["name", "email"], additionalProperties: false, properties: PROFILE_PROPERTIES } as const;
+const CREATE_MEMBER_SCHEMA = { type: "object", required: ["name", "email", "password", "role"], additionalProperties: false, properties: {
+  ...PROFILE_PROPERTIES, password: { type: "string", minLength: 8, maxLength: 72 }, role: UPDATE_ROLE_BODY_SCHEMA.properties.role,
+} } as const;
 
 function translateInviteError(error: unknown): never {
   if (error instanceof Error) {
+    if (error.message.startsWith("USAGE_LIMIT_REACHED")) throw new ConflictError("Limite de usuários atingido. Ajuste a quantidade em Plano e cobrança antes de cadastrar outro usuário.");
+    if (error.message.startsWith("IDENTITY_VALIDATION_ERROR") || error.message.startsWith("USER_EMAIL_ALREADY_EXISTS")) throw new ValidationError(error.message);
     if (error.message.startsWith("INVITE_NOT_FOUND")) throw new NotFoundError(error.message);
     if (error.message.startsWith("INVITE_NOT_PENDING")) throw new ValidationError(error.message);
     if (error.message.startsWith("INVITE_EXPIRED")) throw new ValidationError(error.message);
@@ -32,11 +47,40 @@ function translateInviteError(error: unknown): never {
  * CRM/Comercial (Fase 1) — Usuários. Fecha o gap encontrado na auditoria: até aqui não existia
  * convite/troca de papel/remoção nenhuma, só signup e listagem read-only.
  */
-export async function registerTenantMembersRoutes(app: FastifyInstance, deps: InviteUseCaseDeps): Promise<void> {
+export async function registerTenantMembersRoutes(app: FastifyInstance, deps: InviteUseCaseDeps & { passwordHasher?: PasswordHasherPort; assertCanAddMember?: (tenantId: string) => Promise<void> }): Promise<void> {
   app.get("/tenant-members", async (request) => {
     const principal = requirePermission(request, "tenant_member:manage");
     const members = await listTenantMembers(deps, principal.tenantId);
-    return successEnvelope(members, request.id);
+    const profiles = await Promise.all(members.map(async (member) => {
+      const user = await deps.userRepository.getById(member.userId);
+      return { ...member, name: user?.name, email: user?.email, avatarUrl: user?.avatarUrl };
+    }));
+    return successEnvelope(profiles, request.id);
+  });
+
+  app.post("/tenant-members", { bodyLimit: 3_000_000, schema: { body: CREATE_MEMBER_SCHEMA } }, async (request, reply) => {
+    const principal = requirePermission(request, "tenant_member:manage");
+    const body = request.body as { name: string; email: string; password: string; role: "owner" | "admin" | "editor" | "viewer"; avatarUrl?: string | null };
+    try {
+      if (!deps.passwordHasher) throw new ValidationError("Cadastro indisponível neste ambiente.");
+      await deps.assertCanAddMember?.(principal.tenantId);
+      const avatarUrl = await normalizeUserAvatar(body.avatarUrl);
+      const { user, membership } = await registerUser({ ...deps, passwordHasher: deps.passwordHasher }, { ...body, tenantId: principal.tenantId, avatarUrl: avatarUrl ?? undefined });
+      reply.code(201);
+      return successEnvelope({ ...membership, name: user.name, email: user.email, avatarUrl: user.avatarUrl }, request.id);
+    } catch (error) { translateInviteError(error); }
+  });
+
+  app.patch("/tenant-members/:userId/profile", { bodyLimit: 3_000_000, schema: { params: USER_ID_PARAMS_SCHEMA, body: PROFILE_SCHEMA } }, async (request) => {
+    const principal = requirePermission(request, "tenant_member:manage");
+    const { userId } = request.params as { userId: string };
+    const body = request.body as { name: string; email: string; avatarUrl?: string | null };
+    try {
+      // Verifica o escopo antes de processar a imagem.
+      if (!await deps.membershipRepository.getByUserAndTenant(userId, principal.tenantId)) throw new NotFoundError("Usuário não encontrado nesta conta.");
+      const avatarUrl = await normalizeUserAvatar(body.avatarUrl);
+      return successEnvelope(await updateMemberProfile(deps, { ...body, tenantId: principal.tenantId, userId, actorUserId: principal.userId, avatarUrl }), request.id);
+    } catch (error) { translateInviteError(error); }
   });
 
   app.get("/tenant-members/invites", async (request) => {

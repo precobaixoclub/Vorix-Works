@@ -138,4 +138,16 @@ export type MessageReactionReceived = {
   occurredAt: string;
 };
 
-export type NormalizedInboxEvent = InboundMessageReceived | MessageStatusChanged | ConnectionStateChanged | MessageReactionReceived;
+/** Edição recebida do canal: substitui o conteúdo da mensagem-alvo, sem criar outra mensagem. */
+export type MessageEditReceived = {
+  type: "message.edit";
+  tenantId: string;
+  workspaceId: string;
+  connectionId: string;
+  targetExternalMessageId: string;
+  fromMe: boolean;
+  body: string;
+  occurredAt: string;
+};
+
+export type NormalizedInboxEvent = InboundMessageReceived | MessageStatusChanged | ConnectionStateChanged | MessageReactionReceived | MessageEditReceived;

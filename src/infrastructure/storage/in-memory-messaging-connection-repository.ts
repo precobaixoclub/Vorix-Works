@@ -19,6 +19,7 @@ export class InMemoryMessagingConnectionRepository implements MessagingConnectio
       workspaceId: input.workspaceId,
       provider: input.provider,
       displayName: input.displayName,
+      sendAgentName: false,
       status: "connecting",
       connectionHealth: "unknown",
       reconnectCount: 0,
@@ -45,6 +46,14 @@ export class InMemoryMessagingConnectionRepository implements MessagingConnectio
 
   async listAllActive(): Promise<MessagingConnection[]> {
     return [...this.rows.values()].filter((row) => !MESSAGING_CONNECTION_TERMINAL_STATUSES.includes(row.status));
+  }
+
+  async updateSettings(id: string, input: { sendAgentName: boolean }): Promise<MessagingConnection> {
+    const current = this.rows.get(id);
+    if (!current) throw new Error("INBOX_CONNECTION_NOT_FOUND: canal não encontrado.");
+    const updated = { ...current, sendAgentName: input.sendAgentName, updatedAt: new Date().toISOString() };
+    this.rows.set(id, updated);
+    return updated;
   }
 
   async updateStatus(id: string, input: UpdateMessagingConnectionStatusInput): Promise<MessagingConnection> {

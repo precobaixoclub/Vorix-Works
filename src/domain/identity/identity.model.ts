@@ -299,6 +299,7 @@ export type User = {
   /** Hash (bcrypt) — nunca a senha em texto puro. Ver `PasswordHasherPort`. */
   passwordHash: string;
   name: string;
+  avatarUrl?: string;
   status: UserStatus;
   createdAt: string;
   updatedAt: string;

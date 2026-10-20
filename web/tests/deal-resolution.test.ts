@@ -30,6 +30,21 @@ describe("isDealOpen", () => {
   it("não é aberto quando perdido", () => {
     expect(isDealOpen(makeDeal({ id: "d1", lostAt: "2026-01-02T00:00:00.000Z" }))).toBe(false);
   });
+
+  it("não soma canceladas ou encerradas mesmo sem os timestamps antigos", () => {
+    for (const status of ["won", "lost", "cancelled"] as const) {
+      expect(isDealOpen(makeDeal({ id: status, status }))).toBe(false);
+    }
+    const groups = groupDealsByStatus([
+      makeDeal({ id: "cancelled", status: "cancelled" }),
+      makeDeal({ id: "won", status: "won" }),
+      makeDeal({ id: "lost", status: "lost" }),
+    ]);
+    expect(groups.open).toEqual([]);
+    expect(groups.cancelled.map(deal => deal.id)).toEqual(["cancelled"]);
+    expect(groups.won.map(deal => deal.id)).toEqual(["won"]);
+    expect(groups.lost.map(deal => deal.id)).toEqual(["lost"]);
+  });
 });
 
 describe("resolveActiveDeal", () => {

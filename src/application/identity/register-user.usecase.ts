@@ -5,6 +5,7 @@ export type RegisterUserUseCaseInput = {
   email: string;
   password: string;
   name: string;
+  avatarUrl?: string;
   tenantId: string;
   role: TenantRole;
 };
@@ -20,7 +21,7 @@ const MIN_PASSWORD_LENGTH = 8;
  * pedido. Usado hoje só por `scripts/seed-user.mjs` (bootstrap local) e pelos testes — ver
  * Relatório da Sprint 05, "Ajustes recomendados para a Sprint 06".
  */
-export async function registerUser(deps: IdentityUseCaseDeps, input: RegisterUserUseCaseInput): Promise<RegisterUserUseCaseOutput> {
+export async function registerUser(deps: Pick<IdentityUseCaseDeps, "userRepository" | "membershipRepository" | "passwordHasher">, input: RegisterUserUseCaseInput): Promise<RegisterUserUseCaseOutput> {
   if (input.password.length < MIN_PASSWORD_LENGTH) {
     throw new Error(`IDENTITY_VALIDATION_ERROR: senha precisa ter pelo menos ${MIN_PASSWORD_LENGTH} caracteres.`);
   }
@@ -36,6 +37,7 @@ export async function registerUser(deps: IdentityUseCaseDeps, input: RegisterUse
     email: input.email.trim().toLowerCase(),
     passwordHash,
     name: input.name.trim(),
+    avatarUrl: input.avatarUrl,
   });
   const membership = await deps.membershipRepository.create({ userId: user.id, tenantId: input.tenantId, role: input.role });
 

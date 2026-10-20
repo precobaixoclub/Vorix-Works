@@ -7,6 +7,7 @@ export type MessagingConnectionStatus = "connecting" | "connected" | "reconnecti
 export type MessagingConnection = {
   id: string;
   displayName: string;
+  sendAgentName?: boolean;
   /** WhatsApp (wuzapi) ou Instagram — só WhatsApp permite iniciar conversa. */
   provider?: MessagingProviderId;
   phoneNumber?: string;
@@ -209,7 +210,7 @@ export type InboxConversationEvent = {
 
 /** Fase 5 — membro do tenant/workspace atual, usado pelo seletor de transferência
  * (`GET /v1/inbox/members`). Nunca inclui membros de outro tenant. */
-export type InboxTenantMember = { userId: string; email: string; name: string; role: string };
+export type InboxTenantMember = { userId: string; email: string; name: string; avatarUrl?: string; role: string };
 
 export type InboxMessageDirection = "inbound" | "outbound";
 export type InboxMessageType = "text" | "image" | "video" | "audio" | "document" | "location" | "contact" | "sticker" | "other";
@@ -226,6 +227,7 @@ export type InboxMediaStorageRef = { provider: string; bucket?: string; objectKe
  * `contactPhone`/`vcard` (bloco "enviar/receber contato") são a mesma convenção jsonb, só
  * preenchidos quando `InboxMessage.type === "contact"` — ver `extractContactFields` no mapper. */
 export type InboxMediaMetadata = {
+  senderAvatarUrl?: string;
   fileName?: string;
   fileSizeBytes?: number;
   durationSeconds?: number;

@@ -15,6 +15,7 @@ type Row = {
   workspace_id: string;
   provider: string;
   display_name: string;
+  send_agent_name: boolean;
   phone_number: string | null;
   external_session_id: string | null;
   status: string;
@@ -72,6 +73,12 @@ export class PostgresMessagingConnectionRepository implements MessagingConnectio
     return result.rows.map((row) => this.toDomain(row));
   }
 
+  async updateSettings(id: string, input: { sendAgentName: boolean }): Promise<MessagingConnection> {
+    const result = await this.pool.query<Row>("update messaging_connections set send_agent_name = $2, updated_at = now() where id = $1 returning *", [id, input.sendAgentName]);
+    if (!result.rows[0]) throw new Error("INBOX_CONNECTION_NOT_FOUND: canal não encontrado.");
+    return this.toDomain(result.rows[0]);
+  }
+
   async updateStatus(id: string, input: UpdateMessagingConnectionStatusInput): Promise<MessagingConnection> {
     const result = await this.pool.query<Row>(
       `update messaging_connections set
@@ -119,6 +126,7 @@ export class PostgresMessagingConnectionRepository implements MessagingConnectio
       workspaceId: row.workspace_id,
       provider: row.provider as MessagingConnection["provider"],
       displayName: row.display_name,
+      sendAgentName: row.send_agent_name === true,
       phoneNumber: row.phone_number ?? undefined,
       externalSessionId: row.external_session_id ?? undefined,
       status: row.status as MessagingConnection["status"],

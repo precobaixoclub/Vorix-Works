@@ -1,7 +1,7 @@
 import type { Deal } from "./types";
 
 export function isDealOpen(deal: Deal): boolean {
-  return !deal.wonAt && !deal.lostAt;
+  return (!deal.status || deal.status === "open") && !deal.wonAt && !deal.lostAt;
 }
 
 /** Jornada Comercial Fase 2, item 7 — "negócio atual" de uma conversa/contato é o negócio ABERTO
@@ -17,14 +17,16 @@ export function resolveActiveDeal(deals: readonly Deal[]): { current: Deal | und
 
 /** Contact 360, item 11 — agrupamento visual Em Andamento / Ganhos / Perdidos, sem precisar de
  * três páginas nem de uma nova coluna de status. */
-export function groupDealsByStatus(deals: readonly Deal[]): { open: Deal[]; won: Deal[]; lost: Deal[] } {
+export function groupDealsByStatus(deals: readonly Deal[]): { open: Deal[]; won: Deal[]; lost: Deal[]; cancelled: Deal[] } {
   const open: Deal[] = [];
   const won: Deal[] = [];
   const lost: Deal[] = [];
+  const cancelled: Deal[] = [];
   for (const deal of deals) {
-    if (deal.wonAt) won.push(deal);
-    else if (deal.lostAt) lost.push(deal);
+    if (deal.status === "cancelled") cancelled.push(deal);
+    else if (deal.status === "won" || deal.wonAt) won.push(deal);
+    else if (deal.status === "lost" || deal.lostAt) lost.push(deal);
     else open.push(deal);
   }
-  return { open, won, lost };
+  return { open, won, lost, cancelled };
 }

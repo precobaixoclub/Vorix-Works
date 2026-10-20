@@ -32,6 +32,9 @@ export type TeamMembership = {
 export type TenantMembership = {
   id: string;
   userId: string;
+  name?: string;
+  email?: string;
+  avatarUrl?: string;
   tenantId: string;
   role: TenantRole;
   createdAt: string;

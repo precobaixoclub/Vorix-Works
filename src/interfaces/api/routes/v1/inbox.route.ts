@@ -32,6 +32,7 @@ import {
   deleteInboxTag,
   deleteKanbanPhase,
   createConnection,
+  updateConnectionSettings,
   disconnectConnection,
   ensureConversationPhaseStates,
   getChannelRouting,
@@ -642,6 +643,18 @@ export async function registerInboxRoutes(app: FastifyInstance, deps: InboxRoute
     }
   });
 
+  app.patch("/inbox/connections/:id/settings", { schema: { params: ID_PARAMS_SCHEMA, body: {
+    type: "object", required: ["workspaceId", "sendAgentName"], additionalProperties: false,
+    properties: { workspaceId: { type: "string", minLength: 1 }, sendAgentName: { type: "boolean" } },
+  } } }, async (request) => {
+    const principal = requirePermission(request, "inbox:manage_connections");
+    const { id } = request.params as { id: string };
+    const body = request.body as { workspaceId: string; sendAgentName: boolean };
+    try {
+      return successEnvelope(await updateConnectionSettings(useCaseDeps, { ...body, connectionId: id, tenantId: principal.tenantId }), request.id);
+    } catch (error) { rethrowInboxError(error); }
+  });
+
   app.get("/inbox/connections/:id/qr", { schema: { params: ID_PARAMS_SCHEMA, querystring: WORKSPACE_QUERY_SCHEMA } }, async (request) => {
     const principal = requirePermission(request, "inbox:manage_connections");
     const { id } = request.params as { id: string };
@@ -864,7 +877,7 @@ export async function registerInboxRoutes(app: FastifyInstance, deps: InboxRoute
     const members = await Promise.all(
       memberships.map(async (membership) => {
         const user = await deps.userRepository!.getById(membership.userId);
-        return { userId: membership.userId, email: user?.email ?? "(desconhecido)", name: user?.name ?? "(desconhecido)", role: membership.role };
+        return { userId: membership.userId, email: user?.email ?? "(desconhecido)", name: user?.name ?? "(desconhecido)", avatarUrl: user?.avatarUrl, role: membership.role };
       }),
     );
     return successEnvelope({ members }, request.id);

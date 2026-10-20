@@ -14,6 +14,7 @@ import type {
   ContactActivityItem,
   ContactChannel,
   ContactIdentity,
+  ContactOpenDealsSummary,
   Deal,
   DealStageSummary,
   LeadScore,
@@ -86,6 +87,10 @@ export function listPipelines(workspaceId: string): Promise<Pipeline[]> {
 
 export function listPipelineStages(pipelineId: string, workspaceId: string): Promise<PipelineStage[]> {
   return apiClient.get<PipelineStage[]>(`/v1/pipelines/${encodeURIComponent(pipelineId)}/stages?workspaceId=${encodeURIComponent(workspaceId)}`);
+}
+
+export function getContactOpenDealsSummary(workspaceId: string): Promise<ContactOpenDealsSummary[]> {
+  return apiClient.get<ContactOpenDealsSummary[]>(`/v1/deals/open-by-contact?${new URLSearchParams({ workspaceId })}`);
 }
 
 export type ListDealsParams = { pipelineId?: string; stageId?: string; contactId?: string; ownerUserId?: string; teamId?: string; origin?: string; search?: string };

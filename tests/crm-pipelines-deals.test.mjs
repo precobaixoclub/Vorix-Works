@@ -1,11 +1,16 @@
 import { after, before, test } from "node:test";
 import assert from "node:assert/strict";
+import Fastify from "fastify";
 import { join } from "node:path";
 
 import { applyMigrations } from "../dist/infrastructure/storage/postgres/migration-runner.js";
 import { PostgresWorkspaceRepository } from "../dist/infrastructure/storage/postgres/postgres-workspace-repository.js";
 import { PostgresPipelineRepository, PostgresPipelineStageRepository } from "../dist/infrastructure/storage/postgres/postgres-pipeline-repository.js";
 import { PostgresDealRepository } from "../dist/infrastructure/storage/postgres/postgres-deal-repository.js";
+import { PostgresContactRepository } from "../dist/infrastructure/storage/postgres/postgres-contact-repository.js";
+import { PostgresTeamRepository } from "../dist/infrastructure/storage/postgres/postgres-team-repository.js";
+import { registerDealsRoutes } from "../dist/interfaces/api/routes/v1/deals.route.js";
+import { registerErrorHandler } from "../dist/interfaces/api/http/error-handler.js";
 import { PostgresTimelineEventRepository } from "../dist/infrastructure/storage/postgres/postgres-timeline-event-repository.js";
 import {
   createPipeline,
@@ -36,6 +41,17 @@ const MIGRATIONS_DIR = join(process.cwd(), "db", "migrations");
 let db;
 let counter = 0;
 const nextId = (prefix) => `${prefix}-fixed-${++counter}`;
+
+async function openSummaryFixture() {
+  const tenantId = nextId("summary-tenant");
+  const workspace = await makeWorkspace(tenantId);
+  const { pipeline, stages } = await ensureDefaultPipeline(pipelineDeps(), tenantId, workspace.id);
+  const contact = await new PostgresContactRepository(db.pool).create({ tenantId, workspaceId: workspace.id, name: "Cliente com oportunidades" });
+  const team = await new PostgresTeamRepository(db.pool).create({ tenantId, workspaceId: workspace.id, name: "Equipe de vendas" });
+  const repository = dealDeps().dealRepository;
+  const base = { tenantId, workspaceId: workspace.id, pipelineId: pipeline.id, stageId: stages[0].id, contactId: contact.id, title: "Oportunidade", ownerUserId: "seller-a" };
+  return { tenantId, workspace, contact, team, repository, base };
+}
 
 before(async () => {
   db = await startTestPostgres({ port: 55701 });
@@ -217,4 +233,65 @@ test("Negócios: listagem com filtro de responsável, e resumo por etapa (contag
   assert.equal(novoSummary.valueCentsSum, 3000);
   assert.equal(negociacaoSummary.count, 1);
   assert.equal(negociacaoSummary.valueCentsSum, 4000);
+});
+
+
+test("Resumo por contato soma todas as abertas, em pipelines diferentes e sem truncar em 200", async () => {
+  const { tenantId, workspace, contact, team, repository, base } = await openSummaryFixture();
+  await db.pool.query(
+    `insert into deals (id, tenant_id, workspace_id, pipeline_id, stage_id, contact_id, title, value_cents, currency, owner_user_id)
+     select $1 || '-' || n, $2, $3, $4, $5, $6, 'Em aberto', 100, 'BRL', 'seller-a' from generate_series(1, 205) n`,
+    [nextId("many-deals"), tenantId, workspace.id, base.pipelineId, base.stageId, contact.id],
+  );
+  const secondPipeline = await createPipeline(pipelineDeps(), { tenantId, workspaceId: workspace.id, name: "Outro pipeline" });
+  const secondStage = await createStage(pipelineDeps(), { pipelineId: secondPipeline.id, tenantId, workspaceId: workspace.id, name: "Novo", position: 0 });
+  await repository.create({ ...base, pipelineId: secondPipeline.id, stageId: secondStage.id, ownerUserId: "seller-b", valueCents: 500, teamId: team.id });
+  await repository.create({ ...base, valueCents: 300, currency: "USD" });
+  await repository.create({ ...base, contactId: undefined, valueCents: 999999 });
+  for (const status of ["won", "lost", "cancelled"]) {
+    const closed = await repository.create({ ...base, valueCents: 999999 });
+    await db.pool.query("update deals set status = $2 where id = $1", [closed.id, status]);
+  }
+  assert.deepEqual(await repository.summarizeOpenByContact({ tenantId, workspaceId: workspace.id }), [
+    { contactId: contact.id, currency: "BRL", count: 206, valueCentsSum: 21000 },
+    { contactId: contact.id, currency: "USD", count: 1, valueCentsSum: 300 },
+  ]);
+  assert.deepEqual(await repository.summarizeOpenByContact({ tenantId: "outro-tenant", workspaceId: workspace.id }), []);
+  const anotherWorkspace = await makeWorkspace(tenantId);
+  assert.deepEqual(await repository.summarizeOpenByContact({ tenantId, workspaceId: anotherWorkspace.id }), []);
+  assert.deepEqual(await repository.summarizeOpenByContact({ tenantId, workspaceId: workspace.id, ownerUserIdsIn: [] }), []);
+  const own = await repository.summarizeOpenByContact({ tenantId, workspaceId: workspace.id, ownerUserIdsIn: ["seller-a"] });
+  assert.equal(own[0].count, 205);
+  const teamSummary = await repository.summarizeOpenByContact({ tenantId, workspaceId: workspace.id, ownerUserIdsIn: ["seller-a"], teamIdsIn: [team.id] });
+  assert.equal(teamSummary[0].count, 206);
+});
+
+test("API do resumo aplica a visibilidade do vendedor e deriva o tenant da sessao", async (t) => {
+  const { tenantId, workspace, contact, team, repository, base } = await openSummaryFixture();
+  await repository.create({ ...base, valueCents: 1000 });
+  await repository.create({ ...base, ownerUserId: "seller-b", teamId: team.id, valueCents: 2000 });
+  let visibility = "own";
+  let principal = { tenantId, userId: "seller-a", role: "editor", sessionId: "s" };
+  const app = Fastify();
+  registerErrorHandler(app);
+  app.decorateRequest("zunoContext", null);
+  app.addHook("onRequest", async request => { request.zunoContext = { principal }; });
+  await registerDealsRoutes(app, { ...dealDeps(), sales: {
+    salesConfigRepository: { getSettings: async () => ({ tenantId, dealVisibility: visibility }) },
+    teamMembershipRepository: { listByUser: async () => [{ teamId: team.id }] },
+  } });
+  t.after(() => app.close());
+  const url = `/deals/open-by-contact?workspaceId=${workspace.id}&tenantId=forged`;
+  const own = await app.inject(url);
+  assert.equal(own.statusCode, 200);
+  assert.deepEqual(own.json().data, [{ contactId: contact.id, currency: "BRL", count: 1, valueCentsSum: 1000 }]);
+  visibility = "team";
+  assert.equal((await app.inject(url)).json().data[0].valueCentsSum, 3000);
+  principal = { ...principal, role: "admin" };
+  visibility = "own";
+  assert.equal((await app.inject(url)).json().data[0].count, 2);
+  principal = { ...principal, tenantId: "other-tenant" };
+  assert.deepEqual((await app.inject(url)).json().data, []);
+  principal = undefined;
+  assert.equal((await app.inject(url)).statusCode, 401);
 });

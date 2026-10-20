@@ -35,6 +35,7 @@ export const INBOX_QUEUES = {
   /** Bloco "reações" (pedido explícito do usuário em produção) — fila própria, mesmo padrão das
    * demais (uma fila por assunto, ligada por routing key). */
   reaction: "inbox.reaction.queue",
+  edit: "inbox.edit.queue",
 } as const;
 
 export type InboxQueueName = (typeof INBOX_QUEUES)[keyof typeof INBOX_QUEUES];
@@ -75,11 +76,13 @@ export async function ensureInboxTopology(channel: Channel): Promise<void> {
   await declareQueueWithRetryLadder(channel, INBOX_QUEUES.connection);
   await declareQueueWithRetryLadder(channel, INBOX_QUEUES.outgoing);
   await declareQueueWithRetryLadder(channel, INBOX_QUEUES.reaction);
+  await declareQueueWithRetryLadder(channel, INBOX_QUEUES.edit);
 
   await channel.bindQueue(INBOX_QUEUES.incoming, INBOX_EVENTS_EXCHANGE, "message.inbound");
   await channel.bindQueue(INBOX_QUEUES.status, INBOX_EVENTS_EXCHANGE, "message.status");
   await channel.bindQueue(INBOX_QUEUES.connection, INBOX_EVENTS_EXCHANGE, "connection.state");
   await channel.bindQueue(INBOX_QUEUES.reaction, INBOX_EVENTS_EXCHANGE, "message.reaction");
+  await channel.bindQueue(INBOX_QUEUES.edit, INBOX_EVENTS_EXCHANGE, "message.edit");
 }
 
 /**

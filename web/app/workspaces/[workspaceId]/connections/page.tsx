@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { usePathname } from "next/navigation";
 import { AtSign, Megaphone, Music2, PlaySquare, type LucideIcon } from "lucide-react";
 import { Button } from "@/components/Button";
 import { Card } from "@/components/Card";
@@ -14,7 +15,7 @@ import { TIKTOK_RETURN_PATH_KEY } from "@/app/tiktok/callback/page";
 import { YOUTUBE_RETURN_PATH_KEY } from "@/app/youtube/callback/page";
 import { beginMetaOAuth, disconnectMetaAccount } from "@/features/meta/api";
 import { useMetaOAuthStatus } from "@/features/meta/hooks";
-import { useSolutions } from "@/features/solutions/hooks";
+import { useActiveSolution } from "@/features/solutions/hooks";
 import { beginMetaAdsOAuth, disconnectMetaAdsAccount } from "@/features/meta-ads/api";
 import { useMetaAdAccounts, useMetaAdsOAuthStatus } from "@/features/meta-ads/hooks";
 import { beginTikTokOAuth, disconnectTikTokAccount } from "@/features/tiktok/api";
@@ -28,7 +29,9 @@ type AccountRow = { id: string; label: string; detail?: string; status: string }
 export default function ConnectionsPage() {
   const workspace = useCurrentWorkspace();
   const [feedback, setFeedback] = useState<string | undefined>();
-  const { hasMarketing } = useSolutions();
+  const pathname = usePathname();
+  const { active, available } = useActiveSolution(pathname, `/workspaces/${workspace.id}`);
+  const showMarketing = active === "marketing" && available.includes("marketing");
 
   // A conexão Meta é COMPARTILHADA (Core): é ela que liga o Instagram Direct do Vorix Conversas.
   // TikTok, YouTube e Meta Ads são só do Vorix Marketing.
@@ -36,14 +39,14 @@ export default function ConnectionsPage() {
     <SettingsShell
       active="integrations"
       title="Integrações"
-      description={hasMarketing ? "Contas conectadas ao Vorix para atender, publicar e medir conteúdos. O WhatsApp fica em Conversas." : "Contas conectadas ao Vorix. O WhatsApp é conectado direto em Conversas."}
+      description={showMarketing ? "Contas conectadas ao Vorix para atender, publicar e medir conteúdos. O WhatsApp fica em Conversas." : "Contas conectadas ao Vorix. O WhatsApp é conectado direto em Conversas."}
     >
 
       {feedback ? <Card className="mb-6 border-primary/30 bg-primary/5 p-4"><p className="text-sm text-foreground">{feedback}</p></Card> : null}
 
       <div className="grid gap-4">
-        <MetaConnection workspaceId={workspace.id} onFeedback={setFeedback} hasMarketing={hasMarketing} />
-        {hasMarketing ? (
+        <MetaConnection workspaceId={workspace.id} onFeedback={setFeedback} hasMarketing={showMarketing} />
+        {showMarketing ? (
           <>
             <MetaAdsConnection workspaceId={workspace.id} onFeedback={setFeedback} />
             <TikTokConnection workspaceId={workspace.id} onFeedback={setFeedback} />

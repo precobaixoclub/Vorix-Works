@@ -1,7 +1,7 @@
 "use client";
 
 import { Suspense, useEffect, useMemo, useState } from "react";
-import { Mail, MailOpen, MessageSquareText, MoreHorizontal, Search, SlidersHorizontal } from "lucide-react";
+import { FileText, Mail, MailOpen, MessageSquareText, MoreHorizontal, Search, SlidersHorizontal } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { Button } from "@/components/Button";
@@ -22,8 +22,10 @@ import { useAuth } from "@/contexts/auth-context";
 import { useCurrentWorkspace } from "@/contexts/workspace-context";
 import { moveDealStage } from "@/features/crm/api";
 import { QuickCreateDealModal } from "@/components/crm/QuickCreateDealModal";
-import { useContacts, useDeals, usePipelines, usePipelineStages, useProposals, useStockRisk, useTasks } from "@/features/crm/hooks";
+import { useContacts, useDeal, useDeals, usePipelines, usePipelineStages, useProposals, useStockRisk, useTasks } from "@/features/crm/hooks";
 import { StockRiskBadge } from "@/components/sales/StockRisk";
+import { DealProposalComposer } from "@/components/sales/DealProposalComposer";
+import { useInvalidateSales } from "@/features/sales/hooks";
 import { nextPendingTask, TASK_TYPE_LABEL } from "@/features/crm/presentation";
 import type { Contact, Deal, DealStockRisk, PipelineStage, Task } from "@/features/crm/types";
 import { useTeams } from "@/features/identity/hooks";
@@ -34,6 +36,7 @@ import type { InboxConversation } from "@/features/inbox/types";
 import { useDebounce } from "@/hooks/useDebounce";
 import { formatCurrencyCents, formatDate, formatRelativeTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { canOperateWorkspace } from "@/lib/rbac";
 import { ChannelIcon, ConversationTimelinePane, lastMessagePreviewLabel, timeLabel } from "../conversas/inbox-tab";
 
 function stageDotClass(stage: PipelineStage): string {
@@ -63,13 +66,16 @@ function DealsFallback() {
 function DealsView() {
   const router = useRouter();
   const workspace = useCurrentWorkspace();
+  const invalidateSales = useInvalidateSales(workspace.id);
   const searchParams = useSearchParams();
   const { state: authState } = useAuth();
   const currentUserId = authState.status === "authenticated" ? authState.user.id : undefined;
+  const canGenerateProposal = canOperateWorkspace(authState.status === "authenticated" ? authState.role : undefined);
   const { data: pipelines } = usePipelines(workspace.id);
   const [pipelineId, setPipelineId] = useState<string | undefined>();
   const [search, setSearch] = useState("");
-  const [ownerUserId, setOwnerUserId] = useState("");
+  const [ownerSelection, setOwnerUserId] = useState<string | undefined>();
+  const ownerUserId = ownerSelection ?? currentUserId ?? "";
   const [teamId, setTeamId] = useState("");
   const [origin, setOrigin] = useState("");
   const [withoutNextAction, setWithoutNextAction] = useState(false);
@@ -97,7 +103,9 @@ function DealsView() {
   const conversationByContactId = useMemo(() => {
     const map = new Map<string, InboxConversation>();
     for (const conversation of inboxConversationsData?.conversations ?? []) {
-      if (conversation.crmContactId) map.set(conversation.crmContactId, conversation);
+      if (!conversation.crmContactId || conversation.chatType === "group") continue;
+      const previous = map.get(conversation.crmContactId);
+      if (!previous || (conversation.lastMessageAt ?? "") > (previous.lastMessageAt ?? "")) map.set(conversation.crmContactId, conversation);
     }
     return map;
   }, [inboxConversationsData]);
@@ -161,6 +169,7 @@ function DealsView() {
   const [movingDealId, setMovingDealId] = useState<string | undefined>();
   const [lossPrompt, setLossPrompt] = useState<{ deal: Deal; stage: PipelineStage } | undefined>();
   const [selectedDealId, setSelectedDealId] = useState<string | undefined>();
+  const [proposalDeal, setProposalDeal] = useState<Deal>();
 
   useEffect(() => {
     const queryContactId = searchParams.get("contactId");
@@ -175,11 +184,15 @@ function DealsView() {
     if (queryDealId) setSelectedDealId(queryDealId);
   }, [searchParams]);
 
-  const selectedDeal = visibleDeals.find((deal) => deal.id === selectedDealId) ?? deals?.find((deal) => deal.id === selectedDealId);
+  const selectedFromBoard = deals?.find((deal) => deal.id === selectedDealId);
+  // Links de uma oportunidade específica continuam abrindo mesmo fora do filtro inicial.
+  const { data: requestedDeal } = useDeal(workspace.id, selectedFromBoard ? undefined : selectedDealId);
+  const selectedDeal = selectedFromBoard ?? requestedDeal;
+  const { data: selectedDealStages } = usePipelineStages(selectedDeal?.pipelineId, workspace.id);
   const contactOptions = contactsList.map((contact) => ({ id: contact.id, label: contactLabel(contact) }));
 
   async function refresh() {
-    await Promise.all([mutateDeals(), mutateTasks(), mutateStockRisk()]);
+    await Promise.all([mutateTasks(), mutateStockRisk(), invalidateSales()]);
   }
 
   function requestMoveDeal(deal: Deal, targetStage: PipelineStage) {
@@ -259,6 +272,8 @@ function DealsView() {
         teams={teamsList}
         moving={movingDealId === deal.id}
         onOpen={() => setSelectedDealId(deal.id)}
+        onGenerateProposal={() => setProposalDeal(deal)}
+        canGenerateProposal={canGenerateProposal}
         onMove={(stage) => requestMoveDeal(deal, stage)}
         onOpenConversation={handleOpenConversation}
         onToggleConversationRead={handleToggleConversationRead}
@@ -298,7 +313,7 @@ function DealsView() {
       </div>
 
       <FilterBar
-        summary={withoutNextAction ? "Filtro: sem próxima atividade" : activePipeline ? activePipeline.name : undefined}
+        summary={[activePipeline?.name, ownerUserId === currentUserId ? "Minhas oportunidades" : ownerUserId ? userLabel(ownerUserId, members) : "Todos os responsáveis", withoutNextAction ? "Sem próxima atividade" : undefined].filter(Boolean).join(" · ")}
       >
         <div className="relative min-w-[220px] flex-1 sm:max-w-xs">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -404,10 +419,13 @@ function DealsView() {
         </>
       ) : null}
 
+      {proposalDeal ? <DealProposalComposer workspaceId={workspace.id} deal={proposalDeal} contactName={proposalDeal.contactId ? conversationByContactId.get(proposalDeal.contactId)?.contactName || contactsList.find(contact => contact.id === proposalDeal.contactId)?.name : undefined} onClose={() => setProposalDeal(undefined)} onChanged={refresh} /> : null}
+
       {createOpen ? (
         <QuickCreateDealModal
           workspaceId={workspace.id}
           contactId={contactId || undefined}
+          defaultOwnerUserId={ownerUserId || currentUserId}
           onClose={() => { setCreateOpen(false); resetCreateForm(); }}
           onCreated={async (deal) => {
             setCreateOpen(false);
@@ -454,8 +472,8 @@ function DealsView() {
         onOpenChange={(open) => { if (!open) setSelectedDealId(undefined); }}
         workspaceId={workspace.id}
         deal={selectedDeal}
-        pipeline={activePipeline}
-        stages={orderedStages}
+        pipeline={pipelines?.find((pipeline) => pipeline.id === selectedDeal?.pipelineId)}
+        stages={selectedDealStages ?? []}
         contacts={contactsList}
         tasks={tasksList}
         proposals={proposalsList}
@@ -486,6 +504,8 @@ function DealCard({
   teams,
   moving,
   onOpen,
+  onGenerateProposal,
+  canGenerateProposal,
   onDragStart,
   onMove,
   onOpenConversation,
@@ -504,6 +524,8 @@ function DealCard({
   teams: readonly Team[];
   moving: boolean;
   onOpen: () => void;
+  onGenerateProposal: () => void;
+  canGenerateProposal: boolean;
   onDragStart: (event: React.DragEvent) => void;
   onMove: (stage: PipelineStage) => void;
   onOpenConversation: (conversation: InboxConversation) => void;
@@ -532,7 +554,7 @@ function DealCard({
       {stockRisk ? <StockRiskBadge risk={stockRisk} className="mb-2" /> : null}
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
-          <p className="truncate text-sm font-semibold text-foreground">{contact?.name ?? deal.title}</p>
+          <p className="truncate text-sm font-semibold text-foreground">{conversation?.contactName?.trim() || contact?.name?.trim() || conversation?.contactPhone || deal.title}</p>
           <p className="mt-0.5 truncate text-xs text-muted-foreground">{contact ? deal.title : deal.origin ?? "Sem contato vinculado"}</p>
         </div>
         <Popover>
@@ -621,6 +643,7 @@ function DealCard({
           {deal.teamId ? <span className="rounded-full bg-muted px-2 py-0.5">{teamLabel(deal.teamId, teams)}</span> : null}
         </div>
       ) : null}
+      {(deal.status === "open" || (!deal.status && !deal.wonAt && !deal.lostAt)) ? <Button className="mt-3 w-full gap-2" disabled={!canGenerateProposal || moving} onClick={event => { event.stopPropagation(); onGenerateProposal(); }}><FileText className="h-4 w-4" />Gerar proposta</Button> : null}
     </article>
   );
 }

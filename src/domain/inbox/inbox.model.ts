@@ -40,6 +40,8 @@ export type MessagingConnection = {
   workspaceId: string;
   provider: MessagingProviderId;
   displayName: string;
+  /** Nome do atendente no texto enviado ao cliente; identificação interna independe desta opção. */
+  sendAgentName?: boolean;
   phoneNumber?: string;
   /** Identificador de sessão no gateway (ex.: nome da instância no WuzAPI) — nunca um token/segredo. */
   externalSessionId?: string;

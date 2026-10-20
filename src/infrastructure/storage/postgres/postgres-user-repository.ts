@@ -12,6 +12,7 @@ type UserRow = {
   email: string;
   password_hash: string;
   name: string;
+  avatar_url: string | null;
   status: string;
   created_at: Date;
   updated_at: Date;
@@ -32,10 +33,10 @@ export class PostgresUserRepository implements UserRepositoryPort {
     const id = this.idGenerator();
     try {
       const result = await this.pool.query<UserRow>(
-        `insert into users (id, email, password_hash, name, status, created_at, updated_at)
-         values ($1, $2, $3, $4, 'active', now(), now())
+        `insert into users (id, email, password_hash, name, avatar_url, status, created_at, updated_at)
+         values ($1, $2, $3, $4, $5, 'active', now(), now())
          returning *`,
-        [id, input.email, input.passwordHash, input.name],
+        [id, input.email, input.passwordHash, input.name, input.avatarUrl ?? null],
       );
       return this.toDomain(result.rows[0]);
     } catch (error) {
@@ -56,6 +57,21 @@ export class PostgresUserRepository implements UserRepositoryPort {
     return result.rows[0] ? this.toDomain(result.rows[0]) : undefined;
   }
 
+  async updateProfile(id: string, input: { name: string; email: string; avatarUrl?: string | null }): Promise<User | undefined> {
+    try {
+      const result = await this.pool.query<UserRow>(
+        `update users set name = $2, email = $3,
+           avatar_url = case when $4 then $5 else avatar_url end, updated_at = now()
+         where id = $1 returning *`,
+        [id, input.name, input.email, input.avatarUrl !== undefined, input.avatarUrl ?? null],
+      );
+      return result.rows[0] ? this.toDomain(result.rows[0]) : undefined;
+    } catch (error) {
+      if (isPgError(error) && error.code === UNIQUE_VIOLATION) throw new Error("USER_EMAIL_ALREADY_EXISTS: este e-mail já está em uso.");
+      throw error;
+    }
+  }
+
   async touchLastLogin(id: string): Promise<void> {
     await this.pool.query("update users set last_login_at = now(), updated_at = now() where id = $1", [id]);
   }
@@ -66,6 +82,7 @@ export class PostgresUserRepository implements UserRepositoryPort {
       email: row.email,
       passwordHash: row.password_hash,
       name: row.name,
+      avatarUrl: row.avatar_url ?? undefined,
       status: row.status as User["status"],
       createdAt: row.created_at.toISOString(),
       updatedAt: row.updated_at.toISOString(),

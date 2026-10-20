@@ -405,7 +405,7 @@ export function KanbanBoard({ workspaceId, teamId, teams }: { workspaceId: strin
            fluxo normal do grid, então nunca empurra/redimensiona as colunas por baixo. */}
         <DragOverlay dropAnimation={{ duration: 150, easing: "ease" }}>
           {activeConversation ? (
-            <div className={cn(KANBAN_COLUMN_WIDTH_CLASS, "rotate-1 cursor-grabbing rounded-lg border border-primary/40 bg-card px-2 py-1.5 shadow-xl")}>
+            <div className={cn(KANBAN_COLUMN_WIDTH_CLASS, "rotate-1 cursor-grabbing rounded-lg border border-primary/40 bg-card px-2 py-1.5 shadow-xl", activeConversation.unreadCount > 0 && "conversation-unread")}>
               <KanbanCardBody workspaceId={workspaceId} conversation={activeConversation} serviceTime={serviceTimeByConversation.get(activeConversation.id)} />
             </div>
           ) : null}
@@ -619,6 +619,7 @@ function KanbanCard({
       }}
       className={cn(
         "relative rounded-lg border border-border/60 bg-card px-2 py-1.5 text-left shadow-sm transition-colors hover:border-primary/30 hover:bg-card/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+        conversation.unreadCount > 0 && "conversation-unread",
         canOperate ? "cursor-grab touch-none active:cursor-grabbing" : "cursor-pointer",
         // Discretamente transparente, mas PARADA no lugar (pedido explícito do usuário, seção 2:
         // "não deixar card simplesmente desaparecer") — quem se move é o `DragOverlay` no board.
@@ -684,7 +685,7 @@ function KanbanCardBody({
           className="h-8 w-8 shrink-0 rounded-lg"
           fallbackClassName="rounded-lg bg-muted text-[10px] text-foreground"
         />
-        <div className="min-w-0 flex-1">
+        <div className="conversation-unread-content min-w-0 flex-1">
           <div className="flex items-center justify-between gap-2">
             <p className={cn("min-w-0 truncate text-[13px] text-foreground", conversation.unreadCount > 0 ? "font-semibold" : "font-medium")}>
               {conversationTitle(conversation)}
@@ -698,7 +699,7 @@ function KanbanCardBody({
             <ChannelIcon provider={conversation.connectionProvider} className="h-3 w-3 shrink-0" />
             <span className="truncate">{channelLabelFor(conversation)} · {identity}</span>
             {conversation.unreadCount > 0 ? (
-              <span className="ml-auto flex h-4 min-w-4 shrink-0 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-semibold tabular-nums text-primary-foreground dark:bg-primary-glow dark:text-background">
+              <span className="conversation-unread-count ml-auto flex h-4 min-w-4 shrink-0 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-semibold tabular-nums text-primary-foreground dark:bg-primary-glow dark:text-background">
                 {conversation.unreadCount}
               </span>
             ) : null}

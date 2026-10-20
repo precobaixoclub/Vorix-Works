@@ -1,4 +1,4 @@
-import type { ConnectionStateChanged, InboundMessageReceived, MessageReactionReceived, MessageStatusChanged, NormalizedInboxEvent } from "../../../application/inbox/inbox-events.js";
+import type { ConnectionStateChanged, InboundMessageReceived, MessageEditReceived, MessageReactionReceived, MessageStatusChanged, NormalizedInboxEvent } from "../../../application/inbox/inbox-events.js";
 import type { InboxMessageStatus, InboxMessageType } from "../../../domain/inbox/inbox.model.js";
 import { resolveWhatsAppPersonIdentity } from "../../../domain/inbox/whatsapp-identity.js";
 
@@ -141,11 +141,20 @@ function mapReactionMessage(instanceName: string, event: Record<string, unknown>
   };
 }
 
-function mapInboundMessageOrReaction(instanceName: string, event: Record<string, unknown>): InboundMessageReceived | MessageReactionReceived | undefined {
+function mapInboundMessageOrReaction(instanceName: string, event: Record<string, unknown>): InboundMessageReceived | MessageReactionReceived | MessageEditReceived | undefined {
   const info = event.Info as Record<string, unknown> | undefined;
   const messageId = info?.ID as string | undefined;
   const sender = info?.Sender as string | undefined;
   if (!messageId || !sender) return undefined;
+
+  const messagePayload = asRecord(event.Message);
+  // Whatsmeow normalmente já remove o wrapper EditedMessage, deixando ProtocolMessage em
+  // Message. Também aceitamos o wrapper bruto; Info.ID é o id do EVENTO, nunca o alvo da edição.
+  const editedWrapper = asRecord(messagePayload?.editedMessage);
+  const protocol = asRecord(messagePayload?.protocolMessage) ?? asRecord(asRecord(editedWrapper?.message)?.protocolMessage);
+  if (protocol || editedWrapper || event.IsEdit === true) {
+    return mapMessageEdit(instanceName, event, protocol);
+  }
 
   const reactionMessage = (event.Message as Record<string, unknown> | undefined)?.reactionMessage as Record<string, unknown> | undefined;
   if (reactionMessage) return mapReactionMessage(instanceName, event, reactionMessage);
@@ -276,6 +285,37 @@ function mapInboundMessageOrReaction(instanceName: string, event: Record<string,
     quotedType,
     mentionedJids,
     occurredAt: parseWuzApiTimestamp(info?.Timestamp),
+  };
+}
+
+function asRecord(value: unknown): Record<string, unknown> | undefined {
+  return value !== null && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : undefined;
+}
+
+function mapMessageEdit(instanceName: string, event: Record<string, unknown>, protocol: Record<string, unknown> | undefined): MessageEditReceived | undefined {
+  // waE2E.ProtocolMessage.MESSAGE_EDIT = 14. Outros eventos de protocolo não são conteúdo.
+  if (!protocol || (protocol.type !== 14 && protocol.type !== "MESSAGE_EDIT")) return undefined;
+  const info = asRecord(event.Info);
+  const chat = info?.Chat;
+  if (typeof chat === "string" && (chat.endsWith("@broadcast") || chat.endsWith("@newsletter"))) return undefined;
+  const targetExternalMessageId = asRecord(protocol.key)?.ID;
+  if (typeof targetExternalMessageId !== "string" || !targetExternalMessageId) return undefined;
+  const replacement = asRecord(protocol.editedMessage);
+  const content = extractFallbackBodyAndType(replacement);
+  // A legenda removida costuma vir OMITIDA no protobuf. Nesse caso o novo corpo é vazio.
+  const isCaption = content.type === "image" || content.type === "video" || content.type === "document";
+  if (content.body === undefined && !isCaption) return undefined;
+  const timestampMs = Number(protocol.timestampMS);
+  const timestamp = Number.isFinite(timestampMs) && timestampMs > 0 ? new Date(timestampMs) : undefined;
+  return {
+    type: "message.edit",
+    tenantId: "",
+    workspaceId: "",
+    connectionId: instanceName,
+    targetExternalMessageId,
+    fromMe: Boolean(info?.IsFromMe),
+    body: content.body ?? "",
+    occurredAt: timestamp && !Number.isNaN(timestamp.getTime()) ? timestamp.toISOString() : parseWuzApiTimestamp(info?.Timestamp),
   };
 }
 

@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Button } from "@/components/Button";
 import { Card, CardBody, CardHeader } from "@/components/Card";
@@ -13,7 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch";
 import { useAuth } from "@/contexts/auth-context";
 import { useCurrentWorkspace } from "@/contexts/workspace-context";
-import { useSolutions } from "@/features/solutions/hooks";
+import { useActiveSolution } from "@/features/solutions/hooks";
 import { updateWorkspace } from "@/features/workspace/api";
 import { formatDateTime } from "@/lib/format";
 
@@ -25,7 +25,9 @@ export default function SettingsPage() {
   const workspace = useCurrentWorkspace();
   const router = useRouter();
   const { state } = useAuth();
-  const { hasMarketing } = useSolutions();
+  const pathname = usePathname();
+  const { active, available } = useActiveSolution(pathname, `/workspaces/${workspace.id}`);
+  const showMarketing = active === "marketing" && available.includes("marketing");
   const [name, setName] = useState(workspace.name);
   const [kind, setKind] = useState(workspace.kind ?? "");
   const [timezone, setTimezone] = useState(workspace.settings.timezone ?? "America/Sao_Paulo");
@@ -47,7 +49,7 @@ export default function SettingsPage() {
       await updateWorkspace(workspace.id, {
         name: name.trim(),
         kind: kind.trim() || undefined,
-        settings: { ...workspace.settings, timezone, language, defaultAspectRatio },
+        settings: { ...workspace.settings, timezone, language, ...(showMarketing ? { defaultAspectRatio } : {}) },
       });
       toast.success("Configurações salvas.");
       router.refresh();
@@ -109,8 +111,8 @@ export default function SettingsPage() {
                   <SelectContent>{LANGUAGES.map((item) => <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>)}</SelectContent>
                 </Select>
               </div>
-              {/* Preferência do Vorix Marketing: só existe para contas com a solução. */}
-              {hasMarketing ? (
+              {/* Preferência exibida apenas no produto Marketing. */}
+              {showMarketing ? (
               <div>
                 <Label htmlFor="workspace-aspect">Formato padrão de conteúdo</Label>
                 <Select value={defaultAspectRatio} onValueChange={setDefaultAspectRatio}>
@@ -154,7 +156,7 @@ export default function SettingsPage() {
             </CardBody>
           </Card>
 
-          {hasMarketing ? (
+          {showMarketing ? (
           <Card>
             <CardHeader>
               <div>

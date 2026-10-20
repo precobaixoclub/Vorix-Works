@@ -1,12 +1,11 @@
 import { classifyContactPhone, type ContactPhoneSource, type ContactPhoneSummary } from "../../domain/crm/contact-phone.js";
 
 /**
- * Contatos × celular. O número de celular é o pivô do CRM: contato que só tem LID do WhatsApp
- * (sem telefone real) pode ser removido em lote, com prévia e confirmação. A conversa no Inbox
- * nunca é apagada (só perde o vínculo com o CRM); oportunidades e propostas ficam protegidas —
- * contato LID com venda/proposta NÃO é removido, vai para revisão.
+ * Telefones e manutenção automática do diretório: registros técnicos só com LID aguardam
+ * resolução fora da lista, preservando contatos e vínculos. Os comandos antigos de limpeza
+ * continuam disponíveis para compatibilidade, mas não participam da manutenção automática.
  */
-export type ContactPhoneRow = { contactId: string; name: string; hasDeals: boolean; hasProposals: boolean } & ContactPhoneSource;
+export type ContactPhoneRow = { contactId: string; name: string; hasDeals: boolean; hasProposals: boolean; preserveInDirectory?: boolean } & ContactPhoneSource;
 
 export type ContactPhoneRepositoryPort = {
   listPhoneRows(input: { tenantId: string; workspaceId: string; contactIds?: readonly string[] }): Promise<ContactPhoneRow[]>;
@@ -14,6 +13,19 @@ export type ContactPhoneRepositoryPort = {
 };
 
 export type ContactPhoneDeps = { contactPhoneRepository: ContactPhoneRepositoryPort };
+
+export type ContactDirectoryMaintenancePort = ContactPhoneRepositoryPort & {
+  listDirectoryScopes(): Promise<{ tenantId: string; workspaceId: string }[]>;
+  setPhoneResolutionStates(input: { tenantId: string; workspaceId: string; states: { contactId: string; pending: boolean }[] }): Promise<number>;
+};
+
+/** Suspende a exibição dos registros só-LID; conserva todos os dados e restaura quando o telefone chega. */
+export async function reconcileContactDirectory(repository: ContactDirectoryMaintenancePort, input: { tenantId: string; workspaceId: string }): Promise<number> {
+  const rows = await repository.listPhoneRows(input);
+  const protectedIds = new Set(rows.filter(row => row.hasDeals || row.hasProposals || row.preserveInDirectory).map(row => row.contactId));
+  const summaries = summarize(rows);
+  return repository.setPhoneResolutionStates({ ...input, states: summaries.map(summary => ({ contactId: summary.contactId, pending: summary.kind === "lid_only" && !protectedIds.has(summary.contactId) })) });
+}
 
 function summarize(rows: readonly ContactPhoneRow[]) {
   const byContact = new Map<string, { name: string; hasDeals: boolean; hasProposals: boolean; sources: ContactPhoneSource[] }>();

@@ -67,6 +67,9 @@ export type CapacitySnapshot = {
   includedWhatsappConnections: number | null;
   additionalWhatsappConnections: number;
   totalWhatsappConnections: number | null;
+  includedWorkspaces?: number | null;
+  additionalWorkspaces?: number;
+  totalWorkspaces?: number | null;
   /** Gravações simultâneas do Vorix Meetings (0 = Meetings não contratado). */
   concurrentRecordings: number;
   baseMonthlyAmount: number;
@@ -88,7 +91,7 @@ export type CapacityState = {
   canChangeNow: boolean;
   meetingsSellable: boolean;
   /** Preço de cada unidade adicional no ciclo da assinatura. */
-  unitPrices?: { interval: "monthly" | "yearly"; user?: { amount: number; increment: number }; whatsappConnection?: { amount: number; increment: number }; meetingsBase?: number; meetingsExtraRecording?: number };
+  unitPrices?: { interval: "monthly" | "yearly"; user?: { amount: number; increment: number }; whatsappConnection?: { amount: number; increment: number }; workspace?: { amount: number; increment: number; canIncrease: boolean }; meetingsBase?: number; meetingsExtraRecording?: number };
 };
 
 export type AiCreditPurchase = { id: string; credits: number; amountCents: number; currency: string; status: "pending" | "paid" | "failed" | "cancelled"; method: "saved_card" | "checkout"; failureReason?: string; createdAt: string; paidAt?: string };
@@ -122,6 +125,7 @@ export type CapacityCostBreakdown = {
   additionalWhatsappConnections: number;
   userAddonMonthlyAmount: number;
   whatsappAddonMonthlyAmount: number;
+  workspaceAddonMonthlyAmount?: number;
   concurrentRecordings?: number;
   meetingsMonthlyAmount?: number;
   addonsMonthlyAmount: number;

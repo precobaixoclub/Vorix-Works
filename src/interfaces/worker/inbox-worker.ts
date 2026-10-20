@@ -33,6 +33,7 @@ import type { MessagingProvider } from "../../application/ports/messaging-provid
 import type { InboxAiResponderPort } from "../../application/ports/inbox-ai-responder.port.js";
 import {
   applyConnectionStateChanged,
+  applyMessageEdit,
   applyMessageReaction,
   applyMessageStatusChanged,
   dispatchDueScheduledMessages,
@@ -57,6 +58,7 @@ import { CreditAccountingService } from "../../application/ai-providers/credit-a
 import { OperationalCircuitBreaker, OperationalRateLimiter } from "../../application/operations/operational-services.js";
 import { PostgresAiProvidersRepository } from "../../infrastructure/storage/postgres/postgres-ai-providers-repository.js";
 import { PostgresPlatformBillingRepository } from "../../infrastructure/storage/postgres/postgres-platform-billing-repository.js";
+import { PostgresUserRepository } from "../../infrastructure/storage/postgres/postgres-user-repository.js";
 import { createPromInboxMetrics, inboxMetricsRegistry } from "../../infrastructure/observability/prom-inbox-metrics.js";
 import { reconcileMergeableIdentities, reconcileUnresolvedLidContacts } from "../../infrastructure/storage/postgres/inbox-identity-reconciliation.js";
 import { reconcilePendingContactPictures, reconcilePendingGroupPictures } from "../../infrastructure/storage/postgres/inbox-avatar-reconciliation.js";
@@ -573,6 +575,7 @@ async function main(): Promise<void> {
   console.log("[inbox-worker] conectado ao RabbitMQ, iniciando consumers.");
 
   const deps: InboxUseCaseDeps = {
+    userRepository: repositories.pool ? new PostgresUserRepository(repositories.pool) : undefined,
     connectionRepository: repositories.messagingConnectionRepository,
     contactRepository: repositories.inboxContactRepository,
     conversationRepository: repositories.inboxConversationRepository,
@@ -884,6 +887,14 @@ async function main(): Promise<void> {
     });
     if (result.applied && result.tenantId && result.workspaceId) {
       publishRealtimeNotification(channel, { type: "message.updated", tenantId: result.tenantId, workspaceId: result.workspaceId, conversationId: result.conversationId });
+    }
+  }, metrics);
+
+  await consumeQueue(channel, INBOX_QUEUES.edit, async (content) => {
+    const event = JSON.parse(content.toString("utf8")) as Extract<NormalizedInboxEvent, { type: "message.edit" }>;
+    const result = await applyMessageEdit(deps, event);
+    if (result.applied) {
+      publishRealtimeNotification(channel, { type: "message.updated", tenantId: event.tenantId, workspaceId: event.workspaceId, conversationId: result.conversationId });
     }
   }, metrics);
 

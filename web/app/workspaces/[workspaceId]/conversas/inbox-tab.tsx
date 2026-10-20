@@ -2,6 +2,7 @@
 
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import { ContactOpenDealsBadge } from "@/components/crm/ContactOpenDealsBadge";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   AlertCircle,
@@ -101,6 +102,7 @@ import { CrmContextSection } from "./crm-panel";
 import { CloseConversationModal, csatLabel } from "./service-settings-panel";
 import { StickerPickerButton } from "./sticker-picker";
 import { CreateOpportunityButton } from "./create-opportunity-button";
+import { PersonAvatar } from "@/components/DashboardKit";
 import { ProposalMessageCard } from "./proposal-card";
 import { useConversationProposals } from "@/features/sales/hooks";
 import { InboundAlertsToggle, NewConversationModal, QuickRepliesButton, QuickRepliesModal, useInboundAlerts, useQuickReplySuggestions } from "./inbox-essentials";
@@ -955,6 +957,7 @@ export function ConversationListItem({
       className={cn(
         "group flex w-full cursor-pointer gap-3 border-b border-border/60 px-3 py-3 text-left transition-colors duration-150 hover:bg-muted/50",
         selected && "bg-muted/80",
+        conversation.unreadCount > 0 && "conversation-unread",
       )}
     >
       <div className="relative shrink-0">
@@ -976,7 +979,7 @@ export function ConversationListItem({
           <ChannelIcon provider={conversation.connectionProvider} className="h-2.5 w-2.5 text-white" />
         </span>
       </div>
-      <div className="min-w-0 flex-1">
+      <div className="conversation-unread-content min-w-0 flex-1">
         <div className="flex items-start justify-between gap-2">
           <div className="flex min-w-0 items-center gap-1">
             {conversation.isUrgent ? <Flame className="h-3.5 w-3.5 shrink-0 text-destructive" aria-label="Urgente" /> : null}
@@ -997,13 +1000,14 @@ export function ConversationListItem({
           </div>
         </div>
         <p className="mt-0.5 truncate text-xs text-muted-foreground">{conversationSubtitle(conversation)}</p>
+        {conversation.chatType !== "group" ? <ContactOpenDealsBadge workspaceId={workspaceId} contactId={conversation.crmContactId} compact className="mt-1.5" /> : null}
         {/* Melhoria visual (pedido explícito do usuário — hierarquia de 4 linhas): linha 3 é
            preview + contador de não lidas (antes ficava numa 4ª linha própria, competindo com
            status/responsável); linha 4 fica bem discreta, texto único em vez de vários badges. */}
         <div className="mt-1 flex items-center gap-1.5">
           <p className="min-w-0 flex-1 truncate text-xs text-muted-foreground/80">{lastMessagePreviewLabel(conversation)}</p>
           {conversation.unreadCount > 0 ? (
-            <span className="flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-primary px-1.5 text-[11px] font-semibold tabular-nums text-primary-foreground dark:bg-primary-glow dark:text-background">
+            <span className="conversation-unread-count flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-primary px-1.5 text-[11px] font-semibold tabular-nums text-primary-foreground dark:bg-primary-glow dark:text-background">
               {conversation.unreadCount}
             </span>
           ) : null}
@@ -1532,6 +1536,13 @@ export function ConversationTimelinePane({
   const documentInputRef = useRef<HTMLInputElement | null>(null);
   const stickerInputRef = useRef<HTMLInputElement | null>(null);
 
+  function handleReplyTo(message: InboxMessage) {
+    if (!canOperate) return;
+    setComposerMode("message");
+    setReplyingTo(message);
+    requestAnimationFrame(() => textareaRef.current?.focus());
+  }
+
   const messages = [...(data?.messages ?? [])].reverse();
   const events = eventsData?.events ?? [];
   const timeline: TimelineEntry[] = [
@@ -1870,8 +1881,8 @@ export function ConversationTimelinePane({
         {/* Cabeçalho compacto (pedido explícito do usuário: "evitar muitos badges e textos ao
            mesmo tempo") — a linha de badges (IA/"Humano"/etiquetas) some daqui; o estado da IA já
            é visível no responsável (linha acima) e as etiquetas continuam acessíveis pelo ícone de
-           etiqueta, sem precisar de uma segunda fileira permanente. Erro de ação é a única coisa
-           que ainda pode aparecer abaixo, e só quando existe. */}
+           etiqueta. O resumo comercial aparece abaixo quando há oportunidades abertas. */}
+        {conversation.chatType !== "group" ? <ContactOpenDealsBadge workspaceId={workspaceId} contactId={conversation.crmContactId} className="mt-2" /> : null}
         {actionError ? <p className="mt-1.5 text-xs text-destructive">{actionError}</p> : null}
       </div>
 
@@ -1919,7 +1930,7 @@ export function ConversationTimelinePane({
                   onRetry={(body) => handleSend(body)}
                   retrying={sending}
                   canOperate={canOperate}
-                  onReplyTo={setReplyingTo}
+                  onReplyTo={handleReplyTo}
                   onChanged={() => mutate()}
                   onCancelScheduled={handleCancelScheduled}
                   onOpenMedia={setOpenMediaMessageId}
@@ -2674,7 +2685,7 @@ function formatRecordingTime(totalSeconds: number): string {
 export function messageSenderLabel(message: InboxMessage, isGroup: boolean): string | undefined {
   if (message.sentByAi) return "Vorix IA";
   if (message.sentByAutomation) return "Automação";
-  if (message.direction === "outbound") return "Atendente";
+  if (message.direction === "outbound") return message.senderDisplayName ?? "Atendente";
   if (isGroup) return message.senderDisplayName ?? "Participante";
   return undefined;
 }
@@ -2757,6 +2768,12 @@ function MessageBubble({
          de 70% do WRAPPER a contém sozinho, sem nova dependência circular. */}
       <div className={cn("flex max-w-[min(70%,44rem)] items-center gap-1", reactionGroups.length > 0 && "mb-2.5", isOutbound ? "flex-row-reverse" : "flex-row")}>
         <div
+          onDoubleClick={(event) => {
+            if (!canOperate) return;
+            // Controles de mídia, links e botões mantêm suas próprias ações.
+            if (event.target instanceof Element && event.target.closest("button, a, input, textarea, select, audio, video, [role='button'], [contenteditable='true']")) return;
+            onReplyTo(message);
+          }}
           className={cn(
             // Bolhas mais "mensageiro moderno, não painel administrativo" (pedido explícito do
             // usuário) — sem sombra, sem borda na bolha normal (só a de erro mantém, é um alerta,
@@ -2779,7 +2796,10 @@ function MessageBubble({
                 : "bg-muted/70 text-foreground dark:bg-muted/40",
           )}
         >
-          {senderLabel ? <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.12em] opacity-70">{senderLabel}</p> : null}
+          {senderLabel ? <div className="mb-1 flex items-center gap-1.5">
+            {message.sentByUserId && !message.sentByAi && !message.sentByAutomation ? <PersonAvatar nome={senderLabel} avatarUrl={typeof message.metadata?.senderAvatarUrl === "string" ? message.metadata.senderAvatarUrl : undefined} className="h-5 w-5 shrink-0" /> : null}
+            <p className="text-[10px] font-semibold uppercase tracking-[0.12em] opacity-70">{senderLabel}</p>
+          </div> : null}
           {quoted ? (
             <div className={cn("mb-1.5 rounded-md border-l-2 px-2 py-1 text-xs opacity-80", isOutbound ? "border-primary-foreground/50 bg-black/10" : "border-primary/50 bg-muted/60")}>
               {quotedSenderLabel ? <p className="mb-0.5 font-semibold">{quotedSenderLabel}</p> : null}

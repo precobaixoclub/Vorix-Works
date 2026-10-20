@@ -3,8 +3,6 @@
 import { Suspense, useMemo, useState, type ReactNode } from "react";
 import { BriefcaseBusiness, ClipboardCheck, FileText, History, Info, MessageSquareText, Phone, PhoneOff, Search, SlidersHorizontal } from "lucide-react";
 import useSWR from "swr";
-import { LidCleanupDialog } from "@/components/crm/LidCleanupDialog";
-import { useAuth } from "@/contexts/auth-context";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { Button } from "@/components/Button";
@@ -30,10 +28,10 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useCurrentWorkspace } from "@/contexts/workspace-context";
 import { completeTask, createContact, getContactPhones, linkContactIdentity, moveDealStage, updateContact, type ContactPhoneSummary } from "@/features/crm/api";
 import { groupDealsByStatus } from "@/features/crm/deal-resolution";
-import { useContactActivity, useContacts, useDeals, useLeadScore, usePipelineStages, usePipelines, useProposals, useStagesByPipeline, useTasks } from "@/features/crm/hooks";
+import { useContactActivity, useContactOpenDealsSummary, useContacts, useDeal, useDeals, useLeadScore, usePipelineStages, usePipelines, useProposals, useStagesByPipeline, useTasks } from "@/features/crm/hooks";
 import { activityActorLabel, isTaskOverdue, nextPendingTask, PROPOSAL_STATUS_LABEL, TASK_TYPE_LABEL } from "@/features/crm/presentation";
 import { resolveTaskDealChoice } from "@/features/crm/task-scheduling";
-import type { Contact, Deal, PipelineStage, Proposal, Task } from "@/features/crm/types";
+import type { Contact, ContactOpenDealsSummary, Deal, PipelineStage, Proposal, Task } from "@/features/crm/types";
 import type { Team } from "@/features/identity/types";
 import { useTeams } from "@/features/identity/hooks";
 import type { InboxConversation } from "@/features/inbox/types";
@@ -72,10 +70,8 @@ function ContactsView() {
   const debouncedSearch = useDebounce(search, 300);
 
   const { data: contacts, error, isLoading, mutate } = useContacts(workspace.id, { search: debouncedSearch || undefined, ownerUserId: ownerUserId || undefined, teamId: teamId || undefined });
-  // Workspace inteiro (nunca escopado por contato) — necessário aqui: cada card da GRADE precisa
-  // das próprias métricas (pipeline aberto, próxima atividade, nº de propostas), então não dá pra
-  // buscar só o de um contato por vez enquanto a grade inteira está visível.
-  const { data: deals, mutate: mutateDeals } = useDeals(workspace.id);
+  // Totais completos de todas as oportunidades abertas, sem o limite da listagem de negócios.
+  const { data: openDealsSummary, error: summaryError, mutate: mutateOpenDealsSummary } = useContactOpenDealsSummary(workspace.id);
   const { data: tasks, mutate: mutateTasks } = useTasks(workspace.id);
   const { data: proposals, mutate: mutateProposals } = useProposals(workspace.id);
   const { data: conversations } = useInboxConversations(workspace.id);
@@ -98,13 +94,7 @@ function ContactsView() {
   const contactsList = contacts ?? [];
   // Celular é o pivô do CRM: número real de cada contato (ou só LID do WhatsApp).
   const contactIdsKey = contactsList.map((contact) => contact.id).join(",");
-  const { data: phones, mutate: mutatePhones } = useSWR(contactIdsKey ? ["contact-phones", workspace.id, contactIdsKey] : null, () => getContactPhones(workspace.id, contactsList.map((contact) => contact.id)));
-  const { state: authState } = useAuth();
-  const canCleanup = authState.status === "authenticated" && (authState.role === "owner" || authState.role === "admin");
-  const [cleanupOpen, setCleanupOpen] = useState(false);
-  const [onlyWithoutNumber, setOnlyWithoutNumber] = useState(false);
-  const lidCount = contactsList.filter((contact) => phones?.[contact.id]?.kind === "lid_only").length;
-  const dealsList = deals ?? [];
+  const { data: phones } = useSWR(contactIdsKey ? ["contact-phones", workspace.id, contactIdsKey] : null, () => getContactPhones(workspace.id, contactsList.map((contact) => contact.id)));
   const tasksList = tasks ?? [];
   const proposalsList = proposals ?? [];
   const conversationsList = conversations?.conversations ?? [];
@@ -126,12 +116,8 @@ function ContactsView() {
     router.replace(pathname, { scroll: false });
   }
 
-  // Auditoria (seção 17 do pedido) — o `ContactDetailModal` só precisa dos dados DESTE contato, e a
-  // API já aceita `contactId` como filtro real (nunca usado antes aqui) — reusa a MESMA chave de
-  // cache de `useDeals(workspace.id)` (ambas têm `contactId: undefined` no array-chave do SWR)
-  // quando nenhum contato está selecionado, então abrir/fechar o modal nunca dispara uma requisição
-  // extra à toa; só quando um contato é selecionado é que vira uma chamada genuinamente escopada.
-  const { data: selectedContactDeals, mutate: mutateSelectedContactDeals } = useDeals(workspace.id, { contactId: selectedContactId });
+  // As oportunidades detalhadas são carregadas apenas para o contato aberto.
+  const { data: selectedContactDeals, mutate: mutateSelectedContactDeals } = useDeals(workspace.id, { contactId: selectedContactId }, Boolean(selectedContactId));
   const { data: selectedContactTasks, mutate: mutateSelectedContactTasks } = useTasks(workspace.id, { contactId: selectedContactId });
   const { data: selectedContactProposals, mutate: mutateSelectedContactProposals } = useProposals(workspace.id, { contactId: selectedContactId });
   // Mesmo racional acima, agora para a aba Conversas do Contact 360 (item 17 do pedido: antes
@@ -144,11 +130,11 @@ function ContactsView() {
     }
     return map;
   }, [conversationsList]);
-  const selectedDeal = dealsList.find((deal) => deal.id === selectedDealId);
+  const { data: selectedDeal, mutate: mutateSelectedDeal } = useDeal(workspace.id, selectedDealId);
   const selectedDealPipeline = selectedDeal ? pipelines?.find((pipeline) => pipeline.id === selectedDeal.pipelineId) : undefined;
   const { data: selectedDealStages } = usePipelineStages(selectedDeal?.pipelineId, workspace.id);
 
-  const visibleContacts = onlyWithoutNumber ? contactsList.filter((contact) => phones?.[contact.id]?.kind !== "phone") : contactsList;
+  const visibleContacts = contactsList;
 
   function requestMoveDeal(deal: Deal, stage: PipelineStage) {
     if (stage.isLost) {
@@ -205,7 +191,7 @@ function ContactsView() {
   async function handleMoveDeal(deal: Deal, stageId: string, lossReason?: string) {
     try {
       await moveDealStage(deal.id, workspace.id, stageId, lossReason);
-      await Promise.all([mutateDeals(), mutateSelectedContactDeals()]);
+      await Promise.all([mutateSelectedDeal(), mutateSelectedContactDeals(), mutateOpenDealsSummary()]);
       toast.success("Oportunidade atualizada.");
     } catch (cause) {
       toast.error("Não foi possível mover a oportunidade", { description: cause instanceof Error ? cause.message : "Tente novamente." });
@@ -217,41 +203,12 @@ function ContactsView() {
       <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight text-foreground">Contatos</h1>
-          <p className="mt-1 max-w-2xl text-sm text-muted-foreground">Visao 360 de clientes, canais, oportunidades, tarefas, propostas e historico.</p>
+          <p className="mt-1 max-w-2xl text-sm text-muted-foreground">Clientes, conversas, oportunidades em andamento e propostas em um só lugar.</p>
         </div>
         <div className="flex flex-wrap gap-2">
-          {canCleanup ? <Button variant="secondary" onClick={() => setCleanupOpen(true)}><PhoneOff className="h-4 w-4" />Remover contatos sem número</Button> : null}
           <Button onClick={() => setCreateOpen(true)}>Novo contato</Button>
         </div>
       </div>
-
-      {lidCount > 0 && !onlyWithoutNumber ? (
-        <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-orange-500/40 bg-orange-500/10 px-4 py-3 text-sm">
-          <span className="flex items-center gap-2 text-foreground"><PhoneOff className="h-4 w-4 text-orange-500" />{lidCount === 1 ? "1 contato está sem número de celular (só o código do WhatsApp)." : `${lidCount} contatos estão sem número de celular (só o código do WhatsApp).`}</span>
-          <div className="flex gap-2">
-            <Button variant="ghost" size="sm" onClick={() => setOnlyWithoutNumber(true)}>Ver quais</Button>
-            {canCleanup ? <Button variant="secondary" size="sm" onClick={() => setCleanupOpen(true)}>Remover</Button> : null}
-          </div>
-        </div>
-      ) : null}
-      {onlyWithoutNumber ? (
-        <div className="mb-4 flex items-center justify-between gap-3 rounded-xl border border-border/70 px-4 py-2 text-sm">
-          <span className="text-muted-foreground">Mostrando só contatos sem número de celular.</span>
-          <Button variant="ghost" size="sm" onClick={() => setOnlyWithoutNumber(false)}>Mostrar todos</Button>
-        </div>
-      ) : null}
-
-      {cleanupOpen ? (
-        <LidCleanupDialog
-          workspaceId={workspace.id}
-          onClose={() => setCleanupOpen(false)}
-          onDone={async () => {
-            setCleanupOpen(false);
-            setOnlyWithoutNumber(false);
-            await Promise.all([mutate(), mutatePhones()]);
-          }}
-        />
-      ) : null}
 
       <FilterBar summary={`${visibleContacts.length} contatos`}>
         <div className="relative min-w-[220px] flex-1 sm:max-w-sm">
@@ -294,7 +251,8 @@ function ContactsView() {
               key={contact.id}
               contact={contact}
               phone={phones?.[contact.id]}
-              deals={dealsList.filter((deal) => deal.contactId === contact.id)}
+              openDealsSummary={openDealsSummary?.filter(summary => summary.contactId === contact.id)}
+              summaryError={Boolean(summaryError)}
               tasks={tasksList.filter((task) => task.contactId === contact.id)}
               proposals={proposalsList.filter((proposal) => proposal.contactId === contact.id)}
               conversations={conversationsList.filter((conversation) => conversation.crmContactId === contact.id)}
@@ -347,13 +305,15 @@ function ContactsView() {
         workspaceId={workspace.id}
         contact={selectedContact}
         deals={selectedContactDeals ?? []}
+        openDealsSummary={openDealsSummary?.filter(summary => summary.contactId === selectedContactId)}
+        summaryError={Boolean(summaryError)}
         tasks={selectedContactTasks ?? []}
         proposals={selectedContactProposals ?? []}
         conversations={selectedContactConversations?.conversations ?? []}
         members={members}
         teams={teamsList}
         onChanged={async () => { await mutate(); }}
-        onDealsChanged={async () => { await mutateSelectedContactDeals(); }}
+        onDealsChanged={async () => { await Promise.all([mutateSelectedContactDeals(), mutateOpenDealsSummary()]); }}
         onTasksChanged={async () => { await Promise.all([mutateSelectedContactTasks(), mutateTasks()]); }}
         onProposalsChanged={async () => { await Promise.all([mutateSelectedContactProposals(), mutateProposals()]); }}
         onOpenDeal={(dealId) => {
@@ -374,7 +334,7 @@ function ContactsView() {
         proposals={proposalsList}
         members={members}
         teams={teamsList}
-        onChanged={async () => { await Promise.all([mutateDeals(), mutate(), mutateTasks(), mutateSelectedContactTasks()]); }}
+        onChanged={async () => { await Promise.all([mutateSelectedDeal(), mutateOpenDealsSummary(), mutate(), mutateTasks(), mutateSelectedContactTasks()]); }}
         onMove={(deal, stage) => requestMoveDeal(deal, stage)}
         onOpenConversation={selectedDeal?.contactId && conversationByContactId.has(selectedDeal.contactId) ? (deal) => {
           const conversation = deal.contactId ? conversationByContactId.get(deal.contactId) : undefined;
@@ -394,7 +354,8 @@ function ContactsView() {
 function ContactCard({
   contact,
   phone,
-  deals,
+  openDealsSummary,
+  summaryError,
   tasks,
   proposals,
   conversations,
@@ -404,7 +365,8 @@ function ContactCard({
 }: {
   contact: Contact;
   phone?: ContactPhoneSummary;
-  deals: readonly Deal[];
+  openDealsSummary?: readonly ContactOpenDealsSummary[];
+  summaryError: boolean;
   tasks: readonly Task[];
   proposals: readonly Proposal[];
   conversations: readonly { id: string; status: string; lastMessageAt?: string }[];
@@ -412,7 +374,7 @@ function ContactCard({
   teams: readonly Team[];
   onOpen: () => void;
 }) {
-  const openDealsValue = deals.filter((deal) => !deal.wonAt && !deal.lostAt).reduce((sum, deal) => sum + deal.valueCents, 0);
+  const metrics = openDealMetrics(openDealsSummary, summaryError);
   const nextTask = nextPendingTask(tasks, { contactId: contact.id });
   return (
     <button
@@ -436,7 +398,8 @@ function ContactCard({
         {conversations.length > 0 ? <Badge variant="info">WhatsApp</Badge> : null}
       </div>
       <div className="mt-4 grid grid-cols-2 gap-2 text-xs">
-        <MiniMetric label="Pipeline" value={formatCurrencyCents(openDealsValue)} />
+        <div className="col-span-2 rounded-lg border border-primary/20 bg-primary/5 px-3 py-2.5"><p className="text-[11px] text-muted-foreground">Valor em negociação</p><p className="mt-1 break-words text-base font-semibold tabular-nums text-foreground">{metrics.value}</p></div>
+        <MiniMetric label="Em andamento" value={metrics.count} />
         <MiniMetric label="Propostas" value={String(proposals.length)} />
       </div>
       <div className="mt-3 space-y-1 text-xs text-muted-foreground">
@@ -454,6 +417,8 @@ function ContactDetailModal({
   workspaceId,
   contact,
   deals,
+  openDealsSummary,
+  summaryError,
   tasks,
   proposals,
   conversations,
@@ -470,6 +435,8 @@ function ContactDetailModal({
   workspaceId: string;
   contact: Contact | undefined;
   deals: readonly Deal[];
+  openDealsSummary?: readonly ContactOpenDealsSummary[];
+  summaryError: boolean;
   tasks: readonly Task[];
   proposals: readonly Proposal[];
   conversations: readonly { id: string; status: string; lastMessageAt?: string; contactPhone?: string }[];
@@ -523,7 +490,7 @@ function ContactDetailModal({
   if (!contact) return null;
 
   const primaryConversation = conversations[0];
-  const activeDealsValue = deals.filter((deal) => !deal.wonAt && !deal.lostAt).reduce((sum, deal) => sum + deal.valueCents, 0);
+  const metrics = openDealMetrics(openDealsSummary, summaryError);
   // Header conceitual da auditoria (seção 15 do pedido: "Elen Mitrut / +55 46 9... / WhatsApp") —
   // `Contact` não tem coluna de telefone própria (vive em `ContactIdentity`/`inbox_contacts`, nunca
   // replicado pro CRM, por desenho); a conversa vinculada já denormaliza isso mesmo assim
@@ -571,7 +538,8 @@ function ContactDetailModal({
                 <InfoCell label="Equipe" value={teamLabel(contact.teamId, teams)} />
                 <InfoCell label="Origem" value={contact.origin ?? "—"} />
                 <InfoCell label="Lead score" value={scoreLoading ? "Carregando..." : leadScore ? `${leadScore.score} · ${leadScore.temperature}` : "—"} />
-                <InfoCell label="Pipeline ativo" value={formatCurrencyCents(activeDealsValue)} strong />
+                <InfoCell label="Oportunidades em andamento" value={metrics.count} strong />
+                <InfoCell label="Valor em negociação" value={metrics.value} strong />
                 <InfoCell label="Última interação" value={formatDateTime(contact.lastInteractionAt)} />
                 <InfoCell label="Criado em" value={formatDate(contact.createdAt)} />
               </div>
@@ -627,6 +595,7 @@ function ContactDetailModal({
                 />
                 <DealStatusGroup title="Ganhos" deals={dealGroups.won} tasks={tasks} members={members} stagesByPipeline={stagesByPipeline} onOpenDeal={onOpenDeal} />
                 <DealStatusGroup title="Perdidos" deals={dealGroups.lost} tasks={tasks} members={members} stagesByPipeline={stagesByPipeline} onOpenDeal={onOpenDeal} />
+                <DealStatusGroup title="Canceladas" deals={dealGroups.cancelled} tasks={tasks} members={members} stagesByPipeline={stagesByPipeline} onOpenDeal={onOpenDeal} />
               </>
             )}
           </div>
@@ -944,6 +913,15 @@ function InfoCell({ label, value, strong }: { label: string; value: string; stro
       <p className={cn("mt-1 truncate text-sm text-foreground", strong && "font-semibold tabular-nums")}>{value}</p>
     </div>
   );
+}
+
+function openDealMetrics(summaries: readonly ContactOpenDealsSummary[] | undefined, error: boolean) {
+  if (error) return { count: "—", value: "Indisponível" };
+  if (!summaries) return { count: "…", value: "Carregando…" };
+  return {
+    count: String(summaries.reduce((count, summary) => count + summary.count, 0)),
+    value: summaries.length ? summaries.map(summary => formatCurrencyCents(summary.valueCentsSum, summary.currency)).join(" + ") : formatCurrencyCents(0),
+  };
 }
 
 function MiniMetric({ label, value }: { label: string; value: string }) {

@@ -99,7 +99,7 @@ export function CreateOpportunityButton({
 
   return (
     <>
-      <GuardedButton size="sm" variant="secondary" onClick={() => void start()} loading={linking} disabled={linking} allowed={canOperate} blockedReason={RBAC_COPY.operateConversations}>
+      <GuardedButton size="sm" variant="primary" onClick={() => void start()} loading={linking} disabled={linking} allowed={canOperate} blockedReason={RBAC_COPY.operateConversations}>
         <BriefcaseBusiness className="h-3.5 w-3.5" />
         Criar oportunidade
       </GuardedButton>

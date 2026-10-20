@@ -16,7 +16,7 @@ import { useContacts, usePipelines, usePipelineStages, useProducts, useStockRisk
 import { centsFromCurrencyInput } from "@/features/crm/presentation";
 import type { Deal } from "@/features/crm/types";
 import { addDealItem, findDuplicateDeals } from "@/features/sales/api";
-import { useCommercialSettings } from "@/features/sales/hooks";
+import { useCommercialSettings, useInvalidateSales } from "@/features/sales/hooks";
 import { formatCurrencyCents } from "@/lib/format";
 
 /**
@@ -44,6 +44,7 @@ export function QuickCreateDealModal({
   onCreated: (deal: Deal) => void | Promise<void>;
 }) {
   const { data: pipelines } = usePipelines(workspaceId);
+  const invalidateSales = useInvalidateSales(workspaceId);
   const { data: products } = useProducts(workspaceId, { activeOnly: true });
   const { data: stockRisk } = useStockRisk(workspaceId);
   const stockByProduct = useMemo(() => new Map((stockRisk?.products ?? []).map((item) => [item.productId, item])), [stockRisk]);
@@ -109,6 +110,7 @@ export function QuickCreateDealModal({
         }
       }
       if (failures.length) toast.error("Oportunidade criada, mas alguns produtos não entraram", { description: failures.join(" · ") });
+      await invalidateSales();
       await onCreated(deal);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Não foi possível criar a oportunidade.");

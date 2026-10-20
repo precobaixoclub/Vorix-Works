@@ -50,6 +50,14 @@ export function listTenantMembers(): Promise<TenantMembershipType[]> {
   return apiClient.get<TenantMembershipType[]>("/v1/tenant-members");
 }
 
+export function createTenantMember(input: { name: string; email: string; password: string; role: TenantRole; avatarUrl?: string | null }): Promise<TenantMembershipType> {
+  return apiClient.post<TenantMembershipType>("/v1/tenant-members", input);
+}
+
+export function updateTenantMemberProfile(userId: string, input: { name: string; email: string; avatarUrl?: string | null }): Promise<TenantMembershipType> {
+  return apiClient.patch<TenantMembershipType>(`/v1/tenant-members/${encodeURIComponent(userId)}/profile`, input);
+}
+
 export function listTenantInvites(): Promise<TenantMemberInvite[]> {
   return apiClient.get<TenantMemberInvite[]>("/v1/tenant-members/invites");
 }

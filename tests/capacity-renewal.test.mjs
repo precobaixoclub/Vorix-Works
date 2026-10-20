@@ -20,6 +20,8 @@ import {registerBillingCapacityRoutes} from "../dist/interfaces/api/routes/v1/bi
 import {assertWithinLimit} from "../dist/application/billing/entitlement-use-cases.js";
 import {buildApp} from "../dist/interfaces/api/app.js";
 import {loadApiConfig} from "../dist/interfaces/api/config/api-config.js";
+import { itemsForCapacity } from "../dist/application/billing/checkout-use-cases.js";
+import { computeCapacityCost } from "../dist/domain/platform-billing/capacity.model.js";
 let db;before(async()=>{const url=process.env.VORIX_CAPACITY_FIXTURE_PG_URL;if(url){assert.match(new URL(url).pathname,/^\/vorix_capacity_fixture/);const pool=new pg.Pool({connectionString:url});db={pool,stop:()=>pool.end()};}else db=await startTestPostgres();await applyMigrations(db.pool,join(process.cwd(),"db/migrations"));});after(()=>db.stop());
 async function setup({interval="monthly",used=1}={}){
  const tenantId="renewal-fixture-"+randomUUID(),calls=[];const provider=new SandboxBillingProvider();provider.setRecurringItems=async input=>{calls.push(input);return {ok:true,providerItemIds:Object.fromEntries(input.items.filter(item=>item.quantity>0).map(item=>[item.addonCode,"fixture-item-"+item.addonCode]))};};
@@ -73,4 +75,136 @@ test("Mercado Pago recebe somente o total calculado e mantém data/frequência d
 });
 test("Stripe altera itens em uma chamada, sem prorrata ou mudança da data de renovação",async()=>{
  const provider=new StripeBillingProvider({secretKey:"sk_test_fixture_only"});let sent;provider.client={subscriptions:{retrieve:async()=>({items:{data:[{id:"base",price:{id:"plan"}},{id:"users",price:{id:"user-price"}}]}}),update:async(_id,body)=>{sent=body;return {items:{data:[{id:"base",price:{id:"plan"}},{id:"users",price:{id:"user-price"}}]}};}}};await provider.setRecurringItems({providerSubscriptionId:"fixture",amount:188,currency:"BRL",operationKey:"fixture",items:[{addonCode:"extra_user",providerItemId:"users",quantity:1}]});assert.equal(sent.proration_behavior,"none");assert.deepEqual(sent.items,[{id:"users",quantity:1}]);assert.equal(sent.billing_cycle_anchor,undefined);
+});
+
+async function workspaceSetup({ usedWorkspaces = 1, increment = 1, interval = "monthly" } = {}) {
+  const context = await setup({ interval });
+  const addonCode = `workspace_fixture_${randomUUID().replaceAll("-", "")}`;
+  const addon = await context.deps.addonDefinitionRepository.saveModule({ code: addonCode, name: "Workspaces de fixture", description: "Catálogo descartável", resource: "workspaces", increment, monthlyPriceUsd: 29, yearlyPriceUsd: 290, currency: "BRL", active: true });
+  const definitions = await context.deps.addonDefinitionRepository.listActive();
+  const allowed = context.plan.allowedAddonCodes.filter(code => definitions.find(item => item.code === code)?.resource !== "workspaces");
+  const plan = await context.deps.planVersionRepository.createNextVersion({ ...context.plan, limits: { ...context.plan.limits, workspaces: 1 }, allowedAddonCodes: [...allowed, addonCode] });
+  await context.deps.subscriptionRepository.update(context.subscription.id, { planVersionId: plan.id });
+  context.deps.resourceCounter.count = async ({ resource }) => resource === "workspaces" ? usedWorkspaces : 1;
+  return { ...context, plan, addon, addonCode };
+}
+
+test("Workspaces: preview calcula os três recursos sem escrever e salvamento sincroniza a próxima mensalidade", async () => {
+  const c = await workspaceSetup();
+  const input = { tenantId: c.tenantId, users: 4, whatsappConnections: 2, workspaces: 3 };
+  const preview = await previewCapacityChange(c.deps, input);
+  assert.equal(preview.requestedOnCurrentPlan.workspaceAddonMonthlyAmount, 58);
+  assert.equal(preview.requestedOnCurrentPlan.totalMonthlyAmount, c.plan.monthlyPriceUsd + 78 + 79 + 58);
+  assert.equal(c.calls.length, 0, "simular nunca altera cobrança");
+  assert.equal((await getCapacityState(c.deps, c.tenantId)).current.totalWorkspaces, 1);
+  const result = await applyCapacityChange(c.deps, input);
+  const state = await getCapacityState(c.deps, c.tenantId);
+  assert.equal(state.current.totalUsers, 4);
+  assert.equal(state.current.totalWhatsappConnections, 2);
+  assert.equal(state.current.totalWorkspaces, 3);
+  assert.equal(state.unitPrices.workspace.amount, 29);
+  assert.equal(state.nextCharge.amount, preview.requestedOnCurrentPlan.totalMonthlyAmount);
+  assert.equal(result.nextCharge.at, state.nextCharge.at);
+  assert.equal(c.calls.at(-1).amount, state.nextCharge.amount);
+  assert.equal(c.calls.at(-1).items.find(item => item.addonCode === c.addonCode).quantity, 2);
+  assert.ok(!state.adjustableAddons.some(item => item.resource === "workspaces"), "não duplica workspaces entre campos totais e adicionais");
+});
+
+test("Workspaces: reduzir preserva capacidade paga, pode ser cancelado e é aplicado na renovação", async () => {
+  const c = await workspaceSetup();
+  await applyCapacityChange(c.deps, { tenantId: c.tenantId, workspaces: 4 });
+  await applyCapacityChange(c.deps, { tenantId: c.tenantId, workspaces: 2 });
+  let state = await getCapacityState(c.deps, c.tenantId);
+  assert.equal(state.current.totalWorkspaces, 4);
+  assert.equal(state.next.totalWorkspaces, 2);
+  assert.equal(state.nextCharge.amount, c.plan.monthlyPriceUsd + 29);
+  await cancelPendingCapacityChange(c.deps, { tenantId: c.tenantId, pendingChangeId: state.pending[0].id });
+  state = await getCapacityState(c.deps, c.tenantId);
+  assert.equal(state.next.totalWorkspaces, 4);
+  await applyCapacityChange(c.deps, { tenantId: c.tenantId, workspaces: 2 });
+  const calls = c.calls.length;
+  const list = c.deps.subscriptionPendingChangeRepository.listDueForApplication.bind(c.deps.subscriptionPendingChangeRepository);
+  c.deps.subscriptionPendingChangeRepository.listDueForApplication = async now => (await list(now)).filter(change => change.tenantId === c.tenantId);
+  assert.equal((await applyDuePendingCapacityChanges(c.deps, () => new Date(Date.now() + 21 * 86400000))).appliedCount, 1);
+  assert.equal((await getCapacityState(c.deps, c.tenantId)).current.totalWorkspaces, 2);
+  assert.equal(c.calls.length, calls, "renovação não reenvia o preço sincronizado");
+});
+
+test("Workspaces: uso existente e mínimo impedem redução; erro não salva os outros campos", async () => {
+  const c = await workspaceSetup({ usedWorkspaces: 3 });
+  await applyCapacityChange(c.deps, { tenantId: c.tenantId, workspaces: 4 });
+  const calls = c.calls.length;
+  await assert.rejects(applyCapacityChange(c.deps, { tenantId: c.tenantId, users: 8, workspaces: 2 }), /CAPACITY_REDUCTION_BELOW_USAGE/);
+  await assert.rejects(applyCapacityChange(c.deps, { tenantId: c.tenantId, workspaces: 0 }), /CAPACITY_BELOW_PLAN_MINIMUM/);
+  assert.equal(c.calls.length, calls);
+  assert.equal((await getCapacityState(c.deps, c.tenantId)).current.totalUsers, c.plan.limits.users);
+});
+
+test("Workspaces: adicional descontinuado ainda pode reduzir com o preço contratado", async () => {
+  const c = await workspaceSetup();
+  await applyCapacityChange(c.deps, { tenantId: c.tenantId, workspaces: 4 });
+  await db.pool.query("update addon_definitions set active = false where code = $1", [c.addonCode]);
+  const preview = await previewCapacityChange(c.deps, { tenantId: c.tenantId, users: c.plan.limits.users, whatsappConnections: c.plan.limits.messaging_connections, workspaces: 2 });
+  assert.equal(preview.requestedOnCurrentPlan.feasible, true);
+  assert.equal(preview.requestedOnCurrentPlan.workspaceAddonMonthlyAmount, 29);
+  assert.equal((await getCapacityState(c.deps, c.tenantId)).unitPrices.workspace.canIncrease, false);
+  await applyCapacityChange(c.deps, { tenantId: c.tenantId, workspaces: 2 });
+  assert.equal((await getCapacityState(c.deps, c.tenantId)).next.totalWorkspaces, 2);
+});
+
+test("Workspaces: pacotes, preço contratado e ciclo anual são preservados, inclusive no checkout", async () => {
+  const c = await workspaceSetup({ increment: 5, interval: "yearly" });
+  const input = { tenantId: c.tenantId, users: c.plan.limits.users, whatsappConnections: c.plan.limits.messaging_connections, workspaces: 4 };
+  const cost = computeCapacityCost(c.plan, [c.addon], input, "yearly");
+  assert.equal(cost.additionalWorkspaces, 5);
+  assert.equal(cost.workspaceAddonMonthlyAmount, 290);
+  assert.deepEqual(itemsForCapacity(c.plan, [c.addon], input), [{ addonCode: c.addonCode, quantity: 1 }]);
+  await applyCapacityChange(c.deps, input);
+  let state = await getCapacityState(c.deps, c.tenantId);
+  assert.equal(state.current.totalWorkspaces, 6);
+  const item = (await c.deps.subscriptionItemRepository.listBySubscription(c.subscription.id)).find(item => item.addonCode === c.addonCode);
+  await db.pool.query("update subscription_items set unit_price_usd = 170 where id = $1", [item.id]);
+  const preview = await previewCapacityChange(c.deps, { ...input, workspaces: 8 });
+  assert.equal(preview.requestedOnCurrentPlan.workspaceAddonMonthlyAmount, 340);
+  await applyCapacityChange(c.deps, { ...input, workspaces: 8 });
+  state = await getCapacityState(c.deps, c.tenantId);
+  assert.equal(state.nextCharge.amount, c.plan.yearlyPriceUsd + 340);
+});
+
+test("Workspaces: ilimitados permanecem incluídos e não geram cobrança adicional", async () => {
+  const c = await workspaceSetup();
+  const unlimited = await c.deps.planVersionRepository.createNextVersion({ ...c.plan, limits: { ...c.plan.limits, workspaces: null } });
+  await c.deps.subscriptionRepository.update(c.subscription.id, { planVersionId: unlimited.id });
+  await applyCapacityChange(c.deps, { tenantId: c.tenantId, workspaces: 100 });
+  const state = await getCapacityState(c.deps, c.tenantId);
+  assert.equal(state.current.totalWorkspaces, null);
+  assert.equal(state.nextCharge.amount, unlimited.monthlyPriceUsd);
+  assert.equal(c.calls.length, 0);
+  await c.deps.subscriptionItemRepository.create({ subscriptionId: c.subscription.id, addonCode: c.addonCode, quantity: 1, unitPriceUsd: 29, currency: "BRL" });
+  await applyCapacityChange(c.deps, { tenantId: c.tenantId, addonQuantities: { [c.addonCode]: 0 } });
+  const reduced = await getCapacityState(c.deps, c.tenantId);
+  assert.equal(reduced.current.totalWorkspaces, null);
+  assert.equal(reduced.nextCharge.amount, unlimited.monthlyPriceUsd);
+  assert.equal(reduced.adjustableAddons.find(item => item.addonCode === c.addonCode).quantity, 0);
+  await cancelPendingCapacityChange(c.deps, { tenantId: c.tenantId, pendingChangeId: reduced.pending[0].id });
+  const restored = await getCapacityState(c.deps, c.tenantId);
+  assert.equal(restored.pending.length, 0);
+  assert.equal(restored.nextCharge.amount, unlimited.monthlyPriceUsd + 29);
+});
+
+test("Workspaces: API aceita quantidade total, rejeita valores inválidos e checkout não ignora pedido indisponível", async () => {
+  const c = await workspaceSetup();
+  const app = Fastify();
+  app.decorateRequest("zunoContext", null);
+  app.addHook("onRequest", async request => { request.zunoContext = { principal: { tenantId: c.tenantId, userId: "fixture", role: "owner" } }; });
+  await registerBillingCapacityRoutes(app, c.deps);
+  try {
+    const response = await app.inject({ method: "POST", url: "/billing/capacity/apply", payload: { workspaces: 3 } });
+    assert.equal(response.statusCode, 200, response.body);
+    assert.equal((await getCapacityState(c.deps, c.tenantId)).current.totalWorkspaces, 3);
+    const count = c.calls.length;
+    for (const workspaces of [-1, 1.5, 1001]) assert.equal((await app.inject({ method: "POST", url: "/billing/capacity/apply", payload: { workspaces } })).statusCode, 400);
+    assert.equal(c.calls.length, count);
+    assert.throws(() => itemsForCapacity(c.plan, [], { workspaces: 3 }), /CHECKOUT_ADDON_NOT_ALLOWED/);
+  } finally { await app.close(); }
 });

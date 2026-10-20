@@ -2,6 +2,7 @@ import type { FastifyInstance } from "fastify";
 import {
   createDeal,
   getDeal,
+  getContactOpenDealsSummary,
   getDealsSummary,
   getDealTimeline,
   listDeals,
@@ -116,6 +117,14 @@ export async function registerDealsRoutes(app: FastifyInstance, deps: DealUseCas
     const principal = requirePermission(request, "deal:read");
     const query = request.query as { workspaceId: string; pipelineId: string; ownerUserId?: string; teamId?: string; origin?: string; search?: string };
     const summary = await getDealsSummary(deps, { tenantId: principal.tenantId, ...query });
+    return successEnvelope(summary, request.id);
+  });
+
+  app.get("/deals/open-by-contact", { schema: { querystring: WORKSPACE_QUERY_SCHEMA } }, async (request) => {
+    const principal = requirePermission(request, "deal:read");
+    const { workspaceId } = request.query as { workspaceId: string };
+    const scope = deps.sales ? await resolveDealScope(deps.sales, { tenantId: principal.tenantId, userId: principal.userId, role: principal.role }, workspaceId) : {};
+    const summary = await getContactOpenDealsSummary(deps, { tenantId: principal.tenantId, workspaceId, ...scope });
     return successEnvelope(summary, request.id);
   });
 

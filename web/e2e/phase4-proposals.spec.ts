@@ -9,7 +9,7 @@ async function commercialFixture(page: Page, dealCount = 2) {
   await mockConversasBackend(page);
   const now = new Date().toISOString();
   const contact = { id: "contact-phase4", name: "Cliente Fase 4", company: "Empresa QA", tags: [], createdAt: now };
-  const deals = Array.from({ length: dealCount }, (_, index) => ({ id: `deal-phase4-${index + 1}`, contactId: contact.id, pipelineId: "pipeline-phase4", stageId: "stage-open", title: `Oportunidade Fase 4 ${index + 1}`, valueCents: 450000, currency: "BRL", lastStageChangedAt: now }));
+  const deals = Array.from({ length: dealCount }, (_, index) => ({ id: `deal-phase4-${index + 1}`, contactId: contact.id, ownerUserId: "user-qa", status: "open", pipelineId: "pipeline-phase4", stageId: "stage-open", title: `Oportunidade Fase 4 ${index + 1}`, valueCents: 450000, currency: "BRL", lastStageChangedAt: now }));
   const templates = [{ id: "template-phase4", tenantId: "tenant", workspaceId: WORKSPACE_ID, name: "Plano Premium", defaultTitle: "Proposta Comercial - Plano Premium", defaultItems: [{ name: "Plano Premium", quantity: 1, unitPriceCents: 450000, subtotalCents: 450000 }], defaultConditions: "Pagamento em 2 parcelas", defaultValidDays: 7, active: true, createdAt: now, updatedAt: now }];
   const proposals: Proposal[] = [];
   const sends: any[] = [];
@@ -20,6 +20,14 @@ async function commercialFixture(page: Page, dealCount = 2) {
     const method = route.request().method();
     const ok = (data: unknown) => route.fulfill({ json: { ok: true, data } });
     if (path === "/v1/inbox/conversations") return ok({ conversations: [{ id: "conversation-phase4", contactId: "inbox-contact", crmContactId: contact.id, contactName: contact.name, contactPhone: "+5511999999999", connectionId: "connection", status: "open", chatType: "direct", unreadCount: 0 }] });
+    if (path === "/v1/inbox/connections") return ok({ connections: [{ id: "connection", displayName: "WhatsApp QA", status: "connected", provider: "wuzapi" }] });
+    if (/^\/v1\/deals\/[^/]+\/commercial$/.test(path)) return ok({ items: [], approval: { required: false } });
+    if (/^\/v1\/deals\/[^/]+\/proposals$/.test(path) && method === "POST") {
+      const input = route.request().postDataJSON();
+      const proposal = { ...input, id: `proposal-${proposals.length + 1}`, dealId: path.split("/")[3], contactId: contact.id, status: "draft", currency: "BRL", items: templates[0].defaultItems, discountCents: 0, totalCents: 450000, version: 1, approvalRequired: false, publicToken: "raw-token", createdAt: now, updatedAt: now };
+      proposals.unshift(proposal);
+      return ok(proposal);
+    }
     if (path.endsWith("/messages")) return ok({ messages: [] });
     if (path === `/v1/contacts/${contact.id}`) return ok(contact);
     if (path === "/v1/contacts") return ok([contact]);
@@ -66,27 +74,25 @@ test("link público abre sem cookie de sessão", async ({ browser }) => {
   await context.close();
 });
 
-test("cria pela conversa com modelo, escolhe Deal e envia no pipeline", async ({ page }) => {
+test("gera pelo card da oportunidade com modelo personalizado e envia pelo WhatsApp", async ({ page }) => {
   const state = await commercialFixture(page, 2);
-  await page.goto(`/workspaces/${WORKSPACE_ID}/conversas?conversation=conversation-phase4`);
-  await page.getByRole("button", { name: "Detalhes", exact: true }).click();
-  await page.getByRole("button", { name: "Gerar proposta", exact: true }).click();
+  await page.goto(`/workspaces/${WORKSPACE_ID}/deals`);
+  await page.locator("article:visible").filter({ hasText: "Oportunidade Fase 4 2" }).getByRole("button", { name: "Gerar proposta", exact: true }).click();
   const create = page.getByRole("dialog", { name: "Gerar proposta" });
   await create.getByLabel("Modelo").click();
   await page.getByRole("option", { name: "Plano Premium", exact: true }).click();
-  await create.getByLabel("Oportunidade").click();
-  await page.getByRole("option", { name: "Oportunidade Fase 4 2", exact: true }).click();
+  await create.getByText("Personalizar apresentação e termos", { exact: true }).click();
   await expect(create.getByLabel(/T.tulo/)).toHaveValue("Proposta Comercial - Plano Premium");
-  await create.getByRole("button", { name: "Criar proposta", exact: true }).click();
+  await create.getByRole("button", { name: "Gerar proposta", exact: true }).click();
   await expect(create).toBeHidden();
   expect(state.proposals).toHaveLength(1);
   expect(state.proposals[0].contactId).toBe(state.contact.id);
   expect(state.proposals[0].dealId).toBe(state.deals[1].id);
-  const detail = page.getByRole("dialog", { name: "Proposta Comercial - Plano Premium" });
-  await detail.getByRole("button", { name: "Enviar no WhatsApp", exact: true }).click();
+  const detail = page.getByRole("dialog", { name: "Revise e envie sua proposta" });
+  await detail.getByRole("button", { name: "Enviar pelo WhatsApp", exact: true }).click();
   await expect.poll(() => state.sends.length).toBe(1);
   expect(state.sends[0].conversationId).toBe("conversation-phase4");
-  expect(state.sends[0].message).toContain("{{proposalUrl}}");
+  expect(state.sends[0]).not.toHaveProperty("message");
   expect(state.sends[0].idempotencyKey).toBeTruthy();
   expect(state.proposals[0].status).toBe("sent");
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);

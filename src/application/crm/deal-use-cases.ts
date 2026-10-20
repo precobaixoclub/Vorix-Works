@@ -1,4 +1,4 @@
-import type { DealRepositoryPort, ListDealsFilter, UpdateDealInput } from "../ports/deal-repository.port.js";
+import type { ContactOpenDealsFilter, ContactOpenDealsSummary, DealRepositoryPort, ListDealsFilter, UpdateDealInput } from "../ports/deal-repository.port.js";
 import type { PipelineStageRepositoryPort } from "../ports/pipeline-repository.port.js";
 import type { TimelineEventRepositoryPort } from "../ports/timeline-event-repository.port.js";
 import { evaluateAutomationTrigger, type AutomationUseCaseDeps } from "./automation-use-cases.js";
@@ -28,6 +28,10 @@ export async function mustDealBelongToTenantAndWorkspace(deps: DealUseCaseDeps, 
     throw new Error(`DEAL_NOT_FOUND: oportunidade "${dealId}" não existe.`);
   }
   return deal;
+}
+
+export async function getContactOpenDealsSummary(deps: Pick<DealUseCaseDeps, "dealRepository">, input: ContactOpenDealsFilter): Promise<ContactOpenDealsSummary[]> {
+  return deps.dealRepository.summarizeOpenByContact(input);
 }
 
 export async function createDeal(deps: DealUseCaseDeps, input: { tenantId: string; workspaceId: string; pipelineId: string; stageId: string; contactId?: string; title: string; valueCents?: number; currency?: string; ownerUserId?: string; teamId?: string; origin?: string; expectedCloseDate?: string; probability?: number; forecastCategory?: Deal["forecastCategory"]; contractMonths?: number; priceBookId?: string; actorUserId?: string }): Promise<Deal> {

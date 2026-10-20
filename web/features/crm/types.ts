@@ -140,6 +140,8 @@ export type DealStageSummary = {
   valueCentsSum: number;
 };
 
+export type ContactOpenDealsSummary = { contactId: string; currency: string; count: number; valueCentsSum: number };
+
 export type TaskType = "ligacao" | "whatsapp" | "reuniao" | "enviar_proposta" | "follow_up" | "personalizada";
 export type TaskStatus = "pending" | "done" | "cancelled";
 

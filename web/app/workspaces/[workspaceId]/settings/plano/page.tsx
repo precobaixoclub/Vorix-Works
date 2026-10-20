@@ -20,7 +20,7 @@ import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/auth-context";
 import { applyCapacity, cancelPendingCapacityChange, cancelSubscription, changePlan, fetchDowngradePreview, openBillingPortal, previewCapacity, purchaseAddon, purchaseAiCredits, reactivateSubscription, removeAddon, startCheckout, startTrial } from "@/features/billing/api";
 import { useAiCredits, useBillingOverview, useCapacityState } from "@/features/billing/hooks";
-import { RESOURCE_LABELS, type BillingInterval, type BillingOverviewAvailableAddon, type CapacityPendingChange, type CapacityPreviewResult, type PlatformPlanCode } from "@/features/billing/types";
+import { RESOURCE_LABELS, type BillingInterval, type BillingOverview, type BillingOverviewAvailableAddon, type CapacityPendingChange, type CapacityPreviewResult, type PlatformPlanCode } from "@/features/billing/types";
 import { fetchPublicPlans, formatCreditsQuota, type PublicPlan } from "@/features/platform-plans/api";
 import { formatCurrencyCents, formatDate } from "@/lib/format";
 import { canManageBilling, RBAC_COPY } from "@/lib/rbac";
@@ -69,11 +69,11 @@ export default function BillingSettingsPage() {
     }
   }
 
-  async function goToCheckout(planCode: PlatformPlanCode, interval: BillingInterval) {
+  async function goToCheckout(planCode: PlatformPlanCode, interval: BillingInterval, capacity?: Parameters<typeof startCheckout>[0]["capacity"]) {
     if (!canManage) return;
     setBusy(true);
     try {
-      const { checkoutUrl } = await startCheckout({ planCode, billingInterval: interval, successPath: `/workspaces/${returnWorkspaceId}/settings/plano?checkout=sucesso`, cancelPath: `/workspaces/${returnWorkspaceId}/settings/plano?checkout=cancelado` });
+      const { checkoutUrl } = await startCheckout({ planCode, billingInterval: interval, capacity, successPath: `/workspaces/${returnWorkspaceId}/settings/plano?checkout=sucesso`, cancelPath: `/workspaces/${returnWorkspaceId}/settings/plano?checkout=cancelado` });
       window.location.href = checkoutUrl;
     } catch (err) {
       toast.error("Não foi possível iniciar o checkout", { description: err instanceof Error ? err.message : "Tente novamente." });
@@ -223,24 +223,11 @@ export default function BillingSettingsPage() {
         </Card>
       ) : null}
 
-      {!data.virtual ? <CapacityCard canManage={canManage} onNeedPaymentMethod={() => void goToCheckout(data.planCode as PlatformPlanCode, interval)} /> : null}
-
       <AiCreditsCard canManage={canManage} workspaceId={returnWorkspaceId} />
 
-      <Card className="mt-5">
-        <CardHeader>
-          <div>
-            <p className="text-sm font-semibold text-foreground">Uso do plano</p>
-            <p className="mt-1 text-xs text-muted-foreground">O que o seu plano limita: usuários, números de WhatsApp e workspaces.</p>
-          </div>
-        </CardHeader>
-        <CardBody className="grid gap-4 md:grid-cols-2">
-          {data.consumption.filter((item) => PLAN_USAGE_RESOURCES.includes(item.resource)).map((item) => <ConsumptionBar key={item.resource} label={RESOURCE_LABELS[item.resource]} used={item.used} max={item.max} />)}
-          <p className="text-xs text-muted-foreground md:col-span-2">Contatos, armazenamento e automações são ilimitados em todos os planos. O uso de IA é cobrado em créditos (veja acima).</p>
-        </CardBody>
-      </Card>
+      <CapacityCard canManage={canManage} consumption={data.consumption} virtual={data.virtual} onNeedPaymentMethod={(capacity) => void goToCheckout(data.planCode as PlatformPlanCode, interval, capacity)} />
 
-      <Card className="mt-5">
+      <Card id="comparar-planos" className="mt-5">
         <CardHeader><p className="text-sm font-semibold text-foreground">Comparar planos</p></CardHeader>
         <CardBody className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
           {(plans ?? []).map((plan) => <PlanCard key={plan.code} plan={plan} interval={interval} isCurrent={plan.code === data.planCode} busy={busy} canManage={canManage} onChoose={() => choosePlan(plan.code)} />)}
@@ -307,8 +294,6 @@ export default function BillingSettingsPage() {
   );
 }
 
-const PLAN_USAGE_RESOURCES: readonly string[] = ["users", "messaging_connections", "workspaces"];
-
 function formatAmount(amount: number, currency: string): string {
   return new Intl.NumberFormat("pt-BR", { style: "currency", currency }).format(amount);
 }
@@ -316,17 +301,19 @@ function formatAmount(amount: number, currency: string): string {
 /**
  * "Sua estrutura": usuários, números de WhatsApp e gravações simultâneas do Vorix Meetings.
  * O preview mostra o novo valor mensal e a próxima cobrança ANTES de confirmar; aumentos valem na
- * hora (a diferença proporcional entra na próxima fatura), reduções no fim do ciclo.
+ * hora, sem cobrança proporcional; reduções valem no fim do ciclo já pago.
  */
-function CapacityCard({ canManage, onNeedPaymentMethod }: { canManage: boolean; onNeedPaymentMethod: () => void }) {
+function CapacityCard({ canManage, consumption, virtual, onNeedPaymentMethod }: { canManage: boolean; consumption: BillingOverview["consumption"]; virtual: boolean; onNeedPaymentMethod: (capacity: Parameters<typeof startCheckout>[0]["capacity"]) => void }) {
   const { data: state, error, isLoading, mutate } = useCapacityState();
   const {mutate:refreshGlobal}=useSWRConfig();
   const [addonQuantities,setAddonQuantities]=useState<Record<string,number>>({});
   const [previewError,setPreviewError]=useState<string>();
   const [users, setUsers] = useState<number | undefined>();
   const [whatsappConnections, setWhatsappConnections] = useState<number | undefined>();
+  const [workspaces, setWorkspaces] = useState<number | undefined>();
   const [recordings, setRecordings] = useState<number | undefined>();
   const [preview, setPreview] = useState<CapacityPreviewResult | undefined>();
+  const [previewKey, setPreviewKey] = useState<string>();
   const [previewing, setPreviewing] = useState(false);
   const [applying, setApplying] = useState(false);
   const [cancellingId, setCancellingId] = useState<string | undefined>();
@@ -335,41 +322,45 @@ function CapacityCard({ canManage, onNeedPaymentMethod }: { canManage: boolean; 
     if (!state) return;
     setUsers((current) => current ?? (state.next??state.current).totalUsers ?? 0);
     setWhatsappConnections((current) => current ?? (state.next??state.current).totalWhatsappConnections ?? 0);
+    setWorkspaces((current) => current ?? (state.next??state.current).totalWorkspaces ?? consumption.find(item => item.resource === "workspaces")?.max ?? 0);
     setRecordings((current) => current ?? (state.next??state.current).concurrentRecordings ?? 0);
     setAddonQuantities(current=>Object.fromEntries((state.adjustableAddons??[]).map(item=>[item.addonCode,current[item.addonCode]??item.quantity])));
-  }, [state]);
+  }, [state, consumption]);
 
   const dirty = Boolean(
-    state && users !== undefined && whatsappConnections !== undefined && recordings !== undefined &&
-    (users !== (state.next??state.current).totalUsers || whatsappConnections !== (state.next??state.current).totalWhatsappConnections || recordings !== (state.next??state.current).concurrentRecordings || (state.adjustableAddons??[]).some(item=>(addonQuantities[item.addonCode]??item.quantity)!==item.quantity)),
+    state && users !== undefined && whatsappConnections !== undefined && workspaces !== undefined && recordings !== undefined &&
+    (users !== ((state.next??state.current).totalUsers ?? 0) || whatsappConnections !== ((state.next??state.current).totalWhatsappConnections ?? 0) || workspaces !== ((state.next??state.current).totalWorkspaces ?? consumption.find(item => item.resource === "workspaces")?.max ?? 0) || recordings !== (state.next??state.current).concurrentRecordings || (state.adjustableAddons??[]).some(item=>(addonQuantities[item.addonCode]??item.quantity)!==item.quantity)),
   );
+  const selectionKey = JSON.stringify([users, whatsappConnections, workspaces, recordings, Object.entries(addonQuantities).sort()]);
 
   useEffect(() => {
-    if (!dirty || users === undefined || whatsappConnections === undefined || recordings === undefined) {
+    if (!dirty || users === undefined || whatsappConnections === undefined || workspaces === undefined || recordings === undefined) {
       setPreview(undefined);
+      setPreviewing(false);
+      setPreviewError(undefined);
       return;
     }
     let cancelled = false;
     setPreviewing(true);setPreview(undefined);setPreviewError(undefined);
-    previewCapacity({ users, whatsappConnections, concurrentRecordings: recordings,addonQuantities })
-      .then((result) => { if (!cancelled) setPreview(result); })
+    previewCapacity({ users, whatsappConnections, workspaces, concurrentRecordings: recordings,addonQuantities })
+      .then((result) => { if (!cancelled) { setPreview(result); setPreviewKey(selectionKey); } })
       .catch(error => { if (!cancelled){setPreview(undefined);setPreviewError(error instanceof Error?error.message.replace(/^[A-Z_]+:\s*/,""):"Não foi possível calcular. Tente novamente.");} })
       .finally(() => { if (!cancelled) setPreviewing(false); });
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dirty, users, whatsappConnections, recordings,addonQuantities]);
+  }, [dirty, users, whatsappConnections, workspaces, recordings,addonQuantities, selectionKey]);
 
   async function handleConfirm() {
-    if (!state || users === undefined || whatsappConnections === undefined || recordings === undefined) return;
+    if (applying || !canManage || !state || !preview || previewKey !== selectionKey || previewing || previewError || users === undefined || whatsappConnections === undefined || workspaces === undefined || recordings === undefined) return;
     if (!state.canChangeNow) {
-      onNeedPaymentMethod();
+      onNeedPaymentMethod({ users, whatsappConnections, workspaces, concurrentRecordings: recordings });
       return;
     }
     setApplying(true);
     try {
-      const result = await applyCapacity({users,whatsappConnections,concurrentRecordings:recordings,addonQuantities});
+      const result = await applyCapacity({users,whatsappConnections,workspaces,concurrentRecordings:recordings,addonQuantities});
       const fresh=await mutate();
-      if(fresh){const next=fresh.next??fresh.current;setUsers(next.totalUsers??0);setWhatsappConnections(next.totalWhatsappConnections??0);setRecordings(next.concurrentRecordings);setAddonQuantities(Object.fromEntries((fresh.adjustableAddons??[]).map(item=>[item.addonCode,item.quantity])));}
+      if(fresh){const next=fresh.next??fresh.current;setUsers(next.totalUsers??0);setWhatsappConnections(next.totalWhatsappConnections??0);setWorkspaces(next.totalWorkspaces??0);setRecordings(next.concurrentRecordings);setAddonQuantities(Object.fromEntries((fresh.adjustableAddons??[]).map(item=>[item.addonCode,item.quantity])));}
       await refreshGlobal(["billing","overview"]);
       setPreview(undefined);
       toast.success("Quantidades salvas",{description:result.nextCharge?`Próxima renovação: ${formatAmount(result.nextCharge.amount,result.nextCharge.currency)}, em ${formatDate(result.nextCharge.at)}.`:"O valor recorrente foi atualizado."});
@@ -381,11 +372,13 @@ function CapacityCard({ canManage, onNeedPaymentMethod }: { canManage: boolean; 
   }
 
   async function handleCancelPending(pendingChangeId: string) {
+    if (!canManage || applying || cancellingId) return;
     setCancellingId(pendingChangeId);
     try {
       await cancelPendingCapacityChange(pendingChangeId);
       const fresh=await mutate();
-      if(fresh){const next=fresh.next??fresh.current;setUsers(next.totalUsers??0);setWhatsappConnections(next.totalWhatsappConnections??0);setRecordings(next.concurrentRecordings);setAddonQuantities(Object.fromEntries((fresh.adjustableAddons??[]).map(item=>[item.addonCode,item.quantity])));}
+      if(fresh){const next=fresh.next??fresh.current;setUsers(next.totalUsers??0);setWhatsappConnections(next.totalWhatsappConnections??0);setWorkspaces(next.totalWorkspaces??0);setRecordings(next.concurrentRecordings);setAddonQuantities(Object.fromEntries((fresh.adjustableAddons??[]).map(item=>[item.addonCode,item.quantity])));}
+      await refreshGlobal(["billing", "overview"]);
       toast.success("Alteração cancelada e valor da próxima renovação atualizado.");
     } catch (err) {
       toast.error("Não foi possível cancelar", { description: err instanceof Error ? err.message : "Tente novamente." });
@@ -395,41 +388,46 @@ function CapacityCard({ canManage, onNeedPaymentMethod }: { canManage: boolean; 
   }
 
   if (error) return <Card className="mt-5"><CardBody><ErrorState error={error} onRetry={() => mutate()} /></CardBody></Card>;
-  if (isLoading || !state || users === undefined || whatsappConnections === undefined || recordings === undefined) {
+  if (isLoading || !state || users === undefined || whatsappConnections === undefined || workspaces === undefined || recordings === undefined) {
     return <Card className="mt-5"><CardBody><div className="flex justify-center py-6"><Spinner /></div></CardBody></Card>;
   }
 
   const current = state.current;
-  const nextTotal = dirty ? preview?.requestedOnCurrentPlan.totalMonthlyAmount : current.totalMonthlyAmount;
-  const meetingsAmount = dirty ? preview?.requestedOnCurrentPlan.meetingsMonthlyAmount : undefined;
+  const nextTotal = dirty ? (previewKey === selectionKey ? preview?.requestedOnCurrentPlan.totalMonthlyAmount : undefined) : (state.next ?? current).totalMonthlyAmount;
+  const usage = (resource: string) => consumption.find(item => item.resource === resource);
+  const workspaceUsage = usage("workspaces");
+  const workspaceUnlimited = current.totalWorkspaces === null || current.totalWorkspaces === undefined && workspaceUsage?.max === null;
   const showRecordings = state.meetingsSellable || current.concurrentRecordings > 0;
   // Prévia na tela (o valor oficial vem do preview da API): preço de cada unidade × quanto muda.
   const unit = state.unitPrices ?? { interval: "monthly" as const };
   const cycle = unit.interval === "yearly" ? "/ano" : "/mês";
-  const stepCost = (diff: number, price?: { amount: number; increment: number }) => (price && diff !== 0 ? Math.sign(diff) * Math.ceil(Math.abs(diff) / Math.max(1, price.increment)) * price.amount : 0);
+  const stepCost = (from: number, to: number, included: number, price?: { amount: number; increment: number }) => price ? (Math.ceil(Math.max(0, to - included) / Math.max(1, price.increment)) - Math.ceil(Math.max(0, from - included) / Math.max(1, price.increment))) * price.amount : 0;
   const recordingCost = (n: number) => (n <= 0 ? 0 : (unit.meetingsBase ?? 0) + Math.max(0, n - 1) * (unit.meetingsExtraRecording ?? 0));
   const lines = [
-    { key: "users", label: "Usuários de atendimento", from: current.totalUsers ?? 0, to: users, delta: stepCost(users - (current.totalUsers ?? 0), unit.user) },
-    { key: "whatsapp", label: "Números de WhatsApp", from: current.totalWhatsappConnections ?? 0, to: whatsappConnections, delta: stepCost(whatsappConnections - (current.totalWhatsappConnections ?? 0), unit.whatsappConnection) },
+    { key: "users", label: "Usuários de atendimento", from: current.totalUsers ?? 0, to: users, delta: stepCost(current.totalUsers ?? 0, users, current.includedUsers ?? 0, unit.user), unlimited: current.totalUsers === null },
+    { key: "whatsapp", label: "Números de WhatsApp", from: current.totalWhatsappConnections ?? 0, to: whatsappConnections, delta: stepCost(current.totalWhatsappConnections ?? 0, whatsappConnections, current.includedWhatsappConnections ?? 0, unit.whatsappConnection), unlimited: current.totalWhatsappConnections === null },
+    { key: "workspaces", label: "Workspaces", from: current.totalWorkspaces ?? workspaceUsage?.max ?? 0, to: workspaces, delta: stepCost(current.totalWorkspaces ?? 0, workspaces, current.includedWorkspaces ?? 0, unit.workspace), unlimited: workspaceUnlimited },
     ...(showRecordings ? [{ key: "recordings", label: "Gravações simultâneas", from: current.concurrentRecordings, to: recordings, delta: recordingCost(recordings) - recordingCost(current.concurrentRecordings) }] : []),
   ];
   for(const item of state.adjustableAddons??[]){const target=addonQuantities[item.addonCode]??item.quantity;lines.push({key:item.addonCode,label:item.name,from:item.currentQuantity,to:target,delta:(target-item.currentQuantity)*item.unitPrice});}
-  const totalDelta = lines.reduce((sum, line) => sum + line.delta, 0);
-  const estimatedTotal = current.totalMonthlyAmount + totalDelta;
+  const estimatedDelta = lines.reduce((sum, line) => sum + line.delta, 0);
+  const totalDelta = nextTotal === undefined ? estimatedDelta : nextTotal - current.totalMonthlyAmount;
+  const estimatedTotal = current.totalMonthlyAmount + estimatedDelta;
   const pendingLabel = (pending: CapacityPendingChange) => {
     if (pending.resource === "meetings_concurrent_recordings") return `gravações simultâneas passam a ser ${pending.targetQuantity + 1}`;
-    const included = pending.resource === "users" ? (current.includedUsers ?? 0) : pending.resource==="messaging_connections"?(current.includedWhatsappConnections??0):0;
+    const included = pending.resource === "users" ? (current.includedUsers ?? 0) : pending.resource === "workspaces" ? (current.includedWorkspaces ?? 0) : pending.resource==="messaging_connections"?(current.includedWhatsappConnections??0):0;
+    const increment = pending.resource === "workspaces" ? unit.workspace?.increment ?? 1 : pending.resource === "users" ? unit.user?.increment ?? 1 : unit.whatsappConnection?.increment ?? 1;
     const label=state.adjustableAddons?.find(item=>item.addonCode===pending.addonCode)?.name;
     if(label)return `${label}: quantidade passa a ser ${pending.targetQuantity}`;
-    return `${(RESOURCE_LABELS as Record<string, string>)[pending.resource] ?? pending.resource} passa a ser ${pending.targetQuantity + included}`;
+    return `${(RESOURCE_LABELS as Record<string, string>)[pending.resource] ?? pending.resource} passa a ser ${pending.targetQuantity * increment + included}`;
   };
 
   return (
     <Card id="quantidades-plano" className="mt-5">
       <CardHeader>
         <div>
-          <p className="text-sm font-semibold text-foreground">Quantidades do seu plano</p>
-          <p className="mt-1 text-xs text-muted-foreground">Monte o seu plano: escolha quantos usuários, números de WhatsApp e gravações você quer. Você vê o preço de cada um e quanto a mensalidade aumenta ou diminui antes de confirmar.</p>
+          <p className="text-sm font-semibold text-foreground">Uso do plano</p>
+          <p className="mt-1 text-xs text-muted-foreground">Aumente ou diminua usuários, conexões e workspaces. Confira a diferença no valor e salve quando quiser: a cobrança muda a partir da próxima renovação, sem cobrança proporcional agora.</p>
         </div>
       </CardHeader>
       <CardBody className="space-y-5">
@@ -442,25 +440,34 @@ function CapacityCard({ canManage, onNeedPaymentMethod }: { canManage: boolean; 
           </div>
         ))}
 
-        <div className={cn("grid gap-5", showRecordings ? "sm:grid-cols-3" : "sm:grid-cols-2")}>
+        {virtual ? <p className="rounded-lg bg-muted/40 p-3 text-sm">Para contratar quantidades adicionais, <a href="#comparar-planos" className="font-medium text-primary underline">selecione um plano abaixo</a>. A simulação e a contratação ficam por sua conta, sem precisar falar com o suporte.</p> : null}
+        <div className="grid gap-5 lg:grid-cols-3">
           <CapacityStepper
             label="Usuários de atendimento"
-            hint={`${current.includedUsers ?? 0} no plano · ${current.additionalUsers} adicionais`}
+            hint={current.includedUsers === null ? "Ilimitados incluídos no plano" : `${current.includedUsers} no plano · ${current.additionalUsers} adicionais`}
             price={unit.user ? `${formatAmount(unit.user.amount, current.currency)} por usuário${cycle}` : "O plano não vende usuários adicionais"}
             value={users}
-            min={current.includedUsers ?? 0}
+            min={Math.max(current.includedUsers ?? 0, usage("users")?.used ?? 0)}
             onChange={setUsers}
-            disabled={!canManage || !unit.user || current.totalUsers===null}
+            disabled={!canManage || applying || !!cancellingId || !unit.user || current.totalUsers===null}
+            unlimited={current.totalUsers === null}
+            usage={usage("users")}
           />
           <CapacityStepper
             label="Números de WhatsApp"
-            hint={`${current.includedWhatsappConnections ?? 0} no plano · ${current.additionalWhatsappConnections} adicionais`}
+            hint={current.includedWhatsappConnections === null ? "Ilimitadas incluídas no plano" : `${current.includedWhatsappConnections} no plano · ${current.additionalWhatsappConnections} adicionais`}
             price={unit.whatsappConnection ? `${formatAmount(unit.whatsappConnection.amount, current.currency)} por número${cycle}` : "O plano não vende números adicionais"}
             value={whatsappConnections}
-            min={current.includedWhatsappConnections ?? 0}
+            min={Math.max(current.includedWhatsappConnections ?? 0, usage("messaging_connections")?.used ?? 0)}
             onChange={setWhatsappConnections}
-            disabled={!canManage || !unit.whatsappConnection || current.totalWhatsappConnections===null}
+            disabled={!canManage || applying || !!cancellingId || !unit.whatsappConnection || current.totalWhatsappConnections===null}
+            unlimited={current.totalWhatsappConnections === null}
+            usage={usage("messaging_connections")}
           />
+          <CapacityStepper label="Workspaces" hint={workspaceUnlimited ? "Ilimitados incluídos no plano" : `${current.includedWorkspaces ?? workspaceUsage?.max ?? 0} no plano · ${current.additionalWorkspaces ?? 0} adicionais`}
+            price={workspaceUnlimited ? "Sem custo adicional" : unit.workspace ? `${formatAmount(unit.workspace.amount, current.currency)} por ${unit.workspace.increment === 1 ? "workspace" : `pacote de ${unit.workspace.increment} workspaces`}${cycle}` : "O plano não vende workspaces adicionais"}
+            value={workspaces} min={Math.max(current.includedWorkspaces ?? 0, workspaceUsage?.used ?? 0)} max={unit.workspace?.canIncrease === false ? current.totalWorkspaces ?? 0 : undefined}
+            onChange={setWorkspaces} disabled={!canManage || applying || !!cancellingId || !unit.workspace || workspaceUnlimited} unlimited={workspaceUnlimited} usage={workspaceUsage} />
           {showRecordings ? (
             <CapacityStepper
               label="Gravações simultâneas (Meetings)"
@@ -469,12 +476,13 @@ function CapacityCard({ canManage, onNeedPaymentMethod }: { canManage: boolean; 
               value={recordings}
               min={current.concurrentRecordings > 0 ? 1 : 0}
               onChange={setRecordings}
-              disabled={!canManage} max={!state.meetingsSellable?current.concurrentRecordings:undefined}
+              disabled={!canManage || applying || !!cancellingId} max={!state.meetingsSellable?current.concurrentRecordings:undefined}
             />
           ) : null}
         </div>
 
         {(state.adjustableAddons??[]).length?<div className="grid gap-5 sm:grid-cols-2">{state.adjustableAddons!.map(item=><CapacityStepper key={item.addonCode} label={item.name} hint={`${item.currentQuantity} contratado(s) hoje`} price={`${formatAmount(item.unitPrice,current.currency)} por unidade${cycle}`} value={addonQuantities[item.addonCode]??item.quantity} min={0} max={item.canIncrease?item.maxQuantity:item.currentQuantity} onChange={value=>setAddonQuantities(current=>({...current,[item.addonCode]:value}))} disabled={!canManage}/>)}</div>:null}
+        <p className="text-xs text-muted-foreground">As quantidades respeitam o uso existente e o mínimo incluído no plano. Contatos, armazenamento e automações são ilimitados em todos os planos.</p>
         <div className="rounded-lg border border-border bg-muted/20 p-4 text-sm">
           <p className="mb-2 font-semibold text-foreground">{dirty ? "O que muda no valor da renovação" : "Valor atual do seu plano"}</p>
           <div className="overflow-x-auto">
@@ -483,7 +491,7 @@ function CapacityCard({ canManage, onNeedPaymentMethod }: { canManage: boolean; 
                 <tr className="text-left text-[11px] uppercase tracking-wide text-muted-foreground">
                   <th className="pb-1.5 font-medium">Item</th>
                   <th className="pb-1.5 text-right font-medium">Hoje</th>
-                  <th className="pb-1.5 text-right font-medium">Próximo ciclo</th>
+                  <th className="pb-1.5 text-right font-medium">Após salvar</th>
                   <th className="pb-1.5 text-right font-medium">Diferença{cycle}</th>
                 </tr>
               </thead>
@@ -496,8 +504,8 @@ function CapacityCard({ canManage, onNeedPaymentMethod }: { canManage: boolean; 
                 {lines.map((line) => (
                   <tr key={line.key} className="border-t border-border/60">
                     <td className="py-1.5 text-foreground">{line.label}</td>
-                    <td className="py-1.5 text-right">{line.from}</td>
-                    <td className={cn("py-1.5 text-right", line.to !== line.from && "font-semibold text-foreground")}>{line.to}</td>
+                    <td className="py-1.5 text-right">{"unlimited" in line && line.unlimited ? "Ilimitado" : line.from}</td>
+                    <td className={cn("py-1.5 text-right", line.to !== line.from && "font-semibold text-foreground")}>{"unlimited" in line && line.unlimited ? "Ilimitado" : line.to}</td>
                     <td className={cn("py-1.5 text-right font-medium", line.delta > 0 ? "text-orange-600 dark:text-orange-300" : line.delta < 0 ? "text-success" : "text-muted-foreground")}>
                       {line.delta === 0 ? "—" : `${line.delta > 0 ? "+" : "−"} ${formatAmount(Math.abs(line.delta), current.currency)}`}
                     </td>
@@ -507,9 +515,9 @@ function CapacityCard({ canManage, onNeedPaymentMethod }: { canManage: boolean; 
             </table>
           </div>
           <div className="mt-2 flex items-center justify-between border-t border-border pt-2 text-base">
-            <span className="font-semibold text-foreground">{dirty ? "Novo valor por ciclo" : "Valor atual por ciclo"}</span>
+            <span className="font-semibold text-foreground">{dirty ? "Novo valor por ciclo" : "Valor da próxima renovação"}</span>
             <span className="text-right font-semibold tabular-nums text-foreground">
-              {previewing ? "Calculando..." : formatAmount(nextTotal ?? estimatedTotal, current.currency)}
+              {previewing || dirty && previewKey !== selectionKey ? "Calculando..." : formatAmount(nextTotal ?? estimatedTotal, current.currency)}
               {dirty && totalDelta !== 0 ? (
                 <span className={cn("ml-2 text-sm", totalDelta > 0 ? "text-orange-600 dark:text-orange-300" : "text-success")}>
                   ({totalDelta > 0 ? "aumenta" : "diminui"} {formatAmount(Math.abs(totalDelta), current.currency)})
@@ -528,19 +536,19 @@ function CapacityCard({ canManage, onNeedPaymentMethod }: { canManage: boolean; 
 
           {dirty && preview?.recommendation.recommended && preview.recommendation.recommended.planCode !== current.planCode && preview.recommendation.recommended.totalMonthlyAmount < (preview.requestedOnCurrentPlan.totalMonthlyAmount - (preview.requestedOnCurrentPlan.meetingsMonthlyAmount ?? 0)) ? (
             <p className="mt-3 rounded-md bg-primary/10 px-3 py-2 text-xs text-foreground">
-              O plano {preview.recommendation.recommended.planCode} fica mais econômico para essa quantidade de usuários e números. Fale com o suporte para trocar de plano.
+              O plano {preview.recommendation.recommended.planCode} fica mais econômico para essa quantidade. Você pode <a href="#comparar-planos" className="font-medium underline">comparar e selecionar outro plano abaixo</a>.
             </p>
           ) : null}
 
           {dirty && !state.canChangeNow ? (
-            <p className="mt-3 rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-xs text-foreground">Para aumentar a estrutura, cadastre primeiro uma forma de pagamento — o valor novo é cobrado junto com o plano.</p>
+            <p className="mt-3 rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-xs text-foreground">Cadastre uma forma de pagamento para contratar essas quantidades. Suas escolhas serão levadas para o pagamento.</p>
           ) : null}
 
           {previewError&&dirty?<p role="alert" className="mt-3 text-sm text-destructive">{previewError}</p>:null}
           {dirty ? (
             <div className="mt-3 flex justify-end gap-2">
-              <Button variant="secondary" disabled={applying} onClick={() => { setUsers((state.next??current).totalUsers ?? 0); setWhatsappConnections((state.next??current).totalWhatsappConnections ?? 0); setRecordings((state.next??current).concurrentRecordings);setAddonQuantities(Object.fromEntries((state.adjustableAddons??[]).map(item=>[item.addonCode,item.quantity]))); }}>Cancelar</Button>
-              <GuardedButton loading={applying} disabled={previewing||!preview||!!previewError} onClick={handleConfirm} allowed={canManage} blockedReason={RBAC_COPY.manageBilling}>
+              <Button variant="secondary" disabled={applying} onClick={() => { setUsers((state.next??current).totalUsers ?? 0); setWhatsappConnections((state.next??current).totalWhatsappConnections ?? 0); setWorkspaces((state.next??current).totalWorkspaces ?? workspaceUsage?.max ?? 0); setRecordings((state.next??current).concurrentRecordings);setAddonQuantities(Object.fromEntries((state.adjustableAddons??[]).map(item=>[item.addonCode,item.quantity]))); }}>Cancelar</Button>
+              <GuardedButton loading={applying} disabled={previewing||!preview||previewKey!==selectionKey||!!previewError||!!cancellingId||preview.requestedOnCurrentPlan.feasible===false} onClick={handleConfirm} allowed={canManage} blockedReason={RBAC_COPY.manageBilling}>
                 {state.canChangeNow ? "Salvar quantidades" : "Cadastrar forma de pagamento"}
               </GuardedButton>
             </div>
@@ -673,7 +681,9 @@ function AiCreditsCard({ canManage, workspaceId }: { canManage: boolean; workspa
   );
 }
 
-function CapacityStepper({ label, hint, price, value, min, max=999, onChange, disabled }: { label: string; hint: string; price?: string; value: number; min: number; max?:number; onChange: (value: number) => void; disabled: boolean }) {
+function CapacityStepper({ label, hint, price, value, min, max=999, onChange, disabled, unlimited, usage }: { label: string; hint: string; price?: string; value: number; min: number; max?:number; onChange: (value: number) => void; disabled: boolean; unlimited?: boolean; usage?: { used: number; max: number | null } }) {
+  const [draft, setDraft] = useState(String(value));
+  useEffect(() => setDraft(String(value)), [value]);
   return (
     <div>
       <p className="text-sm font-medium text-foreground">{label}</p>
@@ -685,20 +695,28 @@ function CapacityStepper({ label, hint, price, value, min, max=999, onChange, di
         <input
           type="text"
           inputMode="numeric"
-          value={value}
+          value={unlimited ? "Ilimitado" : draft}
           disabled={disabled}
           aria-label={`Quantidade de ${label}`}
           onChange={(event) => {
-            const next = Number(event.target.value.replace(/\D/g, ""));
-            onChange(Number.isFinite(next) ? Math.max(min, Math.min(max, next)) : min);
+            const raw = event.target.value.replace(/\D/g, "");
+            setDraft(raw);
+            const next = Number(raw);
+            if (raw && Number.isSafeInteger(next) && next >= min && next <= max) onChange(next);
           }}
-          className="h-9 w-16 rounded-md border border-input bg-background text-center text-base font-semibold tabular-nums text-foreground outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/20 disabled:opacity-60"
+          onBlur={() => {
+            const next = Math.max(min, Math.min(max, Number(draft) || min));
+            setDraft(String(next));
+            onChange(next);
+          }}
+          className="h-9 w-24 rounded-md border border-input bg-background text-center text-base font-semibold tabular-nums text-foreground outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/20 disabled:opacity-60"
         />
         <button type="button" disabled={disabled || value >= max} onClick={() => onChange(Math.min(max,value + 1))} aria-label={`Aumentar ${label}`} className="flex h-9 w-9 items-center justify-center rounded-md border border-border text-foreground hover:bg-surface-2 disabled:opacity-30">
           <Plus className="h-4 w-4" />
         </button>
       </div>
       {price ? <p className="mt-1.5 text-xs font-medium text-foreground">{price}</p> : null}
+      {usage ? <div className="mt-3"><ConsumptionBar label="Em uso" used={usage.used} max={usage.max} /></div> : null}
     </div>
   );
 }

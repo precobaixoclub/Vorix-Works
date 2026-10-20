@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { Check, ChevronsUpDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -34,6 +34,9 @@ export function SearchableCombo({
   disabled,
   className,
   contentClassName,
+  id,
+  leadingIcon,
+  renderItem,
 }: {
   items: readonly SearchableComboItem[];
   loading?: boolean;
@@ -48,6 +51,9 @@ export function SearchableCombo({
   disabled?: boolean;
   className?: string;
   contentClassName?: string;
+  id?: string;
+  leadingIcon?: ReactNode;
+  renderItem?: (item: SearchableComboItem) => ReactNode;
 }) {
   const [open, setOpen] = useState(false);
 
@@ -57,6 +63,7 @@ export function SearchableCombo({
     if (extraOption && value === extraOption.value) return extraOption.label;
     return sortedItems.find((item) => item.id === value)?.label;
   }, [extraOption, sortedItems, value]);
+  const selectedItem = sortedItems.find((item) => item.id === value);
 
   function handleSelect(nextValue: string) {
     onValueChange(nextValue);
@@ -66,12 +73,14 @@ export function SearchableCombo({
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <Button type="button" variant="outline" role="combobox" aria-expanded={open} disabled={disabled || loading} className={cn("w-full justify-between font-normal", className)}>
-          <span className={cn("truncate", !selectedLabel && "text-muted-foreground")}>{loading ? loadingLabel : selectedLabel || placeholder}</span>
+        <Button id={id} type="button" variant="outline" role="combobox" aria-expanded={open} disabled={disabled || loading} className={cn("w-full min-w-0 justify-between font-normal", className)}>
+          <span className={cn("flex min-w-0 flex-1 items-center gap-2 text-left", !selectedLabel && "text-muted-foreground")}>
+            {selectedItem && renderItem && !loading ? renderItem(selectedItem) : <>{leadingIcon}<span className="truncate">{loading ? loadingLabel : selectedLabel || placeholder}</span></>}
+          </span>
           <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
         </Button>
       </PopoverTrigger>
-      <PopoverContent className={cn("w-[--radix-popover-trigger-width] p-0", contentClassName)} align="start">
+      <PopoverContent className={cn("w-[var(--radix-popover-trigger-width)] p-0", contentClassName)} align="start">
         <Command>
           <CommandInput placeholder={searchPlaceholder} />
           <CommandList>
@@ -85,8 +94,8 @@ export function SearchableCombo({
               ) : null}
               {sortedItems.map((item) => (
                 <CommandItem key={item.id} value={item.label} onSelect={() => handleSelect(item.id)}>
-                  <Check className={cn("mr-2 h-4 w-4", value === item.id ? "opacity-100" : "opacity-0")} />
-                  {item.label}
+                  <Check className={cn("mr-2 h-4 w-4 shrink-0", value === item.id ? "opacity-100" : "opacity-0")} />
+                  <span className="flex min-w-0 flex-1 items-center gap-2">{renderItem ? renderItem(item) : item.label}</span>
                 </CommandItem>
               ))}
             </CommandGroup>

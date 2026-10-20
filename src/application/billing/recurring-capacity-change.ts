@@ -27,7 +27,7 @@ export function prepareRecurringCapacity(context:RecurringCapacityContext,input:
  const touched=new Set<string>();
  const quantity=(value:number)=>{if(!Number.isSafeInteger(value)||value<0||value>10000)throw Error("CAPACITY_INVALID: informe uma quantidade inteira não negativa.");return value;};
  const set=(code:string,value:number)=>{target.set(code,quantity(value));touched.add(code);};
- for(const [resource,requested] of [["users",input.users],["messaging_connections",input.whatsappConnections]] as const){
+ for(const [resource,requested] of [["users",input.users],["messaging_connections",input.whatsappConnections],["workspaces",input.workspaces]] as const){
   if(requested===undefined)continue;quantity(requested);const included=plan.limits[resource];if(included===null)continue;
   if(requested<included)throw Error(`CAPACITY_BELOW_PLAN_MINIMUM: o plano inclui ${included} de ${resource}.`);
   const addon=definitions.find(addon=>addon.resource===resource&&(plan.allowedAddonCodes.includes(addon.code)||items.some(item=>item.addonCode===addon.code)));
@@ -43,6 +43,7 @@ export function prepareRecurringCapacity(context:RecurringCapacityContext,input:
  }
  for(const [code,value] of Object.entries(input.addonQuantities??{})){
   const addon=definitions.find(addon=>addon.code===code);if(!addon)throw Error("CAPACITY_ADDON_NOT_AVAILABLE: adicional não encontrado.");
+  if(addon.resource==="workspaces"&&input.workspaces!==undefined&&plan.limits.workspaces!==null)throw Error("CAPACITY_INVALID: informe workspaces no campo de quantidade total, sem repetir nos adicionais.");
   if(["users","messaging_connections","meetings_concurrent_recordings"].includes(addon.resource))throw Error("CAPACITY_INVALID: ajuste usuários, WhatsApp e gravações nos campos correspondentes.");
   if(addon.resource==="site"&&value>1)throw Error("CAPACITY_INVALID: esse módulo permite somente uma contratação.");
   set(code,value);
@@ -124,6 +125,7 @@ export async function cancelRecurringCapacityReduction(deps:CapacityUseCaseDeps,
  const plan=await deps.planVersionRepository.getById(subscription.planVersionId);if(!plan)throw Error("CAPACITY_PLAN_VERSION_NOT_FOUND");
  if(addon.resource==="users")await saveRecurringCapacity(deps,{tenantId:input.tenantId,users:(plan.limits.users??0)+item.quantity*addon.increment});
  else if(addon.resource==="messaging_connections")await saveRecurringCapacity(deps,{tenantId:input.tenantId,whatsappConnections:(plan.limits.messaging_connections??0)+item.quantity*addon.increment});
+ else if(addon.resource==="workspaces"&&plan.limits.workspaces!==null)await saveRecurringCapacity(deps,{tenantId:input.tenantId,workspaces:plan.limits.workspaces+item.quantity*addon.increment});
  else if(addon.code===MEETINGS_EXTRA_RECORDING_ADDON)await saveRecurringCapacity(deps,{tenantId:input.tenantId,concurrentRecordings:1+item.quantity});
  else await saveRecurringCapacity(deps,{tenantId:input.tenantId,addonQuantities:{[addon.code]:item.quantity}});
 }

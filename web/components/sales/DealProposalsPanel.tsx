@@ -7,19 +7,16 @@ import { Button } from "@/components/Button";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { GuardedButton } from "@/components/GuardedButton";
 import { DetailBlock } from "@/components/DetailModal";
-import { Input, Label, Textarea } from "@/components/Field";
-import { Modal } from "@/components/Modal";
 import { StatusBadge } from "@/components/StatusBadge";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { useProposalTemplates } from "@/features/crm/hooks";
 import { PROPOSAL_STATUS_LABEL } from "@/features/crm/presentation";
 import type { Deal, Proposal } from "@/features/crm/types";
 import { listInboxConversations } from "@/features/inbox/api";
-import { cancelProposal, createProposalFromDeal, createProposalVersion, markProposalSent, remindProposalWhatsapp, sendProposalWhatsapp } from "@/features/sales/api";
+import { cancelProposal, createProposalVersion, markProposalSent, remindProposalWhatsapp, sendProposalWhatsapp } from "@/features/sales/api";
 import { useInvalidateSales, useProposalTracking } from "@/features/sales/hooks";
 import { PROPOSAL_EVENT_LABEL, proposalLabel } from "@/features/sales/presentation";
 import { formatCurrencyCents, formatDate, formatDateTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { GenerateProposalModal } from "./DealProposalComposer";
 
 const errorMessage = (cause: unknown) => (cause instanceof Error ? cause.message : "Tente novamente.");
 const newKey = () => `ui-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
@@ -74,68 +71,6 @@ export function DealProposalsPanel({ workspaceId, deal, proposals, onChanged, on
         />
       ) : null}
     </div>
-  );
-}
-
-function GenerateProposalModal({ workspaceId, deal, onClose, onCreated }: { workspaceId: string; deal: Deal; onClose: () => void; onCreated: (proposal: Proposal, approvalRequired: boolean) => Promise<void> }) {
-  const { data: templates } = useProposalTemplates(workspaceId, true);
-  const [templateId, setTemplateId] = useState("none");
-  const [title, setTitle] = useState("");
-  const [introduction, setIntroduction] = useState("");
-  const [validUntil, setValidUntil] = useState("");
-  const [conditions, setConditions] = useState("");
-  const [justification, setJustification] = useState("");
-  const [busy, setBusy] = useState(false);
-  return (
-    <Modal title="Gerar proposta" onClose={onClose} maxWidthClass="sm:max-w-xl">
-      <div className="space-y-3">
-        <p className="text-xs text-muted-foreground">Cliente, produtos, quantidades, preços, descontos e totais vêm da oportunidade. Personalize o texto se quiser.</p>
-        <div>
-          <Label>Modelo</Label>
-          <Select value={templateId} onValueChange={setTemplateId}>
-            <SelectTrigger><SelectValue /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="none">Sem modelo</SelectItem>
-              {(templates ?? []).map((template) => <SelectItem key={template.id} value={template.id}>{template.name}</SelectItem>)}
-            </SelectContent>
-          </Select>
-        </div>
-        <div><Label htmlFor="gp-title">Título</Label><Input id="gp-title" value={title} onChange={(event) => setTitle(event.target.value)} placeholder={deal.title} /></div>
-        <div><Label htmlFor="gp-intro">Introdução</Label><Textarea id="gp-intro" rows={2} value={introduction} onChange={(event) => setIntroduction(event.target.value)} /></div>
-        <div className="grid gap-3 sm:grid-cols-2">
-          <div><Label htmlFor="gp-valid">Validade</Label><Input id="gp-valid" type="date" value={validUntil} onChange={(event) => setValidUntil(event.target.value)} /></div>
-        </div>
-        <div><Label htmlFor="gp-cond">Condições comerciais</Label><Textarea id="gp-cond" rows={2} value={conditions} onChange={(event) => setConditions(event.target.value)} placeholder="Pagamento, prazo de entrega..." /></div>
-        <div><Label htmlFor="gp-just">Justificativa (se precisar de aprovação)</Label><Input id="gp-just" value={justification} onChange={(event) => setJustification(event.target.value)} /></div>
-        <div className="flex justify-end gap-2">
-          <Button variant="secondary" onClick={onClose} disabled={busy}>Cancelar</Button>
-          <Button
-            loading={busy}
-            onClick={async () => {
-              setBusy(true);
-              try {
-                const created = await createProposalFromDeal(deal.id, {
-                  workspaceId,
-                  templateId: templateId === "none" ? undefined : templateId,
-                  title: title.trim() || undefined,
-                  introduction: introduction.trim() || undefined,
-                  validUntil: validUntil || undefined,
-                  conditions: conditions.trim() || undefined,
-                  justification: justification.trim() || undefined,
-                });
-                await onCreated(created, created.approvalRequired);
-              } catch (cause) {
-                toast.error("Não foi possível gerar a proposta", { description: errorMessage(cause) });
-              } finally {
-                setBusy(false);
-              }
-            }}
-          >
-            Gerar
-          </Button>
-        </div>
-      </div>
-    </Modal>
   );
 }
 

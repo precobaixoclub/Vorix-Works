@@ -83,10 +83,15 @@ export type ListDealsFilter = {
   teamIdsIn?: readonly string[];
 };
 
+export type ContactOpenDealsSummary = { contactId: string; currency: string; count: number; valueCentsSum: number };
+export type ContactOpenDealsFilter = Pick<ListDealsFilter, "tenantId" | "workspaceId" | "ownerUserIdsIn" | "teamIdsIn">;
+
 export type DealRepositoryPort = {
   create(input: CreateDealInput): Promise<Deal>;
   getById(id: string): Promise<Deal | undefined>;
   listByWorkspace(filter: ListDealsFilter): Promise<Deal[]>;
+  /** Agrega todas as oportunidades abertas, sem o limite de paginação da listagem. */
+  summarizeOpenByContact(filter: ContactOpenDealsFilter): Promise<ContactOpenDealsSummary[]>;
   update(id: string, input: UpdateDealInput): Promise<Deal>;
   moveStage(id: string, input: MoveDealStageInput): Promise<Deal>;
   /** Valor recalculado pelos itens (modo `calculated`) — nunca usado para valor manual. */

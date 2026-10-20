@@ -1,6 +1,8 @@
 "use client";
 
 import { useState } from "react";
+import { useSWRConfig } from "swr";
+import { UserProfileModal } from "@/components/settings/UserProfileModal";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/Button";
 import { Card, CardBody, CardHeader } from "@/components/Card";
@@ -19,7 +21,7 @@ import { useCurrentWorkspace } from "@/contexts/workspace-context";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { inviteTenantMember, removeTenantMember, revokeTenantInvite, updateTenantMemberRole } from "@/features/identity/api";
 import { useTenantInvites, useTenantMembers } from "@/features/identity/hooks";
-import type { TenantMemberInvite, TenantRole } from "@/features/identity/types";
+import type { TenantMemberInvite, TenantMembership, TenantRole } from "@/features/identity/types";
 import { useInboxMembers } from "@/features/inbox/hooks";
 import { canManageTenant, RBAC_COPY } from "@/lib/rbac";
 
@@ -34,6 +36,8 @@ export default function UsersPage() {
   const { data: invites, error: invitesError, isLoading: invitesLoading, mutate: mutateInvites } = useTenantInvites();
   const { data: inboxMembers } = useInboxMembers(workspace.id);
   const [inviteOpen, setInviteOpen] = useState(false);
+  const [profileEditor, setProfileEditor] = useState<TenantMembership | "new">();
+  const { mutate: mutateCache } = useSWRConfig();
   const [email, setEmail] = useState("");
   const [role, setRole] = useState<TenantRole>("editor");
   const [busy, setBusy] = useState(false);
@@ -103,8 +107,8 @@ export default function UsersPage() {
     <SettingsShell
       active="users"
       title="Usuários"
-      description="Convide, gerencie papéis e remova acesso de quem trabalha neste workspace."
-      actions={<GuardedButton onClick={() => setInviteOpen(true)} allowed={canManage} blockedReason={RBAC_COPY.manageTenant}>Convidar usuário</GuardedButton>}
+      description="Cadastre nome, e-mail e foto de quem trabalha com você e gerencie o acesso à conta."
+      actions={<div className="flex gap-2"><GuardedButton variant="secondary" onClick={() => setInviteOpen(true)} allowed={canManage} blockedReason={RBAC_COPY.manageTenant}>Convidar por e-mail</GuardedButton><GuardedButton onClick={() => setProfileEditor("new")} allowed={canManage} blockedReason={RBAC_COPY.manageTenant}>Cadastrar usuário</GuardedButton></div>}
     >
       {error ? <p className="mb-4 rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</p> : null}
 
@@ -128,12 +132,13 @@ export default function UsersPage() {
                 </TableHeader>
                 <TableBody>
                   {members.map((member) => {
-                    const identity = memberIdentity(member.userId, inboxMembers?.members);
+                    const fallback = memberIdentity(member.userId, inboxMembers?.members);
+                    const identity = { name: member.name ?? fallback.name, email: member.email ?? fallback.email, avatarUrl: member.avatarUrl };
                     return (
                     <TableRow key={member.id}>
                       <TableCell>
                         <div className="flex min-w-0 items-center gap-3">
-                          <PersonAvatar nome={identity.name} className="h-9 w-9" />
+                          <PersonAvatar nome={identity.name} avatarUrl={identity.avatarUrl} className="h-9 w-9" />
                           <div className="min-w-0">
                             <p className="truncate font-medium text-foreground">{identity.name}</p>
                             <p className="truncate text-xs text-muted-foreground">{identity.email}</p>
@@ -150,6 +155,7 @@ export default function UsersPage() {
                       </TableCell>
                       <TableCell><Badge variant="default">Ativo</Badge></TableCell>
                       <TableCell className="text-right">
+                        <GuardedButton variant="ghost" onClick={() => setProfileEditor({ ...member, ...identity })} allowed={canManage} blockedReason={RBAC_COPY.manageTenant} disabled={busy}>Editar</GuardedButton>
                         <GuardedButton variant="ghost" onClick={() => setPendingRemoval(member.userId)} allowed={canManage} blockedReason={RBAC_COPY.manageTenant} disabled={busy}>Remover</GuardedButton>
                       </TableCell>
                     </TableRow>
@@ -200,6 +206,11 @@ export default function UsersPage() {
           ) : null}
         </CardBody>
       </Card>
+
+      {profileEditor && canManage ? <UserProfileModal member={profileEditor === "new" ? undefined : profileEditor} onClose={() => setProfileEditor(undefined)} onSaved={async () => {
+        await mutateMembers();
+        await mutateCache((key) => Array.isArray(key) && key[0] === "inbox-members");
+      }} /> : null}
 
       {inviteOpen ? (
         <Modal title="Convidar usuário" onClose={() => setInviteOpen(false)}>

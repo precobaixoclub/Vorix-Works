@@ -58,6 +58,7 @@ import { registerReadOnlyGuard } from "../../http/read-only-guard.js";
 import { registerAdminPlanVersionsRoutes } from "./admin-plan-versions.route.js";
 import { registerBillingCheckoutRoutes, registerBillingTrialRoutes } from "./billing-checkout.route.js";
 import { registerBillingCapacityRoutes } from "./billing-capacity.route.js";
+import { assertWithinLimit } from "../../../../application/billing/entitlement-use-cases.js";
 import { registerProductEventsRoutes } from "./product-events.route.js";
 import { registerBillingLifecycleRoutes } from "./billing-lifecycle.route.js";
 import { registerBillingOverviewRoutes } from "./billing-overview.route.js";
@@ -354,6 +355,8 @@ export async function registerV1Routes(app: FastifyInstance): Promise<void> {
     };
     await registerTeamsRoutes(app, { teamRepository: identity.teamRepository, teamMembershipRepository: identity.teamMembershipRepository });
     await registerTenantMembersRoutes(app, {
+      assertCanAddMember: tenantId => assertWithinLimit(entitlementDeps, { tenantId, resource: "users" }),
+      passwordHasher: identity.passwordHasher,
       tenantMemberInviteRepository: identity.tenantMemberInviteRepository,
       membershipRepository: identity.membershipRepository,
       userRepository: identity.userRepository,

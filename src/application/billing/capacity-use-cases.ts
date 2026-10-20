@@ -51,6 +51,7 @@ export type CapacityStateResult = {
     interval: "monthly" | "yearly";
     user?: { amount: number; increment: number };
     whatsappConnection?: { amount: number; increment: number };
+    workspace?: { amount: number; increment: number; canIncrease: boolean };
     meetingsBase?: number;
     meetingsExtraRecording?: number;
   };
@@ -85,12 +86,14 @@ export async function getCapacityState(deps: CapacityUseCaseDeps, tenantId: stri
   const priceOf = (addon: AddonDefinition | undefined) => (addon ? (items.find(item=>item.addonCode===addon.code)?.unitPriceUsd??(interval === "yearly" ? addon.yearlyPriceUsd : addon.monthlyPriceUsd)) : undefined);
   const userAddon = findAddonByResource(addons, planVersion.allowedAddonCodes, "users");
   const whatsappAddon = findAddonByResource(addons, planVersion.allowedAddonCodes, "messaging_connections");
+  const workspaceAddon = addons.find(addon => addon.resource === "workspaces" && (planVersion.allowedAddonCodes.includes(addon.code) && addon.currency === planVersion.currency || items.some(item => item.addonCode === addon.code)));
   const meetingsBase = addons.find((addon) => addon.code === MEETINGS_BASE_ADDON && planVersion.allowedAddonCodes.includes(addon.code));
   const meetingsExtra = addons.find((addon) => addon.code === MEETINGS_EXTRA_RECORDING_ADDON && planVersion.allowedAddonCodes.includes(addon.code));
   const unitPrices: CapacityStateResult["unitPrices"] = {
     interval,
     ...(userAddon ? { user: { amount: priceOf(userAddon)!, increment: userAddon.increment } } : {}),
     ...(whatsappAddon ? { whatsappConnection: { amount: priceOf(whatsappAddon)!, increment: whatsappAddon.increment } } : {}),
+    ...(workspaceAddon ? { workspace: { amount: priceOf(workspaceAddon)!, increment: workspaceAddon.increment, canIncrease: workspaceAddon.active && workspaceAddon.currency === planVersion.currency && planVersion.allowedAddonCodes.includes(workspaceAddon.code) } } : {}),
     ...(meetingsBase ? { meetingsBase: priceOf(meetingsBase) } : {}),
     ...(meetingsExtra ? { meetingsExtraRecording: priceOf(meetingsExtra) } : {}),
   };
@@ -99,9 +102,10 @@ export async function getCapacityState(deps: CapacityUseCaseDeps, tenantId: stri
   const context=subscription?await loadRecurringCapacity(deps,tenantId,subscription,planVersion):undefined;
   const next=context?resolveCommercialCapacity(planVersion,context.definitions,context.future,interval):current;
   const adjustableAddons=context?.items.filter(item=>!new Set(["users","messaging_connections","meetings_concurrent_recordings"]).has(context.definitions.find(addon=>addon.code===item.addonCode)?.resource??"")).map(item=>{const addon=context.definitions.find(addon=>addon.code===item.addonCode);return {addonCode:item.addonCode,name:addon?.name??item.addonCode,resource:addon?.resource??"unknown",quantity:context.future.find(next=>next.addonCode===item.addonCode)?.quantity??item.quantity,currentQuantity:item.quantity,unitPrice:item.unitPriceUsd,canIncrease:!!addon?.active&&planVersion.allowedAddonCodes.includes(item.addonCode),maxQuantity:addon?.resource==="site"?1:undefined};});
-  if(context)for(const addon of context.definitions.filter(addon=>addon.resource==="workspaces"&&addon.active&&planVersion.allowedAddonCodes.includes(addon.code)&&!context.items.some(item=>item.addonCode===addon.code))){adjustableAddons?.push({addonCode:addon.code,name:addon.name,resource:addon.resource,quantity:0,currentQuantity:0,unitPrice:priceOf(addon)!,canIncrease:true,maxQuantity:undefined});}
+  // Workspaces são ajustados por quantidade total, como usuários e conexões, nunca por unidades
+  // de adicional (que podem representar pacotes de vários workspaces).
   return {
-    current,next,adjustableAddons,
+    current,next,adjustableAddons: adjustableAddons?.filter(addon => addon.resource !== "workspaces" || current.includedWorkspaces === null),
     pending,
     nextCharge: paid && nextChargeAt ? { at: nextChargeAt, amount: next.totalMonthlyAmount, currency: current.currency } : undefined,
     canChangeNow: paid,
@@ -110,7 +114,7 @@ export async function getCapacityState(deps: CapacityUseCaseDeps, tenantId: stri
   };
 }
 
-export type CapacityPreviewInput = { tenantId: string; users: number; whatsappConnections: number; concurrentRecordings?: number;addonQuantities?:Record<string,number> };
+export type CapacityPreviewInput = { tenantId: string; users: number; whatsappConnections: number; workspaces?: number; concurrentRecordings?: number;addonQuantities?:Record<string,number> };
 export type CapacityPreviewResult = { current: CapacitySnapshot; requestedOnCurrentPlan: CapacityCostBreakdown; recommendation: PlanRecommendation };
 
 /** Preview financeiro — NUNCA muda nada (seção 10-11 do pedido: "nenhuma mudança acontece no
@@ -126,14 +130,19 @@ export async function previewCapacityChange(deps: CapacityUseCaseDeps, input: Ca
   const addons = await deps.addonDefinitionRepository.listActive();
   const current = resolveCommercialCapacity(planVersion, addons, items);
 
-  const requirement: CapacityRequirement = { users: input.users, whatsappConnections: input.whatsappConnections, concurrentRecordings: input.concurrentRecordings ?? current.concurrentRecordings };
+  const requirement: CapacityRequirement = { users: input.users, whatsappConnections: input.whatsappConnections, workspaces: input.workspaces, concurrentRecordings: input.concurrentRecordings ?? current.concurrentRecordings };
   const interval = subscription?.billingInterval ?? "monthly";
   let requestedOnCurrentPlan = computeCapacityCost(planVersion, addons, requirement, interval);
-  if(subscription){const context=await loadRecurringCapacity(deps,input.tenantId,subscription,planVersion);const prepared=prepareRecurringCapacity(context,input,false);const usersPrice=prepared.desired.filter(item=>context.definitions.find(addon=>addon.code===item.addonCode)?.resource==="users").reduce((sum,item)=>sum+item.quantity*item.unitPriceUsd,0);const waPrice=prepared.desired.filter(item=>context.definitions.find(addon=>addon.code===item.addonCode)?.resource==="messaging_connections").reduce((sum,item)=>sum+item.quantity*item.unitPriceUsd,0);requestedOnCurrentPlan={...requestedOnCurrentPlan,...prepared.snapshot,userAddonMonthlyAmount:usersPrice,whatsappAddonMonthlyAmount:waPrice};}
+  if (subscription) {
+    const context = await loadRecurringCapacity(deps, input.tenantId, subscription, planVersion);
+    const prepared = prepareRecurringCapacity(context, input, false);
+    const amountFor = (resource: string) => prepared.desired.filter(item => context.definitions.find(addon => addon.code === item.addonCode)?.resource === resource).reduce((sum, item) => sum + item.quantity * item.unitPriceUsd, 0);
+    requestedOnCurrentPlan = { ...requestedOnCurrentPlan, ...prepared.snapshot, feasible: true, userAddonMonthlyAmount: amountFor("users"), whatsappAddonMonthlyAmount: amountFor("messaging_connections"), workspaceAddonMonthlyAmount: amountFor("workspaces") };
+  }
 
   const allActivePlans = await deps.planVersionRepository.listActivePlans();
   // A recomendação compara só o pacote (usuários/números) — Meetings custa igual em qualquer plano.
-  const recommendation = recommendBestPlan(allActivePlans, addons, { users: requirement.users, whatsappConnections: requirement.whatsappConnections }, interval);
+  const recommendation = recommendBestPlan(allActivePlans, addons, { users: requirement.users, whatsappConnections: requirement.whatsappConnections, workspaces: requirement.workspaces }, interval);
 
   if (deps.productAnalytics) {
     await recordProductEvent(deps.productAnalytics, { eventName: "capacity_previewed", source: "server", tenantId: input.tenantId, properties: { users: input.users, whatsappConnections: input.whatsappConnections } });
@@ -142,7 +151,7 @@ export async function previewCapacityChange(deps: CapacityUseCaseDeps, input: Ca
   return { current, requestedOnCurrentPlan, recommendation };
 }
 
-export type CapacityChangeInput = { tenantId: string; users?: number; whatsappConnections?: number; concurrentRecordings?: number;addonQuantities?:Record<string,number> };
+export type CapacityChangeInput = { tenantId: string; users?: number; whatsappConnections?: number; workspaces?: number; concurrentRecordings?: number;addonQuantities?:Record<string,number> };
 export type CapacityChangeOutcome = { resource: AddonDefinition["resource"]; kind: "unchanged" | "increased" | "decrease_scheduled"; fromQuantity: number; toQuantity: number; effectiveAt?: string };
 export type CapacityChangeResult = { outcomes: CapacityChangeOutcome[];nextCharge?:{at:string;amount:number;currency:string} };
 

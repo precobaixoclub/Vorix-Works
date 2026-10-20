@@ -26,7 +26,7 @@ export type CheckoutUseCaseDeps = {
 export type CheckoutItemInput = { addonCode: string; quantity: number };
 
 /** Capacidade desejada (configurador público): o servidor traduz em plano + adicionais. */
-export type CheckoutCapacityInput = { users?: number; whatsappConnections?: number; concurrentRecordings?: number };
+export type CheckoutCapacityInput = { users?: number; whatsappConnections?: number; workspaces?: number; concurrentRecordings?: number };
 
 export type StartCheckoutInput = {
   tenantId: string;
@@ -47,15 +47,19 @@ const MAX_ADDON_QUANTITY = 1_000;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 /** Capacidade desejada → adicionais sobre a capacidade INCLUÍDA no plano escolhido. */
-export function itemsForCapacity(planVersion: Pick<PlanVersion, "limits">, addons: readonly { code: string; resource: string }[], capacity: CheckoutCapacityInput): CheckoutItemInput[] {
+export function itemsForCapacity(planVersion: Pick<PlanVersion, "limits">, addons: readonly { code: string; resource: string; increment?: number }[], capacity: CheckoutCapacityInput): CheckoutItemInput[] {
   const items: CheckoutItemInput[] = [];
   const extra = (wanted: number | undefined, included: number | null | undefined) => (wanted === undefined || included === null || included === undefined ? 0 : Math.max(0, Math.floor(wanted) - included));
   const userAddon = addons.find((addon) => addon.resource === "users");
   const numberAddon = addons.find((addon) => addon.resource === "messaging_connections");
+  const workspaceAddon = addons.find((addon) => addon.resource === "workspaces");
   const extraUsers = extra(capacity.users, planVersion.limits.users);
   const extraNumbers = extra(capacity.whatsappConnections, planVersion.limits.messaging_connections);
-  if (extraUsers > 0 && userAddon) items.push({ addonCode: userAddon.code, quantity: extraUsers });
-  if (extraNumbers > 0 && numberAddon) items.push({ addonCode: numberAddon.code, quantity: extraNumbers });
+  const extraWorkspaces = extra(capacity.workspaces, planVersion.limits.workspaces);
+  if (extraUsers > 0 && !userAddon || extraNumbers > 0 && !numberAddon || extraWorkspaces > 0 && !workspaceAddon) throw new Error("CHECKOUT_ADDON_NOT_ALLOWED: este plano não oferece a capacidade solicitada.");
+  if (extraUsers > 0 && userAddon) items.push({ addonCode: userAddon.code, quantity: Math.ceil(extraUsers / (userAddon.increment ?? 1)) });
+  if (extraNumbers > 0 && numberAddon) items.push({ addonCode: numberAddon.code, quantity: Math.ceil(extraNumbers / (numberAddon.increment ?? 1)) });
+  if (extraWorkspaces > 0 && workspaceAddon) items.push({ addonCode: workspaceAddon.code, quantity: Math.ceil(extraWorkspaces / (workspaceAddon.increment ?? 1)) });
   if (capacity.concurrentRecordings !== undefined && capacity.concurrentRecordings > 0) items.push(...meetingsItemsFor(capacity.concurrentRecordings));
   return items;
 }

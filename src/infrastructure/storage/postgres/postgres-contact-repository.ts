@@ -1,6 +1,7 @@
 import type { Pool } from "pg";
 import type { ContactRepositoryPort, CreateContactInput, UpdateContactInput } from "../../../application/ports/contact-repository.port.js";
 import type { Contact } from "../../../domain/crm/crm.model.js";
+import { CONTACT_DIRECTORY_PROTECTED_SQL } from "./contact-directory-sql.js";
 
 const idGenerator = () => `contact-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 
@@ -47,7 +48,7 @@ export class PostgresContactRepository implements ContactRepositoryPort {
 
   async listByWorkspace(input: { tenantId: string; workspaceId: string; search?: string; ownerUserId?: string; teamId?: string; cursor?: string; limit?: number }): Promise<Contact[]> {
     const limit = input.limit ?? 50;
-    const conditions: string[] = ["tenant_id = $1", "workspace_id = $2"];
+    const conditions: string[] = ["c.tenant_id = $1", "c.workspace_id = $2", `(not c.phone_resolution_pending or ${CONTACT_DIRECTORY_PROTECTED_SQL})`];
     const params: unknown[] = [input.tenantId, input.workspaceId];
     if (input.search) {
       params.push(`%${input.search}%`);
@@ -67,7 +68,7 @@ export class PostgresContactRepository implements ContactRepositoryPort {
     }
     params.push(limit);
     const result = await this.pool.query<ContactRow>(
-      `select * from contacts where ${conditions.join(" and ")} order by created_at desc limit $${params.length}`,
+      `select c.* from contacts c where ${conditions.join(" and ")} order by c.created_at desc limit $${params.length}`,
       params,
     );
     return result.rows.map((row) => this.toDomain(row));

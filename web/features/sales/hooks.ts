@@ -98,7 +98,7 @@ export function useConversationProposals(workspaceId: string, conversationId: st
 }
 
 /** Prefixos de cache afetados por qualquer mudança comercial numa oportunidade. */
-export const SALES_CACHE_PREFIXES = ["deal-commercial", "deal-insights", "deals", "proposals", "proposal-tracking", "commercial-approvals", "sales-performance", "sales-performance-team", "sales-forecast", "sales-goals", "deal-timeline"];
+export const SALES_CACHE_PREFIXES = ["deal-commercial", "deal-insights", "deal", "deals", "contact-open-deals", "proposals", "proposal-tracking", "commercial-approvals", "sales-performance", "sales-performance-team", "sales-forecast", "sales-goals", "deal-timeline"];
 
 
 /** Revalida tudo que depende dos números comerciais do workspace (cockpit, listas, metas...). */

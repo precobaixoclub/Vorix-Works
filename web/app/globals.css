@@ -355,3 +355,27 @@ svg {
 }
 @keyframes vorix-live { 0%, 100% { opacity: 1; } 50% { opacity: 0.45; } }
 .vorix-live-dot { animation: vorix-live 2s ease-in-out infinite; }
+
+/* Conversas não lidas: o fundo inteiro mantém o destaque também no hover e durante o arraste. */
+.conversation-unread {
+  background-color: hsl(var(--primary));
+  border-color: hsl(var(--primary));
+}
+.conversation-unread:hover {
+  background-color: hsl(var(--primary) / 0.9);
+  border-color: hsl(var(--primary));
+}
+.conversation-unread .conversation-unread-content {
+  --foreground: var(--primary-foreground);
+  --muted-foreground: var(--primary-foreground);
+}
+.conversation-unread .conversation-unread-content button:is(:hover, [data-state="open"]),
+.conversation-unread [role="note"] {
+  color: hsl(var(--primary-foreground));
+  background-color: hsl(var(--primary-foreground) / 0.12);
+  border-color: hsl(var(--primary-foreground) / 0.25);
+}
+.conversation-unread .conversation-unread-count {
+  color: hsl(var(--primary));
+  background-color: hsl(var(--primary-foreground));
+}

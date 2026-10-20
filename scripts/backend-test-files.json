@@ -259,6 +259,8 @@
   "tests/inbox-media-retry-reconciliation.test.mjs",
   "tests/inbox-reply-mention-reaction.test.mjs",
   "tests/inbox-message-actions.test.mjs",
+  "tests/inbox-message-edits.test.mjs",
+  "tests/user-profiles-channel-signatures.test.mjs",
   "tests/wuzapi-client-message-actions.test.mjs",
   "tests/team-routing.test.mjs",
   "tests/kanban.test.mjs",

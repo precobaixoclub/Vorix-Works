@@ -47,6 +47,7 @@ const PREVIEW_BODY_SCHEMA = {
   properties: {
     users: { type: "integer", minimum: 0, maximum: 10_000 },
     whatsappConnections: { type: "integer", minimum: 0, maximum: 1_000 },
+    workspaces: { type: "integer", minimum: 0, maximum: 1_000 },
     concurrentRecordings: { type: "integer", minimum: 0, maximum: 100 },
     addonQuantities:{type:"object",maxProperties:30,propertyNames:{pattern:"^[a-zA-Z0-9_-]{1,100}$"},additionalProperties:{type:"integer",minimum:0,maximum:10000}},
   },
@@ -58,6 +59,7 @@ const APPLY_BODY_SCHEMA = {
   properties: {
     users: { type: "integer", minimum: 0, maximum: 10_000 },
     whatsappConnections: { type: "integer", minimum: 0, maximum: 1_000 },
+    workspaces: { type: "integer", minimum: 0, maximum: 1_000 },
     concurrentRecordings: { type: "integer", minimum: 0, maximum: 100 },
     addonQuantities:{type:"object",maxProperties:30,propertyNames:{pattern:"^[a-zA-Z0-9_-]{1,100}$"},additionalProperties:{type:"integer",minimum:0,maximum:10000}},
   },
@@ -79,14 +81,14 @@ export async function registerBillingCapacityRoutes(app: FastifyInstance, deps: 
 
   app.post("/billing/capacity/preview", { schema: { body: PREVIEW_BODY_SCHEMA } }, async (request) => {
     const principal = requirePrincipal(request);
-    const body = request.body as { users: number; whatsappConnections: number; concurrentRecordings?: number };
+    const body = request.body as { users: number; whatsappConnections: number; workspaces?: number; concurrentRecordings?: number };
     const result = await previewCapacityChange(deps, { tenantId: principal.tenantId, ...body }).catch(translateCapacityError);
     return successEnvelope(result, request.id);
   });
 
   app.post("/billing/capacity/apply", { schema: { body: APPLY_BODY_SCHEMA }, config: { idempotent: true } }, async (request) => {
     const principal = requirePrincipal(request);
-    const body = request.body as { users?: number; whatsappConnections?: number; concurrentRecordings?: number };
+    const body = request.body as { users?: number; whatsappConnections?: number; workspaces?: number; concurrentRecordings?: number };
     if(principal.role!=="owner"&&principal.role!=="admin")throw new ForbiddenError("Somente o dono ou um administrador pode alterar a cobrança.");
     const result = await applyCapacityChange(deps, { tenantId: principal.tenantId, ...body }).catch(translateCapacityError);
     return successEnvelope(result, request.id);

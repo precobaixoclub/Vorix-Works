@@ -67,7 +67,7 @@ const CHECKOUT_BODY_SCHEMA = {
     /** Configurador público: capacidade desejada; o servidor calcula os adicionais. */
     capacity: {
       type: "object", additionalProperties: false,
-      properties: { users: { type: "integer", minimum: 1, maximum: 1000 }, whatsappConnections: { type: "integer", minimum: 0, maximum: 1000 }, concurrentRecordings: { type: "integer", minimum: 0, maximum: 100 } },
+      properties: { users: { type: "integer", minimum: 1, maximum: 1000 }, whatsappConnections: { type: "integer", minimum: 0, maximum: 1000 }, workspaces: { type: "integer", minimum: 0, maximum: 1000 }, concurrentRecordings: { type: "integer", minimum: 0, maximum: 100 } },
     },
     successPath: { type: "string", maxLength: 300 },
     cancelPath: { type: "string", maxLength: 300 },

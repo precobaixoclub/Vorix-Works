@@ -114,6 +114,7 @@ async function mockCockpit(page: Page) {
     const ok = (data: unknown) => route.fulfill({ json: { ok: true, data } });
     if (path === "/v1/solutions") return ok({ solutions: [{ key: "conversations", name: "Conversas", internal: false }] });
     if (path === "/v1/deals") return ok([deal]);
+    if (path === "/v1/deals/deal-se") return ok(deal);
     if (path === "/v1/deals/deal-se/commercial") return ok(commercial);
     if (path === "/v1/deals/deal-se/insights") return ok({ dealId: "deal-se", risks: [{ code: "no_next_action", title: "Sem próxima ação definida" }], explanations: ["Há até R$ 150,00 de espaço comercial antes do preço mínimo."], goalImpact: { available: true, ownerUserId: "user-qa", targetCents: 10000000, realizedCents: 6800000, attainmentBp: 6800, remainingCents: 3200000, dealValueCents: 95000, dealShareOfGoalBp: 95, afterCloseCents: 6895000, afterCloseAttainmentBp: 6895, afterCloseRemainingCents: 3105000 }, aiAvailable: false, hasConversation: false, marginVisible: true });
     if (path === "/v1/deals/deal-se/timeline") return ok([]);

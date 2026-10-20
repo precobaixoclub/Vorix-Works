@@ -2,6 +2,8 @@ import useSWR from "swr";
 import {isProductAvailable} from "@/features/product-engine/specializations";
 import {
   getContact,
+  getDeal,
+  getContactOpenDealsSummary,
   getContactActivity,
   getContactTimeline,
   getDealsSummary,
@@ -62,11 +64,19 @@ export function useStagesByPipeline(workspaceId: string, pipelineIds: readonly s
   });
 }
 
-export function useDeals(workspaceId: string, params?: ListDealsParams) {
+export function useDeals(workspaceId: string, params?: ListDealsParams, enabled = true) {
   return useSWR(
-    ["deals", workspaceId, params?.pipelineId, params?.stageId, params?.contactId, params?.ownerUserId, params?.teamId, params?.origin, params?.search],
+    enabled ? ["deals", workspaceId, params?.pipelineId, params?.stageId, params?.contactId, params?.ownerUserId, params?.teamId, params?.origin, params?.search] : null,
     () => listDeals(workspaceId, params),
   );
+}
+
+export function useDeal(workspaceId: string, dealId: string | undefined) {
+  return useSWR(dealId ? ["deal", workspaceId, dealId] : null, () => getDeal(dealId!, workspaceId));
+}
+
+export function useContactOpenDealsSummary(workspaceId: string, enabled = true) {
+  return useSWR(enabled ? ["contact-open-deals", workspaceId] : null, () => getContactOpenDealsSummary(workspaceId), { refreshInterval: 30_000 });
 }
 
 export function useDealsSummary(workspaceId: string, pipelineId: string | undefined, params?: Omit<ListDealsParams, "pipelineId" | "stageId">) {

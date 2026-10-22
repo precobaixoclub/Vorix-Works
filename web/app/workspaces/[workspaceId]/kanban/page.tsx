@@ -1,7 +1,7 @@
 "use client";
 
 import { KanbanSquare } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/Button";
 import { EmptyState } from "@/components/EmptyState";
@@ -30,15 +30,11 @@ export default function KanbanPage() {
   // Mesma chave de querystring que `inbox-filters.tsx` usa pro filtro "Equipe" da tela Conversas
   // (`team`) — pedido explícito do usuário: escolher uma equipe em Conversas e trocar pra Kanban
   // já deve abrir o board DAQUELA equipe, sem escolher de novo.
-  const [teamId, setTeamIdState] = useState<string>(() => searchParams.get("team") ?? "");
-
-  useEffect(() => {
-    if (!teamId && teams && teams.length > 0) setTeamIdState(teams[0].id);
-  }, [teamId, teams]);
+  const requestedTeamId = searchParams.get("team");
+  const teamId = teams?.find((team) => team.id === requestedTeamId)?.id ?? teams?.[0]?.id ?? "";
 
   const setTeamId = useCallback(
     (nextTeamId: string) => {
-      setTeamIdState(nextTeamId);
       const params = new URLSearchParams(searchParams.toString());
       if (nextTeamId) params.set("team", nextTeamId);
       else params.delete("team");

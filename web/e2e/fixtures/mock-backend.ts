@@ -1,4 +1,4 @@
-import { ROLE_PERMISSIONS } from "../../../src/domain/identity/identity.model";
+import { OWNER_PERMISSIONS } from "./access-fixture";
 import type { BrowserContext, Page, Route } from "@playwright/test";
 import { TINY_JPEG_BASE64, TINY_PDF, buildTinyWav } from "./media-fixtures";
 
@@ -102,7 +102,7 @@ export async function mockConversasBackend(page: Page) {
       return fulfillJson(route, { accessToken: "qa-fixture-access-token", expiresIn: 900, tenantId: TENANT_ID, role: "owner" });
     }
     if (path === "/v1/auth/me") {
-      return fulfillJson(route, { user: { id: "user-qa", email: "qa@vorix.dev", name: "QA Reviewer", isPlatformAdmin: false }, tenantId: TENANT_ID, role: "owner", permissions: ROLE_PERMISSIONS.owner, teams: [], isAccountOwner: true });
+      return fulfillJson(route, { user: { id: "user-qa", email: "qa@vorix.dev", name: "QA Reviewer", isPlatformAdmin: false }, tenantId: TENANT_ID, role: "owner", permissions: OWNER_PERMISSIONS, teams: [], isAccountOwner: true });
     }
     if (path === `/v1/workspaces/${WORKSPACE_ID}`) {
       return fulfillJson(route, {

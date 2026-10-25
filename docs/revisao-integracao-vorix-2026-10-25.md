@@ -70,6 +70,10 @@ real foi realizado durante os testes. As alterações que já existiam no worksp
   Seletores antigos de mídia/formulários e expectativas da antiga limpeza manual de contatos foram atualizados.
 - O binário local de FFmpeg ausente foi restaurado com `npm rebuild ffmpeg-static`; testes de mídia
   passaram a executar efetivamente. Isso é uma correção do ambiente, sem mudança de dependência.
+- O primeiro build no servidor encontrou uma importação do domínio do backend nas fixtures E2E.
+  O contexto Docker do frontend contém somente `web/`; as permissões fictícias passaram a ter
+  snapshot explícito dentro das próprias fixtures, preservando os cenários de acesso e o build isolado.
+  O rollback dessa tentativa preservou a aplicação anterior e ocorreu antes das migrações.
 
 ## Migrações e compatibilidade
 

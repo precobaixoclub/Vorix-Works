@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { loginCookie, mockConversasBackend, WORKSPACE_ID, TENANT_ID } from "./fixtures/mock-backend";
-import { ROLE_PERMISSIONS } from "../../src/domain/identity/identity.model";
+import { OWNER_PERMISSIONS } from "./fixtures/access-fixture";
 
 async function fixture(page: Page, lost = false) {
   await mockConversasBackend(page);
@@ -58,7 +58,7 @@ test("as ações respeitam permissões removidas mesmo com o perfil Administrado
   await fixture(page);
   await page.route("**/v1/auth/me", route => route.fulfill({ json: { ok: true, data: {
     user: { id: "user-qa", name: "QA Reviewer", email: "qa@vorix.dev" }, tenantId: TENANT_ID, role: "owner", teams: [],
-    permissions: ROLE_PERMISSIONS.owner.filter(permission => !["deal:win", "deal:lose", "pipeline:configure", "proposal:manage"].includes(permission)),
+    permissions: OWNER_PERMISSIONS.filter(permission => !["deal:win", "deal:lose", "pipeline:configure", "proposal:manage"].includes(permission)),
   } } }));
   await page.goto(`/workspaces/${WORKSPACE_ID}/deals`);
   await expect(page.getByRole("button", { name: "Fases", exact: true })).toHaveCount(0);

@@ -1,0 +1,12 @@
+{
+  "status": "PASS",
+  "checkedAt": "2026-10-25T11:55:08.544Z",
+  "duplicateOpenAttendances": 0,
+  "duplicateActiveAssignments": 0,
+  "invalidPipelineOutcomes": 0,
+  "attendanceTenantMismatch": 0,
+  "legacyOpenBackfill": 2,
+  "legacyClosedBackfill": 0,
+  "activeAccountOwners": 10,
+  "requiredIndexes": 7
+}

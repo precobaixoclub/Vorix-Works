@@ -1,0 +1,18 @@
+{
+  "applicationRevision": "6530754f9b123c1158bedd9d82e867ce43ead926",
+  "status": "PASS",
+  "files": {
+    "src/interfaces/api/app.ts": "55b2d853b86f6689eb7eebed3bbb744190ae62586be28a29d7d59bd965dde9a5",
+    "src/application/identity/access-resolver.ts": "3c7e10b569db88692ea73eead73bfdb6f55014e78b2c7517a3a527f0ccc097d3",
+    "src/application/dashboard/dashboard-use-cases.ts": "7bb26473f3df794d6dc0a117ea310322874d66d238295d4249182e15c27cc901",
+    "src/application/inbox/inbox-use-cases.ts": "91c41943e0a4d7dd47f126f409b0df2726de4f9168a9addcdc4a6df5616a1994",
+    "src/interfaces/api/http/crm-access.ts": "3463113f558e601a7740b073726fc6fc070fc8b68f9c04d9417e799d15a37b30",
+    "web/components/proposals/ProposalDocument.tsx": "9fb149701610278aa4e81072d959f05426125917631f69cb8a4c1de4f688111b",
+    "web/e2e/fixtures/access-fixture.ts": "4728dc2493d9f61e81961312ffa09c43bdfbf4cbe0e9a72e0178fb5fc85ea126",
+    "db/migrations/0172_inbox_attendance_cycles.sql": "eca4df9412c1b7e65db838fb10ac2ae770cfc8457bed913507adc93c1ee21d0d",
+    "db/migrations/0173_access_profiles_and_scope.sql": "8fe1b08f820b947f6389941a15900add245a985921dc56e81349385946453eae",
+    "db/migrations/0173_deal_commercial_lifecycle.sql": "3ad8f09d9cd2fb2d3819f73a975d1ee5048308ac23ee4fda8574bac1339af7e2",
+    "db/migrations/0174_inbox_sla_policies.sql": "341c0f53f0e8029b8d7695f32d096cddca190db12a531914795c1c1d90171c80",
+    "db/migrations/0175_integration_review.sql": "74ca0ed579f596a5e59cda46e70d7b4a01f0cc41f576bcc48ded8e892efa99e3"
+  }
+}

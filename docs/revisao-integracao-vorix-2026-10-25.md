@@ -3,7 +3,7 @@
 Revisão executada no código local, com correções e testes. Inclui frontend, API, casos de uso,
 repositórios, migrações, regras de acesso, atendimento, oportunidades, propostas e relatórios.
 A publicação no servidor e as migrações foram solicitadas explicitamente pelo usuário após a revisão.
-O resultado operacional será registrado no relatório de deploy. Nenhum envio de WhatsApp ou cobrança
+Deploy concluído: [relatório de publicação](production-deploy-20261025.md). Nenhum envio de WhatsApp ou cobrança
 real foi realizado durante os testes. As alterações que já existiam no workspace foram preservadas.
 
 ## Fluxos revisados
@@ -93,6 +93,15 @@ O runner identifica migrações pelo nome completo; os dois arquivos com prefixo
 distintos. Arquivos já existentes não foram renomeados. A nova migração foi testada em instalação
 limpa, atualização e reaplicação idempotente.
 
+Em produção, as cinco migrações foram aplicadas; total final de 176, nenhuma pendente ou com
+checksum divergente. Nenhuma migração previamente aplicada foi alterada. Foram encontrados dois
+atendimentos abertos preservados pelo backfill e nenhum encerramento legado elegível. O schema
+inclui atendimentos, ciclos de responsabilidade, catálogos de encerramento, auditoria de acesso,
+exceções individuais, SLA e novos campos de fechamento/arquivamento. Índices incluem unicidade
+do atendimento aberto e do responsável ativo, numeração por workspace, períodos de abertura,
+fechamento e primeira resposta, responsável por período, administrador principal, etapas de
+resultado e oportunidades fechadas aguardando arquivamento.
+
 Limite histórico: uma conversa antiga não permite reconstruir todos os atendimentos e transferências
 anteriores. A migração preserva o último fechamento e a pesquisa conhecidos. TMR/SLA de resolução
 de registros marcados como migração não recebem uma duração operacional inventada. Novos ciclos
@@ -135,6 +144,11 @@ Veja também `dashboard-indicadores.md`, `conversas-ciclo-de-atendimento.md`,
   (378,8 segundos). Comando: `node scripts/test-backend.mjs`, após o build validado pela
   arquitetura. Registro: `.qa/review-backend-release.log`.
 - Resumo versionado: `qa/integration-review-20261025/validation.json`.
+- Produção: builds Linux das três imagens aprovados; API e worker saudáveis; web HTTP 200;
+  `ready=true`; 26 verificações públicas em desktop/celular aprovadas, sem erros JavaScript.
+  Inclui imagem Open Graph da proposta e bloqueio de acesso anônimo às novas rotas.
+  Conferência por hash de 12 arquivos canônicos do commit e verificações de integridade do banco
+  aprovadas. Evidências versionadas em `qa/integration-review-20261025/production-*.json`.
 
 ## Decisão de negócio pendente
 
@@ -146,8 +160,6 @@ e não foi escolhida arbitrariamente.
 
 ## Limites e riscos técnicos restantes
 
-- A publicação da aplicação e execução das migrações na base de produção ainda precisam acontecer.
-  Os testes desta revisão não alteraram produção.
 - WhatsApp, Google/Meetings e pagamentos foram exercitados com adaptadores de teste/sandbox;
   credenciais, webhooks e serviços externos reais precisam de homologação no ambiente de destino.
 - O cenário de navegador de renovação de capacidade exige PostgreSQL descartável nativo.
@@ -161,5 +173,11 @@ e não foi escolhida arbitrariamente.
 - O modo híbrido `AUTH_MODE=jwt` com persistência operacional em memória serve a testes de módulos
   isolados. O fluxo completo de cadastro/CRM deve usar `PERSISTENCE_DRIVER=postgres`, como nos
   testes integrados e na fixture de navegador com API real.
+- O servidor terminou com aproximadamente 6,3 GB livres. Backups foram mantidos; crescimento de
+  imagens, cache de build e backups exige acompanhamento operacional.
+- `/readyz` já apresentava `status=degraded` antes do deploy pelo aviso de `production_guard`.
+  Permanece assim, com `ready=true` e banco, secrets, estado operacional e fila aprovados;
+  nenhuma configuração de publicação foi alterada neste deploy.
 
-Esses limites impedem tratar os testes locais como uma certificação de funcionamento de produção.
+As verificações em produção foram de saúde, integridade e navegação anônima. Os fluxos autenticados
+de negócio foram testados em ambiente controlado; não foram operadas contas de clientes no smoke.

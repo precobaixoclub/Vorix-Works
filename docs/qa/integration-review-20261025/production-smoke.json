@@ -1,0 +1,140 @@
+{
+  "checkedAt": "2026-10-25T11:55:31.086Z",
+  "applicationRevision": "6530754f9b123c1158bedd9d82e867ce43ead926",
+  "base": "https://vorixworks.com",
+  "api": "https://api.vorixworks.com",
+  "checks": [
+    {
+      "route": "/",
+      "width": 1440,
+      "status": "PASS"
+    },
+    {
+      "route": "/precos",
+      "width": 1440,
+      "status": "PASS"
+    },
+    {
+      "route": "/login",
+      "width": 1440,
+      "status": "PASS"
+    },
+    {
+      "route": "/signup",
+      "width": 1440,
+      "status": "PASS"
+    },
+    {
+      "route": "/p/invalid",
+      "width": 1440,
+      "status": "PASS"
+    },
+    {
+      "route": "/dashboard",
+      "width": 1440,
+      "anonymousAccess": "DENIED"
+    },
+    {
+      "route": "/deals",
+      "width": 1440,
+      "anonymousAccess": "DENIED"
+    },
+    {
+      "route": "/proposals",
+      "width": 1440,
+      "anonymousAccess": "DENIED"
+    },
+    {
+      "route": "/contacts",
+      "width": 1440,
+      "anonymousAccess": "DENIED"
+    },
+    {
+      "route": "/tasks",
+      "width": 1440,
+      "anonymousAccess": "DENIED"
+    },
+    {
+      "route": "/teams",
+      "width": 1440,
+      "anonymousAccess": "DENIED"
+    },
+    {
+      "route": "/inbox/conversations",
+      "width": 1440,
+      "anonymousAccess": "DENIED"
+    },
+    {
+      "route": "/inbox/service-settings",
+      "width": 1440,
+      "anonymousAccess": "DENIED"
+    },
+    {
+      "route": "/",
+      "width": 390,
+      "status": "PASS"
+    },
+    {
+      "route": "/precos",
+      "width": 390,
+      "status": "PASS"
+    },
+    {
+      "route": "/login",
+      "width": 390,
+      "status": "PASS"
+    },
+    {
+      "route": "/signup",
+      "width": 390,
+      "status": "PASS"
+    },
+    {
+      "route": "/p/invalid",
+      "width": 390,
+      "status": "PASS"
+    },
+    {
+      "route": "/dashboard",
+      "width": 390,
+      "anonymousAccess": "DENIED"
+    },
+    {
+      "route": "/deals",
+      "width": 390,
+      "anonymousAccess": "DENIED"
+    },
+    {
+      "route": "/proposals",
+      "width": 390,
+      "anonymousAccess": "DENIED"
+    },
+    {
+      "route": "/contacts",
+      "width": 390,
+      "anonymousAccess": "DENIED"
+    },
+    {
+      "route": "/tasks",
+      "width": 390,
+      "anonymousAccess": "DENIED"
+    },
+    {
+      "route": "/teams",
+      "width": 390,
+      "anonymousAccess": "DENIED"
+    },
+    {
+      "route": "/inbox/conversations",
+      "width": 390,
+      "anonymousAccess": "DENIED"
+    },
+    {
+      "route": "/inbox/service-settings",
+      "width": 390,
+      "anonymousAccess": "DENIED"
+    }
+  ],
+  "pageErrors": [],
+  "status": "PASS"
+}

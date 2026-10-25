@@ -18,7 +18,9 @@
     "productionBuild": "PASS",
     "testFiles": 23,
     "passed": 167,
-    "failed": 0
+    "failed": 0,
+    "selfContainedFixtureTypecheck": "PASS",
+    "selfContainedFixtureProductionBuild": "PASS"
   },
   "browser": {
     "uniqueInterfacePassed": 136,
@@ -33,5 +35,14 @@
   "unexecuted": [
     "capacity-renewal browser scenario requires unavailable disposable native PostgreSQL/Docker/WSL"
   ],
-  "productionOperationsDuringLocalTests": false
+  "productionOperationsDuringLocalTests": false,
+  "production": {
+    "applicationRevision": "6530754f9b123c1158bedd9d82e867ce43ead926",
+    "deployment": "PASS",
+    "migrationsApplied": 176,
+    "migrationsPending": 0,
+    "browserChecksPassed": 26,
+    "databaseIntegrity": "PASS",
+    "canonicalSourceFilesVerified": 12
+  }
 }

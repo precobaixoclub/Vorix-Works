@@ -30,6 +30,12 @@ try {
     await page.getByRole('button', { name: 'Tentar de novo', exact: true }).waitFor();
     assert.equal(await page.getByRole('button', { name: /aceitar|recusar/i }).count(), 0);
     assert.match(await page.locator('meta[name="robots"]').getAttribute('content'), /noindex/);
+    const preview = new URL(await page.locator('meta[property="og:image"]').getAttribute('content'), base);
+    assert.equal(preview.origin, base);
+    const previewResponse = await context.request.get(preview.href);
+    assert.equal(previewResponse.status(), 200);
+    assert.match(previewResponse.headers()['content-type'], /image\/png/);
+    assert.ok((await previewResponse.body()).byteLength > 1000);
     assert.equal(await page.locator('body').evaluate(body => body.scrollWidth > innerWidth), false);
     await page.screenshot({ path: `${directory}/invalid-proposal-${width}.png` });
     checks.push({ route: '/p/invalid', width, status: 'PASS' });

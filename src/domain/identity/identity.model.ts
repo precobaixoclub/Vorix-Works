@@ -151,6 +151,19 @@ export const PERMISSIONS = [
   // pode apagar contatos que ficarem órfãos. Degrau próprio, nunca reaproveita
   // `inbox:delete_conversations` silenciosamente pra uma ação bem mais destrutiva.
   "inbox:delete_connections",
+  // Ciclo de atendimento (0172) — configurar tipos/subtipos de finalização e dispensar a pesquisa
+  // de satisfação de um atendimento específico. Só gerente (admin) e administrador (owner): o
+  // atendente comum (editor) nunca desliga a pesquisa ligada no canal.
+  "inbox:manage_service",
+  // Perfis, direitos de acesso e escopo (0173). Escopo de leitura por domínio, sempre em três
+  // degraus: sem permissão de escopo = só os PRÓPRIOS dados; `view_team` = equipes das quais a
+  // pessoa participa; `view_all` = a empresa inteira. Ver `src/domain/identity/access-control.ts`.
+  "inbox:view_team",
+  "inbox:view_all",
+  // Configurar o kanban de atendimento — só nas equipes que a pessoa GERENCIA (ou em todas, com escopo global).
+  "inbox:configure_kanban",
+  // Dispensar a pesquisa de satisfação de um atendimento (separado de configurar finalização).
+  "inbox:waive_csat",
   // CRM/Comercial (Fase 1) — auditoria em docs/crm-omnichannel-architecture-audit.md.
   // `tenant_member:manage`/`team:manage` ficam num degrau administrativo (convidar/remover
   // membro e criar/editar equipe são ações de gestão de conta, mesmo raciocínio de
@@ -160,11 +173,20 @@ export const PERMISSIONS = [
   // vs. `publication:create`); `automation:manage` fica restrito porque uma regra mal configurada
   // move negócio/dispara ação sem revisão humana (mesmo raciocínio de `inbox:manage_ai`).
   "tenant_member:manage",
+  // Perfis e permissões (0173): ver membros (gerente vê os das equipes que gerencia) e o degrau
+  // SENSÍVEL de alterar perfil/permissões/equipes de alguém — nunca do próprio usuário.
+  "tenant_member:read",
+  "tenant_member:manage_permissions",
   "team:manage",
+  "team:read",
   "contact:read",
   "contact:manage",
   "deal:read",
   "deal:manage",
+  "deal:view_team",
+  "deal:view_all",
+  // Configurar o kanban de oportunidades (funis/etapas) — funil de equipe só por quem a gerencia.
+  "pipeline:configure",
   "task:read",
   "task:manage",
   "product:read",
@@ -189,9 +211,20 @@ export const PERMISSIONS = [
   "deal:view_margin",
   "deal:approve_discount",
   "deal:close",
+  "deal:win",
+  "deal:lose",
+  "deal:reopen",
+  "deal:edit_closed",
+  "deal:change_final_value",
+  "deal:change_loss_reason",
+  "deal:archive",
+  "deal:unarchive",
   "goal:read",
+  "goal:read_team",
+  "goal:read_all",
   "goal:manage",
   "sales_report:read_team",
+  "sales_report:read_all",
   // Agenda (réplica adaptada do CMDesk, pedido explícito do usuário) — `calendar_event:*` (nunca
   // `calendar:*`, já usado pelo calendário editorial de Publication/Scheduling acima — recursos
   // diferentes, nunca a mesma permissão). `read` liberado a todo mundo (até viewer, mesmo
@@ -240,12 +273,22 @@ const INBOX_READ_PERMISSIONS: readonly Permission[] = ["inbox:read"];
 const CALENDAR_EVENT_READ_PERMISSIONS: readonly Permission[] = ["calendar_event:read"];
 const CALENDAR_EVENT_WRITE_PERMISSIONS: readonly Permission[] = ["calendar_event:write"];
 const INBOX_OPERATOR_PERMISSIONS: readonly Permission[] = ["inbox:reply", "inbox:assign"];
-const INBOX_ADMIN_PERMISSIONS: readonly Permission[] = ["inbox:manage_connections", "inbox:manage_ai", "inbox:delete_conversations", "inbox:delete_connections"];
+const INBOX_ADMIN_PERMISSIONS: readonly Permission[] = ["inbox:manage_connections", "inbox:manage_ai", "inbox:delete_conversations", "inbox:delete_connections", "inbox:manage_service"];
+/** Leitura em escopo de equipe (gerente) e global (administrador) — ver `access-control.ts`. */
+const TEAM_SCOPE_PERMISSIONS: readonly Permission[] = ["inbox:view_team", "deal:view_team", "goal:read_team", "sales_report:read_team", "tenant_member:read", "team:read"];
+const GLOBAL_SCOPE_PERMISSIONS: readonly Permission[] = ["inbox:view_all", "deal:view_all", "goal:read_all", "sales_report:read_all"];
+/** Operação de gestão das equipes gerenciadas (configurar os próprios kanbans, dispensar pesquisa). */
+const TEAM_MANAGER_PERMISSIONS: readonly Permission[] = ["inbox:configure_kanban", "pipeline:configure", "inbox:waive_csat"];
+/** Só o Administrador: estrutura de acesso e configurações críticas da empresa. */
+const ACCESS_ADMIN_PERMISSIONS: readonly Permission[] = ["tenant_member:manage", "tenant_member:manage_permissions", "team:manage"];
 const CRM_READ_PERMISSIONS: readonly Permission[] = ["inventory:read", "site:read", "commerce:read", "contact:read", "deal:read", "task:read", "product:read", "proposal:read"];
 const CRM_OPERATOR_PERMISSIONS: readonly Permission[] = ["inventory:manage", "site:manage", "contact:manage", "deal:manage", "task:manage", "product:manage", "proposal:manage", "proposal:send"];
-const CRM_ADMIN_PERMISSIONS: readonly Permission[] = ["site:publish", "commerce:manage", "tenant_member:manage", "team:manage", "automation:manage", "product:view_cost", "deal:view_margin", "deal:approve_discount", "goal:manage", "sales_report:read_team"];
+const CRM_ADMIN_PERMISSIONS: readonly Permission[] = ["site:publish", "commerce:manage", "automation:manage", "product:view_cost", "deal:view_margin", "deal:approve_discount", "deal:edit_closed", "deal:change_final_value", "deal:change_loss_reason", "goal:manage"];
+/** Configurações administrativas que o Gerente NÃO recebe por padrão (canais, finalização,
+ * automações, metas) — continuam concedíveis individualmente pelo Administrador. */
+const ADMIN_ONLY_SETTINGS_PERMISSIONS: readonly Permission[] = ["inbox:manage_connections", "inbox:delete_connections", "inbox:manage_service", "automation:manage", "goal:manage"];
 const SALES_READ_PERMISSIONS: readonly Permission[] = ["goal:read"];
-const SALES_OPERATOR_PERMISSIONS: readonly Permission[] = ["deal:close"];
+const SALES_OPERATOR_PERMISSIONS: readonly Permission[] = ["deal:close", "deal:win", "deal:lose", "deal:reopen", "deal:archive", "deal:unarchive"];
 const MEETING_READ_PERMISSIONS: readonly Permission[] = ["meeting:read"];
 const MEETING_OPERATOR_PERMISSIONS: readonly Permission[] = ["meeting:create", "meeting:record", "meeting:analyze"];
 const MEETING_ADMIN_PERMISSIONS: readonly Permission[] = ["meeting:read_all", "meeting:delete", "meeting:manage_integrations", "meeting:manage_recorder_accounts"];
@@ -256,11 +299,20 @@ const MEETING_ADMIN_PERMISSIONS: readonly Permission[] = ["meeting:read_all", "m
  * fazem tudo, incluindo criar Workspace e executar transições de status. Conversation (Sprint 06)
  * é igual para todos os papéis — ver comentário acima de `PERMISSIONS`.
  */
+const LEGACY_ADMIN_PERMISSIONS: readonly Permission[] = ["workspace:read", "workspace:create", "workspace:update", "workspace:transition", ...CONVERSATION_PERMISSIONS, ...PLANNING_PERMISSIONS, ...RUNTIME_PERMISSIONS, ...EXECUTION_READ_PERMISSIONS, ...EXECUTION_WRITE_PERMISSIONS, ...PUBLICATION_READ_PERMISSIONS, ...PUBLICATION_EDITOR_PERMISSIONS, ...PUBLICATION_OPERATOR_PERMISSIONS, ...PUBLICATION_ADMIN_PERMISSIONS, ...CREDENTIAL_READ_PERMISSIONS, ...CREDENTIAL_OPERATOR_PERMISSIONS, ...AUDIT_READ_PERMISSIONS, ...SCHEDULING_READ_PERMISSIONS, ...SCHEDULING_EDITOR_PERMISSIONS, ...SCHEDULING_OPERATOR_PERMISSIONS, ...ANALYTICS_READ_PERMISSIONS, ...ANALYTICS_OPERATOR_PERMISSIONS, ...SYSTEM_OPERATOR_PERMISSIONS, ...ASSET_READ_PERMISSIONS, ...ASSET_EDITOR_PERMISSIONS, ...ADS_READ_PERMISSIONS, ...ADS_OPERATOR_PERMISSIONS, ...ADS_ADMIN_PERMISSIONS, ...INBOX_READ_PERMISSIONS, ...INBOX_OPERATOR_PERMISSIONS, ...INBOX_ADMIN_PERMISSIONS, ...CRM_READ_PERMISSIONS, ...SALES_READ_PERMISSIONS, ...CRM_OPERATOR_PERMISSIONS, ...SALES_OPERATOR_PERMISSIONS, ...CRM_ADMIN_PERMISSIONS, ...CALENDAR_EVENT_READ_PERMISSIONS, ...CALENDAR_EVENT_WRITE_PERMISSIONS, ...MEETING_READ_PERMISSIONS, ...MEETING_OPERATOR_PERMISSIONS, ...MEETING_ADMIN_PERMISSIONS];
+
+/**
+ * Presets dos perfis (0173) — o PADRÃO inicial de cada perfil, nunca uma trava rígida: o
+ * Administrador ajusta exceções por usuário (`TenantMembership.permissionGrants/Revokes`) e a
+ * permissão efetiva é calculada por `effectivePermissions`. Mapeamento para a UI:
+ * owner = Administrador, admin = Gerente, editor = Atendente, viewer = Visualizador (legado,
+ * leitura global sem operação).
+ */
 export const ROLE_PERMISSIONS: Record<TenantRole, readonly Permission[]> = {
-  viewer: ["workspace:read", ...CONVERSATION_PERMISSIONS, ...PLANNING_PERMISSIONS, ...RUNTIME_PERMISSIONS, ...EXECUTION_READ_PERMISSIONS, ...PUBLICATION_READ_PERMISSIONS, ...SCHEDULING_READ_PERMISSIONS, ...ANALYTICS_READ_PERMISSIONS, ...ASSET_READ_PERMISSIONS, ...ADS_READ_PERMISSIONS, ...INBOX_READ_PERMISSIONS, ...CRM_READ_PERMISSIONS, ...SALES_READ_PERMISSIONS, ...CALENDAR_EVENT_READ_PERMISSIONS, ...MEETING_READ_PERMISSIONS],
-  editor: ["workspace:read", "workspace:update", ...CONVERSATION_PERMISSIONS, ...PLANNING_PERMISSIONS, ...RUNTIME_PERMISSIONS, ...EXECUTION_READ_PERMISSIONS, ...EXECUTION_WRITE_PERMISSIONS, ...PUBLICATION_READ_PERMISSIONS, ...PUBLICATION_EDITOR_PERMISSIONS, ...SCHEDULING_READ_PERMISSIONS, ...SCHEDULING_EDITOR_PERMISSIONS, ...ANALYTICS_READ_PERMISSIONS, ...ASSET_READ_PERMISSIONS, ...ASSET_EDITOR_PERMISSIONS, ...ADS_READ_PERMISSIONS, ...ADS_OPERATOR_PERMISSIONS, ...INBOX_READ_PERMISSIONS, ...INBOX_OPERATOR_PERMISSIONS, ...CRM_READ_PERMISSIONS, ...SALES_READ_PERMISSIONS, ...CRM_OPERATOR_PERMISSIONS, ...SALES_OPERATOR_PERMISSIONS, ...CALENDAR_EVENT_READ_PERMISSIONS, ...CALENDAR_EVENT_WRITE_PERMISSIONS, ...MEETING_READ_PERMISSIONS, ...MEETING_OPERATOR_PERMISSIONS],
-  admin: ["workspace:read", "workspace:create", "workspace:update", "workspace:transition", ...CONVERSATION_PERMISSIONS, ...PLANNING_PERMISSIONS, ...RUNTIME_PERMISSIONS, ...EXECUTION_READ_PERMISSIONS, ...EXECUTION_WRITE_PERMISSIONS, ...PUBLICATION_READ_PERMISSIONS, ...PUBLICATION_EDITOR_PERMISSIONS, ...PUBLICATION_OPERATOR_PERMISSIONS, ...PUBLICATION_ADMIN_PERMISSIONS, ...CREDENTIAL_READ_PERMISSIONS, ...CREDENTIAL_OPERATOR_PERMISSIONS, ...AUDIT_READ_PERMISSIONS, ...SCHEDULING_READ_PERMISSIONS, ...SCHEDULING_EDITOR_PERMISSIONS, ...SCHEDULING_OPERATOR_PERMISSIONS, ...ANALYTICS_READ_PERMISSIONS, ...ANALYTICS_OPERATOR_PERMISSIONS, ...SYSTEM_OPERATOR_PERMISSIONS, ...ASSET_READ_PERMISSIONS, ...ASSET_EDITOR_PERMISSIONS, ...ADS_READ_PERMISSIONS, ...ADS_OPERATOR_PERMISSIONS, ...ADS_ADMIN_PERMISSIONS, ...INBOX_READ_PERMISSIONS, ...INBOX_OPERATOR_PERMISSIONS, ...INBOX_ADMIN_PERMISSIONS, ...CRM_READ_PERMISSIONS, ...SALES_READ_PERMISSIONS, ...CRM_OPERATOR_PERMISSIONS, ...SALES_OPERATOR_PERMISSIONS, ...CRM_ADMIN_PERMISSIONS, ...CALENDAR_EVENT_READ_PERMISSIONS, ...CALENDAR_EVENT_WRITE_PERMISSIONS, ...MEETING_READ_PERMISSIONS, ...MEETING_OPERATOR_PERMISSIONS, ...MEETING_ADMIN_PERMISSIONS],
-  owner: ["workspace:read", "workspace:create", "workspace:update", "workspace:transition", ...CONVERSATION_PERMISSIONS, ...PLANNING_PERMISSIONS, ...RUNTIME_PERMISSIONS, ...EXECUTION_READ_PERMISSIONS, ...EXECUTION_WRITE_PERMISSIONS, ...PUBLICATION_READ_PERMISSIONS, ...PUBLICATION_EDITOR_PERMISSIONS, ...PUBLICATION_OPERATOR_PERMISSIONS, ...PUBLICATION_ADMIN_PERMISSIONS, ...CREDENTIAL_READ_PERMISSIONS, ...CREDENTIAL_OPERATOR_PERMISSIONS, ...AUDIT_READ_PERMISSIONS, ...SCHEDULING_READ_PERMISSIONS, ...SCHEDULING_EDITOR_PERMISSIONS, ...SCHEDULING_OPERATOR_PERMISSIONS, ...ANALYTICS_READ_PERMISSIONS, ...ANALYTICS_OPERATOR_PERMISSIONS, ...SYSTEM_OPERATOR_PERMISSIONS, ...ASSET_READ_PERMISSIONS, ...ASSET_EDITOR_PERMISSIONS, ...ADS_READ_PERMISSIONS, ...ADS_OPERATOR_PERMISSIONS, ...ADS_ADMIN_PERMISSIONS, ...INBOX_READ_PERMISSIONS, ...INBOX_OPERATOR_PERMISSIONS, ...INBOX_ADMIN_PERMISSIONS, ...CRM_READ_PERMISSIONS, ...SALES_READ_PERMISSIONS, ...CRM_OPERATOR_PERMISSIONS, ...SALES_OPERATOR_PERMISSIONS, ...CRM_ADMIN_PERMISSIONS, ...CALENDAR_EVENT_READ_PERMISSIONS, ...CALENDAR_EVENT_WRITE_PERMISSIONS, ...MEETING_READ_PERMISSIONS, ...MEETING_OPERATOR_PERMISSIONS, ...MEETING_ADMIN_PERMISSIONS],
+  viewer: ["workspace:read", ...CONVERSATION_PERMISSIONS, ...PLANNING_PERMISSIONS, ...RUNTIME_PERMISSIONS, ...EXECUTION_READ_PERMISSIONS, ...PUBLICATION_READ_PERMISSIONS, ...SCHEDULING_READ_PERMISSIONS, ...ANALYTICS_READ_PERMISSIONS, ...ASSET_READ_PERMISSIONS, ...ADS_READ_PERMISSIONS, ...INBOX_READ_PERMISSIONS, ...CRM_READ_PERMISSIONS, ...SALES_READ_PERMISSIONS, ...CALENDAR_EVENT_READ_PERMISSIONS, ...MEETING_READ_PERMISSIONS, "inbox:view_all", "deal:view_all", "team:read"],
+  editor: ["workspace:read", "workspace:update", ...CONVERSATION_PERMISSIONS, ...PLANNING_PERMISSIONS, ...RUNTIME_PERMISSIONS, ...EXECUTION_READ_PERMISSIONS, ...EXECUTION_WRITE_PERMISSIONS, ...PUBLICATION_READ_PERMISSIONS, ...PUBLICATION_EDITOR_PERMISSIONS, ...SCHEDULING_READ_PERMISSIONS, ...SCHEDULING_EDITOR_PERMISSIONS, ...ANALYTICS_READ_PERMISSIONS, ...ASSET_READ_PERMISSIONS, ...ASSET_EDITOR_PERMISSIONS, ...ADS_READ_PERMISSIONS, ...ADS_OPERATOR_PERMISSIONS, ...INBOX_READ_PERMISSIONS, ...INBOX_OPERATOR_PERMISSIONS, ...CRM_READ_PERMISSIONS, ...SALES_READ_PERMISSIONS, ...CRM_OPERATOR_PERMISSIONS, ...SALES_OPERATOR_PERMISSIONS, ...CALENDAR_EVENT_READ_PERMISSIONS, ...CALENDAR_EVENT_WRITE_PERMISSIONS, ...MEETING_READ_PERMISSIONS, ...MEETING_OPERATOR_PERMISSIONS, "team:read"],
+  admin: [...new Set<Permission>([...LEGACY_ADMIN_PERMISSIONS, ...TEAM_SCOPE_PERMISSIONS, ...TEAM_MANAGER_PERMISSIONS].filter((permission) => !ADMIN_ONLY_SETTINGS_PERMISSIONS.includes(permission)))],
+  owner: [...new Set<Permission>(["workspace:read", "workspace:create", "workspace:update", "workspace:transition", ...CONVERSATION_PERMISSIONS, ...PLANNING_PERMISSIONS, ...RUNTIME_PERMISSIONS, ...EXECUTION_READ_PERMISSIONS, ...EXECUTION_WRITE_PERMISSIONS, ...PUBLICATION_READ_PERMISSIONS, ...PUBLICATION_EDITOR_PERMISSIONS, ...PUBLICATION_OPERATOR_PERMISSIONS, ...PUBLICATION_ADMIN_PERMISSIONS, ...CREDENTIAL_READ_PERMISSIONS, ...CREDENTIAL_OPERATOR_PERMISSIONS, ...AUDIT_READ_PERMISSIONS, ...SCHEDULING_READ_PERMISSIONS, ...SCHEDULING_EDITOR_PERMISSIONS, ...SCHEDULING_OPERATOR_PERMISSIONS, ...ANALYTICS_READ_PERMISSIONS, ...ANALYTICS_OPERATOR_PERMISSIONS, ...SYSTEM_OPERATOR_PERMISSIONS, ...ASSET_READ_PERMISSIONS, ...ASSET_EDITOR_PERMISSIONS, ...ADS_READ_PERMISSIONS, ...ADS_OPERATOR_PERMISSIONS, ...ADS_ADMIN_PERMISSIONS, ...INBOX_READ_PERMISSIONS, ...INBOX_OPERATOR_PERMISSIONS, ...INBOX_ADMIN_PERMISSIONS, ...CRM_READ_PERMISSIONS, ...SALES_READ_PERMISSIONS, ...CRM_OPERATOR_PERMISSIONS, ...SALES_OPERATOR_PERMISSIONS, ...CRM_ADMIN_PERMISSIONS, ...CALENDAR_EVENT_READ_PERMISSIONS, ...CALENDAR_EVENT_WRITE_PERMISSIONS, ...MEETING_READ_PERMISSIONS, ...MEETING_OPERATOR_PERMISSIONS, ...MEETING_ADMIN_PERMISSIONS, ...ADMIN_ONLY_SETTINGS_PERMISSIONS, ...TEAM_SCOPE_PERMISSIONS, ...GLOBAL_SCOPE_PERMISSIONS, ...TEAM_MANAGER_PERMISSIONS, ...ACCESS_ADMIN_PERMISSIONS])],
 };
 
 /**
@@ -280,14 +332,29 @@ export const SIMPLE_PROFILE_TO_ROLE: Record<SimpleProfile, TenantRole> = {
   marketing: "editor",
 };
 
-export function hasPermission(role: TenantRole, permission: Permission): boolean {
-  return ROLE_PERMISSIONS[role].includes(permission);
+/** Quem está sendo autorizado: só o papel (preset puro) ou o principal/ator já com as permissões
+ * EFETIVAS calculadas (preset + exceções individuais), quando disponíveis. */
+export type PermissionSubject = TenantRole | { role: TenantRole; permissions?: readonly Permission[] };
+
+export function hasPermission(subject: PermissionSubject, permission: Permission): boolean {
+  if (typeof subject === "string") return ROLE_PERMISSIONS[subject].includes(permission);
+  return (subject.permissions ?? ROLE_PERMISSIONS[subject.role]).includes(permission);
 }
 
-export function assertPermission(role: TenantRole, permission: Permission): void {
-  if (!hasPermission(role, permission)) {
+export function assertPermission(subject: PermissionSubject, permission: Permission): void {
+  if (!hasPermission(subject, permission)) {
+    const role = typeof subject === "string" ? subject : subject.role;
     throw new Error(`IDENTITY_FORBIDDEN: papel "${role}" não tem a permissão "${permission}".`);
   }
+}
+
+/** Permissões efetivas = preset do perfil + concedidas − removidas (removida vence concedida). */
+export function effectivePermissions(role: TenantRole, grants: readonly string[] = [], revokes: readonly string[] = []): Permission[] {
+  const valid = new Set<string>(PERMISSIONS);
+  const result = new Set<Permission>(ROLE_PERMISSIONS[role]);
+  for (const permission of grants) if (valid.has(permission)) result.add(permission as Permission);
+  for (const permission of revokes) result.delete(permission as Permission);
+  return [...result];
 }
 
 export const USER_STATUSES = ["active", "disabled"] as const;
@@ -310,12 +377,25 @@ export type User = {
   isPlatformAdmin: boolean;
 };
 
+export const TENANT_MEMBER_STATUSES = ["active", "disabled"] as const;
+export type TenantMemberStatus = (typeof TENANT_MEMBER_STATUSES)[number];
+
 export type TenantMembership = {
   id: string;
   userId: string;
   /** Referência solta ao Tenant da Valentina (JSON) — ver nota da entidade acima. */
   tenantId: string;
+  /** Perfil base (preset). Ver `ROLE_PERMISSIONS`. */
   role: TenantRole;
+  /** Exceções individuais sobre o preset (0173). Default `[]`. */
+  permissionGrants: string[];
+  permissionRevokes: string[];
+  /** Desativado = sem acesso a esta empresa (o login/refresh e cada requisição recusam), sem
+   * apagar histórico. Default `active`. */
+  status: TenantMemberStatus;
+  /** Administrador principal (dono da conta): nunca perde o perfil Administrador, a gestão de
+   * acessos, nem pode ser desativado/removido por outra pessoa. Um por empresa. */
+  isAccountOwner: boolean;
   createdAt: string;
   updatedAt: string;
 };
@@ -451,6 +531,12 @@ export type AuthPrincipal = {
   tenantId: string;
   role: TenantRole;
   sessionId: string;
+  /** Permissões EFETIVAS (preset + exceções), preenchidas a cada requisição pelo resolvedor de
+   * acesso (`auth.middleware.ts`). `undefined` = só o preset de `role` (tokens de escopo único ou
+   * ambientes sem identidade real). */
+  permissions?: readonly Permission[];
+  permissionRevokes?: readonly string[];
+  isAccountOwner?: boolean;
   /** Superadmin da plataforma — propaga do JWT para rotas `/v1/admin/*`. Default `false`
    * quando o claim não veio no token (compatibilidade com tokens antigos). Sprint 25. */
   isPlatformAdmin: boolean;

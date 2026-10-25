@@ -85,7 +85,7 @@ export function automationSummary(
 ): string {
   const action =
     rule.action === "create_task"
-      ? `criar a tarefa “${rule.actionConfig.taskTitle || "Retomar o contato"}”`
+      ? `criar a tarefa “${rule.actionConfig.taskTitle || "Retomar o contato"}”${rule.actionConfig.taskDelayHours !== undefined ? ` com prazo de ${rule.actionConfig.taskDelayHours} hora(s)` : ""}`
       : rule.action === "add_tag"
         ? `colocar a etiqueta “${rule.actionConfig.tag || "Sem etiqueta"}” no contato`
         : ACTION_LABEL[rule.action].toLocaleLowerCase("pt-BR");

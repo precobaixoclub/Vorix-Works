@@ -132,14 +132,17 @@ test.describe("prova dos ajustes de produto", () => {
     await capture(page, "products-list", [VIEWPORTS[0]]);
     await page.getByRole("button", { name: "Cadastrar produto" }).first().click();
     await expect(page.getByLabel("Unidade (opcional)")).toHaveCount(0);
+    await page.getByRole("dialog").getByRole("button", { name: "Preços", exact: true }).click();
     const price = page.getByLabel("Preço de venda");
     await price.click();
     await page.keyboard.type("123456");
     await expect(price).toHaveValue("1.234,56");
+    await page.getByRole("dialog").getByRole("button", { name: "Estoque", exact: true }).click();
     await page.getByLabel("Controlar estoque").click();
     await page.getByLabel("Quantos tenho agora").fill("25");
     await page.getByLabel("Avisar quando chegar a").fill("5");
     await page.getByLabel("Unidade (opcional)").fill("un");
+    await page.getByRole("dialog").getByRole("button", { name: "Geral", exact: true }).click();
     await page.getByLabel("Descrição e observações").fill("Produto importado. Prazo de reposição do fornecedor: 15 dias úteis.");
     await capture(page, "product-form", [VIEWPORTS[0], VIEWPORTS[1]]);
   });
@@ -169,11 +172,11 @@ test.describe("prova dos ajustes de produto", () => {
     await expect(page.getByText("R$ 39,00 por usuário/mês")).toBeVisible();
     await page.getByRole("textbox", { name: "Quantidade de Usuários de atendimento" }).fill("9");
     await page.getByRole("button", { name: "Aumentar Números de WhatsApp" }).click();
-    await expect(page.getByText(/aumenta R\$.196,00/)).toBeVisible();
-    await page.getByText("Sua estrutura").scrollIntoViewIfNeeded();
+    await expect(page.getByText(/aumenta R\$.146,00/)).toBeVisible();
+    await page.getByText("Uso do plano", { exact: true }).scrollIntoViewIfNeeded();
     await capture(page, "billing-custom-plan", [VIEWPORTS[0], VIEWPORTS[1]]);
     await page.getByText("Uso do plano").scrollIntoViewIfNeeded();
-    await expect(page.getByText("Contatos, armazenamento e automações são ilimitados")).toBeVisible();
+    await expect(page.getByText(/Contatos, armazenamento e automações são ilimitados/)).toBeVisible();
     await capture(page, "billing-usage", [VIEWPORTS[0]]);
   });
 
@@ -182,11 +185,9 @@ test.describe("prova dos ajustes de produto", () => {
     await mockAll(page);
     await page.goto(`/workspaces/${WORKSPACE_ID}/contacts`);
     await expect(page.getByText("+55 (11) 98765-4321")).toBeVisible();
-    await expect(page.getByText("2 contatos estão sem número de celular")).toBeVisible();
+    await expect(page.getByText("Sem número (só código do WhatsApp)", { exact: true })).toHaveCount(2);
     await capture(page, "contacts-phones", [VIEWPORTS[0], VIEWPORTS[1]]);
-    await page.getByRole("button", { name: "Remover contatos sem número" }).click();
-    await expect(page.getByRole("button", { name: "Remover 1 contato" })).toBeVisible();
-    await capture(page, "contacts-lid-cleanup", [VIEWPORTS[0]]);
+    await expect(page.getByRole("button", { name: "Remover contatos sem número" })).toHaveCount(0);
   });
 
   test("metas: repetir em todos os meses e anual calculada", async ({ page, context }) => {
@@ -210,7 +211,7 @@ test.describe("prova dos ajustes de produto", () => {
       await page.getByText("Gravações simultâneas (Meetings)").locator("..").locator("button").last().click();
     });
     await expect(page.getByText("Próxima cobrança em")).toBeVisible();
-    await page.getByText("Sua estrutura").scrollIntoViewIfNeeded();
+    await page.getByText("Uso do plano", { exact: true }).scrollIntoViewIfNeeded();
     await capture(page, "billing-structure-preview", [VIEWPORTS[0]]);
     await page.locator("#creditos").scrollIntoViewIfNeeded();
     await capture(page, "billing-ai-credits");

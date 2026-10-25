@@ -1,25 +1,26 @@
 "use client";
 
 import { useState } from "react";
-import { Check, CheckCheck, Copy, Eye, FileText, MessageCircle, RefreshCw, Send, XCircle } from "lucide-react";
+import { Check, CheckCheck, Copy, Eye, FilePlus2, FileText, MessageCircle, RefreshCw, Send, XCircle } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/Button";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { GuardedButton } from "@/components/GuardedButton";
 import { DetailBlock } from "@/components/DetailModal";
+import { ProposalRejectionDetails } from "@/components/crm/ProposalRejectionDetails";
 import { StatusBadge } from "@/components/StatusBadge";
 import { PROPOSAL_STATUS_LABEL } from "@/features/crm/presentation";
 import type { Deal, Proposal } from "@/features/crm/types";
 import { listInboxConversations } from "@/features/inbox/api";
-import { cancelProposal, createProposalVersion, markProposalSent, remindProposalWhatsapp, sendProposalWhatsapp } from "@/features/sales/api";
+import { cancelProposal, createProposalVersion, markProposalSent } from "@/features/sales/api";
 import { useInvalidateSales, useProposalTracking } from "@/features/sales/hooks";
 import { PROPOSAL_EVENT_LABEL, proposalLabel } from "@/features/sales/presentation";
 import { formatCurrencyCents, formatDate, formatDateTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { GenerateProposalModal } from "./DealProposalComposer";
+import { ProposalWhatsappDialog } from "./ProposalWhatsappDialog";
 
 const errorMessage = (cause: unknown) => (cause instanceof Error ? cause.message : "Tente novamente.");
-const newKey = () => `ui-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 
 async function conversationFor(workspaceId: string, contactId?: string): Promise<string | undefined> {
   if (!contactId) return undefined;
@@ -80,6 +81,7 @@ function ProposalTrackingCard({ workspaceId, deal, proposal, onChanged, onSelect
   const { data: tracking, mutate } = useProposalTracking(workspaceId, proposal.id);
   const [busy, setBusy] = useState<string>();
   const [confirmCancel, setConfirmCancel] = useState(false);
+  const [whatsapp, setWhatsapp] = useState<{ conversationId: string; reminder: boolean }>();
   const delivery = tracking?.deliveries.find((item) => item.messageStatus) ?? tracking?.deliveries[0];
   const firstView = tracking?.events.find((event) => event.eventType === "viewed");
   const sendable = ["draft", "approved"].includes(proposal.status);
@@ -101,13 +103,19 @@ function ProposalTrackingCard({ workspaceId, deal, proposal, onChanged, onSelect
   async function sendWhatsapp(reminder: boolean) {
     const conversationId = await conversationFor(workspaceId, deal.contactId);
     if (!conversationId) throw new Error("O contato desta oportunidade não tem conversa no WhatsApp. Inicie uma conversa primeiro.");
-    const input = { workspaceId, conversationId, idempotencyKey: newKey() };
-    return reminder ? remindProposalWhatsapp(proposal.id, input) : sendProposalWhatsapp(proposal.id, input);
+    setWhatsapp({ conversationId, reminder });
   }
 
   return (
     <DetailBlock label={`${proposalLabel(proposal)} · ${proposal.title}`} action={<StatusBadge status={proposal.status} />}>
       <div className="space-y-4">
+        {proposal.status === "rejected" ? <ProposalRejectionDetails proposal={proposal}>
+          <p className="text-sm text-muted-foreground">Você pode continuar a negociação pela conversa ou preparar uma nova versão.</p>
+          <div className="grid gap-2 sm:flex sm:flex-wrap">
+            <Button className="h-auto min-h-[44px] whitespace-normal" loading={busy === "version"} onClick={() => run("version", async () => onSelect((await createProposalVersion(proposal.id, { workspaceId })).id), "Nova versão criada")}><FilePlus2 className="h-4 w-4" />Criar nova versão</Button>
+            <Button variant="secondary" className="h-auto min-h-[44px] whitespace-normal border-destructive/30 bg-destructive/5 text-destructive" onClick={onMarkLost}><XCircle className="h-4 w-4" />Marcar oportunidade como perdida</Button>
+          </div>
+        </ProposalRejectionDetails> : null}
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
           <Cell label="Valor" value={formatCurrencyCents(proposal.totalCents, proposal.currency)} strong />
           <Cell label="Validade" value={formatDate(proposal.validUntil)} />
@@ -136,28 +144,18 @@ function ProposalTrackingCard({ workspaceId, deal, proposal, onChanged, onSelect
         ) : null}
 
         {proposal.status === "pending_approval" ? <p className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:bg-amber-500/10 dark:text-amber-200">Condição fora da política — o envio fica bloqueado até o gestor aprovar.</p> : null}
-        {proposal.status === "rejected" ? (
-          <div className="rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-800 dark:bg-rose-500/10 dark:text-rose-200">
-            Cliente recusou a proposta{proposal.rejectionReason ? ` (${proposal.rejectionReason})` : ""}{proposal.rejectionComment ? ` — “${proposal.rejectionComment}”` : ""}.
-            <div className="mt-2 flex flex-wrap gap-2">
-              <Button size="sm" variant="secondary" loading={busy === "version"} onClick={() => run("version", async () => onSelect((await createProposalVersion(proposal.id, { workspaceId })).id), "Nova versão criada")}>Criar nova versão</Button>
-              <Button size="sm" variant="secondary" onClick={onMarkLost}>Marcar oportunidade como perdida</Button>
-              <span className="self-center text-xs">ou continue negociando pela conversa.</span>
-            </div>
-          </div>
-        ) : null}
         {proposal.status === "accepted" && deal.status === "open" ? <p className="rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-800 dark:bg-emerald-500/10 dark:text-emerald-200">Cliente aceitou. Finalize a oportunidade como ganha quando a venda estiver concluída.</p> : null}
 
         <div className="flex flex-wrap gap-2">
           {sendable || proposal.status === "pending_approval" ? (
-            <GuardedButton size="sm" allowed={sendable} blockedReason="Aguardando aprovação do gestor para esta condição comercial." loading={busy === "send"} onClick={() => run("send", () => sendWhatsapp(false), "Proposta enviada pelo WhatsApp")}><Send className="mr-1.5 h-4 w-4" />Enviar pelo WhatsApp</GuardedButton>
+            <GuardedButton size="sm" allowed={sendable} blockedReason="Aguardando aprovação do gestor para esta condição comercial." loading={busy === "send"} onClick={() => { setBusy("send"); void sendWhatsapp(false).catch((cause) => toast.error(errorMessage(cause))).finally(() => setBusy(undefined)); }}><Send className="mr-1.5 h-4 w-4" />Enviar pelo WhatsApp</GuardedButton>
           ) : null}
           {sendable ? (
             <Button size="sm" variant="secondary" loading={busy === "link"} onClick={() => run("link", async () => {
               await markProposalSent(proposal.id, workspaceId, "link");
             }, "Marcada como enviada")}><Copy className="mr-1.5 h-4 w-4" />Enviei por outro canal</Button>
           ) : null}
-          {inAnalysis ? <Button size="sm" variant="secondary" loading={busy === "remind"} onClick={() => run("remind", () => sendWhatsapp(true), "Lembrete enviado")}><RefreshCw className="mr-1.5 h-4 w-4" />Lembrete pelo WhatsApp</Button> : null}
+          {inAnalysis ? <Button size="sm" variant="secondary" loading={busy === "remind"} onClick={() => { setBusy("remind"); void sendWhatsapp(true).catch((cause) => toast.error(errorMessage(cause))).finally(() => setBusy(undefined)); }}><RefreshCw className="mr-1.5 h-4 w-4" />Lembrete pelo WhatsApp</Button> : null}
           {inAnalysis || proposal.status === "expired" ? <Button size="sm" variant="secondary" loading={busy === "version"} onClick={() => run("version", async () => onSelect((await createProposalVersion(proposal.id, { workspaceId })).id), "Nova versão criada (em rascunho)")}>Nova versão</Button> : null}
           {!["accepted", "cancelled", "superseded"].includes(proposal.status) ? <Button size="sm" variant="ghost" onClick={() => setConfirmCancel(true)}><XCircle className="mr-1.5 h-4 w-4" />Cancelar</Button> : null}
         </div>
@@ -172,6 +170,7 @@ function ProposalTrackingCard({ workspaceId, deal, proposal, onChanged, onSelect
           onCancel={() => setConfirmCancel(false)}
           onConfirm={async () => { await run("cancel", () => cancelProposal(proposal.id, workspaceId), "Proposta cancelada"); setConfirmCancel(false); }}
         />
+        {whatsapp ? <ProposalWhatsappDialog workspaceId={workspaceId} proposalId={proposal.id} conversationId={whatsapp.conversationId} reminder={whatsapp.reminder} onClose={() => setWhatsapp(undefined)} onSent={async () => { await Promise.all([mutate(), onChanged()]); }} /> : null}
 
         {tracking?.events.length ? (
           <ol className="space-y-1 border-t border-border/60 pt-3">

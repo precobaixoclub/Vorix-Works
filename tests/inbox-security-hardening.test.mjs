@@ -40,19 +40,35 @@ async function seedConversation(app, { tenantId, aiEnabled = false }) {
   return { workspace, connection, contact, conversationId: conversation.id };
 }
 
+test("same-tenant media proxy also checks ownership; a session cannot bypass the scoped media token", async () => {
+  const tenantId = "review-media-scope";
+  const body = Buffer.from("private-media");
+  const app = await buildTestApp({ authPort: fakeAuthPortFor(principal({ role: "editor", tenantId })), inboxMediaStorage: { get: async () => ({ body, contentType: "image/jpeg" }) } });
+  try {
+    const { workspace, connection, conversationId } = await seedConversation(app, { tenantId });
+    await app.zunoContainer.inboxConversationRepository.assign(conversationId, "other-agent");
+    const { message } = await app.zunoContainer.inboxMessageRepository.create({ tenantId, workspaceId: workspace.id, conversationId, connectionId: connection.id, direction: "inbound", type: "image", mediaStorageRef: { driver: "local", objectKey: "private-image" } });
+    assert.equal((await app.inject(`/v1/inbox/media/${message.id}`)).statusCode, 404);
+    await app.zunoContainer.inboxConversationRepository.assign(conversationId, "user-a");
+    const allowed = await app.inject(`/v1/inbox/media/${message.id}`);
+    assert.equal(allowed.statusCode, 200);
+    assert.equal(allowed.body, body.toString());
+  } finally { await app.close(); }
+});
+
 // ------------------------------------------------------------------------------------------
 // IDOR / cross-tenant — cada rota que aceita um id de recurso
 // ------------------------------------------------------------------------------------------
 
 test("IDOR: conexão de outro tenant — GET qr / POST refresh-status / POST disconnect nunca funcionam com um connectionId real de outro tenant", async () => {
   const tenantB = "tenant-idor-conn-b";
-  const appB = await buildTestApp({ authPort: fakeAuthPortFor(principal({ role: "admin", tenantId: tenantB })) });
+  const appB = await buildTestApp({ authPort: fakeAuthPortFor(principal({ role: "owner", tenantId: tenantB })) });
   const { workspace: workspaceB, connection: connectionB } = await seedConversation(appB, { tenantId: tenantB });
 
   const tenantA = "tenant-idor-conn-a";
   const appA = await buildApp({
     config: loadApiConfig({ ZUNO_LOG_LEVEL: "silent", AUTH_MODE: "noop", CONVERSATIONS_MODULE_ENABLED: "true" }),
-    container: { ...appB.zunoContainer, authPort: fakeAuthPortFor(principal({ role: "admin", tenantId: tenantA })) },
+    container: { ...appB.zunoContainer, authPort: fakeAuthPortFor(principal({ role: "owner", tenantId: tenantA })) },
   });
 
   const qr = await appA.inject({ method: "GET", url: `/v1/inbox/connections/${connectionB.id}/qr?workspaceId=${workspaceB.id}` });
@@ -109,13 +125,13 @@ test("IDOR: mensagens/eventos de uma conversa de outro tenant nunca são lidos (
 
 test("IDOR: nenhuma ação de escrita numa conversa de outro tenant tem efeito (read, assign, ai, send, close, reopen)", async () => {
   const tenantB = "tenant-idor-write-b";
-  const appB = await buildTestApp({ authPort: fakeAuthPortFor(principal({ role: "admin", tenantId: tenantB, userId: "user-b" })) });
+  const appB = await buildTestApp({ authPort: fakeAuthPortFor(principal({ role: "owner", tenantId: tenantB, userId: "user-b" })) });
   const { workspace: workspaceB, conversationId: conversationIdB } = await seedConversation(appB, { tenantId: tenantB, aiEnabled: true });
 
   const tenantA = "tenant-idor-write-a";
   const appA = await buildApp({
     config: loadApiConfig({ ZUNO_LOG_LEVEL: "silent", AUTH_MODE: "noop", CONVERSATIONS_MODULE_ENABLED: "true" }),
-    container: { ...appB.zunoContainer, authPort: fakeAuthPortFor(principal({ role: "admin", tenantId: tenantA, userId: "user-a" })) },
+    container: { ...appB.zunoContainer, authPort: fakeAuthPortFor(principal({ role: "owner", tenantId: tenantA, userId: "user-a" })) },
   });
 
   const attempts = [

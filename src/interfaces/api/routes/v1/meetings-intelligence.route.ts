@@ -62,7 +62,7 @@ const body = (required: string[], properties: Record<string, unknown>) => ({ typ
 
 function actorOf(request: FastifyRequest, permission: Parameters<typeof requirePermission>[1]): MeetingActor {
   const principal = requirePermission(request, permission);
-  return { tenantId: principal.tenantId, userId: principal.userId, role: principal.role };
+  return { tenantId: principal.tenantId, userId: principal.userId, role: principal.role, permissions: principal.permissions };
 }
 
 function translate(error: unknown): never {

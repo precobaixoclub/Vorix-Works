@@ -3,10 +3,13 @@
 import { useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/Button";
-import { Input, Label, Textarea } from "@/components/Field";
+import { Input, Label } from "@/components/Field";
+import { ProposalWhatsappDialog } from "@/components/sales/ProposalWhatsappDialog";
 import { Modal } from "@/components/Modal";
 import { StatusBadge } from "@/components/StatusBadge";
-import { regenerateProposalLink, revokeProposalLink, sendProposal } from "@/features/crm/api";
+import { ProposalRejectionDetails } from "@/components/crm/ProposalRejectionDetails";
+import { CalendarPlus, FilePlus2, Link2, Link2Off, XCircle } from "lucide-react";
+import { regenerateProposalLink, revokeProposalLink } from "@/features/crm/api";
 import type { Proposal } from "@/features/crm/types";
 import { formatCurrencyCents, formatDate, formatDateTime } from "@/lib/format";
 
@@ -27,7 +30,7 @@ export function ProposalDetailModal({ workspaceId, proposal, contactName, dealTi
   onOpenContact?: (contactId: string) => void;
   onOpenDeal?: (dealId: string) => void;
 }) {
-  const [message, setMessage] = useState(`${contactName ? `Olá, ${contactName}! ` : "Olá! "}Preparei sua proposta comercial.\n\nVocê pode visualizar aqui:\n{{proposalUrl}}`);
+  const [whatsappOpen, setWhatsappOpen] = useState(false);
   const [generatedLink, setGeneratedLink] = useState<string>();
   const [busy, setBusy] = useState<"send" | "link" | "revoke">();
   const canShare = ["draft", "sent", "viewed"].includes(proposal.status);
@@ -35,17 +38,6 @@ export function ProposalDetailModal({ workspaceId, proposal, contactName, dealTi
   // Subtotal somado direto dos itens (não `total + desconto`) pra ficar correto mesmo quando o
   // desconto excede o subtotal e `totalCents` é clampado em 0 (`computeItemsAndTotal`, backend).
   const subtotalCents = proposal.items.reduce((sum, item) => sum + item.subtotalCents, 0);
-
-  async function send() {
-    if (!conversationId) return;
-    setBusy("send");
-    try {
-      await sendProposal(proposal.id, { workspaceId, conversationId, message, idempotencyKey: crypto.randomUUID() });
-      await onChanged();
-      toast.success(proposal.status === "draft" ? "Proposta enviada." : "Proposta reenviada.");
-    } catch (cause) { toast.error("Não foi possível enviar pelo WhatsApp", { description: cause instanceof Error ? cause.message : "Tente novamente." }); }
-    finally { setBusy(undefined); }
-  }
 
   async function regenerate() {
     setBusy("link");
@@ -67,6 +59,13 @@ export function ProposalDetailModal({ workspaceId, proposal, contactName, dealTi
   return (
     <Modal title={proposal.title} onClose={onClose} maxWidthClass="sm:max-w-2xl">
       <div className="space-y-5">
+        {proposal.status === "rejected" ? <ProposalRejectionDetails proposal={proposal}>
+          <div className="grid gap-2 sm:flex sm:flex-wrap">
+            {onCreateNewProposal ? <Button className="h-auto min-h-[44px] whitespace-normal" onClick={onCreateNewProposal}><FilePlus2 className="h-4 w-4" />Criar nova proposta</Button> : null}
+            {onCreateFollowUp ? <Button variant="secondary" className="h-auto min-h-[44px] whitespace-normal border-border bg-muted/50" onClick={onCreateFollowUp}><CalendarPlus className="h-4 w-4" />Criar follow-up</Button> : null}
+            {onMarkDealLost ? <Button variant="secondary" className="h-auto min-h-[44px] whitespace-normal border-destructive/30 bg-destructive/5 text-destructive" onClick={onMarkDealLost}><XCircle className="h-4 w-4" />Marcar oportunidade como perdida</Button> : null}
+          </div>
+        </ProposalRejectionDetails> : null}
         <div className="flex flex-wrap items-center justify-between gap-2">
           <p className="flex flex-wrap items-center gap-1 text-sm text-muted-foreground">
             {proposal.contactId && onOpenContact ? (
@@ -100,17 +99,15 @@ export function ProposalDetailModal({ workspaceId, proposal, contactName, dealTi
         </div>
         <div className="space-y-2">{proposal.items.map((item, index) => <div key={index} className="flex justify-between gap-3 rounded-lg border px-3 py-2 text-sm"><span>{item.quantity}× {item.name}</span><span>{formatCurrencyCents(item.subtotalCents, proposal.currency)}</span></div>)}</div>
         {proposal.conditions ? <p className="whitespace-pre-wrap rounded-lg bg-muted/30 p-3 text-sm text-muted-foreground">{proposal.conditions}</p> : null}
-        {proposal.status === "rejected" ? <p className="text-sm text-muted-foreground">Motivo: {proposal.rejectionReason ?? "Não informado"}{proposal.rejectionComment ? ` · ${proposal.rejectionComment}` : ""}</p> : null}
-        {proposal.status === "rejected" ? <div className="flex flex-wrap gap-2 rounded-lg border border-destructive/20 bg-destructive/5 p-3"><Button variant="secondary" onClick={onCreateNewProposal}>Criar nova proposta</Button>{onCreateFollowUp ? <Button variant="secondary" onClick={onCreateFollowUp}>Criar follow-up</Button> : null}{onMarkDealLost ? <Button variant="ghost" onClick={onMarkDealLost}>Marcar oportunidade como perdida</Button> : null}</div> : null}
 
-        {canShare && conversationId ? <div><Label htmlFor="proposal-message">Mensagem do WhatsApp</Label><Textarea id="proposal-message" rows={4} value={message} onChange={(event) => setMessage(event.target.value)} /><p className="mt-1 text-xs text-muted-foreground">Use {"{{proposalUrl}}"} onde o link deve aparecer.</p></div> : null}
         {generatedLink ? <div><Label htmlFor="generated-proposal-link">Novo link</Label><div className="flex gap-2"><Input id="generated-proposal-link" value={generatedLink} readOnly onFocus={(event) => event.target.select()} /><Button variant="secondary" onClick={() => void navigator.clipboard.writeText(generatedLink)}>Copiar</Button></div></div> : null}
         <div className="flex flex-wrap justify-end gap-2">
-          {canShare ? <Button variant="secondary" loading={busy === "link"} disabled={Boolean(busy)} onClick={regenerate}>Gerar novo link</Button> : null}
-          {canShare && !proposal.publicLinkRevokedAt ? <Button variant="ghost" loading={busy === "revoke"} disabled={Boolean(busy)} onClick={revoke}>Revogar link</Button> : null}
-          {canShare && conversationId ? <Button loading={busy === "send"} disabled={Boolean(busy) || !message.trim()} onClick={send}>{proposal.status === "draft" ? "Enviar no WhatsApp" : "Reenviar"}</Button> : null}
+          {canShare ? <Button variant="secondary" className="min-h-[44px] border-border bg-muted/50" loading={busy === "link"} disabled={Boolean(busy)} onClick={regenerate}><Link2 className="h-4 w-4" />Gerar novo link</Button> : null}
+          {canShare && !proposal.publicLinkRevokedAt ? <Button variant="secondary" className="min-h-[44px] border-border bg-muted/50" loading={busy === "revoke"} disabled={Boolean(busy)} onClick={revoke}><Link2Off className="h-4 w-4" />Revogar link</Button> : null}
+          {canShare && conversationId ? <Button disabled={Boolean(busy)} onClick={() => setWhatsappOpen(true)}>{proposal.status === "draft" ? "Enviar no WhatsApp" : "Reenviar"}</Button> : null}
         </div>
       </div>
+      {whatsappOpen && conversationId ? <ProposalWhatsappDialog workspaceId={workspaceId} proposalId={proposal.id} conversationId={conversationId} onClose={() => setWhatsappOpen(false)} onSent={onChanged} /> : null}
     </Modal>
   );
 }

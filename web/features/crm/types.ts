@@ -132,6 +132,12 @@ export type Deal = {
   finalMrrCents?: number;
   finalArrCents?: number;
   finalTcvCents?: number;
+  archivedAt?: string;
+  firstClosedAt?: string;
+  reopenedAt?: string;
+  reopenedByUserId?: string;
+  reopenCount?: number;
+  closureSource?: string;
 };
 
 export type DealStageSummary = {
@@ -328,6 +334,7 @@ export type AutomationCondition = {
 };
 
 export type AutomationActionConfig = {
+  taskDelayHours?: number;
   taskType?: TaskType;
   taskTitle?: string;
   tag?: string;

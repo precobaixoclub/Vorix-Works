@@ -1,3 +1,4 @@
+import { ROLE_PERMISSIONS } from "../../../src/domain/identity/identity.model";
 import type { BrowserContext, Page, Route } from "@playwright/test";
 import { TINY_JPEG_BASE64, TINY_PDF, buildTinyWav } from "./media-fixtures";
 
@@ -101,7 +102,7 @@ export async function mockConversasBackend(page: Page) {
       return fulfillJson(route, { accessToken: "qa-fixture-access-token", expiresIn: 900, tenantId: TENANT_ID, role: "owner" });
     }
     if (path === "/v1/auth/me") {
-      return fulfillJson(route, { user: { id: "user-qa", email: "qa@vorix.dev", name: "QA Reviewer", isPlatformAdmin: false }, tenantId: TENANT_ID, role: "owner" });
+      return fulfillJson(route, { user: { id: "user-qa", email: "qa@vorix.dev", name: "QA Reviewer", isPlatformAdmin: false }, tenantId: TENANT_ID, role: "owner", permissions: ROLE_PERMISSIONS.owner, teams: [], isAccountOwner: true });
     }
     if (path === `/v1/workspaces/${WORKSPACE_ID}`) {
       return fulfillJson(route, {
@@ -111,6 +112,13 @@ export async function mockConversasBackend(page: Page) {
       });
     }
     if (path === "/v1/solutions") return fulfillJson(route, { solutions: [{ key: "conversations", name: "Conversas", internal: false }] });
+    if (path === "/v1/dashboard") return fulfillJson(route, {
+      viewing: "me", subject: { kind: "me", userIds: ["user-qa"] },
+      period: { period: "this_month", from: new Date().toISOString(), to: new Date().toISOString(), timeZone: "America/Sao_Paulo", monthStart: "2026-10-01" },
+      options: { viewings: [{ value: "me", label: "Eu" }], teams: [], userIds: ["user-qa"] },
+      attendance: { available: false }, commercial: { available: false }, goals: { available: false },
+    });
+    if (path === "/v1/billing/credits") return fulfillJson(route, { remainingCredits: 80, monthlyQuota: 2500, consumedThisMonth: 2420, extraCredits: 0, subscriptionStatus: "active", pricing: { unitPriceCents: 10, currency: "BRL", minPurchase: 100, maxPurchase: 100000, presets: [500, 1000, 2500] }, canPurchase: false, chargesSavedCard: false, purchases: [] });
     if (path === "/v1/inbox/status") return fulfillJson(route, { enabled: true });
     if (path === "/v1/inbox/conversations") return fulfillJson(route, { conversations: CONVERSATIONS });
     if (path === "/v1/inbox/members") return fulfillJson(route, { members: [{ userId: "user-qa", email: "qa@vorix.dev", name: "QA Reviewer", role: "owner" }] });

@@ -109,7 +109,7 @@ export async function registerCredentialRoutes(app: FastifyInstance, deps: Crede
 
 async function requireAuditedPermission(request: FastifyRequest, deps: CredentialRoutesDeps, permission: Permission, resourceId: string): Promise<AuthPrincipal> {
   const principal = requirePrincipal(request);
-  if (hasPermission(principal.role, permission)) return principal;
+  if (hasPermission(principal, permission)) return principal;
   await deps.auditRepository.record({
     id: deps.idGenerator(),
     tenantId: principal.tenantId,

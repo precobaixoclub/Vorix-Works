@@ -15,4 +15,5 @@ export type RecordTimelineEventInput = {
 export type TimelineEventRepositoryPort = {
   record(input: RecordTimelineEventInput): Promise<TimelineEvent>;
   listByEntity(input: { entityType: TimelineEntityType; entityId: string; limit?: number }): Promise<TimelineEvent[]>;
+  listByEntities?(input: { tenantId: string; workspaceId: string; entities: readonly { entityType: TimelineEntityType; entityId: string }[]; limitPerEntity?: number }): Promise<TimelineEvent[]>;
 };

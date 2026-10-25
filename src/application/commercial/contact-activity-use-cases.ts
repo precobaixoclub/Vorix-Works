@@ -1,3 +1,5 @@
+import type { OwnedResourceScope } from "../ports/owned-resource-scope.js";
+import type { InboxConversationVisibility } from "../ports/inbox-conversation-repository.port.js";
 import type { ContactRepositoryPort } from "../ports/contact-repository.port.js";
 import type { DealRepositoryPort } from "../ports/deal-repository.port.js";
 import type { TaskRepositoryPort } from "../ports/task-repository.port.js";
@@ -225,24 +227,40 @@ async function mustContactBelongToTenantAndWorkspace(deps: Pick<ContactActivityU
   return contact;
 }
 
-export async function getContactActivity(deps: ContactActivityUseCaseDeps, input: { contactId: string; tenantId: string; workspaceId: string; limit?: number }): Promise<ContactActivityItem[]> {
+export async function getContactActivity(deps: ContactActivityUseCaseDeps, input: { contactId: string; tenantId: string; workspaceId: string; limit?: number; resourceScope?: OwnedResourceScope; conversationVisibility?: InboxConversationVisibility }): Promise<ContactActivityItem[]> {
   const { tenantId, workspaceId } = input;
   await mustContactBelongToTenantAndWorkspace(deps, input.contactId, tenantId, workspaceId);
 
   const [contactEvents, deals, tasks, proposals, conversations] = await Promise.all([
     deps.timelineEventRepository.listByEntity({ entityType: "contact", entityId: input.contactId }),
-    deps.dealRepository.listByWorkspace({ tenantId, workspaceId, contactId: input.contactId }),
-    deps.taskRepository.listByWorkspace({ tenantId, workspaceId, contactId: input.contactId }),
-    deps.proposalRepository.listByWorkspace({ tenantId, workspaceId, contactId: input.contactId }),
-    deps.inbox ? deps.inbox.conversationRepository.listByWorkspace({ tenantId, workspaceId, contactId: input.contactId }) : Promise.resolve([]),
+    deps.dealRepository.listByWorkspace({ tenantId, workspaceId, contactId: input.contactId, ...input.resourceScope }),
+    deps.taskRepository.listByWorkspace({ tenantId, workspaceId, contactId: input.contactId, ...input.resourceScope }),
+    deps.proposalRepository.listByWorkspace({ tenantId, workspaceId, contactId: input.contactId, ...input.resourceScope }),
+    deps.inbox ? deps.inbox.conversationRepository.listByWorkspace({ tenantId, workspaceId, contactId: input.contactId, visibility: input.conversationVisibility }) : Promise.resolve([]),
   ]);
 
   const activeConversations = conversations.filter((conversation) => conversation.mergeStatus !== "merged");
 
+  const batch = await deps.timelineEventRepository.listByEntities?.({ tenantId, workspaceId, entities: [
+    ...deals.map(deal => ({ entityType: "deal" as const, entityId: deal.id })),
+    ...tasks.map(task => ({ entityType: "task" as const, entityId: task.id })),
+    ...proposals.map(proposal => ({ entityType: "proposal" as const, entityId: proposal.id })),
+  ] });
+  const eventsByEntity = new Map<string, TimelineEvent[]>();
+  for (const event of batch ?? []) {
+    const key = `${event.entityType}:${event.entityId}`;
+    const list = eventsByEntity.get(key) ?? [];
+    list.push(event);
+    eventsByEntity.set(key, list);
+  }
+  const eventsFor = (entityType: "deal" | "task" | "proposal", entityId: string) => batch
+    ? Promise.resolve(eventsByEntity.get(`${entityType}:${entityId}`) ?? [])
+    : deps.timelineEventRepository.listByEntity({ entityType, entityId });
+
   const [dealEventLists, taskEventLists, proposalEventLists, conversationEventLists] = await Promise.all([
-    Promise.all(deals.map((deal) => deps.timelineEventRepository.listByEntity({ entityType: "deal", entityId: deal.id }))),
-    Promise.all(tasks.map((task) => deps.timelineEventRepository.listByEntity({ entityType: "task", entityId: task.id }))),
-    Promise.all(proposals.map((proposal) => deps.timelineEventRepository.listByEntity({ entityType: "proposal", entityId: proposal.id }))),
+    Promise.all(deals.map((deal) => eventsFor("deal", deal.id))),
+    Promise.all(tasks.map((task) => eventsFor("task", task.id))),
+    Promise.all(proposals.map((proposal) => eventsFor("proposal", proposal.id))),
     deps.inbox
       ? Promise.all(activeConversations.map((conversation) => deps.inbox!.conversationEventRepository.listByConversation({ tenantId, workspaceId, conversationId: conversation.id })))
       : Promise.resolve([]),

@@ -156,7 +156,7 @@ export function proposalBuyerEventHandler(deps: SalesEngineDeps): (event: Propos
   };
 }
 
-/** Aceite → padrão B (só sinaliza; o vendedor fecha). Ganho automático só se o tenant configurar. */
+/** A política de aceite é resolvida por empresa; o padrão é registrar a venda como ganha. */
 export function proposalAcceptanceHandler(deps: SalesEngineDeps & { onDealWon?: (deal: import("../../domain/crm/crm.model.js").Deal) => Promise<void> }): (proposal: Proposal) => Promise<void> {
   return async (proposal) => {
     if (!proposal.dealId) return;
@@ -168,17 +168,11 @@ export function proposalAcceptanceHandler(deps: SalesEngineDeps & { onDealWon?: 
       return;
     }
     const finalValueCents = proposal.totalCents;
-    await winDeal(deps, { tenantId: deal.tenantId, userId: deal.ownerUserId ?? "system", role: "owner" }, { workspaceId: deal.workspaceId, dealId: deal.id, proposalId: proposal.id, finalValueCents, comment: "Ganho automático pelo aceite da proposta." });
+    await winDeal(deps, { tenantId: deal.tenantId, userId: deal.ownerUserId ?? "system", role: "owner" }, { workspaceId: deal.workspaceId, dealId: deal.id, proposalId: proposal.id, finalValueCents, source: "proposal_acceptance", comment: "Ganho automático pelo aceite da proposta." });
   };
 }
 
-export function renderProposalMessage(template: string, vars: { nome?: string; valor: string; validade?: string; proposal_link: string; numero?: string; vendedor?: string; empresa?: string }): string {
-  const rendered = template.replace(/\{\{\s*(\w+)\s*\}\}/g, (_, key: string) => {
-    const value = (vars as Record<string, string | undefined>)[key];
-    return value ?? "";
-  });
-  return rendered.includes(vars.proposal_link) ? rendered : `${rendered.trim()}\n\n${vars.proposal_link}`;
-}
+export { renderProposalMessage } from "../../domain/sales/proposal-message.js";
 
 export async function proposalMessageTemplates(deps: SalesEngineDeps, tenantId: string, workspaceId: string): Promise<{ send: string; reminder: string }> {
   const settings = await loadCommercialSettings(deps, tenantId, workspaceId);

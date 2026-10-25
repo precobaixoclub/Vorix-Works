@@ -7,7 +7,10 @@ export async function listMemberships(): Promise<TenantMembership[]> {
   return apiClient.get<TenantMembership[]>("/v1/auth/memberships");
 }
 
-export async function getMe(): Promise<{ user: AuthUser; tenantId: string; role: TenantRole }> {
+/** `permissions`/`teams` (0173): acesso EFETIVO atual — perfil + exceções + equipes. */
+export type MyAccess = { permissions: string[]; isAccountOwner: boolean; teams: { teamId: string; role: TenantRole; isManager: boolean }[] };
+
+export async function getMe(): Promise<{ user: AuthUser; tenantId: string; role: TenantRole } & Partial<MyAccess>> {
   return apiClient.get("/v1/auth/me");
 }
 

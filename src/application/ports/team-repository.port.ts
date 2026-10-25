@@ -38,13 +38,14 @@ export type AddTeamMemberInput = {
   isPrincipalForLevel?: boolean;
 };
 
-export type UpdateTeamMemberInput = { attendanceLevel?: string; participatesInRoundRobin?: boolean; isPrincipalForLevel?: boolean };
+/** `role` na equipe (0173): `owner`/`admin` = gerente da equipe; `editor`/`viewer` = membro. */
+export type UpdateTeamMemberInput = { attendanceLevel?: string; participatesInRoundRobin?: boolean; isPrincipalForLevel?: boolean; role?: TenantRole };
 
 export type TeamMembershipRepositoryPort = {
   add(input: AddTeamMemberInput): Promise<TeamMembership>;
   remove(teamId: string, userId: string): Promise<void>;
   listByTeam(teamId: string): Promise<TeamMembership[]>;
-  listByUser(userId: string): Promise<TeamMembership[]>;
+  listByUser(userId: string, tenantId?: string): Promise<TeamMembership[]>;
   getByTeamAndUser(teamId: string, userId: string): Promise<TeamMembership | undefined>;
   update(teamId: string, userId: string, input: UpdateTeamMemberInput): Promise<TeamMembership>;
   /** Desmarca `isPrincipalForLevel` de todo mundo do nível, exceto `exceptUserId` (se informado) —

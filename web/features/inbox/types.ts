@@ -8,6 +8,10 @@ export type MessagingConnection = {
   id: string;
   displayName: string;
   sendAgentName?: boolean;
+  /** Ciclo de atendimento — pesquisa de satisfação ao finalizar, configurada POR CANAL. */
+  csatOnClose?: boolean;
+  /** Quem recebe um atendimento novo depois de um finalizado: o último responsável ou a regra do canal. */
+  newAttendanceAssignment?: "last_assignee" | "redistribute";
   /** WhatsApp (wuzapi) ou Instagram — só WhatsApp permite iniciar conversa. */
   provider?: MessagingProviderId;
   phoneNumber?: string;
@@ -189,7 +193,13 @@ export type InboxConversationEventType =
   | "csat_answered"
   | "away_message_sent"
   | "triage_completed"
-  | "triage_skipped";
+  | "triage_skipped"
+  // Ciclo de atendimento — marcos do atendimento dentro da mesma conversa.
+  | "attendance_opened"
+  | "attendance_closed"
+  | "attendance_reopened"
+  | "csat_sent"
+  | "csat_not_sent";
 
 /** Resposta rápida — acionada no composer digitando "/atalho". */
 export type InboxQuickReply = { id: string; shortcut: string; body: string; createdBy?: string; createdAt: string; updatedAt: string };
@@ -203,6 +213,13 @@ export type InboxConversationEvent = {
   toUserId?: string;
   fromStatus?: InboxConversationStatus;
   toStatus?: InboxConversationStatus;
+  /** Ciclo de atendimento — vínculo estruturado (o texto do marco é sempre gerado a partir daqui). */
+  attendanceId?: string;
+  fromPhaseId?: string;
+  toPhaseId?: string;
+  closureTypeId?: string;
+  closureSubtypeId?: string;
+  reason?: string;
   /** Fase 5 — só os eventos `ai_response_*`; nunca prompt/resposta bruta (ver backend). */
   metadata?: Record<string, unknown>;
   createdAt: string;
@@ -337,3 +354,51 @@ export type InboxModuleStatus = { enabled: boolean };
 /** Fase 10 — token de curtíssima duração e escopo único (só abre `GET /v1/inbox/stream`), emitido
  * por `POST /v1/inbox/stream-token`. Nunca o access token normal — ver `auth.middleware.ts`. */
 export type InboxStreamToken = { streamToken: string; expiresIn: number };
+
+/** Tipos/subtipos de finalização (Configurações > Atendimento). Espelha `InboxClosureType`. */
+export type InboxClosureSubtype = { id: string; closureTypeId: string; name: string; position: number; isActive: boolean };
+export type InboxClosureType = { id: string; name: string; position: number; isActive: boolean; subtypes: InboxClosureSubtype[] };
+
+export type InboxAttendanceCsatStatus = "sent" | "disabled_by_channel" | "waived" | "not_applicable" | "failed";
+
+/** Ciclo de responsabilidade: cada pessoa que recebeu o atendimento, com o próprio relógio. */
+export type InboxAttendanceAssignment = {
+  id: string;
+  userId: string;
+  teamId?: string;
+  source: string;
+  assignedBy: string;
+  startedAt: string;
+  firstResponseAt?: string;
+  firstResponseSeconds?: number;
+  endedAt?: string;
+  endReason?: "transferred" | "reassigned" | "unassigned" | "attendance_closed";
+  transferredToUserId?: string;
+  holdingSeconds?: number;
+};
+
+/** Atendimento: ciclo que abre e fecha dentro da conversa (a conversa é o histórico permanente). */
+export type InboxAttendance = {
+  id: string;
+  conversationId: string;
+  number: number;
+  status: "open" | "closed";
+  openedAt: string;
+  openedBy: string;
+  openReason: string;
+  distributionRule?: string;
+  initialAssigneeUserId?: string;
+  firstResponseAt?: string;
+  firstResponseBy?: string;
+  closedAt?: string;
+  closedBy?: string;
+  closureTypeName?: string;
+  closureSubtypeName?: string;
+  closureNote?: string;
+  resolutionSeconds?: number;
+  csatStatus?: InboxAttendanceCsatStatus;
+  csatWaivedBy?: string;
+  csatScore?: number;
+  reopenedCount: number;
+  assignments: InboxAttendanceAssignment[];
+};

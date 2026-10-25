@@ -1,3 +1,4 @@
+import type { Permission } from "../../domain/identity/identity.model.js";
 import {
   computeRecordingCapacity,
   looksLikePersonalGoogleAccount,
@@ -28,7 +29,7 @@ export type RecorderAccountDeps = {
   newViewerToken: () => { token: string; hash: string };
 };
 
-export type RecorderAccountActor = { tenantId: string; userId: string; role: TenantRole };
+export type RecorderAccountActor = { tenantId: string; userId: string; role: TenantRole; /** Permissões efetivas (preset + exceções); ausente = preset do papel. */ permissions?: readonly Permission[] };
 
 /** Duração máxima do navegador temporário de login. */
 export const RECORDER_PROVISIONING_TTL_MS = 10 * 60_000;
@@ -71,7 +72,7 @@ export type RecorderAccountView = {
 };
 
 function assertManage(actor: RecorderAccountActor): void {
-  if (!hasPermission(actor.role, "meeting:manage_recorder_accounts")) {
+  if (!hasPermission(actor, "meeting:manage_recorder_accounts")) {
     throw new RecorderAccountError("RECORDER_ACCOUNT_FORBIDDEN", "Somente administradores da empresa podem gerenciar contas de gravação.");
   }
 }
@@ -117,7 +118,7 @@ export async function getRecordingCapacity(deps: RecorderAccountDeps, actor: Rec
   const known = await deps.repository.knownHumanGoogleEmails({ tenantId: actor.tenantId, userId: actor.userId });
   return {
     ...(await capacityFor(deps, actor.tenantId, accounts)),
-    canManage: hasPermission(actor.role, "meeting:manage_recorder_accounts"),
+    canManage: hasPermission(actor, "meeting:manage_recorder_accounts"),
     // Sugestões para "Qual conta Google você utilizará para participar?" — só as da própria pessoa.
     knownHumanEmails: [...new Set([...known.connected, ...known.recentExplicit])].sort(),
   };

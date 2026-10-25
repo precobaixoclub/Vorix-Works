@@ -1,3 +1,5 @@
+import { ownedScopeSql } from "./postgres-owned-scope.js";
+import { proposalScopeSql } from "./postgres-proposal-scope.js";
 import type { Pool } from "pg";
 import type {
   CommercialMetricsFilter,
@@ -10,7 +12,7 @@ import type {
 
 /** Condições comuns a `deals` (`d`) — pipeline/responsável/equipe direto na tabela; origem exige
  * uma subconsulta em `contacts` (deals não guardam origem própria, só o contato guarda). */
-function buildDealConditions(filter: CommercialMetricsFilter, params: unknown[]): string[] {
+function buildDealConditions(filter: CommercialMetricsFilter, params: unknown[], credited = false): string[] {
   const conditions: string[] = ["d.tenant_id = $1", "d.workspace_id = $2"];
   if (filter.pipelineId) {
     params.push(filter.pipelineId);
@@ -28,7 +30,9 @@ function buildDealConditions(filter: CommercialMetricsFilter, params: unknown[])
     params.push(filter.origin);
     conditions.push(`exists (select 1 from contacts c where c.id = d.contact_id and c.origin = $${params.length})`);
   }
-  return conditions;
+  const scope = ownedScopeSql(filter, params, "d.");
+  if (scope) conditions.push(scope);
+  return credited ? conditions.map(condition => condition.replaceAll("d.owner_user_id", "coalesce(d.credited_owner_user_id, d.owner_user_id)").replaceAll("d.team_id", "coalesce(d.credited_team_id, d.team_id)")) : conditions;
 }
 
 export class PostgresCommercialMetricsRepository implements CommercialMetricsRepositoryPort {
@@ -50,49 +54,51 @@ export class PostgresCommercialMetricsRepository implements CommercialMetricsRep
     const openParams: unknown[] = [tenantId, workspaceId];
     const openConditions = buildDealConditions(filter, openParams);
     const openResult = await this.pool.query<{ value: string | null }>(
-      `select coalesce(sum(d.value_cents), 0) as value from deals d where ${openConditions.join(" and ")} and d.won_at is null and d.lost_at is null`,
+      `select coalesce(sum(d.value_cents), 0) as value from deals d where ${openConditions.join(" and ")} and d.status = 'open'`,
       openParams,
     );
 
     const wonParams: unknown[] = [tenantId, workspaceId];
-    const wonConditions = buildDealConditions(filter, wonParams);
+    const wonConditions = buildDealConditions(filter, wonParams, true);
     wonParams.push(dateFrom ?? null, dateTo ?? null);
     const wonResult = await this.pool.query<{ count: string; value: string | null; avg_cycle_days: number | null }>(
-      `select count(*) as count, coalesce(sum(d.value_cents), 0) as value,
-              avg(extract(epoch from (d.won_at - d.created_at)) / 86400) as avg_cycle_days
-       from deals d where ${wonConditions.join(" and ")} and d.won_at is not null
-         and ($${wonParams.length - 1}::timestamptz is null or d.won_at >= $${wonParams.length - 1})
-         and ($${wonParams.length}::timestamptz is null or d.won_at <= $${wonParams.length})`,
+      `select count(*) as count, coalesce(sum(coalesce(d.final_value_cents, d.value_cents)), 0) as value,
+              avg(extract(epoch from (coalesce(d.closed_at, d.won_at) - d.created_at)) / 86400) as avg_cycle_days
+       from deals d where ${wonConditions.join(" and ")} and d.status = 'won'
+         and ($${wonParams.length - 1}::timestamptz is null or coalesce(d.closed_at, d.won_at) >= $${wonParams.length - 1})
+         and ($${wonParams.length}::timestamptz is null or coalesce(d.closed_at, d.won_at) <= $${wonParams.length})`,
       wonParams,
     );
 
     const lostParams: unknown[] = [tenantId, workspaceId];
-    const lostConditions = buildDealConditions(filter, lostParams);
+    const lostConditions = buildDealConditions(filter, lostParams, true);
     lostParams.push(dateFrom ?? null, dateTo ?? null);
     const lostResult = await this.pool.query<{ count: string }>(
-      `select count(*) as count from deals d where ${lostConditions.join(" and ")} and d.lost_at is not null
-         and ($${lostParams.length - 1}::timestamptz is null or d.lost_at >= $${lostParams.length - 1})
-         and ($${lostParams.length}::timestamptz is null or d.lost_at <= $${lostParams.length})`,
+      `select count(*) as count from deals d where ${lostConditions.join(" and ")} and d.status = 'lost'
+         and ($${lostParams.length - 1}::timestamptz is null or coalesce(d.closed_at, d.lost_at) >= $${lostParams.length - 1})
+         and ($${lostParams.length}::timestamptz is null or coalesce(d.closed_at, d.lost_at) <= $${lostParams.length})`,
       lostParams,
     );
 
-    // Propostas: só tenant/workspace + período (sem pipeline/responsável/equipe/origem — exigiria
-    // join com deals/contacts pra cada filtro; fora de escopo desta fase, ver auditoria da Fase 7).
+    const proposalParams: unknown[] = [tenantId, workspaceId, dateFrom ?? null, dateTo ?? null];
+    const proposalConditions = ["p.tenant_id = $1", "p.workspace_id = $2"];
+    const proposalScope = proposalScopeSql(filter, proposalParams, "p");
+    if (proposalScope) proposalConditions.push(proposalScope);
+    if (filter.pipelineId || filter.ownerUserId || filter.teamId || filter.origin) {
+      const dealConditions = buildDealConditions(filter, proposalParams);
+      proposalConditions.push(`exists (select 1 from deals d where d.id = p.deal_id and ${dealConditions.join(" and ")})`);
+    }
     const proposalsSentResult = await this.pool.query<{ count: string }>(
-      `select count(*) as count from proposals where tenant_id = $1 and workspace_id = $2 and sent_at is not null
-         and ($3::timestamptz is null or sent_at >= $3) and ($4::timestamptz is null or sent_at <= $4)`,
-      [tenantId, workspaceId, dateFrom ?? null, dateTo ?? null],
-    );
+      `select count(*) as count from proposals p where ${proposalConditions.join(" and ")} and p.sent_at is not null
+       and ($3::timestamptz is null or p.sent_at >= $3) and ($4::timestamptz is null or p.sent_at <= $4)`, proposalParams);
     const proposalsAcceptedResult = await this.pool.query<{ count: string }>(
-      `select count(*) as count from proposals where tenant_id = $1 and workspace_id = $2 and status = 'accepted'
-         and ($3::timestamptz is null or responded_at >= $3) and ($4::timestamptz is null or responded_at <= $4)`,
-      [tenantId, workspaceId, dateFrom ?? null, dateTo ?? null],
-    );
+      `select count(*) as count from proposals p where ${proposalConditions.join(" and ")} and p.status = 'accepted'
+       and ($3::timestamptz is null or p.responded_at >= $3) and ($4::timestamptz is null or p.responded_at <= $4)`, proposalParams);
 
     const noNextActionParams: unknown[] = [tenantId, workspaceId];
     const noNextActionConditions = buildDealConditions(filter, noNextActionParams);
     const noNextActionResult = await this.pool.query<{ count: string }>(
-      `select count(*) as count from deals d where ${noNextActionConditions.join(" and ")} and d.won_at is null and d.lost_at is null
+      `select count(*) as count from deals d where ${noNextActionConditions.join(" and ")} and d.status = 'open'
          and not exists (select 1 from tasks t where t.deal_id = d.id and t.status = 'pending')`,
       noNextActionParams,
     );
@@ -104,33 +110,33 @@ export class PostgresCommercialMetricsRepository implements CommercialMetricsRep
               avg(extract(epoch from (now() - d.last_stage_changed_at)) / 86400) as avg_days
        from deals d
        join pipeline_stages s on s.id = d.stage_id
-       where ${stageAgingConditions.join(" and ")} and d.won_at is null and d.lost_at is null
+       where ${stageAgingConditions.join(" and ")} and d.status = 'open'
        group by d.stage_id, s.name`,
       stageAgingParams,
     );
 
     const lossReasonsParams: unknown[] = [tenantId, workspaceId];
-    const lossReasonsConditions = buildDealConditions(filter, lossReasonsParams);
+    const lossReasonsConditions = buildDealConditions(filter, lossReasonsParams, true);
     lossReasonsParams.push(dateFrom ?? null, dateTo ?? null);
     const lossReasonsResult = await this.pool.query<{ loss_reason: string | null; count: string }>(
-      `select d.loss_reason, count(*) as count from deals d where ${lossReasonsConditions.join(" and ")} and d.lost_at is not null
-         and ($${lossReasonsParams.length - 1}::timestamptz is null or d.lost_at >= $${lossReasonsParams.length - 1})
-         and ($${lossReasonsParams.length}::timestamptz is null or d.lost_at <= $${lossReasonsParams.length})
+      `select d.loss_reason, count(*) as count from deals d where ${lossReasonsConditions.join(" and ")} and d.status = 'lost'
+         and ($${lossReasonsParams.length - 1}::timestamptz is null or coalesce(d.closed_at, d.lost_at) >= $${lossReasonsParams.length - 1})
+         and ($${lossReasonsParams.length}::timestamptz is null or coalesce(d.closed_at, d.lost_at) <= $${lossReasonsParams.length})
        group by d.loss_reason
        order by count desc`,
       lossReasonsParams,
     );
 
     const revenueByOriginParams: unknown[] = [tenantId, workspaceId];
-    const revenueByOriginConditions = buildDealConditions(filter, revenueByOriginParams);
+    const revenueByOriginConditions = buildDealConditions(filter, revenueByOriginParams, true);
     revenueByOriginParams.push(dateFrom ?? null, dateTo ?? null);
     const revenueByOriginResult = await this.pool.query<{ origin: string | null; count: string; value: string | null }>(
-      `select c.origin, count(*) as count, coalesce(sum(d.value_cents), 0) as value
+      `select c.origin, count(*) as count, coalesce(sum(coalesce(d.final_value_cents, d.value_cents)), 0) as value
        from deals d
        join contacts c on c.id = d.contact_id
-       where ${revenueByOriginConditions.join(" and ")} and d.won_at is not null
-         and ($${revenueByOriginParams.length - 1}::timestamptz is null or d.won_at >= $${revenueByOriginParams.length - 1})
-         and ($${revenueByOriginParams.length}::timestamptz is null or d.won_at <= $${revenueByOriginParams.length})
+       where ${revenueByOriginConditions.join(" and ")} and d.status = 'won'
+         and ($${revenueByOriginParams.length - 1}::timestamptz is null or coalesce(d.closed_at, d.won_at) >= $${revenueByOriginParams.length - 1})
+         and ($${revenueByOriginParams.length}::timestamptz is null or coalesce(d.closed_at, d.won_at) <= $${revenueByOriginParams.length})
        group by c.origin
        order by value desc`,
       revenueByOriginParams,

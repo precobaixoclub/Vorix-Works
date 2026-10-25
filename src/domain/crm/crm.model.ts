@@ -84,6 +84,9 @@ export type Pipeline = {
   workspaceId: string;
   name: string;
   isDefault: boolean;
+  /** Kanban de Oportunidades por equipe (0173). `undefined` = funil da empresa toda; com equipe,
+   * só quem gerencia a equipe (ou tem escopo global) configura. */
+  teamId?: string;
   createdAt: string;
   updatedAt: string;
 };
@@ -154,6 +157,14 @@ export type Deal = {
   finalArrCents?: number;
   finalTcvCents?: number;
   finalSnapshot?: Readonly<Record<string, unknown>>;
+  archivedAt?: string;
+  archiveManualHold?: boolean;
+  firstClosedAt?: string;
+  reopenedAt?: string;
+  reopenedByUserId?: string;
+  reopenCount?: number;
+  closureSource?: string;
+  lossReasonId?: string;
 };
 
 export const DEAL_STATUSES = ["open", "won", "lost", "cancelled"] as const;
@@ -327,6 +338,7 @@ export const AUTOMATION_ACTIONS = ["create_task", "add_tag", "assign_owner", "as
 export type AutomationActionType = (typeof AUTOMATION_ACTIONS)[number];
 
 export type AutomationActionConfig = {
+  taskDelayHours?: number;
   taskType?: TaskType;
   taskTitle?: string;
   tag?: string;

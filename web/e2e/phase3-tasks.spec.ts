@@ -27,6 +27,7 @@ async function fixture(page: Page, dealCount = 1) {
     if (path === `/v1/contacts/${contact.id}`) return ok(contact);
     if (path === "/v1/contacts") return ok([contact]);
     if (path === "/v1/deals") return ok(deals);
+    if (/^\/v1\/deals\/deal-\d+$/.test(path)) return ok(deals.find(d => d.id === path.split("/").at(-1)));
     if (path === "/v1/pipelines") return ok([{ id: "pipeline-qa", name: "Comercial QA", isDefault: true }]);
     if (path.endsWith("/stages")) return ok([{ id: "stage-qa", pipelineId: "pipeline-qa", name: "Aberto", position: 0 }]);
     if (path.startsWith("/v1/tasks")) {
@@ -111,6 +112,7 @@ test("oportunidade embutida recarrega tarefas imediatamente na conversa", async 
   const state = await fixture(page);
   await openConversation(page);
   await page.getByRole("button", { name: "Abrir oportunidade", exact: true }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Dados", exact: true }).click();
   await page.getByRole("button", { name: "+ Nova tarefa", exact: true }).click();
   await page.getByRole("dialog").last().getByRole("button", { name: "Criar", exact: true }).click();
   await expect(page.getByRole("button", { name: "Reagendar", exact: true }).last()).toBeVisible();

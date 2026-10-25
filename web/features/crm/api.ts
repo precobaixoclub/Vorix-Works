@@ -89,11 +89,28 @@ export function listPipelineStages(pipelineId: string, workspaceId: string): Pro
   return apiClient.get<PipelineStage[]>(`/v1/pipelines/${encodeURIComponent(pipelineId)}/stages?workspaceId=${encodeURIComponent(workspaceId)}`);
 }
 
+export function createPipelineStage(pipelineId: string, workspaceId: string, input: { name: string; position: number; isWon?: boolean; isLost?: boolean }): Promise<PipelineStage> {
+  return apiClient.post(`/v1/pipelines/${encodeURIComponent(pipelineId)}/stages`, { workspaceId, ...input });
+}
+
+export function updatePipelineStage(pipelineId: string, workspaceId: string, stageId: string, patch: { name?: string }): Promise<PipelineStage> {
+  return apiClient.patch(`/v1/pipelines/${encodeURIComponent(pipelineId)}/stages/${encodeURIComponent(stageId)}`, { workspaceId, ...patch });
+}
+
+export function deletePipelineStage(pipelineId: string, workspaceId: string, stageId: string): Promise<void> {
+  return apiClient.delete(`/v1/pipelines/${encodeURIComponent(pipelineId)}/stages/${encodeURIComponent(stageId)}?${new URLSearchParams({ workspaceId })}`);
+}
+
+export function reorderPipelineStages(pipelineId: string, workspaceId: string, stageIds: readonly string[]): Promise<void> {
+  return apiClient.post(`/v1/pipelines/${encodeURIComponent(pipelineId)}/stages/reorder`, { workspaceId, stageIds });
+}
+
 export function getContactOpenDealsSummary(workspaceId: string): Promise<ContactOpenDealsSummary[]> {
   return apiClient.get<ContactOpenDealsSummary[]>(`/v1/deals/open-by-contact?${new URLSearchParams({ workspaceId })}`);
 }
 
-export type ListDealsParams = { pipelineId?: string; stageId?: string; contactId?: string; ownerUserId?: string; teamId?: string; origin?: string; search?: string };
+export type DealBoardView = "operational" | "open" | "won" | "lost" | "closed" | "archived" | "all";
+export type ListDealsParams = { boardView?: DealBoardView; pipelineId?: string; stageId?: string; contactId?: string; ownerUserId?: string; teamId?: string; origin?: string; search?: string };
 
 export function listDeals(workspaceId: string, params?: ListDealsParams): Promise<Deal[]> {
   const query = new URLSearchParams({ workspaceId });
@@ -104,6 +121,7 @@ export function listDeals(workspaceId: string, params?: ListDealsParams): Promis
   if (params?.teamId) query.set("teamId", params.teamId);
   if (params?.origin) query.set("origin", params.origin);
   if (params?.search) query.set("search", params.search);
+  if (params?.boardView) query.set("boardView", params.boardView);
   return apiClient.get<Deal[]>(`/v1/deals?${query.toString()}`);
 }
 
@@ -113,6 +131,7 @@ export function getDealsSummary(workspaceId: string, pipelineId: string, params?
   if (params?.teamId) query.set("teamId", params.teamId);
   if (params?.origin) query.set("origin", params.origin);
   if (params?.search) query.set("search", params.search);
+  if (params?.boardView) query.set("boardView", params.boardView);
   return apiClient.get<DealStageSummary[]>(`/v1/deals/summary?${query.toString()}`);
 }
 
@@ -133,16 +152,18 @@ export function createDeal(input: CreateDealInput): Promise<Deal> {
   return apiClient.post<Deal>("/v1/deals", input);
 }
 
-export function getDeal(dealId: string, workspaceId: string): Promise<Deal> {
-  return apiClient.get<Deal>(`/v1/deals/${encodeURIComponent(dealId)}?workspaceId=${encodeURIComponent(workspaceId)}`);
+export async function getDeal(dealId: string, workspaceId: string): Promise<Deal> {
+  const deal = await apiClient.get<Deal>(`/v1/deals/${encodeURIComponent(dealId)}?workspaceId=${encodeURIComponent(workspaceId)}`);
+  if (!deal || typeof deal.id !== "string" || typeof deal.title !== "string") throw new Error("Não foi possível carregar a oportunidade. Tente novamente.");
+  return deal;
 }
 
 export function updateDeal(dealId: string, workspaceId: string, patch: Partial<Omit<CreateDealInput, "workspaceId" | "pipelineId" | "stageId">>): Promise<Deal> {
   return apiClient.patch<Deal>(`/v1/deals/${encodeURIComponent(dealId)}`, { workspaceId, ...patch });
 }
 
-export function moveDealStage(dealId: string, workspaceId: string, stageId: string, lossReason?: string, lossComment?: string): Promise<Deal> {
-  return apiClient.post<Deal>(`/v1/deals/${encodeURIComponent(dealId)}/move-stage`, { workspaceId, stageId, lossReason, lossComment: lossComment || undefined });
+export function moveDealStage(dealId: string, workspaceId: string, stageId: string, lossReason?: string, lossComment?: string, closing?: { finalValueCents?: number; closedAt?: string }): Promise<Deal> {
+  return apiClient.post<Deal>(`/v1/deals/${encodeURIComponent(dealId)}/move-stage`, { workspaceId, stageId, lossReason, lossComment: lossComment || undefined, ...closing });
 }
 
 export function getDealTimeline(dealId: string, workspaceId: string): Promise<TimelineEvent[]> {
@@ -413,4 +434,8 @@ export function previewLidCleanup(workspaceId: string): Promise<LidCleanupPrevie
 /** Remove os contatos só com LID sem oportunidade/proposta. A conversa no WhatsApp continua. */
 export function runLidCleanup(workspaceId: string): Promise<{ removed: number; protected: number }> {
   return apiClient.post<{ removed: number; protected: number }>("/v1/contacts/lid-cleanup", { workspaceId, confirm: true });
+}
+
+export function setDealArchived(dealId: string, workspaceId: string, archived: boolean): Promise<Deal> {
+  return apiClient.post<Deal>(`/v1/deals/${encodeURIComponent(dealId)}/archive`, { workspaceId, archived });
 }

@@ -34,6 +34,20 @@ after(async () => {
   await db.stop();
 });
 
+test("optional trial SQL failure rolls back its savepoint without poisoning the account transaction", async () => {
+  await db.pool.query("alter table subscriptions add constraint review_trial_failure check (status <> 'trial') not valid");
+  try {
+    const result = await signupPublicTransactional(db.pool, { ...makeDeps(), trialEnabled: true, trialAiCredits: 100 }, {
+      email: "trial-sql-failure@example.com", password: "senha-forte-1234", name: "Trial", planCode: "START",
+    });
+    assert.equal(result.trialStarted, false);
+    assert.equal(result.role, "owner");
+    assert.equal((await db.pool.query("select count(*)::int as n from users where id=$1", [result.user.id])).rows[0].n, 1);
+    assert.equal((await db.pool.query("select count(*)::int as n from pipelines where tenant_id=$1", [result.tenantId])).rows[0].n, 1);
+    assert.equal((await db.pool.query("select count(*)::int as n from subscriptions where tenant_id=$1", [result.tenantId])).rows[0].n, 0);
+  } finally { await db.pool.query("alter table subscriptions drop constraint review_trial_failure"); }
+});
+
 test("signupPublicTransactional: cria User + Membership + Workspace + tenant_billing FREE numa única transação", async () => {
   const result = await signupPublicTransactional(db.pool, makeDeps(), {
     email: "tx-novo@example.com",
@@ -44,13 +58,14 @@ test("signupPublicTransactional: cria User + Membership + Workspace + tenant_bil
 
   assert.ok(result.accessToken, "access token retornado");
   assert.equal(result.user.email, "tx-novo@example.com");
-  assert.equal(result.role, "admin");
+  assert.equal(result.role, "owner");
 
   const userRow = await db.pool.query("select id from users where email = 'tx-novo@example.com'");
   assert.equal(userRow.rows.length, 1);
 
-  const membership = await db.pool.query("select role from tenant_members where user_id = $1", [userRow.rows[0].id]);
+  const membership = await db.pool.query("select role, is_account_owner from tenant_members where user_id = $1", [userRow.rows[0].id]);
   assert.equal(membership.rows.length, 1);
+  assert.equal(membership.rows[0].is_account_owner, true);
 
   const workspaces = await db.pool.query("select id, name from workspaces where tenant_id = $1", [result.tenantId]);
   assert.equal(workspaces.rows.length, 1);

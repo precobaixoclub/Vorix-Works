@@ -8,7 +8,7 @@ import { PostgresMessagingConnectionRepository } from "../dist/infrastructure/st
 import { PostgresInboxContactRepository } from "../dist/infrastructure/storage/postgres/postgres-inbox-contact-repository.js";
 import { PostgresInboxConversationRepository } from "../dist/infrastructure/storage/postgres/postgres-inbox-conversation-repository.js";
 import { PostgresInboxMessageRepository } from "../dist/infrastructure/storage/postgres/postgres-inbox-message-repository.js";
-import { processOutboundMessage, sendInboxContactCardMessage, sendInboxMediaMessage } from "../dist/application/inbox/inbox-use-cases.js";
+import { processOutboundMessage, sendInboxMessage, sendInboxContactCardMessage, sendInboxMediaMessage } from "../dist/application/inbox/inbox-use-cases.js";
 import { startTestPostgres } from "./helpers/pglite-test-db.mjs";
 
 /**
@@ -74,6 +74,23 @@ async function makeConversation(tenantId) {
   const conversation = await conversationRepo.findOrCreate({ tenantId, workspaceId: workspace.id, connectionId: connection.id, chatType: "direct", externalChatId: phone, contactId: contact.id });
   return { workspace, connection: await connectionRepo.getById(connection.id), conversation };
 }
+
+test("TEXT_LINK_PREVIEW: a opção da proposta persiste e chega ao provider através do worker", async () => {
+  const tenantId = "tenant-proposal-preview";
+  const { workspace, conversation } = await makeConversation(tenantId);
+  const provider = makeFakeMessagingProvider();
+  const deps = {
+    connectionRepository: new PostgresMessagingConnectionRepository(db.pool),
+    conversationRepository: new PostgresInboxConversationRepository(db.pool),
+    messageRepository: new PostgresInboxMessageRepository(db.pool),
+    outboundQueue: { async publish() {} }, providers: { wuzapi: provider },
+  };
+  const message = await sendInboxMessage(deps, { tenantId, workspaceId: workspace.id, conversationId: conversation.id, body: "*Ver proposta*\nhttps://app.example/p/token", linkPreview: true });
+  assert.equal((await deps.messageRepository.getById(message.id)).metadata.linkPreview, true);
+  await processOutboundMessage(deps, { messageId: message.id });
+  assert.equal(provider.sent[0].input.linkPreview, true);
+  assert.equal(provider.sent[0].input.body, message.body);
+});
 
 test("IMAGE_OUTBOUND: sendInboxMediaMessage grava cópia própria + processOutboundMessage envia como data URI base64", async () => {
   const tenantId = "tenant-media-out-1";

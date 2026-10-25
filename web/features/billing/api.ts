@@ -54,7 +54,9 @@ export async function fetchCapacityState(): Promise<CapacityState> {
 
 /** Preview NUNCA muda nada (seção 10-11 do pedido) — só o backend calcula, frontend só exibe. */
 export async function previewCapacity(input: { users: number; whatsappConnections: number; workspaces?: number; concurrentRecordings?: number;addonQuantities?:Record<string,number> }): Promise<CapacityPreviewResult> {
-  return apiClient.post("/v1/billing/capacity/preview", input);
+  const preview = await apiClient.post<CapacityPreviewResult>("/v1/billing/capacity/preview", input);
+  if (!preview?.requestedOnCurrentPlan || !Number.isFinite(preview.requestedOnCurrentPlan.totalMonthlyAmount) || preview.requestedOnCurrentPlan.totalMonthlyAmount < 0 || !preview.requestedOnCurrentPlan.currency || !preview.recommendation) throw new Error("Não foi possível simular o valor. Tente novamente antes de confirmar.");
+  return preview;
 }
 
 /** Idempotency-Key gerado por confirmação (seção 8 do pedido: duplo clique nunca dobra o efeito) —

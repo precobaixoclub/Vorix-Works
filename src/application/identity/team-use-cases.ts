@@ -86,6 +86,8 @@ export type UpdateTeamMemberInput = {
   userId: string;
   attendanceLevel?: string;
   participatesInRoundRobin?: boolean;
+  /** Papel na equipe (0173): `owner`/`admin` = gerente da equipe. */
+  role?: TenantRole;
   /** `true` = marca este membro como principal do nível (desmarca qualquer outro do MESMO nível
    * automaticamente). `false`/`undefined` = não mexe na marcação de principal diretamente — mas se
    * o membro estava marcado e está MUDANDO de nível, o nível antigo ganha um substituto
@@ -117,6 +119,7 @@ export async function updateTeamMember(deps: TeamUseCaseDeps, input: UpdateTeamM
   const explicitPrincipal = input.setPrincipal !== undefined ? input.setPrincipal : changingLevel ? false : undefined;
 
   const updated = await deps.teamMembershipRepository.update(input.teamId, input.userId, {
+    role: input.role,
     attendanceLevel: input.attendanceLevel,
     participatesInRoundRobin: input.participatesInRoundRobin,
     isPrincipalForLevel: explicitPrincipal,

@@ -1,3 +1,6 @@
+import { AccessResolver } from "../../application/identity/access-resolver.js";
+import type { AccessAuditLogPort } from "../../application/ports/access-audit-log.port.js";
+import { PostgresAccessAuditLog } from "./postgres/postgres-access-audit-log.js";
 import {PostgresCapacityMutationRepository} from "./postgres/postgres-capacity-mutation-repository.js";
 import type {CapacityMutationRepositoryPort} from "../../application/ports/capacity-mutation-repository.port.js";
 import type { CheckoutIntentRepositoryPort } from "../../application/ports/checkout-intent-repository.port.js";
@@ -89,6 +92,9 @@ import { PostgresGrowthMetricsRepository } from "./postgres/postgres-growth-metr
 const { Pool } = pg;
 
 export type IdentityRepositories = {
+  /** Perfis e permissões (0173) — resolvedor de acesso por requisição e auditoria de acesso. */
+  accessResolver: AccessResolver;
+  accessAuditLog: AccessAuditLogPort;
   userRepository: UserRepositoryPort;
   membershipRepository: TenantMembershipRepositoryPort;
   sessionRepository: SessionRepositoryPort;
@@ -177,9 +183,12 @@ export type IdentityRepositories = {
 
 export function buildIdentityRepositories(options: { databaseUrl: string; secretsMasterKey: string }): IdentityRepositories {
   const pool = new Pool({ connectionString: options.databaseUrl });
+  const membershipRepository = new PostgresTenantMembershipRepository(pool);
   return {
     userRepository: new PostgresUserRepository(pool),
-    membershipRepository: new PostgresTenantMembershipRepository(pool),
+    membershipRepository,
+    accessResolver: new AccessResolver(membershipRepository),
+    accessAuditLog: new PostgresAccessAuditLog(pool),
     sessionRepository: new PostgresSessionRepository(pool),
     refreshTokenRepository: new PostgresRefreshTokenRepository(pool),
     auditLog: new PostgresAuditLogRepository(pool),

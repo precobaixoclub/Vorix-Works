@@ -1,3 +1,4 @@
+import { InMemoryWorkspaceRepository } from "../dist/infrastructure/storage/in-memory-workspace-repository.js";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync } from "node:fs";
@@ -39,7 +40,7 @@ async function buildRealJwtTestApp({ conversationsModuleEnabled, inboxMediaStora
     // `app.close()` no fim de cada teste; nenhum destes testes toca Postgres de verdade.
     // `inboxMediaStorage` PRECISA ser passado aqui (nunca reatribuído em `app.zunoContainer` depois
     // do boot) — `registerInboxRoutes` captura a referência uma única vez ao montar as rotas.
-    container: { authPort: new JwtAuthAdapter(jwt), identity: { jwt, pool: { end: async () => {} } }, ...(inboxMediaStorage ? { inboxMediaStorage } : {}) },
+    container: { workspaceRepository: new InMemoryWorkspaceRepository({ idGenerator: () => "ws-1" }), authPort: new JwtAuthAdapter(jwt), identity: { jwt, pool: { end: async () => {} } }, ...(inboxMediaStorage ? { inboxMediaStorage } : {}) },
   });
   return { app, jwt };
 }
@@ -207,6 +208,7 @@ test("isPrincipalAuthorizedForRequest: matriz completa de decisão", () => {
 // ------------------------------------------------------------------------------------------
 
 async function seedMediaMessage(app, { tenantId, workspaceId }) {
+  if (!await app.zunoContainer.workspaceRepository.getById(workspaceId)) await app.zunoContainer.workspaceRepository.create({ tenantId, name: "Media fixture" });
   const connection = await app.zunoContainer.messagingConnectionRepository.create({ tenantId, workspaceId, provider: "wuzapi", displayName: "Canal de teste" });
   const contact = await app.zunoContainer.inboxContactRepository.upsertByPhone({ tenantId, workspaceId, phoneNormalized: "+5511999998888", name: "Cliente" });
   const conversation = await app.zunoContainer.inboxConversationRepository.findOrCreate({ tenantId, workspaceId, connectionId: connection.id, chatType: "direct", externalChatId: "+5511999998888", contactId: contact.id });
@@ -307,7 +309,11 @@ test("GET /inbox/media/:id sem storage de mídia configurado (DisabledInboxMedia
 // ------------------------------------------------------------------------------------------
 
 async function seedContact(app, { tenantId, workspaceId }) {
-  return app.zunoContainer.inboxContactRepository.upsertByPhone({ tenantId, workspaceId, phoneNormalized: "+5511988887777", name: "Cliente com foto" });
+  if (!await app.zunoContainer.workspaceRepository.getById(workspaceId)) await app.zunoContainer.workspaceRepository.create({ tenantId, name: "Avatar fixture" });
+  const contact = await app.zunoContainer.inboxContactRepository.upsertByPhone({ tenantId, workspaceId, phoneNormalized: "+5511988887777", name: "Cliente com foto" });
+  const connection = await app.zunoContainer.messagingConnectionRepository.create({ tenantId, workspaceId, provider: "wuzapi", displayName: "Avatar channel" });
+  await app.zunoContainer.inboxConversationRepository.findOrCreate({ tenantId, workspaceId, connectionId: connection.id, contactId: contact.id, chatType: "direct", externalChatId: "+5511988887777" });
+  return contact;
 }
 
 test("POST /v1/inbox/avatar-token emite token escopado (purpose=inbox_avatar) e GET /inbox/avatars/:kind/:id serve os bytes reais", async () => {

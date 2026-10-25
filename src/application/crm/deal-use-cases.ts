@@ -39,6 +39,7 @@ export async function createDeal(deps: DealUseCaseDeps, input: { tenantId: strin
   if (!stage || stage.pipelineId !== input.pipelineId) {
     throw new Error(`DEAL_STAGE_PIPELINE_MISMATCH: etapa "${input.stageId}" não pertence ao pipeline "${input.pipelineId}".`);
   }
+  if (stage.isWon || stage.isLost) throw new Error("DEAL_STAGE_PIPELINE_MISMATCH: crie a oportunidade em uma fase em andamento e registre o fechamento em seguida.");
   const { actorUserId, ...createInput } = input;
   const deal = await deps.dealRepository.create(createInput);
   await deps.timelineEventRepository.record({
@@ -62,10 +63,12 @@ export async function createDeal(deps: DealUseCaseDeps, input: { tenantId: strin
 }
 
 export async function listDeals(deps: DealUseCaseDeps, filter: ListDealsFilter): Promise<Deal[]> {
+  if (filter.boardView) await deps.dealRepository.archiveDueClosedDeals({ tenantId: filter.tenantId, workspaceId: filter.workspaceId });
   return deps.dealRepository.listByWorkspace(filter);
 }
 
 export async function getDealsSummary(deps: DealUseCaseDeps, filter: Omit<ListDealsFilter, "cursor" | "limit" | "stageId"> & { pipelineId: string }): Promise<DealStageSummary[]> {
+  if (filter.boardView) await deps.dealRepository.archiveDueClosedDeals({ tenantId: filter.tenantId, workspaceId: filter.workspaceId });
   return deps.dealRepository.summaryByPipeline(filter);
 }
 
@@ -110,12 +113,13 @@ export async function updateDeal(deps: DealUseCaseDeps, input: { dealId: string;
  * Mover pra uma etapa `isLost` exige `lossReason` (auditoria, seção "nunca perdido silenciosamente");
  * mover pra uma etapa aberta comum limpa `wonAt`/`lostAt`/`lossReason` — reabrir é permitido.
  */
-export async function moveDealStage(deps: DealUseCaseDeps, input: { dealId: string; tenantId: string; workspaceId: string; targetStageId: string; lossReason?: string; lossComment?: string; actorUserId?: string }): Promise<Deal> {
+export async function moveDealStage(deps: DealUseCaseDeps, input: { dealId: string; tenantId: string; workspaceId: string; targetStageId: string; lossReason?: string; lossComment?: string; actorUserId?: string; finalValueCents?: number; closedAt?: string; source?: string }): Promise<Deal> {
   const deal = await mustDealBelongToTenantAndWorkspace(deps, input.dealId, input.tenantId, input.workspaceId);
   const targetStage = await deps.pipelineStageRepository.getById(input.targetStageId);
   if (!targetStage || targetStage.pipelineId !== deal.pipelineId) {
     throw new Error(`DEAL_STAGE_PIPELINE_MISMATCH: etapa "${input.targetStageId}" não pertence ao pipeline desta oportunidade.`);
   }
+  if (deal.stageId === targetStage.id) return deal;
   if (targetStage.isLost && !input.lossReason?.trim()) {
     throw new Error("DEAL_LOSS_REASON_REQUIRED: informe o motivo da perda para mover uma oportunidade para uma etapa de perda.");
   }
@@ -124,29 +128,49 @@ export async function moveDealStage(deps: DealUseCaseDeps, input: { dealId: stri
       deps.sales.dealItemRepository.listByDeal(deal.id),
       deps.sales.salesConfigRepository.listCustomFields({ tenantId: deal.tenantId, workspaceId: deal.workspaceId, includeInactive: true }),
     ]);
-    const missing = missingStageRequirements(deal, items.length, targetStage, new Map(fields.map((field) => [field.key, field.label])));
+    const missing = missingStageRequirements({ ...deal, valueCents: targetStage.isWon ? input.finalValueCents ?? deal.valueCents : deal.valueCents }, items.length, targetStage, new Map(fields.map((field) => [field.key, field.label])));
     if (missing.length > 0) throw new Error(`DEAL_STAGE_REQUIREMENTS_MISSING: para entrar em "${targetStage.name}" preencha: ${missing.join(", ")}.`);
   }
-  if (deps.sales && targetStage.isWon && deal.status !== "won" && !(deal.valueCents > 0)) {
+  if (deps.sales && targetStage.isWon && deal.status !== "won" && !((input.finalValueCents ?? deal.valueCents) > 0)) {
     throw new Error("DEAL_FINAL_VALUE_REQUIRED: informe o valor da oportunidade antes de marcá-la como ganha.");
   }
   const now = new Date().toISOString();
-  const moved = await deps.dealRepository.moveStage(input.dealId, {
+  const commercialTransition = Boolean(deps.sales && (targetStage.isWon || targetStage.isLost || deal.status !== "open"));
+  const legacyTransition = !deps.sales && (targetStage.isWon || targetStage.isLost || deal.status !== "open");
+  const status = targetStage.isWon ? "won" : targetStage.isLost ? "lost" : "open";
+  const moved = commercialTransition ? await syncClosureWithStage(deps.sales!, deal, targetStage, input.actorUserId, input.lossReason?.trim(), input.lossComment?.trim(), input) : legacyTransition ? await deps.dealRepository.setClosure(deal.id, {
+    expectedStatus: deal.status, expectedUpdatedAt: deal.updatedAt, stageId: targetStage.id,
+    status, forecastCategory: status === "won" ? "closed" : status === "lost" ? "omitted" : "pipeline",
+    closedAt: status === "open" ? null : input.closedAt ?? now,
+    closedByUserId: status === "open" ? null : input.actorUserId ?? null,
+    creditedOwnerUserId: status === "open" ? null : deal.ownerUserId ?? null,
+    creditedTeamId: status === "open" ? null : deal.teamId ?? null,
+    lossReason: status === "lost" ? input.lossReason!.trim() : null,
+    lossReasonId: null, wonReason: null, closeComment: input.lossComment?.trim() || null,
+    competitorId: null, wonProposalId: null,
+    finalValueCents: status === "won" ? input.finalValueCents ?? deal.valueCents : null,
+    finalCostCents: null, finalGrossProfitCents: null, finalMarginBp: null,
+    finalMrrCents: null, finalArrCents: null, finalTcvCents: null, finalSnapshot: null,
+    closureSource: input.source ?? "kanban", reopenedByUserId: status === "open" ? input.actorUserId : undefined,
+    auditEvents: [{ eventType: "deal_stage_changed", actorType: input.source === "automation" ? "automation" : "user", actorId: input.actorUserId, payload: { fromStageId: deal.stageId, toStageId: targetStage.id, isWon: targetStage.isWon, isLost: targetStage.isLost, source: input.source ?? "kanban" } }, { eventType: status === "won" ? "deal_won" : status === "lost" ? "deal_lost" : "deal_reopened", actorType: input.source === "automation" ? "automation" : "user", actorId: input.actorUserId, payload: { fromStatus: deal.status, toStatus: status, previousClosing: deal.status === "open" ? undefined : { closedAt: deal.closedAt, finalValueCents: deal.finalValueCents, lossReason: deal.lossReason, snapshot: deal.finalSnapshot }, finalValueCents: status === "won" ? input.finalValueCents ?? deal.valueCents : undefined } }],
+  }) : await deps.dealRepository.moveStage(input.dealId, {
     stageId: input.targetStageId,
+    expectedStatus: deal.status,
+    expectedUpdatedAt: deal.updatedAt,
     lossReason: targetStage.isLost ? (input.lossReason as string).trim() : null,
     wonAt: targetStage.isWon ? now : null,
     lostAt: targetStage.isLost ? now : null,
   });
-  const updated = deps.sales ? await syncClosureWithStage(deps.sales, moved, targetStage, input.actorUserId, input.lossReason?.trim(), input.lossComment?.trim()) : moved;
-  await deps.timelineEventRepository.record({
+  const updated = moved;
+  if (!commercialTransition && !legacyTransition) await deps.timelineEventRepository.record({
     tenantId: deal.tenantId,
     workspaceId: deal.workspaceId,
     entityType: "deal",
     entityId: deal.id,
     eventType: "deal_stage_changed",
-    actorType: "user",
+    actorType: input.source === "automation" ? "automation" : "user",
     actorId: input.actorUserId,
-    payload: { fromStageId: deal.stageId, toStageId: input.targetStageId, lossReason: targetStage.isLost ? input.lossReason : undefined, isWon: targetStage.isWon, isLost: targetStage.isLost },
+    payload: { fromStageId: deal.stageId, toStageId: input.targetStageId, lossReason: targetStage.isLost ? input.lossReason : undefined, isWon: targetStage.isWon, isLost: targetStage.isLost, source: input.source ?? "kanban" },
   });
   if (deps.automation) {
     const contact = deal.contactId ? await deps.automation.contactRepository.getById(deal.contactId) : undefined;
@@ -155,7 +179,7 @@ export async function moveDealStage(deps: DealUseCaseDeps, input: { dealId: stri
   if (deps.productAnalytics && targetStage.isWon) {
     await recordFirstEvent(deps.productAnalytics, { eventName: "first_deal_won", source: "server", tenantId: deal.tenantId, workspaceId: deal.workspaceId });
   }
-  return updated;
+  return (await deps.dealRepository.getById(updated.id)) ?? updated;
 }
 
 export async function getDealTimeline(deps: DealUseCaseDeps, input: { dealId: string; tenantId: string; workspaceId: string; limit?: number }): Promise<TimelineEvent[]> {

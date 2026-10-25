@@ -62,7 +62,10 @@ export type SalesConfigRepositoryPort = {
   getCloseReason(id: string): Promise<(CloseReason & { tenantId: string }) | undefined>;
   createCloseReason(input: { tenantId: string; workspaceId: string; kind: CloseReasonKind; label: string; position?: number }): Promise<CloseReason>;
   updateCloseReason(id: string, patch: { label?: string; active?: boolean; position?: number }): Promise<CloseReason>;
+  deleteCloseReason(id: string): Promise<void>;
+  reorderCloseReasons(input: { tenantId: string; workspaceId: string; kind: CloseReasonKind; reasonIds: readonly string[] }): Promise<void>;
   countCloseReasons(workspaceId: string): Promise<number>;
+  ensureDefaultCloseReasons(input: { tenantId: string; workspaceId: string; reasons: readonly { kind: CloseReasonKind; label: string; position: number }[] }): Promise<void>;
   listCompetitors(input: { tenantId: string; workspaceId: string; includeInactive?: boolean }): Promise<Competitor[]>;
   getCompetitor(id: string): Promise<(Competitor & { tenantId: string }) | undefined>;
   /** Idempotente por nome (case-insensitive). */

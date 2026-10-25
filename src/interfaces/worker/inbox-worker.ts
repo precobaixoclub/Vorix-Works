@@ -602,6 +602,11 @@ async function main(): Promise<void> {
     teamRepository: repositories.teamRepository,
     teamMembershipRepository: repositories.teamMembershipRepository,
     serviceSettingsRepository: repositories.inboxServiceSettingsRepository,
+    // Ciclo de atendimento (0172) — o worker abre atendimentos novos (cliente voltou a falar) e
+    // marca a primeira resposta; sem eles, a Inbox segue sem histórico de atendimentos.
+    attendanceRepository: repositories.inboxAttendanceRepository,
+    membershipRepository: repositories.membershipRepository,
+    closureCatalogRepository: repositories.inboxClosureCatalogRepository,
   };
   if (config.resilience.outboundSendPaused) {
     console.warn("[inbox-worker] INBOX_OUTBOUND_SEND_PAUSED=true — kill switch de emergência ATIVO: nenhuma mensagem outbound será enviada ao WuzAPI (permanecem queued). Inbound/IA/humano continuam funcionando normalmente.");

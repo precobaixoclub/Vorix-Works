@@ -1,3 +1,5 @@
+import type { WorkspaceRepositoryPort } from "../ports/workspace-repository.port.js";
+import type { Permission } from "../../domain/identity/identity.model.js";
 import type { DealRepositoryPort } from "../ports/deal-repository.port.js";
 import type { PipelineStageRepositoryPort } from "../ports/pipeline-repository.port.js";
 import type { ProductRepositoryPort } from "../ports/product-repository.port.js";
@@ -14,11 +16,13 @@ import { hasPermission, type TenantRole } from "../../domain/identity/identity.m
 import type { CommercialPolicy, CommercialSettings } from "../../domain/sales/sales.model.js";
 import type { EffectiveCommercialPolicy } from "../../domain/sales/pricing.js";
 import type { Deal } from "../../domain/crm/crm.model.js";
+import { matchesOwnedScope } from "../ports/owned-resource-scope.js";
 
 /** Dependências do Sales Engine — reaproveita os repositórios do CRM existente (Deal/Product/
  * Stage/Timeline/Task) e só acrescenta o que é novo (itens, catálogo estendido, configuração e
  * aprovações). Notificação/automação são opcionais: sem elas o fluxo funciona igual, só não avisa. */
 export type SalesEngineDeps = {
+  workspaceRepository?: WorkspaceRepositoryPort;
   dealRepository: DealRepositoryPort;
   pipelineStageRepository: PipelineStageRepositoryPort;
   productRepository: ProductRepositoryPort;
@@ -38,7 +42,7 @@ export type SalesEngineDeps = {
 };
 
 /** Quem está agindo — sempre vindo do JWT (nunca do corpo da requisição). */
-export type SalesActor = { tenantId: string; userId: string; role: TenantRole };
+export type SalesActor = { tenantId: string; userId: string; role: TenantRole; /** Permissões efetivas (preset + exceções); ausente = preset do papel. */ permissions?: readonly Permission[]; permissionRevokes?: readonly string[] };
 
 export const isSalesManager = (role: TenantRole): boolean => role === "owner" || role === "admin";
 
@@ -48,8 +52,9 @@ export function defaultCommercialSettings(tenantId: string, workspaceId: string)
     tenantId,
     sellersCanViewCost: false,
     sellersCanViewMargin: true,
-    dealVisibility: "all",
-    proposalAcceptAutoWin: false,
+    dealVisibility: "own",
+    proposalAcceptAutoWin: true,
+    closedDealArchiveDays: null,
     rankingEnabled: false,
     updatedAt: new Date(0).toISOString(),
   };
@@ -66,25 +71,28 @@ export type SalesVisibility = { canViewCost: boolean; canViewMargin: boolean; is
 export function resolveVisibility(actor: SalesActor, settings: CommercialSettings): SalesVisibility {
   const editor = actor.role === "editor";
   return {
-    canViewCost: hasPermission(actor.role, "product:view_cost") || (editor && settings.sellersCanViewCost),
-    canViewMargin: hasPermission(actor.role, "deal:view_margin") || (editor && settings.sellersCanViewMargin),
-    isManager: isSalesManager(actor.role),
+    canViewCost: !actor.permissionRevokes?.includes("product:view_cost") && (hasPermission(actor, "product:view_cost") || (editor && settings.sellersCanViewCost)),
+    canViewMargin: !actor.permissionRevokes?.includes("deal:view_margin") && (hasPermission(actor, "deal:view_margin") || (editor && settings.sellersCanViewMargin)),
+    isManager: hasPermission(actor, "deal:approve_discount"),
   };
 }
 
-/** Escopo de leitura de oportunidades conforme `dealVisibility` — gestão sempre vê tudo. */
-export async function resolveDealScope(deps: Pick<SalesEngineDeps, "salesConfigRepository" | "teamMembershipRepository">, actor: SalesActor, workspaceId: string): Promise<{ ownerUserIdsIn?: string[]; teamIdsIn?: string[] }> {
-  if (isSalesManager(actor.role)) return {};
-  const settings = await loadCommercialSettings(deps, actor.tenantId, workspaceId);
-  if (settings.dealVisibility === "all") return {};
-  if (settings.dealVisibility === "own") return { ownerUserIdsIn: [actor.userId] };
-  const teams = await deps.teamMembershipRepository.listByUser(actor.userId);
-  return { ownerUserIdsIn: [actor.userId], teamIdsIn: teams.map((membership) => membership.teamId) };
+/**
+ * Escopo de leitura de oportunidades (0173): `deal:view_all` vê tudo; `deal:view_team` vê as
+ * próprias, as das equipes das quais participa e as dos colegas dessas equipes; sem nenhuma, só as
+ * próprias. Campos comerciais legados nunca ampliam permissões de acesso.
+ */
+export async function resolveDealScope(deps: Pick<SalesEngineDeps, "salesConfigRepository" | "teamMembershipRepository">, actor: SalesActor, workspaceId: string): Promise<{ ownUserId?: string; ownerUserIdsIn?: string[]; teamIdsIn?: string[] }> {
+  if (hasPermission(actor, "deal:view_all")) return {};
+  if (!hasPermission(actor, "deal:view_team")) return { ownerUserIdsIn: [actor.userId] };
+  const teamIds = (await deps.teamMembershipRepository.listByUser(actor.userId, actor.tenantId)).filter(m => actor.role !== "admin" || m.role === "owner" || m.role === "admin").map((membership) => membership.teamId);
+  const owners = new Set<string>([actor.userId]);
+  for (const teamId of teamIds) for (const member of await deps.teamMembershipRepository.listByTeam(teamId)) owners.add(member.userId);
+  return { ownUserId: actor.userId, ownerUserIdsIn: [...owners], teamIdsIn: teamIds };
 }
 
 export function dealVisibleInScope(deal: Deal, scope: { ownerUserIdsIn?: string[]; teamIdsIn?: string[] }): boolean {
-  if (!scope.ownerUserIdsIn && !scope.teamIdsIn) return true;
-  return Boolean((deal.ownerUserId && scope.ownerUserIdsIn?.includes(deal.ownerUserId)) || (deal.teamId && scope.teamIdsIn?.includes(deal.teamId)));
+  return matchesOwnedScope(deal, scope);
 }
 
 /** Política efetiva — a mais específica vence: usuário > equipe (a mais permissiva entre as
@@ -99,7 +107,7 @@ export async function resolveEffectivePolicy(deps: Pick<SalesEngineDeps, "salesC
     const membership = await deps.membershipRepository.getByUserAndTenant(input.userId, input.tenantId);
     const rolePolicy = membership ? policies.find((policy) => policy.scopeType === "role" && policy.scopeId === membership.role) : undefined;
     if (rolePolicy) layers.push({ policy: rolePolicy, source: "role" });
-    const teamIds = new Set((await deps.teamMembershipRepository.listByUser(input.userId)).map((membershipRow) => membershipRow.teamId));
+    const teamIds = new Set((await deps.teamMembershipRepository.listByUser(input.userId, input.tenantId)).map((membershipRow) => membershipRow.teamId));
     const teamPolicies = policies.filter((policy) => policy.scopeType === "team" && policy.scopeId && teamIds.has(policy.scopeId));
     if (teamPolicies.length > 0) {
       const minMargins = teamPolicies.map((policy) => policy.minMarginBp).filter((value): value is number => value !== undefined);

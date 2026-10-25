@@ -50,7 +50,7 @@ export default function PublicProposalPage() {
   const [rejectReason, setRejectReason] = useState("");
   const [rejectComment, setRejectComment] = useState("");
   const [actionError, setActionError] = useState<string>();
-  const loaded = useRef(false);
+  const loaded = useRef<string | undefined>(undefined);
 
   async function load() {
     setLoading(true);
@@ -65,8 +65,8 @@ export default function PublicProposalPage() {
   }
 
   useEffect(() => {
-    if (loaded.current) return;
-    loaded.current = true;
+    if (loaded.current === token) return;
+    loaded.current = token;
     void load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
@@ -111,11 +111,16 @@ export default function PublicProposalPage() {
   }
 
   const remaining = daysUntil(proposal?.validUntil);
+  const declineReasons = (proposal?.declineReasons ?? []).map((reason) => reason.trim().replace(/\s+/g, " ")).filter((reason, index, reasons) => reason && reasons.findIndex((candidate) => candidate.normalize("NFC").toLocaleLowerCase("pt-BR") === reason.normalize("NFC").toLocaleLowerCase("pt-BR")) === index);
+  const responseButtons = <>
+    <Button className={proposalStyles.acceptButton} onClick={() => { setActionError(undefined); setConfirming(true); }} disabled={Boolean(busy)}><CheckCircle2 className="h-4 w-4" />Aceitar proposta</Button>
+    <Button className={proposalStyles.rejectButton} variant="secondary" onClick={() => { setActionError(undefined); setRejecting(true); }} disabled={Boolean(busy)}>Recusar proposta</Button>
+  </>;
 
   return (
-    <div className={proposalStyles.page}>
+    <div className={proposalStyles.page} data-can-respond={canRespond}>
       <header className={proposalStyles.pageHeader}>
-        <span><ShieldCheck className="h-4 w-4" />Uma proposta preparada especialmente para você</span>
+        <span><ShieldCheck className="h-4 w-4" />Proposta compartilhada com você</span>
         {proposal ? <Button variant="ghost" size="sm" onClick={() => { sendProposalDownload(token); window.print(); }}><Download className="h-4 w-4" />Salvar PDF</Button> : null}
       </header>
 
@@ -125,44 +130,42 @@ export default function PublicProposalPage() {
 
         {proposal ? <>
           <div className="mb-4 overflow-hidden rounded-xl" role="status"><StatusBanner proposal={proposal} /></div>
-          {canRespond && remaining !== undefined && remaining >= 0 && remaining <= 2 ? <p className="mb-4 text-sm text-amber-200">{remaining === 0 ? "Sua proposta vence hoje." : `Sua proposta vence em ${remaining} dia${remaining === 1 ? "" : "s"}.`}</p> : null}
-          <ProposalDocument proposal={proposal} actions={canRespond && !rejecting ? <>
-            <Button className={proposalStyles.acceptButton} onClick={() => { setActionError(undefined); setConfirming(true); }} disabled={Boolean(busy)}><CheckCircle2 className="h-4 w-4" />Aceitar proposta</Button>
-            <Button className={proposalStyles.rejectButton} variant="secondary" onClick={() => { setActionError(undefined); setRejecting(true); }} disabled={Boolean(busy)}>Recusar proposta</Button>
-          </> : undefined} />
+          {canRespond && remaining !== undefined && remaining >= 0 && remaining <= 2 ? <p className={proposalStyles.expiryNotice}>{remaining === 0 ? "Sua proposta vence hoje." : `Sua proposta vence em ${remaining} dia${remaining === 1 ? "" : "s"}.`}</p> : null}
+          <ProposalDocument proposal={proposal} actions={canRespond ? responseButtons : undefined} />
         </> : null}
 
         {actionError && !confirming && !rejecting ? <p role="alert" className="mt-4 rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">{actionError}</p> : null}
 
-        {canRespond && rejecting ? (
-          <div className={cn(proposalStyles.responsePanel, "space-y-3 print:hidden")}>
-            <p className="text-sm font-medium">Pode nos contar o motivo? (opcional)</p>
-            <div className="flex flex-wrap gap-2">
-              {(proposal?.declineReasons ?? []).map((reason) => (
-                <button key={reason} type="button" aria-pressed={reason === rejectReason} onClick={() => setRejectReason(reason === rejectReason ? "" : reason)} className={cn(proposalStyles.reason, reason === rejectReason && proposalStyles.selectedReason)}>{reason}</button>
-              ))}
-            </div>
-            <div><Label htmlFor="reject-comment">Comentário (opcional)</Label><Textarea id="reject-comment" autoFocus value={rejectComment} onChange={(event) => setRejectComment(event.target.value)} rows={3} maxLength={1000} /></div>
-            {actionError ? <p role="alert" className="text-sm text-rose-300">{actionError}</p> : null}
-            <div className="flex gap-2"><Button variant="secondary" className="flex-1" onClick={() => setRejecting(false)}>Voltar</Button><Button variant="danger" className="flex-1" onClick={handleReject} loading={busy === "reject"} disabled={Boolean(busy)}>Confirmar recusa</Button></div>
-          </div>
-        ) : null}
       </main>
 
+      {canRespond ? <nav className={proposalStyles.mobileActions} aria-label="Responder à proposta">{responseButtons}</nav> : null}
+
+      {canRespond && rejecting ? <Modal title="Recusar proposta" onClose={() => { if (!busy) setRejecting(false); }} maxWidthClass={`sm:max-w-lg ${proposalStyles.responseDialog}`}>
+        <form className={proposalStyles.responsePanel} onSubmit={(event) => { event.preventDefault(); void handleReject(); }}>
+          <p>Se quiser, conte o que podemos melhorar. O motivo e o comentário são opcionais.</p>
+          {declineReasons.length ? <fieldset disabled={Boolean(busy)}><legend>Motivo da recusa (opcional)</legend><div className={proposalStyles.reasonGrid}>
+            {declineReasons.map((reason) => <button key={reason} type="button" aria-pressed={reason === rejectReason} onClick={() => setRejectReason(reason === rejectReason ? "" : reason)} className={cn(proposalStyles.reason, reason === rejectReason && proposalStyles.selectedReason)}>{reason}</button>)}
+          </div></fieldset> : null}
+          <div><Label htmlFor="reject-comment">Comentário (opcional)</Label><Textarea id="reject-comment" value={rejectComment} disabled={Boolean(busy)} onChange={(event) => setRejectComment(event.target.value)} rows={3} maxLength={1000} placeholder="Conte um pouco mais, se desejar." /></div>
+          {actionError ? <p role="alert" className={proposalStyles.dialogError}>{actionError}</p> : null}
+          <div className={proposalStyles.dialogActions}><Button type="button" variant="secondary" disabled={Boolean(busy)} onClick={() => setRejecting(false)}>Voltar</Button><Button type="submit" variant="danger" loading={busy === "reject"} disabled={Boolean(busy)}>Confirmar recusa</Button></div>
+        </form>
+      </Modal> : null}
+
       {confirming && proposal ? (
-        <Modal title="Confirmar aceite" onClose={() => setConfirming(false)}>
+        <Modal title="Confirmar aceite" onClose={() => { if (!busy) setConfirming(false); }} maxWidthClass={`sm:max-w-lg ${proposalStyles.responseDialog}`}>
           <div className="space-y-3 text-sm">
             <ul className="space-y-1">
-              {proposal.items.map((item, index) => <li key={index} className="flex justify-between gap-3"><span className="min-w-0 truncate">{String(item.quantity).replace(".", ",")} × {item.name}</span><span className="shrink-0 tabular-nums">{formatCurrencyCents(item.subtotalCents, proposal.currency)}</span></li>)}
+              {proposal.items.map((item, index) => <li key={index} className="flex flex-wrap justify-between gap-3"><span className="min-w-0 flex-1 break-words [overflow-wrap:anywhere]">{String(item.quantity).replace(".", ",")} × {item.name}</span><span className="tabular-nums">{formatCurrencyCents(item.subtotalCents, proposal.currency)}</span></li>)}
             </ul>
             <div className="flex justify-between border-t border-border/60 pt-2 font-semibold"><span>Total</span><span className="tabular-nums">{formatCurrencyCents(proposal.totalCents, proposal.currency)}</span></div>
             {proposal.conditions ? <p className="whitespace-pre-wrap text-muted-foreground">{proposal.conditions}</p> : null}
             {proposal.validUntil ? <p className="text-muted-foreground">Válida até {formatDate(proposal.validUntil)}.</p> : null}
             <p className="rounded-lg bg-muted/50 px-3 py-2 text-xs text-muted-foreground">Ao confirmar, você registra o aceite comercial desta proposta ({proposal.number ?? "proposta"}{proposal.version > 1 ? ` v${proposal.version}` : ""}). Isto não é uma assinatura eletrônica.</p>
             {actionError ? <p role="alert" className="text-sm text-destructive">{actionError}</p> : null}
-            <div className="flex gap-2">
+            <div className={proposalStyles.dialogActions}>
               <Button variant="secondary" className="flex-1" onClick={() => setConfirming(false)} disabled={busy === "accept"}>Voltar</Button>
-              <Button className="flex-1" onClick={handleAccept} loading={busy === "accept"}>Confirmar aceite</Button>
+              <Button className={proposalStyles.acceptButton} onClick={handleAccept} loading={busy === "accept"}>Confirmar aceite</Button>
             </div>
           </div>
         </Modal>
@@ -175,11 +178,11 @@ function StatusBanner({ proposal }: { proposal: PublicProposal }) {
   const banner = proposal.superseded
     ? { icon: FileText, text: "Esta versão foi substituída por uma proposta mais recente. Use o link da versão nova.", tone: "bg-muted text-muted-foreground" }
     : proposal.status === "accepted"
-      ? { icon: CheckCircle2, text: `Proposta aceita${proposal.respondedAt ? ` em ${formatDate(proposal.respondedAt)}` : ""}. Obrigado!`, tone: "bg-emerald-50 text-emerald-800 dark:bg-emerald-500/10 dark:text-emerald-200" }
+      ? { icon: CheckCircle2, text: `Proposta aceita${proposal.respondedAt ? ` em ${formatDate(proposal.respondedAt)}` : ""}. Obrigado!`, tone: "bg-emerald-50 text-emerald-800" }
       : proposal.status === "rejected"
-        ? { icon: XCircle, text: "Você recusou esta proposta. Se mudar de ideia, fale com o vendedor.", tone: "bg-rose-50 text-rose-800 dark:bg-rose-500/10 dark:text-rose-200" }
+        ? { icon: XCircle, text: "Você recusou esta proposta. Se mudar de ideia, fale com o vendedor.", tone: "bg-rose-50 text-rose-800" }
         : proposal.status === "expired"
-          ? { icon: CalendarClock, text: "Esta proposta expirou. Peça uma nova versão ao vendedor.", tone: "bg-amber-50 text-amber-800 dark:bg-amber-500/10 dark:text-amber-200" }
+          ? { icon: CalendarClock, text: "Esta proposta expirou. Peça uma nova versão ao vendedor.", tone: "bg-amber-50 text-amber-800" }
           : proposal.status === "cancelled"
             ? { icon: XCircle, text: "Esta proposta foi cancelada.", tone: "bg-muted text-muted-foreground" }
             : undefined;

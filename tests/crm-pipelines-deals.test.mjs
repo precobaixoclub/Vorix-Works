@@ -17,6 +17,9 @@ import {
   createStage,
   ensureDefaultPipeline,
   mustPipelineBelongToTenantAndWorkspace,
+  reorderStages,
+  updateStage,
+  deleteStage,
 } from "../dist/application/crm/pipeline-use-cases.js";
 import {
   createDeal,
@@ -28,6 +31,7 @@ import {
   updateDeal,
 } from "../dist/application/crm/deal-use-cases.js";
 import { startTestPostgres } from "./helpers/pglite-test-db.mjs";
+import { registerPipelinesRoutes } from "../dist/interfaces/api/routes/v1/pipelines.route.js";
 
 /**
  * CRM/Comercial — Fase 2 (Pipelines/Etapas/Negócios/Kanban). Foco: (1) pipeline padrão é criado
@@ -79,6 +83,72 @@ function dealDeps() {
   };
 }
 
+test("Fases personalizadas: renomear, reordenar atomicamente e rejeitar lista incompleta ou de outro tenant", async () => {
+  const tenantId = nextId("custom-pipeline-tenant");
+  const workspace = await makeWorkspace(tenantId);
+  const deps = pipelineDeps();
+  const { pipeline, stages } = await ensureDefaultPipeline(deps, tenantId, workspace.id);
+  const input = { tenantId, workspaceId: workspace.id, pipelineId: pipeline.id };
+  await updateStage(deps, { ...input, stageId: stages[0].id, patch: { name: "Aguardando retorno" } });
+  const ids = [...stages.filter(s => !s.isWon && !s.isLost).reverse(), ...stages.filter(s => s.isWon || s.isLost)].map(s => s.id);
+  await reorderStages(deps, { ...input, stageIds: ids });
+  assert.deepEqual((await deps.pipelineStageRepository.listByPipeline(pipeline.id)).map((stage) => stage.id), ids);
+  assert.equal((await deps.pipelineStageRepository.getById(stages[0].id)).name, "Aguardando retorno");
+  for (const invalid of [ids.slice(1), [...ids.slice(0, -1), ids[0]], [...ids.slice(0, -1), "foreign-stage"]]) {
+    await assert.rejects(() => reorderStages(deps, { ...input, stageIds: invalid }), /PIPELINE_STAGE_INVALID/);
+  }
+  assert.deepEqual((await deps.pipelineStageRepository.listByPipeline(pipeline.id)).map((stage) => stage.id), ids);
+  await assert.rejects(() => reorderStages(deps, { ...input, tenantId: "other-tenant", stageIds: ids }), /PIPELINE_NOT_FOUND/);
+  const app = Fastify();
+  registerErrorHandler(app);
+  app.addHook("onRequest", async request => { request.zunoContext = { principal: { tenantId, userId: "admin", role: "owner" } }; });
+  await registerPipelinesRoutes(app, deps);
+  try {
+    const response = await app.inject({ method: "POST", url: `/pipelines/${pipeline.id}/stages/reorder`, payload: { workspaceId: workspace.id, stageIds: [...ids.slice(0, -2).reverse(), ...ids.slice(-2)] } });
+    assert.equal(response.statusCode, 204, response.body);
+    const invalid = await app.inject({ method: "POST", url: `/pipelines/${pipeline.id}/stages/reorder`, payload: { workspaceId: workspace.id, stageIds: ids.slice(1) } });
+    assert.equal(invalid.statusCode, 400, invalid.body);
+  } finally { await app.close(); }
+});
+
+test("Excluir fase preserva oportunidades e mantém ao menos uma fase", async () => {
+  const tenantId = nextId("delete-pipeline-tenant");
+  const workspace = await makeWorkspace(tenantId);
+  const deps = pipelineDeps();
+  const pipeline = await createPipeline(deps, { tenantId, workspaceId: workspace.id, name: "Funil personalizado" });
+  const input = { tenantId, workspaceId: workspace.id, pipelineId: pipeline.id };
+  const initial = await deps.pipelineStageRepository.listByPipeline(pipeline.id);
+  for (const stage of initial.filter(s => !s.isWon && !s.isLost).slice(1)) await deleteStage(deps, { ...input, stageId: stage.id });
+  const first = initial[0];
+  await assert.rejects(() => deleteStage(deps, { ...input, stageId: first.id }), /PIPELINE_STAGE_INVALID/);
+  const second = await createStage(deps, { ...input, name: "Retorno", position: 1 });
+  await createDeal(dealDeps(), { ...input, stageId: first.id, title: "Preservar" });
+  await assert.rejects(() => deleteStage(deps, { ...input, stageId: first.id }), (error) => ["23503", "23001"].includes(error.code));
+  await deleteStage(deps, { ...input, stageId: second.id });
+  assert.equal((await deps.pipelineStageRepository.listByPipeline(pipeline.id)).length, 3);
+});
+
+test("Fases sistêmicas: protegidas, únicas e sempre depois das fases configuráveis", async () => {
+  const tenantId = nextId("system-stages");
+  const workspace = await makeWorkspace(tenantId);
+  const deps = pipelineDeps();
+  const pipeline = await createPipeline(deps, { tenantId, workspaceId: workspace.id, name: "Novo funil" });
+  const scope = { tenantId, workspaceId: workspace.id, pipelineId: pipeline.id };
+  const initial = await deps.pipelineStageRepository.listByPipeline(pipeline.id);
+  const won = initial.find(s => s.isWon), lost = initial.find(s => s.isLost);
+  for (const stage of [won, lost]) {
+    await assert.rejects(deleteStage(deps, { ...scope, stageId: stage.id }), /PIPELINE_STAGE_INVALID/);
+    await assert.rejects(updateStage(deps, { ...scope, stageId: stage.id, patch: { isWon: false, isLost: false } }), /PIPELINE_STAGE_INVALID/);
+  }
+  await assert.rejects(createStage(deps, { ...scope, name: "Outra ganha", position: 0, isWon: true }), /PIPELINE_STAGE_INVALID/);
+  await updateStage(deps, { ...scope, stageId: won.id, patch: { name: "Venda realizada" } });
+  const custom = await createStage(deps, { ...scope, name: "Contrato", position: 999 });
+  const stages = await deps.pipelineStageRepository.listByPipeline(pipeline.id);
+  assert.deepEqual(stages.slice(-3).map(s => s.id), [custom.id, won.id, lost.id]);
+  assert.equal(stages.at(-2).isWon, true);
+  await assert.rejects(reorderStages(deps, { ...scope, stageIds: [...stages].reverse().map(s => s.id) }), /PIPELINE_STAGE_INVALID/);
+});
+
 test("Migrations 0094-0095 aplicam sem erro; tabelas de pipeline/deal existem", async () => {
   for (const id of ["0094_crm_pipelines", "0095_crm_deals"]) {
     const status = await db.pool.query("select id from schema_migrations where id = $1", [id]);
@@ -123,8 +193,8 @@ async function makePipelineWithStages(tenantId, workspaceId) {
   const pipeline = await createPipeline(deps, { tenantId, workspaceId, name: "Vendas" });
   const novo = await createStage(deps, { pipelineId: pipeline.id, tenantId, workspaceId, name: "Novo", position: 0 });
   const negociacao = await createStage(deps, { pipelineId: pipeline.id, tenantId, workspaceId, name: "Negociação", position: 1 });
-  const ganho = await createStage(deps, { pipelineId: pipeline.id, tenantId, workspaceId, name: "Ganho", position: 2, isWon: true });
-  const perdido = await createStage(deps, { pipelineId: pipeline.id, tenantId, workspaceId, name: "Perdido", position: 3, isLost: true });
+  const ganho = (await deps.pipelineStageRepository.listByPipeline(pipeline.id)).find(stage => stage.isWon);
+  const perdido = (await deps.pipelineStageRepository.listByPipeline(pipeline.id)).find(stage => stage.isLost);
   return { pipeline, novo, negociacao, ganho, perdido };
 }
 
@@ -278,7 +348,7 @@ test("API do resumo aplica a visibilidade do vendedor e deriva o tenant da sessa
   app.addHook("onRequest", async request => { request.zunoContext = { principal }; });
   await registerDealsRoutes(app, { ...dealDeps(), sales: {
     salesConfigRepository: { getSettings: async () => ({ tenantId, dealVisibility: visibility }) },
-    teamMembershipRepository: { listByUser: async () => [{ teamId: team.id }] },
+    teamMembershipRepository: { listByUser: async () => [{ teamId: team.id }], listByTeam: async () => [] },
   } });
   t.after(() => app.close());
   const url = `/deals/open-by-contact?workspaceId=${workspace.id}&tenantId=forged`;
@@ -286,8 +356,9 @@ test("API do resumo aplica a visibilidade do vendedor e deriva o tenant da sessa
   assert.equal(own.statusCode, 200);
   assert.deepEqual(own.json().data, [{ contactId: contact.id, currency: "BRL", count: 1, valueCentsSum: 1000 }]);
   visibility = "team";
+  principal = { ...principal, permissions: ["deal:read", "deal:view_team"] };
   assert.equal((await app.inject(url)).json().data[0].valueCentsSum, 3000);
-  principal = { ...principal, role: "admin" };
+  principal = { ...principal, role: "owner", permissions: undefined };
   visibility = "own";
   assert.equal((await app.inject(url)).json().data[0].count, 2);
   principal = { ...principal, tenantId: "other-tenant" };

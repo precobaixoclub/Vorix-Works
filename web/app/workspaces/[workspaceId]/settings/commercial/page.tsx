@@ -10,6 +10,7 @@ import { Card, CardBody } from "@/components/Card";
 import { DetailBlock } from "@/components/DetailModal";
 import { Input, Label, MoneyInput, Textarea } from "@/components/Field";
 import { SettingsShell } from "@/components/settings/SettingsShell";
+import { CloseReasonManager } from "@/components/sales/CloseReasonManager";
 import { FunnelStagesBlock } from "@/components/sales/FunnelStagesBlock";
 import { ErrorState } from "@/components/ErrorState";
 import { Spinner } from "@/components/Spinner";
@@ -164,6 +165,12 @@ export default function CommercialSettingsPage() {
               workspaceId={workspace.id}
               disabled={!isManager}
             />
+          </SettingsTopic>
+          <SettingsTopic
+            title="6. Arquivamento do Kanban"
+            description="Escolha por quanto tempo as oportunidades encerradas ficam no Kanban operacional."
+          >
+            <ArchiveSettingsBlock workspaceId={workspace.id} days={settings.closedDealArchiveDays ?? null} disabled={!isManager} onSaved={() => mutate()} />
           </SettingsTopic>
           <SettingsTopic
             title="Opções adicionais (opcionais)"
@@ -356,7 +363,7 @@ function GeneralBlock({
         />
         <ToggleRow
           label="Finalizar a venda quando o cliente aceitar a proposta?"
-          description="Se escolher Não, a equipe recebe o aceite e finaliza a venda manualmente. É a opção recomendada para começar."
+          description="Por padrão, o aceite registra a venda como ganha. Se escolher Não, a equipe recebe o aceite e finaliza a venda manualmente."
           checked={draft.proposalAcceptAutoWin}
           disabled={disabled || busy}
           onChange={(value) => {
@@ -379,28 +386,8 @@ function GeneralBlock({
         <Label htmlFor="deal-visibility">
           Quais oportunidades cada vendedor pode ver?
         </Label>
-        <Select
-          value={draft.dealVisibility}
-          disabled={disabled || busy}
-          onValueChange={(value) => {
-            setDraft({
-              ...draft,
-              dealVisibility: value as typeof draft.dealVisibility,
-            });
-            setSaved(false);
-          }}
-        >
-          <SelectTrigger id="deal-visibility" className="min-h-11">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">
-              Todas as oportunidades da empresa
-            </SelectItem>
-            <SelectItem value="team">As suas e as da sua equipe</SelectItem>
-            <SelectItem value="own">Somente as suas oportunidades</SelectItem>
-          </SelectContent>
-        </Select>
+        <p className="text-sm text-muted-foreground">O acesso às oportunidades segue o perfil, as permissões individuais e as equipes configuradas em Usuários.</p>
+
       </div>
       <details className="rounded-lg border border-border p-4">
         <summary className="min-h-11 cursor-pointer text-base font-medium">
@@ -840,8 +827,9 @@ function TemplatesBlock({
   return (
     <DetailBlock label="Mensagens da proposta no WhatsApp">
       <p className="mb-2 text-xs text-muted-foreground">
-        As palavras entre chaves são preenchidas pelo sistema: {"{{nome}}"} vira
-        o nome do cliente e {"{{valor}}"} vira o valor da proposta. Mantenha{" "}
+        Use {"{{saudacao}}"} para cumprimentar o cliente pelo nome, {"{{titulo}}"} para o título,
+        {"{{valor}}"} para o valor e {"{{linha_validade}}"} para a validade, quando houver.
+        Use *texto* para negrito no WhatsApp. Mantenha{" "}
         {"{{proposal_link}}"} no texto de envio para incluir o link. Se deixar
         em branco, será usada a mensagem padrão.
       </p>
@@ -855,7 +843,7 @@ function TemplatesBlock({
             disabled={disabled}
             onChange={(event) => setSend(event.target.value)}
             placeholder={
-              "Olá, {{nome}}!\n\nSua proposta comercial está disponível.\nValor: {{valor}}\nValidade: {{validade}}\n\n{{proposal_link}}"
+              "{{saudacao}}\n\n*PROPOSTA COMERCIAL*\n{{titulo}}\n\n*Valor total:* {{valor}}\n{{linha_validade}}\n\n*Ver proposta completa*\n{{proposal_link}}"
             }
           />
         </div>
@@ -868,7 +856,7 @@ function TemplatesBlock({
             disabled={disabled}
             onChange={(event) => setReminder(event.target.value)}
             placeholder={
-              "Olá, {{nome}}! Passando para lembrar da proposta ({{valor}}).\n\n{{proposal_link}}"
+              "{{saudacao}}\n\n*Vamos conversar sobre sua proposta?*\n{{titulo}}\n\n*Valor total:* {{valor}}\n\n{{proposal_link}}"
             }
           />
         </div>
@@ -910,84 +898,15 @@ function ReasonsBlock({
   workspaceId: string;
   disabled: boolean;
 }) {
-  const { data: reasons, mutate } = useReasons(workspaceId, undefined, true);
   const { data: competitors, mutate: mutateCompetitors } = useCompetitors(
     workspaceId,
     true,
   );
-  const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [competitor, setCompetitor] = useState("");
   return (
     <DetailBlock label="Motivos e concorrentes">
       <div className="grid gap-4 sm:grid-cols-2">
-        {(Object.keys(REASON_KIND_LABEL) as CloseReasonKind[]).map((kind) => (
-          <div key={kind}>
-            <p className="mb-1.5 text-sm font-medium">
-              {REASON_KIND_LABEL[kind]}
-            </p>
-            <div className="flex flex-wrap gap-1.5">
-              {(reasons ?? [])
-                .filter((reason) => reason.kind === kind)
-                .map((reason) => (
-                  <button
-                    key={reason.id}
-                    type="button"
-                    disabled={disabled}
-                    onClick={() =>
-                      updateReason(reason.id, {
-                        workspaceId,
-                        active: !reason.active,
-                      })
-                        .then(() => mutate())
-                        .catch(toastError("Não foi possível alterar"))
-                    }
-                    className={
-                      reason.active
-                        ? "rounded-full border border-border px-2.5 py-1 text-xs"
-                        : "rounded-full border border-dashed border-border px-2.5 py-1 text-xs text-muted-foreground line-through"
-                    }
-                    title={
-                      reason.active
-                        ? "Clique para desativar"
-                        : "Clique para reativar"
-                    }
-                  >
-                    {reason.label}
-                  </button>
-                ))}
-            </div>
-            {!disabled ? (
-              <div className="mt-2 flex gap-2">
-                <Input
-                  value={drafts[kind] ?? ""}
-                  onChange={(event) =>
-                    setDrafts({ ...drafts, [kind]: event.target.value })
-                  }
-                  placeholder="Novo motivo"
-                />
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  disabled={!drafts[kind]?.trim()}
-                  onClick={() =>
-                    createReason({
-                      workspaceId,
-                      kind,
-                      label: drafts[kind].trim(),
-                    })
-                      .then(() => {
-                        setDrafts({ ...drafts, [kind]: "" });
-                        return mutate();
-                      })
-                      .catch(toastError("Não foi possível criar"))
-                  }
-                >
-                  Adicionar
-                </Button>
-              </div>
-            ) : null}
-          </div>
-        ))}
+        {(Object.keys(REASON_KIND_LABEL) as CloseReasonKind[]).map(kind => <CloseReasonManager key={kind} workspaceId={workspaceId} kind={kind} title={REASON_KIND_LABEL[kind]} disabled={disabled} />)}
         <div>
           <p className="mb-1.5 text-sm font-medium">Concorrentes</p>
           <div className="flex flex-wrap gap-1.5">
@@ -1380,3 +1299,29 @@ function PriceBookItems({
 }
 
 export { percentInputFromBp };
+
+function ArchiveSettingsBlock({ workspaceId, days, disabled, onSaved }: { workspaceId: string; days: number | null; disabled: boolean; onSaved: () => void }) {
+  const choiceFor = (value: number | null) => value === null ? "never" : [0, 1, 3, 7].includes(value) ? String(value) : "custom";
+  const [choice, setChoice] = useState(() => choiceFor(days));
+  const [custom, setCustom] = useState(String(days ?? 14));
+  const [busy, setBusy] = useState(false);
+  useEffect(() => { setChoice(choiceFor(days)); setCustom(String(days ?? 14)); }, [days]);
+  const nextDays = choice === "never" ? null : choice === "custom" ? Number(custom) : Number(choice);
+  const valid = choice !== "custom" || (custom !== "" && Number.isInteger(nextDays) && Number(nextDays) >= 0 && Number(nextDays) <= 36500);
+  return <div className="space-y-4">
+    <div className="space-y-2"><Label htmlFor="closed-deal-archive-days">Ocultar oportunidades encerradas após</Label>
+      <Select value={choice} disabled={disabled || busy} onValueChange={setChoice}>
+        <SelectTrigger id="closed-deal-archive-days"><SelectValue /></SelectTrigger>
+        <SelectContent><SelectItem value="never">Nunca</SelectItem><SelectItem value="0">Imediatamente</SelectItem><SelectItem value="1">1 dia</SelectItem><SelectItem value="3">3 dias</SelectItem><SelectItem value="7">7 dias</SelectItem><SelectItem value="custom">Personalizar prazo</SelectItem></SelectContent>
+      </Select>
+    </div>
+    {choice === "custom" ? <div className="space-y-2"><Label htmlFor="custom-archive-days">Quantidade de dias</Label><Input id="custom-archive-days" type="number" min={0} max={36500} value={custom} disabled={disabled || busy} onChange={event => setCustom(event.target.value)} /></div> : null}
+    <p className="text-sm leading-relaxed text-muted-foreground">O prazo começa na data do fechamento. A oportunidade mantém o resultado Ganha ou Perdida e continua disponível nos filtros, histórico, metas e relatórios. Reabrir a oportunidade remove o arquivamento.</p>
+    {!disabled ? <Button loading={busy} disabled={busy || !valid || nextDays === days} onClick={async () => {
+      setBusy(true);
+      try { await updateCommercialSettings({ workspaceId, closedDealArchiveDays: nextDays }); onSaved(); toast.success("Prazo de arquivamento salvo."); }
+      catch (cause) { toastError("Não foi possível salvar o prazo")(cause); }
+      finally { setBusy(false); }
+    }}>Salvar arquivamento</Button> : null}
+  </div>;
+}

@@ -66,7 +66,7 @@ export function useStagesByPipeline(workspaceId: string, pipelineIds: readonly s
 
 export function useDeals(workspaceId: string, params?: ListDealsParams, enabled = true) {
   return useSWR(
-    enabled ? ["deals", workspaceId, params?.pipelineId, params?.stageId, params?.contactId, params?.ownerUserId, params?.teamId, params?.origin, params?.search] : null,
+    enabled ? ["deals", workspaceId, params?.pipelineId, params?.stageId, params?.contactId, params?.ownerUserId, params?.teamId, params?.origin, params?.search, params?.boardView] : null,
     () => listDeals(workspaceId, params),
   );
 }
@@ -81,7 +81,7 @@ export function useContactOpenDealsSummary(workspaceId: string, enabled = true) 
 
 export function useDealsSummary(workspaceId: string, pipelineId: string | undefined, params?: Omit<ListDealsParams, "pipelineId" | "stageId">) {
   return useSWR(
-    pipelineId ? ["deals-summary", workspaceId, pipelineId, params?.ownerUserId, params?.teamId, params?.origin, params?.search] : null,
+    pipelineId ? ["deals-summary", workspaceId, pipelineId, params?.ownerUserId, params?.teamId, params?.origin, params?.search, params?.boardView] : null,
     () => getDealsSummary(workspaceId, pipelineId!, params),
   );
 }

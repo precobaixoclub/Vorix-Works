@@ -50,7 +50,7 @@ async function setup({ messages = [], generator } = {}) {
   const workspace = await new PostgresWorkspaceRepository(db.pool, { idGenerator: () => nextId("workspace") }).create({ tenantId, name: "W" });
   const workspaceId = workspace.id;
   const seller = { tenantId, userId: nextId("seller"), role: "editor" };
-  const manager = { tenantId, userId: nextId("manager"), role: "admin" };
+  const manager = { tenantId, userId: nextId("manager"), role: "owner" };
   const members = [seller, manager].map((actor) => ({ id: nextId("m"), userId: actor.userId, tenantId, role: actor.role }));
   const captured = [];
   const d = {

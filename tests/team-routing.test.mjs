@@ -39,6 +39,10 @@ const nextId = (prefix) => `${prefix}-fixed-${++counter}`;
 
 async function makeWorkspace(tenantId) {
   const workspaceRepo = new PostgresWorkspaceRepository(db.pool, { idGenerator: () => nextId("workspace") });
+  for (const id of ["user-a", "user-b", "user-c", "user-n2", "user-agent-1", "user-agent-2"]) {
+    await db.pool.query("insert into users (id, email, password_hash, name, status, created_at, updated_at) values ($1, $2, 'x', $1, 'active', now(), now()) on conflict do nothing", [id, `${id}@routing.test`]);
+    await db.pool.query("insert into tenant_members (id, user_id, tenant_id, role, created_at, updated_at) values ($1, $2, $3, 'editor', now(), now()) on conflict do nothing", [`${tenantId}-${id}`, id, tenantId]);
+  }
   return workspaceRepo.create({ tenantId, name: "W" });
 }
 

@@ -19,19 +19,28 @@ import { Spinner } from "@/components/Spinner";
 import { useAuth } from "@/contexts/auth-context";
 import { useCurrentWorkspace } from "@/contexts/workspace-context";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { inviteTenantMember, removeTenantMember, revokeTenantInvite, updateTenantMemberRole } from "@/features/identity/api";
+import { inviteTenantMember, removeTenantMember, revokeTenantInvite, setMemberStatus } from "@/features/identity/api";
+import { UserAccessModal } from "@/components/settings/UserAccessModal";
+import { useMyAccess } from "@/features/auth/access";
 import { useTenantInvites, useTenantMembers } from "@/features/identity/hooks";
 import type { TenantMemberInvite, TenantMembership, TenantRole } from "@/features/identity/types";
 import { useInboxMembers } from "@/features/inbox/hooks";
-import { canManageTenant, RBAC_COPY } from "@/lib/rbac";
+import { RBAC_COPY } from "@/lib/rbac";
 
-const ROLE_LABEL: Record<TenantRole, string> = { owner: "Administrador", admin: "Gestor", editor: "Editor", viewer: "Visualizador" };
-const ROLES: TenantRole[] = ["owner", "admin", "editor", "viewer"];
+/** Perfis (0173): owner = Administrador, admin = Gerente, editor = Atendente; viewer é legado. */
+const ROLE_LABEL: Record<TenantRole, string> = { owner: "Administrador", admin: "Gerente", editor: "Atendente", viewer: "Visualizador" };
+const INVITE_ROLES: TenantRole[] = ["owner", "admin", "editor"];
 
 export default function UsersPage() {
   const workspace = useCurrentWorkspace();
   const { state } = useAuth();
-  const canManage = canManageTenant(state.status === "authenticated" ? state.role : undefined);
+  const { can } = useMyAccess();
+  const currentUserId = state.status === "authenticated" ? state.user.id : undefined;
+  const actorIsOwner = state.status === "authenticated" && state.role === "owner";
+  // Permissões efetivas (perfil + exceções), não só o nome do perfil.
+  const canManage = can("tenant_member:manage");
+  const canManageAccess = can("tenant_member:manage_permissions");
+  const [accessEditor, setAccessEditor] = useState<{ userId: string; name: string }>();
   const { data: members, error: membersError, isLoading: membersLoading, mutate: mutateMembers } = useTenantMembers();
   const { data: invites, error: invitesError, isLoading: invitesLoading, mutate: mutateInvites } = useTenantInvites();
   const { data: inboxMembers } = useInboxMembers(workspace.id);
@@ -60,15 +69,15 @@ export default function UsersPage() {
     }
   }
 
-  async function handleRoleChange(userId: string, nextRole: TenantRole) {
+  async function handleStatus(userId: string, status: "active" | "disabled") {
     if (!canManage) return;
     setBusy(true);
     setError(undefined);
     try {
-      await updateTenantMemberRole(userId, nextRole);
+      await setMemberStatus(userId, status);
       await mutateMembers();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Não foi possível atualizar o papel.");
+      setError(cause instanceof Error ? cause.message : "Não foi possível alterar o status.");
     } finally {
       setBusy(false);
     }
@@ -125,7 +134,7 @@ export default function UsersPage() {
                 <TableHeader>
                     <TableRow>
                       <TableHead>Usuário</TableHead>
-                      <TableHead>Papel</TableHead>
+                      <TableHead>Perfil</TableHead>
                       <TableHead>Status</TableHead>
                       <TableHead className="text-right">Ações</TableHead>
                     </TableRow>
@@ -146,17 +155,24 @@ export default function UsersPage() {
                         </div>
                       </TableCell>
                       <TableCell>
-                        <Select value={member.role} onValueChange={(value) => handleRoleChange(member.userId, value as TenantRole)} disabled={!canManage || busy}>
-                          <SelectTrigger className="w-40"><SelectValue /></SelectTrigger>
-                          <SelectContent>
-                            {ROLES.map((r) => <SelectItem key={r} value={r}>{ROLE_LABEL[r]}</SelectItem>)}
-                          </SelectContent>
-                        </Select>
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <span className="text-sm text-foreground">{ROLE_LABEL[member.role]}</span>
+                          {member.isAccountOwner ? <Badge variant="outline">Principal</Badge> : null}
+                          {member.customizedPermissions ? <Badge variant="secondary" title="Permissões ajustadas sobre o padrão do perfil">Personalizado</Badge> : null}
+                        </div>
                       </TableCell>
-                      <TableCell><Badge variant="default">Ativo</Badge></TableCell>
+                      <TableCell>{member.status === "disabled" ? <Badge variant="outline">Desativado</Badge> : <Badge variant="default">Ativo</Badge>}</TableCell>
                       <TableCell className="text-right">
+                        <Button variant="ghost" onClick={() => setAccessEditor({ userId: member.userId, name: identity.name })} disabled={busy}>Acesso</Button>
                         <GuardedButton variant="ghost" onClick={() => setProfileEditor({ ...member, ...identity })} allowed={canManage} blockedReason={RBAC_COPY.manageTenant} disabled={busy}>Editar</GuardedButton>
-                        <GuardedButton variant="ghost" onClick={() => setPendingRemoval(member.userId)} allowed={canManage} blockedReason={RBAC_COPY.manageTenant} disabled={busy}>Remover</GuardedButton>
+                        {member.userId !== currentUserId && !member.isAccountOwner ? (
+                          <>
+                            <GuardedButton variant="ghost" onClick={() => void handleStatus(member.userId, member.status === "disabled" ? "active" : "disabled")} allowed={canManage} blockedReason={RBAC_COPY.manageTenant} disabled={busy}>
+                              {member.status === "disabled" ? "Reativar" : "Desativar"}
+                            </GuardedButton>
+                            <GuardedButton variant="ghost" onClick={() => setPendingRemoval(member.userId)} allowed={canManage} blockedReason={RBAC_COPY.manageTenant} disabled={busy}>Remover</GuardedButton>
+                          </>
+                        ) : null}
                       </TableCell>
                     </TableRow>
                   );})}
@@ -212,6 +228,18 @@ export default function UsersPage() {
         await mutateCache((key) => Array.isArray(key) && key[0] === "inbox-members");
       }} /> : null}
 
+      {accessEditor ? (
+        <UserAccessModal
+          userId={accessEditor.userId}
+          name={accessEditor.name}
+          workspaceId={workspace.id}
+          isSelf={accessEditor.userId === currentUserId || !canManageAccess}
+          actorIsOwner={actorIsOwner}
+          onClose={() => setAccessEditor(undefined)}
+          onSaved={async () => { await mutateMembers(); }}
+        />
+      ) : null}
+
       {inviteOpen ? (
         <Modal title="Convidar usuário" onClose={() => setInviteOpen(false)}>
           <div className="space-y-3">
@@ -220,11 +248,11 @@ export default function UsersPage() {
               <Input id="invite-email" type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="pessoa@empresa.com" />
             </div>
             <div>
-              <Label htmlFor="invite-role">Papel</Label>
+              <Label htmlFor="invite-role">Perfil</Label>
               <Select value={role} onValueChange={(value) => setRole(value as TenantRole)}>
                 <SelectTrigger id="invite-role"><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  {ROLES.map((r) => <SelectItem key={r} value={r}>{ROLE_LABEL[r]}</SelectItem>)}
+                  {INVITE_ROLES.filter((r) => r !== "owner" || actorIsOwner).map((r) => <SelectItem key={r} value={r}>{ROLE_LABEL[r]}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>
@@ -239,7 +267,7 @@ export default function UsersPage() {
       <ConfirmDialog
         open={Boolean(pendingRemoval)}
         title="Remover usuário"
-        description="Este usuário perde acesso a este tenant imediatamente. Essa ação pode ser desfeita convidando-o novamente."
+        description="Este usuário perde acesso a esta empresa imediatamente. Para só suspender o acesso mantendo tudo configurado, use Desativar."
         confirmLabel="Remover"
         variant="danger"
         busy={busy}

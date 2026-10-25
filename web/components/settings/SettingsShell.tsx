@@ -1,7 +1,7 @@
 "use client";
 
 import { usePathname, useRouter } from "next/navigation";
-import { Boxes, CreditCard, Palette, PlugZap, Scale, Settings, Target, UsersRound, Workflow } from "lucide-react";
+import { Boxes, CreditCard, Headset, Palette, PlugZap, Scale, Settings, Target, UsersRound, Workflow } from "lucide-react";
 import { PageHeader } from "@/components/PageHeader";
 import { PageSubnav } from "@/components/PageSubnav";
 import { useCurrentWorkspace } from "@/contexts/workspace-context";
@@ -17,6 +17,7 @@ const SETTINGS_SECTIONS: ReadonlyArray<{ value: string; label: string; href: str
   { value: "teams", label: "Equipes", href: "/settings/teams", icon: UsersRound, group: GLOBAL_GROUP },
   { value: "integrations", label: "Integrações", href: "/connections", icon: PlugZap, group: GLOBAL_GROUP },
   { value: "billing", label: "Plano e cobrança", href: "/settings/plano", icon: CreditCard, group: GLOBAL_GROUP },
+  { value: "attendance", label: "Atendimento", href: "/settings/attendance", icon: Headset, group: "Vorix Conversas", solution: "conversations" },
   { value: "products", label: "Produtos", href: "/products", icon: Boxes, group: "Vorix Conversas", solution: "conversations" },
   { value: "commercial", label: "Regras comerciais", href: "/settings/commercial", icon: Scale, group: "Vorix Conversas", solution: "conversations" },
   { value: "goals", label: "Metas", href: "/settings/goals", icon: Target, group: "Vorix Conversas", solution: "conversations" },
@@ -78,6 +79,7 @@ function activeFromPath(pathname: string): string | undefined {
   if (pathname.endsWith("/settings/automations")) return "automations";
   if (pathname.endsWith("/settings/commercial")) return "commercial";
   if (pathname.endsWith("/settings/goals")) return "goals";
+  if (pathname.endsWith("/settings/attendance")) return "attendance";
   if (pathname.endsWith("/settings/plano")) return "billing";
   if (pathname.endsWith("/settings")) return "general";
   return undefined;

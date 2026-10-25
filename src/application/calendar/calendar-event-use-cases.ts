@@ -1,3 +1,4 @@
+import type { Permission } from "../../domain/identity/identity.model.js";
 import {
   isTerminalCalendarStatus,
   isValidTimeZone,
@@ -35,7 +36,7 @@ export type CalendarUseCaseDeps = {
   now: () => Date;
 };
 
-export type CalendarActor = { tenantId: string; userId: string; role: TenantRole };
+export type CalendarActor = { tenantId: string; userId: string; role: TenantRole; /** Permissões efetivas (preset + exceções); ausente = preset do papel. */ permissions?: readonly Permission[] };
 
 export class CalendarError extends Error {
   constructor(readonly code: "CALENDAR_EVENT_NOT_FOUND" | "CALENDAR_EVENT_FORBIDDEN" | "CALENDAR_INVALID_INPUT" | "CALENDAR_EVENT_TERMINAL" | "CALENDAR_NO_CONFLICT", text: string) {
@@ -47,7 +48,7 @@ const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 /** Gestão (owner/admin) vê a Agenda de todos; as demais pessoas, a própria. */
 function seesEveryone(actor: CalendarActor): boolean {
-  return hasPermission(actor.role, "meeting:read_all");
+  return hasPermission(actor, "meeting:read_all");
 }
 
 async function requireEvent(deps: CalendarUseCaseDeps, actor: CalendarActor, workspaceId: string, eventId: string): Promise<CalendarEvent> {

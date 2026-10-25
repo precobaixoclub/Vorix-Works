@@ -16,7 +16,7 @@ const QUERY_SCHEMA = {
 
 export async function registerInboxMetricsRoutes(app: FastifyInstance, deps: InboxMetricsUseCaseDeps): Promise<void> {
   app.get("/inbox/metrics", { schema: { querystring: QUERY_SCHEMA } }, async (request) => {
-    const principal = requirePermission(request, "inbox:read");
+    const principal = requirePermission(request, "inbox:view_all");
     const { workspaceId, dateFrom, dateTo } = request.query as { workspaceId: string; dateFrom?: string; dateTo?: string };
     const report = await getInboxMetrics(deps, { tenantId: principal.tenantId, workspaceId, dateFrom, dateTo });
     return successEnvelope(report, request.id);

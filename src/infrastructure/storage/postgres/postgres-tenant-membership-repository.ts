@@ -3,7 +3,7 @@ import type {
   CreateMembershipInput,
   TenantMembershipRepositoryPort,
 } from "../../../application/ports/tenant-membership-repository.port.js";
-import type { TenantMembership } from "../../../domain/identity/identity.model.js";
+import type { TenantMemberStatus, TenantMembership } from "../../../domain/identity/identity.model.js";
 
 export type MembershipIdGenerator = () => string;
 const defaultIdGenerator: MembershipIdGenerator = () => `membership-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
@@ -15,6 +15,10 @@ type MembershipRow = {
   user_id: string;
   tenant_id: string;
   role: string;
+  permission_grants: string[] | null;
+  permission_revokes: string[] | null;
+  status: string | null;
+  is_account_owner: boolean | null;
   created_at: Date;
   updated_at: Date;
 };
@@ -32,10 +36,10 @@ export class PostgresTenantMembershipRepository implements TenantMembershipRepos
     const id = this.idGenerator();
     try {
       const result = await this.pool.query<MembershipRow>(
-        `insert into tenant_members (id, user_id, tenant_id, role, created_at, updated_at)
-         values ($1, $2, $3, $4, now(), now())
+        `insert into tenant_members (id, user_id, tenant_id, role, is_account_owner, created_at, updated_at)
+         values ($1, $2, $3, $4, $5, now(), now())
          returning *`,
-        [id, input.userId, input.tenantId, input.role],
+        [id, input.userId, input.tenantId, input.role, input.isAccountOwner ?? false],
       );
       return this.toDomain(result.rows[0]);
     } catch (error) {
@@ -77,6 +81,22 @@ export class PostgresTenantMembershipRepository implements TenantMembershipRepos
     return result.rows[0] ? this.toDomain(result.rows[0]) : undefined;
   }
 
+  async updateAccess(userId: string, tenantId: string, input: { role: TenantMembership["role"]; permissionGrants: readonly string[]; permissionRevokes: readonly string[] }): Promise<TenantMembership | undefined> {
+    const result = await this.pool.query<MembershipRow>(
+      "update tenant_members set role = $3, permission_grants = $4, permission_revokes = $5, updated_at = now() where user_id = $1 and tenant_id = $2 returning *",
+      [userId, tenantId, input.role, [...input.permissionGrants], [...input.permissionRevokes]],
+    );
+    return result.rows[0] ? this.toDomain(result.rows[0]) : undefined;
+  }
+
+  async setStatus(userId: string, tenantId: string, status: TenantMemberStatus): Promise<TenantMembership | undefined> {
+    const result = await this.pool.query<MembershipRow>(
+      "update tenant_members set status = $3, disabled_at = case when $3 = 'disabled' then now() else null end, updated_at = now() where user_id = $1 and tenant_id = $2 returning *",
+      [userId, tenantId, status],
+    );
+    return result.rows[0] ? this.toDomain(result.rows[0]) : undefined;
+  }
+
   async remove(userId: string, tenantId: string): Promise<void> {
     await this.pool.query("delete from tenant_members where user_id = $1 and tenant_id = $2", [userId, tenantId]);
   }
@@ -87,6 +107,10 @@ export class PostgresTenantMembershipRepository implements TenantMembershipRepos
       userId: row.user_id,
       tenantId: row.tenant_id,
       role: row.role as TenantMembership["role"],
+      permissionGrants: row.permission_grants ?? [],
+      permissionRevokes: row.permission_revokes ?? [],
+      status: row.status === "disabled" ? "disabled" : "active",
+      isAccountOwner: row.is_account_owner === true,
       createdAt: row.created_at.toISOString(),
       updatedAt: row.updated_at.toISOString(),
     };

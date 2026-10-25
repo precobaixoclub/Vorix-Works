@@ -12,6 +12,13 @@ export type RecordInboxConversationEventInput = {
   toUserId?: string;
   fromStatus?: InboxConversationStatus;
   toStatus?: InboxConversationStatus;
+  /** Ciclo de atendimento (0172) — omitido = o atendimento aberto da conversa no momento. */
+  attendanceId?: string;
+  fromPhaseId?: string;
+  toPhaseId?: string;
+  closureTypeId?: string;
+  closureSubtypeId?: string;
+  reason?: string;
   /** Fase 5 — só os 3 eventos `ai_response_*` usam isto (nunca prompt/resposta bruta, ver
    * `InboxConversationEvent.metadata`). */
   metadata?: Record<string, unknown>;

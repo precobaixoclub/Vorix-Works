@@ -1,4 +1,5 @@
 import type pg from "pg";
+import { transactionScopedPool } from "./transaction-scoped-pool.js";
 import { startTrial } from "../../../application/billing/trial-use-cases.js";
 import { ensureDefaultPipeline } from "../../../application/crm/pipeline-use-cases.js";
 import type { LoginUseCaseOutput } from "../../../application/identity/login.usecase.js";
@@ -66,7 +67,7 @@ export async function signupPublicTransactional(
   input: SignupPublicUseCaseInput & { planCode?: PlatformPlanCode },
 ): Promise<LoginUseCaseOutput & { trialStarted: boolean }> {
   const client = await pool.connect();
-  const txPool = client as unknown as pg.Pool;
+  const txPool = transactionScopedPool(client);
   try {
     await client.query("begin");
     const result = await signupPublic(
@@ -108,6 +109,7 @@ export async function signupPublicTransactional(
     // ativar um plano depois pela tela de Billing.
     let trialStarted = false;
     if (input.planCode && deps.trialEnabled && TRIAL_ELIGIBLE_PLAN_CODES.includes(input.planCode)) {
+      await client.query("savepoint optional_trial");
       try {
         await startTrial(
           {
@@ -126,7 +128,10 @@ export async function signupPublicTransactional(
           { tenantId: result.tenantId, planCode: input.planCode },
         );
         trialStarted = true;
+        await client.query("release savepoint optional_trial");
       } catch {
+        await client.query("rollback to savepoint optional_trial");
+        await client.query("release savepoint optional_trial");
         // Best-effort — ver comentário acima. Nunca propaga pro catch externo (que faria rollback
         // do signup inteiro por uma falha puramente de billing).
       }

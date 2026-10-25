@@ -1,7 +1,7 @@
 "use client";
 
 import { Suspense, useEffect, useMemo, useState, type ReactNode } from "react";
-import { Copy, FileText, History, Info, Search, Send, SlidersHorizontal } from "lucide-react";
+import { CalendarPlus, Copy, ExternalLink, FilePlus2, FileText, History, Info, Link2, Link2Off, Search, Send, SlidersHorizontal, XCircle } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { Button } from "@/components/Button";
@@ -9,6 +9,8 @@ import { DetailBlock, DetailModal } from "@/components/DetailModal";
 import { LossReasonModal } from "@/components/crm/LossReasonModal";
 import { ProposalTemplatesPanel } from "@/components/crm/ProposalTemplatesPanel";
 import { QuickCreateTaskModal } from "@/components/crm/QuickCreateTaskModal";
+import { ProposalRejectionDetails } from "@/components/crm/ProposalRejectionDetails";
+import proposalDetailStyles from "@/components/crm/ProposalDetail.module.css";
 import { EmptyState } from "@/components/EmptyState";
 import { ErrorState } from "@/components/ErrorState";
 import { FilterBar } from "@/components/FilterBar";
@@ -314,7 +316,7 @@ function ProposalsView() {
               contact={contactsList.find((contact) => contact.id === proposal.contactId)}
               deal={dealsList.find((deal) => deal.id === proposal.dealId)}
               sending={sendingId === proposal.id}
-              onOpen={() => setSelectedId(proposal.id)}
+              onOpen={() => { setSelectedId(proposal.id); void mutate(); }}
               onSend={() => handleSend(proposal)}
             />
           ))}
@@ -405,6 +407,7 @@ function ProposalsView() {
       ) : null}
 
       <ProposalDetailModal
+        key={selected?.id ?? "none"}
         open={Boolean(selected)}
         onOpenChange={(open) => { if (!open) setSelectedId(undefined); }}
         workspaceId={workspace.id}
@@ -481,8 +484,6 @@ function ProposalCard({
   );
 }
 
-const REJECTION_REASON_LABEL: Record<string, string> = { price: "Preço", deadline: "Prazo", scope: "Escopo", other: "Outro" };
-
 function ProposalDetailModal({
   open,
   onOpenChange,
@@ -522,6 +523,7 @@ function ProposalDetailModal({
   const { data: timeline, isLoading: timelineLoading, error: timelineError, mutate: mutateTimeline } = useProposalTimeline(proposal?.id, workspaceId);
 
   if (!proposal) return null;
+  const canShare = ["draft", "approved", "sent", "viewed"].includes(proposal.status);
 
   return (
     <DetailModal
@@ -531,9 +533,9 @@ function ProposalDetailModal({
       description={
         // Jornada Comercial Fase 5, item 11 — nome do contato/negócio no header nunca deveria ser
         // texto morto quando dá pra abrir o Contact 360/o Deal direto.
-        <span className="flex flex-wrap items-center gap-1 text-sm text-muted-foreground">
-          {contact ? <button type="button" onClick={() => router.push(`/workspaces/${workspaceId}/contacts?contactId=${contact.id}`)} className="underline-offset-2 hover:text-foreground hover:underline">{contact.name}</button> : <span>Sem contato</span>}
-          {deal ? <><span>·</span><button type="button" onClick={() => router.push(`/workspaces/${workspaceId}/deals?dealId=${deal.id}`)} className="underline-offset-2 hover:text-foreground hover:underline">{deal.title}</button></> : null}
+        <span className="flex flex-wrap gap-2 text-sm text-muted-foreground">
+          {contact ? <Button variant="secondary" size="sm" className="h-auto min-h-9 max-w-full whitespace-normal border-border bg-muted/40 text-left" aria-label={`Abrir contato ${contact.name}`} onClick={() => router.push(`/workspaces/${workspaceId}/contacts?contactId=${contact.id}`)}>{contact.name}<ExternalLink className="h-3.5 w-3.5 shrink-0" /></Button> : <span>Sem contato</span>}
+          {deal ? <Button variant="secondary" size="sm" className="h-auto min-h-9 max-w-full whitespace-normal border-border bg-muted/40 text-left" aria-label={`Abrir oportunidade ${deal.title}`} onClick={() => router.push(`/workspaces/${workspaceId}/deals?dealId=${deal.id}`)}>{deal.title}<ExternalLink className="h-3.5 w-3.5 shrink-0" /></Button> : null}
         </span>
       }
       eyebrow="Proposta"
@@ -548,9 +550,18 @@ function ProposalDetailModal({
       onValueChange={(value) => setSection(value as ProposalSection)}
       widthStorageKey="proposal-detail-modal-width"
       defaultWidthPercent={68}
+      className={proposalDetailStyles.dialog}
     >
       {section === "summary" ? (
         <div className="space-y-7">
+          {proposal.status === "rejected" ? <ProposalRejectionDetails proposal={proposal}>
+            <p className="text-sm text-muted-foreground">A recusa se refere a esta proposta. Você pode continuar a negociação com o cliente.</p>
+            <div className="grid gap-2 sm:flex sm:flex-wrap">
+              {onCreateNewProposal ? <Button className="h-auto min-h-[44px] whitespace-normal" onClick={() => onCreateNewProposal(proposal)}><FilePlus2 className="h-4 w-4" />Criar nova proposta</Button> : null}
+              {onCreateFollowUp ? <Button variant="secondary" className="h-auto min-h-[44px] whitespace-normal border-border bg-muted/50" onClick={() => onCreateFollowUp(proposal)}><CalendarPlus className="h-4 w-4" />Criar follow-up</Button> : null}
+              {onMarkDealLost && deal ? <Button variant="secondary" className="h-auto min-h-[44px] whitespace-normal border-destructive/30 bg-destructive/5 text-destructive hover:bg-destructive/10" onClick={() => onMarkDealLost(proposal)}><XCircle className="h-4 w-4" />Marcar oportunidade como perdida</Button> : null}
+            </div>
+          </ProposalRejectionDetails> : null}
           <DetailBlock
             label="Resumo"
             action={["draft", "sent", "viewed"].includes(proposal.status) ? <Button size="sm" loading={sending} disabled={sending} onClick={() => { void onSend(proposal); }}>{proposal.status === "draft" ? "Enviar proposta" : "Reenviar proposta"}</Button> : undefined}
@@ -571,28 +582,13 @@ function ProposalDetailModal({
             {proposal.conditions ? <p className="mt-4 rounded-xl bg-muted/30 px-3 py-3 text-sm text-muted-foreground">{proposal.conditions}</p> : null}
           </DetailBlock>
 
-          {proposal.status === "rejected" ? (
-            <DetailBlock label="Proposta recusada">
-              <p className="text-sm text-muted-foreground">
-                Motivo: {proposal.rejectionReason ? REJECTION_REASON_LABEL[proposal.rejectionReason] ?? proposal.rejectionReason : "Não informado"}
-                {proposal.rejectionComment ? ` · ${proposal.rejectionComment}` : ""}
-              </p>
-              <p className="mt-1 text-xs text-muted-foreground">A oportunidade continua aberta — recusar uma proposta não significa perder a venda.</p>
-              <div className="mt-3 flex flex-wrap gap-2">
-                <Button variant="secondary" onClick={() => onCreateNewProposal?.(proposal)}>Criar nova proposta</Button>
-                {onCreateFollowUp ? <Button variant="secondary" onClick={() => onCreateFollowUp(proposal)}>Criar follow-up</Button> : null}
-                {onMarkDealLost && deal ? <Button variant="ghost" onClick={() => onMarkDealLost(proposal)}>Marcar oportunidade como perdida</Button> : null}
-              </div>
-            </DetailBlock>
-          ) : null}
-
-          <DetailBlock label="Link publico">
-            <p className="text-sm text-muted-foreground">O token bruto nao e armazenado. Gerar outro link invalida o anterior.</p>
-            {publicLink ? <Input className="mt-2" readOnly value={publicLink} onFocus={(event) => event.target.select()} /> : null}
+          <DetailBlock label="Link da proposta">
+            <p className="text-sm text-muted-foreground">{proposal.publicLinkRevokedAt ? "O link desta proposta foi desativado." : canShare ? "Ao gerar um novo link, o link anterior deixa de funcionar." : "Para compartilhar novas condições, crie uma nova proposta. O cliente ainda pode consultar esta resposta pelo link que recebeu."}</p>
+            {publicLink ? <div className="mt-3"><Label htmlFor="proposal-public-link">Link para compartilhar</Label><Input id="proposal-public-link" readOnly value={publicLink} onFocus={(event) => event.target.select()} /></div> : null}
             <div className="mt-3 flex flex-wrap gap-2">
-              <Button variant="secondary" loading={linkBusy} disabled={linkBusy || !["draft", "sent", "viewed"].includes(proposal.status)} onClick={async () => { setLinkBusy(true); try { const result = await regenerateProposalLink(proposal.id, workspaceId); setPublicLink(`${window.location.origin}/p/${result.publicToken}`); await onChanged(); } catch (cause) { toast.error("Nao foi possivel gerar o link", { description: cause instanceof Error ? cause.message : "Tente novamente." }); } finally { setLinkBusy(false); } }}>Gerar novo link</Button>
-              <Button variant="ghost" disabled={linkBusy || Boolean(proposal.publicLinkRevokedAt)} onClick={async () => { setLinkBusy(true); try { await revokeProposalLink(proposal.id, workspaceId); await onChanged(); toast.success("Link revogado."); } catch (cause) { toast.error("Nao foi possivel revogar o link", { description: cause instanceof Error ? cause.message : "Tente novamente." }); } finally { setLinkBusy(false); } }}>Revogar link</Button>
-              {publicLink ? <Button variant="ghost" onClick={() => void navigator.clipboard.writeText(publicLink)}>Copiar</Button> : null}
+              {canShare ? <Button variant="secondary" className="min-h-[44px] border-border bg-muted/50" loading={linkBusy} disabled={linkBusy} onClick={async () => { setLinkBusy(true); try { const result = await regenerateProposalLink(proposal.id, workspaceId); setPublicLink(`${window.location.origin}/p/${result.publicToken}`); await onChanged(); } catch (cause) { toast.error("Não foi possível gerar o link", { description: cause instanceof Error ? cause.message : "Tente novamente." }); } finally { setLinkBusy(false); } }}><Link2 className="h-4 w-4" />Gerar novo link</Button> : null}
+              {!proposal.publicLinkRevokedAt ? <Button variant="secondary" className="min-h-[44px] border-border bg-muted/50" disabled={linkBusy} onClick={async () => { setLinkBusy(true); try { await revokeProposalLink(proposal.id, workspaceId); setPublicLink(undefined); await onChanged(); toast.success("Link revogado."); } catch (cause) { toast.error("Não foi possível revogar o link", { description: cause instanceof Error ? cause.message : "Tente novamente." }); } finally { setLinkBusy(false); } }}><Link2Off className="h-4 w-4" />Revogar link</Button> : null}
+              {publicLink ? <Button variant="secondary" className="min-h-[44px] border-border bg-muted/50" onClick={async () => { try { await navigator.clipboard.writeText(publicLink); toast.success("Link copiado."); } catch { toast.error("Não foi possível copiar o link."); } }}><Copy className="h-4 w-4" />Copiar link</Button> : null}
             </div>
           </DetailBlock>
         </div>
@@ -626,13 +622,18 @@ function ProposalDetailModal({
       {section === "history" ? (
         timelineLoading ? <TimelineSkeleton /> : timelineError ? <ErrorState error={timelineError} onRetry={() => mutateTimeline()} /> : (
           <ListBlock empty="Nenhum evento registrado ainda.">
-            {(timeline ?? []).map((event) => (
+            {(timeline ?? []).map((event) => {
+              const reason = typeof event.payload.reason === "string" ? event.payload.reason : proposal.rejectionReason;
+              const comment = typeof event.payload.comment === "string" ? event.payload.comment : proposal.rejectionComment;
+              return (
               <div key={event.id} className="relative pl-5">
                 <span className="absolute left-0 top-1.5 h-2 w-2 rounded-full bg-primary" />
                 <p className="text-sm font-medium text-foreground">{timelineEventLabel(event)}</p>
                 <p className="text-xs text-muted-foreground">{formatDateTime(event.occurredAt)}</p>
+                {event.eventType === "proposal_rejected" ? <dl className="mt-3 space-y-2 rounded-lg border border-border bg-muted/20 p-3 text-sm"><div><dt className="font-medium text-muted-foreground">Motivo da recusa</dt><dd className="mt-1 whitespace-pre-wrap [overflow-wrap:anywhere]">{reason || "Não informado"}</dd></div>{comment ? <div><dt className="font-medium text-muted-foreground">Comentário do cliente</dt><dd className="mt-1 whitespace-pre-wrap [overflow-wrap:anywhere]">{comment}</dd></div> : null}</dl> : null}
               </div>
-            ))}
+              );
+            })}
           </ListBlock>
         )
       ) : null}

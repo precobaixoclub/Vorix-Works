@@ -102,7 +102,10 @@ export class PostgresTeamRepository implements TeamRepositoryPort {
       if (!team) return undefined;
 
       const membersResult = await client.query<TeamMembershipRow>(
-        "select * from team_memberships where team_id = $1 and attendance_level = $2 order by created_at asc",
+        `select m.* from team_memberships m
+         join teams t on t.id = m.team_id
+         join tenant_members tm on tm.user_id = m.user_id and tm.tenant_id = t.tenant_id and tm.status = 'active'
+         where m.team_id = $1 and m.attendance_level = $2 order by m.created_at asc`,
         [teamId, normalizedLevel],
       );
       const members = membersResult.rows;
@@ -170,8 +173,8 @@ export class PostgresTeamMembershipRepository implements TeamMembershipRepositor
     return result.rows.map((row) => this.toDomain(row));
   }
 
-  async listByUser(userId: string): Promise<TeamMembership[]> {
-    const result = await this.pool.query<TeamMembershipRow>("select * from team_memberships where user_id = $1", [userId]);
+  async listByUser(userId: string, tenantId?: string): Promise<TeamMembership[]> {
+    const result = await this.pool.query<TeamMembershipRow>("select m.* from team_memberships m join teams t on t.id = m.team_id where m.user_id = $1 and ($2::text is null or t.tenant_id = $2)", [userId, tenantId ?? null]);
     return result.rows.map((row) => this.toDomain(row));
   }
 
@@ -186,10 +189,11 @@ export class PostgresTeamMembershipRepository implements TeamMembershipRepositor
       `update team_memberships set
          attendance_level = coalesce($3, attendance_level),
          participates_in_round_robin = coalesce($4, participates_in_round_robin),
-         is_principal_for_level = coalesce($5, is_principal_for_level)
+         is_principal_for_level = coalesce($5, is_principal_for_level),
+         role = coalesce($6, role)
        where team_id = $1 and user_id = $2
        returning *`,
-      [teamId, userId, level, input.participatesInRoundRobin ?? null, input.isPrincipalForLevel ?? null],
+      [teamId, userId, level, input.participatesInRoundRobin ?? null, input.isPrincipalForLevel ?? null, input.role ?? null],
     );
     if (!result.rows[0]) throw new Error(`TEAM_MEMBER_NOT_FOUND: usuário "${userId}" não é membro da equipe "${teamId}".`);
     return this.toDomain(result.rows[0]);

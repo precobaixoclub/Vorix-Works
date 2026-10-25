@@ -1,5 +1,7 @@
 "use client";
 
+import { useMyAccess } from "@/features/auth/access";
+
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
@@ -56,7 +58,8 @@ export function CrmContextSection({
   onLinked: () => void;
 }) {
   const { state } = useAuth();
-  const canOperate = canOperateWorkspace(state.status === "authenticated" ? state.role : undefined);
+  const { can } = useMyAccess();
+  const canOperate = can("contact:manage");
   const [linking, setLinking] = useState(false);
   const [linkError, setLinkError] = useState<string | undefined>();
   const { data: messagesData } = useInboxConversationMessages(workspaceId, conversation.id);
@@ -121,6 +124,8 @@ function LinkedCrmSection({
   canOperate: boolean;
 }) {
   const router = useRouter();
+  const { can } = useMyAccess();
+  const canManageTasks = can("task:manage");
   const invalidateSales = useInvalidateSales(workspaceId);
   const { data: contact, error: contactError, mutate: mutateContact } = useContact(contactId, workspaceId);
   const { data: deals, mutate: mutateDeals } = useDeals(workspaceId, { contactId });
@@ -216,7 +221,7 @@ function LinkedCrmSection({
   }
 
   async function handleCompleteNextTask(task: Task) {
-    if (!canOperate) return;
+    if (!canManageTasks) return;
     setCompletingTaskId(task.id);
     try {
       await completeTask(task.id, workspaceId);
@@ -346,7 +351,7 @@ function LinkedCrmSection({
             return (
               <div className="space-y-2">
                 <p className="text-xs text-muted-foreground">Nenhuma próxima atividade.</p>
-                <GuardedButton variant="secondary" className="w-full" onClick={() => setCreatingTask(true)} allowed={canOperate} blockedReason={RBAC_COPY.operateConversations}>
+                <GuardedButton variant="secondary" className="w-full" onClick={() => setCreatingTask(true)} allowed={canManageTasks} blockedReason={RBAC_COPY.operateConversations}>
                   + Criar próxima ação
                 </GuardedButton>
               </div>
@@ -371,12 +376,12 @@ function LinkedCrmSection({
                   onClick={() => handleCompleteNextTask(nextTask)}
                   loading={completingTaskId === nextTask.id}
                   disabled={Boolean(completingTaskId)}
-                  allowed={canOperate}
+                  allowed={canManageTasks}
                   blockedReason={RBAC_COPY.operateConversations}
                 >
                   Concluir
                 </GuardedButton>
-                {canOperate ? (
+                {canManageTasks ? (
                   <RescheduleTaskPopover
                     task={nextTask}
                     workspaceId={workspaceId}

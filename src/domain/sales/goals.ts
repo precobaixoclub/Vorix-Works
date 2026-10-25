@@ -1,3 +1,4 @@
+import { localDate, localMidnightUtc } from "../shared/company-time.js";
 /**
  * Sales Engine — metas comerciais e períodos. Puro e determinístico: o realizado vem SEMPRE de
  * oportunidades GANHAS (snapshot do fechamento), nunca de propostas enviadas/abertas ou commit.
@@ -34,18 +35,21 @@ export type SalesGoal = {
 
 /** Normaliza o início do período (mês → dia 1; trimestre → 1º mês do trimestre; ano → 1º de jan). */
 export function normalizePeriodStart(periodType: GoalPeriod, date: string): string {
-  const [year, month] = date.split("-").map(Number);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new Error("SALES_GOAL_INVALID: informe uma data válida no formato AAAA-MM-DD.");
+  const [year, month, day] = date.split("-").map(Number);
+  const check = new Date(Date.UTC(year, month - 1, day));
+  if (check.getUTCFullYear() !== year || check.getUTCMonth() + 1 !== month || check.getUTCDate() !== day) throw new Error("SALES_GOAL_INVALID: data inexistente.");
   if (periodType === "annual") return `${year}-01-01`;
   if (periodType === "quarterly") return `${year}-${String(Math.floor((month - 1) / 3) * 3 + 1).padStart(2, "0")}-01`;
   return `${year}-${String(month).padStart(2, "0")}-01`;
 }
 
 /** Intervalo [início, fim) em ISO — fim exclusivo. */
-export function periodRange(periodType: GoalPeriod, periodStart: string): { from: string; to: string } {
+export function periodRange(periodType: GoalPeriod, periodStart: string, timeZone = "UTC"): { from: string; to: string } {
   const [year, month] = normalizePeriodStart(periodType, periodStart).split("-").map(Number);
   const months = periodType === "annual" ? 12 : periodType === "quarterly" ? 3 : 1;
   const end = new Date(Date.UTC(year, month - 1 + months, 1));
-  return { from: `${normalizePeriodStart(periodType, periodStart)}T00:00:00.000Z`, to: end.toISOString() };
+  return { from: localMidnightUtc(year, month, 1, timeZone), to: localMidnightUtc(end.getUTCFullYear(), end.getUTCMonth() + 1, 1, timeZone) };
 }
 
 export function previousPeriodStart(periodType: GoalPeriod, periodStart: string): string {
@@ -106,8 +110,8 @@ export function goalProgress(targetValue: number, realized: number): GoalProgres
 }
 
 /** Ritmo e projeção linear para metas de período longo (ano/trimestre) — explicitamente estimativa. */
-export function paceAndProjection(periodType: GoalPeriod, periodStart: string, targetValue: number, realized: number, now: Date): { elapsedMonths: number; totalMonths: number; requiredPerRemainingMonth: number; projectedValue: number } {
-  const { from, to } = periodRange(periodType, periodStart);
+export function paceAndProjection(periodType: GoalPeriod, periodStart: string, targetValue: number, realized: number, now: Date, timeZone = "UTC"): { elapsedMonths: number; totalMonths: number; requiredPerRemainingMonth: number; projectedValue: number } {
+  const { from, to } = periodRange(periodType, periodStart, timeZone);
   const start = new Date(from).getTime();
   const end = new Date(to).getTime();
   const totalMonths = periodType === "annual" ? 12 : periodType === "quarterly" ? 3 : 1;
@@ -115,7 +119,8 @@ export function paceAndProjection(periodType: GoalPeriod, periodStart: string, t
   const elapsedMonths = Math.round(fraction * totalMonths * 10) / 10;
   // Meses de calendário já encerrados (dias/365 erraria por fração em meses de 28–31 dias).
   const [startYear, startMonth] = normalizePeriodStart(periodType, periodStart).split("-").map(Number);
-  const completedMonths = Math.min(totalMonths, Math.max(0, (now.getUTCFullYear() - startYear) * 12 + (now.getUTCMonth() + 1 - startMonth)));
+  const current = localDate(now, timeZone);
+  const completedMonths = Math.min(totalMonths, Math.max(0, (current.year - startYear) * 12 + (current.month - startMonth)));
   const remainingMonths = Math.max(1, totalMonths - completedMonths);
   return {
     elapsedMonths,

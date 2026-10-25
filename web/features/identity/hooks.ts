@@ -1,5 +1,5 @@
 import useSWR from "swr";
-import { listTeamMembers, listTeams, listTenantInvites, listTenantMembers } from "./api";
+import { getAccessCatalog, getMemberAccess, listTeamMembers, listTeams, listTenantInvites, listTenantMembers } from "./api";
 
 export function useTeams(workspaceId: string) {
   return useSWR(["teams", workspaceId], () => listTeams(workspaceId));
@@ -15,4 +15,12 @@ export function useTenantMembers() {
 
 export function useTenantInvites() {
   return useSWR("tenant-member-invites", () => listTenantInvites());
+}
+
+export function useAccessCatalog() {
+  return useSWR("access-catalog", () => getAccessCatalog(), { revalidateOnFocus: false });
+}
+
+export function useMemberAccess(userId: string | undefined) {
+  return useSWR(userId ? ["member-access", userId] : null, () => getMemberAccess(userId!));
 }

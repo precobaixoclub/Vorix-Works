@@ -141,7 +141,7 @@ test("AGENDA RBAC + isolamento: viewer não cria; editor vê só os seus; outro 
   assert.equal((await app.inject({ method: "GET", url: `/v1/meetings/agenda/events/${mine.id}?workspaceId=${a.workspaceId}`, headers: auth(b.tenantId) })).statusCode, 404, "outro tenant");
   assert.equal((await app.inject({ method: "GET", url: `/v1/meetings/agenda/events/${mine.id}?workspaceId=${otherWorkspace.id}`, headers: auth(a.tenantId) })).statusCode, 404, "outro workspace do mesmo tenant");
   const bList = await app.inject({ method: "GET", url: `/v1/meetings/agenda/events?workspaceId=${a.workspaceId}&${range}`, headers: auth(b.tenantId) });
-  assert.equal(bList.json().data.length, 0);
+  assert.equal(bList.statusCode, 404);
   await app.close();
 });
 

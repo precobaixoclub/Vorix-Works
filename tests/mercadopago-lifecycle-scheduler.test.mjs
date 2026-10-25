@@ -56,6 +56,7 @@ function fakeNonNativeProvider() {
     async addSubscriptionItem(input) { calls.push({ method: "addSubscriptionItem", input }); return { ok: true, providerItemId: `item-${calls.length}` }; },
     async removeSubscriptionItem(input) { calls.push({ method: "removeSubscriptionItem", input }); return { ok: true }; },
     async updateSubscriptionItemQuantity(input) { calls.push({ method: "updateSubscriptionItemQuantity", input }); return { ok: true }; },
+    async setRecurringItems(input) { calls.push({ method: "setRecurringItems", input }); return { ok: true, providerItemIds: {} }; },
     async getPaymentMethod() { return { ok: true, paymentMethod: undefined }; },
     async createCustomerPortal() { return { ok: false, kind: "not_configured", message: "sem portal" }; },
     async handleWebhook() { throw new Error("not used"); },
@@ -198,7 +199,7 @@ test("applyCapacityChange: redução agendada, ao ser aplicada pelo scheduler, t
   const result = await applyDuePendingCapacityChanges(d);
   assert.equal(result.appliedCount, 1);
 
-  const updateCall = provider.calls.filter((c) => c.method === "updateSubscriptionItemQuantity").at(-1);
+  const updateCall = provider.calls.filter((c) => c.method === "setRecurringItems").at(-1);
   assert.ok(updateCall);
   assert.equal(updateCall.input.amount, 338); // PRO (299) + 1 extra_user (39) restante
   assert.equal(updateCall.input.currency, "BRL");

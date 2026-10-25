@@ -402,7 +402,7 @@ async function respondToPublicProposal(deps: ProposalUseCaseDeps, rawToken: stri
     entityId: responded.id,
     eventType: decision === "accepted" ? "proposal_accepted" : "proposal_rejected",
     actorType: "system",
-    payload: decision === "rejected" ? { reason: details.reason } : { version: responded.version },
+    payload: decision === "rejected" ? { reason: responded.rejectionReason, comment: responded.rejectionComment } : { version: responded.version },
   });
   await appendEvent(deps, responded, decision === "accepted" ? "accepted" : "declined", decision === "accepted"
     ? { version: responded.version, contentHash: responded.acceptedContentHash }

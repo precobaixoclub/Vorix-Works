@@ -61,10 +61,11 @@ export class WuzApiMessagingProvider implements MessagingProvider {
     return { qrCode: result.QRCode, expiresAt: new Date(Date.now() + 20_000).toISOString() };
   }
 
-  async sendText(input: { externalSessionId: string; to: string; body: string; replyTo?: { externalMessageId: string; participantJid?: string; quotedText?: string } }): Promise<MessagingSendResult> {
+  async sendText(input: { externalSessionId: string; to: string; body: string; linkPreview?: boolean; replyTo?: { externalMessageId: string; participantJid?: string; quotedText?: string } }): Promise<MessagingSendResult> {
     const result = await this.client.sendText(input.externalSessionId, {
       phone: input.to,
       body: input.body,
+      linkPreview: input.linkPreview,
       replyTo: input.replyTo ? { stanzaId: input.replyTo.externalMessageId, participant: input.replyTo.participantJid, quotedText: input.replyTo.quotedText } : undefined,
     });
     return this.toSendResult(result);

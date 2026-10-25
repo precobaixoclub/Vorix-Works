@@ -82,7 +82,7 @@ export type MessagingProvider = {
   /** `replyTo` (pedido explícito do usuário em produção: "clicar para reponder uma mensagem
    * especifica") — presente quando esta mensagem responde a outra já existente na mesma conversa;
    * `undefined` é o caso comum (mensagem normal, sem citação). */
-  sendText(input: { externalSessionId: string; to: string; body: string; replyTo?: { externalMessageId: string; participantJid?: string; quotedText?: string } }): Promise<MessagingSendResult>;
+  sendText(input: { externalSessionId: string; to: string; body: string; linkPreview?: boolean; replyTo?: { externalMessageId: string; participantJid?: string; quotedText?: string } }): Promise<MessagingSendResult>;
   sendImage(input: { externalSessionId: string; to: string; mediaUrl: string; caption?: string }): Promise<MessagingSendResult>;
   sendAudio(input: { externalSessionId: string; to: string; mediaUrl: string }): Promise<MessagingSendResult>;
   sendVideo(input: { externalSessionId: string; to: string; mediaUrl: string; caption?: string }): Promise<MessagingSendResult>;

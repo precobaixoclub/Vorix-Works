@@ -1,3 +1,4 @@
+import { proposalScopeSql } from "./postgres-proposal-scope.js";
 import type { Pool } from "pg";
 import type { CreateProposalInput, ListProposalsFilter, ProposalRepositoryPort, UpdateProposalInput } from "../../../application/ports/proposal-repository.port.js";
 import type { Proposal, ProposalDelivery, ProposalEvent, ProposalEventType, ProposalItem, ProposalRecipient, ProposalStatus } from "../../../domain/crm/crm.model.js";
@@ -166,6 +167,8 @@ export class PostgresProposalRepository implements ProposalRepositoryPort {
       params.push(filter.status);
       conditions.push(`status = $${params.length}`);
     }
+    const scope = proposalScopeSql(filter, params);
+    if (scope) conditions.push(scope);
     if (filter.cursor) {
       params.push(filter.cursor);
       conditions.push(`created_at < (select created_at from proposals where id = $${params.length})`);

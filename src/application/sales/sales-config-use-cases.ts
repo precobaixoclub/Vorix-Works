@@ -13,6 +13,7 @@ import {
   type PolicyScopeType,
 } from "../../domain/sales/sales.model.js";
 import { TENANT_ROLES } from "../../domain/identity/identity.model.js";
+import { closeReasonKey } from "../../domain/sales/close-reasons.js";
 import { loadCommercialSettings, mustDealInWorkspace, resolveEffectivePolicy, type SalesActor, type SalesEngineDeps } from "./sales-context.js";
 
 type ConfigDeps = Pick<SalesEngineDeps, "salesConfigRepository" | "membershipRepository" | "teamMembershipRepository" | "dealRepository" | "contactRepository" | "timelineEventRepository">;
@@ -24,6 +25,8 @@ export async function getCommercialSettings(deps: ConfigDeps, input: { tenantId:
 }
 
 export async function updateCommercialSettings(deps: ConfigDeps, input: { tenantId: string; workspaceId: string; patch: Partial<Omit<CommercialSettings, "tenantId" | "workspaceId" | "updatedAt">> }): Promise<CommercialSettings> {
+  const days = input.patch.closedDealArchiveDays;
+  if (days != null && (!Number.isInteger(days) || days < 0 || days > 36500)) throw new Error("COMMERCIAL_SETTINGS_INVALID: informe um prazo de 0 a 36500 dias, ou Nunca.");
   for (const key of ["proposalWhatsappTemplate", "proposalReminderTemplate"] as const) {
     const value = input.patch[key];
     if (value !== undefined && value !== null && (value.length > TEMPLATE_MAX || (key === "proposalWhatsappTemplate" && value.trim() && !value.includes("{{proposal_link}}")))) {
@@ -69,24 +72,50 @@ export async function getEffectivePolicyFor(deps: ConfigDeps, input: { tenantId:
 
 /** Semeia os motivos padrão só na primeira leitura do workspace — depois são 100% do tenant. */
 export async function listCloseReasons(deps: ConfigDeps, input: { tenantId: string; workspaceId: string; kind?: CloseReasonKind; includeInactive?: boolean }): Promise<CloseReason[]> {
-  if ((await deps.salesConfigRepository.countCloseReasons(input.workspaceId)) === 0) {
-    for (const kind of Object.keys(DEFAULT_CLOSE_REASONS) as CloseReasonKind[]) {
-      let position = 0;
-      for (const label of DEFAULT_CLOSE_REASONS[kind]) await deps.salesConfigRepository.createCloseReason({ tenantId: input.tenantId, workspaceId: input.workspaceId, kind, label, position: position++ });
-    }
-  }
-  return deps.salesConfigRepository.listCloseReasons(input);
+  await deps.salesConfigRepository.ensureDefaultCloseReasons({
+    tenantId: input.tenantId, workspaceId: input.workspaceId,
+    reasons: (Object.keys(DEFAULT_CLOSE_REASONS) as CloseReasonKind[]).flatMap((kind) => DEFAULT_CLOSE_REASONS[kind].map((label, position) => ({ kind, label, position }))),
+  });
+  const reasons = await deps.salesConfigRepository.listCloseReasons(input);
+  const seen = new Set<string>();
+  return [...reasons].sort((a, b) => Number(b.active) - Number(a.active)).filter((reason) => {
+    const key = `${reason.kind}:${closeReasonKey(reason.label)}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 export async function createCloseReason(deps: ConfigDeps, input: { tenantId: string; workspaceId: string; kind: CloseReasonKind; label: string }): Promise<CloseReason> {
   const existing = await listCloseReasons(deps, { tenantId: input.tenantId, workspaceId: input.workspaceId, kind: input.kind, includeInactive: true });
+  if (!input.label.trim() || existing.some(r => closeReasonKey(r.label) === closeReasonKey(input.label))) throw new Error("SALES_REASON_INVALID: informe um motivo diferente dos já cadastrados neste grupo.");
   return deps.salesConfigRepository.createCloseReason({ ...input, label: input.label.trim(), position: existing.length });
 }
 
 export async function updateCloseReason(deps: ConfigDeps, input: { tenantId: string; workspaceId: string; reasonId: string; patch: { label?: string; active?: boolean; position?: number } }): Promise<CloseReason> {
   const reason = await deps.salesConfigRepository.getCloseReason(input.reasonId);
   if (!reason || reason.tenantId !== input.tenantId || reason.workspaceId !== input.workspaceId) throw new Error(`SALES_REASON_NOT_FOUND: motivo "${input.reasonId}" não existe.`);
+  if (input.patch.label !== undefined) {
+    const others = await deps.salesConfigRepository.listCloseReasons({ tenantId: input.tenantId, workspaceId: input.workspaceId, kind: reason.kind, includeInactive: true });
+    if (!input.patch.label.trim() || others.some(r => r.id !== reason.id && closeReasonKey(r.label) === closeReasonKey(input.patch.label!))) throw new Error("SALES_REASON_INVALID: já existe um motivo com esse nome neste grupo.");
+  }
   return deps.salesConfigRepository.updateCloseReason(reason.id, { ...input.patch, label: input.patch.label?.trim() });
+}
+
+export async function deleteCloseReason(deps: ConfigDeps, input: { tenantId: string; workspaceId: string; reasonId: string }): Promise<void> {
+  const reason = await deps.salesConfigRepository.getCloseReason(input.reasonId);
+  if (!reason || reason.tenantId !== input.tenantId || reason.workspaceId !== input.workspaceId) throw new Error("SALES_REASON_NOT_FOUND: motivo não encontrado.");
+  await deps.salesConfigRepository.deleteCloseReason(reason.id);
+}
+
+export async function reorderCloseReasons(deps: ConfigDeps, input: { tenantId: string; workspaceId: string; kind: CloseReasonKind; reasonIds: readonly string[] }): Promise<void> {
+  const stored = await deps.salesConfigRepository.listCloseReasons({ ...input, includeInactive: true });
+  const selected = input.reasonIds.map(id => stored.find(r => r.id === id));
+  const keys = new Set(selected.map(r => r ? closeReasonKey(r.label) : ""));
+  if (selected.some(r => !r) || keys.size !== input.reasonIds.length || stored.some(r => !keys.has(closeReasonKey(r.label)))) throw new Error("SALES_REASON_INVALID: informe todos os motivos deste grupo, sem repetições.");
+  // Legacy duplicate labels remain stored for historical references, adjacent to their visible entry.
+  const reasonIds = selected.flatMap(r => stored.filter(other => closeReasonKey(other.label) === closeReasonKey(r!.label)).map(other => other.id));
+  await deps.salesConfigRepository.reorderCloseReasons({ ...input, reasonIds });
 }
 
 export async function listCompetitors(deps: ConfigDeps, input: { tenantId: string; workspaceId: string; includeInactive?: boolean }): Promise<Competitor[]> {

@@ -3,6 +3,7 @@ import {
   addDealItem,
   cancelCommercialApproval,
   cancelDeal,
+  correctDealClosure,
   decideCommercialApproval,
   getDealCommercialSummary,
   listCommercialApprovals,
@@ -31,6 +32,8 @@ import {
 } from "../../../../application/sales/catalog-use-cases.js";
 import {
   createCloseReason,
+  deleteCloseReason,
+  reorderCloseReasons,
   createCompetitor,
   createDealCustomField,
   deleteCommercialPolicy,
@@ -71,13 +74,14 @@ const QUANTITY = { type: "number", exclusiveMinimum: 0, maximum: 1_000_000 } as 
 const BILLING = { type: "string", enum: ["one_time", "monthly", "quarterly", "annual", "per_unit", "per_hour", "custom"] } as const;
 
 const NOT_FOUND = ["DEAL_NOT_FOUND", "DEAL_ITEM_NOT_FOUND", "PRODUCT_NOT_FOUND", "PRODUCT_VARIANT_NOT_FOUND", "PRICE_BOOK_NOT_FOUND", "APPROVAL_NOT_FOUND", "SALES_REASON_NOT_FOUND", "SALES_COMPETITOR_NOT_FOUND", "DEAL_CUSTOM_FIELD_NOT_FOUND", "COMMERCIAL_POLICY_NOT_FOUND", "CONTACT_NOT_FOUND"];
-const CONFLICT = ["APPROVAL_ALREADY_DECIDED", "DEAL_CUSTOM_FIELD_DUPLICATE", "COMMERCIAL_APPROVAL_REQUIRED"];
-const INVALID = ["DEAL_CLOSED", "DEAL_ITEM_INVALID", "PRODUCT_INACTIVE", "PRODUCT_PRICING_INVALID", "DEAL_VALUE_CALCULATED", "APPROVAL_NOT_REQUIRED", "APPROVAL_REASON_REQUIRED", "DEAL_FINAL_VALUE_REQUIRED", "DEAL_LOSS_REASON_REQUIRED", "COMMERCIAL_SETTINGS_INVALID", "COMMERCIAL_POLICY_INVALID", "SALES_COMPETITOR_INVALID", "DEAL_CUSTOM_FIELD_INVALID"];
+const CONFLICT = ["DEAL_CONFLICT", "SALES_REASON_IN_USE","APPROVAL_ALREADY_DECIDED", "DEAL_CUSTOM_FIELD_DUPLICATE", "COMMERCIAL_APPROVAL_REQUIRED"];
+const INVALID = ["DEAL_PROPOSAL_INVALID", "DEAL_CLOSE_DATE_INVALID", "DEAL_STAGE_REQUIREMENTS_MISSING", "DEAL_STAGE_PIPELINE_MISMATCH", "SALES_REASON_INVALID", "DEAL_CLOSED", "DEAL_ITEM_INVALID", "PRODUCT_INACTIVE", "PRODUCT_PRICING_INVALID", "DEAL_VALUE_CALCULATED", "APPROVAL_NOT_REQUIRED", "APPROVAL_REASON_REQUIRED", "DEAL_FINAL_VALUE_REQUIRED", "DEAL_LOSS_REASON_REQUIRED", "COMMERCIAL_SETTINGS_INVALID", "COMMERCIAL_POLICY_INVALID", "SALES_COMPETITOR_INVALID", "DEAL_CUSTOM_FIELD_INVALID"];
 
 function translate(error: unknown): never {
   if(error instanceof Error&&/^(PRODUCT_VALIDATION|PRODUCT_VARIANT_REQUIRED|INVENTORY_INSUFFICIENT|INVENTORY_VARIANT_UNAVAILABLE)/.test(error.message))throw new ValidationError(error.message);
   if((error as {code?:string})?.code==="23505")throw new ConflictError("Essa combinação ou código já existe.");
   if (error instanceof Error) {
+    if (error.message.startsWith("DEAL_PERMISSION_REQUIRED")) throw new ForbiddenError(error.message);
     const code = error.message.split(":")[0];
     if (NOT_FOUND.includes(code)) throw new NotFoundError(error.message);
     if (CONFLICT.includes(code)) throw new ConflictError(error.message);
@@ -96,12 +100,11 @@ async function guard<T>(run: () => Promise<T>): Promise<T> {
 
 function actorFor(request: FastifyRequest, permission: Permission): SalesActor {
   const principal = requirePermission(request, permission);
-  return { tenantId: principal.tenantId, userId: principal.userId, role: principal.role };
+  return { tenantId: principal.tenantId, userId: principal.userId, role: principal.role, permissions: principal.permissions, permissionRevokes: principal.permissionRevokes };
 }
 
 function managerFor(request: FastifyRequest, permission: Permission): SalesActor {
   const actor = actorFor(request, permission);
-  if (!isSalesManager(actor.role)) throw new ForbiddenError("Somente gestores (admin/owner) podem alterar esta configuração comercial.");
   return actor;
 }
 
@@ -224,10 +227,10 @@ export async function registerSalesEngineRoutes(app: FastifyInstance, deps: Sale
   });
 
   // ------------------------------------------------------------------ fechamento
-  app.post("/deals/:id/win", { schema: { params: ID_PARAMS, body: body([], { wonReason: { type: "string", maxLength: 200 }, proposalId: { type: "string" }, comment: { type: "string", maxLength: 2000 }, finalValueCents: MONEY }) } }, async (request) => {
-    const actor = actorFor(request, "deal:close");
+  app.post("/deals/:id/win", { schema: { params: ID_PARAMS, body: body([], { wonReason: { type: "string", maxLength: 200 }, proposalId: { type: "string" }, comment: { type: "string", maxLength: 2000 }, finalValueCents: MONEY, closedAt: { type: "string", format: "date-time" } }) } }, async (request) => {
+    const actor = actorFor(request, "deal:win");
     const { id } = request.params as { id: string };
-    const input = request.body as { workspaceId: string; wonReason?: string; proposalId?: string; comment?: string; finalValueCents?: number };
+    const input = request.body as { workspaceId: string; wonReason?: string; proposalId?: string; comment?: string; finalValueCents?: number; closedAt?: string };
     return successEnvelope(await guard(async () => {
       await visibleDeal(actor, input.workspaceId, id);
       return winDeal(deps, actor, { ...input, dealId: id });
@@ -235,7 +238,7 @@ export async function registerSalesEngineRoutes(app: FastifyInstance, deps: Sale
   });
 
   app.post("/deals/:id/lose", { schema: { params: ID_PARAMS, body: body(["lossReason"], { lossReason: { type: "string", minLength: 1, maxLength: 400 }, competitorId: { type: "string" }, competitorName: { type: "string", maxLength: 120 }, comment: { type: "string", maxLength: 2000 } }) } }, async (request) => {
-    const actor = actorFor(request, "deal:close");
+    const actor = actorFor(request, "deal:lose");
     const { id } = request.params as { id: string };
     const input = request.body as { workspaceId: string; lossReason: string; competitorId?: string; competitorName?: string; comment?: string };
     return successEnvelope(await guard(async () => {
@@ -245,7 +248,7 @@ export async function registerSalesEngineRoutes(app: FastifyInstance, deps: Sale
   });
 
   app.post("/deals/:id/reopen", { schema: { params: ID_PARAMS, body: body([], {}) } }, async (request) => {
-    const actor = actorFor(request, "deal:close");
+    const actor = actorFor(request, "deal:reopen");
     const { id } = request.params as { id: string };
     const { workspaceId } = request.body as { workspaceId: string };
     return successEnvelope(await guard(async () => {
@@ -265,6 +268,15 @@ export async function registerSalesEngineRoutes(app: FastifyInstance, deps: Sale
   });
 
   // ------------------------------------------------------------------ aprovações
+  app.patch("/deals/:id/closure", { schema: { params: ID_PARAMS, body: body([], { finalValueCents: MONEY, lossReason: { type: "string", minLength: 1, maxLength: 400 }, comment: { type: "string", maxLength: 2000 } }) } }, async request => {
+    const actor = actorFor(request, "deal:edit_closed");
+    const { id } = request.params as { id: string };
+    const input = request.body as { workspaceId: string; finalValueCents?: number; lossReason?: string; comment?: string };
+    if (input.finalValueCents !== undefined) requirePermission(request, "deal:change_final_value");
+    if (input.lossReason !== undefined) requirePermission(request, "deal:change_loss_reason");
+    return successEnvelope(await guard(async () => { await visibleDeal(actor, input.workspaceId, id); return correctDealClosure(deps, actor, { ...input, dealId: id }); }), request.id);
+  });
+
   app.post("/deals/:id/approvals", { schema: { params: ID_PARAMS, body: body([], { justification: { type: "string", maxLength: 2000 }, proposalId: { type: "string" } }) } }, async (request, reply) => {
     const actor = actorFor(request, "deal:manage");
     const { id } = request.params as { id: string };
@@ -398,11 +410,11 @@ export async function registerSalesEngineRoutes(app: FastifyInstance, deps: Sale
   });
 
   app.patch("/commercial-settings", {
-    schema: { body: body([], { sellersCanViewCost: { type: "boolean" }, sellersCanViewMargin: { type: "boolean" }, dealVisibility: { type: "string", enum: ["all", "team", "own"] }, proposalAcceptAutoWin: { type: "boolean" }, proposalWhatsappTemplate: { type: ["string", "null"], maxLength: 4000 }, proposalReminderTemplate: { type: ["string", "null"], maxLength: 4000 }, defaultContractMonths: { type: ["integer", "null"], minimum: 1, maximum: 600 }, rankingEnabled: { type: "boolean" } }) },
+    schema: { body: body([], { sellersCanViewCost: { type: "boolean" }, sellersCanViewMargin: { type: "boolean" }, dealVisibility: { type: "string", enum: ["all", "team", "own"] }, proposalAcceptAutoWin: { type: "boolean" }, closedDealArchiveDays: { type: ["integer", "null"], minimum: 0, maximum: 36500 }, proposalWhatsappTemplate: { type: ["string", "null"], maxLength: 4000 }, proposalReminderTemplate: { type: ["string", "null"], maxLength: 4000 }, defaultContractMonths: { type: ["integer", "null"], minimum: 1, maximum: 600 }, rankingEnabled: { type: "boolean" } }) },
   }, async (request) => {
     const actor = managerFor(request, "deal:approve_discount");
     const { workspaceId, ...patch } = request.body as { workspaceId: string } & Record<string, unknown>;
-    const normalized = Object.fromEntries(Object.entries(patch).map(([key, value]) => [key, value === null ? undefined : value]));
+    const normalized = Object.fromEntries(Object.entries(patch).map(([key, value]) => [key, value === null && key !== "closedDealArchiveDays" ? undefined : value]));
     return successEnvelope(await guard(() => updateCommercialSettings(deps, { tenantId: actor.tenantId, workspaceId, patch: normalized })), request.id);
   });
 
@@ -455,6 +467,21 @@ export async function registerSalesEngineRoutes(app: FastifyInstance, deps: Sale
     const { id } = request.params as { id: string };
     const { workspaceId, ...patch } = request.body as { workspaceId: string } & Record<string, unknown>;
     return successEnvelope(await guard(() => updateCloseReason(deps, { tenantId: actor.tenantId, workspaceId, reasonId: id, patch: patch as never })), request.id);
+  });
+
+  app.delete("/sales-reasons/:id", { schema: { params: ID_PARAMS, querystring: WORKSPACE_QUERY } }, async (request, reply) => {
+    const actor = managerFor(request, "deal:manage");
+    const { id } = request.params as { id: string };
+    const { workspaceId } = request.query as { workspaceId: string };
+    await guard(() => deleteCloseReason(deps, { tenantId: actor.tenantId, workspaceId, reasonId: id }));
+    reply.code(204); return null;
+  });
+
+  app.post("/sales-reasons/reorder", { schema: { body: body(["kind", "reasonIds"], { kind: { type: "string", enum: ["won", "lost", "proposal_decline"] }, reasonIds: { type: "array", minItems: 1, maxItems: 500, uniqueItems: true, items: WS } }) } }, async (request, reply) => {
+    const actor = managerFor(request, "deal:manage");
+    const input = request.body as { workspaceId: string; kind: "won" | "lost" | "proposal_decline"; reasonIds: string[] };
+    await guard(() => reorderCloseReasons(deps, { tenantId: actor.tenantId, ...input }));
+    reply.code(204); return null;
   });
 
   app.get("/sales-competitors", { schema: { querystring: { type: "object", required: ["workspaceId"], properties: { workspaceId: WS, includeInactive: { type: "boolean" } } } } }, async (request) => {

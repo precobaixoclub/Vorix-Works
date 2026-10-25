@@ -12,6 +12,7 @@ import type { ProposalDealLinkDeps, ProposalUseCaseDeps } from "../../../../appl
 import type { WorkspaceRepositoryPort } from "../../../../application/ports/workspace-repository.port.js";
 import type { SalesConfigRepositoryPort } from "../../../../application/ports/sales-engine-repository.port.js";
 import { DEFAULT_CLOSE_REASONS } from "../../../../domain/sales/sales.model.js";
+import { uniqueCloseReasonLabels } from "../../../../domain/sales/close-reasons.js";
 import type { Proposal } from "../../../../domain/crm/crm.model.js";
 import { NotFoundError, ValidationError } from "../../http/app-error.js";
 import { successEnvelope } from "../../http/response-envelope.js";
@@ -50,7 +51,7 @@ async function publicPayload(deps: PublicProposalRoutesDeps, proposal: Proposal)
     customerName: contact?.name,
     customerCompany: contact?.company,
     issuerName: workspace?.name,
-    declineReasons: reasons.length > 0 ? reasons.map((reason) => reason.label) : [...DEFAULT_CLOSE_REASONS.proposal_decline],
+    declineReasons: uniqueCloseReasonLabels(reasons.length > 0 ? reasons.map((reason) => reason.label) : DEFAULT_CLOSE_REASONS.proposal_decline),
   };
 }
 

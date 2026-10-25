@@ -497,11 +497,12 @@ function RuleDetails({
   );
 }
 
-function AutomationWizard({
+export function AutomationWizard({
   workspaceId,
   pipelines,
   initial,
   editing,
+  pipelineScope,
   onClose,
   onSaved,
 }: {
@@ -509,23 +510,25 @@ function AutomationWizard({
   pipelines: readonly { id: string; name: string }[];
   initial?: RuleDraft;
   editing?: AutomationRule;
+  pipelineScope?: string;
   onClose: () => void;
   onSaved: () => Promise<void>;
 }) {
   const [step, setStep] = useState(0),
     [name, setName] = useState(initial?.name ?? "");
   const [trigger, setTrigger] = useState<AutomationTrigger>(
-    initial?.trigger ?? "contact_created",
+    initial?.trigger ?? (pipelineScope ? "deal_stage_changed" : "contact_created"),
   );
   const [action, setAction] = useState<AutomationActionType>(
     initial?.action ?? "create_task",
   );
   const [conditions, setConditions] = useState<AutomationCondition[]>([
-    ...(initial?.conditions ?? []),
+    ...(initial?.conditions ?? []).filter((condition) => !pipelineScope || condition.field !== "pipelineId"),
   ]);
   const [taskType, setTaskType] = useState<TaskType>(
     initial?.actionConfig.taskType ?? "follow_up",
   );
+  const [taskDelayHours, setTaskDelayHours] = useState(initial?.actionConfig.taskDelayHours?.toString() ?? "");
   const [taskTitle, setTaskTitle] = useState(
       initial?.actionConfig.taskTitle ?? "",
     ),
@@ -534,7 +537,7 @@ function AutomationWizard({
       initial?.actionConfig.ownerUserId ?? "",
     ),
     [teamId, setTeamId] = useState(initial?.actionConfig.teamId ?? "");
-  const [pipelineId, setPipelineId] = useState(""),
+  const [pipelineId, setPipelineId] = useState(pipelineScope ?? ""),
     [targetStageId, setTargetStageId] = useState(
       initial?.actionConfig.targetStageId ?? "",
     );
@@ -558,7 +561,7 @@ function AutomationWizard({
   }, [initial?.actionConfig.targetStageId, pipelineId, stageChoices]);
   const actionConfig =
     action === "create_task"
-      ? { taskType, taskTitle: taskTitle.trim() }
+      ? { taskType, taskTitle: taskTitle.trim(), ...(taskDelayHours !== "" ? { taskDelayHours: Number(taskDelayHours) } : {}) }
       : action === "add_tag"
         ? { tag: tag.trim() }
         : action === "assign_owner"
@@ -568,7 +571,7 @@ function AutomationWizard({
             : { targetStageId };
   const actionValid =
     action === "create_task"
-      ? !!taskTitle.trim()
+      ? !!taskTitle.trim() && (taskDelayHours === "" || (Number.isInteger(Number(taskDelayHours)) && Number(taskDelayHours) >= 0 && Number(taskDelayHours) <= 8760))
       : action === "add_tag"
         ? !!tag.trim()
         : action === "assign_owner"
@@ -593,7 +596,7 @@ function AutomationWizard({
         name: name.trim(),
         trigger,
         action,
-        conditions,
+        conditions: pipelineScope ? [{ field: "pipelineId" as const, equals: pipelineScope }, ...conditions] : conditions,
         actionConfig,
         active: false,
       };
@@ -662,7 +665,7 @@ function AutomationWizard({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {Object.entries(TRIGGER_LABEL).map(([value, label]) => (
+                {Object.entries(TRIGGER_LABEL).filter(([value]) => !pipelineScope || !["contact_created", "goal_reached"].includes(value)).map(([value, label]) => (
                   <SelectItem key={value} value={value}>
                     {label}
                   </SelectItem>
@@ -725,6 +728,11 @@ function AutomationWizard({
                     ))}
                   </SelectContent>
                 </Select>
+                <div className="space-y-2">
+                  <Label htmlFor="automation-task-delay">Prazo para recontato (horas após o acontecimento)</Label>
+                  <Input id="automation-task-delay" type="number" min={0} max={8760} step={1} value={taskDelayHours} onChange={(event) => setTaskDelayHours(event.target.value)} placeholder="Ex.: 24" />
+                  <p className="text-sm text-muted-foreground">A tarefa será criada para o responsável pela oportunidade ou pelo contato. Deixe vazio para criar sem prazo.</p>
+                </div>
               </>
             ) : null}
             {action === "add_tag" ? (
@@ -770,6 +778,7 @@ function AutomationWizard({
                 <Label>Para onde mover a oportunidade?</Label>
                 <Select
                   value={pipelineId}
+                  disabled={!!pipelineScope}
                   onValueChange={(value) => {
                     setPipelineId(value);
                     setTargetStageId("");
@@ -817,7 +826,7 @@ function AutomationWizard({
               </div>
             ) : null}
             <p className="rounded-lg bg-muted/40 p-3 text-sm text-muted-foreground">
-              Tarefas e etiquetas precisam de um contato vinculado. Uma tarefa
+              Etiquetas precisam de um contato vinculado. Uma tarefa
               de WhatsApp é um lembrete para a equipe; não envia uma mensagem
               automaticamente.
             </p>
@@ -827,8 +836,9 @@ function AutomationWizard({
           <div className="space-y-4">
             <p className="text-base text-muted-foreground">
               Sem condições, vale para todos os casos. Para limitar, adicione
-              até 3 condições. Todas precisam ser atendidas.
+              até {pipelineScope ? 2 : 3} condições. Todas precisam ser atendidas.
             </p>
+            {pipelineScope ? <p className="rounded-lg bg-muted/40 p-3 text-sm">Esta automação se aplica somente ao funil {pipelines.find((pipeline) => pipeline.id === pipelineScope)?.name}.</p> : null}
             {conditions.map((condition, index) => (
               <div
                 key={index}
@@ -866,7 +876,7 @@ function AutomationWizard({
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {Object.entries(FIELD_LABEL).map(([value, label]) => (
+                    {Object.entries(FIELD_LABEL).filter(([value]) => !pipelineScope || value !== "pipelineId").map(([value, label]) => (
                       <SelectItem key={value} value={value}>
                         {label}
                       </SelectItem>
@@ -877,6 +887,7 @@ function AutomationWizard({
                   condition={condition}
                   workspaceId={workspaceId}
                   pipelines={pipelines}
+                  defaultPipelineId={pipelineScope}
                   onChange={(equals) =>
                     setConditions((current) =>
                       current.map((item, i) =>
@@ -887,7 +898,7 @@ function AutomationWizard({
                 />
               </div>
             ))}
-            {conditions.length < 3 ? (
+            {conditions.length < (pipelineScope ? 2 : 3) ? (
               <Button
                 variant="secondary"
                 onClick={() =>
@@ -902,7 +913,7 @@ function AutomationWizard({
               </Button>
             ) : (
               <p className="text-sm text-muted-foreground">
-                Você já adicionou o máximo de 3 condições.
+                Você já adicionou o máximo de condições.
               </p>
             )}
           </div>
@@ -1002,14 +1013,16 @@ function ConditionValue({
   condition,
   workspaceId,
   pipelines,
+  defaultPipelineId,
   onChange,
 }: {
   condition: AutomationCondition;
   workspaceId: string;
   pipelines: readonly { id: string; name: string }[];
+  defaultPipelineId?: string;
   onChange: (value: string) => void;
 }) {
-  const [pipelineId, setPipelineId] = useState("");
+  const [pipelineId, setPipelineId] = useState(defaultPipelineId ?? "");
   const { data: stages } = usePipelineStages(
     pipelineId || undefined,
     workspaceId,

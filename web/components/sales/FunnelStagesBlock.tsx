@@ -2,6 +2,9 @@
 
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
+import { LockKeyhole } from "lucide-react";
+import { Button } from "@/components/Button";
+import { PipelineStageManager } from "@/components/crm/PipelineStageManager";
 import { DetailBlock } from "@/components/DetailModal";
 import { Input, Label } from "@/components/Field";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -22,6 +25,7 @@ const FIXED_FIELDS = [
 /** Funil: probabilidade padrão, alerta de parada e campos exigidos para ENTRAR em cada etapa. */
 export function FunnelStagesBlock({ workspaceId, disabled }: { workspaceId: string; disabled: boolean }) {
   const { data: pipelines } = usePipelines(workspaceId);
+  const [managing, setManaging] = useState(false);
   const [pipelineId, setPipelineId] = useState<string>();
   useEffect(() => {
     if (!pipelineId && pipelines?.length) setPipelineId((pipelines.find((pipeline) => pipeline.isDefault) ?? pipelines[0]).id);
@@ -41,6 +45,8 @@ export function FunnelStagesBlock({ workspaceId, disabled }: { workspaceId: stri
           </Select>
         </div>
       ) : null}
+      {!disabled && pipelineId ? <Button variant="secondary" className="mb-4" onClick={() => setManaging(true)}>Configurar nomes e ordem das fases</Button> : null}
+      {managing && pipelineId ? <PipelineStageManager workspaceId={workspaceId} pipelineId={pipelineId} stages={[...(stages ?? [])].sort((a, b) => a.position - b.position)} onClose={() => setManaging(false)} onChanged={() => mutate()} /> : null}
       <div className="space-y-2">
         {[...(stages ?? [])].sort((a, b) => a.position - b.position).map((stage) => (
           <StageRow key={stage.id} workspaceId={workspaceId} stage={stage} fieldOptions={fieldOptions} disabled={disabled} onSaved={() => mutate()} />
@@ -72,6 +78,7 @@ function StageRow({ workspaceId, stage, fieldOptions, disabled, onSaved }: { wor
           </>
         ) : null}
       </div>
+      {terminal ? <p className="mt-2 flex items-center gap-1.5 text-xs text-muted-foreground"><LockKeyhole className="h-3.5 w-3.5" />Fase sistêmica de encerramento. Não pode ser removida.</p> : null}
       <div className="mt-2 flex flex-wrap items-center gap-1.5">
         <span className="text-[11px] text-muted-foreground">Exigir para entrar:</span>
         {fieldOptions.map((field) => (

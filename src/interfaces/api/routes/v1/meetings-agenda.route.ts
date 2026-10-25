@@ -94,7 +94,7 @@ const CALLBACK_BODY = { type: "object", required: ["state", "code"], additionalP
 
 function actorOf(request: FastifyRequest, permission: Parameters<typeof requirePermission>[1]): CalendarActor {
   const principal = requirePermission(request, permission);
-  return { tenantId: principal.tenantId, userId: principal.userId, role: principal.role };
+  return { tenantId: principal.tenantId, userId: principal.userId, role: principal.role, permissions: principal.permissions };
 }
 
 function translate(error: unknown): never {
@@ -131,7 +131,7 @@ export async function registerMeetingAgendaRoutes(app: FastifyInstance, deps: Me
   app.post("/meetings/agenda/events", { schema: { body: CREATE_BODY }, config: { readOnlyGuard: true } }, async (request, reply) => {
     const actor = actorOf(request, "calendar_event:write");
     const body = request.body as Parameters<typeof createCalendarEvent>[2];
-    if (body.autoRecord && !hasPermission(actor.role, "meeting:create")) throw new AppError({ code: "IDENTITY_FORBIDDEN", message: "Seu papel não pode preparar gravações.", statusCode: 403, recoverable: false });
+    if (body.autoRecord && !hasPermission(actor, "meeting:create")) throw new AppError({ code: "IDENTITY_FORBIDDEN", message: "Seu papel não pode preparar gravações.", statusCode: 403, recoverable: false });
     await ownWorkspace(actor, body.workspaceId);
     const event = await guard(() => createCalendarEvent(deps.calendar, actor, body));
     reply.code(201);

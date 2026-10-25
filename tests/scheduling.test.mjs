@@ -129,7 +129,9 @@ test("Scheduling dispatcher: falha nao retentavel cria dead letter e reprocessam
 
 test("Scheduling API: schedule due passa por governance, credential, provider health, Publication Outbox, sandbox dispatch, receipt, webhook sync e audit", async () => {
   const app = await buildTestApp("owner");
-  const workspaceId = "workspace-scheduling-api";
+  const workspace = await app.zunoContainer.workspaceRepository.create({ tenantId: "tenant-scheduling-api", name: "Scheduling" });
+  const workspaceId = workspace.id;
+  app.zunoConfig.publication.canaryWorkspaceIds.push(workspaceId);
   const connect = await app.inject({ method: "POST", url: "/v1/providers/linkedin_sandbox/connect", payload: { workspaceId } });
   assert.equal(connect.statusCode, 200);
   const credentialReferenceId = connect.json().data.credentialReferenceId;
@@ -221,7 +223,9 @@ test("Scheduling API: schedule due passa por governance, credential, provider he
 
 test("Scheduling API: recovery marca ocorrencia atrasada como missed e run-due nao publica automaticamente", async () => {
   const app = await buildTestApp("owner");
-  const workspaceId = "workspace-scheduling-api";
+  const workspace = await app.zunoContainer.workspaceRepository.create({ tenantId: "tenant-scheduling-api", name: "Scheduling" });
+  const workspaceId = workspace.id;
+  app.zunoConfig.publication.canaryWorkspaceIds.push(workspaceId);
   const createPublication = await app.inject({
     method: "POST",
     url: "/v1/publications",

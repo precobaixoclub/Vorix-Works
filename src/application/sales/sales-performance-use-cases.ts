@@ -1,3 +1,4 @@
+import { localDateIso } from "../../domain/shared/company-time.js";
 import type { Deal, PipelineStage } from "../../domain/crm/crm.model.js";
 import {
   ACTIVE_GOAL_METRICS,
@@ -23,6 +24,10 @@ import { isSalesManager, listManagerUserIds, loadCommercialSettings, mustDealInW
 
 export type SalesPerformanceDeps = SalesEngineDeps & { goalRepository: SalesGoalRepositoryPort; analyticsRepository: SalesAnalyticsRepositoryPort };
 
+async function companyTimeZone(deps: SalesEngineDeps, workspaceId: string): Promise<string> {
+  return (await deps.workspaceRepository?.getById(workspaceId))?.settings?.timezone || "America/Sao_Paulo";
+}
+
 const DAY_MS = 86_400_000;
 const bp = (part: number, whole: number): number | undefined => (whole > 0 ? Math.round((part * 10000) / whole) : undefined);
 
@@ -39,20 +44,69 @@ function toWonFacts(deal: Deal): WonDealFacts {
   };
 }
 
-/** Vendedor vê o próprio; gestão (sales_report:read_team) vê equipe/empresa/qualquer vendedor. */
-export function resolveReportSubject(actor: SalesActor, requested: { userId?: string; teamId?: string }): { userId?: string; teamId?: string } {
-  const canTeam = hasPermission(actor.role, "sales_report:read_team");
-  if (canTeam) return requested;
-  if (requested.teamId || (requested.userId && requested.userId !== actor.userId)) throw new Error("SALES_REPORT_FORBIDDEN: você só pode ver a sua própria performance.");
-  return { userId: actor.userId };
+export type ReportSubject = { userId?: string; teamId?: string; teamIds?: string[] };
+
+/** "Minhas equipes" — consolidado das equipes das quais a pessoa participa. */
+export const MY_TEAMS = "mine";
+
+/**
+ * Sujeito de um relatório/dashboard dentro do escopo (0173): `sales_report:read_all` vê empresa,
+ * qualquer equipe ou pessoa; `sales_report:read_team` vê as próprias equipes (uma, ou todas
+ * consolidadas com `teamId: "mine"`), os colegas delas e a si mesma; sem nenhuma, só a si mesma.
+ * Pedir algo fora do escopo é erro (nunca devolve silenciosamente outro recorte).
+ */
+export async function resolveReportSubject(deps: Pick<SalesPerformanceDeps, "teamMembershipRepository">, actor: SalesActor, requested: { userId?: string; teamId?: string }): Promise<ReportSubject> {
+  const all = hasPermission(actor, "sales_report:read_all");
+  const team = all || hasPermission(actor, "sales_report:read_team");
+  if (!team) {
+    if (requested.teamId || (requested.userId && requested.userId !== actor.userId)) throw new Error("SALES_REPORT_FORBIDDEN: você só pode ver a sua própria performance.");
+    return { userId: actor.userId };
+  }
+  const memberTeams = (await deps.teamMembershipRepository.listByUser(actor.userId, actor.tenantId)).filter(m => actor.role !== "admin" || m.role === "owner" || m.role === "admin").map((membership) => membership.teamId);
+  if (requested.teamId === MY_TEAMS) return memberTeams.length ? { teamIds: memberTeams, ...(requested.userId ? { userId: requested.userId } : {}) } : { userId: actor.userId };
+  if (all) return requested;
+  if (requested.teamId && !memberTeams.includes(requested.teamId)) throw new Error("SALES_REPORT_FORBIDDEN: esta equipe está fora do seu escopo.");
+  if (requested.userId && requested.userId !== actor.userId) {
+    const colleagues = new Set<string>();
+    for (const teamId of memberTeams) for (const member of await deps.teamMembershipRepository.listByTeam(teamId)) colleagues.add(member.userId);
+    if (!colleagues.has(requested.userId)) throw new Error("SALES_REPORT_FORBIDDEN: esta pessoa está fora do seu escopo.");
+  }
+  if (!requested.userId && !requested.teamId) return memberTeams.length ? { teamIds: memberTeams } : { userId: actor.userId };
+  return requested.userId && requested.userId !== actor.userId && !requested.teamId ? { ...requested, teamIds: memberTeams } : requested;
 }
 
-function matchesSubject(deal: Deal, subject: { userId?: string; teamId?: string }, credited: boolean): boolean {
+/** Oportunidade dentro do sujeito do relatório (`credited` = responsável/equipe CREDITADOS no fechamento). */
+export function matchesSubject(deal: Deal, subject: ReportSubject, credited: boolean): boolean {
   const owner = credited ? deal.creditedOwnerUserId ?? deal.ownerUserId : deal.ownerUserId;
   const team = credited ? deal.creditedTeamId ?? deal.teamId : deal.teamId;
   if (subject.userId && owner !== subject.userId) return false;
   if (subject.teamId && team !== subject.teamId) return false;
+  if (subject.teamIds && !(team && subject.teamIds.includes(team))) return false;
   return true;
+}
+
+/** Metas visíveis: própria sempre; equipes das quais participa (e colegas) com `goal:read_team`;
+ * todas (inclusive a da empresa) com `goal:read_all`. */
+async function filterGoalsInScope(deps: Pick<SalesPerformanceDeps, "teamMembershipRepository">, actor: SalesActor, goals: SalesGoal[]): Promise<SalesGoal[]> {
+  if (hasPermission(actor, "goal:read_all")) return goals;
+  if (!hasPermission(actor, "goal:read_team")) return goals.filter((goal) => goal.scopeType === "user" && goal.scopeId === actor.userId);
+  const teams = new Set((await deps.teamMembershipRepository.listByUser(actor.userId, actor.tenantId)).filter(m => actor.role !== "admin" || m.role === "owner" || m.role === "admin").map((membership) => membership.teamId));
+  const colleagues = new Set<string>([actor.userId]);
+  for (const teamId of teams) for (const member of await deps.teamMembershipRepository.listByTeam(teamId)) colleagues.add(member.userId);
+  return goals.filter((goal) => (goal.scopeType === "user" && goal.scopeId && colleagues.has(goal.scopeId)) || (goal.scopeType === "team" && goal.scopeId && teams.has(goal.scopeId)));
+}
+
+/** Definir metas (`goal:manage`): com escopo global, qualquer uma; senão só metas das equipes que
+ * a pessoa GERENCIA e dos membros delas — nunca a da empresa. */
+async function assertGoalInManageScope(deps: Pick<SalesPerformanceDeps, "teamMembershipRepository">, actor: SalesActor, goal: { scopeType: GoalScope; scopeId?: string }): Promise<void> {
+  if (!hasPermission(actor, "goal:manage")) throw new Error("SALES_REPORT_FORBIDDEN: só a gestão define metas.");
+  if (hasPermission(actor, "goal:read_all")) return;
+  const managed = (await deps.teamMembershipRepository.listByUser(actor.userId, actor.tenantId)).filter((membership) => membership.role === "owner" || membership.role === "admin").map((membership) => membership.teamId);
+  if (goal.scopeType === "team" && goal.scopeId && managed.includes(goal.scopeId)) return;
+  if (goal.scopeType === "user" && goal.scopeId) {
+    for (const teamId of managed) if ((await deps.teamMembershipRepository.listByTeam(teamId)).some((member) => member.userId === goal.scopeId)) return;
+  }
+  throw new Error("SALES_REPORT_FORBIDDEN: você só define metas das equipes que gerencia e dos membros delas.");
 }
 
 async function stageMap(deps: SalesPerformanceDeps, deals: readonly Deal[]): Promise<Map<string, PipelineStage[]>> {
@@ -73,7 +127,8 @@ async function wonDealsBetween(deps: SalesPerformanceDeps, tenantId: string, wor
 
 async function attachProgress(deps: SalesPerformanceDeps, tenantId: string, workspaceId: string, goals: readonly SalesGoal[], now: Date): Promise<GoalWithProgress[]> {
   if (goals.length === 0) return [];
-  const ranges = goals.map((goal) => periodRange(goal.periodType, goal.periodStart));
+  const timeZone = await companyTimeZone(deps, workspaceId);
+  const ranges = goals.map((goal) => periodRange(goal.periodType, goal.periodStart, timeZone));
   const from = ranges.map((range) => range.from).sort()[0];
   const to = ranges.map((range) => range.to).sort().at(-1) as string;
   const won = (await wonDealsBetween(deps, tenantId, workspaceId, from, to)).map(toWonFacts);
@@ -81,20 +136,17 @@ async function attachProgress(deps: SalesPerformanceDeps, tenantId: string, work
     const range = ranges[index];
     const inPeriod = dealsInGoalScope(goal, won.filter((deal) => deal.closedAt >= range.from && deal.closedAt < range.to));
     const progress = goalProgress(goal.targetValue, realizedValue(goal.metric, inPeriod));
-    return { ...goal, progress, pace: goal.periodType !== "monthly" ? paceAndProjection(goal.periodType, goal.periodStart, goal.targetValue, progress.realizedValue, now) : undefined };
+    return { ...goal, progress, pace: goal.periodType !== "monthly" ? paceAndProjection(goal.periodType, goal.periodStart, goal.targetValue, progress.realizedValue, now, timeZone) : undefined };
   });
 }
 
 export async function listGoals(deps: SalesPerformanceDeps, actor: SalesActor, input: { workspaceId: string; year?: number; periodType?: GoalPeriod; now?: Date }): Promise<GoalWithProgress[]> {
-  if (!hasPermission(actor.role, "goal:read")) throw new Error("SALES_REPORT_FORBIDDEN: sem acesso a metas.");
+  if (!hasPermission(actor, "goal:read")) throw new Error("SALES_REPORT_FORBIDDEN: sem acesso a metas.");
   const now = input.now ?? new Date();
-  const year = input.year ?? now.getUTCFullYear();
+  const year = input.year ?? Number(localDateIso(now, await companyTimeZone(deps, input.workspaceId)).slice(0, 4));
   let goals = await deps.goalRepository.list({ tenantId: actor.tenantId, workspaceId: input.workspaceId, periodFrom: `${year}-01-01`, periodTo: `${year + 1}-01-01` });
   if (input.periodType) goals = goals.filter((goal) => goal.periodType === input.periodType);
-  if (!hasPermission(actor.role, "sales_report:read_team")) {
-    const teams = new Set((await deps.teamMembershipRepository.listByUser(actor.userId)).map((membership) => membership.teamId));
-    goals = goals.filter((goal) => goal.scopeType === "company" || (goal.scopeType === "user" && goal.scopeId === actor.userId) || (goal.scopeType === "team" && goal.scopeId && teams.has(goal.scopeId)));
-  }
+  goals = await filterGoalsInScope(deps, actor, goals);
   return attachProgress(deps, actor.tenantId, input.workspaceId, goals, now);
 }
 
@@ -110,7 +162,8 @@ export async function upsertGoal(deps: SalesPerformanceDeps, actor: SalesActor, 
 
 /** "Aplicar a todos os meses" e edição em lote: um valor por mês (null = sem meta), um único recálculo. */
 export async function setMonthlyGoals(deps: SalesPerformanceDeps, actor: SalesActor, input: { workspaceId: string; scopeType: GoalScope; scopeId?: string; metric: GoalMetric; year: number; months: (number | null)[]; currency?: string }): Promise<GoalWithProgress[]> {
-  if (!hasPermission(actor.role, "goal:manage")) throw new Error("SALES_REPORT_FORBIDDEN: só a gestão define metas.");
+  if (input.scopeType !== "company" && !input.scopeId) throw new Error("SALES_GOAL_INVALID: informe o vendedor ou a equipe.");
+  await assertGoalInManageScope(deps, actor, input);
   if (input.months.length !== 12) throw new Error("SALES_GOAL_INVALID: informe os 12 meses.");
   const existing = await scopeGoals(deps, actor, input);
   for (let index = 0; index < 12; index += 1) {
@@ -163,10 +216,10 @@ async function writeMonthlyGoal(deps: SalesPerformanceDeps, actor: SalesActor, i
 }
 
 async function writeGoal(deps: SalesPerformanceDeps, actor: SalesActor, input: GoalInput): Promise<SalesGoal> {
-  if (!hasPermission(actor.role, "goal:manage")) throw new Error("SALES_REPORT_FORBIDDEN: só a gestão define metas.");
+  if (input.scopeType !== "company" && !input.scopeId) throw new Error("SALES_GOAL_INVALID: informe o vendedor ou a equipe.");
+  await assertGoalInManageScope(deps, actor, input);
   if (!ACTIVE_GOAL_METRICS.includes(input.metric)) throw new Error("SALES_GOAL_INVALID: este tipo de meta ainda não está disponível.");
   if (!(input.targetValue > 0) || !Number.isInteger(input.targetValue)) throw new Error("SALES_GOAL_INVALID: a meta deve ser um valor positivo.");
-  if (input.scopeType !== "company" && !input.scopeId) throw new Error("SALES_GOAL_INVALID: informe o vendedor ou a equipe.");
   if (input.scopeType === "user" && !(await deps.membershipRepository.getByUserAndTenant(input.scopeId as string, actor.tenantId))) throw new Error("SALES_GOAL_INVALID: vendedor não pertence a esta conta.");
   const { goal, previousTarget } = await deps.goalRepository.upsert({
     tenantId: actor.tenantId, workspaceId: input.workspaceId, scopeType: input.scopeType, scopeId: input.scopeType === "company" ? undefined : input.scopeId,
@@ -177,9 +230,10 @@ async function writeGoal(deps: SalesPerformanceDeps, actor: SalesActor, input: G
 }
 
 export async function deleteGoal(deps: SalesPerformanceDeps, actor: SalesActor, input: { workspaceId: string; goalId: string }): Promise<void> {
-  if (!hasPermission(actor.role, "goal:manage")) throw new Error("SALES_REPORT_FORBIDDEN: só a gestão define metas.");
+  if (!hasPermission(actor, "goal:manage")) throw new Error("SALES_REPORT_FORBIDDEN: só a gestão define metas.");
   const goal = await deps.goalRepository.getById(input.goalId);
   if (!goal || goal.tenantId !== actor.tenantId || goal.workspaceId !== input.workspaceId) throw new Error(`SALES_GOAL_NOT_FOUND: meta "${input.goalId}" não existe.`);
+  await assertGoalInManageScope(deps, actor, goal);
   if (goal.periodType !== "monthly") throw new Error("SALES_GOAL_INVALID: a meta trimestral e a anual são a soma dos meses — remova os meses.");
   await removeGoal(deps, actor, input.workspaceId, goal);
   await syncDerivedGoals(deps, actor, { workspaceId: input.workspaceId, scopeType: goal.scopeType, scopeId: goal.scopeId, metric: goal.metric, year: Number(goal.periodStart.slice(0, 4)), currency: goal.currency });
@@ -188,10 +242,11 @@ export async function deleteGoal(deps: SalesPerformanceDeps, actor: SalesActor, 
 /** "Meta atingida" — avaliado a cada ganho; notifica uma única vez por meta. */
 export async function checkGoalsReached(deps: SalesPerformanceDeps, deal: Deal): Promise<void> {
   if (deal.status !== "won" || !deal.closedAt) return;
-  const day = deal.closedAt.slice(0, 10);
+  const timeZone = await companyTimeZone(deps, deal.workspaceId);
+  const day = localDateIso(new Date(deal.closedAt), timeZone);
   const candidates = (await deps.goalRepository.list({ tenantId: deal.tenantId, workspaceId: deal.workspaceId, periodFrom: `${day.slice(0, 4)}-01-01`, periodTo: `${Number(day.slice(0, 4)) + 1}-01-01` }))
     .filter((goal) => {
-      const range = periodRange(goal.periodType, goal.periodStart);
+      const range = periodRange(goal.periodType, goal.periodStart, timeZone);
       if (deal.closedAt! < range.from || deal.closedAt! >= range.to) return false;
       const facts = toWonFacts(deal);
       return dealsInGoalScope(goal, [facts]).length > 0;
@@ -229,8 +284,8 @@ export async function checkGoalsReached(deps: SalesPerformanceDeps, deal: Deal):
 
 export type ForecastBuckets = { wonCents: number; commitCents: number; bestCaseCents: number; pipelineCents: number; weightedCents: number };
 
-function forecastFor(openDeals: readonly Deal[], stages: Map<string, PipelineStage[]>, range: { from: string; to: string }, wonCents: number): ForecastBuckets {
-  const inPeriod = openDeals.filter((deal) => deal.expectedCloseDate && `${deal.expectedCloseDate}T00:00:00.000Z` >= range.from && `${deal.expectedCloseDate}T00:00:00.000Z` < range.to);
+function forecastFor(openDeals: readonly Deal[], stages: Map<string, PipelineStage[]>, range: { from: string; to: string }, wonCents: number, timeZone: string): ForecastBuckets {
+  const inPeriod = openDeals.filter((deal) => deal.expectedCloseDate && deal.expectedCloseDate >= localDateIso(new Date(range.from), timeZone) && deal.expectedCloseDate < localDateIso(new Date(range.to), timeZone));
   const sum = (category: Deal["forecastCategory"]) => inPeriod.filter((deal) => deal.forecastCategory === category).reduce((total, deal) => total + deal.valueCents, 0);
   return {
     wonCents,
@@ -257,11 +312,12 @@ export type PerformanceReport = {
 
 export async function getPerformance(deps: SalesPerformanceDeps, actor: SalesActor, input: { workspaceId: string; userId?: string; teamId?: string; periodType?: GoalPeriod; periodStart?: string; now?: Date }): Promise<PerformanceReport> {
   const now = input.now ?? new Date();
-  const subject = resolveReportSubject(actor, { userId: input.userId, teamId: input.teamId });
+  const subject = await resolveReportSubject(deps, actor, { userId: input.userId, teamId: input.teamId });
   const periodType = input.periodType ?? "monthly";
-  const start = normalizePeriodStart(periodType, input.periodStart ?? now.toISOString().slice(0, 10));
-  const range = periodRange(periodType, start);
-  const previous = periodRange(periodType, previousPeriodStart(periodType, start));
+  const timeZone = await companyTimeZone(deps, input.workspaceId);
+  const start = normalizePeriodStart(periodType, input.periodStart ?? localDateIso(now, timeZone));
+  const range = periodRange(periodType, start, timeZone);
+  const previous = periodRange(periodType, previousPeriodStart(periodType, start), timeZone);
   const settings = await loadCommercialSettings(deps, actor.tenantId, input.workspaceId);
   const visibility = resolveVisibility(actor, settings);
 
@@ -282,8 +338,10 @@ export async function getPerformance(deps: SalesPerformanceDeps, actor: SalesAct
   const mrr = won.reduce((sum, deal) => sum + (deal.finalMrrCents ?? 0), 0);
   const cycles = [...won, ...lost].filter((deal) => deal.closedAt).map((deal) => (new Date(deal.closedAt as string).getTime() - new Date(deal.createdAt).getTime()) / DAY_MS);
 
-  const goalScopes = subject.userId ? { scopeType: "user" as const, scopeId: subject.userId } : subject.teamId ? { scopeType: "team" as const, scopeId: subject.teamId } : { scopeType: "company" as const };
+  // Consolidado de várias equipes: as metas de cada equipe (somadas na tela, nunca duplicadas aqui).
+  const goalScopes = subject.userId ? { scopeType: "user" as const, scopeId: subject.userId } : subject.teamId ? { scopeType: "team" as const, scopeId: subject.teamId } : subject.teamIds ? { scopeType: "team" as const } : { scopeType: "company" as const };
   const goals = (await deps.goalRepository.list({ tenantId: actor.tenantId, workspaceId: input.workspaceId, scopeType: goalScopes.scopeType, scopeId: "scopeId" in goalScopes ? goalScopes.scopeId : undefined }))
+    .filter((goal) => !subject.teamIds || subject.userId || (goal.scopeId !== undefined && subject.teamIds.includes(goal.scopeId)))
     .filter((goal) => goal.periodType === periodType && goal.periodStart === start && (visibility.canViewMargin || goal.metric !== "gross_margin"));
 
   return {
@@ -307,14 +365,14 @@ export async function getPerformance(deps: SalesPerformanceDeps, actor: SalesAct
       openValueCents: mine.reduce((sum, deal) => sum + deal.valueCents, 0),
       weightedValueCents: mine.reduce((sum, deal) => sum + Math.round((deal.valueCents * resolveDealProbability(deal, stages.get(deal.pipelineId) ?? []).value) / 100), 0),
     },
-    forecast: forecastFor(mine, stages, range, revenue),
+    forecast: forecastFor(mine, stages, range, revenue, timeZone),
     dataQuality: {
       withoutNextActivity: mine.filter((deal) => !withTasks.has(deal.id)).length,
       stale: mine.filter((deal) => {
         const stage = stages.get(deal.pipelineId)?.find((item) => item.id === deal.stageId);
         return stage?.staleAfterDays !== undefined && (now.getTime() - new Date(deal.lastStageChangedAt).getTime()) / DAY_MS >= stage.staleAfterDays;
       }).length,
-      overdueExpectedClose: mine.filter((deal) => deal.expectedCloseDate && deal.expectedCloseDate < now.toISOString().slice(0, 10)).length,
+      overdueExpectedClose: mine.filter((deal) => deal.expectedCloseDate && deal.expectedCloseDate < localDateIso(now, timeZone)).length,
       withoutValue: mine.filter((deal) => !(deal.valueCents > 0)).length,
       withoutOwner: mine.filter((deal) => !deal.ownerUserId).length,
     },
@@ -330,9 +388,9 @@ export async function getPerformance(deps: SalesPerformanceDeps, actor: SalesAct
 export async function getDealGoalImpact(deps: SalesPerformanceDeps, actor: SalesActor, input: { workspaceId: string; dealId: string; now?: Date }) {
   const deal = await mustDealInWorkspace(deps, input.dealId, actor.tenantId, input.workspaceId);
   const ownerUserId = deal.ownerUserId ?? actor.userId;
-  if (ownerUserId !== actor.userId && !hasPermission(actor.role, "sales_report:read_team")) return { available: false as const };
+  if (ownerUserId !== actor.userId && !hasPermission(actor, "sales_report:read_team")) return { available: false as const };
   const now = input.now ?? new Date();
-  const start = normalizePeriodStart("monthly", now.toISOString().slice(0, 10));
+  const start = normalizePeriodStart("monthly", localDateIso(now, await companyTimeZone(deps, input.workspaceId)));
   const [goal] = await deps.goalRepository.list({ tenantId: actor.tenantId, workspaceId: input.workspaceId, scopeType: "user", scopeId: ownerUserId, metric: "sales_revenue" })
     .then((goals) => goals.filter((item) => item.periodType === "monthly" && item.periodStart === start));
   if (!goal) return { available: false as const, ownerUserId };
@@ -359,11 +417,17 @@ export async function getDealGoalImpact(deps: SalesPerformanceDeps, actor: Sales
 // ---------------------------------------------------------------------------------------------
 
 export async function getTeamPerformance(deps: SalesPerformanceDeps, actor: SalesActor, input: { workspaceId: string; teamId?: string; periodType?: GoalPeriod; periodStart?: string; now?: Date }) {
-  if (!hasPermission(actor.role, "sales_report:read_team")) throw new Error("SALES_REPORT_FORBIDDEN: visão de equipe é da gestão.");
+  if (!hasPermission(actor, "sales_report:read_team") && !hasPermission(actor, "sales_report:read_all")) throw new Error("SALES_REPORT_FORBIDDEN: visão de equipe é da gestão.");
   const now = input.now ?? new Date();
   const periodType = input.periodType ?? "monthly";
-  const start = normalizePeriodStart(periodType, input.periodStart ?? now.toISOString().slice(0, 10));
-  const members = await deps.membershipRepository.listByTenant(actor.tenantId);
+  const timeZone = await companyTimeZone(deps, input.workspaceId);
+  const start = normalizePeriodStart(periodType, input.periodStart ?? localDateIso(now, timeZone));
+  // Comparativo só entre pessoas do escopo: empresa toda (global) ou membros das equipes do recorte.
+  const subject = await resolveReportSubject(deps, actor, { teamId: input.teamId });
+  const subjectTeams = subject.teamIds ?? (subject.teamId ? [subject.teamId] : undefined);
+  const members = subjectTeams
+    ? [...new Map((await Promise.all(subjectTeams.map((teamId) => deps.teamMembershipRepository.listByTeam(teamId)))).flat().map((member) => [member.userId, member] as const)).values()]
+    : hasPermission(actor, "sales_report:read_all") ? await deps.membershipRepository.listByTenant(actor.tenantId) : [{ userId: actor.userId, role: actor.role }];
   const company = await getPerformance(deps, actor, { workspaceId: input.workspaceId, teamId: input.teamId, periodType, periodStart: start, now });
   const rows = [];
   for (const member of members) {
@@ -397,7 +461,8 @@ export async function getTeamPerformance(deps: SalesPerformanceDeps, actor: Sale
 export async function getForecast(deps: SalesPerformanceDeps, actor: SalesActor, input: { workspaceId: string; userId?: string; teamId?: string; periodType?: "quarterly" | "annual" | "monthly"; periodStart?: string; now?: Date }) {
   const now = input.now ?? new Date();
   const periodType = input.periodType ?? "quarterly";
-  const start = normalizePeriodStart(periodType, input.periodStart ?? now.toISOString().slice(0, 10));
+  const timeZone = await companyTimeZone(deps, input.workspaceId);
+  const start = normalizePeriodStart(periodType, input.periodStart ?? localDateIso(now, timeZone));
   const months = periodType === "annual" ? 12 : periodType === "quarterly" ? 3 : 1;
   const [year, month] = start.split("-").map(Number);
   const rows: (ForecastBuckets & { month: string; goalCents?: number; gapCents?: number })[] = [];
@@ -413,7 +478,7 @@ export async function getForecast(deps: SalesPerformanceDeps, actor: SalesActor,
 }
 
 export async function getSalesReports(deps: SalesPerformanceDeps, actor: SalesActor, input: { workspaceId: string; from: string; to: string; userId?: string; teamId?: string; pipelineId?: string; origin?: string }) {
-  const subject = resolveReportSubject(actor, { userId: input.userId, teamId: input.teamId });
+  const subject = await resolveReportSubject(deps, actor, { userId: input.userId, teamId: input.teamId });
   const settings = await loadCommercialSettings(deps, actor.tenantId, input.workspaceId);
   const visibility = resolveVisibility(actor, settings);
   const filterDeal = (deal: Deal, credited: boolean) => matchesSubject(deal, subject, credited) && (!input.pipelineId || deal.pipelineId === input.pipelineId) && (!input.origin || deal.origin === input.origin);

@@ -1,7 +1,5 @@
-/** Módulo Conversas — Fase 7 (Resultados). Read-model só de relatório — agrega dados já existentes
- * de `inbox_conversations`/`inbox_messages`, nunca escreve nada. Port deliberadamente separado de
- * `InboxConversationRepositoryPort` (que é sobre operação do dia a dia) pra não forçar nenhuma
- * outra implementação existente a ganhar um método novo. */
+/** Operational metrics use structured attendances and responsibility cycles.
+ * Message volume remains a separate measure; automated replies never become human FRT. */
 
 export type InboxMetricsFilter = {
   tenantId: string;
@@ -21,12 +19,9 @@ export type InboxMetricsReport = {
   pendingCount: number;
   resolvedCount: number;
   backlogCount: number;
-  /** `undefined` quando nenhuma conversa no período teve uma resposta depois da primeira mensagem
-   * inbound — nunca `0` nesse caso (0 segundos seria um dado inventado). */
+  /** Average human FRT per responsibility cycle started in the period; absent without samples. */
   avgFirstResponseSeconds?: number;
-  /** Aproximação via `updated_at` da conversa no momento em que o status virou `resolved` — o
-   * schema do módulo Conversas não tem um `resolved_at` dedicado (ver auditoria da Fase 7:
-   * documentar a aproximação em vez de inventar precisão que não existe). */
+  /** Global resolution time: closed_at - opened_at, attributed by attendance closure date. */
   avgHandleTimeSeconds?: number;
   aiResolvedMessageCount: number;
   humanResolvedMessageCount: number;

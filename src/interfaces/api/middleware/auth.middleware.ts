@@ -1,3 +1,4 @@
+import type { AccessResolver } from "../../../application/identity/access-resolver.js";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import type { AuthPort } from "../../../application/ports/auth.port.js";
 import type { AuthPrincipal } from "../../../domain/identity/identity.model.js";
@@ -111,7 +112,7 @@ export function isPrincipalAuthorizedForRequest(
  * verificação falha, só registra `authFailureReason` — quem decide se a rota exige autenticação, e
  * qual status/código devolver, é o handler da rota (`requirePrincipal`), nunca este middleware.
  */
-export function registerAuthMiddleware(app: FastifyInstance, authPort: AuthPort): void {
+export function registerAuthMiddleware(app: FastifyInstance, authPort: AuthPort, accessResolver?: AccessResolver): void {
   app.addHook("onRequest", async (request: FastifyRequest, _reply: FastifyReply) => {
     const header = request.headers.authorization;
     const headerToken = header?.startsWith("Bearer ") ? header.slice("Bearer ".length) : undefined;
@@ -149,7 +150,14 @@ export function registerAuthMiddleware(app: FastifyInstance, authPort: AuthPort)
       return;
     }
 
-    request.zunoContext.principal = result.principal;
-    request.zunoContext.tenantId = result.principal.tenantId;
+    // Perfil, permissões efetivas e status ATUAIS (ver `AccessResolver`) — membro removido ou
+    // desativado deixa de ter acesso na próxima requisição, não só no próximo refresh.
+    const principal = accessResolver ? await accessResolver.resolve(result.principal) : result.principal;
+    if (!principal) {
+      request.zunoContext.authFailureReason = "invalid_token";
+      return;
+    }
+    request.zunoContext.principal = principal;
+    request.zunoContext.tenantId = principal.tenantId;
   });
 }

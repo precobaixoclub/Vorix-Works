@@ -161,6 +161,8 @@ test("Fase 4 reserva idempotente impede envio duplicado, inclusive em falha de p
   assert.equal(sent.status, "sent");
   assert.equal(repeated.id, sent.id);
   assert.equal(publishCount, 1);
+  const queued = (await db.pool.query("select metadata from inbox_messages where conversation_id = $1", [conversation.id])).rows[0];
+  assert.equal(queued.metadata.linkPreview, true);
   assert.equal(Number((await db.pool.query("select count(*) from inbox_messages where conversation_id = $1", [conversation.id])).rows[0].count), 1);
 
   const second = await createProposal(deps, { tenantId, workspaceId: ws.id, contactId: contact.id, title: "Falha", items: [{ name: "Item", quantity: 1, unitPriceCents: 100 }] });

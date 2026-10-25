@@ -191,7 +191,7 @@ test("Analytics performance: 10 mil eventos, consulta 30 dias e agregacao diaria
 
 test("Analytics API: dashboard, query, snapshot rebuild, insight, alert, export, audit, isolamento e RBAC", async () => {
   const ownerApp = await buildTestApp("owner");
-  const workspaceId = "workspace-analytics-api";
+  const workspaceId = (await ownerApp.zunoContainer.workspaceRepository.create({ tenantId: "tenant-analytics-api", name: "Analytics" })).id;
   await ownerApp.zunoContainer.analyticsIngestionService.replay([
     event({ tenantId: "tenant-analytics-api", workspaceId, eventId: "api-planning", eventType: "planning_created", planningId: "planning-api", campaignId: "campaign-api" }),
     event({ tenantId: "tenant-analytics-api", workspaceId, eventId: "api-execution", eventType: "execution_completed", executionRunId: "execution-api", campaignId: "campaign-api", measurements: { executionDurationMs: 1000, executionArtifactsTotal: 1 } }),
@@ -244,7 +244,8 @@ test("Analytics API: dashboard, query, snapshot rebuild, insight, alert, export,
   await ownerApp.close();
 
   const viewerApp = await buildTestApp("viewer");
-  const denied = await viewerApp.inject({ method: "POST", url: "/v1/analytics/admin/rebuild", payload: { workspaceId } });
+  const viewerWorkspace = await viewerApp.zunoContainer.workspaceRepository.create({ tenantId: "tenant-analytics-api", name: "Viewer" });
+  const denied = await viewerApp.inject({ method: "POST", url: "/v1/analytics/admin/rebuild", payload: { workspaceId: viewerWorkspace.id } });
   assert.equal(denied.statusCode, 403);
   await viewerApp.close();
 });

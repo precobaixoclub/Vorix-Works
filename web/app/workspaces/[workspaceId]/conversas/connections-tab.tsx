@@ -1,8 +1,10 @@
 "use client";
 
+import { useMyAccess } from "@/features/auth/access";
+
 import { useEffect, useState } from "react";
 import { Switch } from "@/components/ui/switch";
-import { updateInboxConnectionSettings } from "@/features/inbox/api";
+import { updateInboxConnectionSettings, type InboxConnectionSettingsPatch } from "@/features/inbox/api";
 import { ChevronDown, ChevronUp, Users } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -26,12 +28,13 @@ import { canManageTenant, canOperateWorkspace, RBAC_COPY } from "@/lib/rbac";
 export function ConnectionsTab({ workspaceId }: { workspaceId: string }) {
   const { state } = useAuth();
   const role = state.status === "authenticated" ? state.role : undefined;
-  const canOperate = canOperateWorkspace(role);
+  const { can } = useMyAccess();
+  const canOperate = can("inbox:manage_connections");
   // Achado real do usuário ("não tá sendo possível excluir o canal"): o botão usava `canOperate`
   // (inclui "editor"), mas o backend exige `inbox:delete_connections` — degrau restrito a
   // owner/admin (mesmo tier de `inbox:delete_conversations`, ver `canDelete` em `inbox-tab.tsx`).
   // Um editor via o botão habilitado e a exclusão sempre falhava com 403.
-  const canDelete = canManageTenant(role);
+  const canDelete = can("inbox:delete_connections");
   const { data, isLoading, error, mutate } = useInboxConnections(workspaceId);
   const [newDisplayName, setNewDisplayName] = useState("");
   const [creating, setCreating] = useState(false);
@@ -352,28 +355,58 @@ function ChannelSignatureSettings({ workspaceId, connection, canManage }: { work
   const { mutate } = useInboxConnections(workspaceId);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string>();
-  async function save(checked: boolean) {
+  async function save(patch: InboxConnectionSettingsPatch) {
     if (!canManage || saving) return;
     setSaving(true);
     setError(undefined);
     try {
-      await updateInboxConnectionSettings(workspaceId, connection.id, checked);
+      await updateInboxConnectionSettings(workspaceId, connection.id, patch);
       await mutate();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Não foi possível salvar a identificação do atendente.");
+      setError(cause instanceof Error ? cause.message : "Não foi possível salvar a configuração do canal.");
     } finally { setSaving(false); }
   }
+  const isWhatsapp = (connection.provider ?? "wuzapi") === "wuzapi";
   return (
-    <div className="rounded-lg border border-border/60 p-3">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <label htmlFor={`agent-name-${connection.id}`} className="text-sm font-medium">Enviar nome do atendente ao cliente</label>
-          <p className="mt-1 text-xs text-muted-foreground">Inclui o nome nas mensagens de texto e nas legendas de fotos e vídeos. Internamente, o autor sempre aparece, mesmo com esta opção desligada.</p>
+    <div className="divide-y divide-border/60 rounded-lg border border-border/60">
+      <div className="p-3">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <label htmlFor={`agent-name-${connection.id}`} className="text-sm font-medium">Enviar nome do atendente ao cliente</label>
+            <p className="mt-1 text-xs text-muted-foreground">Inclui o nome nas mensagens de texto e nas legendas de fotos e vídeos. Internamente, o autor sempre aparece, mesmo com esta opção desligada.</p>
+          </div>
+          <Switch id={`agent-name-${connection.id}`} checked={connection.sendAgentName ?? false} disabled={!canManage || saving} onCheckedChange={(checked) => void save({ sendAgentName: checked })} />
         </div>
-        <Switch id={`agent-name-${connection.id}`} checked={connection.sendAgentName ?? false} disabled={!canManage || saving} onCheckedChange={(checked) => void save(checked)} />
+        {connection.sendAgentName ? <p className="mt-2 text-xs text-muted-foreground">Exemplo: <strong>Maria</strong> · Olá! Como posso ajudar?</p> : null}
       </div>
-      {connection.sendAgentName ? <p className="mt-2 text-xs text-muted-foreground">Exemplo: <strong>Maria</strong> · Olá! Como posso ajudar?</p> : null}
-      {error ? <p role="alert" className="mt-2 text-xs text-destructive">{error}</p> : null}
+      <div className="p-3">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <label htmlFor={`csat-${connection.id}`} className="text-sm font-medium">Enviar pesquisa de satisfação ao finalizar atendimento</label>
+            <p className="mt-1 text-xs text-muted-foreground">
+              {isWhatsapp
+                ? "Ligada, a pesquisa sai sempre que um atendente finalizar. Gerentes e administradores podem dispensá-la em um atendimento específico. O texto da pergunta fica em Conversas > Regras."
+                : "Disponível só para canais de WhatsApp."}
+            </p>
+          </div>
+          <Switch id={`csat-${connection.id}`} checked={connection.csatOnClose ?? false} disabled={!canManage || saving || !isWhatsapp} onCheckedChange={(checked) => void save({ csatOnClose: checked })} />
+        </div>
+      </div>
+      <div className="p-3">
+        <label htmlFor={`new-attendance-${connection.id}`} className="text-sm font-medium">Quando o cliente voltar a falar depois de um atendimento finalizado</label>
+        <p className="mt-1 text-xs text-muted-foreground">Um novo atendimento é aberto na mesma conversa, com todo o histórico.</p>
+        <select
+          id={`new-attendance-${connection.id}`}
+          className="mt-2 h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary/20 disabled:bg-muted/50 sm:max-w-md"
+          value={connection.newAttendanceAssignment ?? "last_assignee"}
+          disabled={!canManage || saving}
+          onChange={(event) => void save({ newAttendanceAssignment: event.target.value as "last_assignee" | "redistribute" })}
+        >
+          <option value="last_assignee">Manter com o último responsável</option>
+          <option value="redistribute">Distribuir de novo (triagem, equipe e rodízio do canal)</option>
+        </select>
+      </div>
+      {error ? <p role="alert" className="p-3 text-xs text-destructive">{error}</p> : null}
     </div>
   );
 }

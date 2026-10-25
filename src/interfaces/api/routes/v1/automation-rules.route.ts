@@ -25,6 +25,7 @@ const ACTION_CONFIG_SCHEMA = {
   type: "object",
   additionalProperties: false,
   properties: {
+    taskDelayHours: { type: "integer", minimum: 0, maximum: 8760 },
     taskType: { type: "string" },
     taskTitle: { type: "string", maxLength: 200 },
     tag: { type: "string", maxLength: 60 },

@@ -6,6 +6,7 @@ import type { DealRepositoryPort } from "../ports/deal-repository.port.js";
 import type { TaskRepositoryPort } from "../ports/task-repository.port.js";
 import type { TimelineEventRepositoryPort } from "../ports/timeline-event-repository.port.js";
 import type { LeadScore } from "../../domain/crm/crm.model.js";
+import type { OwnedResourceScope } from "../ports/owned-resource-scope.js";
 
 export type LeadScoringUseCaseDeps = {
   contactRepository: ContactRepositoryPort;
@@ -15,11 +16,11 @@ export type LeadScoringUseCaseDeps = {
   taskRepository: TaskRepositoryPort;
 };
 
-export async function getLeadScore(deps: LeadScoringUseCaseDeps, input: { contactId: string; tenantId: string; workspaceId: string }): Promise<LeadScore> {
+export async function getLeadScore(deps: LeadScoringUseCaseDeps, input: { contactId: string; tenantId: string; workspaceId: string; resourceScope?: OwnedResourceScope }): Promise<LeadScore> {
   const contact = await mustContactBelongToTenantAndWorkspace(deps, input.contactId, input.tenantId, input.workspaceId);
   const [deals, tasks] = await Promise.all([
-    deps.dealRepository.listByWorkspace({ tenantId: input.tenantId, workspaceId: input.workspaceId, contactId: contact.id }),
-    deps.taskRepository.listByWorkspace({ tenantId: input.tenantId, workspaceId: input.workspaceId, contactId: contact.id }),
+    deps.dealRepository.listByWorkspace({ tenantId: input.tenantId, workspaceId: input.workspaceId, contactId: contact.id, ...input.resourceScope }),
+    deps.taskRepository.listByWorkspace({ tenantId: input.tenantId, workspaceId: input.workspaceId, contactId: contact.id, ...input.resourceScope }),
   ]);
   return computeLeadScore({ contact, deals, tasks });
 }

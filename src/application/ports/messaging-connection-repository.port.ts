@@ -30,7 +30,8 @@ export type MessagingConnectionRepositoryPort = {
    * evento de fila — nunca exposto a uma rota HTTP. */
   listAllActive(): Promise<MessagingConnection[]>;
   updateStatus(id: string, input: UpdateMessagingConnectionStatusInput): Promise<MessagingConnection>;
-  updateSettings(id: string, input: { sendAgentName: boolean }): Promise<MessagingConnection>;
+  /** Patch: campo omitido mantém o valor atual. */
+  updateSettings(id: string, input: MessagingConnectionSettingsPatch): Promise<MessagingConnection>;
   /** Exclusão de canal (pedido explícito do usuário) — permanente, cascateia conversas/mensagens/
    * eventos/tags/roteamento (`db/migrations/0082`/`0083`/`0084`/`0123`/`0129`, todos `on delete
    * cascade` a partir de `messaging_connections`). NUNCA cascateia `inbox_contacts` (não é FK
@@ -51,4 +52,10 @@ export type MessagingConnectionRepositoryPort = {
    * ou o gateway pode estar inalcançável mesmo com a última sessão conhecida "connected".
    */
   recordHealthCheck(id: string, input: { connectionHealth: "healthy" | "degraded" | "unknown" | "gateway_unavailable"; lastConnectionError?: string; at: string }): Promise<MessagingConnection | undefined>;
+};
+
+export type MessagingConnectionSettingsPatch = {
+  sendAgentName?: boolean;
+  csatOnClose?: boolean;
+  newAttendanceAssignment?: "last_assignee" | "redistribute";
 };

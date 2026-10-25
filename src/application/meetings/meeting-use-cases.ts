@@ -1,3 +1,4 @@
+import type { Permission } from "../../domain/identity/identity.model.js";
 import {
   buildExcludedRecorderEmails,
   computeRecordingCapacity,
@@ -65,7 +66,7 @@ async function minutesQuotaReached(deps: MeetingUseCaseDeps, tenantId: string): 
   return usage.transcriptionSeconds >= limits.monthlyRecordingMinutes * 60 ? limits.monthlyRecordingMinutes : undefined;
 }
 
-export type MeetingActor = { tenantId: string; userId: string; role: TenantRole };
+export type MeetingActor = { tenantId: string; userId: string; role: TenantRole; /** Permissões efetivas (preset + exceções); ausente = preset do papel. */ permissions?: readonly Permission[] };
 
 /** Validade da URL de reprodução: curta; o player renova pedindo outra. */
 export const MEETING_PLAYBACK_URL_TTL_SECONDS = 15 * 60;
@@ -77,7 +78,7 @@ export class MeetingError extends Error {
 }
 
 function visibilityOf(actor: MeetingActor): string | undefined {
-  return hasPermission(actor.role, "meeting:read_all") ? undefined : actor.userId;
+  return hasPermission(actor, "meeting:read_all") ? undefined : actor.userId;
 }
 
 export async function requireVisibleMeeting(deps: MeetingUseCaseDeps, actor: MeetingActor, workspaceId: string, meetingId: string): Promise<MeetingDetail> {

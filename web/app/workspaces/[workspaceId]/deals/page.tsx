@@ -1,11 +1,15 @@
 "use client";
 
+import { useMyAccess } from "@/features/auth/access";
+
 import { Suspense, useEffect, useMemo, useState } from "react";
-import { FileText, Mail, MailOpen, MessageSquareText, MoreHorizontal, Search, SlidersHorizontal } from "lucide-react";
+import { FileText, Mail, MailOpen, MessageSquareText, MoreHorizontal, Search, Settings2, SlidersHorizontal, Workflow } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { Button } from "@/components/Button";
 import { DealDetailModal } from "@/components/crm/DealDetailModal";
+import { PipelineStageManager } from "@/components/crm/PipelineStageManager";
+import { PipelineAutomations } from "@/components/crm/PipelineAutomations";
 import { LossReasonModal } from "@/components/crm/LossReasonModal";
 import { EmptyState } from "@/components/EmptyState";
 import { ErrorState } from "@/components/ErrorState";
@@ -20,6 +24,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAuth } from "@/contexts/auth-context";
 import { useCurrentWorkspace } from "@/contexts/workspace-context";
+import { CloseDealModal } from "@/components/sales/DealCockpit";
+import type { DealBoardView } from "@/features/crm/api";
 import { moveDealStage } from "@/features/crm/api";
 import { QuickCreateDealModal } from "@/components/crm/QuickCreateDealModal";
 import { useContacts, useDeal, useDeals, usePipelines, usePipelineStages, useProposals, useStockRisk, useTasks } from "@/features/crm/hooks";
@@ -36,7 +42,7 @@ import type { InboxConversation } from "@/features/inbox/types";
 import { useDebounce } from "@/hooks/useDebounce";
 import { formatCurrencyCents, formatDate, formatRelativeTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import { canOperateWorkspace } from "@/lib/rbac";
+import { canManageTenant, canOperateWorkspace } from "@/lib/rbac";
 import { ChannelIcon, ConversationTimelinePane, lastMessagePreviewLabel, timeLabel } from "../conversas/inbox-tab";
 
 function stageDotClass(stage: PipelineStage): string {
@@ -70,7 +76,11 @@ function DealsView() {
   const searchParams = useSearchParams();
   const { state: authState } = useAuth();
   const currentUserId = authState.status === "authenticated" ? authState.user.id : undefined;
-  const canGenerateProposal = canOperateWorkspace(authState.status === "authenticated" ? authState.role : undefined);
+  const { can } = useMyAccess();
+  const canGenerateProposal = can("proposal:manage");
+  const canManageAutomations = can("pipeline:configure");
+  const [stageManagerOpen, setStageManagerOpen] = useState(false);
+  const [automationsOpen, setAutomationsOpen] = useState(false);
   const { data: pipelines } = usePipelines(workspace.id);
   const [pipelineId, setPipelineId] = useState<string | undefined>();
   const [search, setSearch] = useState("");
@@ -78,6 +88,7 @@ function DealsView() {
   const ownerUserId = ownerSelection ?? currentUserId ?? "";
   const [teamId, setTeamId] = useState("");
   const [origin, setOrigin] = useState("");
+  const [boardView, setBoardView] = useState<DealBoardView>("operational");
   const [withoutNextAction, setWithoutNextAction] = useState(false);
   const [mobileStageId, setMobileStageId] = useState<string | undefined>();
   const debouncedSearch = useDebounce(search, 300);
@@ -86,7 +97,7 @@ function DealsView() {
     if (!pipelineId && pipelines && pipelines.length > 0) setPipelineId((pipelines.find((pipeline) => pipeline.isDefault) ?? pipelines[0]).id);
   }, [pipelines, pipelineId]);
 
-  const { data: stages } = usePipelineStages(pipelineId, workspace.id);
+  const { data: stages, error: stagesError, mutate: mutateStages } = usePipelineStages(pipelineId, workspace.id);
   const { data: contacts, error: contactsError } = useContacts(workspace.id);
   const { data: tasks, mutate: mutateTasks } = useTasks(workspace.id);
   const { data: proposals } = useProposals(workspace.id);
@@ -110,6 +121,7 @@ function DealsView() {
     return map;
   }, [inboxConversationsData]);
   const filterParams = {
+    boardView,
     pipelineId,
     search: debouncedSearch || undefined,
     ownerUserId: ownerUserId || undefined,
@@ -150,23 +162,26 @@ function DealsView() {
     for (const deal of visibleDeals) {
       const current = map.get(deal.stageId) ?? { count: 0, valueCentsSum: 0 };
       current.count += 1;
-      current.valueCentsSum += deal.valueCents;
+      current.valueCentsSum += deal.status === "won" ? deal.finalValueCents ?? deal.valueCents : deal.valueCents;
       map.set(deal.stageId, current);
     }
     return map;
   }, [visibleDeals]);
 
-  const pipelineValue = visibleDeals.reduce((sum, deal) => sum + deal.valueCents, 0);
+  const pipelineValue = visibleDeals.reduce((sum, deal) => sum + (deal.status === "won" ? deal.finalValueCents ?? deal.valueCents : deal.valueCents), 0);
+  const openPipelineValue = visibleDeals.filter(deal => !deal.status || deal.status === "open").reduce((sum, deal) => sum + deal.valueCents, 0);
 
   useEffect(() => {
-    if (!mobileStageId && orderedStages[0]) setMobileStageId(orderedStages[0].id);
-  }, [mobileStageId, orderedStages]);
+    const matching = boardView === "won" ? orderedStages.filter(s => s.isWon) : boardView === "lost" ? orderedStages.filter(s => s.isLost) : boardView === "closed" || boardView === "archived" ? orderedStages.filter(s => visibleDeals.some(d => d.stageId === s.id)) : orderedStages;
+    if (matching[0] && (!mobileStageId || !matching.some(s => s.id === mobileStageId))) setMobileStageId(matching[0].id);
+  }, [mobileStageId, orderedStages, boardView, visibleDeals]);
 
   const [createOpen, setCreateOpen] = useState(false);
   const [contactId, setContactId] = useState(searchParams.get("contactId") ?? "");
 
   const [hoveredStageId, setHoveredStageId] = useState<string | undefined>();
   const [movingDealId, setMovingDealId] = useState<string | undefined>();
+  const [winPrompt, setWinPrompt] = useState<{ deal: Deal; stage: PipelineStage }>();
   const [lossPrompt, setLossPrompt] = useState<{ deal: Deal; stage: PipelineStage } | undefined>();
   const [selectedDealId, setSelectedDealId] = useState<string | undefined>();
   const [proposalDeal, setProposalDeal] = useState<Deal>();
@@ -197,7 +212,11 @@ function DealsView() {
 
   function requestMoveDeal(deal: Deal, targetStage: PipelineStage) {
     setHoveredStageId(undefined);
-    if (movingDealId) return;
+    const permission = targetStage.isWon ? "deal:win" : targetStage.isLost ? "deal:lose" : deal.status !== "open" ? "deal:reopen" : "deal:manage";
+    if (!can("deal:manage") || !can(permission)) { toast.error("Sem permissão para mover esta oportunidade."); return; }
+    if (movingDealId || deal.stageId === targetStage.id) return;
+    if (deal.status && deal.status !== "open" && (targetStage.isWon || targetStage.isLost)) { toast.info("Reabra a oportunidade em uma fase em andamento antes de registrar outro resultado."); return; }
+    if (targetStage.isWon) { setWinPrompt({ deal, stage: targetStage }); return; }
     if (targetStage.isLost) {
       setLossPrompt({ deal, stage: targetStage });
       return;
@@ -205,7 +224,7 @@ function DealsView() {
     void performMoveDeal(deal, targetStage);
   }
 
-  async function performMoveDeal(deal: Deal, targetStage: PipelineStage, lossReasonValue?: string, lossComment?: string) {
+  async function performMoveDeal(deal: Deal, targetStage: PipelineStage, lossReasonValue?: string, lossComment?: string, closing?: { finalValueCents?: number; closedAt?: string }) {
     const previousDeals = deals;
     const movedAt = new Date().toISOString();
     setMovingDealId(deal.id);
@@ -214,12 +233,14 @@ function DealsView() {
       { revalidate: false },
     );
     try {
-      await moveDealStage(deal.id, workspace.id, targetStage.id, lossReasonValue, lossComment);
+      await moveDealStage(deal.id, workspace.id, targetStage.id, lossReasonValue, lossComment, closing);
       await refresh();
       if (targetStage.isWon) toast.success("Oportunidade ganha 🎉");
+      return true;
     } catch (cause) {
       await mutateDeals(previousDeals, { revalidate: false });
       toast.error("Não foi possível mover a oportunidade", { description: cause instanceof Error ? cause.message : "Tente novamente." });
+      return false;
     } finally {
       setMovingDealId(undefined);
     }
@@ -250,8 +271,7 @@ function DealsView() {
 
   async function confirmLossReason(reason: string, comment?: string) {
     if (!lossPrompt) return;
-    await performMoveDeal(lossPrompt.deal, lossPrompt.stage, reason, comment);
-    setLossPrompt(undefined);
+    if (await performMoveDeal(lossPrompt.deal, lossPrompt.stage, reason, comment)) setLossPrompt(undefined);
   }
 
   function resetCreateForm() {
@@ -266,7 +286,7 @@ function DealsView() {
         stockRisk={deal.status === "open" ? stockRiskByDeal.get(deal.id) : undefined}
         contact={contactsList.find((item) => item.id === deal.contactId)}
         conversation={deal.contactId ? conversationByContactId.get(deal.contactId) : undefined}
-        stages={orderedStages}
+        stages={can("deal:manage") ? orderedStages.filter(stage => stage.isWon ? can("deal:win") : stage.isLost ? can("deal:lose") : deal.status === "open" || can("deal:reopen")) : []}
         tasks={tasksList}
         members={members}
         teams={teamsList}
@@ -295,11 +315,13 @@ function DealsView() {
           <h1 className="text-2xl font-semibold tracking-tight text-foreground">Oportunidades</h1>
           <p className="mt-1 max-w-2xl text-sm text-muted-foreground">Acompanhe as oportunidades comerciais da sua empresa, da primeira conversa até o fechamento.</p>
           <div className="mt-3 flex flex-wrap gap-3 text-xs text-muted-foreground">
-            <span><strong className="font-semibold text-foreground">{formatCurrencyCents(pipelineValue)}</strong> em pipeline</span>
+            <span><strong className="font-semibold text-foreground">{formatCurrencyCents(boardView === "operational" || boardView === "open" ? openPipelineValue : pipelineValue)}</strong> {boardView === "operational" || boardView === "open" ? "em andamento" : "na consulta"}</span>
             <span><strong className="font-semibold text-foreground">{visibleDeals.length}</strong> oportunidades</span>
           </div>
         </div>
         <div className="flex flex-wrap gap-2">
+          {canManageAutomations ? <Button variant="secondary" disabled={!pipelineId || !stages || !!stagesError} onClick={() => setStageManagerOpen(true)}><Settings2 className="mr-2 h-4 w-4" />Fases</Button> : null}
+          {canManageAutomations ? <Button variant="secondary" disabled={!activePipeline} onClick={() => setAutomationsOpen(true)}><Workflow className="mr-2 h-4 w-4" />Automações</Button> : null}
           {pipelines && pipelines.length > 1 ? (
             <Select value={pipelineId} onValueChange={setPipelineId}>
               <SelectTrigger className="w-56"><SelectValue placeholder="Pipeline" /></SelectTrigger>
@@ -308,8 +330,28 @@ function DealsView() {
               </SelectContent>
             </Select>
           ) : null}
-          <Button onClick={() => setCreateOpen(true)} disabled={!pipelineId || orderedStages.length === 0}>Nova oportunidade</Button>
+          <Button onClick={() => setCreateOpen(true)} disabled={!can("deal:manage") || !pipelineId || orderedStages.length === 0}>Nova oportunidade</Button>
         </div>
+      </div>
+
+      {stageManagerOpen && pipelineId ? <PipelineStageManager key={pipelineId} workspaceId={workspace.id} pipelineId={pipelineId} stages={orderedStages} onClose={() => setStageManagerOpen(false)} onChanged={() => mutateStages()} /> : null}
+      {automationsOpen && activePipeline ? <PipelineAutomations key={activePipeline.id} workspaceId={workspace.id} pipeline={activePipeline} onClose={() => setAutomationsOpen(false)} /> : null}
+
+      <div className="mb-3 flex flex-wrap items-center gap-3">
+        <Label htmlFor="opportunity-view">Exibir</Label>
+        <Select value={boardView} onValueChange={value => setBoardView(value as DealBoardView)}>
+          <SelectTrigger id="opportunity-view" className="w-56"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="operational">Kanban operacional</SelectItem>
+            <SelectItem value="open">Em andamento</SelectItem>
+            <SelectItem value="won">Ganhas</SelectItem>
+            <SelectItem value="lost">Perdidas</SelectItem>
+            <SelectItem value="closed">Encerradas</SelectItem>
+            <SelectItem value="archived">Arquivadas</SelectItem>
+            <SelectItem value="all">Todas</SelectItem>
+          </SelectContent>
+        </Select>
+        <p className="text-xs text-muted-foreground">{boardView === "operational" ? "Encerradas aparecem até o prazo de arquivamento definido nas regras comerciais." : "Os filtros de consulta incluem oportunidades arquivadas."}</p>
       </div>
 
       <FilterBar
@@ -437,6 +479,9 @@ function DealsView() {
         />
       ) : null}
 
+      {winPrompt ? <CloseDealModal mode="won" deal={winPrompt.deal} reasons={[]} competitors={[]} onClose={() => setWinPrompt(undefined)} onConfirm={async input => {
+        if (await performMoveDeal(winPrompt.deal, winPrompt.stage, undefined, input.comment, { finalValueCents: input.finalValueCents, closedAt: input.closedAt })) setWinPrompt(undefined);
+      }} /> : null}
       {lossPrompt ? (
         <LossReasonModal onClose={() => setLossPrompt(undefined)} onConfirm={confirmLossReason} busy={Boolean(movingDealId)} />
       ) : null}
@@ -626,7 +671,8 @@ function DealCard({
           ) : null}
         </button>
       ) : null}
-      <p className="mt-3 text-lg font-semibold tabular-nums text-foreground">{formatCurrencyCents(deal.valueCents, deal.currency)}</p>
+      {deal.archivedAt ? <span className="mt-2 inline-block rounded-full border border-border px-2 py-0.5 text-xs text-muted-foreground">Arquivada</span> : null}
+      <p className="mt-3 text-lg font-semibold tabular-nums text-foreground">{formatCurrencyCents(deal.status === "won" ? deal.finalValueCents ?? deal.valueCents : deal.valueCents, deal.currency)}</p>
       <div className="mt-3 flex items-center justify-between gap-3 text-xs text-muted-foreground">
         <span className="flex min-w-0 items-center gap-2">
           <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-muted text-[10px] font-semibold text-foreground">{userInitials(deal.ownerUserId, members)}</span>

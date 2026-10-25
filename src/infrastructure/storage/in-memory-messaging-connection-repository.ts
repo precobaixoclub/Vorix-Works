@@ -1,6 +1,7 @@
 import type {
   CreateMessagingConnectionInput,
   MessagingConnectionRepositoryPort,
+  MessagingConnectionSettingsPatch,
   UpdateMessagingConnectionStatusInput,
 } from "../../application/ports/messaging-connection-repository.port.js";
 import type { MessagingConnection } from "../../domain/inbox/inbox.model.js";
@@ -20,6 +21,8 @@ export class InMemoryMessagingConnectionRepository implements MessagingConnectio
       provider: input.provider,
       displayName: input.displayName,
       sendAgentName: false,
+      csatOnClose: false,
+      newAttendanceAssignment: "last_assignee",
       status: "connecting",
       connectionHealth: "unknown",
       reconnectCount: 0,
@@ -48,10 +51,16 @@ export class InMemoryMessagingConnectionRepository implements MessagingConnectio
     return [...this.rows.values()].filter((row) => !MESSAGING_CONNECTION_TERMINAL_STATUSES.includes(row.status));
   }
 
-  async updateSettings(id: string, input: { sendAgentName: boolean }): Promise<MessagingConnection> {
+  async updateSettings(id: string, input: MessagingConnectionSettingsPatch): Promise<MessagingConnection> {
     const current = this.rows.get(id);
     if (!current) throw new Error("INBOX_CONNECTION_NOT_FOUND: canal não encontrado.");
-    const updated = { ...current, sendAgentName: input.sendAgentName, updatedAt: new Date().toISOString() };
+    const updated = {
+      ...current,
+      sendAgentName: input.sendAgentName ?? current.sendAgentName,
+      csatOnClose: input.csatOnClose ?? current.csatOnClose,
+      newAttendanceAssignment: input.newAttendanceAssignment ?? current.newAttendanceAssignment,
+      updatedAt: new Date().toISOString(),
+    };
     this.rows.set(id, updated);
     return updated;
   }

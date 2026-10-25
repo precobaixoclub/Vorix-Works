@@ -1,3 +1,5 @@
+import type { TenantMembershipRepositoryPort } from "../../application/ports/tenant-membership-repository.port.js";
+import { PostgresTenantMembershipRepository } from "./postgres/postgres-tenant-membership-repository.js";
 import pg from "pg";
 import type { AiExecutionRepositoryPort } from "../../application/ports/ai-execution-repository.port.js";
 import type { AnalyticsRepositoryPort } from "../../application/ports/analytics-repository.port.js";
@@ -138,6 +140,12 @@ import { PostgresInboxTagRepository } from "./postgres/postgres-inbox-tag-reposi
 import { PostgresInboxQuickReplyRepository } from "./postgres/postgres-inbox-quick-reply-repository.js";
 import { PostgresInboxStickerRepository } from "./postgres/postgres-inbox-sticker-repository.js";
 import { PostgresInboxServiceSettingsRepository } from "./postgres/postgres-inbox-service-settings-repository.js";
+import { PostgresInboxAttendanceRepository } from "./postgres/postgres-inbox-attendance-repository.js";
+import { PostgresInboxClosureCatalogRepository } from "./postgres/postgres-inbox-closure-catalog-repository.js";
+import { InMemoryInboxAttendanceRepository } from "./in-memory-inbox-attendance-repository.js";
+import { InMemoryInboxClosureCatalogRepository } from "./in-memory-inbox-closure-catalog-repository.js";
+import type { InboxAttendanceRepositoryPort } from "../../application/ports/inbox-attendance-repository.port.js";
+import type { InboxClosureCatalogRepositoryPort } from "../../application/ports/inbox-closure-catalog-repository.port.js";
 import { PostgresTeamRepository, PostgresTeamMembershipRepository } from "./postgres/postgres-team-repository.js";
 import { PostgresChannelRoutingRepository } from "./postgres/postgres-channel-routing-repository.js";
 import { InMemoryInboxIdentityLinkRepository } from "./in-memory-inbox-identity-link-repository.js";
@@ -262,10 +270,13 @@ export type PlatformRepositories = {
   inboxQuickReplyRepository: InboxQuickReplyRepositoryPort;
   inboxStickerRepository: InboxStickerRepositoryPort;
   inboxServiceSettingsRepository: InboxServiceSettingsRepositoryPort;
+  inboxAttendanceRepository: InboxAttendanceRepositoryPort;
+  inboxClosureCatalogRepository: InboxClosureCatalogRepositoryPort;
   /** Bloco "roteamento por equipe" (réplica adaptada do CMDesk, pedido explícito do usuário, ver
    * `db/migrations/0123_team_routing.sql`) — `undefined` no driver `memory` (sem implementação
    * em memória ainda; `registerInboundMessage` trata a ausência como "sem roteamento
    * configurado", nunca erro). */
+  membershipRepository?: TenantMembershipRepositoryPort;
   teamRepository?: TeamRepositoryPort;
   teamMembershipRepository?: TeamMembershipRepositoryPort;
   channelRoutingRepository?: ChannelRoutingRepositoryPort;
@@ -349,6 +360,8 @@ export function buildPlatformRepositories(options: { driver: PersistenceDriver; 
       inboxQuickReplyRepository: new InMemoryInboxQuickReplyRepository(),
       inboxStickerRepository: new InMemoryInboxStickerRepository(),
       inboxServiceSettingsRepository: new InMemoryInboxServiceSettingsRepository(),
+      inboxAttendanceRepository: new InMemoryInboxAttendanceRepository(),
+      inboxClosureCatalogRepository: new InMemoryInboxClosureCatalogRepository(),
       notificationRepository: new InMemoryNotificationRepository(),
     };
   }
@@ -416,11 +429,14 @@ export function buildPlatformRepositories(options: { driver: PersistenceDriver; 
     inboxQuickReplyRepository: new PostgresInboxQuickReplyRepository(pool),
     inboxStickerRepository: new PostgresInboxStickerRepository(pool),
     inboxServiceSettingsRepository: new PostgresInboxServiceSettingsRepository(pool),
+    inboxAttendanceRepository: new PostgresInboxAttendanceRepository(pool),
+    inboxClosureCatalogRepository: new PostgresInboxClosureCatalogRepository(pool),
     // Bloco "roteamento por equipe" (réplica adaptada do CMDesk, pedido explícito do usuário) —
     // MESMO pool que `messaging_connections`/`inbox_conversations` (o worker precisa deles em
     // tempo real ao registrar mensagem inbound, ver `registerInboundMessage`); a API também os
     // constrói de novo a partir do pool de `identity` (mesmo banco físico, dois pools de conexão
     // organizados por processo/camada — mesmo padrão já usado no resto do projeto).
+    membershipRepository: new PostgresTenantMembershipRepository(pool),
     teamRepository: new PostgresTeamRepository(pool),
     teamMembershipRepository: new PostgresTeamMembershipRepository(pool),
     channelRoutingRepository: new PostgresChannelRoutingRepository(pool),

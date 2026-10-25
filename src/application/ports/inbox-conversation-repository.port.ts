@@ -23,6 +23,21 @@ export type FindOrCreateInboxConversationInput = {
  */
 export type InboxConversationListFilter = "all" | "mine" | "unassigned" | "unread" | "urgent" | "open" | "pending" | "resolved";
 
+/**
+ * Escopo de visibilidade de conversas (0173). Uma conversa é visível quando: está com alguém de
+ * `userIds`; OU pertence a uma equipe de `teamIds`; OU está na fila (sem responsável) de uma
+ * equipe de `queueTeamIds` ou sem equipe. Ausente = sem restrição (escopo global).
+ */
+export type InboxConversationVisibility = { ownUserId?: string; userIds: readonly string[]; teamIds: readonly string[]; queueTeamIds: readonly string[] };
+
+export function isConversationVisible(conversation: { assignedUserId?: string; currentTeamId?: string }, visibility: InboxConversationVisibility | undefined): boolean {
+  if (!visibility) return true;
+  if (conversation.assignedUserId && (visibility.ownUserId ? conversation.assignedUserId === visibility.ownUserId : visibility.userIds.includes(conversation.assignedUserId))) return true;
+  if (conversation.currentTeamId && visibility.teamIds.includes(conversation.currentTeamId)) return true;
+  if (!conversation.currentTeamId && conversation.assignedUserId && visibility.userIds.includes(conversation.assignedUserId)) return true;
+  return !conversation.assignedUserId && (!conversation.currentTeamId || visibility.queueTeamIds.includes(conversation.currentTeamId));
+}
+
 /** Read-model só de listagem (Fase 3) — denormaliza nome/telefone do contato pra Inbox não
  * precisar de uma segunda chamada por conversa. Nunca usado fora de `listByWorkspace`; toda
  * escrita continua contra `InboxConversation` puro. `crmContactId` (Fase 4) é
@@ -86,7 +101,7 @@ export type InboxConversationRepositoryPort = {
   /** `contactId` (Jornada Comercial Fase 1, item 17) filtra pelo Contact CRM já vinculado
    * (`inbox_contacts.contact_id`) — permite ao Contact 360 buscar só as conversas daquela pessoa
    * em vez de trazer o workspace inteiro e filtrar no frontend. */
-  listByWorkspace(input: { tenantId: string; workspaceId: string; filter?: InboxConversationListFilter; assignedUserId?: string; contactId?: string }): Promise<InboxConversationListItem[]>;
+  listByWorkspace(input: { inboxContactId?: string; tenantId: string; workspaceId: string; filter?: InboxConversationListFilter; assignedUserId?: string; contactId?: string; visibility?: InboxConversationVisibility }): Promise<InboxConversationListItem[]>;
   markLastMessage(id: string, input: { lastMessageAt: string; incrementUnread: boolean }): Promise<void>;
   /** Bloco "Identity UX" — metadata de grupo (nome real/quantidade de participantes), buscada via
    * `MessagingProvider.getGroupInfo` (ver `syncGroupMetadata` em inbox-use-cases.ts). Só grava

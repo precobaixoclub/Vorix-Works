@@ -1,3 +1,4 @@
+import { crmScope, type CrmAccessDeps } from "../../http/crm-access.js";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import {
   addProposalRecipient,
@@ -19,6 +20,7 @@ import {
   getProposalTracking,
   listConversationProposals,
   sendProposalReminderThroughInbox,
+  previewProposalWhatsappMessage,
   type ProposalDeliveryDeps,
 } from "../../../../application/commercial/proposal-delivery-use-cases.js";
 import { createProposalFromDeal, resolveSpecializedProposalItems, type SalesProposalDeps } from "../../../../application/sales/proposal-sales-use-cases.js";
@@ -88,14 +90,14 @@ function translateProposalError(error: unknown): never {
   throw error;
 }
 
-export type ProposalsRoutesDeps = ProposalUseCaseDeps & { delivery?: ProposalDeliveryDeps; sales?: SalesProposalDeps };
+export type ProposalsRoutesDeps = ProposalUseCaseDeps & { access?: CrmAccessDeps; delivery?: ProposalDeliveryDeps; sales?: SalesProposalDeps };
 
 export async function registerProposalsRoutes(app: FastifyInstance, deps: ProposalsRoutesDeps): Promise<void> {
   /** Custo dos itens (snapshot interno) só para quem pode ver custo. */
   async function present<T extends Proposal | Proposal[]>(request: FastifyRequest, workspaceId: string, value: T): Promise<T> {
     if (!deps.sales) return value;
     const principal = requirePermission(request, "proposal:read");
-    const visibility = resolveVisibility({ tenantId: principal.tenantId, userId: principal.userId, role: principal.role }, await loadCommercialSettings(deps.sales, principal.tenantId, workspaceId));
+    const visibility = resolveVisibility({ tenantId: principal.tenantId, userId: principal.userId, role: principal.role, permissions: principal.permissions, permissionRevokes: principal.permissionRevokes }, await loadCommercialSettings(deps.sales, principal.tenantId, workspaceId));
     if (visibility.canViewCost) return value;
     const strip = (proposal: Proposal): Proposal => ({ ...proposal, items: proposal.items.map((item) => ({ ...item, unitCostCents: undefined })) });
     return (Array.isArray(value) ? value.map(strip) : strip(value)) as T;
@@ -104,7 +106,8 @@ export async function registerProposalsRoutes(app: FastifyInstance, deps: Propos
   app.get("/proposals", { schema: { querystring: LIST_QUERY_SCHEMA } }, async (request) => {
     const principal = requirePermission(request, "proposal:read");
     const { workspaceId, dealId, contactId, status } = request.query as { workspaceId: string; dealId?: string; contactId?: string; status?: (typeof PROPOSAL_STATUSES)[number] };
-    const proposals = await listProposals(deps, { tenantId: principal.tenantId, workspaceId, dealId, contactId, status });
+    const scope = deps.access ? await crmScope(deps.access, principal) : {};
+    const proposals = await listProposals(deps, { tenantId: principal.tenantId, workspaceId, dealId, contactId, status, ...scope });
     return successEnvelope(await present(request, workspaceId, proposals), request.id);
   });
 
@@ -131,7 +134,7 @@ export async function registerProposalsRoutes(app: FastifyInstance, deps: Propos
     const { id } = request.params as { id: string };
     const body = request.body as { workspaceId: string } & Record<string, unknown>;
     try {
-      const result = await createProposalFromDeal(deps.sales, { tenantId: principal.tenantId, userId: principal.userId, role: principal.role }, { ...body, dealId: id } as never);
+      const result = await createProposalFromDeal(deps.sales, { tenantId: principal.tenantId, userId: principal.userId, role: principal.role, permissions: principal.permissions, permissionRevokes: principal.permissionRevokes }, { ...body, dealId: id } as never);
       reply.code(201);
       return successEnvelope({ ...(await present(request, body.workspaceId, result.proposal)), publicToken: result.rawToken, approvalRequired: result.approvalRequired }, request.id);
     } catch (error) {
@@ -229,6 +232,19 @@ export async function registerProposalsRoutes(app: FastifyInstance, deps: Propos
       const result = await addProposalRecipient(deps, { proposalId: id, tenantId: principal.tenantId, ...body });
       reply.code(201);
       return successEnvelope({ recipientId: result.recipientId, publicToken: result.rawToken }, request.id);
+    } catch (error) { translateProposalError(error); }
+  });
+
+  app.get("/proposals/:id/whatsapp-preview", { schema: { params: ID_PARAMS_SCHEMA, querystring: {
+    ...WORKSPACE_QUERY_SCHEMA,
+    properties: { ...WORKSPACE_QUERY_SCHEMA.properties, kind: { type: "string", enum: ["send", "reminder"] } },
+  } } }, async (request) => {
+    const principal = requirePermission(request, "proposal:send");
+    if (!deps.delivery) throw new ValidationError("PROPOSAL_SEND_UNAVAILABLE: o módulo Conversas está desabilitado.");
+    const { id } = request.params as { id: string };
+    const { workspaceId, kind = "send" } = request.query as { workspaceId: string; kind?: "send" | "reminder" };
+    try {
+      return successEnvelope(await previewProposalWhatsappMessage(deps.delivery, { proposalId: id, tenantId: principal.tenantId, workspaceId, kind }), request.id);
     } catch (error) { translateProposalError(error); }
   });
 

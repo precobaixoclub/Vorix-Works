@@ -52,7 +52,7 @@ export async function refresh(deps: IdentityUseCaseDeps, input: RefreshUseCaseIn
   // mudar o papel do usuário ou remover o acesso ao tenant, o próximo refresh já reflete isso,
   // em vez de esperar o access token expirar por conta própria.
   const membership = await deps.membershipRepository.getByUserAndTenant(existing.userId, session.activeTenantId);
-  if (!membership) {
+  if (!membership || membership.status === "disabled") {
     throw new Error("IDENTITY_NO_TENANT_ACCESS: usuário perdeu acesso ao tenant ativo desta sessão.");
   }
 

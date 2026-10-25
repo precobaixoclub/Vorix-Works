@@ -1,3 +1,4 @@
+import { readableTeamIds } from "../../../../application/identity/access-control-use-cases.js";
 import type { FastifyInstance } from "fastify";
 import type { JwtPort } from "../../../../application/ports/jwt.port.js";
 import type { InboxContactRepositoryPort } from "../../../../application/ports/inbox-contact-repository.port.js";
@@ -9,6 +10,22 @@ import type { InboxTagRepositoryPort } from "../../../../application/ports/inbox
 import type { InboxQuickReplyRepositoryPort } from "../../../../application/ports/inbox-quick-reply-repository.port.js";
 import type { InboxStickerRepositoryPort } from "../../../../application/ports/inbox-sticker-repository.port.js";
 import type { InboxServiceSettingsRepositoryPort } from "../../../../application/ports/inbox-service-settings-repository.port.js";
+import type { InboxAttendanceRepositoryPort } from "../../../../application/ports/inbox-attendance-repository.port.js";
+import type { InboxClosureCatalogRepositoryPort } from "../../../../application/ports/inbox-closure-catalog-repository.port.js";
+import {
+  createClosureSubtype,
+  createClosureType,
+  deleteClosureSubtype,
+  deleteClosureType,
+  listClosureTypes,
+  reorderClosureSubtypes,
+  reorderClosureTypes,
+  updateClosureSubtype,
+  updateClosureType,
+} from "../../../../application/inbox/attendance-tracking.js";
+import { effectivePermissions, hasPermission, type AuthPrincipal } from "../../../../domain/identity/identity.model.js";
+import { assertCanConfigureTeam, resolveAccessContext, scopeFor, teamScopeUserIds } from "../../../../application/identity/access-control-use-cases.js";
+import { isConversationVisible, type InboxConversationVisibility } from "../../../../application/ports/inbox-conversation-repository.port.js";
 import type { InboxTagColor } from "../../../../domain/inbox/inbox.model.js";
 import type { MessagingConnectionRepositoryPort } from "../../../../application/ports/messaging-connection-repository.port.js";
 import type { MessagingProvider } from "../../../../application/ports/messaging-provider.port.js";
@@ -39,6 +56,7 @@ import {
   getConnectionQrCode,
   getConversationsServiceTime,
   listConnections,
+  listConversationAttendances,
   listConversationEvents,
   listConversationMessages,
   listConversations,
@@ -151,7 +169,23 @@ const SERVICE_SETTINGS_BODY_SCHEMA = {
     },
   },
 } as const;
-const CLOSE_BODY_SCHEMA = { type: "object", required: ["workspaceId"], properties: { workspaceId: { type: "string", minLength: 1 }, closingReason: { type: "string", maxLength: 80 } } } as const;
+const CLOSE_BODY_SCHEMA = {
+  type: "object",
+  required: ["workspaceId"],
+  properties: {
+    workspaceId: { type: "string", minLength: 1 },
+    closingReason: { type: "string", maxLength: 80 },
+    closureTypeId: { type: "string", minLength: 1 },
+    closureSubtypeId: { type: "string", minLength: 1 },
+    closureNote: { type: "string", maxLength: 1000 },
+    sendCsat: { type: "boolean" },
+  },
+} as const;
+const CLOSURE_NAME_BODY_SCHEMA = { type: "object", required: ["workspaceId", "name"], additionalProperties: false, properties: { workspaceId: { type: "string", minLength: 1 }, name: { type: "string", minLength: 1, maxLength: 80 } } } as const;
+const CLOSURE_UPDATE_BODY_SCHEMA = { type: "object", required: ["workspaceId"], additionalProperties: false, properties: { workspaceId: { type: "string", minLength: 1 }, name: { type: "string", minLength: 1, maxLength: 80 }, isActive: { type: "boolean" } } } as const;
+const CLOSURE_TYPE_PARAMS_SCHEMA = { type: "object", required: ["typeId"], properties: { typeId: { type: "string", minLength: 1 } } } as const;
+const CLOSURE_SUBTYPE_PARAMS_SCHEMA = { type: "object", required: ["typeId", "subtypeId"], properties: { typeId: { type: "string", minLength: 1 }, subtypeId: { type: "string", minLength: 1 } } } as const;
+const CLOSURE_REORDER_BODY_SCHEMA = { type: "object", required: ["workspaceId", "ids"], additionalProperties: false, properties: { workspaceId: { type: "string", minLength: 1 }, ids: { type: "array", maxItems: 100, items: { type: "string", minLength: 1 } } } } as const;
 const REACT_MESSAGE_BODY_SCHEMA = { type: "object", required: ["workspaceId", "emoji"], properties: { workspaceId: { type: "string", minLength: 1 }, emoji: { type: "string" } } } as const;
 const MESSAGE_PARAMS_SCHEMA = { type: "object", required: ["id", "messageId"], properties: { id: { type: "string", minLength: 1 }, messageId: { type: "string", minLength: 1 } } } as const;
 const ASSIGN_BODY_SCHEMA = { type: "object", required: ["workspaceId"], properties: { workspaceId: { type: "string", minLength: 1 }, assignedUserId: { type: "string" } } } as const;
@@ -313,6 +347,18 @@ const INBOX_ERROR_STATUS: Record<string, number> = {
   INBOX_SERVICE_SETTINGS_NOT_CONFIGURED: 503,
   INBOX_SERVICE_SETTINGS_INVALID: 422,
   INBOX_CLOSING_REASON_REQUIRED: 422,
+  // Ciclo de atendimento (0172).
+  INBOX_CLOSURE_REQUIRED: 422,
+  INBOX_CLOSURE_INVALID: 422,
+  INBOX_CLOSURE_NOTE_TOO_LONG: 422,
+  INBOX_CLOSURE_NAME_INVALID: 422,
+  INBOX_CLOSURE_NAME_TAKEN: 409,
+  INBOX_CLOSURE_REORDER_MISMATCH: 422,
+  INBOX_CLOSURE_TYPE_NOT_FOUND: 404,
+  INBOX_CLOSURE_SUBTYPE_NOT_FOUND: 404,
+  INBOX_CLOSURE_CATALOG_NOT_CONFIGURED: 503,
+  INBOX_CSAT_WAIVE_FORBIDDEN: 403,
+  INBOX_ATTENDANCE_OPEN_CONFLICT: 409,
   INBOX_CLOSING_REASON_INVALID: 422,
 };
 
@@ -382,6 +428,9 @@ export type InboxRoutesDeps = {
   quickReplyRepository?: InboxQuickReplyRepositoryPort;
   stickerRepository?: InboxStickerRepositoryPort;
   serviceSettingsRepository?: InboxServiceSettingsRepositoryPort;
+  /** Ciclo de atendimento (0172) — `undefined` = finalizar segue o fluxo anterior (motivo em texto). */
+  attendanceRepository?: InboxAttendanceRepositoryPort;
+  closureCatalogRepository?: InboxClosureCatalogRepositoryPort;
 };
 
 function toUseCaseDeps(deps: InboxRoutesDeps): InboxUseCaseDeps {
@@ -401,6 +450,28 @@ export function shouldDeliverInboxNotification(notification: Record<string, unkn
   return notification.tenantId === scope.tenantId && notification.workspaceId === scope.workspaceId;
 }
 
+/** A long-lived stream must recheck current membership and team scope for each event. */
+export async function canDeliverScopedInboxNotification(deps: Pick<InboxRoutesDeps, "membershipRepository" | "teamMembershipRepository" | "conversationRepository">, principal: AuthPrincipal, workspaceId: string, notification: Record<string, unknown>): Promise<boolean> {
+  if (!shouldDeliverInboxNotification(notification, { tenantId: principal.tenantId, workspaceId })) return false;
+  let current = principal;
+  if (deps.membershipRepository) {
+    const member = await deps.membershipRepository.getByUserAndTenant(principal.userId, principal.tenantId);
+    if (!member || member.status === "disabled") return false;
+    current = { ...principal, role: member.role, permissions: effectivePermissions(member.role, member.permissionGrants, member.permissionRevokes) };
+  }
+  if (!hasPermission(current, "inbox:read")) return false;
+  if (typeof notification.conversationId !== "string") return true;
+  const conversation = await deps.conversationRepository.getById(notification.conversationId);
+  return Boolean(conversation && conversation.tenantId === current.tenantId && conversation.workspaceId === workspaceId && isConversationVisible(conversation, await resolveConversationVisibility(deps, current)));
+}
+
+async function assertConversationReadable(deps: InboxRoutesDeps, principal: AuthPrincipal, conversationId: string): Promise<void> {
+  const visibility = await resolveConversationVisibility(deps, principal);
+  if (!visibility) return;
+  const conversation = await deps.conversationRepository.getById(conversationId);
+  if (!conversation || conversation.tenantId !== principal.tenantId || !isConversationVisible(conversation, visibility)) throw new AppError({ code: "INBOX_CONVERSATION_NOT_FOUND", message: "Conversa não encontrada.", statusCode: 404 });
+}
+
 /** Fase 4 — best-effort: publica no SSE depois que a ação já foi persistida com sucesso; nunca faz
  * a requisição HTTP esperar por isso nem falhar por causa disso. */
 function publishConversationUpdated(deps: InboxRoutesDeps, input: { tenantId: string; workspaceId: string; conversationId: string }): void {
@@ -410,7 +481,7 @@ function publishConversationUpdated(deps: InboxRoutesDeps, input: { tenantId: st
 async function assertUserBelongsToTenant(deps: InboxRoutesDeps, userId: string, tenantId: string): Promise<void> {
   if (!deps.membershipRepository) return;
   const membership = await deps.membershipRepository.getByUserAndTenant(userId, tenantId);
-  if (!membership) throw new AppError({ code: "INBOX_TARGET_USER_NOT_IN_TENANT", message: `Usuário "${userId}" não pertence a esta conta.`, statusCode: 404, recoverable: true });
+  if (!membership || membership.status === "disabled") throw new AppError({ code: "INBOX_TARGET_USER_NOT_IN_TENANT", message: `Usuário "${userId}" não pertence a esta conta.`, statusCode: 404, recoverable: true });
 }
 
 /** Fase 10 (Pre-Pilot Hardening) — 60s é o teto de tempo entre "mintar o token" e "o EventSource
@@ -423,8 +494,66 @@ const MEDIA_TOKEN_TTL_SECONDS = 60;
 /** Fotos de grupo/contato — mesmo teto de 60s dos outros tokens de curta duração acima. */
 const AVATAR_TOKEN_TTL_SECONDS = 60;
 
+/**
+ * Escopo de conversas do principal (0173): `inbox:view_all` vê tudo; `inbox:view_team` vê o que
+ * está com colegas/equipes das quais participa; sem nenhuma, só as próprias. A FILA (sem
+ * responsável) das próprias equipes — ou sem equipe — é sempre visível, senão ninguém conseguiria
+ * assumir um atendimento novo.
+ */
+export async function resolveConversationVisibility(deps: Pick<InboxRoutesDeps, "teamMembershipRepository">, principal: AuthPrincipal): Promise<InboxConversationVisibility | undefined> {
+  const context = await resolveAccessContext(deps, principal);
+  const level = scopeFor(context, "inbox");
+  if (level === "all") return undefined;
+  return {
+    userIds: level === "team" ? await teamScopeUserIds(deps, context) : [principal.userId],
+    ownUserId: principal.userId,
+    teamIds: level === "team" ? readableTeamIds(context) : [],
+    queueTeamIds: context.memberTeamIds,
+  };
+}
+
+const CONVERSATION_SCOPED_ROUTE = /\/inbox\/(?:conversations\/:id|teams\/:teamId\/conversations\/:conversationId)(?:\/|$)/;
+const KANBAN_CONFIG_ROUTE = /\/inbox\/teams\/:teamId\/kanban-phases/;
+
 export async function registerInboxRoutes(app: FastifyInstance, deps: InboxRoutesDeps): Promise<void> {
   const useCaseDeps = toUseCaseDeps(deps);
+
+  // Escopo é regra do backend, não da tela: toda rota que recebe uma conversa confere se ela está
+  // no escopo de quem pede ANTES do handler. Fora do escopo = 404 (mesmo padrão cross-tenant).
+  app.addHook("preHandler", async (request) => {
+    const route = request.routeOptions.url ?? "";
+    const principal = request.zunoContext.principal;
+    if (!principal || !CONVERSATION_SCOPED_ROUTE.test(route)) return;
+    const params = request.params as { id?: string; conversationId?: string };
+    const conversationId = params.id ?? params.conversationId;
+    if (!conversationId) return;
+    const visibility = await resolveConversationVisibility(deps, principal);
+    if (!visibility) return;
+    let conversation = await deps.conversationRepository.getById(conversationId);
+    if (conversation?.mergeStatus === "merged" && conversation.mergedIntoConversationId) conversation = await deps.conversationRepository.getById(conversation.mergedIntoConversationId);
+    if (conversation && conversation.tenantId === principal.tenantId && !isConversationVisible(conversation, visibility)) {
+      // Quem perdeu a disputa de "assumir" (outra pessoa pegou um instante antes) recebe o conflito
+      // real, não "não existe": a conversa ESTAVA na fila visível dela.
+      if (route.endsWith("/take-over") && conversation.assignedUserId) {
+        throw new AppError({ code: "INBOX_CONVERSATION_ALREADY_ASSIGNED", message: "Outro atendente já assumiu esta conversa.", statusCode: 409, recoverable: true });
+      }
+      throw new AppError({ code: "INBOX_CONVERSATION_NOT_FOUND", message: `Conversa "${conversationId}" não existe.`, statusCode: 404, recoverable: true });
+    }
+  });
+
+  // Configurar o kanban de atendimento: permissão própria + só nas equipes que a pessoa gerencia
+  // (escopo global configura qualquer equipe). Leitura das fases continua liberada a quem opera.
+  app.addHook("preHandler", async (request) => {
+    const route = request.routeOptions.url ?? "";
+    const principal = request.zunoContext.principal;
+    if (!principal || request.method === "GET" || !KANBAN_CONFIG_ROUTE.test(route)) return;
+    const { teamId } = request.params as { teamId?: string };
+    try {
+      assertCanConfigureTeam(await resolveAccessContext(deps, principal), "inbox:configure_kanban", "inbox", teamId);
+    } catch (error) {
+      throw new AppError({ code: "ACCESS_TEAM_SCOPE_FORBIDDEN", message: error instanceof Error ? error.message.replace(/^[A-Z_]+: /, "") : "Sem permissão.", statusCode: 403, recoverable: false });
+    }
+  });
 
   /**
    * Fase 10 (Pre-Pilot Hardening) — emite o token de curtíssima duração e escopo único que
@@ -464,6 +593,12 @@ export async function registerInboxRoutes(app: FastifyInstance, deps: InboxRoute
     if (!message || message.tenantId !== principal.tenantId || message.workspaceId !== workspaceId) {
       throw new AppError({ code: "INBOX_MESSAGE_NOT_FOUND", message: `Mensagem "${messageId}" não existe.`, statusCode: 404, recoverable: true });
     }
+    // Mídia de conversa fora do escopo responde igual a inexistente.
+    const visibility = await resolveConversationVisibility(deps, principal);
+    const mediaConversation = visibility ? await deps.conversationRepository.getById(message.conversationId) : undefined;
+    if (visibility && (!mediaConversation || !isConversationVisible(mediaConversation, visibility))) {
+      throw new AppError({ code: "INBOX_MESSAGE_NOT_FOUND", message: `Mensagem "${messageId}" não existe.`, statusCode: 404, recoverable: true });
+    }
     const mediaToken = deps.jwtPort.sign(
       { userId: principal.userId, tenantId: principal.tenantId, role: principal.role, sessionId: principal.sessionId, isPlatformAdmin: principal.isPlatformAdmin, purpose: "inbox_media", messageId },
       MEDIA_TOKEN_TTL_SECONDS,
@@ -487,6 +622,7 @@ export async function registerInboxRoutes(app: FastifyInstance, deps: InboxRoute
     if (!message || message.tenantId !== principal.tenantId || !message.mediaStorageRef) {
       throw new AppError({ code: "INBOX_MEDIA_NOT_FOUND", message: "Mídia não encontrada.", statusCode: 404, recoverable: true });
     }
+    await assertConversationReadable(deps, principal, message.conversationId);
     const stored = await deps.inboxMediaStorage.get(message.mediaStorageRef.objectKey);
     if (!stored) {
       throw new AppError({ code: "INBOX_MEDIA_NOT_FOUND", message: "Mídia não encontrada.", statusCode: 404, recoverable: true });
@@ -558,10 +694,14 @@ export async function registerInboxRoutes(app: FastifyInstance, deps: InboxRoute
       kind === "contact"
         ? await (async () => {
             const contact = await deps.contactRepository.getById(id);
-            return contact && contact.tenantId === principal.tenantId ? contact.profilePictureStorageRef : undefined;
+            if (!contact || contact.tenantId !== principal.tenantId) return undefined;
+            const visibility = await resolveConversationVisibility(deps, principal);
+            if (visibility && !(await deps.conversationRepository.listByWorkspace({ tenantId: principal.tenantId, workspaceId: contact.workspaceId, inboxContactId: id, visibility })).length) return undefined;
+            return contact.profilePictureStorageRef;
           })()
         : await (async () => {
             const conversation = await deps.conversationRepository.getById(id);
+            if (conversation) await assertConversationReadable(deps, principal, conversation.id);
             return conversation && conversation.tenantId === principal.tenantId ? conversation.groupPictureStorageRef : undefined;
           })();
     if (!storageRef) {
@@ -601,8 +741,8 @@ export async function registerInboxRoutes(app: FastifyInstance, deps: InboxRoute
     });
     reply.raw.write(": connected\n\n");
 
-    const listener = (notification: Record<string, unknown>) => {
-      if (!shouldDeliverInboxNotification(notification, { tenantId: principal.tenantId, workspaceId })) return;
+    const listener = async (notification: Record<string, unknown>) => {
+      if (!await canDeliverScopedInboxNotification(deps, principal, workspaceId, notification).catch(() => false) || reply.raw.destroyed) return;
       const eventType = typeof notification.type === "string" ? notification.type : "message";
       reply.raw.write(`event: ${eventType}\ndata: ${JSON.stringify(notification)}\n\n`);
     };
@@ -610,7 +750,11 @@ export async function registerInboxRoutes(app: FastifyInstance, deps: InboxRoute
 
     // Heartbeat — mantém proxies (Traefik) e o próprio EventSource do browser de considerar a
     // conexão morta em silêncio; comentário SSE (`:`), nunca interpretado como evento de dado.
-    const heartbeat = setInterval(() => reply.raw.write(": heartbeat\n\n"), 20_000);
+    const heartbeat = setInterval(async () => {
+      const allowed = await canDeliverScopedInboxNotification(deps, principal, workspaceId, { tenantId: principal.tenantId, workspaceId }).catch(() => false);
+      if (!allowed) { reply.raw.end(); return; }
+      if (!reply.raw.destroyed) reply.raw.write(": heartbeat\n\n");
+    }, 20_000);
 
     request.raw.on("close", () => {
       clearInterval(heartbeat);
@@ -644,12 +788,17 @@ export async function registerInboxRoutes(app: FastifyInstance, deps: InboxRoute
   });
 
   app.patch("/inbox/connections/:id/settings", { schema: { params: ID_PARAMS_SCHEMA, body: {
-    type: "object", required: ["workspaceId", "sendAgentName"], additionalProperties: false,
-    properties: { workspaceId: { type: "string", minLength: 1 }, sendAgentName: { type: "boolean" } },
+    type: "object", required: ["workspaceId"], additionalProperties: false,
+    properties: {
+      workspaceId: { type: "string", minLength: 1 },
+      sendAgentName: { type: "boolean" },
+      csatOnClose: { type: "boolean" },
+      newAttendanceAssignment: { type: "string", enum: ["last_assignee", "redistribute"] },
+    },
   } } }, async (request) => {
     const principal = requirePermission(request, "inbox:manage_connections");
     const { id } = request.params as { id: string };
-    const body = request.body as { workspaceId: string; sendAgentName: boolean };
+    const body = request.body as { workspaceId: string; sendAgentName?: boolean; csatOnClose?: boolean; newAttendanceAssignment?: "last_assignee" | "redistribute" };
     try {
       return successEnvelope(await updateConnectionSettings(useCaseDeps, { ...body, connectionId: id, tenantId: principal.tenantId }), request.id);
     } catch (error) { rethrowInboxError(error); }
@@ -757,7 +906,7 @@ export async function registerInboxRoutes(app: FastifyInstance, deps: InboxRoute
   });
 
   app.post("/inbox/teams/:teamId/kanban-phases", { schema: { params: TEAM_ID_PARAMS_SCHEMA, body: CREATE_KANBAN_PHASE_BODY_SCHEMA } }, async (request, reply) => {
-    const principal = requirePermission(request, "inbox:assign");
+    const principal = requirePermission(request, "inbox:configure_kanban");
     const { teamId } = request.params as { teamId: string };
     const { workspaceId, name, phaseType } = request.body as { workspaceId: string; name: string; phaseType?: "RUNNING" | "PAUSED" };
     try {
@@ -770,7 +919,7 @@ export async function registerInboxRoutes(app: FastifyInstance, deps: InboxRoute
   });
 
   app.patch("/inbox/teams/:teamId/kanban-phases/:phaseId", { schema: { params: TEAM_PHASE_PARAMS_SCHEMA, body: UPDATE_KANBAN_PHASE_BODY_SCHEMA } }, async (request) => {
-    const principal = requirePermission(request, "inbox:assign");
+    const principal = requirePermission(request, "inbox:configure_kanban");
     const { teamId, phaseId } = request.params as { teamId: string; phaseId: string };
     const { workspaceId, name, isDefaultFirst, phaseType, naoContabilizaOperacional } = request.body as {
       workspaceId: string; name?: string; isDefaultFirst?: boolean; phaseType?: "RUNNING" | "PAUSED"; naoContabilizaOperacional?: boolean;
@@ -784,7 +933,7 @@ export async function registerInboxRoutes(app: FastifyInstance, deps: InboxRoute
   });
 
   app.delete("/inbox/teams/:teamId/kanban-phases/:phaseId", { schema: { params: TEAM_PHASE_PARAMS_SCHEMA, querystring: WORKSPACE_QUERY_SCHEMA } }, async (request) => {
-    const principal = requirePermission(request, "inbox:assign");
+    const principal = requirePermission(request, "inbox:configure_kanban");
     const { teamId, phaseId } = request.params as { teamId: string; phaseId: string };
     const { workspaceId } = request.query as { workspaceId: string };
     try {
@@ -796,7 +945,7 @@ export async function registerInboxRoutes(app: FastifyInstance, deps: InboxRoute
   });
 
   app.post("/inbox/teams/:teamId/kanban-phases/reorder", { schema: { params: TEAM_ID_PARAMS_SCHEMA, body: REORDER_KANBAN_PHASES_BODY_SCHEMA } }, async (request) => {
-    const principal = requirePermission(request, "inbox:assign");
+    const principal = requirePermission(request, "inbox:configure_kanban");
     const { teamId } = request.params as { teamId: string };
     const { workspaceId, phaseIds } = request.body as { workspaceId: string; phaseIds: string[] };
     try {
@@ -886,7 +1035,8 @@ export async function registerInboxRoutes(app: FastifyInstance, deps: InboxRoute
   app.get("/inbox/conversations", { schema: { querystring: CONVERSATIONS_QUERY_SCHEMA } }, async (request) => {
     const principal = requirePermission(request, "inbox:read");
     const { workspaceId, filter, contactId } = request.query as { workspaceId: string; filter?: InboxConversationListFilter; contactId?: string };
-    const conversations = await listConversations(useCaseDeps, { tenantId: principal.tenantId, workspaceId, filter, assignedUserId: principal.userId, contactId });
+    const visibility = await resolveConversationVisibility(deps, principal);
+    const conversations = await listConversations(useCaseDeps, { tenantId: principal.tenantId, workspaceId, filter, assignedUserId: principal.userId, contactId, visibility });
     return successEnvelope({ conversations }, request.id);
   });
 
@@ -1105,11 +1255,141 @@ export async function registerInboxRoutes(app: FastifyInstance, deps: InboxRoute
   app.post("/inbox/conversations/:id/close", { schema: { params: ID_PARAMS_SCHEMA, body: CLOSE_BODY_SCHEMA } }, async (request) => {
     const principal = requirePermission(request, "inbox:assign");
     const { id } = request.params as { id: string };
-    const { workspaceId, closingReason } = request.body as { workspaceId: string; closingReason?: string };
+    const { workspaceId, closingReason, closureTypeId, closureSubtypeId, closureNote, sendCsat } = request.body as {
+      workspaceId: string; closingReason?: string; closureTypeId?: string; closureSubtypeId?: string; closureNote?: string; sendCsat?: boolean;
+    };
     try {
-      const conversation = await closeConversation(useCaseDeps, { tenantId: principal.tenantId, workspaceId, conversationId: id, performedBy: principal.userId, closingReason });
+      const conversation = await closeConversation(useCaseDeps, {
+        tenantId: principal.tenantId,
+        workspaceId,
+        conversationId: id,
+        performedBy: principal.userId,
+        closingReason,
+        closureTypeId,
+        closureSubtypeId,
+        closureNote,
+        sendCsat,
+        // Dispensar a pesquisa é decisão de gerente/administrador — nunca do corpo da requisição.
+        canWaiveCsat: hasPermission(principal, "inbox:waive_csat"),
+      });
       publishConversationUpdated(deps, { tenantId: principal.tenantId, workspaceId, conversationId: id });
       return successEnvelope(conversation, request.id);
+    } catch (error) {
+      rethrowInboxError(error);
+    }
+  });
+
+  /** Histórico de atendimentos da conversa (cada ciclo aberto/finalizado, com os responsáveis). */
+  app.get("/inbox/conversations/:id/attendances", { schema: { params: ID_PARAMS_SCHEMA, querystring: WORKSPACE_QUERY_SCHEMA } }, async (request) => {
+    const principal = requirePermission(request, "inbox:read");
+    const { id } = request.params as { id: string };
+    const { workspaceId } = request.query as { workspaceId: string };
+    try {
+      const attendances = await listConversationAttendances(useCaseDeps, { tenantId: principal.tenantId, workspaceId, conversationId: id });
+      return successEnvelope({ attendances }, request.id);
+    } catch (error) {
+      rethrowInboxError(error);
+    }
+  });
+
+  // Tipos de finalização (Configurações > Atendimento): qualquer atendente lê (o modal de
+  // finalizar precisa deles); só gerente/administrador altera.
+  app.get("/inbox/closure-types", { schema: { querystring: WORKSPACE_QUERY_SCHEMA } }, async (request) => {
+    const principal = requirePermission(request, "inbox:read");
+    const { workspaceId } = request.query as { workspaceId: string };
+    try {
+      return successEnvelope({ closureTypes: await listClosureTypes(useCaseDeps, { tenantId: principal.tenantId, workspaceId }) }, request.id);
+    } catch (error) {
+      rethrowInboxError(error);
+    }
+  });
+
+  app.post("/inbox/closure-types", { schema: { body: CLOSURE_NAME_BODY_SCHEMA } }, async (request, reply) => {
+    const principal = requirePermission(request, "inbox:manage_service");
+    const { workspaceId, name } = request.body as { workspaceId: string; name: string };
+    try {
+      const closureType = await createClosureType(useCaseDeps, { tenantId: principal.tenantId, workspaceId, name });
+      reply.status(201);
+      return successEnvelope(closureType, request.id);
+    } catch (error) {
+      rethrowInboxError(error);
+    }
+  });
+
+  app.post("/inbox/closure-types/reorder", { schema: { body: CLOSURE_REORDER_BODY_SCHEMA } }, async (request) => {
+    const principal = requirePermission(request, "inbox:manage_service");
+    const { workspaceId, ids } = request.body as { workspaceId: string; ids: string[] };
+    try {
+      return successEnvelope({ closureTypes: await reorderClosureTypes(useCaseDeps, { tenantId: principal.tenantId, workspaceId, closureTypeIds: ids }) }, request.id);
+    } catch (error) {
+      rethrowInboxError(error);
+    }
+  });
+
+  app.patch("/inbox/closure-types/:typeId", { schema: { params: CLOSURE_TYPE_PARAMS_SCHEMA, body: CLOSURE_UPDATE_BODY_SCHEMA } }, async (request) => {
+    const principal = requirePermission(request, "inbox:manage_service");
+    const { typeId } = request.params as { typeId: string };
+    const { workspaceId, name, isActive } = request.body as { workspaceId: string; name?: string; isActive?: boolean };
+    try {
+      return successEnvelope(await updateClosureType(useCaseDeps, { tenantId: principal.tenantId, workspaceId, closureTypeId: typeId, name, isActive }), request.id);
+    } catch (error) {
+      rethrowInboxError(error);
+    }
+  });
+
+  app.delete("/inbox/closure-types/:typeId", { schema: { params: CLOSURE_TYPE_PARAMS_SCHEMA, querystring: WORKSPACE_QUERY_SCHEMA } }, async (request) => {
+    const principal = requirePermission(request, "inbox:manage_service");
+    const { typeId } = request.params as { typeId: string };
+    const { workspaceId } = request.query as { workspaceId: string };
+    try {
+      await deleteClosureType(useCaseDeps, { tenantId: principal.tenantId, workspaceId, closureTypeId: typeId });
+      return successEnvelope({ deleted: true }, request.id);
+    } catch (error) {
+      rethrowInboxError(error);
+    }
+  });
+
+  app.post("/inbox/closure-types/:typeId/subtypes", { schema: { params: CLOSURE_TYPE_PARAMS_SCHEMA, body: CLOSURE_NAME_BODY_SCHEMA } }, async (request, reply) => {
+    const principal = requirePermission(request, "inbox:manage_service");
+    const { typeId } = request.params as { typeId: string };
+    const { workspaceId, name } = request.body as { workspaceId: string; name: string };
+    try {
+      const closureType = await createClosureSubtype(useCaseDeps, { tenantId: principal.tenantId, workspaceId, closureTypeId: typeId, name });
+      reply.status(201);
+      return successEnvelope(closureType, request.id);
+    } catch (error) {
+      rethrowInboxError(error);
+    }
+  });
+
+  app.post("/inbox/closure-types/:typeId/subtypes/reorder", { schema: { params: CLOSURE_TYPE_PARAMS_SCHEMA, body: CLOSURE_REORDER_BODY_SCHEMA } }, async (request) => {
+    const principal = requirePermission(request, "inbox:manage_service");
+    const { typeId } = request.params as { typeId: string };
+    const { workspaceId, ids } = request.body as { workspaceId: string; ids: string[] };
+    try {
+      return successEnvelope(await reorderClosureSubtypes(useCaseDeps, { tenantId: principal.tenantId, workspaceId, closureTypeId: typeId, closureSubtypeIds: ids }), request.id);
+    } catch (error) {
+      rethrowInboxError(error);
+    }
+  });
+
+  app.patch("/inbox/closure-types/:typeId/subtypes/:subtypeId", { schema: { params: CLOSURE_SUBTYPE_PARAMS_SCHEMA, body: CLOSURE_UPDATE_BODY_SCHEMA } }, async (request) => {
+    const principal = requirePermission(request, "inbox:manage_service");
+    const { typeId, subtypeId } = request.params as { typeId: string; subtypeId: string };
+    const { workspaceId, name, isActive } = request.body as { workspaceId: string; name?: string; isActive?: boolean };
+    try {
+      return successEnvelope(await updateClosureSubtype(useCaseDeps, { tenantId: principal.tenantId, workspaceId, closureTypeId: typeId, closureSubtypeId: subtypeId, name, isActive }), request.id);
+    } catch (error) {
+      rethrowInboxError(error);
+    }
+  });
+
+  app.delete("/inbox/closure-types/:typeId/subtypes/:subtypeId", { schema: { params: CLOSURE_SUBTYPE_PARAMS_SCHEMA, querystring: WORKSPACE_QUERY_SCHEMA } }, async (request) => {
+    const principal = requirePermission(request, "inbox:manage_service");
+    const { typeId, subtypeId } = request.params as { typeId: string; subtypeId: string };
+    const { workspaceId } = request.query as { workspaceId: string };
+    try {
+      return successEnvelope(await deleteClosureSubtype(useCaseDeps, { tenantId: principal.tenantId, workspaceId, closureTypeId: typeId, closureSubtypeId: subtypeId }), request.id);
     } catch (error) {
       rethrowInboxError(error);
     }

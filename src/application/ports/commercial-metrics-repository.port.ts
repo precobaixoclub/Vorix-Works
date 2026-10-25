@@ -5,6 +5,9 @@
  */
 
 export type CommercialMetricsFilter = {
+  ownUserId?: string;
+  ownerUserIdsIn?: readonly string[];
+  teamIdsIn?: readonly string[];
   tenantId: string;
   workspaceId: string;
   pipelineId?: string;

@@ -243,13 +243,13 @@ export class PostgresDealItemRepository implements DealItemRepositoryPort {
 type SettingsRow = {
   workspace_id: string; tenant_id: string; sellers_can_view_cost: boolean; sellers_can_view_margin: boolean; deal_visibility: CommercialSettings["dealVisibility"];
   proposal_accept_auto_win: boolean; proposal_whatsapp_template: string | null; proposal_reminder_template: string | null; default_contract_months: number | null;
-  ranking_enabled: boolean; updated_at: Date;
+  ranking_enabled: boolean; updated_at: Date; closed_deal_archive_days: number | null;
 };
 const toSettings = (row: SettingsRow): CommercialSettings => ({
   workspaceId: row.workspace_id, tenantId: row.tenant_id, sellersCanViewCost: row.sellers_can_view_cost, sellersCanViewMargin: row.sellers_can_view_margin,
   dealVisibility: row.deal_visibility, proposalAcceptAutoWin: row.proposal_accept_auto_win, proposalWhatsappTemplate: row.proposal_whatsapp_template ?? undefined,
   proposalReminderTemplate: row.proposal_reminder_template ?? undefined, defaultContractMonths: row.default_contract_months ?? undefined,
-  rankingEnabled: row.ranking_enabled, updatedAt: row.updated_at.toISOString(),
+  rankingEnabled: row.ranking_enabled, updatedAt: row.updated_at.toISOString(), closedDealArchiveDays: row.closed_deal_archive_days,
 });
 
 type PolicyRow = { id: string; tenant_id: string; workspace_id: string; scope_type: PolicyScopeType; scope_id: string | null; min_margin_bp: number | null; max_discount_bp: number | null; allow_below_minimum: boolean; created_at: Date; updated_at: Date };
@@ -283,12 +283,15 @@ export class PostgresSalesConfigRepository implements SalesConfigRepositoryPort 
   }
 
   async upsertSettings(input: { tenantId: string; workspaceId: string } & Partial<Omit<CommercialSettings, "tenantId" | "workspaceId" | "updatedAt">>): Promise<CommercialSettings> {
+    const workspace = await this.pool.query("select id from workspaces where id = $1 and tenant_id = $2", [input.workspaceId, input.tenantId]);
+    if (!workspace.rows.length) throw new Error("COMMERCIAL_SETTINGS_INVALID: workspace não encontrado nesta conta.");
     const current = await this.getSettings(input.workspaceId);
     const merged = {
       sellersCanViewCost: input.sellersCanViewCost ?? current?.sellersCanViewCost ?? false,
       sellersCanViewMargin: input.sellersCanViewMargin ?? current?.sellersCanViewMargin ?? true,
       dealVisibility: input.dealVisibility ?? current?.dealVisibility ?? "all",
-      proposalAcceptAutoWin: input.proposalAcceptAutoWin ?? current?.proposalAcceptAutoWin ?? false,
+      proposalAcceptAutoWin: input.proposalAcceptAutoWin ?? current?.proposalAcceptAutoWin ?? true,
+      closedDealArchiveDays: "closedDealArchiveDays" in input ? input.closedDealArchiveDays : current?.closedDealArchiveDays,
       proposalWhatsappTemplate: "proposalWhatsappTemplate" in input ? input.proposalWhatsappTemplate : current?.proposalWhatsappTemplate,
       proposalReminderTemplate: "proposalReminderTemplate" in input ? input.proposalReminderTemplate : current?.proposalReminderTemplate,
       defaultContractMonths: "defaultContractMonths" in input ? input.defaultContractMonths : current?.defaultContractMonths,
@@ -296,15 +299,16 @@ export class PostgresSalesConfigRepository implements SalesConfigRepositoryPort 
     };
     const result = await this.pool.query<SettingsRow>(
       `insert into commercial_settings (workspace_id, tenant_id, sellers_can_view_cost, sellers_can_view_margin, deal_visibility, proposal_accept_auto_win,
-         proposal_whatsapp_template, proposal_reminder_template, default_contract_months, ranking_enabled)
-       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+         proposal_whatsapp_template, proposal_reminder_template, default_contract_months, ranking_enabled, closed_deal_archive_days)
+       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
        on conflict (workspace_id) do update set sellers_can_view_cost = excluded.sellers_can_view_cost, sellers_can_view_margin = excluded.sellers_can_view_margin,
          deal_visibility = excluded.deal_visibility, proposal_accept_auto_win = excluded.proposal_accept_auto_win,
          proposal_whatsapp_template = excluded.proposal_whatsapp_template, proposal_reminder_template = excluded.proposal_reminder_template,
-         default_contract_months = excluded.default_contract_months, ranking_enabled = excluded.ranking_enabled, updated_at = now()
+         default_contract_months = excluded.default_contract_months, ranking_enabled = excluded.ranking_enabled,
+         closed_deal_archive_days = excluded.closed_deal_archive_days, updated_at = now()
        returning *`,
       [input.workspaceId, input.tenantId, merged.sellersCanViewCost, merged.sellersCanViewMargin, merged.dealVisibility, merged.proposalAcceptAutoWin,
-        merged.proposalWhatsappTemplate ?? null, merged.proposalReminderTemplate ?? null, merged.defaultContractMonths ?? null, merged.rankingEnabled],
+        merged.proposalWhatsappTemplate ?? null, merged.proposalReminderTemplate ?? null, merged.defaultContractMonths ?? null, merged.rankingEnabled, merged.closedDealArchiveDays ?? null],
     );
     return toSettings(result.rows[0]);
   }
@@ -372,6 +376,55 @@ export class PostgresSalesConfigRepository implements SalesConfigRepositoryPort 
   async countCloseReasons(workspaceId: string): Promise<number> {
     const result = await this.pool.query<{ count: string }>("select count(*) as count from sales_close_reasons where workspace_id = $1", [workspaceId]);
     return Number(result.rows[0]?.count ?? 0);
+  }
+
+  async deleteCloseReason(id: string): Promise<void> {
+    const client = await this.pool.connect();
+    try {
+      await client.query("begin");
+      const { rows } = await client.query<ReasonRow>("select * from sales_close_reasons where id = $1 for update", [id]);
+      const reason = rows[0];
+      if (!reason) throw new Error("SALES_REASON_NOT_FOUND: motivo não encontrado.");
+      const used = await client.query(`select 1 from deals where tenant_id = $2 and workspace_id = $3 and (loss_reason_id = $1 or lower(trim(loss_reason)) = lower(trim($4)) or lower(trim(won_reason)) = lower(trim($4)))
+        union all select 1 from proposals where tenant_id = $2 and workspace_id = $3 and lower(trim(rejection_reason)) = lower(trim($4))
+        union all select 1 from timeline_events where tenant_id = $2 and workspace_id = $3 and (payload->>'lossReasonId' = $1 or lower(trim(payload->>'lossReason')) = lower(trim($4))) limit 1`, [id, reason.tenant_id, reason.workspace_id, reason.label]);
+      if (used.rows.length) throw new Error("SALES_REASON_IN_USE: este motivo possui histórico. Desative-o para preservar os registros.");
+      await client.query("delete from sales_close_reasons where id = $1", [id]);
+      await client.query("commit");
+    } catch (error) { await client.query("rollback"); throw error; }
+    finally { client.release(); }
+  }
+
+  async reorderCloseReasons(input: { tenantId: string; workspaceId: string; kind: CloseReasonKind; reasonIds: readonly string[] }): Promise<void> {
+    const client = await this.pool.connect();
+    try {
+      await client.query("begin");
+      await client.query("select id from workspaces where id = $1 and tenant_id = $2 for update", [input.workspaceId, input.tenantId]);
+      const { rows } = await client.query<{ id: string }>("select id from sales_close_reasons where tenant_id = $1 and workspace_id = $2 and kind = $3 for update", [input.tenantId, input.workspaceId, input.kind]);
+      if (rows.length !== input.reasonIds.length || new Set(input.reasonIds).size !== rows.length || rows.some(r => !input.reasonIds.includes(r.id))) throw new Error("SALES_REASON_INVALID: informe todos os motivos deste grupo, sem repetições.");
+      for (const [position, id] of input.reasonIds.entries()) await client.query("update sales_close_reasons set position = $2 where id = $1", [id, position]);
+      await client.query("commit");
+    } catch (error) { await client.query("rollback"); throw error; }
+    finally { client.release(); }
+  }
+
+  async ensureDefaultCloseReasons(input: { tenantId: string; workspaceId: string; reasons: readonly { kind: CloseReasonKind; label: string; position: number }[] }): Promise<void> {
+    const client = await this.pool.connect();
+    try {
+      await client.query("begin");
+      const workspace = await client.query("select id from workspaces where id = $1 and tenant_id = $2 for update", [input.workspaceId, input.tenantId]);
+      if (!workspace.rows.length) throw new Error("SALES_REASON_NOT_FOUND: workspace não encontrado.");
+      const existing = await client.query("select id from sales_close_reasons where workspace_id = $1 limit 1", [input.workspaceId]);
+      if (!existing.rows.length) {
+        for (const reason of input.reasons) {
+          await client.query("insert into sales_close_reasons (id, tenant_id, workspace_id, kind, label, position) values ($1, $2, $3, $4, $5, $6)", [newId("reason"), input.tenantId, input.workspaceId, reason.kind, reason.label, reason.position]);
+        }
+      }
+      await client.query("commit");
+    } catch (error) {
+      await client.query("rollback");
+      throw error;
+    } finally { client.release(); }
   }
 
   async listCompetitors(input: { tenantId: string; workspaceId: string; includeInactive?: boolean }): Promise<Competitor[]> {

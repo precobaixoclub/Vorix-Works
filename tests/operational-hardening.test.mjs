@@ -1,3 +1,4 @@
+import { InMemoryWorkspaceRepository } from "../dist/infrastructure/storage/in-memory-workspace-repository.js";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { join } from "node:path";
@@ -203,7 +204,9 @@ test("API rate limit: health/livez ficam fora do limite e rotas de negocio receb
 });
 
 test("API operacional: bastidor nao vaza fila, rate limits ou reset de outro tenant", async () => {
-  const app = await buildApp({ config: testConfig() });
+  const workspaceRepository = new InMemoryWorkspaceRepository({ idGenerator: () => "workspace-ops" });
+  await workspaceRepository.create({ tenantId: "tenant-ops", name: "Operations" });
+  const app = await buildApp({ config: testConfig(), container: { workspaceRepository } });
   try {
     await app.zunoContainer.publicationQueue.enqueue({
       id: "job-owned",

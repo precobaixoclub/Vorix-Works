@@ -11,7 +11,8 @@ import { useAuth } from "@/contexts/auth-context";
 import { useCurrentWorkspace } from "@/contexts/workspace-context";
 import { useCommercialMetrics, useTasks } from "@/features/crm/hooks";
 import { isTaskOverdue } from "@/features/crm/presentation";
-import { useInboxMetrics, useInboxModuleStatus } from "@/features/inbox/hooks";
+import { useInboxModuleStatus } from "@/features/inbox/hooks";
+import { DashboardView } from "./dashboard-view";
 import { useOnboarding } from "@/features/onboarding/hooks";
 import type { OnboardingStep } from "@/features/onboarding/types";
 import { formatCurrencyCents, formatDate } from "@/lib/format";
@@ -40,7 +41,6 @@ export default function WorkspaceHomePage() {
   // toa); só chama de verdade depois de confirmar `enabled === true`.
   const { data: inboxStatus } = useInboxModuleStatus();
   const inboxEnabled = inboxStatus?.enabled === true;
-  const { data: inboxMetrics, isLoading: inboxLoading, error: inboxError, mutate: mutateInbox } = useInboxMetrics(workspace.id, { enabled: inboxEnabled });
   const { data: commercialMetrics, isLoading: commercialLoading, error: commercialError, mutate: mutateCommercial } = useCommercialMetrics(workspace.id);
   const { data: tasks, isLoading: tasksLoading, error: tasksError, mutate: mutateTasks } = useTasks(workspace.id, { status: "pending" });
   const { data: onboarding, isLoading: onboardingLoading } = useOnboarding(workspace.id);
@@ -50,41 +50,21 @@ export default function WorkspaceHomePage() {
   // esta página tinha sua PRÓPRIA terceira definição de "atrasada" (instante atual), diferente das
   // outras duas. Agora as três (aqui, Intelligence e Contact 360/Tarefas) usam `isTaskOverdue`.
   const overdueTasks = (tasks ?? []).filter((task) => isTaskOverdue(task, now));
-  const loading = (inboxEnabled && inboxLoading) || commercialLoading || tasksLoading;
-  const error = (inboxEnabled && inboxError) || commercialError || tasksError;
-  const isFreshWorkspace = !loading && !error && (inboxMetrics?.backlogCount ?? 0) === 0 && (commercialMetrics?.openPipelineValueCents ?? 0) === 0 && overdueTasks.length === 0;
+  const loading = commercialLoading || tasksLoading;
+  const error = commercialError || tasksError;
+  const isFreshWorkspace = !loading && !error && (commercialMetrics?.openPipelineValueCents ?? 0) === 0 && overdueTasks.length === 0 && (onboarding?.completedSteps.length ?? 0) < 2;
 
   const userName = state.status === "authenticated" ? state.user.name.split(" ")[0] : undefined;
   const greeting = `${greetingForHour(now)}, ${userName || "time"}.`;
 
   const kpis = [
-    // Fase 10 — nunca renderizado com o módulo desligado (nem placeholder/erro): o card some e o
-    // grid reflui pros demais, em vez de mostrar um KPI que não existe neste ambiente.
-    ...(inboxEnabled
-      ? [{
-          label: "Conversas aguardando",
-          value: inboxMetrics ? String(inboxMetrics.backlogCount) : undefined,
-          hint: inboxMetrics ? `${inboxMetrics.openCount} abertas · ${inboxMetrics.pendingCount} pendentes` : undefined,
-          route: `/workspaces/${workspace.id}/conversas`,
-          icon: MessageSquareText,
-          tone: (inboxMetrics?.backlogCount ?? 0) > 0 ? "attention" as const : "default" as const,
-        }]
-      : []),
-    {
-      label: "Pipeline comercial",
-      value: commercialMetrics ? formatCurrencyCents(commercialMetrics.openPipelineValueCents) : undefined,
-      hint: commercialMetrics ? `${commercialMetrics.dealsCreatedCount} oportunidades no período` : undefined,
-      route: `/workspaces/${workspace.id}/deals`,
-      icon: WalletCards,
-      tone: "default" as const,
-    },
     {
       label: "Tarefas atrasadas",
       value: tasks ? String(overdueTasks.length) : undefined,
       hint: tasks ? `${tasks.length} tarefas pendentes` : undefined,
       route: `/workspaces/${workspace.id}/tasks`,
       icon: CheckCircle2,
-      tone: overdueTasks.length > 0 ? "critical" as const : "default" as const,
+      tone: (overdueTasks.length > 0 ? "critical" : "default") as "critical" | "attention" | "default",
     },
   ];
 
@@ -111,11 +91,16 @@ export default function WorkspaceHomePage() {
 
       {error ? (
         <div className="mb-5">
-          <ErrorState error={error} onRetry={() => { void Promise.all([mutateInbox(), mutateCommercial(), mutateTasks()]); }} />
+          <ErrorState error={error} onRetry={() => { void Promise.all([mutateCommercial(), mutateTasks()]); }} />
         </div>
       ) : null}
 
-      <section className={cn("grid gap-3 sm:grid-cols-2", inboxEnabled ? "xl:grid-cols-3" : "xl:grid-cols-2")}>
+      {/* Dashboard principal (atendimento, SLA, CSAT, comercial e metas), sempre no escopo de quem vê. */}
+      <div className="mb-5">
+        <DashboardView workspaceId={workspace.id} inboxEnabled={inboxEnabled} />
+      </div>
+
+      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
         {kpis.map((kpi) => (
           <button
             key={kpi.label}

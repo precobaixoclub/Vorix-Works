@@ -32,7 +32,7 @@ function translate(error: unknown): never {
 export async function registerReportsRoutes(app: FastifyInstance, deps: ReportUseCaseDeps): Promise<void> {
   const actorOf = (request: Parameters<typeof requirePermission>[0]) => {
     const principal = requirePermission(request, "deal:read");
-    return { tenantId: principal.tenantId, userId: principal.userId, role: principal.role };
+    return { tenantId: principal.tenantId, userId: principal.userId, role: principal.role, permissions: principal.permissions, permissionRevokes: principal.permissionRevokes };
   };
 
   app.get("/report-templates", { schema: { querystring: { type: "object", required: ["workspaceId"], properties: { workspaceId: WS } } } }, async (request) => {

@@ -1,5 +1,6 @@
 import { apiClient } from "@/lib/api-client";
 import type { Team, TeamMembership, TenantMemberInvite, TenantMembership as TenantMembershipType, TenantRole } from "./types";
+import type { AccessCatalog, MemberAccess } from "./types";
 
 export function listTeams(workspaceId: string): Promise<Team[]> {
   return apiClient.get<Team[]>(`/v1/teams?workspaceId=${encodeURIComponent(workspaceId)}`);
@@ -41,7 +42,7 @@ export function updateTeamMember(
   teamId: string,
   workspaceId: string,
   userId: string,
-  input: { attendanceLevel?: string; participatesInRoundRobin?: boolean; setPrincipal?: boolean },
+  input: { attendanceLevel?: string; participatesInRoundRobin?: boolean; setPrincipal?: boolean; role?: TenantRole },
 ): Promise<TeamMembership> {
   return apiClient.patch<TeamMembership>(`/v1/teams/${encodeURIComponent(teamId)}/members/${encodeURIComponent(userId)}`, { workspaceId, ...input });
 }
@@ -76,4 +77,21 @@ export function updateTenantMemberRole(userId: string, role: TenantRole): Promis
 
 export function removeTenantMember(userId: string): Promise<void> {
   return apiClient.delete<void>(`/v1/tenant-members/${encodeURIComponent(userId)}`);
+}
+
+// Perfis, permissões e escopo (0173).
+export function getAccessCatalog(): Promise<AccessCatalog> {
+  return apiClient.get<AccessCatalog>("/v1/tenant-members/access-catalog");
+}
+
+export function getMemberAccess(userId: string): Promise<MemberAccess> {
+  return apiClient.get<MemberAccess>(`/v1/tenant-members/${encodeURIComponent(userId)}/access`);
+}
+
+export function updateMemberAccess(userId: string, input: { role: TenantRole; permissionGrants: string[]; permissionRevokes: string[] }): Promise<MemberAccess> {
+  return apiClient.put<MemberAccess>(`/v1/tenant-members/${encodeURIComponent(userId)}/access`, input);
+}
+
+export function setMemberStatus(userId: string, status: "active" | "disabled"): Promise<MemberAccess> {
+  return apiClient.post<MemberAccess>(`/v1/tenant-members/${encodeURIComponent(userId)}/${status === "disabled" ? "disable" : "enable"}`, {});
 }

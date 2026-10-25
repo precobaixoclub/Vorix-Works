@@ -2,6 +2,7 @@ import type { Pool } from "pg";
 import type {
   CreateMessagingConnectionInput,
   MessagingConnectionRepositoryPort,
+  MessagingConnectionSettingsPatch,
   UpdateMessagingConnectionStatusInput,
 } from "../../../application/ports/messaging-connection-repository.port.js";
 import type { MessagingConnection } from "../../../domain/inbox/inbox.model.js";
@@ -16,6 +17,8 @@ type Row = {
   provider: string;
   display_name: string;
   send_agent_name: boolean;
+  csat_on_close: boolean | null;
+  new_attendance_assignment: string | null;
   phone_number: string | null;
   external_session_id: string | null;
   status: string;
@@ -73,8 +76,14 @@ export class PostgresMessagingConnectionRepository implements MessagingConnectio
     return result.rows.map((row) => this.toDomain(row));
   }
 
-  async updateSettings(id: string, input: { sendAgentName: boolean }): Promise<MessagingConnection> {
-    const result = await this.pool.query<Row>("update messaging_connections set send_agent_name = $2, updated_at = now() where id = $1 returning *", [id, input.sendAgentName]);
+  async updateSettings(id: string, input: MessagingConnectionSettingsPatch): Promise<MessagingConnection> {
+    const result = await this.pool.query<Row>(
+      `update messaging_connections set
+         send_agent_name = coalesce($2, send_agent_name), csat_on_close = coalesce($3, csat_on_close),
+         new_attendance_assignment = coalesce($4, new_attendance_assignment), updated_at = now()
+       where id = $1 returning *`,
+      [id, input.sendAgentName ?? null, input.csatOnClose ?? null, input.newAttendanceAssignment ?? null],
+    );
     if (!result.rows[0]) throw new Error("INBOX_CONNECTION_NOT_FOUND: canal não encontrado.");
     return this.toDomain(result.rows[0]);
   }
@@ -127,6 +136,8 @@ export class PostgresMessagingConnectionRepository implements MessagingConnectio
       provider: row.provider as MessagingConnection["provider"],
       displayName: row.display_name,
       sendAgentName: row.send_agent_name === true,
+      csatOnClose: row.csat_on_close === true,
+      newAttendanceAssignment: row.new_attendance_assignment === "redistribute" ? "redistribute" : "last_assignee",
       phoneNumber: row.phone_number ?? undefined,
       externalSessionId: row.external_session_id ?? undefined,
       status: row.status as MessagingConnection["status"],

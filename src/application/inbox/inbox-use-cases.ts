@@ -1,3 +1,4 @@
+import type { TenantMembershipRepositoryPort } from "../ports/tenant-membership-repository.port.js";
 import type { InboxContact, InboxConversation, InboxConversationEvent, InboxMessage, InboxQuickReply, InboxTag, InboxTagColor, MessagingConnection, MessagingConnectionStatus, MessagingProviderId } from "../../domain/inbox/inbox.model.js";
 import { INBOX_AI_ACTOR, INBOX_SYSTEM_ACTOR, MESSAGING_CONNECTION_TERMINAL_STATUSES, normalizePhoneNumber } from "../../domain/inbox/inbox.model.js";
 import type { KanbanPhaseType, TeamKanbanPhase } from "../../domain/identity/identity.model.js";
@@ -8,7 +9,7 @@ import type { ConversationServiceTime, ConversationTimeEntryRepositoryPort } fro
 import type { InboxAiResponderPort } from "../ports/inbox-ai-responder.port.js";
 import type { InboxContactRepositoryPort } from "../ports/inbox-contact-repository.port.js";
 import type { InboxConversationEventRepositoryPort } from "../ports/inbox-conversation-event-repository.port.js";
-import type { InboxConversationListFilter, InboxConversationListItem, InboxConversationRepositoryPort } from "../ports/inbox-conversation-repository.port.js";
+import type { InboxConversationListFilter, InboxConversationListItem, InboxConversationRepositoryPort, InboxConversationVisibility } from "../ports/inbox-conversation-repository.port.js";
 import type { InboxIdentityLinkRepositoryPort } from "../ports/inbox-identity-link-repository.port.js";
 import type { InboxMediaStoragePort } from "../ports/inbox-media-storage.port.js";
 import type { InboxMessageRepositoryPort } from "../ports/inbox-message-repository.port.js";
@@ -33,6 +34,11 @@ import type { TeamMembershipRepositoryPort, TeamRepositoryPort } from "../ports/
 import type { WorkspaceRepositoryPort } from "../ports/workspace-repository.port.js";
 import { recordFirstEvent, type ProductAnalyticsUseCaseDeps } from "../product-analytics/product-analytics-use-cases.js";
 import { mustTeamBelongToTenantAndWorkspace, resolveNextTeamMember } from "../identity/team-use-cases.js";
+import type { InboxAttendanceRepositoryPort, InboxAttendanceWithAssignments } from "../ports/inbox-attendance-repository.port.js";
+import type { InboxClosureCatalogRepositoryPort } from "../ports/inbox-closure-catalog-repository.port.js";
+import type { InboxAttendance, InboxAttendanceCsatStatus, InboxDistributionRule } from "../../domain/inbox/attendance.model.js";
+import { closureLabel } from "../../domain/inbox/attendance.model.js";
+import { ensureOpenAttendance, ensureOpenAttendanceSafely, resolveClosureChoice, trackFirstResponse, trackResponsibleChange } from "./attendance-tracking.js";
 
 /**
  * Casos de uso do módulo Conversas — Fase 1/3/4/5/6. Mesmo padrão de `conversation-use-cases.ts`:
@@ -42,6 +48,7 @@ import { mustTeamBelongToTenantAndWorkspace, resolveNextTeamMember } from "../id
  * outro tenant/workspace responde "not found", nunca "forbidden" — evita vazar existência entre tenants.
  */
 export type InboxUseCaseDeps = {
+  membershipRepository?: TenantMembershipRepositoryPort;
   userRepository?: UserRepositoryPort;
   connectionRepository: MessagingConnectionRepositoryPort;
   contactRepository: InboxContactRepositoryPort;
@@ -128,6 +135,11 @@ export type InboxUseCaseDeps = {
   /** Regras de atendimento (horário/ausência, motivos de encerramento, pesquisa). `undefined` =
    * regras desligadas neste processo (finalizar continua funcionando como antes). */
   serviceSettingsRepository?: InboxServiceSettingsRepositoryPort;
+  /** Ciclo de atendimento (0172) — atendimentos, ciclos de responsabilidade e o catálogo de
+   * tipos/subtipos de finalização. `undefined` = comportamento anterior (finalizar só com o motivo
+   * em texto das regras de atendimento, sem histórico de atendimentos). Ver `attendance-tracking.ts`. */
+  attendanceRepository?: InboxAttendanceRepositoryPort;
+  closureCatalogRepository?: InboxClosureCatalogRepositoryPort;
 };
 
 const defaultIdGenerator = () => `wuzsess-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
@@ -415,7 +427,7 @@ export async function deleteConnection(deps: InboxUseCaseDeps, input: DeleteConn
   }
 }
 
-export type ListConversationsInput = { tenantId: string; workspaceId: string; filter?: InboxConversationListFilter; assignedUserId?: string; contactId?: string };
+export type ListConversationsInput = { tenantId: string; workspaceId: string; filter?: InboxConversationListFilter; assignedUserId?: string; contactId?: string; visibility?: InboxConversationVisibility };
 
 export async function listConversations(deps: InboxUseCaseDeps, input: ListConversationsInput): Promise<InboxConversationListItem[]> {
   const conversations = await deps.conversationRepository.listByWorkspace(input);
@@ -443,9 +455,19 @@ export async function listConversationMessages(deps: InboxUseCaseDeps, input: Li
   });
 }
 
-export async function updateConnectionSettings(deps: InboxUseCaseDeps, input: { tenantId: string; workspaceId: string; connectionId: string; sendAgentName: boolean }): Promise<MessagingConnection> {
+export type UpdateConnectionSettingsInput = {
+  tenantId: string;
+  workspaceId: string;
+  connectionId: string;
+  sendAgentName?: boolean;
+  /** Pesquisa de satisfação ao finalizar atendimento, por canal (0172). */
+  csatOnClose?: boolean;
+  newAttendanceAssignment?: "last_assignee" | "redistribute";
+};
+
+export async function updateConnectionSettings(deps: InboxUseCaseDeps, input: UpdateConnectionSettingsInput): Promise<MessagingConnection> {
   await mustConnectionBelongToTenantAndWorkspace(deps, input.connectionId, input.tenantId, input.workspaceId);
-  return deps.connectionRepository.updateSettings(input.connectionId, { sendAgentName: input.sendAgentName });
+  return deps.connectionRepository.updateSettings(input.connectionId, { sendAgentName: input.sendAgentName, csatOnClose: input.csatOnClose, newAttendanceAssignment: input.newAttendanceAssignment });
 }
 
 async function outboundSender(deps: Pick<InboxUseCaseDeps, "userRepository">, userId: string | undefined): Promise<{ name: string; avatarUrl?: string } | undefined> {
@@ -562,6 +584,7 @@ export async function assignConversation(deps: InboxUseCaseDeps, input: AssignCo
     fromUserId: conversation.assignedUserId,
     toUserId: input.assignedUserId,
   });
+  await trackResponsibleChange(deps, updated, { performedBy: input.performedBy, source: "manual", endReason: "reassigned" });
 
   // Central de notificações in-app — gatilho concreto (réplica adaptada do catálogo do CMDesk,
   // "serviço atribuído a alguém" vira "conversa atribuída a alguém" aqui). Só notifica quando o
@@ -615,6 +638,7 @@ export async function takeOverConversation(deps: InboxUseCaseDeps, input: TakeOv
     fromUserId: conversation.assignedUserId,
     toUserId: input.userId,
   });
+  await trackResponsibleChange(deps, updated, { performedBy: input.userId, source: "take_over", endReason: "reassigned" });
   if (wasAiEnabled) {
     await deps.conversationEventRepository.record({
       tenantId: input.tenantId,
@@ -655,6 +679,9 @@ export async function transferConversation(deps: InboxUseCaseDeps, input: Transf
     fromUserId,
     toUserId: input.toUserId,
   });
+  // Encerra o ciclo de quem transferiu e abre o de quem recebeu — o relógio de primeira resposta
+  // do novo responsável começa AGORA, nunca na abertura do atendimento.
+  await trackResponsibleChange(deps, updated, { performedBy: input.performedBy, source: "transfer", endReason: "transferred" });
   return updated;
 }
 
@@ -837,25 +864,81 @@ export async function removeTagFromConversation(deps: InboxUseCaseDeps, input: T
   await requireTagRepository(deps).detachFromConversation(conversation.id, input.tagId);
 }
 
-export type CloseConversationInput = { tenantId: string; workspaceId: string; conversationId: string; performedBy: string; closingReason?: string };
+export type CloseConversationInput = {
+  tenantId: string;
+  workspaceId: string;
+  conversationId: string;
+  performedBy: string;
+  /** Legado (sem ciclo de atendimento configurado): motivo em texto das regras de atendimento. */
+  closingReason?: string;
+  /** Ciclo de atendimento (0172): obrigatórios quando o catálogo de finalização está configurado. */
+  closureTypeId?: string;
+  closureSubtypeId?: string;
+  closureNote?: string;
+  /** `false` = dispensar a pesquisa NESTE atendimento — só quem tem `canWaiveCsat` (gerente/admin). */
+  sendCsat?: boolean;
+  canWaiveCsat?: boolean;
+};
 
-/** Finalizar atendimento — status vira `resolved` ("Finalizada" na UI). Idempotente: já
- * finalizada, não faz nada (nunca duplica evento de histórico). Registra o motivo (obrigatório
- * quando o workspace exige) e, com a pesquisa ligada, pergunta a nota ao cliente — falha no envio
- * da pesquisa NUNCA impede a finalização. */
+/**
+ * Finalizar atendimento — status vira `resolved` ("Finalizada" na UI). Idempotente: já finalizada,
+ * não faz nada (nunca duplica evento de histórico).
+ *
+ * Com o ciclo de atendimento configurado (0172): exige tipo E subtipo de finalização, fecha o
+ * atendimento aberto (e o ciclo de responsabilidade ativo) e registra o marco estruturado. A
+ * pesquisa de satisfação segue a configuração DO CANAL: ligada, vai sempre para o atendente comum;
+ * gerente/administrador podem dispensar só este atendimento (fica registrado quem dispensou).
+ * Sem o ciclo configurado, segue o comportamento anterior (motivo em texto + regra por workspace).
+ * Falha no envio da pesquisa NUNCA impede a finalização.
+ */
 export async function closeConversation(deps: InboxUseCaseDeps, input: CloseConversationInput): Promise<InboxConversation> {
   const current = await mustConversationBelongToTenantAndWorkspace(deps, input.conversationId, input.tenantId, input.workspaceId);
   if (current.status === "resolved") return current;
-  const settings = await loadServiceSettings(deps, input.tenantId, input.workspaceId);
-  const reason = input.closingReason?.trim() || undefined;
-  if (settings && settings.closingReasons.length) {
-    if (!reason && settings.requireClosingReason) throw new Error("INBOX_CLOSING_REASON_REQUIRED: escolha o motivo do encerramento.");
-    if (reason && !settings.closingReasons.includes(reason)) throw new Error("INBOX_CLOSING_REASON_INVALID: motivo de encerramento não cadastrado.");
+  if (input.sendCsat === false && !input.canWaiveCsat) {
+    throw new Error("INBOX_CSAT_WAIVE_FORBIDDEN: só gerente ou administrador pode dispensar a pesquisa de satisfação.");
   }
-  await transitionConversationStatus(deps, input, "resolved", reason ? { closingReason: reason } : undefined);
+  const settings = await loadServiceSettings(deps, input.tenantId, input.workspaceId);
+  const tracksAttendance = Boolean(deps.attendanceRepository && deps.closureCatalogRepository);
+
+  let reason: string | undefined;
+  let closure: Awaited<ReturnType<typeof resolveClosureChoice>> | undefined;
+  if (tracksAttendance) {
+    closure = await resolveClosureChoice(deps, input);
+    reason = closureLabel(closure.typeName, closure.subtypeName);
+  } else {
+    reason = input.closingReason?.trim() || undefined;
+    if (settings && settings.closingReasons.length) {
+      if (!reason && settings.requireClosingReason) throw new Error("INBOX_CLOSING_REASON_REQUIRED: escolha o motivo do encerramento.");
+      if (reason && !settings.closingReasons.includes(reason)) throw new Error("INBOX_CLOSING_REASON_INVALID: motivo de encerramento não cadastrado.");
+    }
+  }
+  const closureNote = input.closureNote?.trim() || undefined;
+  if (closureNote && closureNote.length > 1000) throw new Error("INBOX_CLOSURE_NOTE_TOO_LONG: a observação pode ter até 1000 caracteres.");
+
+  const closedAt = new Date().toISOString();
+  let attendance: InboxAttendance | undefined;
+  if (tracksAttendance && closure) {
+    const open = await ensureOpenAttendance(deps, current, { at: closedAt, openedBy: input.performedBy, openReason: "assignment" });
+    attendance = open
+      ? await deps.attendanceRepository!.close(open.id, {
+          closedAt,
+          closedBy: input.performedBy,
+          closureTypeId: closure.typeId,
+          closureSubtypeId: closure.subtypeId,
+          closureTypeName: closure.typeName,
+          closureSubtypeName: closure.subtypeName,
+          closureNote,
+        })
+      : undefined;
+    // Outra requisição finalizou primeiro: devolve o estado atual, sem duplicar nada.
+    if (!attendance) return (await deps.conversationRepository.getById(current.id)) ?? current;
+  }
+
+  await transitionConversationStatus(deps, input, "resolved", { ...(reason ? { closingReason: reason } : {}), ...(attendance ? { attendanceId: attendance.id } : {}) });
   let conversation = await deps.conversationRepository.updateServiceState(current.id, {
+    // `closing_reason` ("Tipo > Subtipo") continua alimentando os relatórios de motivos existentes.
     closingReason: reason ?? null,
-    closedAt: new Date().toISOString(),
+    closedAt,
     closedBy: input.performedBy,
     csatStatus: null,
     csatRequestedAt: null,
@@ -866,25 +949,116 @@ export async function closeConversation(deps: InboxUseCaseDeps, input: CloseConv
     triageAttempts: 0,
     triageOption: null,
   });
-  const closingConnection = settings?.csatEnabled ? await deps.connectionRepository.getById(conversation.connectionId) : undefined;
-  if (settings?.csatEnabled && conversation.chatType === "direct" && closingConnection?.provider === "wuzapi") {
+  if (attendance) {
+    await deps.conversationEventRepository.record({
+      tenantId: input.tenantId,
+      workspaceId: input.workspaceId,
+      conversationId: conversation.id,
+      attendanceId: attendance.id,
+      type: "attendance_closed",
+      performedBy: input.performedBy,
+      fromUserId: current.assignedUserId,
+      fromPhaseId: current.currentPhaseId,
+      closureTypeId: attendance.closureTypeId,
+      closureSubtypeId: attendance.closureSubtypeId,
+      metadata: {
+        number: attendance.number,
+        closureTypeName: attendance.closureTypeName,
+        closureSubtypeName: attendance.closureSubtypeName,
+        resolutionSeconds: attendance.resolutionSeconds,
+        ...(closureNote ? { note: closureNote } : {}),
+      },
+    });
+  }
+
+  // O canal só é lido quando a pesquisa pode valer (mesma economia de antes da 0172).
+  const connection = tracksAttendance || settings?.csatEnabled ? await deps.connectionRepository.getById(conversation.connectionId) : undefined;
+  const csatOn = tracksAttendance ? connection?.csatOnClose === true : settings?.csatEnabled === true;
+  const csatApplicable = conversation.chatType === "direct" && connection?.provider === "wuzapi" && Boolean(settings);
+  let csatOutcome: InboxAttendanceCsatStatus;
+  if (!csatOn) csatOutcome = "disabled_by_channel";
+  else if (!csatApplicable) csatOutcome = "not_applicable";
+  else if (input.sendCsat === false) csatOutcome = "waived";
+  else {
     try {
-      await sendInboxMessage(deps, { tenantId: input.tenantId, workspaceId: input.workspaceId, conversationId: conversation.id, body: settings.csatMessage, sentByAutomation: true });
+      await sendInboxMessage(deps, { tenantId: input.tenantId, workspaceId: input.workspaceId, conversationId: conversation.id, body: settings!.csatMessage, sentByAutomation: true });
       conversation = await deps.conversationRepository.updateServiceState(conversation.id, { csatStatus: "awaiting", csatRequestedAt: new Date().toISOString() });
+      csatOutcome = "sent";
     } catch {
       // Canal desconectado/fila indisponível: a conversa fica finalizada, só sem pesquisa.
+      csatOutcome = "failed";
     }
+  }
+  if (attendance) {
+    await recordCsatOutcome(deps, { ...input, conversationId: conversation.id, attendanceId: attendance.id, outcome: csatOutcome, sentAt: conversation.csatRequestedAt });
   }
   return conversation;
 }
 
+/** Situação da pesquisa no atendimento + marco na timeline quando ela foi enviada, dispensada por
+ * alguém ou falhou (desligada no canal fica só no atendimento — marcar isso em toda finalização
+ * seria ruído). */
+async function recordCsatOutcome(
+  deps: InboxUseCaseDeps,
+  input: { tenantId: string; workspaceId: string; conversationId: string; attendanceId: string; performedBy: string; outcome: InboxAttendanceCsatStatus; sentAt?: string },
+): Promise<void> {
+  try {
+    await deps.attendanceRepository!.setCsat(input.attendanceId, {
+      status: input.outcome,
+      ...(input.outcome === "waived" ? { waivedBy: input.performedBy } : {}),
+      ...(input.outcome === "sent" ? { sentAt: input.sentAt ?? new Date().toISOString() } : {}),
+    });
+    if (input.outcome === "sent" || input.outcome === "waived" || input.outcome === "failed") {
+      await deps.conversationEventRepository.record({
+        tenantId: input.tenantId,
+        workspaceId: input.workspaceId,
+        conversationId: input.conversationId,
+        attendanceId: input.attendanceId,
+        type: input.outcome === "sent" ? "csat_sent" : "csat_not_sent",
+        performedBy: input.outcome === "waived" ? input.performedBy : INBOX_SYSTEM_ACTOR,
+        ...(input.outcome === "sent" ? {} : { reason: input.outcome }),
+      });
+    }
+  } catch (error) {
+    console.warn("[inbox] falha ao registrar a pesquisa de satisfação do atendimento (best-effort):", error instanceof Error ? error.message : error);
+  }
+}
+
 export type ReopenConversationInput = { tenantId: string; workspaceId: string; conversationId: string; performedBy: string };
 
-/** Reabrir uma conversa finalizada — só faz sentido a partir de `resolved`; volta pra `open`. */
+/** Reabrir uma conversa finalizada — só faz sentido a partir de `resolved`; volta pra `open`.
+ * Reabre o MESMO atendimento (marco "Atendimento reaberto") com um ciclo novo para o responsável;
+ * a finalização anterior continua registrada no marco de finalização. */
 export async function reopenConversation(deps: InboxUseCaseDeps, input: ReopenConversationInput): Promise<InboxConversation> {
-  const conversation = await transitionConversationStatus(deps, input, "open");
+  const before = await mustConversationBelongToTenantAndWorkspace(deps, input.conversationId, input.tenantId, input.workspaceId);
+  const wasClosed = before.status === "resolved" || before.status === "archived";
+  const latest = wasClosed ? await deps.attendanceRepository?.getLatestByConversation(before.id) : undefined;
+  const conversation = await transitionConversationStatus(deps, input, "open", latest ? { attendanceId: latest.id } : undefined);
   // Reaberta à mão: pesquisa pendente deixa de valer e o encerramento anterior sai dos relatórios.
-  return deps.conversationRepository.updateServiceState(conversation.id, { closingReason: null, closedAt: null, closedBy: null, ...(conversation.csatStatus === "awaiting" ? { csatStatus: "expired" as const } : {}) });
+  const updated = await deps.conversationRepository.updateServiceState(conversation.id, { closingReason: null, closedAt: null, closedBy: null, ...(conversation.csatStatus === "awaiting" ? { csatStatus: "expired" as const } : {}) });
+  if (!deps.attendanceRepository || !wasClosed) return updated;
+  try {
+    const at = new Date().toISOString();
+    const reopened = latest?.status === "closed" ? await deps.attendanceRepository.reopen(latest.id, at) : undefined;
+    if (reopened) {
+      await deps.conversationEventRepository.record({ tenantId: input.tenantId, workspaceId: input.workspaceId, conversationId: updated.id, attendanceId: reopened.id, type: "attendance_reopened", performedBy: input.performedBy, toUserId: updated.assignedUserId, metadata: { number: reopened.number } });
+      await trackResponsibleChange(deps, updated, { performedBy: input.performedBy, source: "last_assignee", endReason: "reassigned", at });
+    } else {
+      await ensureOpenAttendance(deps, updated, { at, openedBy: input.performedBy, openReason: "assignment", distributionRule: updated.assignedUserId ? "last_assignee" : "queue" });
+    }
+  } catch (error) {
+    console.warn("[inbox] falha ao reabrir o atendimento (best-effort):", error instanceof Error ? error.message : error);
+  }
+  return updated;
+}
+
+export type ListConversationAttendancesInput = { tenantId: string; workspaceId: string; conversationId: string };
+
+/** Histórico de atendimentos da conversa (mais recente primeiro), com os ciclos de responsabilidade. */
+export async function listConversationAttendances(deps: InboxUseCaseDeps, input: ListConversationAttendancesInput): Promise<InboxAttendanceWithAssignments[]> {
+  const conversation = await mustConversationBelongToTenantAndWorkspace(deps, input.conversationId, input.tenantId, input.workspaceId);
+  if (!deps.attendanceRepository) return [];
+  return deps.attendanceRepository.listByConversation(conversation.id);
 }
 
 // ── Regras de atendimento ─────────────────────────────────────────────────────────────────────
@@ -1008,6 +1182,7 @@ async function runTriage(deps: InboxUseCaseDeps, settings: InboxServiceSettings,
       }
     }
     if (!teamRouted) routed = await maybeRouteNewConversationToTeam(deps, conversation);
+    await trackResponsibleChange(deps, routed, { performedBy: INBOX_SYSTEM_ACTOR, source: teamRouted ? "triage" : "routing", endReason: "reassigned" });
     if (option.tagId && deps.tagRepository) await deps.tagRepository.attachToConversation(conversation.id, option.tagId).catch(() => undefined);
     await deps.conversationEventRepository.record({ ...ctx, conversationId: conversation.id, type: "triage_completed", performedBy: INBOX_SYSTEM_ACTOR, toUserId: routed.assignedUserId, metadata: { option: option.label, ...(option.teamId ? { teamId: option.teamId } : {}) } });
     await send(option.reply || `Certo! Já vamos te atender sobre "${option.label}".`).catch(() => undefined);
@@ -1020,7 +1195,8 @@ async function runTriage(deps: InboxUseCaseDeps, settings: InboxServiceSettings,
   const attempts = (conversation.triageAttempts ?? 0) + 1;
   if (attempts >= MAX_TRIAGE_ATTEMPTS) {
     await deps.conversationRepository.updateServiceState(conversation.id, { triageStatus: "skipped", triageAttempts: attempts });
-    await maybeRouteNewConversationToTeam(deps, conversation);
+    const routed = await maybeRouteNewConversationToTeam(deps, conversation);
+    await trackResponsibleChange(deps, routed, { performedBy: INBOX_SYSTEM_ACTOR, source: "routing", endReason: "reassigned" });
     await deps.conversationEventRepository.record({ ...ctx, conversationId: conversation.id, type: "triage_skipped", performedBy: INBOX_SYSTEM_ACTOR });
     await send(settings.triageFallbackMessage).catch(() => undefined);
     return "skipped";
@@ -1058,10 +1234,12 @@ export async function applyInboundServiceRules(
   const message = await deps.messageRepository.getById(input.messageId);
   if (!message || message.direction !== "inbound") return result;
   if (conversation.chatType !== "direct") {
-    // Grupo: só reabre (nada de menu, ausência ou pesquisa para um grupo inteiro).
+    // Grupo: só abre um atendimento novo (nada de menu, ausência ou pesquisa para um grupo inteiro).
     if (conversation.status === "resolved" || conversation.status === "archived") {
-      await transitionConversationStatus(deps, { tenantId: input.tenantId, workspaceId: input.workspaceId, conversationId: conversation.id, performedBy: INBOX_SYSTEM_ACTOR }, "open");
+      await startNewAttendanceFromInbound(deps, conversation, { tenantId: input.tenantId, workspaceId: input.workspaceId, at: message.createdAt, triageWillRun: false });
       result.reopened = true;
+    } else {
+      await ensureOpenAttendanceSafely(deps, conversation, { at: message.createdAt, openedBy: INBOX_SYSTEM_ACTOR, openReason: "inbound_message" });
     }
     return result;
   }
@@ -1073,10 +1251,15 @@ export async function applyInboundServiceRules(
 
   if (conversation.csatStatus === "awaiting") {
     const requestedAt = conversation.csatRequestedAt ? Date.parse(conversation.csatRequestedAt) : 0;
-    const score = message.type === "text" && now.getTime() - requestedAt <= CSAT_ANSWER_WINDOW_MS ? parseCsatScore(message.body) : undefined;
+    const score = message.type === "text" && now.getTime() >= requestedAt && now.getTime() - requestedAt <= CSAT_ANSWER_WINDOW_MS ? parseCsatScore(message.body) : undefined;
     if (score !== undefined) {
-      await deps.conversationRepository.updateServiceState(conversation.id, { csatStatus: "answered", csatScore: score, csatAnsweredAt: now.toISOString() });
-      await deps.conversationEventRepository.record({ tenantId: input.tenantId, workspaceId: input.workspaceId, conversationId: conversation.id, type: "csat_answered", performedBy: INBOX_SYSTEM_ACTOR, metadata: { score } });
+      // A nota pertence ao atendimento que mandou a pesquisa (já finalizado) — nunca abre outro.
+      const surveyed = await deps.attendanceRepository?.getLatestByConversation(conversation.id).catch(() => undefined);
+      const claimed = await deps.conversationRepository.updateServiceStateIf(conversation.id, { kind: "csat_awaiting", requestedAt: conversation.csatRequestedAt }, { csatStatus: "answered", csatScore: score, csatAnsweredAt: now.toISOString() });
+      if (!claimed) { result.csatAnswered = true; return result; }
+      const attendanceId = surveyed?.csatStatus === "sent" ? surveyed.id : undefined;
+      if (attendanceId) await deps.attendanceRepository!.recordCsatAnswer(attendanceId, { score, answeredAt: now.toISOString() }).catch(() => undefined);
+      await deps.conversationEventRepository.record({ tenantId: input.tenantId, workspaceId: input.workspaceId, conversationId: conversation.id, type: "csat_answered", performedBy: INBOX_SYSTEM_ACTOR, metadata: { score }, ...(attendanceId ? { attendanceId } : {}) });
       // A nota não é "o cliente voltou a falar": não conta como não lida.
       await deps.conversationRepository.markRead(conversation.id);
       if (settings?.csatThanksMessage) {
@@ -1088,12 +1271,16 @@ export async function applyInboundServiceRules(
     conversation = await deps.conversationRepository.updateServiceState(conversation.id, { csatStatus: "expired" });
   }
 
+  const createdAfterTriage = !settings?.triageEnabledAt || conversation.createdAt >= settings.triageEnabledAt;
   if (conversation.status === "resolved" || conversation.status === "archived") {
-    conversation = await transitionConversationStatus(deps, { tenantId: input.tenantId, workspaceId: input.workspaceId, conversationId: conversation.id, performedBy: INBOX_SYSTEM_ACTOR }, "open");
+    // Fechar zera a triagem (`closeConversation`), então ela roda de novo se estiver ligada.
+    const triageWillRun = Boolean(settings?.triageEnabled && settings.triageOptions.length && createdAfterTriage);
+    conversation = await startNewAttendanceFromInbound(deps, conversation, { tenantId: input.tenantId, workspaceId: input.workspaceId, at: message.createdAt, triageWillRun });
     result.reopened = true;
+  } else {
+    await ensureOpenAttendanceSafely(deps, conversation, { at: message.createdAt, openedBy: INBOX_SYSTEM_ACTOR, openReason: "inbound_message" });
   }
 
-  const createdAfterTriage = !settings?.triageEnabledAt || conversation.createdAt >= settings.triageEnabledAt;
   if (settings?.triageEnabled && settings.triageOptions.length && !conversation.assignedUserId && conversation.status === "open" && (createdAfterTriage || conversation.triageStatus)) {
     try {
       result.triage = await runTriage(deps, settings, conversation, message.type === "text" ? message.body : undefined, { tenantId: input.tenantId, workspaceId: input.workspaceId });
@@ -1202,6 +1389,7 @@ export async function listConversationEvents(deps: InboxUseCaseDeps, input: List
 }
 
 export type SendInboxMessageInput = {
+  linkPreview?: boolean;
   tenantId: string;
   workspaceId: string;
   conversationId: string;
@@ -1278,6 +1466,7 @@ export async function sendInboxMessage(deps: InboxUseCaseDeps, input: SendInboxM
     sentByAi: input.sentByAi ?? false,
     sentByAutomation: input.sentByAutomation ?? false,
     quotedMessage,
+    metadata: input.linkPreview ? { linkPreview: true } : undefined,
   });
   if (scheduledAt) {
     await deps.conversationRepository.markLastMessage(conversation.id, { lastMessageAt: message.createdAt, incrementUnread: false });
@@ -1352,11 +1541,12 @@ export async function startInboxConversation(deps: InboxUseCaseDeps, input: Star
   let conversation = await mustConversationBelongToTenantAndWorkspace(deps, found.id, input.tenantId, input.workspaceId);
   const wasExisting = found.createdAt !== found.updatedAt;
   if (conversation.status === "resolved" || conversation.status === "archived") {
-    conversation = await transitionConversationStatus(deps, { tenantId: input.tenantId, workspaceId: input.workspaceId, conversationId: conversation.id, performedBy: input.startedByUserId }, "open");
+    conversation = await transitionConversationStatus(deps, { tenantId: input.tenantId, workspaceId: input.workspaceId, conversationId: conversation.id, performedBy: input.startedByUserId }, "open", deps.attendanceRepository ? { attendanceTracked: true } : undefined);
   }
   // Quem puxa a conversa encerra qualquer pesquisa pendente (a resposta "2" não pode virar nota).
   if (conversation.csatStatus === "awaiting") conversation = await deps.conversationRepository.updateServiceState(conversation.id, { csatStatus: "expired" });
-  if (!conversation.assignedUserId) {
+  const assignsStarter = !conversation.assignedUserId;
+  if (assignsStarter) {
     conversation = await deps.conversationRepository.assign(conversation.id, input.startedByUserId);
     await deps.conversationEventRepository.record({
       tenantId: input.tenantId,
@@ -1367,6 +1557,8 @@ export async function startInboxConversation(deps: InboxUseCaseDeps, input: Star
       toUserId: input.startedByUserId,
     });
   }
+  // Atendimento iniciado pelo atendente (ou o já aberto, se a conversa estava em atendimento).
+  await ensureOpenAttendanceSafely(deps, conversation, { at: new Date().toISOString(), openedBy: input.startedByUserId, openReason: "agent_started", distributionRule: assignsStarter ? "agent_started" : "last_assignee" });
   const message = await sendInboxMessage(deps, { tenantId: input.tenantId, workspaceId: input.workspaceId, conversationId: conversation.id, body, sentByUserId: input.startedByUserId });
   return { conversation, message, wasExisting };
 }
@@ -1587,6 +1779,10 @@ async function finishEnqueueingOutboundMessage(
     throw error;
   }
   await deps.conversationRepository.markLastMessage(input.conversationId, { lastMessageAt: input.message.createdAt, incrementUnread: false });
+  // Primeira resposta HUMANA (IA/automação nunca contam) — do atendimento e do ciclo do responsável.
+  if (!input.sentByAi && input.message.sentByUserId) {
+    await trackFirstResponse(deps, { conversationId: input.conversationId, userId: input.message.sentByUserId, messageId: input.message.id, at: input.message.createdAt });
+  }
   if (deps.productAnalytics && !input.sentByAi) {
     // "Reply" no sentido do funil de ativação é uma resposta HUMANA — resposta automática de IA
     // não conta como o marco de "alguém do time respondeu pela primeira vez".
@@ -1776,12 +1972,19 @@ export async function registerInboundMessage(
   // quem pegou, até uma transferência manual explícita). `createdAt === updatedAt` é o MESMO sinal
   // já usado acima pra "conversa acabou de nascer agora" — nunca refaz em reentregas/mensagens
   // seguintes da mesma conversa.
-  if (!input.fromMe && conversation.createdAt === conversation.updatedAt && !conversation.currentTeamId && !conversation.assignedUserId && !input.isGroup && !(await isTriageActiveForConnection(deps, input.tenantId, input.workspaceId, input.connectionId))) {
-    // Com o menu de triagem ligado, quem decide a equipe é a escolha do cliente (ver
-    // `applyInboundServiceRules`); o roteamento do canal vira o plano B da triagem.
-    conversation = await maybeRouteNewConversationToTeam(deps, conversation);
-  } else if (!input.fromMe && input.isGroup && conversation.createdAt === conversation.updatedAt && !conversation.currentTeamId && !conversation.assignedUserId) {
-    conversation = await maybeRouteNewConversationToTeam(deps, conversation);
+  // Regra que distribuiu a conversa nova — vai para o atendimento que abre logo abaixo.
+  let distributionRule: InboxDistributionRule | undefined;
+  const isNewConversation = conversation.createdAt === conversation.updatedAt;
+  if (!input.fromMe && isNewConversation && !conversation.currentTeamId && !conversation.assignedUserId && !input.isGroup) {
+    if (await isTriageActiveForConnection(deps, input.tenantId, input.workspaceId, input.connectionId)) {
+      // Com o menu de triagem ligado, quem decide a equipe é a escolha do cliente (ver
+      // `applyInboundServiceRules`); o roteamento do canal vira o plano B da triagem.
+      distributionRule = "triage";
+    } else {
+      ({ conversation, rule: distributionRule } = await routeConversationByChannel(deps, conversation));
+    }
+  } else if (!input.fromMe && input.isGroup && isNewConversation && !conversation.currentTeamId && !conversation.assignedUserId) {
+    ({ conversation, rule: distributionRule } = await routeConversationByChannel(deps, conversation));
   }
   const resolvedBody = input.body && input.mentionedJids?.length
     ? await resolveMentionsInBody(deps, { tenantId: input.tenantId, workspaceId: input.workspaceId, body: input.body, mentionedJids: input.mentionedJids })
@@ -1811,6 +2014,12 @@ export async function registerInboundMessage(
   });
   if (wasCreated) {
     await deps.conversationRepository.markLastMessage(conversation.id, { lastMessageAt: input.occurredAt, incrementUnread: !input.fromMe });
+    // Conversa em atendimento sem atendimento aberto (conversa nova): abre aqui, com a regra de
+    // distribuição acima. Finalizada fica para `applyInboundServiceRules` — a mensagem pode ser
+    // só a nota da pesquisa, que nunca abre atendimento novo.
+    if (!input.fromMe && (conversation.status === "open" || conversation.status === "pending")) {
+      await ensureOpenAttendanceSafely(deps, conversation, { at: input.occurredAt, openedBy: INBOX_SYSTEM_ACTOR, openReason: "inbound_message", distributionRule });
+    }
     if (!input.fromMe) {
       deps.metrics?.incMessageInbound();
       // `createdAt === updatedAt` é o sinal de que `findOrCreate` acabou de CRIAR a conversa agora
@@ -1833,21 +2042,63 @@ export async function registerInboundMessage(
  * `assignedUserId` — mesmo fallback do CMDesk (conversa cai na equipe certa, mesmo sem dono).
  */
 async function maybeRouteNewConversationToTeam(deps: InboxUseCaseDeps, conversation: InboxConversation): Promise<InboxConversation> {
-  if (!deps.channelRoutingRepository) return conversation;
+  return (await routeConversationByChannel(deps, conversation)).conversation;
+}
+
+/** Mesma regra de `maybeRouteNewConversationToTeam`, devolvendo QUAL regra decidiu — gravada no
+ * atendimento para auditar/testar a distribuição (`queue` = ficou sem equipe nem responsável;
+ * `team_queue` = caiu na equipe, sem agente elegível). */
+async function routeConversationByChannel(deps: InboxUseCaseDeps, conversation: InboxConversation): Promise<{ conversation: InboxConversation; rule: InboxDistributionRule }> {
+  if (!deps.channelRoutingRepository) return { conversation, rule: "queue" };
   try {
     const teamId = await deps.channelRoutingRepository.resolveTeamForNewConversation(conversation.connectionId);
-    if (!teamId) return conversation;
+    if (!teamId) return { conversation, rule: "queue" };
     let updated = await deps.conversationRepository.setTeam(conversation.id, teamId);
+    let rule: InboxDistributionRule = "team_queue";
 
     if (deps.teamRepository && deps.teamMembershipRepository) {
       const nextMember = await resolveNextTeamMember({ teamRepository: deps.teamRepository, teamMembershipRepository: deps.teamMembershipRepository }, { teamId });
-      if (nextMember) updated = await deps.conversationRepository.assign(conversation.id, nextMember.userId);
+      if (nextMember) {
+        updated = await deps.conversationRepository.assign(conversation.id, nextMember.userId);
+        rule = nextMember.usedRoundRobin ? "round_robin" : "fixed";
+      }
     }
-    return updated;
+    return { conversation: updated, rule };
   } catch (error) {
     console.warn("[inbox] falha ao rotear conversa nova por equipe (best-effort, nunca bloqueia o registro da mensagem):", error instanceof Error ? error.message : error);
-    return conversation;
+    return { conversation, rule: "queue" };
   }
+}
+
+/**
+ * Cliente voltou a falar depois de um atendimento finalizado: abre um atendimento NOVO na mesma
+ * conversa (nunca reabre o anterior) e aplica de novo a regra de distribuição do canal —
+ * `last_assignee` mantém quem atendeu da última vez; `redistribute` passa pela triagem (quando
+ * vai rodar) ou pelo roteamento por equipe + rodízio. Sem responsável anterior, sempre distribui.
+ */
+async function startNewAttendanceFromInbound(
+  deps: InboxUseCaseDeps,
+  conversation: InboxConversation,
+  ctx: { tenantId: string; workspaceId: string; at: string; triageWillRun: boolean },
+): Promise<InboxConversation> {
+  let current = conversation;
+  let rule: InboxDistributionRule | undefined;
+  if (deps.attendanceRepository) {
+    const connection = await deps.connectionRepository.getById(current.connectionId);
+    const member = current.assignedUserId && deps.membershipRepository ? await deps.membershipRepository.getByUserAndTenant(current.assignedUserId, current.tenantId) : undefined;
+    const activeAssignee = !deps.membershipRepository || Boolean(member && member.status !== "disabled");
+    const stillInTeam = !current.currentTeamId || !current.assignedUserId || !deps.teamMembershipRepository || Boolean(await deps.teamMembershipRepository.getByTeamAndUser(current.currentTeamId, current.assignedUserId));
+    if (current.assignedUserId && activeAssignee && stillInTeam && connection?.newAttendanceAssignment !== "redistribute") {
+      rule = "last_assignee";
+    } else {
+      if (current.assignedUserId) current = await deps.conversationRepository.assign(current.id, undefined);
+      if (ctx.triageWillRun) rule = "triage";
+      else ({ conversation: current, rule } = await routeConversationByChannel(deps, current));
+    }
+  }
+  current = await transitionConversationStatus(deps, { tenantId: ctx.tenantId, workspaceId: ctx.workspaceId, conversationId: current.id, performedBy: INBOX_SYSTEM_ACTOR }, "open", deps.attendanceRepository ? { attendanceTracked: true } : undefined);
+  await ensureOpenAttendanceSafely(deps, current, { at: ctx.at, openedBy: INBOX_SYSTEM_ACTOR, openReason: "inbound_message", distributionRule: rule });
+  return current;
 }
 
 export type SyncGroupMetadataInput = { tenantId: string; workspaceId: string; connectionId: string; conversationId: string };
@@ -2207,7 +2458,7 @@ async function sendOutboundByType(
     const replyTo = message.quotedMessage?.externalMessageId
       ? { externalMessageId: message.quotedMessage.externalMessageId, participantJid: message.quotedMessage.senderId, quotedText: message.quotedMessage.body }
       : undefined;
-    return provider.sendText({ externalSessionId: input.externalSessionId, to: input.to, body: body ?? "", replyTo });
+    return provider.sendText({ externalSessionId: input.externalSessionId, to: input.to, body: body ?? "", replyTo, ...(message.metadata?.linkPreview === true ? { linkPreview: true } : {}) });
   }
   if (message.type === "contact") {
     const contactName = message.metadata?.contactName as string | undefined;
@@ -2830,6 +3081,8 @@ export async function moveConversationPhase(deps: InboxUseCaseDeps, input: MoveC
   }
   const targetPhase = await mustKanbanPhaseBelongToTeam(deps, input.phaseId, input.teamId);
   const fromPhaseId = conversation.currentPhaseId;
+  if (fromPhaseId === targetPhase.id) return conversation;
+  const fromPhase = fromPhaseId ? await requireKanbanDeps(deps).teamKanbanPhaseRepository.getById(fromPhaseId).catch(() => undefined) : undefined;
 
   await conversationTimeEntryRepository.moveConversationPhase({
     tenantId: input.tenantId,
@@ -2846,7 +3099,10 @@ export async function moveConversationPhase(deps: InboxUseCaseDeps, input: MoveC
       conversationId: conversation.id,
       type: "kanban_phase_changed",
       performedBy: input.performedBy,
-      metadata: { fromPhaseId, toPhaseId: targetPhase.id, toPhaseName: targetPhase.name },
+      fromPhaseId,
+      toPhaseId: targetPhase.id,
+      // Nomes são snapshot do momento (a fase pode ser renomeada/excluída depois).
+      metadata: { fromPhaseId, toPhaseId: targetPhase.id, toPhaseName: targetPhase.name, ...(fromPhase ? { fromPhaseName: fromPhase.name } : {}), teamId: input.teamId },
     })
     .catch((error) => {
       console.warn("[inbox] falha ao registrar evento de mudança de fase (best-effort, nunca desfaz a mudança):", error instanceof Error ? error.message : error);

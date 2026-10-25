@@ -13,8 +13,8 @@ const DEFAULT_STAGE_NAMES: ReadonlyArray<{ name: string; isWon: boolean; isLost:
   { name: "Contato Feito", isWon: false, isLost: false },
   { name: "Proposta Enviada", isWon: false, isLost: false },
   { name: "Negociação", isWon: false, isLost: false },
-  { name: "Ganho", isWon: true, isLost: false },
-  { name: "Perdido", isWon: false, isLost: true },
+  { name: "Ganha", isWon: true, isLost: false },
+  { name: "Perdida", isWon: false, isLost: true },
 ];
 
 function isUniqueViolation(error: unknown): boolean {
@@ -33,17 +33,14 @@ export async function ensureDefaultPipeline(deps: PipelineUseCaseDeps, tenantId:
   }
   let pipeline: Pipeline;
   try {
-    pipeline = await deps.pipelineRepository.create({ tenantId, workspaceId, name: "Pipeline Padrão", isDefault: true });
+    pipeline = await deps.pipelineRepository.create({ tenantId, workspaceId, name: "Pipeline Padrão", isDefault: true }, DEFAULT_STAGE_NAMES.map((def, position) => ({ ...def, position })));
   } catch (error) {
     if (!isUniqueViolation(error)) throw error;
     const raceWinner = await deps.pipelineRepository.getDefaultForWorkspace(tenantId, workspaceId);
     if (!raceWinner) throw error;
     return { pipeline: raceWinner, stages: await deps.pipelineStageRepository.listByPipeline(raceWinner.id) };
   }
-  const stages: PipelineStage[] = [];
-  for (const [position, def] of DEFAULT_STAGE_NAMES.entries()) {
-    stages.push(await deps.pipelineStageRepository.create({ pipelineId: pipeline.id, name: def.name, position, isWon: def.isWon, isLost: def.isLost }));
-  }
+  const stages = await deps.pipelineStageRepository.listByPipeline(pipeline.id);
   return { pipeline, stages };
 }
 
@@ -69,8 +66,8 @@ export async function mustStageBelongToPipeline(deps: PipelineUseCaseDeps, stage
   return stage;
 }
 
-export async function createPipeline(deps: PipelineUseCaseDeps, input: { tenantId: string; workspaceId: string; name: string }): Promise<Pipeline> {
-  return deps.pipelineRepository.create(input);
+export async function createPipeline(deps: PipelineUseCaseDeps, input: { tenantId: string; workspaceId: string; name: string; teamId?: string }): Promise<Pipeline> {
+  return deps.pipelineRepository.create(input, DEFAULT_STAGE_NAMES.map((def, position) => ({ ...def, position })));
 }
 
 export async function listStages(deps: PipelineUseCaseDeps, input: { pipelineId: string; tenantId: string; workspaceId: string }): Promise<PipelineStage[]> {
@@ -80,17 +77,36 @@ export async function listStages(deps: PipelineUseCaseDeps, input: { pipelineId:
 
 export async function createStage(deps: PipelineUseCaseDeps, input: { pipelineId: string; tenantId: string; workspaceId: string; name: string; position: number; isWon?: boolean; isLost?: boolean; probability?: number | null; staleAfterDays?: number | null; requiredFields?: readonly string[] }): Promise<PipelineStage> {
   await mustPipelineBelongToTenantAndWorkspace(deps, input.pipelineId, input.tenantId, input.workspaceId);
+  if (input.isWon || input.isLost) throw new Error("PIPELINE_STAGE_INVALID: Ganha e Perdida já são fases sistêmicas deste funil. Crie uma fase em andamento.");
   return deps.pipelineStageRepository.create(input);
 }
 
 export async function updateStage(deps: PipelineUseCaseDeps, input: { pipelineId: string; stageId: string; tenantId: string; workspaceId: string; patch: UpdateStageInput }): Promise<PipelineStage> {
   await mustPipelineBelongToTenantAndWorkspace(deps, input.pipelineId, input.tenantId, input.workspaceId);
-  await mustStageBelongToPipeline(deps, input.stageId, input.pipelineId);
+  const stage = await mustStageBelongToPipeline(deps, input.stageId, input.pipelineId);
+  if ((input.patch.isWon !== undefined && input.patch.isWon !== stage.isWon) || (input.patch.isLost !== undefined && input.patch.isLost !== stage.isLost)) {
+    throw new Error("PIPELINE_STAGE_INVALID: o resultado comercial de uma fase sistêmica não pode ser alterado.");
+  }
+  if (input.patch.position !== undefined && input.patch.position !== stage.position) throw new Error("PIPELINE_STAGE_INVALID: use a reordenação de fases para alterar a posição.");
   return deps.pipelineStageRepository.update(input.stageId, input.patch);
 }
 
 export async function deleteStage(deps: PipelineUseCaseDeps, input: { pipelineId: string; stageId: string; tenantId: string; workspaceId: string }): Promise<void> {
   await mustPipelineBelongToTenantAndWorkspace(deps, input.pipelineId, input.tenantId, input.workspaceId);
-  await mustStageBelongToPipeline(deps, input.stageId, input.pipelineId);
+  const stage = await mustStageBelongToPipeline(deps, input.stageId, input.pipelineId);
+  if (stage.isWon || stage.isLost) throw new Error("PIPELINE_STAGE_INVALID: fase sistêmica de encerramento. Não pode ser removida.");
+  const stages = await deps.pipelineStageRepository.listByPipeline(input.pipelineId);
+  if (stages.filter(s => !s.isWon && !s.isLost).length <= 1) throw new Error("PIPELINE_STAGE_INVALID: mantenha pelo menos uma fase em andamento no funil.");
   await deps.pipelineStageRepository.delete(input.stageId);
+}
+
+export async function reorderStages(deps: PipelineUseCaseDeps, input: { pipelineId: string; tenantId: string; workspaceId: string; stageIds: readonly string[] }): Promise<void> {
+  await mustPipelineBelongToTenantAndWorkspace(deps, input.pipelineId, input.tenantId, input.workspaceId);
+  const stages = await deps.pipelineStageRepository.listByPipeline(input.pipelineId);
+  const won = stages.find(s => s.isWon);
+  const lost = stages.find(s => s.isLost);
+  if (!won || !lost || input.stageIds.at(-2) !== won.id || input.stageIds.at(-1) !== lost.id) {
+    throw new Error("PIPELINE_STAGE_INVALID: Ganha e Perdida devem permanecer no final do funil, nessa ordem.");
+  }
+  await deps.pipelineStageRepository.reorder(input.pipelineId, input.stageIds);
 }

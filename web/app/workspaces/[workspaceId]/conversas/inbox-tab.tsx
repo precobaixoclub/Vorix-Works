@@ -83,7 +83,7 @@ import {
   transferInboxConversation,
   updateInboxTag,
 } from "@/features/inbox/api";
-import { useInboxConversationEvents, useInboxConversationMessages, useInboxConversations, useInboxMembers, useInboxRealtime, useInboxServiceSettings, useInboxTags } from "@/features/inbox/hooks";
+import { useInboxClosureTypes, useInboxConnections, useInboxConversationAttendances, useInboxConversationEvents, useInboxConversationMessages, useInboxConversations, useInboxMembers, useInboxRealtime, useInboxServiceSettings, useInboxTags } from "@/features/inbox/hooks";
 import { useTeams } from "@/features/identity/hooks";
 import { INBOX_TAG_COLORS } from "@/features/inbox/types";
 import type { InboxConversation, InboxConversationEvent, InboxConversationStatus, InboxMediaStorageRef, InboxMessage, InboxTag, InboxTagColor, InboxTenantMember, MessagingProviderId, TeamKanbanPhase } from "@/features/inbox/types";
@@ -100,6 +100,9 @@ import {
 import type { InboxAiFilter, InboxFilterSection, InboxFilterState, InboxPeriodFilter, InboxReadFilter } from "@/features/inbox/inbox-filters";
 import { CrmContextSection } from "./crm-panel";
 import { CloseConversationModal, csatLabel } from "./service-settings-panel";
+import { AttendanceCloseModal, AttendanceHistorySection, type CsatCloseMode } from "./attendance-panel";
+import { attendanceEventLabel, isShadowedStatusEvent } from "@/features/inbox/attendance-labels";
+import { useMyAccess } from "@/features/auth/access";
 import { StickerPickerButton } from "./sticker-picker";
 import { CreateOpportunityButton } from "./create-opportunity-button";
 import { PersonAvatar } from "@/components/DashboardKit";
@@ -1480,8 +1483,9 @@ export function ConversationTimelinePane({
 }) {
   const { state } = useAuth();
   const role = state.status === "authenticated" ? state.role : undefined;
-  const canOperate = canOperateWorkspace(role);
-  const canDelete = canManageTenant(role);
+  const { can } = useMyAccess();
+  const canOperate = can("inbox:reply");
+  const canDelete = can("inbox:delete_conversations");
   // Histórico: começa nas 50 últimas; "Carregar mensagens anteriores" amplia de 50 em 50.
   const [messageLimit, setMessageLimit] = useState(50);
   useEffect(() => { setMessageLimit(50); }, [conversation.id]);
@@ -1493,6 +1497,16 @@ export function ConversationTimelinePane({
   // Finalizar com motivo (quando o workspace cadastrou motivos de encerramento).
   const { data: serviceSettings, isLoading: serviceSettingsLoading } = useInboxServiceSettings(workspaceId);
   const [closeDialogOpen, setCloseDialogOpen] = useState(false);
+  // Ciclo de atendimento: tipo + subtipo obrigatórios; a pesquisa segue o canal e o papel.
+  const { data: closureTypesData, error: closureTypesError, isLoading: closureTypesLoading } = useInboxClosureTypes(workspaceId);
+  const { data: connectionsData } = useInboxConnections(workspaceId);
+  const { mutate: mutateAttendances } = useInboxConversationAttendances(workspaceId, conversation.id);
+  const conversationConnection = connectionsData?.connections.find((item) => item.id === conversation.connectionId);
+  // Sem o catálogo (backend sem o ciclo de atendimento), cai no fluxo anterior de motivos.
+  const tracksAttendance = Boolean(closureTypesData) && !closureTypesError;
+  const csatApplies = conversation.chatType === "direct" && (conversationConnection?.provider ?? "wuzapi") === "wuzapi" && conversationConnection?.csatOnClose === true;
+  // Dispensar a pesquisa é permissão própria (gerente/administrador por padrão), não o nome do perfil.
+  const csatMode: CsatCloseMode = !csatApplies ? "off" : can("inbox:waive_csat") ? "optional" : "forced";
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const stickToBottom = useRef(true);
   const olderAnchor = useRef<{ height: number; top: number } | undefined>(undefined);
@@ -1547,7 +1561,7 @@ export function ConversationTimelinePane({
   const events = eventsData?.events ?? [];
   const timeline: TimelineEntry[] = [
     ...messages.map((message): TimelineEntry => ({ kind: "message", at: message.sentAt ?? message.createdAt, message })),
-    ...events.map((event): TimelineEntry => ({ kind: "event", at: event.createdAt, event })),
+    ...events.filter((event) => !isShadowedStatusEvent(event)).map((event): TimelineEntry => ({ kind: "event", at: event.createdAt, event })),
   ].sort((a, b) => new Date(a.at).getTime() - new Date(b.at).getTime());
   // Sales Engine — proposta enviada pelo WhatsApp aparece como cartão junto da própria mensagem.
   const { data: conversationProposals } = useConversationProposals(workspaceId, conversation.chatType === "group" ? undefined : conversation.id);
@@ -1590,7 +1604,7 @@ export function ConversationTimelinePane({
   const transferOptions = members.filter((member) => member.userId !== conversation.assignedUserId).map((member) => ({ id: member.userId, label: `${member.name} · ${member.email}` }));
 
   async function refreshThread() {
-    await Promise.all([mutate(), mutateEvents(), onConversationChanged()]);
+    await Promise.all([mutate(), mutateEvents(), mutateAttendances(), onConversationChanged()]);
   }
 
   async function runAction(key: string, action: () => Promise<InboxConversation>) {
@@ -1834,10 +1848,10 @@ export function ConversationTimelinePane({
               allowed={canOperate}
               blockedReason={RBAC_COPY.operateConversations}
               loading={busyAction === "status"}
-              // Espera as regras carregarem: o motivo pode ser obrigatório.
-              disabled={Boolean(busyAction) || (!isResolved && serviceSettingsLoading)}
+              // Espera as regras/tipos carregarem: tipo e subtipo (ou o motivo) podem ser obrigatórios.
+              disabled={Boolean(busyAction) || (!isResolved && (serviceSettingsLoading || closureTypesLoading))}
               onClick={() => {
-                if (!isResolved && serviceSettings?.closingReasons.length) {
+                if (!isResolved && (tracksAttendance || serviceSettings?.closingReasons.length)) {
                   setCloseDialogOpen(true);
                   return;
                 }
@@ -2170,7 +2184,20 @@ export function ConversationTimelinePane({
         />
       ) : null}
 
-      {closeDialogOpen && serviceSettings ? (
+      {closeDialogOpen && tracksAttendance && closureTypesData ? (
+        <AttendanceCloseModal
+          workspaceId={workspaceId}
+          closureTypes={closureTypesData.closureTypes}
+          csatMode={csatMode}
+          canConfigure={canDelete}
+          busy={busyAction === "status"}
+          onCancel={() => setCloseDialogOpen(false)}
+          onConfirm={async (choice) => {
+            await runAction("status", () => closeInboxConversation(workspaceId, conversation.id, choice));
+            setCloseDialogOpen(false);
+          }}
+        />
+      ) : closeDialogOpen && serviceSettings ? (
         <CloseConversationModal
           reasons={serviceSettings.closingReasons}
           required={serviceSettings.requireClosingReason}
@@ -2178,7 +2205,7 @@ export function ConversationTimelinePane({
           busy={busyAction === "status"}
           onCancel={() => setCloseDialogOpen(false)}
           onConfirm={async (reason) => {
-            await runAction("status", () => closeInboxConversation(workspaceId, conversation.id, reason));
+            await runAction("status", () => closeInboxConversation(workspaceId, conversation.id, { closingReason: reason }));
             setCloseDialogOpen(false);
           }}
         />
@@ -3058,6 +3085,20 @@ function EventPill({ event, currentUserId, members }: { event: InboxConversation
       </div>
     );
   }
+  // Início/fim de atendimento separam os ciclos dentro da MESMA conversa: linha divisória com o
+  // marco no meio, para o histórico ser legível de relance. O resto segue como pílula discreta.
+  if (event.type === "attendance_opened" || event.type === "attendance_closed" || event.type === "attendance_reopened") {
+    const closed = event.type === "attendance_closed";
+    return (
+      <div className="flex items-center gap-2 py-2" role="separator" aria-label={eventLabel(event, currentUserId, members)}>
+        <span className={cn("h-px flex-1", closed ? "bg-success/40" : "bg-primary/30")} />
+        <span className={cn("max-w-[80%] rounded-full border px-3 py-1 text-center text-[11px] font-medium shadow-sm", closed ? "border-success/40 bg-success/10 text-foreground" : "border-primary/30 bg-primary/5 text-foreground")}>
+          {eventLabel(event, currentUserId, members)} · {timeLabel(event.createdAt)}
+        </span>
+        <span className={cn("h-px flex-1", closed ? "bg-success/40" : "bg-primary/30")} />
+      </div>
+    );
+  }
   return (
     <div className="flex justify-center py-1">
       <span className="rounded-full border border-border bg-card px-3 py-1 text-center text-[11px] text-muted-foreground shadow-sm">
@@ -3085,6 +3126,8 @@ function ContactContextPane({
   onConversationChanged: () => void;
 }) {
   const contextAvatarProps = avatarPropsFor(conversation);
+  const { state: authState } = useAuth();
+  const currentUserId = authState.status === "authenticated" ? authState.user.id : undefined;
   return (
     <aside className="flex h-full min-h-0 flex-col bg-card">
       <div className="flex items-center justify-between gap-2 border-b border-border px-4 py-3">
@@ -3148,6 +3191,8 @@ function ContactContextPane({
             </div>
           ) : null}
         </div>
+
+        <AttendanceHistorySection workspaceId={workspaceId} conversationId={conversation.id} members={members} currentUserId={currentUserId} />
 
         {conversation.chatType === "direct" && conversation.crmContactId ? (
           // Bug real corrigido (auditoria, "Jornada Comercial Integrada" — item P0): antes levava
@@ -3284,6 +3329,8 @@ function MessageStatusTicks({ status }: { status: InboxMessage["status"] }) {
 
 function eventLabel(event: InboxConversationEvent, currentUserId: string | undefined, members: readonly InboxTenantMember[]): string {
   const by = agentLabel(event.performedBy, currentUserId, members);
+  const attendanceLabel = attendanceEventLabel(event, (userId) => (userId === "system" ? "Vorix" : agentLabel(userId, currentUserId, members)));
+  if (attendanceLabel) return attendanceLabel;
   switch (event.type) {
     case "took_over":
       return `${by} assumiu o atendimento`;

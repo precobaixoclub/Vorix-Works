@@ -21,7 +21,7 @@ export function requirePrincipal(request: FastifyRequest): AuthPrincipal {
 /** Autenticação (`requirePrincipal`) + autorização (RBAC) — devolve 403 quando o papel não tem a permissão, nunca 401. */
 export function requirePermission(request: FastifyRequest, permission: Permission): AuthPrincipal {
   const principal = requirePrincipal(request);
-  if (!hasPermission(principal.role, permission)) {
+  if (!hasPermission(principal, permission)) {
     throw new ForbiddenError(`Papel "${principal.role}" não tem a permissão "${permission}".`);
   }
   return principal;

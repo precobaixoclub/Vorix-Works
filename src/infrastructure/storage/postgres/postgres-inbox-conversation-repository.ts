@@ -1,9 +1,11 @@
+import { inboxVisibilitySql } from "./postgres-inbox-visibility.js";
 import type { Pool } from "pg";
 import type {
   FindOrCreateInboxConversationInput,
   InboxConversationListFilter,
   InboxConversationListItem,
   InboxConversationRepositoryPort,
+  InboxConversationVisibility,
 } from "../../../application/ports/inbox-conversation-repository.port.js";
 import type { InboxAiPauseReason, InboxChatType, InboxConversation, InboxConversationStatus, InboxMediaStorageRef, InboxMessageDirection, InboxMessageType, MessagingProviderId, InboxConversationServiceStatePatch, InboxCsatStatus, InboxServiceStateGuard, InboxTriageStatus } from "../../../domain/inbox/inbox.model.js";
 
@@ -115,14 +117,18 @@ export class PostgresInboxConversationRepository implements InboxConversationRep
   }
 
   async listByWorkspace(input: {
+    inboxContactId?: string;
     tenantId: string;
     workspaceId: string;
     filter?: InboxConversationListFilter;
     assignedUserId?: string;
     contactId?: string;
+    visibility?: InboxConversationVisibility;
   }): Promise<InboxConversationListItem[]> {
     const conditions = ["c.tenant_id = $1", "c.workspace_id = $2", "c.merge_status is null"];
     const params: unknown[] = [input.tenantId, input.workspaceId];
+    if (input.visibility) conditions.push(inboxVisibilitySql(input.visibility, params));
+    if (input.inboxContactId) { params.push(input.inboxContactId); conditions.push(`c.contact_id = $${params.length}`); }
     if (input.contactId) {
       // Contact 360 (Jornada Comercial Fase 1, item 17) — escopo real por Contact CRM em vez de
       // trazer o workspace inteiro e filtrar no frontend. `ct` é o LEFT JOIN com `inbox_contacts`
@@ -301,6 +307,10 @@ export class PostgresInboxConversationRepository implements InboxConversationRep
     let condition: string;
     if (guard.kind === "triage_unset") condition = "triage_status is null";
     else if (guard.kind === "triage_awaiting") condition = "triage_status = 'awaiting'";
+    else if (guard.kind === "csat_awaiting") {
+      params.push(guard.requestedAt ?? null);
+      condition = `status = 'resolved' and csat_status = 'awaiting' and csat_requested_at is not distinct from $${params.length}::timestamptz`;
+    }
     else {
       params.push(guard.cutoff);
       condition = `(last_away_message_at is null or last_away_message_at < $${params.length}::timestamptz)`;

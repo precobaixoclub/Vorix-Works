@@ -4,6 +4,7 @@ import type { ProposalUseCaseDeps } from "../crm/proposal-use-cases.js";
 import { getProposal, regenerateProposalLink, sendProposal } from "../crm/proposal-use-cases.js";
 import type { Proposal, ProposalDelivery, ProposalEvent, ProposalRecipient } from "../../domain/crm/crm.model.js";
 import type { InboxMessageStatus } from "../../domain/inbox/inbox.model.js";
+import { DEFAULT_PROPOSAL_WHATSAPP_TEMPLATE, DEFAULT_PROPOSAL_REMINDER_TEMPLATE, renderProposalMessage, proposalRecipientName, type ProposalMessageVariables } from "../../domain/sales/proposal-message.js";
 
 /** Orquestrador explícito entre os bounded contexts CRM e Inbox. Nenhum dos dois importa o outro:
  * esta camada valida a relação Proposal -> Contact -> InboxConversation e só marca `sent` depois
@@ -13,7 +14,7 @@ export type ProposalDeliveryDeps = ProposalUseCaseDeps & {
   appBaseUrl: string;
   /** Sales Engine — modelos configuráveis da mensagem (envio e lembrete). */
   messageTemplates?: (tenantId: string, workspaceId: string) => Promise<{ send: string; reminder: string }>;
-  renderMessage?: (template: string, vars: { nome?: string; valor: string; validade?: string; proposal_link: string; numero?: string }) => string;
+  renderMessage?: (template: string, vars: ProposalMessageVariables) => string;
 };
 
 const SENDABLE_FIRST: readonly Proposal["status"][] = ["draft", "pending_approval", "approved"];
@@ -29,16 +30,23 @@ async function buildMessage(deps: ProposalDeliveryDeps, proposal: Proposal, kind
       : `${explicit.trim()}\n\n${proposalUrl}`;
   }
   const contact = proposal.contactId && deps.contactRepository ? await deps.contactRepository.getById(proposal.contactId) : undefined;
-  const templates = deps.messageTemplates ? await deps.messageTemplates(proposal.tenantId, proposal.workspaceId) : { send: "Sua proposta está disponível: {{proposal_link}}", reminder: "Lembrete da sua proposta: {{proposal_link}}" };
+  const templates = deps.messageTemplates ? await deps.messageTemplates(proposal.tenantId, proposal.workspaceId) : { send: DEFAULT_PROPOSAL_WHATSAPP_TEMPLATE, reminder: DEFAULT_PROPOSAL_REMINDER_TEMPLATE };
   const vars = {
-    nome: contact?.name?.split(" ")[0],
+    nome: proposalRecipientName(contact?.name),
     valor: formatMoney(proposal.totalCents, proposal.currency),
     validade: proposal.validUntil ? proposal.validUntil.split("-").reverse().join("/") : undefined,
     proposal_link: proposalUrl,
     numero: proposal.number,
+    titulo: proposal.title,
   };
   const template = kind === "send" ? templates.send : templates.reminder;
-  return deps.renderMessage ? deps.renderMessage(template, vars) : template.replaceAll("{{proposal_link}}", proposalUrl);
+  return (deps.renderMessage ?? renderProposalMessage)(template, vars);
+}
+
+/** A preview never rotates the token, records a view, or dispatches a message. */
+export async function previewProposalWhatsappMessage(deps: ProposalDeliveryDeps, input: { proposalId: string; tenantId: string; workspaceId: string; kind: "send" | "reminder" }): Promise<{ message: string }> {
+  const proposal = await getProposal(deps, input);
+  return { message: await buildMessage(deps, proposal, input.kind, undefined, "{{proposal_link}}") };
 }
 
 async function assertConversationOfContact(deps: ProposalDeliveryDeps, proposal: Proposal, conversationId: string): Promise<void> {
@@ -88,7 +96,7 @@ export async function deliverProposalThroughInbox(deps: ProposalDeliveryDeps, in
     // From this point Inbox may have persisted the message even if queue publication throws.
     // Keeping the reservation pending prevents a second send while reconciliation recovers it.
     dispatchStarted = true;
-    const message = await sendInboxMessage(deps.inbox, { tenantId: input.tenantId, workspaceId: input.workspaceId, conversationId: input.conversationId, body: text, sentByUserId: input.sentByUserId });
+    const message = await sendInboxMessage(deps.inbox, { tenantId: input.tenantId, workspaceId: input.workspaceId, conversationId: input.conversationId, body: text, sentByUserId: input.sentByUserId, linkPreview: true });
     await deps.proposalRepository.completeDelivery({ tenantId: input.tenantId, workspaceId: input.workspaceId, idempotencyKey: input.idempotencyKey, inboxMessageId: message.id, queuedAt: new Date().toISOString() });
     return sendProposal(deps, { proposalId: input.proposalId, tenantId: input.tenantId, workspaceId: input.workspaceId, actorUserId: input.sentByUserId, channel: "whatsapp", conversationId: input.conversationId, messageId: message.id });
   } catch (error) {
@@ -114,7 +122,7 @@ export async function sendProposalReminderThroughInbox(deps: ProposalDeliveryDep
     const proposalUrl = new URL(`/p/${rawToken}`, deps.appBaseUrl).toString();
     const text = await buildMessage(deps, proposal, "reminder", input.message, proposalUrl);
     dispatchStarted = true;
-    const message = await sendInboxMessage(deps.inbox, { tenantId: input.tenantId, workspaceId: input.workspaceId, conversationId: input.conversationId, body: text, sentByUserId: input.sentByUserId });
+    const message = await sendInboxMessage(deps.inbox, { tenantId: input.tenantId, workspaceId: input.workspaceId, conversationId: input.conversationId, body: text, sentByUserId: input.sentByUserId, linkPreview: true });
     await deps.proposalRepository.completeDelivery({ tenantId: input.tenantId, workspaceId: input.workspaceId, idempotencyKey: input.idempotencyKey, inboxMessageId: message.id, queuedAt: new Date().toISOString() });
     await deps.proposalRepository.appendEvent({ tenantId: proposal.tenantId, workspaceId: proposal.workspaceId, proposalId: proposal.id, eventType: "reminder_sent", payload: { channel: "whatsapp", conversationId: input.conversationId, messageId: message.id, byUserId: input.sentByUserId } });
     return getProposal(deps, { proposalId: input.proposalId, tenantId: input.tenantId, workspaceId: input.workspaceId });

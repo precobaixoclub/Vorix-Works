@@ -18,6 +18,7 @@ async function sellerFixture(page: Page, options: { approval?: boolean; failSend
     const request = route.request(), path = new URL(request.url()).pathname;
     let data: unknown;
     if (path === "/v1/deals") data = [deal];
+    else if (path.endsWith("/whatsapp-preview")) data = { message: "Olá, Ana!\n\n*PROPOSTA COMERCIAL*\nSolução de atendimento\n\n*Valor total:* R$ 2.949,00\n\n*Ver proposta completa*\n{{proposal_link}}" };
     else if (path === "/v1/pipelines") data = [{ id: deal.pipelineId, name: "Pipeline padrão", isDefault: true }];
     else if (path.endsWith(`/pipelines/${deal.pipelineId}/stages`)) data = [{ id: deal.stageId, pipelineId: deal.pipelineId, name: "Novo", position: 0, isWon: false, isLost: false }];
     else if (path === "/v1/contacts") data = [contact];
@@ -56,8 +57,12 @@ test("gera pelo card, revisa o modelo e envia ao WhatsApp sem duplicar a propost
   expect(fixture.generations).toHaveLength(1);
   expect(fixture.generations[0]).not.toHaveProperty("items");
   await review.getByRole("button", { name: "Enviar pelo WhatsApp", exact: true }).click();
-  await expect(review.getByRole("alert")).toContainText("Tente enviar novamente.");
-  await review.getByRole("button", { name: "Enviar pelo WhatsApp", exact: true }).click();
+  const whatsapp = page.getByRole("dialog", { name: "Enviar proposta pelo WhatsApp", exact: true });
+  await expect(whatsapp.getByLabel("Mensagem do WhatsApp", { exact: true })).toHaveValue(/PROPOSTA COMERCIAL/);
+  expect(fixture.sends).toHaveLength(0);
+  await whatsapp.getByRole("button", { name: "Enviar proposta", exact: true }).click();
+  await expect(whatsapp.getByRole("alert")).toContainText("Tente enviar novamente.");
+  await whatsapp.getByRole("button", { name: "Enviar proposta", exact: true }).click();
   await expect(page.getByRole("dialog", { name: "Proposta enviada", exact: true })).toBeVisible();
   expect(fixture.generations).toHaveLength(1);
   expect(fixture.sends).toHaveLength(2);

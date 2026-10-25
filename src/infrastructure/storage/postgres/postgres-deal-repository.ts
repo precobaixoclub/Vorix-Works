@@ -1,3 +1,4 @@
+import { ownedScopeSql } from "./postgres-owned-scope.js";
 import type { Pool } from "pg";
 import type {
   CreateDealInput,
@@ -57,6 +58,14 @@ type DealRow = {
   final_arr_cents: string | null;
   final_tcv_cents: string | null;
   final_snapshot: Record<string, unknown> | null;
+  archived_at: Date | null;
+  archive_manual_hold: boolean;
+  first_closed_at: Date | null;
+  reopened_at: Date | null;
+  reopened_by_user_id: string | null;
+  reopen_count: number;
+  closure_source: string | null;
+  loss_reason_id: string | null;
 };
 
 const optionalNumber = (value: string | number | null): number | undefined => (value === null ? undefined : Number(value));
@@ -111,6 +120,14 @@ function toDomain(row: DealRow): Deal {
     finalArrCents: optionalNumber(row.final_arr_cents),
     finalTcvCents: optionalNumber(row.final_tcv_cents),
     finalSnapshot: row.final_snapshot ?? undefined,
+    archivedAt: row.archived_at?.toISOString(),
+    archiveManualHold: row.archive_manual_hold,
+    firstClosedAt: row.first_closed_at?.toISOString(),
+    reopenedAt: row.reopened_at?.toISOString(),
+    reopenedByUserId: row.reopened_by_user_id ?? undefined,
+    reopenCount: row.reopen_count,
+    closureSource: row.closure_source ?? undefined,
+    lossReasonId: row.loss_reason_id ?? undefined,
   };
 }
 
@@ -148,18 +165,16 @@ function buildFilterConditions(filter: ListDealsFilter, params: unknown[]): stri
     params.push(filter.status);
     conditions.push(`status = $${params.length}`);
   }
-  if (filter.ownerUserIdsIn || filter.teamIdsIn) {
-    const scoped: string[] = [];
-    if (filter.ownerUserIdsIn?.length) {
-      params.push([...filter.ownerUserIdsIn]);
-      scoped.push(`owner_user_id = any($${params.length}::text[])`);
-    }
-    if (filter.teamIdsIn?.length) {
-      params.push([...filter.teamIdsIn]);
-      scoped.push(`team_id = any($${params.length}::text[])`);
-    }
-    conditions.push(scoped.length ? `(${scoped.join(" or ")})` : "false");
+  switch (filter.boardView) {
+    case "operational": conditions.push("archived_at is null", "status <> 'cancelled'"); break;
+    case "open": conditions.push("status = 'open'"); break;
+    case "won": conditions.push("status = 'won'"); break;
+    case "lost": conditions.push("status = 'lost'"); break;
+    case "closed": conditions.push("status in ('won', 'lost')"); break;
+    case "archived": conditions.push("archived_at is not null"); break;
   }
+  const scope = ownedScopeSql(filter, params);
+  if (scope) conditions.push(scope);
   return conditions;
 }
 
@@ -241,11 +256,12 @@ export class PostgresDealRepository implements DealRepositoryPort {
       `update deals set
          stage_id = $2, loss_reason = $3, won_at = $4, lost_at = $5,
          last_stage_changed_at = now(), updated_at = now()
-       where id = $1
+       where id = $1 and ($6::text is null or status = $6)
+         and ($7::timestamptz is null or date_trunc('milliseconds', updated_at) = $7::timestamptz)
        returning *`,
-      [id, input.stageId, input.lossReason ?? null, input.wonAt ?? null, input.lostAt ?? null],
+      [id, input.stageId, input.lossReason ?? null, input.wonAt ?? null, input.lostAt ?? null, input.expectedStatus ?? null, input.expectedUpdatedAt ?? null],
     );
-    if (!result.rows[0]) throw new Error(`DEAL_NOT_FOUND: oportunidade "${id}" não existe.`);
+    if (!result.rows[0]) throw new Error("DEAL_CONFLICT: a oportunidade foi alterada. Atualize e tente novamente.");
     return toDomain(result.rows[0]);
   }
 
@@ -257,20 +273,86 @@ export class PostgresDealRepository implements DealRepositoryPort {
 
   async setClosure(id: string, input: DealClosureInput): Promise<Deal> {
     const result = await this.pool.query<DealRow>(
-      `update deals set status = $2, forecast_category = $3, closed_at = $4, closed_by_user_id = $5, credited_owner_user_id = $6,
+      `with changed as (update deals set status = $2, forecast_category = $3, closed_at = $4, closed_by_user_id = $5, credited_owner_user_id = $6,
          credited_team_id = $7, won_reason = $8, loss_reason = $9, close_comment = $10, competitor_id = $11, won_proposal_id = $12,
          final_value_cents = $13, final_cost_cents = $14, final_gross_profit_cents = $15, final_margin_bp = $16,
-         final_mrr_cents = $17, final_arr_cents = $18, final_tcv_cents = $19, final_snapshot = $20, updated_at = now()
-       where id = $1 returning *`,
+         final_mrr_cents = $17, final_arr_cents = $18, final_tcv_cents = $19, final_snapshot = $20, updated_at = now(),
+         stage_id = coalesce($21, stage_id),
+         last_stage_changed_at = case when $21::text is not null and stage_id <> $21 then now() else last_stage_changed_at end,
+         won_at = case when $2 = 'won' then $4::timestamptz else null end,
+         lost_at = case when $2 = 'lost' then $4::timestamptz else null end,
+         first_closed_at = coalesce(first_closed_at, $4::timestamptz),
+         reopened_at = case when status <> 'open' and $2 = 'open' then now() else reopened_at end,
+         reopened_by_user_id = case when status <> 'open' and $2 = 'open' then $24 else reopened_by_user_id end,
+         reopen_count = reopen_count + case when status <> 'open' and $2 = 'open' then 1 else 0 end,
+         closure_source = $22, loss_reason_id = $25,
+         archived_at = case when status <> $2 then null else archived_at end,
+         archive_manual_hold = case when status <> $2 then false else archive_manual_hold end
+       where id = $1 and ($23::text is null or status = $23)
+         and ($28::timestamptz is null or date_trunc('milliseconds', updated_at) = $28::timestamptz) returning *),
+       events as (
+         insert into timeline_events (id, tenant_id, workspace_id, entity_type, entity_id, event_type, actor_type, actor_id, payload)
+         select $27 || '-' || e.ordinality, d.tenant_id, d.workspace_id, 'deal', d.id,
+           e.value->>'eventType', e.value->>'actorType', e.value->>'actorId',
+           coalesce(e.value->'payload', '{}'::jsonb) || jsonb_build_object('closedAt', d.closed_at, 'firstClosedAt', d.first_closed_at, 'reopenCount', d.reopen_count)
+         from changed d cross join jsonb_array_elements($26::jsonb) with ordinality as e(value, ordinality)
+       ) select * from changed`,
       [
         id, input.status, input.forecastCategory, input.closedAt, input.closedByUserId, input.creditedOwnerUserId, input.creditedTeamId,
         input.wonReason, input.lossReason, input.closeComment, input.competitorId, input.wonProposalId, input.finalValueCents,
         input.finalCostCents, input.finalGrossProfitCents, input.finalMarginBp, input.finalMrrCents, input.finalArrCents,
         input.finalTcvCents, input.finalSnapshot ? JSON.stringify(input.finalSnapshot) : null,
+        input.stageId ?? null, input.closureSource ?? null, input.expectedStatus ?? null, input.reopenedByUserId ?? null,
+        input.lossReasonId ?? null,
+        JSON.stringify(input.auditEvents ?? []), `timeline-${crypto.randomUUID()}`, input.expectedUpdatedAt ?? null,
       ],
     );
-    if (!result.rows[0]) throw new Error(`DEAL_NOT_FOUND: oportunidade "${id}" não existe.`);
+    if (!result.rows[0]) throw new Error("DEAL_CONFLICT: a oportunidade foi alterada por outra ação. Atualize e tente novamente.");
     return toDomain(result.rows[0]);
+  }
+
+  async setArchived(input: { id: string; tenantId: string; workspaceId: string; archived: boolean; actorUserId: string }): Promise<Deal> {
+    const result = await this.pool.query<DealRow>(
+      `with changed as (
+        update deals set archived_at = case when $4 then now() else null end, archive_manual_hold = not $4, updated_at = now()
+        where id = $1 and tenant_id = $2 and workspace_id = $3 and status in ('won', 'lost')
+          and (($4 and archived_at is null) or (not $4 and archived_at is not null))
+        returning *
+      ), event as (
+        insert into timeline_events (id, tenant_id, workspace_id, entity_type, entity_id, event_type, actor_type, actor_id, payload)
+        select $6, tenant_id, workspace_id, 'deal', id, case when $4 then 'deal_archived' else 'deal_unarchived' end, 'user', $5,
+          jsonb_build_object('source', 'manual', 'status', status, 'stageId', stage_id, 'archivedAt', archived_at) from changed
+      ) select * from changed`,
+      [input.id, input.tenantId, input.workspaceId, input.archived, input.actorUserId, `timeline-${crypto.randomUUID()}`],
+    );
+    if (!result.rows[0]) {
+      const existing = await this.getById(input.id);
+      if (existing?.tenantId === input.tenantId && existing.workspaceId === input.workspaceId && (existing.status === "won" || existing.status === "lost") && Boolean(existing.archivedAt) === input.archived) return existing;
+      throw new Error("DEAL_CLOSED: somente oportunidades ganhas ou perdidas podem ser arquivadas.");
+    }
+    return toDomain(result.rows[0]);
+  }
+
+  /** Archive and its audit event commit together. Concurrent workers update each row once. */
+  async archiveDueClosedDeals(scope?: { tenantId: string; workspaceId: string }): Promise<number> {
+    const result = await this.pool.query<{ id: string }>(
+      `with changed as (
+        update deals d set archived_at = now(), updated_at = now()
+        from commercial_settings s where s.workspace_id = d.workspace_id and s.tenant_id = d.tenant_id
+        and d.status in ('won', 'lost') and d.archived_at is null and not d.archive_manual_hold
+        and s.closed_deal_archive_days is not null
+        and d.closed_at + s.closed_deal_archive_days * interval '1 day' <= now()
+        and ($1::text is null or (d.tenant_id = $1 and d.workspace_id = $2))
+        returning d.*
+      ), event as (
+        insert into timeline_events (id, tenant_id, workspace_id, entity_type, entity_id, event_type, actor_type, payload)
+        select $3 || '-' || id, tenant_id, workspace_id, 'deal', id, 'deal_archived', 'system',
+          jsonb_build_object('source', 'retention', 'status', status, 'stageId', stage_id, 'closedAt', closed_at, 'archivedAt', archived_at)
+        from changed
+      ) select id from changed`,
+      [scope?.tenantId ?? null, scope?.workspaceId ?? null, `timeline-${crypto.randomUUID()}`],
+    );
+    return result.rows.length;
   }
 
   async findOpenSimilar(input: { tenantId: string; workspaceId: string; contactId?: string; pipelineId: string; title: string; limit?: number }): Promise<Deal[]> {
@@ -301,7 +383,7 @@ export class PostgresDealRepository implements DealRepositoryPort {
     const params: unknown[] = [filter.tenantId, filter.workspaceId];
     const conditions = buildFilterConditions(filter, params);
     const result = await this.pool.query<{ stage_id: string; count: string; value_cents_sum: string | null }>(
-      `select stage_id, count(*) as count, coalesce(sum(value_cents), 0) as value_cents_sum
+      `select stage_id, count(*) as count, coalesce(sum(case when status = 'won' then coalesce(final_value_cents, value_cents) else value_cents end), 0) as value_cents_sum
        from deals where ${conditions.join(" and ")}
        group by stage_id`,
       params,

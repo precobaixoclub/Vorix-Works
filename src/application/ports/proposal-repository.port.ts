@@ -27,7 +27,7 @@ export type CreateProposalInput = {
 
 export type UpdateProposalInput = Partial<Omit<CreateProposalInput, "tenantId" | "workspaceId" | "publicTokenHash" | "number" | "version" | "rootProposalId" | "supersedesProposalId" | "createdByUserId" | "status">>;
 
-export type ListProposalsFilter = {
+export type ListProposalsFilter = { ownUserId?: string; ownerUserIdsIn?: readonly string[]; teamIdsIn?: readonly string[];
   tenantId: string;
   workspaceId: string;
   dealId?: string;

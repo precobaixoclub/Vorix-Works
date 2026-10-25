@@ -2,7 +2,8 @@ export function formatDate(iso: string | undefined): string {
   if (!iso) return "—";
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return "—";
-  return new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "short", year: "numeric" }).format(date);
+  // A date-only value is a calendar day, not midnight UTC in the viewer's timezone.
+  return new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "short", year: "numeric", ...(/^\d{4}-\d{2}-\d{2}$/.test(iso) ? { timeZone: "UTC" } : {}) }).format(date);
 }
 
 export function formatDateTime(iso: string | undefined): string {

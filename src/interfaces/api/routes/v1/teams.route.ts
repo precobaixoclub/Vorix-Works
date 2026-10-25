@@ -1,7 +1,10 @@
 import type { FastifyInstance } from "fastify";
 import { addTeamMember, createTeam, deleteTeam, listTeamMembers, listTeams, removeTeamMember, updateTeam, updateTeamMember } from "../../../../application/identity/team-use-cases.js";
 import type { TeamUseCaseDeps } from "../../../../application/identity/team-use-cases.js";
-import { ConflictError, NotFoundError } from "../../http/app-error.js";
+import { ConflictError, ForbiddenError, NotFoundError } from "../../http/app-error.js";
+import { hasPermission, type AuthPrincipal } from "../../../../domain/identity/identity.model.js";
+import { isTeamManagerRole } from "../../../../domain/identity/access-control.js";
+import { assertTeamMembershipChangeAllowed, auditTeamMembershipChange, resolveAccessContext, type AccessControlDeps } from "../../../../application/identity/access-control-use-cases.js";
 import { requirePermission } from "../../http/require-principal.js";
 import { successEnvelope } from "../../http/response-envelope.js";
 
@@ -42,6 +45,7 @@ const UPDATE_MEMBER_BODY_SCHEMA = {
     attendanceLevel: { type: "string", minLength: 1, maxLength: 20 },
     participatesInRoundRobin: { type: "boolean" },
     setPrincipal: { type: "boolean" },
+    role: { type: "string", enum: ["owner", "admin", "editor", "viewer"] },
   },
 } as const;
 
@@ -52,9 +56,24 @@ function translateTeamError(error: unknown): never {
   throw error;
 }
 
-export async function registerTeamsRoutes(app: FastifyInstance, deps: TeamUseCaseDeps): Promise<void> {
+type TeamsRoutesDeps = TeamUseCaseDeps & Partial<Pick<AccessControlDeps, "accessAuditLog" | "onAccessChanged">>;
+
+/** Guarda das alterações de membros (0173): proteções de `assertTeamMembershipChangeAllowed` como
+ * 403, nunca um erro cru. */
+async function guardTeamChange(deps: TeamsRoutesDeps, principal: AuthPrincipal, input: { userId: string; changesManager: boolean }) {
+  const context = await resolveAccessContext(deps, principal);
+  try {
+    assertTeamMembershipChangeAllowed(context, input);
+  } catch (error) {
+    throw new ForbiddenError(error instanceof Error ? error.message.replace(/^[A-Z_]+: /, "") : "Sem permissão.");
+  }
+  return context;
+}
+
+export async function registerTeamsRoutes(app: FastifyInstance, deps: TeamsRoutesDeps): Promise<void> {
+  // Nomes de equipes são estrutura, não dados: quem opera precisa deles (transferir, kanban).
   app.get("/teams", { schema: { querystring: WORKSPACE_QUERY_SCHEMA } }, async (request) => {
-    const principal = requirePermission(request, "team:manage");
+    const principal = requirePermission(request, "team:read");
     const { workspaceId } = request.query as { workspaceId: string };
     const teams = await listTeams(deps, { tenantId: principal.tenantId, workspaceId });
     return successEnvelope(teams, request.id);
@@ -94,10 +113,12 @@ export async function registerTeamsRoutes(app: FastifyInstance, deps: TeamUseCas
   });
 
   app.get("/teams/:id/members", { schema: { params: ID_PARAMS_SCHEMA, querystring: WORKSPACE_QUERY_SCHEMA } }, async (request) => {
-    const principal = requirePermission(request, "team:manage");
+    const principal = requirePermission(request, "team:read");
     const { id } = request.params as { id: string };
     const { workspaceId } = request.query as { workspaceId: string };
     try {
+      // Membros: quem gerencia equipes (team:manage) vê todas; os demais, só as equipes de que participam.
+      if (!hasPermission(principal, "team:manage") && !(await resolveAccessContext(deps, principal)).memberTeamIds.includes(id)) throw new NotFoundError("TEAM_NOT_FOUND: equipe não encontrada.");
       const members = await listTeamMembers(deps, { teamId: id, tenantId: principal.tenantId, workspaceId });
       return successEnvelope(members, request.id);
     } catch (error) {
@@ -112,7 +133,9 @@ export async function registerTeamsRoutes(app: FastifyInstance, deps: TeamUseCas
       workspaceId: string; userId: string; role: "owner" | "admin" | "editor" | "viewer"; attendanceLevel?: string; participatesInRoundRobin?: boolean;
     };
     try {
+      const actor = await guardTeamChange(deps, principal, { userId, changesManager: isTeamManagerRole(role) });
       const membership = await addTeamMember(deps, { teamId: id, tenantId: principal.tenantId, workspaceId, userId, role, attendanceLevel, participatesInRoundRobin });
+      await auditTeamMembershipChange(deps, actor, { teamId: id, userId, after: membership });
       reply.code(201);
       return successEnvelope(membership, request.id);
     } catch (error) {
@@ -126,11 +149,15 @@ export async function registerTeamsRoutes(app: FastifyInstance, deps: TeamUseCas
   app.patch("/teams/:id/members/:userId", { schema: { params: { type: "object", required: ["id", "userId"], properties: { id: { type: "string" }, userId: { type: "string" } } }, body: UPDATE_MEMBER_BODY_SCHEMA } }, async (request) => {
     const principal = requirePermission(request, "team:manage");
     const { id, userId } = request.params as { id: string; userId: string };
-    const { workspaceId, attendanceLevel, participatesInRoundRobin, setPrincipal } = request.body as {
-      workspaceId: string; attendanceLevel?: string; participatesInRoundRobin?: boolean; setPrincipal?: boolean;
+    const { workspaceId, attendanceLevel, participatesInRoundRobin, setPrincipal, role } = request.body as {
+      workspaceId: string; attendanceLevel?: string; participatesInRoundRobin?: boolean; setPrincipal?: boolean; role?: "owner" | "admin" | "editor" | "viewer";
     };
     try {
-      const membership = await updateTeamMember(deps, { teamId: id, tenantId: principal.tenantId, workspaceId, userId, attendanceLevel, participatesInRoundRobin, setPrincipal });
+      const before = await deps.teamMembershipRepository.getByTeamAndUser(id, userId);
+      const changesManager = role !== undefined && before !== undefined && isTeamManagerRole(role) !== isTeamManagerRole(before.role);
+      const actor = await guardTeamChange(deps, principal, { userId, changesManager });
+      const membership = await updateTeamMember(deps, { teamId: id, tenantId: principal.tenantId, workspaceId, userId, attendanceLevel, participatesInRoundRobin, setPrincipal, role });
+      if (changesManager) await auditTeamMembershipChange(deps, actor, { teamId: id, userId, before, after: membership });
       return successEnvelope(membership, request.id);
     } catch (error) {
       translateTeamError(error);
@@ -144,7 +171,10 @@ export async function registerTeamsRoutes(app: FastifyInstance, deps: TeamUseCas
     const { id, userId } = request.params as { id: string; userId: string };
     const { workspaceId } = request.body as { workspaceId: string };
     try {
+      const before = await deps.teamMembershipRepository.getByTeamAndUser(id, userId);
+      const actor = await guardTeamChange(deps, principal, { userId, changesManager: before ? isTeamManagerRole(before.role) : false });
       await removeTeamMember(deps, { teamId: id, tenantId: principal.tenantId, workspaceId, userId });
+      if (before) await auditTeamMembershipChange(deps, actor, { teamId: id, userId, before });
       reply.code(204);
       return null;
     } catch (error) {

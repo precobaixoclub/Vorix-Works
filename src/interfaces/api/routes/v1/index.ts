@@ -1,3 +1,8 @@
+import { registerCommercialResponseVisibility } from "../../http/commercial-response-visibility.js";
+import { registerWorkspaceTenantGuard } from "../../http/workspace-tenant-guard.js";
+import { registerCrmAccessGuards } from "../../http/crm-access.js";
+import { moveDealStage } from "../../../../application/crm/deal-use-cases.js";
+import type { AutomationUseCaseDeps } from "../../../../application/crm/automation-use-cases.js";
 import type { FastifyInstance } from "fastify";
 import { requirePrincipal } from "../../http/require-principal.js";
 import { successEnvelope } from "../../http/response-envelope.js";
@@ -25,6 +30,8 @@ import { registerTikTokRoutes } from "./tiktok.route.js";
 import { registerYouTubeRoutes } from "./youtube.route.js";
 import { registerInstagramRoutes } from "./instagram.route.js";
 import { registerInboxRoutes } from "./inbox.route.js";
+import { registerDashboardRoutes } from "./dashboard.route.js";
+import { PostgresDashboardRepository } from "../../../../infrastructure/storage/postgres/postgres-dashboard-repository.js";
 import { registerNotificationRoutes } from "./notifications.route.js";
 import { registerSolutionRoutes } from "./solutions.route.js";
 import { registerMeetingRoutes } from "./meetings.route.js";
@@ -95,6 +102,7 @@ import { GoogleMeetTranscriptClient } from "../../../../infrastructure/meetings/
  * decorators do Fastify — nenhuma rota importa um adapter diretamente.
  */
 export async function registerV1Routes(app: FastifyInstance): Promise<void> {
+  registerWorkspaceTenantGuard(app, app.zunoContainer.workspaceRepository);
   // Trial + Product Analytics — construído uma ÚNICA vez aqui (não dentro do bloco `if
   // (identity)` mais abaixo) porque `registerAuthRoutes` (signup) já precisa dele antes disso.
   // `undefined` quando `identity` não existe (modo memória/noop) — toda instrumentação vira um
@@ -331,6 +339,8 @@ export async function registerV1Routes(app: FastifyInstance): Promise<void> {
       quickReplyRepository: app.zunoContainer.inboxQuickReplyRepository,
       stickerRepository: app.zunoContainer.inboxStickerRepository,
       serviceSettingsRepository: app.zunoContainer.inboxServiceSettingsRepository,
+      attendanceRepository: app.zunoContainer.inboxAttendanceRepository,
+      closureCatalogRepository: app.zunoContainer.inboxClosureCatalogRepository,
     };
     await registerInboxRoutes(app, sharedInboxDeps);
     // Fase 7 (Resultados) — métricas agregadas de atendimento, mesmo kill switch do módulo.
@@ -340,10 +350,13 @@ export async function registerV1Routes(app: FastifyInstance): Promise<void> {
   // só quando `identity` existe (driver postgres), nunca em modo memória (dev/teste sem banco).
   if (app.zunoContainer.identity) {
     const identity = app.zunoContainer.identity;
+    const crmAccess = { teamRepository: identity.teamRepository, inboxConversationRepository: app.zunoContainer.inboxConversationRepository, workspaceRepository: app.zunoContainer.workspaceRepository, dealRepository: identity.dealRepository, contactRepository: identity.contactRepository, taskRepository: identity.taskRepository, proposalRepository: identity.proposalRepository, teamMembershipRepository: identity.teamMembershipRepository, membershipRepository: identity.membershipRepository };
+    registerCrmAccessGuards(app, crmAccess);
+    registerCommercialResponseVisibility(app, { salesConfigRepository: identity.salesConfigRepository });
     // CRM/Comercial (Fase 6) — deps de automação, reaproveitadas por Contatos/Negócios/Propostas
     // (opcional em cada um: quando ausente, nenhuma automação dispara, comportamento idêntico às
     // fases anteriores).
-    const automationDeps = {
+    const automationDeps: AutomationUseCaseDeps = {
       automationRuleRepository: identity.automationRuleRepository,
       automationRunLogRepository: identity.automationRunLogRepository,
       contactRepository: identity.contactRepository,
@@ -353,7 +366,7 @@ export async function registerV1Routes(app: FastifyInstance): Promise<void> {
       pipelineStageRepository: identity.pipelineStageRepository,
       timelineEventRepository: identity.timelineEventRepository,
     };
-    await registerTeamsRoutes(app, { teamRepository: identity.teamRepository, teamMembershipRepository: identity.teamMembershipRepository });
+    await registerTeamsRoutes(app, { teamRepository: identity.teamRepository, teamMembershipRepository: identity.teamMembershipRepository, accessAuditLog: identity.accessAuditLog, onAccessChanged: (userId, tenantId) => identity.accessResolver.invalidate(userId, tenantId) });
     await registerTenantMembersRoutes(app, {
       assertCanAddMember: tenantId => assertWithinLimit(entitlementDeps, { tenantId, resource: "users" }),
       passwordHasher: identity.passwordHasher,
@@ -362,10 +375,15 @@ export async function registerV1Routes(app: FastifyInstance): Promise<void> {
       userRepository: identity.userRepository,
       workspaceRepository: app.zunoContainer.workspaceRepository,
       productAnalytics: productAnalyticsDeps,
+      teamRepository: identity.teamRepository,
+      teamMembershipRepository: identity.teamMembershipRepository,
+      accessAuditLog: identity.accessAuditLog,
+      onAccessChanged: (userId, tenantId) => identity.accessResolver.invalidate(userId, tenantId),
     });
     // Celular é o pivô do CRM: telefone na lista de contatos e limpeza dos contatos só com LID.
     await registerContactPhonesRoutes(app, { contactPhoneRepository: new PostgresContactPhoneRepository(identity.pool) });
     await registerContactsRoutes(app, {
+      access: crmAccess,
       contactRepository: identity.contactRepository,
       contactIdentityRepository: identity.contactIdentityRepository,
       timelineEventRepository: identity.timelineEventRepository,
@@ -385,10 +403,12 @@ export async function registerV1Routes(app: FastifyInstance): Promise<void> {
     await registerPipelinesRoutes(app, {
       pipelineRepository: identity.pipelineRepository,
       pipelineStageRepository: identity.pipelineStageRepository,
+      teamMembershipRepository: identity.teamMembershipRepository,
     });
     // Sales Engine (Conversas) — oportunidade como negociação completa: itens com snapshot,
     // margem, política comercial/aprovações, fechamento com snapshot, catálogo estendido.
     const salesDeps = {
+      workspaceRepository: app.zunoContainer.workspaceRepository,
       dealRepository: identity.dealRepository,
       pipelineStageRepository: identity.pipelineStageRepository,
       productRepository: identity.productRepository,
@@ -407,9 +427,10 @@ export async function registerV1Routes(app: FastifyInstance): Promise<void> {
       // Metas: cada ganho reavalia "meta atingida" (notifica uma única vez por meta).
       onDealWon: async (deal: import("../../../../domain/crm/crm.model.js").Deal) => checkGoalsReached(salesPerformanceDeps, deal),
     };
+    automationDeps.transitionDealStage = (deal, targetStageId) => moveDealStage({ ...salesDeps, sales: salesDeps }, { dealId: deal.id, tenantId: deal.tenantId, workspaceId: deal.workspaceId, targetStageId, source: "automation" });
     const salesPerformanceDeps = { ...salesDeps, goalRepository: identity.salesGoalRepository, analyticsRepository: identity.salesAnalyticsRepository };
     // Proposta como parte da negociação: gate de aprovação no envio, alertas ao vendedor e o
-    // efeito configurável do aceite (padrão: só sinaliza; ganho automático se o tenant quiser).
+    // efeito configurável do aceite (padrão: ganho automático; preserva preferências existentes).
     const proposalSalesHooks = {
       approvalGate: proposalApprovalGate(salesDeps),
       onBuyerEvent: proposalBuyerEventHandler(salesDeps),
@@ -427,6 +448,15 @@ export async function registerV1Routes(app: FastifyInstance): Promise<void> {
     // IA comercial: leitura da conversa do contato por ponte (sales nunca importa inbox) e gerador
     // via AI Gateway (mesmo stack/créditos do Copiloto Comercial).
     const inboxForInsights = sharedInboxDeps;
+    // Dashboard principal (0174): atendimento + SLA + CSAT + comercial + metas, sempre no escopo.
+    await registerDashboardRoutes(app, {
+      dashboardRepository: new PostgresDashboardRepository(identity.pool),
+      workspaceRepository: app.zunoContainer.workspaceRepository,
+      membershipRepository: identity.membershipRepository,
+      teamRepository: identity.teamRepository,
+      teamMembershipRepository: identity.teamMembershipRepository,
+      sales: salesPerformanceDeps,
+    });
     await registerSalesPerformanceRoutes(app, {
       ...salesPerformanceDeps,
       proposalRepository: identity.proposalRepository,
@@ -444,7 +474,7 @@ export async function registerV1Routes(app: FastifyInstance): Promise<void> {
       } : undefined,
     });
     // CRM/Comercial (Fase 3) — Tarefas, Catálogo de produtos, Propostas (com link público).
-    await registerTasksRoutes(app, { taskRepository: identity.taskRepository, timelineEventRepository: identity.timelineEventRepository });
+    await registerTasksRoutes(app, { access: crmAccess, taskRepository: identity.taskRepository, timelineEventRepository: identity.timelineEventRepository });
     await registerProductsRoutes(app, {
       productRepository: identity.productRepository,
       productEngineRepository: identity.productEngineRepository,
@@ -467,6 +497,7 @@ export async function registerV1Routes(app: FastifyInstance): Promise<void> {
       ...proposalSalesHooks,
     };
     await registerProposalsRoutes(app, {
+      access: crmAccess,
       ...proposalUseCaseDeps,
       delivery: sharedInboxDeps ? {
         ...proposalUseCaseDeps,
@@ -531,7 +562,7 @@ export async function registerV1Routes(app: FastifyInstance): Promise<void> {
       generator: new AiGatewayCommercialCopilotGenerator(app.zunoContainer.aiGateway),
     });
     // CRM/Comercial (Fase 7) — métricas agregadas de resultados comerciais.
-    await registerCommercialMetricsRoutes(app, { commercialMetricsRepository: identity.commercialMetricsRepository });
+    await registerCommercialMetricsRoutes(app, { commercialMetricsRepository: identity.commercialMetricsRepository, teamMembershipRepository: identity.teamMembershipRepository });
     // SaaS Commercialization (Fase 1) — Billing Foundation: canUse()/limit() centralizados.
     const entitlementDeps = {
       subscriptionPendingChangeRepository:identity.subscriptionPendingChangeRepository,

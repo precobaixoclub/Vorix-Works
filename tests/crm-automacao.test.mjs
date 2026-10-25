@@ -59,7 +59,7 @@ test("API cria exemplos já desativados; não age até a ativação explícita",
   const deps = automationDeps();
   const app = Fastify();
   app.addHook("onRequest", async request => {
-    request.zunoContext = { principal: { tenantId, userId: "fixture-admin", role: "admin" } };
+    request.zunoContext = { principal: { tenantId, userId: "fixture-admin", role: "owner" } };
   });
   await registerAutomationRulesRoutes(app, deps);
   try {
@@ -120,8 +120,8 @@ async function makePipelineWithStages(tenantId, workspaceId) {
   const pipeline = await createPipeline(deps, { tenantId, workspaceId, name: "Vendas" });
   const novo = await createStage(deps, { pipelineId: pipeline.id, tenantId, workspaceId, name: "Novo", position: 0 });
   const negociacao = await createStage(deps, { pipelineId: pipeline.id, tenantId, workspaceId, name: "Negociação", position: 1 });
-  const ganho = await createStage(deps, { pipelineId: pipeline.id, tenantId, workspaceId, name: "Ganho", position: 2, isWon: true });
-  const perdido = await createStage(deps, { pipelineId: pipeline.id, tenantId, workspaceId, name: "Perdido", position: 3, isLost: true });
+  const ganho = (await deps.pipelineStageRepository.listByPipeline(pipeline.id)).find(stage => stage.isWon);
+  const perdido = (await deps.pipelineStageRepository.listByPipeline(pipeline.id)).find(stage => stage.isLost);
   return { pipeline, novo, negociacao, ganho, perdido };
 }
 
@@ -250,6 +250,42 @@ test("deal_stage_changed: move_deal_stage usa o repositório direto (nunca reent
   const loseLogs = await listAutomationRunLogs(deps, { ruleId: ruleLose.id, tenantId: tenantId2, workspaceId: workspace2.id });
   assert.equal(loseLogs[0].actionTaken, false);
   assert.ok(loseLogs[0].error.includes("AUTOMATION_ACTION_CANNOT_AUTO_LOSE"));
+});
+
+test("Recontato por fase agenda tarefa com prazo e responsável, restrito ao funil configurado", async () => {
+  const tenantId = nextId("recontact-tenant");
+  const workspace = await makeWorkspace(tenantId);
+  const deps = automationDeps();
+  const { pipeline, novo, negociacao } = await makePipelineWithStages(tenantId, workspace.id);
+  const conditions = [{ field: "pipelineId", equals: pipeline.id }, { field: "stageId", equals: negociacao.id }];
+  const app = Fastify();
+  app.addHook("onRequest", async request => { request.zunoContext = { principal: { tenantId, userId: "admin", role: "owner" } }; });
+  await registerAutomationRulesRoutes(app, deps);
+  try {
+    const response = await app.inject({ method: "POST", url: "/automation-rules", payload: {
+      workspaceId: workspace.id, name: "Recontato em 24 horas", trigger: "deal_stage_changed", conditions,
+      action: "create_task", actionConfig: { taskType: "follow_up", taskTitle: "Retomar negociação", taskDelayHours: 24 }, active: true,
+    } });
+    assert.equal(response.statusCode, 201, response.body);
+    assert.equal(response.json().data.actionConfig.taskDelayHours, 24);
+    const deal = await createDeal(dealDeps(deps), { tenantId, workspaceId: workspace.id, pipelineId: pipeline.id, stageId: novo.id, title: "Sem contato vinculado", ownerUserId: "seller" });
+    const before = Date.now();
+    await moveDealStage(dealDeps(deps), { tenantId, workspaceId: workspace.id, dealId: deal.id, targetStageId: negociacao.id });
+    const tasks = await deps.taskRepository.listByWorkspace({ tenantId, workspaceId: workspace.id, dealId: deal.id });
+    assert.equal(tasks.length, 1);
+    assert.equal(tasks[0].ownerUserId, "seller");
+    assert.equal(tasks[0].type, "follow_up");
+    assert.ok(Date.parse(tasks[0].dueAt) >= before + 24 * 3_600_000);
+    assert.ok(Date.parse(tasks[0].dueAt) <= Date.now() + 24 * 3_600_000);
+    const other = await makePipelineWithStages(tenantId, workspace.id);
+    const otherDeal = await createDeal(dealDeps(deps), { tenantId, workspaceId: workspace.id, pipelineId: other.pipeline.id, stageId: other.novo.id, title: "Outro funil" });
+    await moveDealStage(dealDeps(deps), { tenantId, workspaceId: workspace.id, dealId: otherDeal.id, targetStageId: other.negociacao.id });
+    assert.equal((await deps.taskRepository.listByWorkspace({ tenantId, workspaceId: workspace.id, dealId: otherDeal.id })).length, 0);
+    const invalid = await app.inject({ method: "POST", url: "/automation-rules", payload: {
+      workspaceId: workspace.id, name: "Prazo inválido", trigger: "deal_created", action: "create_task", actionConfig: { taskDelayHours: -1 },
+    } });
+    assert.equal(invalid.statusCode, 400);
+  } finally { await app.close(); }
 });
 
 test("Falha de uma ação (config inválida) nunca derruba a ação de negócio que disparou o gatilho", async () => {

@@ -94,7 +94,7 @@ test.describe("renderização real de mídia (imagem/áudio/vídeo/documento)", 
     await page.goto(`/workspaces/${WORKSPACE_ID}/conversas`);
     await page.getByText("Carla Mendes").click();
     await expect(page.getByText("contrato.pdf")).toBeVisible();
-    const [popup] = await Promise.all([page.waitForEvent("popup"), page.getByRole("button", { name: "Abrir" }).click()]);
+    const [popup] = await Promise.all([page.waitForEvent("popup"), page.getByRole("button", { name: "Abrir", exact: true }).click()]);
     expect(popup).toBeTruthy();
     await popup.close();
   });
@@ -105,7 +105,7 @@ test.describe("renderização real de mídia (imagem/áudio/vídeo/documento)", 
     // Não clicamos em play aqui de propósito — não há um fixture de vídeo decodificável disponível
     // neste ambiente (sem ffmpeg para gerar um mp4 válido); o objetivo deste teste é só confirmar
     // que o estado inicial (lazy, sem carregar bytes até o clique) renderiza corretamente.
-    await expect(page.getByRole("button", { name: "Reproduzir vídeo" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Abrir vídeo", exact: true })).toBeVisible();
   });
 });
 

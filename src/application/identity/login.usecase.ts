@@ -40,7 +40,8 @@ export async function login(deps: IdentityUseCaseDeps, input: LoginUseCaseInput)
   }
 
   const memberships = await deps.membershipRepository.listByUser(user.id);
-  const activeMembership = memberships[0];
+  // Membership desativada (0173) nunca abre sessão; `status` ausente = registro antigo, ativo.
+  const activeMembership = memberships.find((membership) => membership.status !== "disabled");
   if (!activeMembership) {
     await deps.auditLog.record({ eventType: "login_failed", userId: user.id, metadata: { reason: "no_tenant_access" } });
     throw new Error("IDENTITY_NO_TENANT_ACCESS: usuário não pertence a nenhum tenant.");

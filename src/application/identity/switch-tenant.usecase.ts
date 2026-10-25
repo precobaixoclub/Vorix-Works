@@ -13,7 +13,7 @@ export type SwitchTenantUseCaseOutput = { accessToken: string; tenantId: string;
  */
 export async function switchTenant(deps: IdentityUseCaseDeps, input: SwitchTenantUseCaseInput): Promise<SwitchTenantUseCaseOutput> {
   const membership = await deps.membershipRepository.getByUserAndTenant(input.userId, input.targetTenantId);
-  if (!membership) {
+  if (!membership || membership.status === "disabled") {
     throw new Error(`IDENTITY_NO_TENANT_ACCESS: usuário não pertence ao tenant "${input.targetTenantId}".`);
   }
 

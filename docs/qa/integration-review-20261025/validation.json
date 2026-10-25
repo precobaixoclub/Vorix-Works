@@ -1,0 +1,37 @@
+{
+  "backend": {
+    "command": "node scripts/test-backend.mjs",
+    "tests": 4077,
+    "passed": 4075,
+    "failed": 0,
+    "skipped": 2,
+    "durationMs": 378772.8811
+  },
+  "architecture": {
+    "command": "npm run architecture:check",
+    "contracts": 49,
+    "files": 1216,
+    "status": "PASS"
+  },
+  "frontend": {
+    "typecheck": "PASS",
+    "productionBuild": "PASS",
+    "testFiles": 23,
+    "passed": 167,
+    "failed": 0
+  },
+  "browser": {
+    "uniqueInterfacePassed": 136,
+    "realFixtureSiteCatalogPassed": 55,
+    "uniqueTotalPassed": 191,
+    "intentionalSkips": 13,
+    "widths": [
+      1440,
+      390
+    ]
+  },
+  "unexecuted": [
+    "capacity-renewal browser scenario requires unavailable disposable native PostgreSQL/Docker/WSL"
+  ],
+  "productionOperationsDuringLocalTests": false
+}

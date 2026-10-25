@@ -1,3 +1,5 @@
+import type { AccessResolver } from "../../../application/identity/access-resolver.js";
+import type { AccessAuditLogPort } from "../../../application/ports/access-audit-log.port.js";
 import type {CapacityMutationRepositoryPort} from "../../../application/ports/capacity-mutation-repository.port.js";
 import type { CheckoutIntentRepositoryPort } from "../../../application/ports/checkout-intent-repository.port.js";
 import type { SolutionEntitlementRepositoryPort } from "../../../application/ports/solution-entitlement-repository.port.js";
@@ -44,6 +46,8 @@ import type { InboxTagRepositoryPort } from "../../../application/ports/inbox-ta
 import type { InboxQuickReplyRepositoryPort } from "../../../application/ports/inbox-quick-reply-repository.port.js";
 import type { InboxStickerRepositoryPort } from "../../../application/ports/inbox-sticker-repository.port.js";
 import type { InboxServiceSettingsRepositoryPort } from "../../../application/ports/inbox-service-settings-repository.port.js";
+import type { InboxAttendanceRepositoryPort } from "../../../application/ports/inbox-attendance-repository.port.js";
+import type { InboxClosureCatalogRepositoryPort } from "../../../application/ports/inbox-closure-catalog-repository.port.js";
 import type { InboxConversationEventRepositoryPort } from "../../../application/ports/inbox-conversation-event-repository.port.js";
 import type { InboxMetricsRepositoryPort } from "../../../application/ports/inbox-metrics-repository.port.js";
 import type { MessagingProvider } from "../../../application/ports/messaging-provider.port.js";
@@ -414,6 +418,8 @@ export type ApiContainer = {
   inboxQuickReplyRepository: InboxQuickReplyRepositoryPort;
   inboxStickerRepository: InboxStickerRepositoryPort;
   inboxServiceSettingsRepository: InboxServiceSettingsRepositoryPort;
+  inboxAttendanceRepository: InboxAttendanceRepositoryPort;
+  inboxClosureCatalogRepository: InboxClosureCatalogRepositoryPort;
   /** Fase 4 (Atendimento) — auditoria + timeline de eventos operacionais, ver `db/migrations/0084`. */
   inboxConversationEventRepository: InboxConversationEventRepositoryPort;
   /** Fase 7 (Resultados) — relatório agregado de atendimento (read-only). */
@@ -506,6 +512,8 @@ export type ApiContainer = {
   identity?: {
     userRepository: UserRepositoryPort;
     membershipRepository: TenantMembershipRepositoryPort;
+    accessResolver: AccessResolver;
+    accessAuditLog: AccessAuditLogPort;
     sessionRepository: SessionRepositoryPort;
     refreshTokenRepository: RefreshTokenRepositoryPort;
     auditLog: AuditLogPort;

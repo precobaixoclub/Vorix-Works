@@ -1,5 +1,7 @@
 "use client";
 
+import { useMyAccess } from "@/features/auth/access";
+
 import { useEffect, useMemo, useState } from "react";
 import { ClipboardCheck, FileText, Handshake, History, Info, MoveRight, Package, Pencil, RotateCcw, Trophy, XCircle } from "lucide-react";
 import { toast } from "sonner";
@@ -17,7 +19,7 @@ import { StatusBadge } from "@/components/StatusBadge";
 import { TeamPicker, teamLabel } from "@/components/TeamPicker";
 import { UserPicker, type UserPickerMember, userLabel } from "@/components/UserPicker";
 import { Skeleton } from "@/components/ui/skeleton";
-import { completeTask, updateDeal } from "@/features/crm/api";
+import { completeTask, updateDeal, setDealArchived } from "@/features/crm/api";
 import { useDealTimeline } from "@/features/crm/hooks";
 import { centsFromCurrencyInput, currencyInputFromCents, isTaskOverdue, nextPendingTask, PROPOSAL_STATUS_LABEL, TASK_TYPE_LABEL, timelineEventLabel } from "@/features/crm/presentation";
 import type { Contact, Deal, Pipeline, PipelineStage, Proposal, Task } from "@/features/crm/types";
@@ -29,6 +31,10 @@ import { DealProposalsPanel } from "@/components/sales/DealProposalsPanel";
 import { DealCustomFieldsBlock, DealParticipantsBlock } from "@/components/sales/DealDataBlocks";
 import { loseDeal, reopenDeal, winDeal } from "@/features/sales/api";
 import { useCompetitors, useInvalidateSales, useReasons } from "@/features/sales/hooks";
+import { ClosedDealCorrectionModal } from "@/components/sales/ClosedDealCorrectionModal";
+import { useAuth } from "@/contexts/auth-context";
+import { canManageTenant, canOperateWorkspace } from "@/lib/rbac";
+import styles from "./DealDetail.module.css";
 
 type Section = "overview" | "products" | "negotiation" | "summary" | "activities" | "proposals" | "timeline";
 
@@ -74,6 +80,12 @@ export function DealDetailModal({
 }) {
   const [section, setSection] = useState<Section>("overview");
   const [closing, setClosing] = useState<"won" | "lost">();
+  const [correcting, setCorrecting] = useState(false);
+  const { state: auth } = useAuth();
+  const role = auth.status === "authenticated" ? auth.role : undefined;
+  const { can } = useMyAccess();
+  const canOperate = can("deal:manage");
+  const canCorrect = can("deal:edit_closed") && can(deal?.status === "won" ? "deal:change_final_value" : "deal:change_loss_reason");
   const invalidateSales = useInvalidateSales(workspaceId);
   const { data: wonReasons } = useReasons(workspaceId, "won");
   const { data: lostReasons } = useReasons(workspaceId, "lost");
@@ -112,6 +124,7 @@ export function DealDetailModal({
   return (
     <>
       <DetailModal
+        className={styles.dialog}
         open={open}
         onOpenChange={onOpenChange}
         title={deal.title}
@@ -123,20 +136,26 @@ export function DealDetailModal({
               <span>{contact?.name ?? "Sem contato vinculado"}</span>
             )}
             <span>·</span>
-            <span>{formatCurrencyCents(deal.valueCents, deal.currency)}</span>
+            <span>{formatCurrencyCents(deal.status === "won" ? deal.finalValueCents ?? deal.valueCents : deal.valueCents, deal.currency)}</span>
           </div>
         }
         eyebrow="Oportunidade"
         avatar={<DealAvatar title={deal.title} stage={stage} />}
         headerExtra={
-          <div className="flex flex-wrap items-center gap-2">
+          <div className={cn(styles.headerActions, "flex flex-wrap items-center gap-2")}>
             <StatusBadge status={status === "cancelled" ? "cancelled" : status} />
-            {status === "open" ? (
+            {deal.archivedAt ? <span className="rounded-full border border-border px-2 py-1 text-xs text-muted-foreground">Arquivada</span> : null}
+            {can(deal.archivedAt ? "deal:unarchive" : "deal:archive") && (status === "won" || status === "lost") ? <Button size="sm" variant="secondary" onClick={async () => {
+              try { await setDealArchived(deal.id, workspaceId, !deal.archivedAt); await Promise.all([invalidateSales(), onChanged()]); toast.success(deal.archivedAt ? "Oportunidade visível no Kanban." : "Oportunidade arquivada."); }
+              catch (cause) { toast.error("Não foi possível atualizar o arquivamento", { description: cause instanceof Error ? cause.message : undefined }); }
+            }}>{deal.archivedAt ? "Mostrar no Kanban" : "Arquivar"}</Button> : null}
+            {canCorrect && (status === "won" || status === "lost") ? <Button size="sm" variant="secondary" onClick={() => setCorrecting(true)}>{status === "won" ? "Ajustar valor final" : "Corrigir motivo"}</Button> : null}
+            {canOperate && status === "open" ? (
               <>
-                <Button size="sm" onClick={() => setClosing("won")}><Trophy className="mr-1.5 h-4 w-4" />Ganha</Button>
-                <Button size="sm" variant="secondary" onClick={() => setClosing("lost")}><XCircle className="mr-1.5 h-4 w-4" />Perdida</Button>
+                <Button size="sm" disabled={!can("deal:win")} onClick={() => setClosing("won")}><Trophy className="mr-1.5 h-4 w-4" />Ganha</Button>
+                <Button size="sm" variant="secondary" disabled={!can("deal:lose")} onClick={() => setClosing("lost")}><XCircle className="mr-1.5 h-4 w-4" />Perdida</Button>
               </>
-            ) : (
+            ) : can("deal:reopen") && status !== "open" ? (
               <Button size="sm" variant="secondary" onClick={async () => {
                 try {
                   await reopenDeal(deal.id, workspaceId);
@@ -146,7 +165,7 @@ export function DealDetailModal({
                   toast.error("Não foi possível reabrir", { description: cause instanceof Error ? cause.message : undefined });
                 }
               }}><RotateCcw className="mr-1.5 h-4 w-4" />Reabrir</Button>
-            )}
+            ) : null}
           </div>
         }
         sections={[
@@ -165,6 +184,11 @@ export function DealDetailModal({
       >
         {section === "overview" ? (
           <div className="space-y-6">
+            {status === "lost" || deal.closeComment ? <div className="space-y-3 rounded-xl border border-border bg-muted/20 p-4">
+              {status === "lost" ? <div><p className="text-xs font-medium text-muted-foreground">Motivo da perda</p><p className="mt-1 text-base font-semibold">{deal.lossReason ?? "Não informado no registro original"}</p></div> : null}
+              {deal.closeComment ? <div><p className="text-xs font-medium text-muted-foreground">Observação do fechamento</p><p className="mt-1 whitespace-pre-wrap break-words text-sm">{deal.closeComment}</p></div> : null}
+            </div> : null}
+            {deal.firstClosedAt ? <p className="text-xs text-muted-foreground">Primeiro fechamento: {formatDateTime(deal.firstClosedAt)}{deal.reopenCount ? ` · ${deal.reopenCount} reabertura(s) · Última: ${formatDateTime(deal.reopenedAt)}` : ""}</p> : null}
             <DealCockpitStats workspaceId={workspaceId} deal={deal} />
             <DealOverview workspaceId={workspaceId} deal={deal} onGoToProducts={() => setSection("products")} onGoToNegotiation={() => setSection("negotiation")} />
           </div>
@@ -181,11 +205,11 @@ export function DealDetailModal({
             nextTask={nextTask}
             pendingTasks={pendingDealTasks}
             completingTaskId={completingTaskId}
-            stages={stages}
+            stages={canOperate ? stages.filter(item => (item.isWon ? can("deal:win") : item.isLost ? can("deal:lose") : status === "open" || can("deal:reopen"))) : []}
             ownerLabel={userLabel(deal.ownerUserId, members)}
             teamLabel={teamLabel(deal.teamId, teams)}
-            onEdit={() => setEditing(true)}
-            onMove={(targetStage) => { void onMove(deal, targetStage); }}
+            onEdit={canOperate && (status === "open" || canCorrect) ? () => setEditing(true) : undefined}
+            onMove={(targetStage) => { if (targetStage.isWon) setClosing("won"); else if (targetStage.isLost) setClosing("lost"); else void onMove(deal, targetStage); }}
             onCreateTask={() => setCreatingTask(true)}
             onCompleteTask={handleCompleteTask}
             onTaskRescheduled={onChanged}
@@ -202,8 +226,9 @@ export function DealDetailModal({
         ) : null}
         {section === "activities" ? <DealActivities tasks={dealTasks} members={members} /> : null}
         {section === "proposals" ? <DealProposalsPanel workspaceId={workspaceId} deal={deal} proposals={dealProposals} onChanged={onChanged} onMarkLost={() => setClosing("lost")} /> : null}
-        {section === "timeline" ? <DealTimeline dealId={deal.id} workspaceId={workspaceId} /> : null}
+        {section === "timeline" ? <DealTimeline dealId={deal.id} workspaceId={workspaceId} stages={stages} members={members} /> : null}
       </DetailModal>
+      {correcting ? <ClosedDealCorrectionModal workspaceId={workspaceId} deal={deal} onClose={() => setCorrecting(false)} onSaved={() => Promise.all([invalidateSales(), onChanged()])} /> : null}
 
       {closing ? (
         <CloseDealModal
@@ -214,7 +239,7 @@ export function DealDetailModal({
           onClose={() => setClosing(undefined)}
           onConfirm={async (input) => {
             try {
-              if (closing === "won") await winDeal(deal.id, { workspaceId, wonReason: input.reason, comment: input.comment, finalValueCents: input.finalValueCents });
+              if (closing === "won") await winDeal(deal.id, { workspaceId, wonReason: input.reason, comment: input.comment, finalValueCents: input.finalValueCents, closedAt: input.closedAt });
               else await loseDeal(deal.id, { workspaceId, lossReason: input.reason ?? "", competitorId: input.competitorId, competitorName: input.competitorName, comment: input.comment });
               setClosing(undefined);
               await Promise.all([invalidateSales(), onChanged()]);
@@ -301,7 +326,7 @@ function DealSummary({
   stages: readonly PipelineStage[];
   ownerLabel: string;
   teamLabel: string;
-  onEdit: () => void;
+  onEdit?: () => void;
   onMove: (stage: PipelineStage) => void;
   onCreateTask: () => void;
   onCompleteTask: (task: Task) => void;
@@ -314,7 +339,7 @@ function DealSummary({
     <div className="space-y-7">
       <DetailBlock
         label="Contexto"
-        action={<Button variant="ghost" size="sm" onClick={onEdit}><Pencil className="mr-2 h-4 w-4" /> Editar</Button>}
+        action={onEdit ? <Button variant="secondary" size="sm" onClick={onEdit}><Pencil className="mr-2 h-4 w-4" /> Editar</Button> : undefined}
       >
         <div className="grid gap-3 sm:grid-cols-2">
           <InfoCell label="Contato" value={contact?.name ?? "Sem contato"} />
@@ -322,7 +347,7 @@ function DealSummary({
           <InfoCell label="Equipe" value={teamLabel} />
           <InfoCell label="Etapa" value={stage?.name ?? "Sem etapa"} />
           <InfoCell label="Pipeline" value={pipeline?.name ?? "Pipeline"} />
-          <InfoCell label="Valor" value={formatCurrencyCents(deal.valueCents, deal.currency)} strong />
+          <InfoCell label="Valor" value={formatCurrencyCents(deal.status === "won" ? deal.finalValueCents ?? deal.valueCents : deal.valueCents, deal.currency)} strong />
           <InfoCell label="Origem" value={deal.origin ?? "—"} />
           <InfoCell label="Previsão" value={formatDate(deal.expectedCloseDate)} />
           <InfoCell label="Próxima atividade" value={nextTask ? `${TASK_TYPE_LABEL[nextTask.type]} · ${nextTask.title}` : "Sem próxima atividade"} />
@@ -410,7 +435,7 @@ function DealActivities({ tasks, members }: { tasks: readonly Task[]; members: r
   );
 }
 
-function DealTimeline({ dealId, workspaceId }: { dealId: string; workspaceId: string }) {
+function DealTimeline({ dealId, workspaceId, stages, members }: { dealId: string; workspaceId: string; stages: readonly PipelineStage[]; members: readonly UserPickerMember[] }) {
   const { data, isLoading, error, mutate } = useDealTimeline(dealId, workspaceId);
   if (isLoading) return <TimelineSkeleton />;
   if (error) return <ErrorState error={error} onRetry={() => mutate()} />;
@@ -422,7 +447,12 @@ function DealTimeline({ dealId, workspaceId }: { dealId: string; workspaceId: st
         <li key={event.id} className="relative pl-5">
           <span className="absolute left-0 top-1.5 h-2 w-2 rounded-full bg-primary" />
           <p className="text-sm font-medium text-foreground">{timelineEventLabel(event)}</p>
-          <p className="text-xs text-muted-foreground">{formatDateTime(event.occurredAt)}</p>
+          <p className="text-xs text-muted-foreground">{formatDateTime(event.occurredAt)} · {event.actorType === "user" ? userLabel(event.actorId, members) : event.actorType === "automation" ? "Automação" : "Sistema"}</p>
+          {event.payload.fromStageId && event.payload.toStageId ? <p className="mt-1 text-sm text-muted-foreground">{stages.find(stage => stage.id === event.payload.fromStageId)?.name ?? "Fase anterior"} → {stages.find(stage => stage.id === event.payload.toStageId)?.name ?? "Nova fase"}</p> : null}
+          {typeof event.payload.finalValueCents === "number" ? <p className="mt-1 text-sm">Valor final: {formatCurrencyCents(event.payload.finalValueCents)}</p> : null}
+          {typeof event.payload.toValueCents === "number" ? <p className="mt-1 text-sm">{typeof event.payload.fromValueCents === "number" ? `${formatCurrencyCents(event.payload.fromValueCents)} → ` : ""}{formatCurrencyCents(event.payload.toValueCents)}</p> : null}
+          {typeof event.payload.lossReason === "string" ? <p className="mt-1 text-sm">Motivo: {event.payload.lossReason}</p> : null}
+          {typeof event.payload.comment === "string" ? <p className="mt-1 whitespace-pre-wrap break-words text-sm text-muted-foreground">{event.payload.comment}</p> : null}
         </li>
       ))}
     </ol>

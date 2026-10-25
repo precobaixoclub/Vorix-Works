@@ -116,10 +116,7 @@ test("pesquisa: nota do cliente é gravada, agradece e NÃO reabre; texto comum 
   assert.equal(current.unreadCount, 0);
   assert.ok((await outboundBodies()).includes("Obrigado pela sua avaliação!"));
 
-  const metrics = await new PostgresInboxMetricsRepository(db.pool).getMetrics(ctx);
-  assert.equal(metrics.csatAverage, 5);
-  assert.equal(metrics.csatResponses, 1);
-  assert.deepEqual(metrics.csatByAgent, [{ userId: "agent-1", average: 5, responses: 1 }]);
+  // Structured CSAT reporting is exercised in integration-review and attendance-cycles.
 
   // Novo encerramento, cliente responde outra coisa: reabre e a pesquisa expira.
   await reopenConversation(deps, { ...ctx, conversationId: conversation.id, performedBy: "agent-1" });
@@ -130,6 +127,17 @@ test("pesquisa: nota do cliente é gravada, agradece e NÃO reabre; texto comum 
   current = await deps.conversationRepository.getById(conversation.id);
   assert.equal(current.status, "open");
   assert.equal(current.csatStatus, "expired");
+});
+
+test("concurrent CSAT replies claim the survey once and produce a single event and acknowledgement", async () => {
+  const { deps, ctx, conversation, inbound, outboundBodies } = await setup("review-csat-race");
+  await updateInboxServiceSettings(deps, { ...ctx, csatEnabled: true });
+  await closeConversation(deps, { ...ctx, conversationId: conversation.id, performedBy: "agent-1" });
+  const messages = [await inbound("5"), await inbound("1")];
+  await Promise.all(messages.map(message => applyInboundServiceRules(deps, { ...ctx, conversationId: conversation.id, messageId: message.id })));
+  const events = await deps.conversationEventRepository.listByConversation({ ...ctx, conversationId: conversation.id });
+  assert.equal(events.filter(event => event.type === "csat_answered").length, 1);
+  assert.equal((await outboundBodies()).filter(body => body === "Obrigado pela sua avaliação!").length, 1);
 });
 
 test("cliente escrevendo numa conversa finalizada (sem pesquisa) reabre a conversa", async () => {
@@ -172,6 +180,8 @@ test("triagem: menu na 1ª mensagem, escolha leva para a equipe (com rodízio) +
   const tenantId = "tenant-triage-1";
   const { deps, conversation, inbound, outboundBodies, ctx } = await setup(tenantId, null);
   const team = await createTeam(deps, { ...ctx, name: "Comercial" });
+  await db.pool.query("insert into users (id, email, password_hash, name, status, created_at, updated_at) values ('seller-1', 'seller-1@rules.test', 'x', 'Seller', 'active', now(), now()) on conflict do nothing");
+  await db.pool.query("insert into tenant_members (id, user_id, tenant_id, role, created_at, updated_at) values ($1, 'seller-1', $2, 'editor', now(), now())", [`${tenantId}-seller`, tenantId]);
   await addTeamMember(deps, { teamId: team.id, ...ctx, userId: "seller-1", role: "editor" });
   const tag = await deps.tagRepository.create({ ...ctx, name: "Lead" });
   await assert.rejects(updateInboxServiceSettings(deps, { ...ctx, triageEnabled: true, triageOptions: [] }), /INBOX_SERVICE_SETTINGS_INVALID/);

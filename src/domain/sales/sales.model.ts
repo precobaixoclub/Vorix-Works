@@ -120,7 +120,7 @@ export type CloseReason = {
 
 /** Motivos iniciais — semeados na primeira leitura do workspace, depois 100% editáveis. */
 export const DEFAULT_CLOSE_REASONS: Record<CloseReasonKind, readonly string[]> = {
-  lost: ["Preço", "Concorrente", "Sem orçamento", "Sem retorno", "Projeto adiado", "Produto não atende", "Decisão interna", "Outro"],
+  lost: ["Preço", "Concorrência", "Cliente desistiu", "Sem retorno", "Fora do perfil", "Prazo", "Produto indisponível", "Outro"],
   won: ["Preço", "Relacionamento", "Produto", "Agilidade", "Funcionalidade", "Condição comercial", "Outro"],
   proposal_decline: ["Preço", "Condição", "Prazo", "Concorrente", "Não tenho interesse", "Outro"],
 };
@@ -144,8 +144,10 @@ export type CommercialSettings = {
   sellersCanViewMargin: boolean;
   /** Quem vê quais oportunidades: `all` (padrão, comportamento atual), `team` ou `own`. */
   dealVisibility: DealVisibilityMode;
-  /** Aceite da proposta marca a oportunidade como ganha? Padrão NÃO (aceite ≠ venda concluída). */
+  /** Outcome policy for proposal acceptance; stored company preferences are preserved. */
   proposalAcceptAutoWin: boolean;
+  /** Null/undefined means never hide. Zero means immediately after commercial closure. */
+  closedDealArchiveDays?: number | null;
   proposalWhatsappTemplate?: string;
   proposalReminderTemplate?: string;
   defaultContractMonths?: number;
@@ -153,8 +155,7 @@ export type CommercialSettings = {
   updatedAt: string;
 };
 
-export const DEFAULT_PROPOSAL_WHATSAPP_TEMPLATE = "Olá, {{nome}}!\n\nSua proposta comercial está disponível.\n\nValor: {{valor}}\nValidade: {{validade}}\n\nClique para visualizar:\n{{proposal_link}}";
-export const DEFAULT_PROPOSAL_REMINDER_TEMPLATE = "Olá, {{nome}}! Passando para lembrar da proposta que enviamos ({{valor}}). Ficou alguma dúvida?\n\n{{proposal_link}}";
+export { DEFAULT_PROPOSAL_WHATSAPP_TEMPLATE, DEFAULT_PROPOSAL_REMINDER_TEMPLATE } from "./proposal-message.js";
 
 export const POLICY_SCOPE_TYPES = ["workspace", "role", "team", "user"] as const;
 export type PolicyScopeType = (typeof POLICY_SCOPE_TYPES)[number];

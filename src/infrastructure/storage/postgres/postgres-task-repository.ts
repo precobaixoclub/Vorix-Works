@@ -1,3 +1,4 @@
+import { ownedScopeSql } from "./postgres-owned-scope.js";
 import type { Pool } from "pg";
 import type { CreateTaskInput, ListTasksFilter, TaskRepositoryPort, UpdateTaskInput } from "../../../application/ports/task-repository.port.js";
 import type { Task, TaskStatus } from "../../../domain/crm/crm.model.js";
@@ -87,6 +88,8 @@ export class PostgresTaskRepository implements TaskRepositoryPort {
       params.push(filter.status);
       conditions.push(`status = $${params.length}`);
     }
+    const scope = ownedScopeSql(filter, params, "");
+    if (scope) conditions.push(scope);
     if (filter.cursor) {
       params.push(filter.cursor);
       conditions.push(`created_at < (select created_at from tasks where id = $${params.length})`);

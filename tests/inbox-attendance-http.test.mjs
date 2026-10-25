@@ -28,6 +28,13 @@ async function buildTestApp(container) {
   return buildApp({ config, container });
 }
 
+/** Finalizar exige tipo + subtipo (ciclo de atendimento, 0172): usa o primeiro do catálogo. */
+async function closurePayload(app, workspaceId) {
+  const response = await app.inject({ method: "GET", url: `/v1/inbox/closure-types?workspaceId=${workspaceId}` });
+  const [type] = response.json().data.closureTypes;
+  return { closureTypeId: type.id, closureSubtypeId: type.subtypes[0].id };
+}
+
 async function seedConversation(app, { tenantId, aiEnabled = false }) {
   const workspace = await app.zunoContainer.workspaceRepository.create({ tenantId, name: "Workspace HTTP" });
   const connection = await app.zunoContainer.messagingConnectionRepository.create({ tenantId, workspaceId: workspace.id, provider: "wuzapi", displayName: "Conexão" });
@@ -116,17 +123,20 @@ test("RBAC: editor (inbox:assign) consegue assumir, transferir, finalizar e reab
   assert.equal(takeOver.statusCode, 200);
   assert.equal(takeOver.json().data.assignedUserId, "user-a");
 
-  const transfer = await app.inject({ method: "POST", url: `/v1/inbox/conversations/${conversationId}/transfer`, payload: { workspaceId: workspace.id, toUserId: "user-b" } });
-  assert.equal(transfer.statusCode, 200);
-  assert.equal(transfer.json().data.assignedUserId, "user-b");
-
-  const close = await app.inject({ method: "POST", url: `/v1/inbox/conversations/${conversationId}/close`, payload: { workspaceId: workspace.id } });
+  const close = await app.inject({ method: "POST", url: `/v1/inbox/conversations/${conversationId}/close`, payload: { workspaceId: workspace.id, ...(await closurePayload(app, workspace.id)) } });
   assert.equal(close.statusCode, 200);
   assert.equal(close.json().data.status, "resolved");
 
   const reopen = await app.inject({ method: "POST", url: `/v1/inbox/conversations/${conversationId}/reopen`, payload: { workspaceId: workspace.id } });
   assert.equal(reopen.statusCode, 200);
   assert.equal(reopen.json().data.status, "open");
+
+  // Transferir por último: depois disso a conversa sai do escopo próprio do atendente (0173).
+  const transfer = await app.inject({ method: "POST", url: `/v1/inbox/conversations/${conversationId}/transfer`, payload: { workspaceId: workspace.id, toUserId: "user-b" } });
+  assert.equal(transfer.statusCode, 200);
+  assert.equal(transfer.json().data.assignedUserId, "user-b");
+  const afterTransfer = await app.inject({ method: "GET", url: `/v1/inbox/conversations/${conversationId}/messages?workspaceId=${workspace.id}` });
+  assert.equal(afterTransfer.statusCode, 404, "atendente sem escopo de equipe não vê conversa de outra pessoa");
 
   await app.close();
 });
@@ -297,7 +307,7 @@ test("SSE: ações operacionais publicam notificação realtime com tenantId/wor
   const { workspace, conversationId } = await seedConversation(app, { tenantId });
 
   await app.inject({ method: "POST", url: `/v1/inbox/conversations/${conversationId}/take-over`, payload: { workspaceId: workspace.id } });
-  await app.inject({ method: "POST", url: `/v1/inbox/conversations/${conversationId}/close`, payload: { workspaceId: workspace.id } });
+  await app.inject({ method: "POST", url: `/v1/inbox/conversations/${conversationId}/close`, payload: { workspaceId: workspace.id, ...(await closurePayload(app, workspace.id)) } });
 
   assert.equal(published.length, 2, "take-over e close devem, cada um, disparar exatamente uma notificação");
   for (const notification of published) {
@@ -325,8 +335,7 @@ test("Isolamento cross-tenant via HTTP: principal de um tenant não enxerga nem 
   assert.equal(takeOver.statusCode, 404);
 
   const list = await appA.inject({ method: "GET", url: `/v1/inbox/conversations?workspaceId=${workspaceB.id}` });
-  assert.equal(list.statusCode, 200);
-  assert.deepEqual(list.json().data.conversations, [], "workspace de outro tenant nunca aparece — nem existência é revelada");
+  assert.equal(list.statusCode, 404, "foreign workspaces are rejected before collection queries");
 
   await appA.close();
   await appB.close();

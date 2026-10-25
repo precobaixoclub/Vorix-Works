@@ -52,6 +52,7 @@ async function commercialFixture(page: Page, dealCount = 2) {
       proposals.unshift(proposal);
       return ok(proposal);
     }
+    if (path.endsWith("/whatsapp-preview")) return ok({ message: "Olá, Cliente!\n\n*PROPOSTA COMERCIAL*\nPlano Premium\n\n*Valor total:* R$ 4.500,00\n\n*Ver proposta completa*\n{{proposal_link}}" });
     if (path.endsWith("/send-whatsapp")) {
       const body = route.request().postDataJSON(); sends.push(body);
       const proposal = proposals.find((item) => path.includes(item.id))!; Object.assign(proposal, { status: "sent", sentAt: now }); return ok(proposal);
@@ -64,6 +65,19 @@ async function commercialFixture(page: Page, dealCount = 2) {
 
 test.beforeEach(async ({ context }) => { await loginCookie(context); });
 
+test("cartão do link tem metadados de proposta e imagem pública sem consultar dados do cliente", async ({ request }) => {
+  const response = await request.get("/p/preview-only");
+  expect(response.ok()).toBe(true);
+  const html = await response.text();
+  expect(html).toContain('property="og:title" content="Sua proposta comercial"');
+  expect(html).toContain('name="robots" content="noindex, nofollow"');
+  const imageUrl = html.match(/<meta property="og:image" content="([^"]+)"/)?.[1];
+  expect(imageUrl).toBeTruthy();
+  const image = await request.get(imageUrl!);
+  expect(image.ok()).toBe(true);
+  expect(image.headers()["content-type"]).toContain("image/png");
+});
+
 test("link público abre sem cookie de sessão", async ({ browser }) => {
   const context = await browser.newContext();
   const page = await context.newPage();
@@ -74,7 +88,7 @@ test("link público abre sem cookie de sessão", async ({ browser }) => {
   await context.close();
 });
 
-test("gera pelo card da oportunidade com modelo personalizado e envia pelo WhatsApp", async ({ page }) => {
+test("gera pelo card da oportunidade com modelo personalizado e envia pelo WhatsApp", async ({ page }, info) => {
   const state = await commercialFixture(page, 2);
   await page.goto(`/workspaces/${WORKSPACE_ID}/deals`);
   await page.locator("article:visible").filter({ hasText: "Oportunidade Fase 4 2" }).getByRole("button", { name: "Gerar proposta", exact: true }).click();
@@ -90,9 +104,15 @@ test("gera pelo card da oportunidade com modelo personalizado e envia pelo Whats
   expect(state.proposals[0].dealId).toBe(state.deals[1].id);
   const detail = page.getByRole("dialog", { name: "Revise e envie sua proposta" });
   await detail.getByRole("button", { name: "Enviar pelo WhatsApp", exact: true }).click();
+  const whatsapp = page.getByRole("dialog", { name: "Enviar proposta pelo WhatsApp", exact: true });
+  await expect(whatsapp.getByLabel("Mensagem do WhatsApp", { exact: true })).toHaveValue(/PROPOSTA COMERCIAL/);
+  await expect(whatsapp.getByLabel("Prévia da mensagem no WhatsApp", { exact: true })).toContainText("Sua proposta comercial");
+  await page.screenshot({ path: info.outputPath("whatsapp-proposal-preview.png"), fullPage: true });
+  expect(state.sends).toHaveLength(0);
+  await whatsapp.getByRole("button", { name: "Enviar proposta", exact: true }).click();
   await expect.poll(() => state.sends.length).toBe(1);
   expect(state.sends[0].conversationId).toBe("conversation-phase4");
-  expect(state.sends[0]).not.toHaveProperty("message");
+  expect(state.sends[0].message).toContain("{{proposal_link}}");
   expect(state.sends[0].idempotencyKey).toBeTruthy();
   expect(state.proposals[0].status).toBe("sent");
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);

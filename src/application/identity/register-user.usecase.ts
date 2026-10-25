@@ -8,6 +8,7 @@ export type RegisterUserUseCaseInput = {
   avatarUrl?: string;
   tenantId: string;
   role: TenantRole;
+  isAccountOwner?: boolean;
 };
 
 export type RegisterUserUseCaseOutput = { user: User; membership: TenantMembership };
@@ -39,7 +40,7 @@ export async function registerUser(deps: Pick<IdentityUseCaseDeps, "userReposito
     name: input.name.trim(),
     avatarUrl: input.avatarUrl,
   });
-  const membership = await deps.membershipRepository.create({ userId: user.id, tenantId: input.tenantId, role: input.role });
+  const membership = await deps.membershipRepository.create({ userId: user.id, tenantId: input.tenantId, role: input.role, isAccountOwner: input.isAccountOwner });
 
   return { user, membership };
 }

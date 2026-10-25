@@ -1,5 +1,7 @@
 "use client";
 
+import { useMyAccess } from "@/features/auth/access";
+
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
@@ -115,8 +117,9 @@ export function KanbanBoard({ workspaceId, teamId, teams }: { workspaceId: strin
   // inbox.route.ts) está em `INBOX_OPERATOR_PERMISSIONS` — concedida a editor/admin/owner, o MESMO
   // grupo de `inbox:reply` (mover card/fixar). Nunca `canManageTenant` (só admin/owner) — isso
   // bloquearia editores de uma ação que o backend já permite pra eles.
-  const canOperate = canOperateWorkspace(role);
-  const canManage = canOperate;
+  const { can } = useMyAccess();
+  const canOperate = can("inbox:assign");
+  const canManage = can("inbox:configure_kanban");
   const currentUserId = state.status === "authenticated" ? state.user.id : undefined;
 
   const { data: phasesData, error: phasesError, isLoading: phasesLoading, mutate: mutatePhases } = useKanbanPhases(workspaceId, teamId);

@@ -1,0 +1,11 @@
+.dialog button[aria-label="Diminuir largura"], .dialog button[aria-label="Aumentar largura"] {
+  width: 34px;
+  height: 34px;
+  border: 1px solid hsl(var(--border));
+  border-radius: 8px;
+  background: hsl(var(--muted) / .5);
+}
+@media (max-width: 767px) {
+  .dialog { width: calc(100vw - 24px) !important; max-width: calc(100vw - 24px) !important; }
+  .dialog button[aria-label="Diminuir largura"], .dialog button[aria-label="Aumentar largura"] { display: none; }
+}

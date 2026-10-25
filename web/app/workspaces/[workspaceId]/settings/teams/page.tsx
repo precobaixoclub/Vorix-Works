@@ -25,9 +25,11 @@ import { useCurrentWorkspace } from "@/contexts/workspace-context";
 import { useAuth } from "@/contexts/auth-context";
 import { useInboxMembers } from "@/features/inbox/hooks";
 import { canManageTenant, RBAC_COPY } from "@/lib/rbac";
+import { useMyAccess } from "@/features/auth/access";
 import { cn } from "@/lib/utils";
 
-const ROLE_LABEL: Record<TenantRole, string> = { owner: "Administrador", admin: "Gestor", editor: "Editor", viewer: "Visualizador" };
+/** Papel NA EQUIPE (0173): gerente da equipe (owner/admin) ou membro (editor/viewer). */
+const ROLE_LABEL: Record<TenantRole, string> = { owner: "Gerente da equipe", admin: "Gerente da equipe", editor: "Membro", viewer: "Membro" };
 
 /** Bloco "roteamento por equipe" (réplica adaptada do CMDesk, pedido explícito do usuário) — a UI
  * atual oferece N1-N5 como atalho (mesmos rótulos usados no relatório de referência), mas o
@@ -37,7 +39,9 @@ const ATTENDANCE_LEVELS = ["N1", "N2", "N3", "N4", "N5"] as const;
 export default function TeamsPage() {
   const workspace = useCurrentWorkspace();
   const { state } = useAuth();
-  const canManage = canManageTenant(state.status === "authenticated" ? state.role : undefined);
+  // Estrutura de equipes é do Administrador (ou de quem recebeu "Gerenciar equipes").
+  const { can } = useMyAccess();
+  const canManage = can("team:manage");
   const { data: teams, error, isLoading, mutate } = useTeams(workspace.id);
   const { data: tenantMembers, isLoading: usersLoading, error: usersError } = useInboxMembers(workspace.id);
   const [createOpen, setCreateOpen] = useState(false);
@@ -253,7 +257,7 @@ export default function TeamsPage() {
                       <Label htmlFor="team-member-role">Acesso na equipe</Label>
                       <Select value={memberRole} onValueChange={(value) => setMemberRole(value as TenantRole)} disabled={!canManage || busy}>
                         <SelectTrigger id="team-member-role"><SelectValue /></SelectTrigger>
-                        <SelectContent>{(["owner", "admin", "editor", "viewer"] as const).map((role) => <SelectItem key={role} value={role}>{ROLE_LABEL[role]}</SelectItem>)}</SelectContent>
+                        <SelectContent>{(["editor", "admin"] as const).map((role) => <SelectItem key={role} value={role}>{ROLE_LABEL[role]}</SelectItem>)}</SelectContent>
                       </Select>
                     </div>
                     <div className="min-w-0 space-y-2">

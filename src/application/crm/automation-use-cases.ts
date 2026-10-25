@@ -10,6 +10,8 @@ import { createTask } from "./task-use-cases.js";
 import type { AutomationCondition, AutomationRule, AutomationTrigger, Contact, Deal } from "../../domain/crm/crm.model.js";
 
 export type AutomationUseCaseDeps = {
+  /** Production uses the same commercial transition as the Kanban (snapshot/stock/events). */
+  transitionDealStage?: (deal: Deal, targetStageId: string) => Promise<Deal>;
   automationRuleRepository: AutomationRuleRepositoryPort;
   automationRunLogRepository: AutomationRunLogRepositoryPort;
   contactRepository: ContactRepositoryPort;
@@ -77,9 +79,8 @@ function conditionsMatch(conditions: readonly AutomationCondition[], context: Au
 }
 
 /**
- * Move o negócio de etapa DIRETO pelo repositório (nunca via `moveDealStage` de
- * `deal-use-cases.ts`) — evitar isso é o que impede um ciclo infinito (regra de automação move o
- * negócio → dispararia `deal_stage_changed` de novo → poderia casar a mesma regra de novo).
+ * O adaptador comercial usa a mesma transição do Kanban; a pilha de regras em execução impede
+ * recursão. O caminho básico é mantido para integrações que ainda não usam o Sales Engine.
  * Automação nunca move um negócio pra uma etapa de perda: não há como coletar `lossReason` num
  * contexto automatizado, e inventar um motivo genérico violaria "nunca perdido silenciosamente".
  */
@@ -90,6 +91,10 @@ async function executeMoveDealStage(deps: AutomationUseCaseDeps, deal: Deal, tar
   }
   if (targetStage.isLost) {
     throw new Error("AUTOMATION_ACTION_CANNOT_AUTO_LOSE: automação nunca move uma oportunidade pra uma etapa de perda (exige motivo humano).");
+  }
+  if (deps.transitionDealStage) {
+    await deps.transitionDealStage(deal, targetStageId);
+    return;
   }
   const now = new Date().toISOString();
   await deps.dealRepository.moveStage(deal.id, { stageId: targetStageId, wonAt: targetStage.isWon ? now : null, lostAt: null, lossReason: null });
@@ -120,14 +125,18 @@ async function executeAssignLeastLoadedInTeam(deps: AutomationUseCaseDeps, conte
 async function executeAction(deps: AutomationUseCaseDeps, rule: AutomationRule, context: AutomationTriggerContext): Promise<void> {
   switch (rule.action) {
     case "create_task": {
-      if (!context.contact) throw new Error("AUTOMATION_ACTION_MISSING_CONTACT: ação exige um contato no contexto do gatilho.");
+      if (!context.contact && !context.deal) throw new Error("AUTOMATION_ACTION_MISSING_CONTACT: ação exige um contato ou oportunidade no contexto do gatilho.");
       await createTask(deps, {
         tenantId: context.tenantId,
         workspaceId: context.workspaceId,
-        contactId: context.contact.id,
+        contactId: context.contact?.id,
         dealId: context.deal?.id,
         type: rule.actionConfig.taskType ?? "follow_up",
         title: rule.actionConfig.taskTitle ?? rule.name,
+        ownerUserId: context.deal?.ownerUserId ?? context.contact?.ownerUserId,
+        dueAt: rule.actionConfig.taskDelayHours !== undefined
+          ? new Date(Date.now() + rule.actionConfig.taskDelayHours * 3_600_000).toISOString()
+          : undefined,
       });
       return;
     }
@@ -162,9 +171,13 @@ async function executeAction(deps: AutomationUseCaseDeps, rule: AutomationRule, 
  * `AutomationRunLog`, mesmo quando as condições não batem (`matched: false`) — auditabilidade
  * total, não só das que executaram.
  */
+const automationExecution = new AsyncLocalStorage<ReadonlySet<string>>();
+
 export async function evaluateAutomationTrigger(deps: AutomationUseCaseDeps, context: AutomationTriggerContext): Promise<void> {
   const rules = await deps.automationRuleRepository.listActiveByTrigger(context.tenantId, context.workspaceId, context.trigger);
   for (const rule of rules) {
+    const active = automationExecution.getStore() ?? new Set<string>();
+    if (active.has(rule.id) || active.size >= 20) continue;
     const matched = conditionsMatch(rule.conditions, context);
     if (!matched) {
       await deps.automationRunLogRepository.record({
@@ -174,7 +187,7 @@ export async function evaluateAutomationTrigger(deps: AutomationUseCaseDeps, con
       continue;
     }
     try {
-      await executeAction(deps, rule, context);
+      await automationExecution.run(new Set([...active, rule.id]), () => executeAction(deps, rule, context));
       await deps.automationRunLogRepository.record({
         tenantId: context.tenantId, workspaceId: context.workspaceId, ruleId: rule.id,
         contactId: context.contact?.id, dealId: context.deal?.id, matched: true, actionTaken: true,
@@ -188,3 +201,4 @@ export async function evaluateAutomationTrigger(deps: AutomationUseCaseDeps, con
     }
   }
 }
+import { AsyncLocalStorage } from "node:async_hooks";

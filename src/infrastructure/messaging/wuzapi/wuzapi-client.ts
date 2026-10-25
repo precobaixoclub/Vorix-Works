@@ -180,8 +180,9 @@ export class WuzApiClient {
    * corretamente no destinatário mesmo sem reconstruir o `QuotedMessage` proto inteiro (WuzAPI cai
    * pra `ExtendedTextMessage{Text: QuotedText}` internamente quando só isso é passado).
    */
-  async sendText(sessionToken: string, input: { phone: string; body: string; replyTo?: { stanzaId: string; participant?: string; quotedText?: string } }): Promise<{ Id: string; Timestamp: string }> {
+  async sendText(sessionToken: string, input: { phone: string; body: string; linkPreview?: boolean; replyTo?: { stanzaId: string; participant?: string; quotedText?: string } }): Promise<{ Id: string; Timestamp: string }> {
     const body: Record<string, unknown> = { Phone: input.phone, Body: input.body };
+    if (input.linkPreview !== undefined) body.LinkPreview = input.linkPreview;
     if (input.replyTo) {
       body.ContextInfo = { StanzaId: input.replyTo.stanzaId, Participant: input.replyTo.participant ?? "" };
       if (input.replyTo.quotedText) body.QuotedText = input.replyTo.quotedText;

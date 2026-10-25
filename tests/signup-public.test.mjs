@@ -64,7 +64,7 @@ test("signupPublic: cria User + Membership + Workspace + tenant_billing FREE e d
   assert.ok(result.refreshToken, "refresh token retornado");
   assert.equal(result.user.email, "novo@example.com");
   assert.equal(result.user.isPlatformAdmin, false);
-  assert.equal(result.role, "admin");
+  assert.equal(result.role, "owner");
   assert.ok(result.tenantId.startsWith("tenant-"));
 
   const userRow = await db.pool.query("select id, email, is_platform_admin from users where email = 'novo@example.com'");
@@ -73,7 +73,7 @@ test("signupPublic: cria User + Membership + Workspace + tenant_billing FREE e d
 
   const membership = await db.pool.query("select tenant_id, role from tenant_members where user_id = $1", [userRow.rows[0].id]);
   assert.equal(membership.rows.length, 1);
-  assert.equal(membership.rows[0].role, "admin");
+  assert.equal(membership.rows[0].role, "owner");
   assert.equal(membership.rows[0].tenant_id, result.tenantId);
 
   const workspaces = await db.pool.query("select id, name, kind, tenant_id from workspaces where tenant_id = $1", [result.tenantId]);

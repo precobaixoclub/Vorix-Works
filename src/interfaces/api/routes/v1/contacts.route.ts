@@ -1,3 +1,5 @@
+import { resolveConversationVisibility } from "./inbox.route.js";
+import { crmScope, type CrmAccessDeps } from "../../http/crm-access.js";
 import type { FastifyInstance } from "fastify";
 import { createContact, getContact, getContactTimeline, linkContactIdentity, listContacts, updateContact } from "../../../../application/crm/contact-use-cases.js";
 import type { ContactUseCaseDeps } from "../../../../application/crm/contact-use-cases.js";
@@ -58,18 +60,19 @@ function translateContactError(error: unknown): never {
   throw error;
 }
 
-export async function registerContactsRoutes(app: FastifyInstance, deps: ContactUseCaseDeps & LeadScoringUseCaseDeps & ContactActivityUseCaseDeps): Promise<void> {
+export async function registerContactsRoutes(app: FastifyInstance, deps: ContactUseCaseDeps & LeadScoringUseCaseDeps & ContactActivityUseCaseDeps & { access?: CrmAccessDeps }): Promise<void> {
   app.get("/contacts", { schema: { querystring: WORKSPACE_QUERY_SCHEMA } }, async (request) => {
     const principal = requirePermission(request, "contact:read");
     const { workspaceId, search, ownerUserId, teamId, cursor, limit } = request.query as { workspaceId: string; search?: string; ownerUserId?: string; teamId?: string; cursor?: string; limit?: number };
-    const contacts = await listContacts(deps, { tenantId: principal.tenantId, workspaceId, search, ownerUserId, teamId, cursor, limit });
+    const scope = deps.access ? { ...await crmScope(deps.access, principal, true), inboxVisibility: await resolveConversationVisibility(deps.access, principal) } : {};
+    const contacts = await listContacts(deps, { tenantId: principal.tenantId, workspaceId, search, ownerUserId, teamId, cursor, limit, ...scope });
     return successEnvelope(contacts, request.id);
   });
 
   app.post("/contacts", { schema: { body: CREATE_BODY_SCHEMA }, config: { readOnlyGuard: true } }, async (request, reply) => {
     const principal = requirePermission(request, "contact:manage");
     const body = request.body as Record<string, unknown> & { workspaceId: string; name: string };
-    const contact = await createContact(deps, { tenantId: principal.tenantId, ...body } as never);
+    const contact = await createContact(deps, { tenantId: principal.tenantId, ...body, ownerUserId: body.ownerUserId ?? principal.userId } as never);
     reply.code(201);
     return successEnvelope(contact, request.id);
   });
@@ -119,7 +122,7 @@ export async function registerContactsRoutes(app: FastifyInstance, deps: Contact
     const { id } = request.params as { id: string };
     const { workspaceId, limit } = request.query as { workspaceId: string; limit?: number };
     try {
-      const activity = await getContactActivity(deps, { contactId: id, tenantId: principal.tenantId, workspaceId, limit });
+      const activity = await getContactActivity(deps, { contactId: id, tenantId: principal.tenantId, workspaceId, limit, resourceScope: deps.access ? await crmScope(deps.access, principal) : undefined, conversationVisibility: deps.access ? await resolveConversationVisibility(deps.access, principal) : undefined });
       return successEnvelope(activity, request.id);
     } catch (error) {
       translateContactError(error);
@@ -131,7 +134,7 @@ export async function registerContactsRoutes(app: FastifyInstance, deps: Contact
     const { id } = request.params as { id: string };
     const { workspaceId } = request.query as { workspaceId: string };
     try {
-      const leadScore = await getLeadScore(deps, { contactId: id, tenantId: principal.tenantId, workspaceId });
+      const leadScore = await getLeadScore(deps, { contactId: id, tenantId: principal.tenantId, workspaceId, resourceScope: deps.access ? await crmScope(deps.access, principal) : undefined });
       return successEnvelope(leadScore, request.id);
     } catch (error) {
       translateContactError(error);

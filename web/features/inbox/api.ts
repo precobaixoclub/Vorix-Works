@@ -1,5 +1,5 @@
 import { apiClient } from "@/lib/api-client";
-import type { InboxQuickReply, InboxServiceSettings } from "./types";
+import type { InboxAttendance, InboxClosureType, InboxQuickReply, InboxServiceSettings } from "./types";
 import type { ChannelDistributionMode, ChannelRoutingSnapshot, ConversationServiceTime, InboxConversation, InboxConversationEvent, InboxConversationFilter, InboxMessage, InboxMetricsReport, InboxModuleStatus, InboxStreamToken, InboxTag, InboxTagColor, InboxTenantMember, KanbanPhaseType, MessagingConnection, TeamKanbanPhase } from "./types";
 
 /** Fase 10 (Pre-Pilot Hardening) — sempre disponível, mesmo com o módulo desligado. */
@@ -24,8 +24,10 @@ export function createInboxConnection(workspaceId: string, displayName: string):
   return apiClient.post<MessagingConnection>("/v1/inbox/connections", { workspaceId, displayName });
 }
 
-export function updateInboxConnectionSettings(workspaceId: string, connectionId: string, sendAgentName: boolean): Promise<MessagingConnection> {
-  return apiClient.patch<MessagingConnection>(`/v1/inbox/connections/${encodeURIComponent(connectionId)}/settings`, { workspaceId, sendAgentName });
+export type InboxConnectionSettingsPatch = { sendAgentName?: boolean; csatOnClose?: boolean; newAttendanceAssignment?: "last_assignee" | "redistribute" };
+
+export function updateInboxConnectionSettings(workspaceId: string, connectionId: string, patch: InboxConnectionSettingsPatch): Promise<MessagingConnection> {
+  return apiClient.patch<MessagingConnection>(`/v1/inbox/connections/${encodeURIComponent(connectionId)}/settings`, { workspaceId, ...patch });
 }
 
 export function getInboxConnectionQrCode(workspaceId: string, connectionId: string): Promise<{ qrCode: string; expiresAt: string }> {
@@ -127,8 +129,56 @@ export function setInboxConversationTeam(workspaceId: string, conversationId: st
   return apiClient.post<InboxConversation>(`/v1/inbox/conversations/${encodeURIComponent(conversationId)}/team`, { workspaceId, teamId });
 }
 
-export function closeInboxConversation(workspaceId: string, conversationId: string, closingReason?: string): Promise<InboxConversation> {
-  return apiClient.post<InboxConversation>(`/v1/inbox/conversations/${encodeURIComponent(conversationId)}/close`, { workspaceId, ...(closingReason ? { closingReason } : {}) });
+/** Finalizar atendimento. Com o ciclo de atendimento ativo, `closureTypeId` + `closureSubtypeId`
+ * são obrigatórios; `sendCsat: false` (dispensar a pesquisa) só é aceito de gerente/administrador. */
+export type CloseInboxConversationInput = { closingReason?: string; closureTypeId?: string; closureSubtypeId?: string; closureNote?: string; sendCsat?: boolean };
+
+export function closeInboxConversation(workspaceId: string, conversationId: string, input: CloseInboxConversationInput = {}): Promise<InboxConversation> {
+  const body = Object.fromEntries(Object.entries(input).filter(([, value]) => value !== undefined && value !== ""));
+  return apiClient.post<InboxConversation>(`/v1/inbox/conversations/${encodeURIComponent(conversationId)}/close`, { workspaceId, ...body });
+}
+
+/** Histórico de atendimentos da conversa (mais recente primeiro), com os ciclos de responsabilidade. */
+export function listInboxConversationAttendances(workspaceId: string, conversationId: string): Promise<{ attendances: InboxAttendance[] }> {
+  const query = new URLSearchParams({ workspaceId });
+  return apiClient.get<{ attendances: InboxAttendance[] }>(`/v1/inbox/conversations/${encodeURIComponent(conversationId)}/attendances?${query.toString()}`);
+}
+
+// Tipos de finalização (Configurações > Atendimento).
+export function listInboxClosureTypes(workspaceId: string): Promise<{ closureTypes: InboxClosureType[] }> {
+  return apiClient.get<{ closureTypes: InboxClosureType[] }>(`/v1/inbox/closure-types?${new URLSearchParams({ workspaceId }).toString()}`);
+}
+
+export function createInboxClosureType(workspaceId: string, name: string): Promise<InboxClosureType> {
+  return apiClient.post<InboxClosureType>("/v1/inbox/closure-types", { workspaceId, name });
+}
+
+export function updateInboxClosureType(workspaceId: string, typeId: string, patch: { name?: string; isActive?: boolean }): Promise<InboxClosureType> {
+  return apiClient.patch<InboxClosureType>(`/v1/inbox/closure-types/${encodeURIComponent(typeId)}`, { workspaceId, ...patch });
+}
+
+export function deleteInboxClosureType(workspaceId: string, typeId: string): Promise<{ deleted: boolean }> {
+  return apiClient.delete<{ deleted: boolean }>(`/v1/inbox/closure-types/${encodeURIComponent(typeId)}?${new URLSearchParams({ workspaceId }).toString()}`);
+}
+
+export function reorderInboxClosureTypes(workspaceId: string, ids: string[]): Promise<{ closureTypes: InboxClosureType[] }> {
+  return apiClient.post<{ closureTypes: InboxClosureType[] }>("/v1/inbox/closure-types/reorder", { workspaceId, ids });
+}
+
+export function createInboxClosureSubtype(workspaceId: string, typeId: string, name: string): Promise<InboxClosureType> {
+  return apiClient.post<InboxClosureType>(`/v1/inbox/closure-types/${encodeURIComponent(typeId)}/subtypes`, { workspaceId, name });
+}
+
+export function updateInboxClosureSubtype(workspaceId: string, typeId: string, subtypeId: string, patch: { name?: string; isActive?: boolean }): Promise<InboxClosureType> {
+  return apiClient.patch<InboxClosureType>(`/v1/inbox/closure-types/${encodeURIComponent(typeId)}/subtypes/${encodeURIComponent(subtypeId)}`, { workspaceId, ...patch });
+}
+
+export function deleteInboxClosureSubtype(workspaceId: string, typeId: string, subtypeId: string): Promise<InboxClosureType> {
+  return apiClient.delete<InboxClosureType>(`/v1/inbox/closure-types/${encodeURIComponent(typeId)}/subtypes/${encodeURIComponent(subtypeId)}?${new URLSearchParams({ workspaceId }).toString()}`);
+}
+
+export function reorderInboxClosureSubtypes(workspaceId: string, typeId: string, ids: string[]): Promise<InboxClosureType> {
+  return apiClient.post<InboxClosureType>(`/v1/inbox/closure-types/${encodeURIComponent(typeId)}/subtypes/reorder`, { workspaceId, ids });
 }
 
 export function reopenInboxConversation(workspaceId: string, conversationId: string): Promise<InboxConversation> {

@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 import useSWR, { useSWRConfig } from "swr";
 import { getApiBaseUrl } from "@/lib/api-error";
-import { getChannelRouting, getConversationsServiceTime, getInboxMetrics, getInboxModuleStatus, listInboxConnections, listInboxConversationEvents, listInboxConversationMessages, listInboxConversations, listInboxMembers, listInboxQuickReplies, getInboxServiceSettings, listInboxTags, listKanbanPhases, mintInboxStreamToken } from "./api";
+import { getChannelRouting, getConversationsServiceTime, getInboxMetrics, getInboxModuleStatus, listInboxClosureTypes, listInboxConnections, listInboxConversationAttendances, listInboxConversationEvents, listInboxConversationMessages, listInboxConversations, listInboxMembers, listInboxQuickReplies, getInboxServiceSettings, listInboxTags, listKanbanPhases, mintInboxStreamToken } from "./api";
 import type { InboxConversationFilter } from "./types";
 
 /**
@@ -37,6 +37,16 @@ export function useKanbanPhases(workspaceId: string, teamId: string | undefined)
  * mais espaçado que o de conversas (nunca precisa ser tempo real). */
 export function useInboxServiceSettings(workspaceId: string) {
   return useSWR(["inbox-service-settings", workspaceId], () => getInboxServiceSettings(workspaceId), { refreshInterval: 300_000 });
+}
+
+/** Tipos de finalização do workspace — o modal de finalizar e a tela de configuração usam a mesma chave. */
+export function useInboxClosureTypes(workspaceId: string) {
+  return useSWR(["inbox-closure-types", workspaceId], () => listInboxClosureTypes(workspaceId), { refreshInterval: 300_000 });
+}
+
+/** Histórico de atendimentos da conversa — mesma cadência dos eventos (os marcos e o histórico andam juntos). */
+export function useInboxConversationAttendances(workspaceId: string, conversationId: string | undefined) {
+  return useSWR(conversationId ? ["inbox-conversation-attendances", workspaceId, conversationId] : null, () => listInboxConversationAttendances(workspaceId, conversationId!), { refreshInterval: 20_000 });
 }
 
 export function useInboxQuickReplies(workspaceId: string) {

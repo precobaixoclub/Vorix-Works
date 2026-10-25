@@ -181,7 +181,7 @@ export async function setMeetingSummaryTemplate(deps: MeetingIntelligenceDeps, a
   await deps.insights.upsertInsights({ tenantId: actor.tenantId, workspaceId: input.workspaceId, meetingId: meeting.id, patch: { summaryTemplate: input.template } });
   let reanalysisQueued = false;
   if (input.reanalyze && meeting.transcript?.status === "completed") {
-    if (!hasPermission(actor.role, "meeting:analyze")) throw new MeetingError("MEETING_INVALID_INPUT", "Seu papel não permite gerar uma nova análise.");
+    if (!hasPermission(actor, "meeting:analyze")) throw new MeetingError("MEETING_INVALID_INPUT", "Seu papel não permite gerar uma nova análise.");
     const queued = await deps.repository.enqueueAnalysis({ tenantId: actor.tenantId, workspaceId: input.workspaceId, meetingId: meeting.id });
     if (!queued.alreadyActive) await deps.repository.reopenForReprocessing({ tenantId: actor.tenantId, meetingId: meeting.id, status: "analyzing" });
     reanalysisQueued = true;
@@ -225,7 +225,7 @@ export async function askMeetings(deps: MeetingIntelligenceDeps, actor: MeetingA
     const segments = await namedSegments(deps, actor.tenantId, input.workspaceId, meeting.id);
     sources = [{ meetingId: meeting.id, title: meeting.title, ...(meeting.scheduledStartAt ? { date: meeting.scheduledStartAt.slice(0, 10) } : {}), segments: segments.map(({ startMs, speaker, text }) => ({ startMs, ...(speaker ? { speaker } : {}), text })) }];
   } else {
-    const visibleTo = hasPermission(actor.role, "meeting:read_all") ? undefined : actor.userId;
+    const visibleTo = hasPermission(actor, "meeting:read_all") ? undefined : actor.userId;
     const hits = await deps.insights.searchSegments({ tenantId: actor.tenantId, workspaceId: input.workspaceId, ...(visibleTo ? { visibleToUserId: visibleTo } : {}), query: question, limit: 40 });
     if (!hits.length) {
       return deps.insights.saveQuestion({ id: deps.idGenerator("mqa"), tenantId: actor.tenantId, workspaceId: input.workspaceId, userId: actor.userId, question, answer: { answer: "Não encontrei nada sobre isso nas transcrições das suas reuniões.", found: false, citations: [] }, creditsCharged: 0 });
@@ -469,7 +469,7 @@ export async function createMeetingClip(deps: MeetingIntelligenceDeps, actor: Me
 export async function deleteMeetingClip(deps: MeetingIntelligenceDeps, actor: MeetingActor, input: { workspaceId: string; meetingId: string; clipId: string }): Promise<void> {
   const meeting = await requireVisibleMeeting(deps, actor, input.workspaceId, input.meetingId);
   // Mesma regra dos comentários: cada pessoa apaga o próprio trecho; gestão apaga qualquer um.
-  if (!hasPermission(actor.role, "meeting:read_all")) {
+  if (!hasPermission(actor, "meeting:read_all")) {
     const clip = (await deps.insights.listClips({ tenantId: actor.tenantId, meetingId: meeting.id })).find((item) => item.id === input.clipId);
     if (!clip || clip.createdBy !== actor.userId) throw new MeetingError("MEETING_NOT_FOUND", "Trecho não encontrado.");
   }
@@ -487,7 +487,7 @@ export async function addMeetingComment(deps: MeetingIntelligenceDeps, actor: Me
 export async function deleteMeetingComment(deps: MeetingIntelligenceDeps, actor: MeetingActor, input: { workspaceId: string; meetingId: string; commentId: string }): Promise<void> {
   const meeting = await requireVisibleMeeting(deps, actor, input.workspaceId, input.meetingId);
   // Cada pessoa apaga o próprio comentário; quem vê todas as reuniões (gestão) apaga qualquer um.
-  const ownOnly = !hasPermission(actor.role, "meeting:read_all");
+  const ownOnly = !hasPermission(actor, "meeting:read_all");
   if (!(await deps.insights.deleteComment({ tenantId: actor.tenantId, meetingId: meeting.id, commentId: input.commentId, ...(ownOnly ? { userId: actor.userId } : {}) }))) throw new MeetingError("MEETING_NOT_FOUND", "Comentário não encontrado.");
 }
 
@@ -523,7 +523,7 @@ export async function deleteKeywordTracker(deps: MeetingIntelligenceDeps, actor:
 export async function keywordTrackerReport(deps: MeetingIntelligenceDeps, actor: MeetingActor, input: { workspaceId: string; from?: string; to?: string }): Promise<{ trackerId: string; label: string; meetings: number; mentions: number; latest: { meetingId: string; title: string; startMs: number; excerpt: string }[] }[]> {
   const trackers = await deps.insights.listKeywordTrackers({ tenantId: actor.tenantId, workspaceId: input.workspaceId });
   if (!trackers.length) return [];
-  const visibleTo = hasPermission(actor.role, "meeting:read_all") ? undefined : actor.userId;
+  const visibleTo = hasPermission(actor, "meeting:read_all") ? undefined : actor.userId;
   const { items } = await deps.repository.list({ tenantId: actor.tenantId, workspaceId: input.workspaceId, ...(visibleTo ? { visibleToUserId: visibleTo } : {}), hasTranscript: true, ...(input.from ? { from: input.from } : {}), ...(input.to ? { to: input.to } : {}), limit: 100, offset: 0 });
   const report = new Map(trackers.map((tracker) => [tracker.id, { trackerId: tracker.id, label: tracker.label, meetings: 0, mentions: 0, latest: [] as { meetingId: string; title: string; startMs: number; excerpt: string }[] }]));
   for (const meeting of items) {
@@ -553,7 +553,7 @@ export async function updateMeetingPreferences(deps: MeetingIntelligenceDeps, ac
   }
   if (input.consentNoticeEnabled !== undefined || input.consentMessage !== undefined) {
     // Aviso de gravação vale para a conta inteira: só quem administra integrações do Meetings altera.
-    if (!hasPermission(actor.role, "meeting:manage_integrations")) throw new MeetingError("MEETING_INVALID_INPUT", "Só administradores alteram o aviso de gravação.");
+    if (!hasPermission(actor, "meeting:manage_integrations")) throw new MeetingError("MEETING_INVALID_INPUT", "Só administradores alteram o aviso de gravação.");
     const message = input.consentMessage !== undefined ? cleanText(input.consentMessage, 500) : undefined;
     if (input.consentMessage !== undefined && !message) throw new MeetingError("MEETING_INVALID_INPUT", "Escreva o aviso de gravação.");
     await deps.insights.setTenantSettings({ tenantId: actor.tenantId, ...(input.consentNoticeEnabled !== undefined ? { consentNoticeEnabled: input.consentNoticeEnabled } : {}), ...(message ? { consentMessage: message } : {}) });
@@ -582,7 +582,7 @@ export async function assertMinutesAvailable(deps: Pick<MeetingIntelligenceDeps,
 /** Exclusão DEFINITIVA (pedido do titular, LGPD): apaga arquivos, transcrição, análise e tudo
  * ligado à reunião. Diferente da exclusão comum (lógica). Só quem pode excluir reuniões. */
 export async function purgeMeetingPermanently(deps: MeetingIntelligenceDeps, actor: MeetingActor, input: { workspaceId: string; meetingId: string; confirmTitle: string }): Promise<void> {
-  if (!hasPermission(actor.role, "meeting:delete")) throw new MeetingError("MEETING_NOT_FOUND", "Reunião não encontrada.");
+  if (!hasPermission(actor, "meeting:delete")) throw new MeetingError("MEETING_NOT_FOUND", "Reunião não encontrada.");
   const meeting = await requireVisibleMeeting(deps, actor, input.workspaceId, input.meetingId);
   if (input.confirmTitle.trim() !== meeting.title.trim()) throw new MeetingError("MEETING_INVALID_INPUT", "Digite o título exato da reunião para confirmar a exclusão definitiva.");
   if (["queued", "starting", "waiting_admission", "recording", "processing", "transcribing", "analyzing"].includes(meeting.status)) throw new MeetingError("MEETING_ACTIVE_CANNOT_DELETE", "Aguarde a gravação terminar de ser processada antes de excluir definitivamente.");

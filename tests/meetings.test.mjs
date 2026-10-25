@@ -336,7 +336,7 @@ test("ISOLAMENTO: tenant B não vê, não reproduz, não transcreve e não grava
     assert.equal(record.statusCode, 404);
   }
   const list = await app.inject({ method: "GET", url: `/v1/meetings?workspaceId=${a.workspaceId}`, headers: auth(b.tenantId) });
-  assert.equal(list.json().data.total, 0, "workspace de outro tenant: lista vazia");
+  assert.equal(list.statusCode, 404, "foreign workspaces are rejected before querying the collection");
   const create = await app.inject({ method: "POST", url: "/v1/meetings", headers: auth(b.tenantId), payload: { workspaceId: a.workspaceId, source: "manual" } });
   assert.equal(create.statusCode, 404, "não cria reunião em workspace alheio");
   await app.close();

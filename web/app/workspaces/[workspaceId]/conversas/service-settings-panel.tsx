@@ -1,6 +1,9 @@
 "use client";
 
+import { useMyAccess } from "@/features/auth/access";
+
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { ArrowDown, ArrowUp, Bot, Clock, MessageSquareHeart, Plus, Tags, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/Button";
@@ -13,7 +16,7 @@ import { useAuth } from "@/contexts/auth-context";
 import { canManageTenant } from "@/lib/rbac";
 import { cn } from "@/lib/utils";
 import { updateInboxServiceSettings } from "@/features/inbox/api";
-import { useInboxServiceSettings, useInboxTags } from "@/features/inbox/hooks";
+import { useInboxClosureTypes, useInboxServiceSettings, useInboxTags } from "@/features/inbox/hooks";
 import { useTeams } from "@/features/identity/hooks";
 import type { InboxConversation, InboxServiceSettings, ServiceWeekday, TriageOption } from "@/features/inbox/types";
 
@@ -33,8 +36,12 @@ export function csatLabel(conversation: Pick<InboxConversation, "csatStatus" | "
 /** Aba "Regras" de Conversas: horário + ausência, motivos de encerramento e pesquisa de satisfação. */
 export function ServiceSettingsPanel({ workspaceId }: { workspaceId: string }) {
   const { state } = useAuth();
-  const canEdit = canManageTenant(state.status === "authenticated" ? state.role : undefined);
+  const { can } = useMyAccess();
+  const canEdit = can("inbox:manage_service");
   const { data, error, isLoading, mutate } = useInboxServiceSettings(workspaceId);
+  // Com o ciclo de atendimento ativo, finalizar usa tipo + subtipo e a pesquisa é ligada por canal.
+  const { data: closureTypes, error: closureTypesError } = useInboxClosureTypes(workspaceId);
+  const tracksAttendance = Boolean(closureTypes) && !closureTypesError;
   const [draft, setDraft] = useState<InboxServiceSettings | undefined>();
   const [newReason, setNewReason] = useState("");
   const [saving, setSaving] = useState(false);
@@ -132,6 +139,14 @@ export function ServiceSettingsPanel({ workspaceId }: { workspaceId: string }) {
         <Textarea rows={3} value={draft.awayMessage} disabled={!canEdit || !draft.awayEnabled} onChange={(event) => set("awayMessage", event.target.value)} aria-label="Mensagem de ausência" />
       </Section>
 
+      {tracksAttendance ? (
+        <Section icon={Tags} title="Tipos de finalização" description="Ao finalizar, o atendente escolhe obrigatoriamente um tipo e um subtipo. Em Resultados, você vê por que os clientes chamam.">
+          <p className="text-sm text-muted-foreground">
+            {closureTypes?.closureTypes.length ?? 0} tipo(s) cadastrado(s).{" "}
+            <Link className="font-medium text-primary underline-offset-2 hover:underline" href={`/workspaces/${workspaceId}/settings/attendance`}>Gerenciar em Configurações &gt; Atendimento</Link>
+          </p>
+        </Section>
+      ) : (
       <Section icon={Tags} title="Motivos de encerramento" description="Ao finalizar, o atendente escolhe o motivo. Em Resultados, você vê por que os clientes chamam.">
         <div className="flex flex-wrap gap-1.5">
           {draft.closingReasons.length === 0 ? <p className="text-sm text-muted-foreground">Nenhum motivo cadastrado: finalizar não pede motivo.</p> : null}
@@ -155,16 +170,21 @@ export function ServiceSettingsPanel({ workspaceId }: { workspaceId: string }) {
         ) : null}
         <ToggleRow label="Motivo obrigatório ao finalizar" checked={draft.requireClosingReason} disabled={!canEdit || draft.closingReasons.length === 0} onChange={(value) => set("requireClosingReason", value)} />
       </Section>
+      )}
 
       <Section icon={MessageSquareHeart} title="Pesquisa de satisfação" description="Ao finalizar, o cliente recebe a pergunta e responde com uma nota de 1 a 5. A nota aparece na conversa e em Resultados.">
-        <ToggleRow label="Enviar pesquisa ao finalizar o atendimento" checked={draft.csatEnabled} disabled={!canEdit} onChange={(value) => set("csatEnabled", value)} />
+        {tracksAttendance ? (
+          <p className="rounded-lg bg-muted/50 px-3 py-2 text-xs text-muted-foreground">Ligue ou desligue a pesquisa em cada canal, na aba Canais. Os textos abaixo valem para todos os canais.</p>
+        ) : (
+          <ToggleRow label="Enviar pesquisa ao finalizar o atendimento" checked={draft.csatEnabled} disabled={!canEdit} onChange={(value) => set("csatEnabled", value)} />
+        )}
         <div className="space-y-1.5">
           <Label htmlFor="csat-message">Pergunta</Label>
-          <Textarea id="csat-message" rows={3} value={draft.csatMessage} disabled={!canEdit || !draft.csatEnabled} onChange={(event) => set("csatMessage", event.target.value)} />
+          <Textarea id="csat-message" rows={3} value={draft.csatMessage} disabled={!canEdit || (!tracksAttendance && !draft.csatEnabled)} onChange={(event) => set("csatMessage", event.target.value)} />
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="csat-thanks">Agradecimento após a nota</Label>
-          <Input id="csat-thanks" value={draft.csatThanksMessage} disabled={!canEdit || !draft.csatEnabled} onChange={(event) => set("csatThanksMessage", event.target.value)} />
+          <Input id="csat-thanks" value={draft.csatThanksMessage} disabled={!canEdit || (!tracksAttendance && !draft.csatEnabled)} onChange={(event) => set("csatThanksMessage", event.target.value)} />
         </div>
       </Section>
 

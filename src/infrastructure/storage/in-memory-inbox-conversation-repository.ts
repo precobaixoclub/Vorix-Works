@@ -1,8 +1,10 @@
+import { isConversationVisible } from "../../application/ports/inbox-conversation-repository.port.js";
 import type {
   FindOrCreateInboxConversationInput,
   InboxConversationListFilter,
   InboxConversationListItem,
   InboxConversationRepositoryPort,
+  InboxConversationVisibility,
 } from "../../application/ports/inbox-conversation-repository.port.js";
 import type { InboxContactRepositoryPort } from "../../application/ports/inbox-contact-repository.port.js";
 import type { InboxMessageRepositoryPort } from "../../application/ports/inbox-message-repository.port.js";
@@ -90,13 +92,16 @@ export class InMemoryInboxConversationRepository implements InboxConversationRep
   }
 
   async listByWorkspace(input: {
+    inboxContactId?: string;
     tenantId: string;
     workspaceId: string;
     filter?: InboxConversationListFilter;
     assignedUserId?: string;
     contactId?: string;
+    visibility?: InboxConversationVisibility;
   }): Promise<InboxConversationListItem[]> {
-    let rows = [...this.rows.values()].filter((row) => row.tenantId === input.tenantId && row.workspaceId === input.workspaceId && !row.mergeStatus);
+    let rows = [...this.rows.values()].filter((row) => row.tenantId === input.tenantId && row.workspaceId === input.workspaceId && !row.mergeStatus && isConversationVisible(row, input.visibility));
+    if (input.inboxContactId) rows = rows.filter(row => row.contactId === input.inboxContactId);
     if (input.contactId) {
       const contactIds = new Set<string>();
       for (const row of rows) {
@@ -237,7 +242,7 @@ export class InMemoryInboxConversationRepository implements InboxConversationRep
   async updateServiceStateIf(id: string, guard: InboxServiceStateGuard, patch: InboxConversationServiceStatePatch): Promise<InboxConversation | undefined> {
     const existing = this.rows.get(id);
     if (!existing) return undefined;
-    const ok = guard.kind === "triage_unset" ? !existing.triageStatus : guard.kind === "triage_awaiting" ? existing.triageStatus === "awaiting" : !existing.lastAwayMessageAt || existing.lastAwayMessageAt < guard.cutoff;
+    const ok = guard.kind === "triage_unset" ? !existing.triageStatus : guard.kind === "triage_awaiting" ? existing.triageStatus === "awaiting" : guard.kind === "csat_awaiting" ? existing.status === "resolved" && existing.csatStatus === "awaiting" && existing.csatRequestedAt === guard.requestedAt : !existing.lastAwayMessageAt || existing.lastAwayMessageAt < guard.cutoff;
     return ok ? this.updateServiceState(id, patch) : undefined;
   }
 

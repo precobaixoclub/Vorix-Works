@@ -1,3 +1,5 @@
+import { effectivePermissions } from "../../../../domain/identity/identity.model.js";
+import { isTeamManagerRole } from "../../../../domain/identity/access-control.js";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { randomBytes } from "node:crypto";
 import {
@@ -298,6 +300,11 @@ export async function registerAuthRoutes(app: FastifyInstance, deps: { identity?
         user: { id: user.id, email: user.email, name: user.name, isPlatformAdmin: user.isPlatformAdmin === true },
         tenantId: principal.tenantId,
         role: principal.role,
+        // Perfis e permissões (0173): o que a pessoa pode fazer AGORA (preset + exceções) e as
+        // equipes de que participa/gerencia — a UI esconde o que não cabe, o backend continua validando.
+        permissions: principal.permissions ?? effectivePermissions(principal.role),
+        isAccountOwner: principal.isAccountOwner === true,
+        teams: (await identity.teamMembershipRepository?.listByUser(principal.userId, principal.tenantId) ?? []).map((membership) => ({ teamId: membership.teamId, role: membership.role, isManager: isTeamManagerRole(membership.role) })),
       },
       request.id,
     );

@@ -271,6 +271,9 @@
   "tests/public-product-catalog.test.mjs",
   "tests/inbox-start-conversation.test.mjs",
   "tests/inbox-service-rules.test.mjs",
+  "tests/inbox-attendance-cycles.test.mjs",
+  "tests/access-control.test.mjs",
+  "tests/dashboard.test.mjs",
   "tests/meetings-intelligence.test.mjs",
   "tests/product-stock.test.mjs",
   "tests/ai-credits-purchase.test.mjs",
@@ -282,5 +285,8 @@
   "tests/unified-site-product.test.mjs",
   "tests/site-customization.test.mjs",
   "tests/product-specializations.test.mjs",
-  "tests/website-builder-templates.test.mjs"
+  "tests/website-builder-templates.test.mjs",
+  "tests/proposal-whatsapp-message.test.mjs",
+  "tests/deal-lifecycle-migration.test.mjs",
+  "tests/integration-review.test.mjs"
 ]

@@ -1,3 +1,4 @@
+import { InMemoryWorkspaceRepository } from "../dist/infrastructure/storage/in-memory-workspace-repository.js";
 import test from "node:test";
 import assert from "node:assert/strict";
 
@@ -5,8 +6,13 @@ import { buildApp } from "../dist/interfaces/api/app.js";
 import { loadApiConfig } from "../dist/interfaces/api/config/api-config.js";
 import { signWebhookPayload } from "../dist/application/webhook/webhook-signature-verifier.js";
 
-function buildTestApp(role = "owner", env = {}) {
+async function buildTestApp(role = "owner", env = {}) {
+  const ids = ['workspace-canary-only', 'workspace-governance-api', 'workspace-governance-connect', 'workspace-governance-rbac', 'workspace-multi-provider-api', 'workspace-outside-canary', 'workspace-publication-api'];
+  let index = 0;
+  const workspaceRepository = new InMemoryWorkspaceRepository({ idGenerator: () => ids[index++] });
+  for (const _id of ids) await workspaceRepository.create({ tenantId: "tenant-publication-api", name: "Publication fixture" });
   return buildApp({
+    container: { workspaceRepository },
     config: loadApiConfig({
       AUTH_MODE: "noop",
       DEV_PRINCIPAL_TENANT_ID: "tenant-publication-api",

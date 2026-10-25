@@ -107,6 +107,7 @@ export type CommercialSettings = {
   sellersCanViewMargin: boolean;
   dealVisibility: "all" | "team" | "own";
   proposalAcceptAutoWin: boolean;
+  closedDealArchiveDays?: number | null;
   proposalWhatsappTemplate?: string;
   proposalReminderTemplate?: string;
   defaultContractMonths?: number;

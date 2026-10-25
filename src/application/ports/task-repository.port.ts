@@ -15,7 +15,7 @@ export type CreateTaskInput = {
 
 export type UpdateTaskInput = Partial<Omit<CreateTaskInput, "tenantId" | "workspaceId">>;
 
-export type ListTasksFilter = {
+export type ListTasksFilter = { ownUserId?: string; ownerUserIdsIn?: readonly string[]; teamIdsIn?: readonly string[];
   tenantId: string;
   workspaceId: string;
   contactId?: string;

@@ -484,25 +484,29 @@ export function CloseDealModal({
   reasons: readonly { id: string; label: string }[];
   competitors: readonly { id: string; name: string }[];
   onClose: () => void;
-  onConfirm: (input: { reason?: string; comment?: string; competitorId?: string; competitorName?: string; finalValueCents?: number }) => Promise<void>;
+  onConfirm: (input: { reason?: string; comment?: string; competitorId?: string; competitorName?: string; finalValueCents?: number; closedAt?: string }) => Promise<void>;
 }) {
   const [reason, setReason] = useState("");
   const [comment, setComment] = useState("");
   const [competitor, setCompetitor] = useState("");
   const [newCompetitor, setNewCompetitor] = useState("");
   const [finalValue, setFinalValue] = useState(currencyInputFromCents(deal.valueCents));
+  const [closedDate, setClosedDate] = useState(() => {
+    const now = new Date();
+    return new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+  });
   const [busy, setBusy] = useState(false);
   const lost = mode === "lost";
   return (
-    <Modal title={lost ? "Marcar como perdida" : "Marcar como ganha"} onClose={onClose}>
+    <Modal title={lost ? "Marcar como perdida" : "Marcar como ganha"} onClose={() => { if (!busy) onClose(); }}>
       <div className="space-y-3">
-        <div>
+        {lost || reasons.length ? <div>
           <Label>{lost ? "Motivo da perda" : "Motivo do ganho (opcional)"}</Label>
           <Select value={reason} onValueChange={setReason}>
             <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
             <SelectContent>{reasons.map((item) => <SelectItem key={item.id} value={item.label}>{item.label}</SelectItem>)}</SelectContent>
           </Select>
-        </div>
+        </div> : null}
         {lost ? (
           <div className="grid gap-2 sm:grid-cols-2">
             <div>
@@ -514,12 +518,16 @@ export function CloseDealModal({
               <Input id="new-competitor" value={newCompetitor} onChange={(event) => setNewCompetitor(event.target.value)} placeholder="Nome" />
             </div>
           </div>
-        ) : deal.valueMode !== "calculated" ? (
+        ) : (
+          <>
           <div>
             <Label htmlFor="final-value">Valor final</Label>
             <MoneyInput id="final-value" value={finalValue} onChange={(event) => setFinalValue(event.target.value)} />
           </div>
-        ) : <p className="text-xs text-muted-foreground">Valor final = {formatCurrencyCents(deal.valueCents, deal.currency)} (produtos e condições negociadas). O snapshot da venda fica registrado e não muda depois.</p>}
+          <div><Label htmlFor="deal-closed-date">Data do fechamento</Label><Input id="deal-closed-date" type="datetime-local" value={closedDate} disabled={busy} onChange={event => setClosedDate(event.target.value)} /></div>
+          <p className="text-xs leading-relaxed text-muted-foreground">Confirme o valor efetivamente negociado. Você pode registrar a venda com ou sem proposta.</p>
+          </>
+        )}
         <div>
           <Label htmlFor="close-comment">Observação</Label>
           <Textarea id="close-comment" value={comment} onChange={(event) => setComment(event.target.value)} rows={2} />
@@ -529,7 +537,7 @@ export function CloseDealModal({
           <Button
             variant={lost ? "danger" : "primary"}
             loading={busy}
-            disabled={busy || (lost && !reason)}
+              disabled={busy || (lost ? !reason : !(centsFromCurrencyInput(finalValue) > 0) || !closedDate)}
             onClick={async () => {
               setBusy(true);
               try {
@@ -538,7 +546,8 @@ export function CloseDealModal({
                   comment: comment.trim() || undefined,
                   competitorId: competitor || undefined,
                   competitorName: newCompetitor.trim() || undefined,
-                  finalValueCents: !lost && deal.valueMode !== "calculated" ? centsFromCurrencyInput(finalValue) : undefined,
+                  finalValueCents: !lost ? centsFromCurrencyInput(finalValue) : undefined,
+                  closedAt: !lost ? new Date(closedDate).toISOString() : undefined,
                 });
               } finally {
                 setBusy(false);

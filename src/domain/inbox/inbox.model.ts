@@ -42,6 +42,10 @@ export type MessagingConnection = {
   displayName: string;
   /** Nome do atendente no texto enviado ao cliente; identificação interna independe desta opção. */
   sendAgentName?: boolean;
+  /** Ciclo de atendimento (0172) — pesquisa de satisfação ao finalizar, configurada POR CANAL. */
+  csatOnClose?: boolean;
+  /** Ciclo de atendimento (0172) — quem recebe um atendimento novo depois de um finalizado. */
+  newAttendanceAssignment?: "last_assignee" | "redistribute";
   phoneNumber?: string;
   /** Identificador de sessão no gateway (ex.: nome da instância no WuzAPI) — nunca um token/segredo. */
   externalSessionId?: string;
@@ -240,6 +244,7 @@ export type InboxConversationServiceStatePatch = {
 /** Condição para uma atualização ATÔMICA das regras de atendimento (duas mensagens seguidas do
  * cliente nunca disparam o menu ou a ausência duas vezes). */
 export type InboxServiceStateGuard =
+  | { kind: "csat_awaiting"; requestedAt?: string }
   | { kind: "triage_unset" }
   | { kind: "triage_awaiting" }
   | { kind: "away_due"; cutoff: string };
@@ -430,6 +435,15 @@ export const INBOX_CONVERSATION_EVENT_TYPES = [
   // Menu de triagem: cliente escolheu (`metadata.option`) ou não escolheu após 2 tentativas.
   "triage_completed",
   "triage_skipped",
+  // Ciclo de atendimento (0172) — marcos do atendimento dentro da MESMA conversa. Dados
+  // estruturados nas colunas do evento (`attendanceId`, `closureTypeId`...), nunca só no texto.
+  "attendance_opened",
+  "attendance_closed",
+  "attendance_reopened",
+  // Pesquisa ao finalizar: enviada, ou não enviada (`reason`: `disabled_by_channel`/`waived`/
+  // `not_applicable`/`failed`; `waived` guarda quem dispensou em `performedBy`).
+  "csat_sent",
+  "csat_not_sent",
 ] as const;
 
 /** Ator das ações automáticas das regras de atendimento (reabrir por mensagem do cliente etc.). */
@@ -452,6 +466,15 @@ export type InboxConversationEvent = {
   toUserId?: string;
   fromStatus?: InboxConversationStatus;
   toStatus?: InboxConversationStatus;
+  /** Ciclo de atendimento (0172) — vínculo estruturado do evento. `attendanceId` é preenchido
+   * automaticamente com o atendimento aberto da conversa quando quem registra não informa. */
+  attendanceId?: string;
+  contactId?: string;
+  fromPhaseId?: string;
+  toPhaseId?: string;
+  closureTypeId?: string;
+  closureSubtypeId?: string;
+  reason?: string;
   /**
    * Fase 5 — detalhes operacionais dos eventos `ai_response_*`, nunca prompt/resposta bruta:
    * `inboundMessageIds: string[]`, `outboundMessageId?: string`, `provider?: string`,

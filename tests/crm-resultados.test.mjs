@@ -1,3 +1,4 @@
+import { PostgresInboxAttendanceRepository } from "../dist/infrastructure/storage/postgres/postgres-inbox-attendance-repository.js";
 import { after, before, test } from "node:test";
 import assert from "node:assert/strict";
 import { join } from "node:path";
@@ -83,8 +84,8 @@ async function makePipelineWithStages(tenantId, workspaceId) {
   const pipeline = await createPipeline(deps, { tenantId, workspaceId, name: "Vendas" });
   const novo = await createStage(deps, { pipelineId: pipeline.id, tenantId, workspaceId, name: "Novo", position: 0 });
   const negociacao = await createStage(deps, { pipelineId: pipeline.id, tenantId, workspaceId, name: "Negociação", position: 1 });
-  const ganho = await createStage(deps, { pipelineId: pipeline.id, tenantId, workspaceId, name: "Ganho", position: 2, isWon: true });
-  const perdido = await createStage(deps, { pipelineId: pipeline.id, tenantId, workspaceId, name: "Perdido", position: 3, isLost: true });
+  const ganho = (await deps.pipelineStageRepository.listByPipeline(pipeline.id)).find(stage => stage.isWon);
+  const perdido = (await deps.pipelineStageRepository.listByPipeline(pipeline.id)).find(stage => stage.isLost);
   return { pipeline, novo, negociacao, ganho, perdido };
 }
 
@@ -165,11 +166,12 @@ test("Métricas de atendimento: recebidas, backlog, IA vs. humano e tempo de pri
   await messageRepo.create({ tenantId, workspaceId: workspace.id, conversationId: conversation.id, connectionId: connection.id, direction: "inbound", type: "text", body: "Oi" });
   await messageRepo.create({ tenantId, workspaceId: workspace.id, conversationId: conversation.id, connectionId: connection.id, direction: "outbound", type: "text", body: "Olá! Como posso ajudar?", sentByAi: true });
 
+  await new PostgresInboxAttendanceRepository(db.pool).openIfNone({ tenantId, workspaceId: workspace.id, conversationId: conversation.id, connectionId: connection.id, openedAt: new Date().toISOString(), openedBy: "system", openReason: "inbound_message" });
   const report = await getInboxMetrics({ inboxMetricsRepository: new PostgresInboxMetricsRepository(db.pool) }, { tenantId, workspaceId: workspace.id });
   assert.equal(report.receivedCount, 1);
   assert.equal(report.openCount, 1);
   assert.equal(report.backlogCount, 1);
   assert.equal(report.aiResolvedMessageCount, 1);
   assert.equal(report.humanResolvedMessageCount, 0);
-  assert.ok(report.avgFirstResponseSeconds !== undefined);
+  assert.equal(report.avgFirstResponseSeconds, undefined, "AI output never becomes a human first response");
 });

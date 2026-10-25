@@ -57,7 +57,8 @@ export async function signupPublic(
     password: input.password,
     name,
     tenantId,
-    role: "admin",
+    role: "owner",
+    isAccountOwner: true,
   });
 
   const workspace = await deps.workspaceRepository.create({

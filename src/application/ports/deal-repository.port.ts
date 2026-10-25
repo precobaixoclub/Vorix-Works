@@ -1,4 +1,5 @@
 import type { Deal, DealStageSummary, DealStatus, DealValueMode, ForecastCategory } from "../../domain/crm/crm.model.js";
+import type { RecordTimelineEventInput } from "./timeline-event-repository.port.js";
 
 export type CreateDealInput = {
   tenantId: string;
@@ -37,6 +38,14 @@ export type UpdateDealInput = Partial<Omit<CreateDealInput, "tenantId" | "worksp
 
 /** Fechamento (ganho/perda/cancelamento) ou reabertura — `null` limpa o snapshot. */
 export type DealClosureInput = {
+  /** Compare-and-set prevents concurrent requests from closing/crediting a sale twice. */
+  expectedStatus?: DealStatus;
+  expectedUpdatedAt?: string;
+  auditEvents?: readonly Pick<RecordTimelineEventInput, "eventType" | "actorType" | "actorId" | "payload">[];
+  stageId?: string;
+  closureSource?: string;
+  lossReasonId?: string | null;
+  reopenedByUserId?: string;
   status: DealStatus;
   forecastCategory: ForecastCategory;
   closedAt: string | null;
@@ -59,6 +68,8 @@ export type DealClosureInput = {
 };
 
 export type MoveDealStageInput = {
+  expectedStatus?: DealStatus;
+  expectedUpdatedAt?: string;
   stageId: string;
   lossReason?: string | null;
   wonAt?: string | null;
@@ -78,13 +89,15 @@ export type ListDealsFilter = {
   cursor?: string;
   limit?: number;
   status?: DealStatus;
+  boardView?: "operational" | "open" | "won" | "lost" | "closed" | "archived" | "all";
   /** Visibilidade (`own`/`team`): restringe a estes responsáveis. Lista vazia = nenhum resultado. */
+  ownUserId?: string;
   ownerUserIdsIn?: readonly string[];
   teamIdsIn?: readonly string[];
 };
 
 export type ContactOpenDealsSummary = { contactId: string; currency: string; count: number; valueCentsSum: number };
-export type ContactOpenDealsFilter = Pick<ListDealsFilter, "tenantId" | "workspaceId" | "ownerUserIdsIn" | "teamIdsIn">;
+export type ContactOpenDealsFilter = Pick<ListDealsFilter, "tenantId" | "workspaceId" | "ownUserId" | "ownerUserIdsIn" | "teamIdsIn">;
 
 export type DealRepositoryPort = {
   create(input: CreateDealInput): Promise<Deal>;
@@ -97,6 +110,8 @@ export type DealRepositoryPort = {
   /** Valor recalculado pelos itens (modo `calculated`) — nunca usado para valor manual. */
   setValue(id: string, valueCents: number): Promise<Deal>;
   setClosure(id: string, input: DealClosureInput): Promise<Deal>;
+  setArchived(input: { id: string; tenantId: string; workspaceId: string; archived: boolean; actorUserId: string }): Promise<Deal>;
+  archiveDueClosedDeals(scope?: { tenantId: string; workspaceId: string }): Promise<number>;
   /** Oportunidades abertas do mesmo contato/pipeline — aviso de duplicidade (nunca bloqueio). */
   findOpenSimilar(input: { tenantId: string; workspaceId: string; contactId?: string; pipelineId: string; title: string; limit?: number }): Promise<Deal[]>;
   summaryByPipeline(filter: Omit<ListDealsFilter, "cursor" | "limit" | "stageId"> & { pipelineId: string }): Promise<DealStageSummary[]>;

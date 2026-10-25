@@ -1,3 +1,4 @@
+import { crmScope, type CrmAccessDeps } from "../../http/crm-access.js";
 import type { FastifyInstance } from "fastify";
 import { cancelTask, completeTask, createTask, getTask, listTasks, updateTask } from "../../../../application/crm/task-use-cases.js";
 import type { TaskUseCaseDeps } from "../../../../application/crm/task-use-cases.js";
@@ -8,6 +9,7 @@ import { successEnvelope } from "../../http/response-envelope.js";
 
 const LIST_QUERY_SCHEMA = {
   type: "object",
+  additionalProperties: false,
   required: ["workspaceId"],
   properties: {
     workspaceId: { type: "string", minLength: 1 },
@@ -45,18 +47,19 @@ function translateTaskError(error: unknown): never {
   throw error;
 }
 
-export async function registerTasksRoutes(app: FastifyInstance, deps: TaskUseCaseDeps): Promise<void> {
+export async function registerTasksRoutes(app: FastifyInstance, deps: TaskUseCaseDeps & { access?: CrmAccessDeps }): Promise<void> {
   app.get("/tasks", { schema: { querystring: LIST_QUERY_SCHEMA } }, async (request) => {
     const principal = requirePermission(request, "task:read");
     const query = request.query as { workspaceId: string; contactId?: string; dealId?: string; ownerUserId?: string; teamId?: string; status?: (typeof TASK_STATUSES)[number]; cursor?: string; limit?: number };
-    const tasks = await listTasks(deps, { tenantId: principal.tenantId, ...query });
+    const scope = deps.access ? await crmScope(deps.access, principal) : {};
+    const tasks = await listTasks(deps, { ...query, ...scope, tenantId: principal.tenantId });
     return successEnvelope(tasks, request.id);
   });
 
   app.post("/tasks", { schema: { body: CREATE_BODY_SCHEMA }, config: { readOnlyGuard: true } }, async (request, reply) => {
     const principal = requirePermission(request, "task:manage");
     const body = request.body as Record<string, unknown> & { workspaceId: string; type: (typeof TASK_TYPES)[number]; title: string };
-    const task = await createTask(deps, { tenantId: principal.tenantId, ...body } as never);
+    const task = await createTask(deps, { tenantId: principal.tenantId, ...body, ownerUserId: body.ownerUserId ?? principal.userId } as never);
     reply.code(201);
     return successEnvelope(task, request.id);
   });

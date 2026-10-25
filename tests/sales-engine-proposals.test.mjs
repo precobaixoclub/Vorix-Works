@@ -30,7 +30,7 @@ import {
   rejectPublicProposal,
   sendProposal,
 } from "../dist/application/crm/proposal-use-cases.js";
-import { addDealItem, decideCommercialApproval } from "../dist/application/sales/deal-commercial-use-cases.js";
+import { addDealItem, updateDealItem, decideCommercialApproval } from "../dist/application/sales/deal-commercial-use-cases.js";
 import {
   createProposalFromDeal,
   proposalAcceptanceHandler,
@@ -40,6 +40,8 @@ import {
 } from "../dist/application/sales/proposal-sales-use-cases.js";
 import { updateCommercialSettings } from "../dist/application/sales/sales-config-use-cases.js";
 import { startTestPostgres } from "./helpers/pglite-test-db.mjs";
+import Fastify from "fastify";
+import { registerPublicProposalsRoutes } from "../dist/interfaces/api/routes/v1/public-proposals.route.js";
 
 /** Sales Engine — fases 5–7: proposta gerada da oportunidade, aprovação antes do envio, versões
  * que se substituem, rastreio real (link ≠ WhatsApp lido), aceite auditado e idempotente,
@@ -50,6 +52,21 @@ let db;
 let counter = 0;
 const nextId = (prefix) => `${prefix}-prop-${++counter}`;
 
+test("API pública remove motivos repetidos, espaços extras e diferenças de caixa", async () => {
+  const app = Fastify();
+  const proposal = { id: "proposal", tenantId: "tenant", workspaceId: "workspace", status: "draft", title: "Proposta", items: [], totalCents: 9900, discountCents: 0, currency: "BRL", version: 1 };
+  await registerPublicProposalsRoutes(app, {
+    proposalRepository: { getByTokenHash: async () => proposal },
+    workspaceRepository: { getById: async () => ({ name: "Empresa" }) },
+    salesConfigRepository: { listCloseReasons: async () => ["Preço", "Preço", " Preço ", "Prazo", "PRAZO", "Condição", ""].map((label) => ({ label })) },
+  });
+  try {
+    const response = await app.inject({ method: "GET", url: "/public/proposals/token" });
+    assert.equal(response.statusCode, 200, response.body);
+    assert.deepEqual(response.json().data.declineReasons, ["Preço", "Prazo", "Condição"]);
+  } finally { await app.close(); }
+});
+
 before(async () => {
   db = await startTestPostgres();
   await applyMigrations(db.pool, MIGRATIONS_DIR);
@@ -59,7 +76,7 @@ after(async () => {
   await db.stop();
 });
 
-async function setup({ autoWin = false } = {}) {
+async function setup({ autoWin } = {}) {
   const tenantId = nextId("tenant");
   const workspace = await new PostgresWorkspaceRepository(db.pool, { idGenerator: () => nextId("workspace") }).create({ tenantId, name: "W" });
   const workspaceId = workspace.id;
@@ -95,7 +112,7 @@ async function setup({ autoWin = false } = {}) {
   const contact = await base.contactRepository.create({ tenantId, workspaceId, name: "Ana Souza", company: "Empresa ABC" });
   const deal = await createDeal(d, { tenantId, workspaceId, pipelineId: pipeline.id, stageId: stages[1].id, contactId: contact.id, title: "Plano Pro", ownerUserId: seller.userId });
   const product = await base.productRepository.create({ tenantId, workspaceId, name: "Plano Pro", priceCents: 100000, costCents: 40000, minimumPriceCents: 80000 });
-  if (autoWin) await updateCommercialSettings(d, { tenantId, workspaceId, patch: { proposalAcceptAutoWin: true } });
+  if (autoWin !== undefined) await updateCommercialSettings(d, { tenantId, workspaceId, patch: { proposalAcceptAutoWin: autoWin } });
   return { d, tenantId, workspaceId, seller, manager, deal, product, stages, buyerEvents };
 }
 
@@ -168,7 +185,7 @@ test("Visualização só pelo link real; alerta na 1ª abertura e no sinal quent
   assert.equal(events.filter((type) => type === "viewed").length, 4);
 });
 
-test("Aceite idempotente e auditado; padrão não ganha a oportunidade automaticamente", async () => {
+test("Aceite idempotente e auditado; padrão fecha a oportunidade automaticamente", async () => {
   const { d, workspaceId, tenantId, seller, deal, product } = await setup();
   await addDealItem(d, seller, { workspaceId, dealId: deal.id, productId: product.id, quantity: 1 });
   const { proposal, rawToken } = await createProposalFromDeal(d, seller, { workspaceId, dealId: deal.id });
@@ -184,7 +201,7 @@ test("Aceite idempotente e auditado; padrão não ganha a oportunidade automatic
   const raw = await db.pool.query("select accepted_ip_hash, accepted_user_agent from proposals where id = $1", [proposal.id]);
   assert.notEqual(raw.rows[0].accepted_ip_hash, "203.0.113.9", "IP nunca guardado em claro");
   await applyProposalAcceptanceToDeal({ ...d, acceptanceHandler: proposalAcceptanceHandler(d) }, accepted);
-  assert.equal((await d.dealRepository.getById(deal.id)).status, "open", "padrão B: vendedor finaliza manualmente");
+  assert.equal((await d.dealRepository.getById(deal.id)).status, "won", "aceite fecha a venda por padrao");
 });
 
 test("Com ganho automático configurado, o aceite fecha a venda com o valor da proposta", async () => {
@@ -192,6 +209,9 @@ test("Com ganho automático configurado, o aceite fecha a venda com o valor da p
   await addDealItem(d, seller, { workspaceId, dealId: deal.id, productId: product.id, quantity: 1, proposedUnitPriceCents: 90000 });
   const { proposal, rawToken } = await createProposalFromDeal(d, seller, { workspaceId, dealId: deal.id });
   await sendProposal(d.proposal, { proposalId: proposal.id, tenantId, workspaceId });
+  const currentItems = await d.dealItemRepository.listByDeal(deal.id);
+  await updateDealItem(d, seller, { workspaceId, dealId: deal.id, itemId: currentItems[0].id, proposedUnitPriceCents: 100000 });
+  assert.equal((await d.dealRepository.getById(deal.id)).valueCents, 100000);
   const accepted = await acceptPublicProposal(d.proposal, rawToken);
   await applyProposalAcceptanceToDeal({ ...d, acceptanceHandler: proposalAcceptanceHandler(d) }, accepted);
   const won = await d.dealRepository.getById(deal.id);
@@ -199,6 +219,17 @@ test("Com ganho automático configurado, o aceite fecha a venda com o valor da p
   assert.equal(won.wonProposalId, proposal.id);
   assert.equal(won.finalValueCents, 90000);
   assert.equal(won.creditedOwnerUserId, seller.userId);
+  assert.equal(won.closureSource, "proposal_acceptance");
+});
+
+test("Preferência explícita desativada mantém a oportunidade aberta após o aceite", async () => {
+  const { d, workspaceId, tenantId, seller, deal, product } = await setup({ autoWin: false });
+  await addDealItem(d, seller, { workspaceId, dealId: deal.id, productId: product.id, quantity: 1 });
+  const { proposal, rawToken } = await createProposalFromDeal(d, seller, { workspaceId, dealId: deal.id });
+  await sendProposal(d.proposal, { proposalId: proposal.id, tenantId, workspaceId });
+  const accepted = await acceptPublicProposal(d.proposal, rawToken);
+  await applyProposalAcceptanceToDeal({ ...d, acceptanceHandler: proposalAcceptanceHandler(d) }, accepted);
+  assert.equal((await d.dealRepository.getById(deal.id)).status, "open");
 });
 
 test("Recusa registra motivo e não perde a oportunidade; proposta vencida não é aceita", async () => {
@@ -209,6 +240,12 @@ test("Recusa registra motivo e não perde a oportunidade; proposta vencida não 
   const declined = await rejectPublicProposal(d.proposal, rawToken, { reason: "Prazo", comment: "Precisamos para março" });
   assert.equal(declined.status, "rejected");
   assert.equal(declined.rejectionReason, "Prazo");
+  assert.equal(declined.rejectionComment, "Precisamos para março");
+  const persisted = await d.proposalRepository.getById(proposal.id);
+  assert.equal(persisted.rejectionReason, "Prazo");
+  assert.equal(persisted.rejectionComment, "Precisamos para março");
+  const events = await d.timelineEventRepository.listByEntity({ entityType: "proposal", entityId: proposal.id });
+  assert.deepEqual(events.find((event) => event.eventType === "proposal_rejected").payload, { reason: "Prazo", comment: "Precisamos para março" });
   assert.equal((await d.dealRepository.getById(deal.id)).status, "open");
 
   const expired = await createProposalFromDeal(d, seller, { workspaceId, dealId: deal.id, validUntil: "2020-01-01" });

@@ -23,8 +23,8 @@ export function LossReasonModal({
   busy?: boolean;
 }) {
   const workspace = useCurrentWorkspace();
-  const { data: reasons } = useReasons(workspace.id, "lost");
-  const options = reasons && reasons.length ? reasons.map((reason) => reason.label) : FALLBACK_REASONS;
+  const { data: reasons, error, isLoading } = useReasons(workspace.id, "lost");
+  const options = (reasons ?? []).map(reason => reason.label);
   const [reason, setReason] = useState("");
   const [notes, setNotes] = useState("");
 
@@ -32,6 +32,7 @@ export function LossReasonModal({
     <Modal title="Motivo da perda" onClose={onClose}>
       <div className="space-y-3">
         <p className="text-sm text-muted-foreground">Escolha o motivo principal — ele alimenta a análise de perdas.</p>
+        {isLoading ? <p role="status" className="text-sm text-muted-foreground">Carregando motivos…</p> : error ? <p role="alert" className="text-sm text-destructive">Não foi possível carregar os motivos. Tente novamente.</p> : !options.length ? <p role="alert" className="text-sm text-muted-foreground">Cadastre ou ative um motivo de perda nas regras comerciais antes de continuar.</p> : null}
         <div className="flex flex-wrap gap-2">
           {options.map((item) => (
             <button key={item} type="button" onClick={() => setReason(item)} className={cn("rounded-full border px-3 py-1.5 text-sm", reason === item ? "border-primary bg-primary/10 text-foreground" : "border-border text-muted-foreground hover:text-foreground")}>{item}</button>
@@ -43,7 +44,7 @@ export function LossReasonModal({
         </div>
         <div className="flex justify-end gap-2 pt-2">
           <Button variant="secondary" onClick={onClose} disabled={busy}>Cancelar</Button>
-          <Button variant="danger" onClick={() => onConfirm(reason, notes.trim() || undefined)} loading={busy} disabled={!reason}>Confirmar perda</Button>
+          <Button variant="danger" onClick={() => onConfirm(reason, notes.trim() || undefined)} loading={busy} disabled={busy || !reason || !options.includes(reason)}>Confirmar perda</Button>
         </div>
       </div>
     </Modal>

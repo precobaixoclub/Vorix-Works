@@ -43,7 +43,7 @@ const CONNECT_BODY = {
 
 function actorOf(request: FastifyRequest, permission: "meeting:read" | "meeting:manage_recorder_accounts"): RecorderAccountActor {
   const principal = requirePermission(request, permission);
-  return { tenantId: principal.tenantId, userId: principal.userId, role: principal.role };
+  return { tenantId: principal.tenantId, userId: principal.userId, role: principal.role, permissions: principal.permissions };
 }
 
 function translate(error: unknown): never {

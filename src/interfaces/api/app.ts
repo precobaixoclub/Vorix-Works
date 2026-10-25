@@ -18,6 +18,7 @@ import { registerV1Routes } from "./routes/v1/index.js";
 import { registerPublicationScheduler } from "./scheduler/publication-scheduler.js";
 import { registerMetaAdsSyncScheduler } from "./scheduler/meta-ads-sync-scheduler.js";
 import { registerTrialExpirationScheduler } from "./scheduler/trial-expiration-scheduler.js";
+import { registerDealArchiveScheduler } from "./scheduler/deal-archive-scheduler.js";
 import { registerProposalFollowUpScheduler } from "./scheduler/proposal-follow-up-scheduler.js";
 import { registerContactDirectoryScheduler } from "./scheduler/contact-directory-scheduler.js";
 import { registerCapacityChangeScheduler } from "./scheduler/capacity-change-scheduler.js";
@@ -91,7 +92,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
 
   registerDiPlugin(app, container, config);
   registerRequestContext(app);
-  registerAuthMiddleware(app, container.authPort);
+  registerAuthMiddleware(app, container.authPort, container.identity?.accessResolver);
   // Depois da autenticação (precisa do principal): barra rotas do Vorix Marketing para tenant sem
   // entitlement. Ver `solution-access.middleware.ts`.
   registerSolutionAccessMiddleware(app, container.solutionAccess);
@@ -176,6 +177,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   registerMetaAdsSyncScheduler(app, container, { enabled: config.metaAds.syncSchedulerEnabled, intervalMs: config.metaAds.syncSchedulerIntervalMs });
   registerTrialExpirationScheduler(app, container, { enabled: config.billing.trialEnabled, intervalMs: config.billing.trialExpirationCheckIntervalMs });
   // Sales Engine — follow-up de propostas (tarefa/alerta ao vendedor; nunca mensagem automática ao cliente).
+  registerDealArchiveScheduler(app, container);
   registerProposalFollowUpScheduler(app, container, { enabled: process.env.ZUNO_PROPOSAL_FOLLOW_UPS !== "false", intervalMs: 15 * 60 * 1000 });
   registerContactDirectoryScheduler(app, container, { intervalMs: 5 * 60 * 1000 });
   // Pricing/Capacity Etapa B — aplica reduções de capacidade agendadas pro fim do ciclo. Mesma

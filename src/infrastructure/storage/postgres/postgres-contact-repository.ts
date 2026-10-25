@@ -1,3 +1,6 @@
+import type { InboxConversationVisibility } from "../../../application/ports/inbox-conversation-repository.port.js";
+import { inboxVisibilitySql } from "./postgres-inbox-visibility.js";
+import { ownedScopeSql } from "./postgres-owned-scope.js";
 import type { Pool } from "pg";
 import type { ContactRepositoryPort, CreateContactInput, UpdateContactInput } from "../../../application/ports/contact-repository.port.js";
 import type { Contact } from "../../../domain/crm/crm.model.js";
@@ -46,7 +49,7 @@ export class PostgresContactRepository implements ContactRepositoryPort {
     return result.rows[0] ? this.toDomain(result.rows[0]) : undefined;
   }
 
-  async listByWorkspace(input: { tenantId: string; workspaceId: string; search?: string; ownerUserId?: string; teamId?: string; cursor?: string; limit?: number }): Promise<Contact[]> {
+  async listByWorkspace(input: { ownUserId?: string; inboxVisibility?: InboxConversationVisibility; ownerUserIdsIn?: readonly string[]; teamIdsIn?: readonly string[]; tenantId: string; workspaceId: string; search?: string; ownerUserId?: string; teamId?: string; cursor?: string; limit?: number }): Promise<Contact[]> {
     const limit = input.limit ?? 50;
     const conditions: string[] = ["c.tenant_id = $1", "c.workspace_id = $2", `(not c.phone_resolution_pending or ${CONTACT_DIRECTORY_PROTECTED_SQL})`];
     const params: unknown[] = [input.tenantId, input.workspaceId];
@@ -61,6 +64,11 @@ export class PostgresContactRepository implements ContactRepositoryPort {
     if (input.teamId) {
       params.push(input.teamId);
       conditions.push(`team_id = $${params.length}`);
+    }
+    const scope = ownedScopeSql(input, params, "c.");
+    if (scope) {
+      const inbox = input.inboxVisibility ? `exists (select 1 from inbox_contacts ic join inbox_conversations vc on vc.contact_id = ic.id where ic.contact_id = c.id and vc.tenant_id = c.tenant_id and vc.workspace_id = c.workspace_id and vc.merge_status is null and ${inboxVisibilitySql(input.inboxVisibility, params, "vc")})` : "false";
+      conditions.push(`(${scope} or ${inbox})`);
     }
     if (input.cursor) {
       params.push(input.cursor);

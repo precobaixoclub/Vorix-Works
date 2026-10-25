@@ -1,5 +1,6 @@
 import { after, before, test } from "node:test";
 import assert from "node:assert/strict";
+import Fastify from "fastify";
 import { join } from "node:path";
 
 import { applyMigrations } from "../dist/infrastructure/storage/postgres/migration-runner.js";
@@ -19,7 +20,7 @@ import {
   PostgresSalesConfigRepository,
 } from "../dist/infrastructure/storage/postgres/postgres-sales-engine-repositories.js";
 import { ensureDefaultPipeline } from "../dist/application/crm/pipeline-use-cases.js";
-import { createDeal, moveDealStage, updateDeal } from "../dist/application/crm/deal-use-cases.js";
+import { createDeal, moveDealStage, updateDeal, listDeals } from "../dist/application/crm/deal-use-cases.js";
 import { computeCommercialTotals, evaluateCommercialTerms, priceLine } from "../dist/domain/sales/pricing.js";
 import {
   addDealItem,
@@ -33,11 +34,18 @@ import {
   updateDealCommercialTerms,
   updateDealItem,
   winDeal,
+  correctDealClosure,
 } from "../dist/application/sales/deal-commercial-use-cases.js";
 import { resolveProductPricing } from "../dist/application/sales/catalog-use-cases.js";
-import { listCloseReasons, updateCommercialSettings, findPossibleDuplicateDeals } from "../dist/application/sales/sales-config-use-cases.js";
+import { listCloseReasons, createCloseReason, updateCloseReason, deleteCloseReason, reorderCloseReasons, updateCommercialSettings, findPossibleDuplicateDeals } from "../dist/application/sales/sales-config-use-cases.js";
 import { resolveDealScope } from "../dist/application/sales/sales-context.js";
 import { startTestPostgres } from "./helpers/pglite-test-db.mjs";
+import { DEFAULT_CLOSE_REASONS } from "../dist/domain/sales/sales.model.js";
+import { registerDealsRoutes } from "../dist/interfaces/api/routes/v1/deals.route.js";
+import { registerSalesEngineRoutes } from "../dist/interfaces/api/routes/v1/sales-engine.route.js";
+import { registerErrorHandler } from "../dist/interfaces/api/http/error-handler.js";
+import { PostgresAutomationRuleRepository } from "../dist/infrastructure/storage/postgres/postgres-automation-rule-repository.js";
+import { PostgresAutomationRunLogRepository } from "../dist/infrastructure/storage/postgres/postgres-automation-run-log-repository.js";
 
 /**
  * Sales Engine — fases 1–4: catálogo com custo/tabela/mínimo, snapshot dos itens, margem e espaço
@@ -49,6 +57,175 @@ const MIGRATIONS_DIR = join(process.cwd(), "db", "migrations");
 let db;
 let counter = 0;
 const nextId = (prefix) => `${prefix}-sales-${++counter}`;
+
+test("Ciclo comercial: ganho manual sem proposta, valor negociado, arquivo e reabertura preservam histórico", async () => {
+  const { d, tenantId, workspaceId, deal, seller, stages } = await setup();
+  await updateDeal(d, { dealId: deal.id, tenantId, workspaceId, patch: { valueCents: 100000 } });
+  await updateCommercialSettings(d, { tenantId, workspaceId, patch: { closedDealArchiveDays: 0 } });
+  const closedAt = new Date(Date.now() - 3600000).toISOString();
+  const won = await moveDealStage({ ...d, sales: d }, { dealId: deal.id, tenantId, workspaceId, targetStageId: stages.find(s => s.isWon).id, actorUserId: seller.userId, finalValueCents: 85000, closedAt, lossComment: "Negociação presencial" });
+  assert.equal(won.status, "won");
+  assert.equal(won.finalValueCents, 85000);
+  assert.equal(won.closedAt, closedAt);
+  assert.equal(won.firstClosedAt, closedAt);
+  assert.equal(won.wonProposalId, undefined);
+  assert.equal(won.closureSource, "kanban");
+  assert.ok(won.archivedAt);
+  const filter = { tenantId, workspaceId, pipelineId: deal.pipelineId };
+  assert.equal((await listDeals(d, { ...filter, boardView: "operational" })).length, 0);
+  assert.equal((await listDeals(d, { ...filter, boardView: "won" })).length, 1);
+  assert.equal((await listDeals(d, { ...filter, boardView: "archived", search: deal.title })).length, 1);
+  assert.equal(await d.dealRepository.archiveDueClosedDeals(filter), 0);
+  const reopened = await moveDealStage({ ...d, sales: d }, { dealId: deal.id, tenantId, workspaceId, targetStageId: stages[2].id, actorUserId: seller.userId });
+  assert.equal(reopened.status, "open");
+  assert.equal(reopened.archivedAt, undefined);
+  assert.equal(reopened.closedAt, undefined);
+  assert.equal(reopened.firstClosedAt, closedAt);
+  assert.equal(reopened.reopenCount, 1);
+  assert.equal(reopened.reopenedByUserId, seller.userId);
+  assert.ok(reopened.reopenedAt);
+  const events = await d.timelineEventRepository.listByEntity({ entityType: "deal", entityId: deal.id });
+  assert.equal(events.filter(e => e.eventType === "deal_archived").length, 1);
+  const event = events.find(e => e.eventType === "deal_reopened");
+  assert.equal(event.actorId, seller.userId);
+  assert.equal(event.payload.fromStageId, won.stageId);
+  assert.equal(event.payload.toStageId, stages[2].id);
+  assert.equal(event.payload.previousFinalValueCents, 85000);
+  assert.equal(event.payload.reopenCount, 1);
+});
+
+test("Arquivamento respeita prazo, Nunca, preferência existente e liberação manual", async () => {
+  const { d, tenantId, workspaceId, deal, seller } = await setup();
+  await updateDeal(d, { dealId: deal.id, tenantId, workspaceId, patch: { valueCents: 50000 } });
+  await updateCommercialSettings(d, { tenantId, workspaceId, patch: { closedDealArchiveDays: 3, proposalAcceptAutoWin: false } });
+  const won = await winDeal(d, seller, { dealId: deal.id, workspaceId });
+  assert.equal(won.archivedAt, undefined);
+  await db.pool.query("update deals set closed_at = now() - interval '4 days' where id = $1", [deal.id]);
+  assert.equal(await d.dealRepository.archiveDueClosedDeals({ tenantId: "foreign", workspaceId }), 0);
+  assert.equal(await d.dealRepository.archiveDueClosedDeals({ tenantId, workspaceId }), 1);
+  assert.equal((await d.dealRepository.getById(deal.id)).status, "won");
+  await d.dealRepository.setArchived({ id: deal.id, tenantId, workspaceId, archived: false, actorUserId: seller.userId });
+  assert.equal(await d.dealRepository.archiveDueClosedDeals({ tenantId, workspaceId }), 0, "devolução manual mantém visível até o próximo fechamento");
+  await updateCommercialSettings(d, { tenantId, workspaceId, patch: { closedDealArchiveDays: null } });
+  const settings = await d.salesConfigRepository.getSettings(workspaceId);
+  assert.equal(settings.closedDealArchiveDays, null);
+  assert.equal(settings.proposalAcceptAutoWin, false, "alterar retenção preserva opção explícita de aceite");
+});
+
+test("Perda usa motivo ativo, persiste ID e permite administrar cadastro sem apagar histórico", async () => {
+  const { d, tenantId, workspaceId, deal, seller } = await setup();
+  const scope = { tenantId, workspaceId };
+  const custom = await createCloseReason(d, { ...scope, kind: "lost", label: "Sem disponibilidade" });
+  const reasons = await listCloseReasons(d, { ...scope, kind: "lost", includeInactive: true });
+  await reorderCloseReasons(d, { ...scope, kind: "lost", reasonIds: reasons.map(r => r.id).reverse() });
+  assert.equal((await listCloseReasons(d, { ...scope, kind: "lost" }))[0].id, custom.id);
+  await updateCloseReason(d, { ...scope, reasonId: custom.id, patch: { active: false } });
+  await assert.rejects(loseDeal(d, seller, { workspaceId, dealId: deal.id, lossReason: custom.label }), /DEAL_LOSS_REASON_REQUIRED/);
+  await updateCloseReason(d, { ...scope, reasonId: custom.id, patch: { active: true, label: "Sem agenda" } });
+  const lost = await loseDeal(d, seller, { workspaceId, dealId: deal.id, lossReason: "Sem agenda", comment: "Retomar no próximo mês" });
+  assert.equal(lost.lossReasonId, custom.id);
+  assert.equal(lost.closeComment, "Retomar no próximo mês");
+  await assert.rejects(deleteCloseReason(d, { ...scope, reasonId: custom.id }), /SALES_REASON_IN_USE/);
+  await reopenDeal(d, seller, { workspaceId, dealId: deal.id });
+  await assert.rejects(deleteCloseReason(d, { ...scope, reasonId: custom.id }), /SALES_REASON_IN_USE/);
+  const unused = await createCloseReason(d, { ...scope, kind: "lost", label: "Temporário" });
+  await deleteCloseReason(d, { ...scope, reasonId: unused.id });
+  assert.equal(await d.salesConfigRepository.getCloseReason(unused.id), undefined);
+});
+
+test("Fechamento simultâneo emite um ganho e uma mudança de fase; datas futuras não alteram a oportunidade", async () => {
+  const { d, workspaceId, deal, seller } = await setup();
+  await assert.rejects(winDeal(d, seller, { workspaceId, dealId: deal.id, finalValueCents: 10000, closedAt: new Date(Date.now() + 86400000).toISOString() }), /DEAL_CLOSE_DATE_INVALID/);
+  assert.equal((await d.dealRepository.getById(deal.id)).status, "open");
+  await Promise.allSettled([1, 2].map(() => winDeal(d, seller, { workspaceId, dealId: deal.id, finalValueCents: 10000 })));
+  const events = await d.timelineEventRepository.listByEntity({ entityType: "deal", entityId: deal.id });
+  assert.equal(events.filter(e => e.eventType === "deal_won").length, 1);
+  assert.equal(events.filter(e => e.eventType === "deal_stage_changed").length, 1);
+});
+
+test("Valor final no Kanban satisfaz campo obrigatório e respeita a política comercial", async () => {
+  const { d, tenantId, workspaceId, deal, seller, stages } = await setup();
+  const wonStage = stages.find(s => s.isWon);
+  await d.pipelineStageRepository.update(wonStage.id, { requiredFields: ["valueCents"] });
+  const item = await product(d, tenantId, workspaceId);
+  await addDealItem(d, seller, { workspaceId, dealId: deal.id, productId: item.id, quantity: 1 });
+  const move = finalValueCents => moveDealStage({ ...d, sales: d }, { tenantId, workspaceId, dealId: deal.id, targetStageId: wonStage.id, finalValueCents, actorUserId: seller.userId });
+  await assert.rejects(move(70000), /COMMERCIAL_APPROVAL_REQUIRED/);
+  assert.equal((await d.dealRepository.getById(deal.id)).stageId, deal.stageId);
+  const won = await move(90000);
+  assert.equal(won.finalValueCents, 90000);
+  assert.equal(won.finalSnapshot.totals.totalCents, 90000);
+  assert.equal(won.finalTcvCents, 90000);
+});
+
+test("Gestor corrige valor final com auditoria sem mudar data, crédito, estoque ou arquivamento", async () => {
+  const { d, tenantId, workspaceId, deal, seller, manager } = await setup();
+  await updateCommercialSettings(d, { tenantId, workspaceId, patch: { closedDealArchiveDays: 0 } });
+  const won = await winDeal(d, seller, { workspaceId, dealId: deal.id, finalValueCents: 10000 });
+  await assert.rejects(correctDealClosure(d, seller, { workspaceId, dealId: deal.id, finalValueCents: 9000 }), /DEAL_PERMISSION_REQUIRED/);
+  const corrected = await correctDealClosure(d, manager, { workspaceId, dealId: deal.id, finalValueCents: 9000, comment: "Ajuste autorizado" });
+  assert.equal(corrected.finalValueCents, 9000);
+  assert.equal(corrected.finalSnapshot.totals.totalCents, 9000);
+  assert.equal(corrected.closedAt, won.closedAt);
+  assert.equal(corrected.creditedOwnerUserId, seller.userId);
+  assert.equal(corrected.archivedAt, won.archivedAt);
+  const events = await d.timelineEventRepository.listByEntity({ entityType: "deal", entityId: deal.id });
+  assert.equal(events.filter(e => e.eventType === "deal_won").length, 1);
+  assert.deepEqual(events.find(e => e.eventType === "deal_final_value_changed").payload.fromValueCents, 10000);
+  assert.equal(events.find(e => e.eventType === "deal_final_value_changed").payload.toValueCents, 9000);
+});
+
+test("HTTP: permissões específicas protegem fechamento, correções e arquivo e isolam o tenant", async () => {
+  const { d, workspaceId, deal, seller, manager, tenantId } = await setup();
+  let actor = { ...seller, role: "viewer" };
+  const app = Fastify();
+  registerErrorHandler(app);
+  app.addHook("onRequest", async request => { request.zunoContext = { principal: actor }; });
+  await registerDealsRoutes(app, { ...d, sales: d });
+  await registerSalesEngineRoutes(app, d);
+  try {
+    const win = () => app.inject({ method: "POST", url: `/deals/${deal.id}/win`, payload: { workspaceId, finalValueCents: 8500 } });
+    assert.equal((await win()).statusCode, 403);
+    actor = seller;
+    assert.equal((await win()).statusCode, 200);
+    const correction = () => app.inject({ method: "PATCH", url: `/deals/${deal.id}/closure`, payload: { workspaceId, finalValueCents: 8000 } });
+    assert.equal((await correction()).statusCode, 403);
+    const archive = () => app.inject({ method: "POST", url: `/deals/${deal.id}/archive`, payload: { workspaceId, archived: true } });
+    assert.equal((await archive()).statusCode, 200);
+    assert.equal((await archive()).statusCode, 200);
+    const events = await d.timelineEventRepository.listByEntity({ entityType: "deal", entityId: deal.id });
+    assert.equal(events.filter(e => e.eventType === "deal_archived").length, 1);
+    actor = manager;
+    assert.equal((await correction()).statusCode, 200);
+    const settings = await app.inject({ method: "PATCH", url: "/commercial-settings", payload: { workspaceId, closedDealArchiveDays: null } });
+    assert.equal(settings.statusCode, 200, settings.body);
+    actor = { ...manager, tenantId: "another-tenant" };
+    assert.equal((await archive()).statusCode, 404);
+    assert.equal((await correction()).statusCode, 404);
+    assert.equal((await d.dealRepository.getById(deal.id)).tenantId, tenantId);
+  } finally { await app.close(); }
+});
+
+test("Automação de fase executa fechamento comercial e gatilho de ganho sem recursão", async () => {
+  const { d, workspaceId, deal, seller, tenantId, stages } = await setup();
+  await updateDeal(d, { dealId: deal.id, tenantId, workspaceId, patch: { valueCents: 25000 } });
+  const automation = { ...d, automationRuleRepository: new PostgresAutomationRuleRepository(db.pool), automationRunLogRepository: new PostgresAutomationRunLogRepository(db.pool) };
+  const sales = { ...d, automation };
+  automation.transitionDealStage = (current, targetStageId) => moveDealStage({ ...d, sales, automation }, { dealId: current.id, tenantId, workspaceId, targetStageId, source: "automation" });
+  await automation.automationRuleRepository.create({ tenantId, workspaceId, name: "Encerrar negociação", trigger: "deal_stage_changed", conditions: [{ field: "stageId", equals: stages[1].id }], action: "move_deal_stage", actionConfig: { targetStageId: stages.find(s => s.isWon).id }, active: true });
+  await automation.automationRuleRepository.create({ tenantId, workspaceId, name: "Pós-venda", trigger: "deal_won", conditions: [], action: "create_task", actionConfig: { taskTitle: "Acompanhar entrega" }, active: true });
+  await moveDealStage({ ...d, sales, automation }, { dealId: deal.id, tenantId, workspaceId, targetStageId: stages[1].id, actorUserId: seller.userId });
+  const won = await d.dealRepository.getById(deal.id);
+  assert.equal(won.status, "won");
+  assert.equal(won.finalValueCents, 25000);
+  assert.equal(won.closureSource, "automation");
+  assert.equal(won.closedByUserId, undefined);
+  const events = await d.timelineEventRepository.listByEntity({ entityType: "deal", entityId: deal.id });
+  assert.equal(events.filter(e => e.eventType === "deal_won").length, 1);
+  assert.equal(events.find(e => e.eventType === "deal_won").actorType, "automation");
+  const tasks = await d.taskRepository.listByWorkspace({ tenantId, workspaceId, dealId: deal.id });
+  assert.equal(tasks.filter(t => t.title === "Acompanhar entrega").length, 1);
+});
 
 before(async () => {
   db = await startTestPostgres();
@@ -82,7 +259,7 @@ async function setup(tenantId = nextId("tenant")) {
   const d = deps();
   const { pipeline, stages } = await ensureDefaultPipeline(d, tenantId, workspace.id);
   const seller = { tenantId, userId: nextId("seller"), role: "editor" };
-  const manager = { tenantId, userId: nextId("manager"), role: "admin" };
+  const manager = { tenantId, userId: nextId("manager"), role: "owner" };
   const deal = await createDeal({ ...d, sales: d }, { tenantId, workspaceId: workspace.id, pipelineId: pipeline.id, stageId: stages[0].id, title: "Plano anual", ownerUserId: seller.userId });
   return { d, tenantId, workspaceId: workspace.id, pipeline, stages, seller, manager, deal };
 }
@@ -90,6 +267,27 @@ async function setup(tenantId = nextId("tenant")) {
 async function product(d, tenantId, workspaceId, overrides = {}) {
   return d.productRepository.create({ tenantId, workspaceId, name: overrides.name ?? "Produto A", priceCents: 100000, costCents: 40000, minimumPriceCents: 80000, ...overrides });
 }
+
+test("Motivos padrão: inicialização concorrente não duplica registros nem deixa grupos incompletos", async () => {
+  const tenantId = nextId("reason-tenant");
+  const workspace = await new PostgresWorkspaceRepository(db.pool).create({ tenantId, name: "Motivos" });
+  const d = deps();
+  await Promise.all(Array.from({ length: 4 }, () => listCloseReasons(d, { tenantId, workspaceId: workspace.id })));
+  const stored = await d.salesConfigRepository.listCloseReasons({ tenantId, workspaceId: workspace.id, includeInactive: true });
+  assert.equal(stored.length, Object.values(DEFAULT_CLOSE_REASONS).flat().length);
+  assert.equal(new Set(stored.map((reason) => `${reason.kind}:${reason.label}`)).size, stored.length);
+  for (const [kind, expected] of Object.entries(DEFAULT_CLOSE_REASONS)) {
+    assert.deepEqual(stored.filter((reason) => reason.kind === kind).map((reason) => reason.label), expected);
+  }
+});
+
+test("Motivos duplicados de workspaces antigos aparecem uma única vez na configuração", async () => {
+  const { d, tenantId, workspaceId } = await setup();
+  await listCloseReasons(d, { tenantId, workspaceId });
+  await d.salesConfigRepository.createCloseReason({ tenantId, workspaceId, kind: "proposal_decline", label: "  Preço  " });
+  const reasons = await listCloseReasons(d, { tenantId, workspaceId, kind: "proposal_decline" });
+  assert.equal(reasons.filter((reason) => reason.label.trim().toLowerCase() === "preço").length, 1);
+});
 
 test("Domínio: margem, desconto e espaço de negociação (cenário 147)", () => {
   const line = priceLine({ quantity: 1, unitCostCents: 40000, listPriceCents: 100000, minimumPriceCents: 80000, proposedUnitPriceCents: 95000, billingType: "one_time" });
@@ -254,14 +452,14 @@ test("Perda exige motivo, registra concorrente e não conta como venda (cenário
   const { d, tenantId, workspaceId, deal, seller } = await setup();
   await updateDeal(d, { dealId: deal.id, tenantId, workspaceId, patch: { valueCents: 50000 } });
   await assert.rejects(loseDeal(d, seller, { workspaceId, dealId: deal.id, lossReason: " " }), /DEAL_LOSS_REASON_REQUIRED/);
-  const lost = await loseDeal(d, seller, { workspaceId, dealId: deal.id, lossReason: "Concorrente", competitorName: "Acme", comment: "Preço deles 20% menor" });
+  const lost = await loseDeal(d, seller, { workspaceId, dealId: deal.id, lossReason: "Concorrência", competitorName: "Acme", comment: "Preço deles 20% menor" });
   assert.equal(lost.status, "lost");
-  assert.equal(lost.lossReason, "Concorrente");
+  assert.equal(lost.lossReason, "Concorrência");
   assert.ok(lost.competitorId);
   assert.equal(lost.creditedOwnerUserId, seller.userId);
   assert.equal(lost.finalMarginBp, undefined);
   const reasons = await listCloseReasons(d, { tenantId, workspaceId, kind: "lost" });
-  assert.ok(reasons.some((reason) => reason.label === "Sem orçamento"), "motivos padrão semeados e editáveis");
+  assert.ok(reasons.some((reason) => reason.label === "Cliente desistiu"), "motivos padrão semeados e editáveis");
 });
 
 test("Kanban: mover para etapa de ganho fecha com snapshot; etapa exige campos configurados", async () => {

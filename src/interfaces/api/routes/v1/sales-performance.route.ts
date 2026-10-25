@@ -43,7 +43,7 @@ async function guard<T>(run: () => Promise<T>): Promise<T> {
 
 function actorFor(request: FastifyRequest, permission: Permission): SalesActor {
   const principal = requirePermission(request, permission);
-  return { tenantId: principal.tenantId, userId: principal.userId, role: principal.role };
+  return { tenantId: principal.tenantId, userId: principal.userId, role: principal.role, permissions: principal.permissions, permissionRevokes: principal.permissionRevokes };
 }
 
 export async function registerSalesPerformanceRoutes(app: FastifyInstance, deps: SalesPerformanceDeps & Partial<Pick<DealInsightsDeps, "proposalRepository" | "conversationReader" | "insightsGenerator">>): Promise<void> {

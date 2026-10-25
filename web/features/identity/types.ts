@@ -37,8 +37,35 @@ export type TenantMembership = {
   avatarUrl?: string;
   tenantId: string;
   role: TenantRole;
+  /** Perfis e permissões (0173). */
+  status?: "active" | "disabled";
+  isAccountOwner?: boolean;
+  permissionGrants?: string[];
+  permissionRevokes?: string[];
+  /** Quantas exceções sobre o perfil padrão. */
+  customizedPermissions?: number;
   createdAt: string;
   updatedAt: string;
+};
+
+export type PermissionOrigin = "profile" | "granted" | "revoked" | "none";
+
+/** Acesso completo de um usuário: perfil, exceções, permissões efetivas e equipes. */
+export type MemberAccess = {
+  userId: string;
+  role: TenantRole;
+  status: "active" | "disabled";
+  isAccountOwner: boolean;
+  permissionGrants: string[];
+  permissionRevokes: string[];
+  effectivePermissions: string[];
+  permissions: { permission: string; enabled: boolean; origin: PermissionOrigin }[];
+  teams: { teamId: string; role: TenantRole; isManager: boolean }[];
+};
+
+export type AccessCatalog = {
+  profiles: { role: TenantRole; label: string; permissions: string[] }[];
+  categories: { key: string; label: string; description: string; permissions: { permission: string; label: string; description?: string; sensitive?: boolean }[] }[];
 };
 
 export type TenantMemberInviteStatus = "pending" | "accepted" | "revoked" | "expired";

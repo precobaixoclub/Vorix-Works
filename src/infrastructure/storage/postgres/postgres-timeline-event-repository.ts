@@ -42,6 +42,21 @@ export class PostgresTimelineEventRepository implements TimelineEventRepositoryP
     return result.rows.map((row) => this.toDomain(row));
   }
 
+  async listByEntities(input: { tenantId: string; workspaceId: string; entities: readonly { entityType: TimelineEntityType; entityId: string }[]; limitPerEntity?: number }): Promise<TimelineEvent[]> {
+    if (!input.entities.length) return [];
+    const result = await this.pool.query<TimelineRow>(
+      `select * from (
+         select e.*, row_number() over (partition by e.entity_type, e.entity_id order by e.occurred_at desc) as rank
+         from timeline_events e
+         join jsonb_to_recordset($3::jsonb) as allowed(entity_type text, entity_id text)
+           on allowed.entity_type = e.entity_type and allowed.entity_id = e.entity_id
+         where e.tenant_id = $1 and e.workspace_id = $2
+       ) ranked where rank <= $4 order by occurred_at desc`,
+      [input.tenantId, input.workspaceId, JSON.stringify(input.entities.map(entity => ({ entity_type: entity.entityType, entity_id: entity.entityId }))), input.limitPerEntity ?? 100],
+    );
+    return result.rows.map(row => this.toDomain(row));
+  }
+
   private toDomain(row: TimelineRow): TimelineEvent {
     return {
       id: row.id,

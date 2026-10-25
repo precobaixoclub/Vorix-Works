@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useState } from "react";
 import useSWR from "swr";
 import { ArrowRight, Check, CheckCircle2, FileText, MessageCircle, Send, Sparkles } from "lucide-react";
 import { toast } from "sonner";
@@ -15,7 +15,8 @@ import type { Deal, ProposalWithToken } from "@/features/crm/types";
 import type { PublicProposal } from "@/features/crm/public-proposal-api";
 import { listInboxConversations } from "@/features/inbox/api";
 import { useInboxConnections } from "@/features/inbox/hooks";
-import { createProposalFromDeal, sendProposalWhatsapp } from "@/features/sales/api";
+import { createProposalFromDeal } from "@/features/sales/api";
+import { ProposalWhatsappDialog } from "./ProposalWhatsappDialog";
 import { useDealCommercial, useInvalidateSales } from "@/features/sales/hooks";
 import { formatCurrencyCents } from "@/lib/format";
 
@@ -109,8 +110,7 @@ function ProposalReview({ workspaceId, deal, proposal, contactName, onClose, onC
   const [selected, setSelected] = useState("");
   const [busy, setBusy] = useState(false);
   const [sent, setSent] = useState(false);
-  const [error, setError] = useState<string>();
-  const idempotencyKey = useRef(`proposal-card-${proposal.id}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`);
+  const [whatsappOpen, setWhatsappOpen] = useState(false);
   const connections = connectionsData?.connections ?? [];
   const conversations = (conversationsData?.conversations ?? []).filter(conversation => conversation.chatType !== "group" && conversation.connectionProvider !== "instagram" && conversation.crmContactId === deal.contactId && connections.some(connection => connection.id === conversation.connectionId && connection.provider !== "instagram" && connection.status === "connected"));
   const conversationId = selected || (conversations.length === 1 ? conversations[0].id : "");
@@ -119,17 +119,7 @@ function ProposalReview({ workspaceId, deal, proposal, contactName, onClose, onC
   const loading = !connectionsData || (Boolean(deal.contactId) && !conversationsData);
   const document: PublicProposal = { number: proposal.number, version: proposal.version ?? 1, title: proposal.title, introduction: proposal.introduction, items: proposal.items.map(item => ({ name: item.name, description: item.description, quantity: item.quantity, unitPriceCents: item.unitPriceCents, subtotalCents: item.subtotalCents, billingType: item.billingType })), subtotalCents: proposal.items.reduce((sum, item) => sum + item.subtotalCents, 0), discountCents: proposal.discountCents, totalCents: proposal.totalCents, currency: proposal.currency, validUntil: proposal.validUntil, conditions: proposal.conditions, notes: proposal.notes, terms: proposal.terms, status: proposal.status, superseded: false, customerName: contactName || contact?.name, customerCompany: contact?.company, issuerName: workspace.name, declineReasons: [] };
 
-  async function send() {
-    if (!recipient || pending || busy || sent) return;
-    setBusy(true); setError(undefined);
-    try {
-      await sendProposalWhatsapp(proposal.id, { workspaceId, conversationId: recipient.id, idempotencyKey: idempotencyKey.current });
-      setSent(true);
-      toast.success("Proposta enviada pelo WhatsApp.");
-      await onChanged();
-    } catch (cause) { setError(messageFor(cause)); }
-    finally { setBusy(false); }
-  }
+  function send() { if (recipient && !pending && !busy && !sent) setWhatsappOpen(true); }
 
   return <Modal title={sent ? "Proposta enviada" : "Revise e envie sua proposta"} onClose={() => { if (!busy) onClose(); }} maxWidthClass="sm:max-w-5xl">
     <div className="space-y-4">
@@ -138,10 +128,10 @@ function ProposalReview({ workspaceId, deal, proposal, contactName, onClose, onC
           <p className="mb-3 flex items-center gap-2 text-sm font-medium"><MessageCircle className="h-4 w-4 text-primary" />Enviar para o WhatsApp do cliente</p>
           {conversationsError || connectionsError ? <p role="alert" className="text-sm text-destructive">Não foi possível carregar as conversas. Feche e abra a proposta novamente para tentar.</p> : loading ? <p className="text-xs text-muted-foreground">Buscando as conversas deste cliente...</p> : !deal.contactId || conversations.length === 0 ? <p className="text-sm text-muted-foreground">Este cliente ainda não tem uma conversa em um WhatsApp conectado. O rascunho está salvo; vincule o contato a uma conversa para enviar depois.</p> : <div className="grid items-end gap-3 sm:grid-cols-[minmax(0,1fr)_auto]"><div className="min-w-0 space-y-1.5"><Label htmlFor="proposal-whatsapp-recipient">Conversa de destino</Label><Select value={conversationId} onValueChange={setSelected} disabled={busy}><SelectTrigger id="proposal-whatsapp-recipient"><SelectValue placeholder="Escolha a conversa do cliente" /></SelectTrigger><SelectContent>{conversations.map(conversation => <SelectItem key={conversation.id} value={conversation.id}>{conversation.contactPhone || conversation.contactName || "Cliente"} · {connections.find(connection => connection.id === conversation.connectionId)?.displayName}</SelectItem>)}</SelectContent></Select></div><Button onClick={send} loading={busy} disabled={!recipient}><Send className="h-4 w-4" />Enviar pelo WhatsApp</Button></div>}
         </>}
-        {error ? <p role="alert" className="mt-3 text-sm text-destructive">{error}</p> : null}
       </div>
       <ProposalDocument proposal={document} preview />
       <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border pt-4"><p className="text-xs text-muted-foreground">{sent ? "O envio e a resposta ficam registrados na oportunidade." : "A proposta já está salva. Você também pode enviá-la mais tarde."}</p><Button variant="secondary" onClick={onClose} disabled={busy}>{sent ? "Concluir" : "Fechar revisão"}</Button></div>
     </div>
+    {whatsappOpen && recipient ? <ProposalWhatsappDialog workspaceId={workspaceId} proposalId={proposal.id} conversationId={recipient.id} onClose={() => setWhatsappOpen(false)} onSent={async () => { setSent(true); setBusy(true); try { await onChanged(); } finally { setBusy(false); } }} /> : null}
   </Modal>;
 }

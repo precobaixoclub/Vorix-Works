@@ -38,13 +38,17 @@ const qs = (params: Record<string, string | number | boolean | undefined>) => {
 };
 
 // --- Oportunidade: cockpit, itens, termos, fechamento ----------------------------------------
-export const getDealCommercial = (workspaceId: string, dealId: string) => apiClient.get<DealCommercialSummary>(`/v1/deals/${q(dealId)}/commercial?workspaceId=${q(workspaceId)}`);
+export const getDealCommercial = async (workspaceId: string, dealId: string) => {
+  const data = await apiClient.get<DealCommercialSummary>(`/v1/deals/${q(dealId)}/commercial?workspaceId=${q(workspaceId)}`);
+  if (!data?.totals || !data.visibility || !data.probability || !data.aging || !data.evaluation || !data.policy || !data.approval) throw new Error("Não foi possível carregar os dados comerciais. Tente novamente.");
+  return data;
+};
 export type AddDealItemInput = { workspaceId: string; productId?: string; variantId?: string; name?: string; listPriceCents?: number; unitCostCents?: number; billingType?: string; quantity: number; proposedUnitPriceCents?: number; discountBp?: number };
 export const addDealItem = (dealId: string, input: AddDealItemInput) => apiClient.post<DealItem>(`/v1/deals/${q(dealId)}/items`, input);
 export const updateDealItem = (dealId: string, itemId: string, input: { workspaceId: string; quantity?: number; proposedUnitPriceCents?: number; discountBp?: number }) => apiClient.patch<DealItem>(`/v1/deals/${q(dealId)}/items/${q(itemId)}`, input);
 export const removeDealItem = (dealId: string, itemId: string, workspaceId: string) => apiClient.delete<null>(`/v1/deals/${q(dealId)}/items/${q(itemId)}?workspaceId=${q(workspaceId)}`);
 export const updateDealCommercial = (dealId: string, input: { workspaceId: string; valueMode?: "manual" | "calculated"; discountCents?: number; contractMonths?: number | null; priceBookId?: string | null; probability?: number | null; forecastCategory?: "pipeline" | "best_case" | "commit"; valueCents?: number }) => apiClient.patch<Deal>(`/v1/deals/${q(dealId)}/commercial`, input);
-export const winDeal = (dealId: string, input: { workspaceId: string; wonReason?: string; proposalId?: string; comment?: string; finalValueCents?: number }) => apiClient.post<Deal>(`/v1/deals/${q(dealId)}/win`, input);
+export const winDeal = (dealId: string, input: { workspaceId: string; wonReason?: string; proposalId?: string; comment?: string; finalValueCents?: number; closedAt?: string }) => apiClient.post<Deal>(`/v1/deals/${q(dealId)}/win`, input);
 export const loseDeal = (dealId: string, input: { workspaceId: string; lossReason: string; competitorId?: string; competitorName?: string; comment?: string }) => apiClient.post<Deal>(`/v1/deals/${q(dealId)}/lose`, input);
 export const reopenDeal = (dealId: string, workspaceId: string) => apiClient.post<Deal>(`/v1/deals/${q(dealId)}/reopen`, { workspaceId });
 export const setDealCustomFields = (dealId: string, workspaceId: string, values: Record<string, unknown>) => apiClient.put<Deal>(`/v1/deals/${q(dealId)}/custom-fields`, { workspaceId, values });
@@ -110,6 +114,7 @@ export const createProposalVersion = (proposalId: string, input: { workspaceId: 
 export const cancelProposal = (proposalId: string, workspaceId: string) => apiClient.post<Proposal>(`/v1/proposals/${q(proposalId)}/cancel`, { workspaceId });
 export const markProposalSent = (proposalId: string, workspaceId: string, channel: "link" | "email" | "other" = "link") => apiClient.post<Proposal>(`/v1/proposals/${q(proposalId)}/mark-sent`, { workspaceId, channel });
 export const sendProposalWhatsapp = (proposalId: string, input: { workspaceId: string; conversationId: string; message?: string; idempotencyKey: string }) => apiClient.post<Proposal>(`/v1/proposals/${q(proposalId)}/send-whatsapp`, input);
+export const previewProposalWhatsapp = (proposalId: string, workspaceId: string, kind: "send" | "reminder" = "send") => apiClient.get<{ message: string }>(`/v1/proposals/${q(proposalId)}/whatsapp-preview?${new URLSearchParams({ workspaceId, kind })}`);
 export const remindProposalWhatsapp = (proposalId: string, input: { workspaceId: string; conversationId: string; message?: string; idempotencyKey: string }) => apiClient.post<Proposal>(`/v1/proposals/${q(proposalId)}/remind-whatsapp`, input);
 export const getProposalTracking = (proposalId: string, workspaceId: string) => apiClient.get<ProposalTracking>(`/v1/proposals/${q(proposalId)}/tracking?workspaceId=${q(workspaceId)}`);
 export const listConversationProposals = (conversationId: string, workspaceId: string) => apiClient.get<ConversationProposal[]>(`/v1/inbox/conversations/${q(conversationId)}/proposals?workspaceId=${q(workspaceId)}`);
@@ -117,3 +122,7 @@ export const listConversationProposals = (conversationId: string, workspaceId: s
 // --- Funil: configuração das etapas -----------------------------------------------------------
 export const updatePipelineStage = (pipelineId: string, stageId: string, input: { workspaceId: string; probability?: number | null; staleAfterDays?: number | null; requiredFields?: string[] }) =>
   apiClient.patch<import("@/features/crm/types").PipelineStage>(`/v1/pipelines/${q(pipelineId)}/stages/${q(stageId)}`, input);
+
+export const deleteReason = (reasonId: string, workspaceId: string) => apiClient.delete(`/v1/sales-reasons/${q(reasonId)}?workspaceId=${q(workspaceId)}`);
+export const correctDealClosure = (dealId: string, input: { workspaceId: string; finalValueCents?: number; lossReason?: string; comment?: string }) => apiClient.patch<Deal>(`/v1/deals/${q(dealId)}/closure`, input);
+export const reorderReasons = (input: { workspaceId: string; kind: import("./types").CloseReasonKind; reasonIds: string[] }) => apiClient.post("/v1/sales-reasons/reorder", input);

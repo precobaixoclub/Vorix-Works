@@ -1,0 +1,16 @@
+@media (max-width: 640px) {
+  .dialog {
+    width: calc(100vw - 24px) !important;
+    max-width: calc(100vw - 24px) !important;
+    max-height: calc(100dvh - 24px) !important;
+  }
+
+  .dialog button[aria-label="Diminuir largura"],
+  .dialog button[aria-label="Aumentar largura"] {
+    display: none;
+  }
+
+  .headerActions button {
+    min-height: 44px;
+  }
+}

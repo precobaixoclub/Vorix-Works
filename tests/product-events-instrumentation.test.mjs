@@ -111,7 +111,7 @@ async function makePipelineWithStages(tenantId, workspaceId) {
   const deps = { pipelineRepository: new PostgresPipelineRepository(db.pool), pipelineStageRepository: new PostgresPipelineStageRepository(db.pool) };
   const pipeline = await createPipeline(deps, { tenantId, workspaceId, name: "Vendas" });
   const novo = await createStage(deps, { pipelineId: pipeline.id, tenantId, workspaceId, name: "Novo", position: 0 });
-  const ganho = await createStage(deps, { pipelineId: pipeline.id, tenantId, workspaceId, name: "Ganho", position: 1, isWon: true });
+  const ganho = (await deps.pipelineStageRepository.listByPipeline(pipeline.id)).find(stage => stage.isWon);
   return { pipeline, novo, ganho };
 }
 

@@ -43,7 +43,7 @@ function buildTestApp(overrides = {}) {
     AUTH_MODE: "jwt",
     JWT_SECRET: "test-secret-saas-acquisition",
     DATABASE_URL: db.connectionString,
-    PERSISTENCE_DRIVER: "memory",
+    PERSISTENCE_DRIVER: "postgres",
     ACCESS_TOKEN_TTL_SECONDS: "900",
     REFRESH_TOKEN_TTL_SECONDS: "2592000",
     ZUNO_LOG_LEVEL: "silent",

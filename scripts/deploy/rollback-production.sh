@@ -7,6 +7,7 @@
 # Uso: sh scripts/deploy/rollback-production.sh <stamp> [api|web|all]
 #   (o <stamp> e o backup aparecem no log do deploy: /var/log/vorix-deploy-<sha>-<stamp>.log)
 set -eu
+umask 077
 STAMP="$1"; TARGET="${2:-api}"
 ROOT=/opt/zuno
 cd "$ROOT"
@@ -32,8 +33,16 @@ for service in $SERVICES; do
   docker image inspect "$image:rollback-$STAMP" >/dev/null 2>&1 || { echo "imagem $image:rollback-$STAMP ausente"; exit 1; }
 done
 ENV_BEFORE=$(md5sum .env.zuno | cut -c1-12)
-rm -rf assets db docs examples scripts src tests web Dockerfile docker-compose.zuno.yml package.json package-lock.json tsconfig.json
-tar -xzf "$BACKUP" -C "$ROOT"
+RESTORE_DIR="$ROOT/deploy_backups/manual-restore-$STAMP"
+mkdir -p "$RESTORE_DIR"
+# Keep current source intact if the complete extraction fails (including disk exhaustion).
+tar -xzf "$BACKUP" -C "$RESTORE_DIR"
+for entry in assets db docs examples scripts src tests web .dockerignore .editorconfig .env.example .env.zuno.example .gitignore CHANGELOG.md Dockerfile README.md docker-compose.zuno.yml package.json package-lock.json tsconfig.json scratch-creative-benchmark.mjs; do
+  [ -e "$RESTORE_DIR/$entry" ] || continue
+  rm -rf -- "$ROOT/$entry"
+  mv -- "$RESTORE_DIR/$entry" "$ROOT/$entry"
+done
+rm -rf -- "$RESTORE_DIR"
 [ "$(md5sum .env.zuno | cut -c1-12)" = "$ENV_BEFORE" ] || echo "AVISO: .env.zuno do backup difere do atual — conferir"
 for service in $SERVICES; do
   image=$(image_of "$service")

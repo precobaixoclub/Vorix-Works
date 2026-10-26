@@ -41,6 +41,13 @@ S3, a privacidade depende da ACL do bucket — usar bucket privado + URL pré-as
 
 ## 2. Deploy e rollback
 
+Atualização de 26/10/2026: o preflight exige **8.192 MiB livres**, reservando espaço para o build
+conjunto de API/gateway/web e a extração de um rollback. O rollback automático e o manual extraem
+o backup completo numa pasta privada antes de substituir o código; uma falha de extração no
+automático preserva o código atual e ainda restaura as imagens anteriores. Os cenários de backup
+válido e de falha de extração foram exercitados em diretórios temporários com comandos Docker
+simulados. Arquivos de sessão do gateway também recebem backup com permissão 0600.
+
 Procedimento oficial (nunca mais scripts avulsos):
 
 ```sh

@@ -45,7 +45,10 @@ image_of() { case "$1" in zuno-api) echo zuno-zuno-api ;; vorix-worker) echo zun
 [ -f "$TARBALL" ] || { echo "tarball ausente"; echo DEPLOY_FAILED; exit 1; }
 [ -f .env.zuno ] || { echo ".env.zuno ausente"; echo DEPLOY_FAILED; exit 1; }
 FREE_MB=$(df -Pm / | awk 'NR==2{print $4}')
-[ "$FREE_MB" -ge 4000 ] || { echo "PREFLIGHT_DISK: só ${FREE_MB}MB livres (mínimo 4000)"; echo DEPLOY_FAILED; exit 1; }
+# The API/gateway/web build can consume more than 4 GiB before exporting its images. Reserve
+# enough space for the builds AND a fully extracted source backup if rollback is needed.
+MIN_FREE_MB=8192
+[ "$FREE_MB" -ge "$MIN_FREE_MB" ] || { echo "PREFLIGHT_DISK: só ${FREE_MB}MB livres (mínimo ${MIN_FREE_MB})"; echo DEPLOY_FAILED; exit 1; }
 tar -tzf "$TARBALL" docker-compose.zuno.yml Dockerfile >/dev/null || { echo "tarball sem compose/Dockerfile"; echo DEPLOY_FAILED; exit 1; }
 echo "PREFLIGHT_OK free=${FREE_MB}MB"
 
@@ -65,6 +68,7 @@ if docker volume inspect zuno_social_gateway >/dev/null 2>&1; then
   docker run --rm --user 0:0 --network none -v zuno_social_gateway:/data:ro -v "$ROOT/deploy_backups:/backup" \
     --entrypoint tar zuno-social-provider-gateway:latest -czf "/backup/social-sessions-pre-$SHA-$STAMP.tgz" -C /data . \
     || { echo "BACKUP_SOCIAL_SESSIONS_FAILED"; echo DEPLOY_FAILED; exit 1; }
+  chmod 600 "$ROOT/deploy_backups/social-sessions-pre-$SHA-$STAMP.tgz"
 fi
 
 # 3. imagens atuais → :rollback-<stamp>
@@ -80,8 +84,20 @@ rollback() {
   if ! docker image inspect "zuno-social-provider-gateway:rollback-$STAMP" >/dev/null 2>&1; then
     $COMPOSE stop social-provider-gateway >/dev/null 2>&1 || true
   fi
-  rm -rf assets db docs examples scripts src tests web Dockerfile docker-compose.zuno.yml package.json package-lock.json tsconfig.json
-  tar -xzf "deploy_backups/pre-$SHA-$STAMP.tgz" -C "$ROOT"
+  # Extract and validate the complete source backup before replacing ANY current source path.
+  # A full disk used to leave the host tree half-restored and abort before restoring image tags.
+  RESTORE_DIR="$ROOT/deploy_backups/restore-$STAMP"
+  mkdir -p "$RESTORE_DIR"
+  if tar -xzf "deploy_backups/pre-$SHA-$STAMP.tgz" -C "$RESTORE_DIR"; then
+    for entry in assets db docs examples scripts src tests web .dockerignore .editorconfig .env.example .env.zuno.example .gitignore CHANGELOG.md Dockerfile README.md docker-compose.zuno.yml package.json package-lock.json tsconfig.json scratch-creative-benchmark.mjs; do
+      [ -e "$RESTORE_DIR/$entry" ] || continue
+      rm -rf -- "$ROOT/$entry"
+      mv -- "$RESTORE_DIR/$entry" "$ROOT/$entry"
+    done
+    rm -rf -- "$RESTORE_DIR"
+  else
+    echo "ROLLBACK_CODE_RESTORE_FAILED: current source preserved; restoring running images"
+  fi
   for service in $SERVICES; do
     image=$(image_of "$service")
     docker image inspect "$image:rollback-$STAMP" >/dev/null 2>&1 && docker tag "$image:rollback-$STAMP" "$image:latest"

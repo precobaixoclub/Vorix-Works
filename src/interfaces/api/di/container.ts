@@ -173,6 +173,10 @@ import { PostgresCalendarEventRepository } from "../../../infrastructure/storage
 import { PostgresMeetingRepository } from "../../../infrastructure/storage/postgres/postgres-meeting-repository.js";
 import { isSolutionKey, type SolutionKey } from "../../../domain/solutions/solution.model.js";
 import { PostgresSolutionEntitlementRepository } from "../../../infrastructure/storage/postgres/postgres-solution-entitlement-repository.js";
+import type { RadarUseCaseDeps } from "../../../application/radar/radar-use-cases.js";
+import { AiGatewayRadarAnalyst } from "../../../infrastructure/ai-gateway/radar-ai-analyst-adapter.js";
+import { CreditAccountingRadarCreditGate } from "../../../infrastructure/radar/credit-accounting-radar-credit-gate.js";
+import { PostgresRadarRepository } from "../../../infrastructure/storage/postgres/postgres-radar-repository.js";
 import { DeterministicExecutionTaskHandler } from "../../../application/execution/deterministic-handlers.js";
 import type { ExecutionHandlerResolver } from "../../../application/execution/handler-resolver.js";
 import type { ExecutionFeatureFlags } from "../../../application/execution/feature-flags.js";
@@ -349,6 +353,10 @@ export type ApiContainer = {
   meetings?: MeetingUseCaseDeps & { maxUploadBytes: number; zoom?: ZoomIntegration };
   /** Agenda do Meetings + conexão Google Calendar (a sincronização roda no worker). */
   meetingsAgenda?: { calendar: CalendarUseCaseDeps; connection: CalendarConnectionDeps };
+  /** Radar de Sentimento — só existe com `RADAR_ENABLED=true` e identidade real (Postgres). A
+   * análise profunda (`aiAnalyst`/`creditGate`) só entra com `RADAR_AI_ENABLED=true`, sempre sobre
+   * o gateway de IA com gate de crédito. */
+  radar?: RadarUseCaseDeps;
   publicationProviders: readonly PublicationProviderPort[];
   publicationProviderAdapters: readonly PublicationProviderAdapterPort[];
   publicationProviderRegistry: PublicationProviderRegistry;
@@ -1739,7 +1747,20 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
       now: () => new Date(),
     });
 
+    // Radar de Sentimento — a análise profunda ("Analisar agora") usa o MESMO gateway com gate de
+    // crédito e o MESMO `CreditAccountingService` das demais operações de IA; nunca um saldo
+    // próprio do Radar. Sem `RADAR_AI_ENABLED`, a tela funciona só com a camada heurística.
+    const radar: RadarUseCaseDeps | undefined = config.radar?.enabled
+      ? {
+          radarRepository: new PostgresRadarRepository(identityRepositories.pool),
+          aiAnalyst: config.radar.aiEnabled ? new AiGatewayRadarAnalyst(gatedAiGateway) : undefined,
+          creditGate: config.radar.aiEnabled ? new CreditAccountingRadarCreditGate({ creditAccounting }) : undefined,
+          realtimePublisher: inboxRealtimeSubscriber ? { publish: (event) => inboxRealtimeSubscriber.publish(event) } : undefined,
+        }
+      : undefined;
+
     return {
+      radar,
       authPort: new JwtAuthAdapter(jwtPort),
       inboxFeatureFlags,
       inboxProvider,

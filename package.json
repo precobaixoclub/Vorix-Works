@@ -12,6 +12,7 @@
     "test": "npm run build && node scripts/test-backend.mjs",
     "test:meetings": "npm run build && node --test tests/meetings.test.mjs tests/meetings-agenda.test.mjs tests/meetings-processing.test.mjs tests/meetings-recorder.test.mjs tests/meetings-recorder-accounts.test.mjs",
     "test:solutions": "npm run build && node --test tests/solutions.test.mjs tests/onboarding.test.mjs tests/onboarding-route.test.mjs",
+    "test:radar": "npm run build && node --test tests/radar-engine.test.mjs tests/radar-credits.test.mjs tests/radar-http.test.mjs",
     "typecheck": "tsc --noEmit",
     "architecture:check": "npm run build && node scripts/verify-skills-discovery.mjs && node scripts/check-legacy-chat-imports.mjs && node scripts/check-contract-drift.mjs && node scripts/check-ai-stack-isolation.mjs && node scripts/check-inbox-conversation-isolation.mjs && node scripts/check-crm-isolation.mjs && node scripts/check-planning-isolation.mjs && node scripts/check-runtime-isolation.mjs && node scripts/check-execution-isolation.mjs && node scripts/check-publication-isolation.mjs && node scripts/sync-site-template-registry.mjs --check",
     "zuno": "npm run build && node dist/interfaces/cli/index.js",

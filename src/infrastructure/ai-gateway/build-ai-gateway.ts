@@ -30,6 +30,10 @@ export type BuildAiGatewayOptions = {
     commercialCopilotEnabled: boolean;
     anthropicCommercialCopilotModel: string;
     anthropicMeetingAnalysisModel?: string;
+    /** Radar de Sentimento, Camada 2 — opcional: sem valor, usa `DEFAULT_SENTIMENT_RADAR_MODEL`.
+     * Ligar/desligar a análise profunda NÃO passa por aqui (é `RADAR_AI_ENABLED` na composição
+     * raiz + `radar_settings.ai_analysis_enabled` por workspace) — isto só escolhe o modelo. */
+    anthropicSentimentRadarModel?: string;
   };
   executionRepository: AiExecutionRepositoryPort;
   telemetry?: AiTelemetryPort;
@@ -50,6 +54,9 @@ export type BuiltAiGateway = {
   aiCommercialCopilotEnabled: boolean;
 };
 
+/** Já registrado e ativo em `model-registry.ts` — mesmo modelo padrão das demais operações de texto. */
+export const DEFAULT_SENTIMENT_RADAR_MODEL = "claude-haiku-4-5-20251001";
+
 function buildBindings(aiConfig: BuildAiGatewayOptions["aiConfig"]): AiOperationModelBindings {
   const bindings: AiOperationModelBindings = {
     briefing_field_extraction: { provider: "anthropic", modelId: aiConfig.anthropicBriefingExtractionModel },
@@ -63,6 +70,7 @@ function buildBindings(aiConfig: BuildAiGatewayOptions["aiConfig"]): AiOperation
     meeting_ai_analysis: { provider: "anthropic", modelId: aiConfig.anthropicMeetingAnalysisModel ?? "claude-haiku-4-5-20251001" },
     meeting_question_answer: { provider: "anthropic", modelId: aiConfig.anthropicMeetingAnalysisModel ?? "claude-haiku-4-5-20251001" },
     meeting_follow_up: { provider: "anthropic", modelId: aiConfig.anthropicMeetingAnalysisModel ?? "claude-haiku-4-5-20251001" },
+    sentiment_radar_analysis: { provider: "anthropic", modelId: aiConfig.anthropicSentimentRadarModel || DEFAULT_SENTIMENT_RADAR_MODEL },
   };
   if (aiConfig.anthropicInboxAutoReplyModel) {
     bindings.inbox_auto_reply = { provider: "anthropic", modelId: aiConfig.anthropicInboxAutoReplyModel };

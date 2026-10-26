@@ -47,6 +47,10 @@ export const AI_OPERATIONS = [
   "report_ai_analysis",
   /** Relatórios (Conversas) — monta um modelo de relatório escolhendo seções do catálogo fechado. */
   "report_template_builder",
+  /** Radar de Sentimento, Camada 2 — diagnóstico de risco de uma conversa de atendimento (ver
+   * `src/application/ports/radar-ai.port.ts`). Só roda com gatilho suficiente da camada
+   * heurística e sempre consome crédito. */
+  "sentiment_radar_analysis",
 ] as const;
 export type AiOperation = (typeof AI_OPERATIONS)[number];
 
@@ -55,7 +59,7 @@ export type AiOperation = (typeof AI_OPERATIONS)[number];
  * `infrastructure/ai-gateway/inbox-ai-responder-adapter.ts` chama `inbox_auto_reply`; o adapter em
  * `infrastructure/ai-gateway/commercial-copilot-generator-adapter.ts` chama
  * `commercial_copilot_suggestions`. */
-export const EXECUTABLE_AI_OPERATIONS: readonly AiOperation[] = ["briefing_field_extraction", "inbox_auto_reply", "commercial_copilot_suggestions", "meeting_ai_analysis", "meeting_question_answer", "meeting_follow_up", "deal_commercial_insights", "report_ai_analysis", "report_template_builder"];
+export const EXECUTABLE_AI_OPERATIONS: readonly AiOperation[] = ["briefing_field_extraction", "inbox_auto_reply", "commercial_copilot_suggestions", "meeting_ai_analysis", "meeting_question_answer", "meeting_follow_up", "deal_commercial_insights", "report_ai_analysis", "report_template_builder", "sentiment_radar_analysis"];
 
 export type AiCapability = "structured_text" | "free_text" | "vision" | "image_generation" | "embeddings" | "tool_calling" | "streaming";
 

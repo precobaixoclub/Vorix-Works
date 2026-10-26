@@ -55,6 +55,7 @@ export const OPERATION_REQUIRED_CAPABILITY: Record<AiOperation, AiCapability> = 
   deal_commercial_insights: "structured_text",
   report_ai_analysis: "structured_text",
   report_template_builder: "structured_text",
+  sentiment_radar_analysis: "structured_text",
 };
 
 const ANTHROPIC_PRICING_2026_01: AiPricingMetadata = {

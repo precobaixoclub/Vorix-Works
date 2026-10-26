@@ -36,7 +36,11 @@ ENV_BEFORE=$(md5sum .env.zuno | cut -c1-12)
 RESTORE_DIR="$ROOT/deploy_backups/manual-restore-$STAMP"
 mkdir -p "$RESTORE_DIR"
 # Keep current source intact if the complete extraction fails (including disk exhaustion).
-tar -xzf "$BACKUP" -C "$RESTORE_DIR"
+if ! tar -xzf "$BACKUP" -C "$RESTORE_DIR"; then
+  rm -rf -- "$RESTORE_DIR"
+  echo "ROLLBACK_EXTRACTION_FAILED: current source preserved"
+  exit 1
+fi
 for entry in assets db docs examples scripts src tests web .dockerignore .editorconfig .env.example .env.zuno.example .gitignore CHANGELOG.md Dockerfile README.md docker-compose.zuno.yml package.json package-lock.json tsconfig.json scratch-creative-benchmark.mjs; do
   [ -e "$RESTORE_DIR/$entry" ] || continue
   rm -rf -- "$ROOT/$entry"

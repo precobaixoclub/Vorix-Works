@@ -87,8 +87,7 @@ rollback() {
   # Extract and validate the complete source backup before replacing ANY current source path.
   # A full disk used to leave the host tree half-restored and abort before restoring image tags.
   RESTORE_DIR="$ROOT/deploy_backups/restore-$STAMP"
-  mkdir -p "$RESTORE_DIR"
-  if tar -xzf "deploy_backups/pre-$SHA-$STAMP.tgz" -C "$RESTORE_DIR"; then
+  if mkdir -p "$RESTORE_DIR" && tar -xzf "deploy_backups/pre-$SHA-$STAMP.tgz" -C "$RESTORE_DIR"; then
     for entry in assets db docs examples scripts src tests web .dockerignore .editorconfig .env.example .env.zuno.example .gitignore CHANGELOG.md Dockerfile README.md docker-compose.zuno.yml package.json package-lock.json tsconfig.json scratch-creative-benchmark.mjs; do
       [ -e "$RESTORE_DIR/$entry" ] || continue
       rm -rf -- "$ROOT/$entry"
@@ -96,6 +95,8 @@ rollback() {
     done
     rm -rf -- "$RESTORE_DIR"
   else
+    # Release any space consumed by partial extraction before asking Docker to restore images.
+    rm -rf -- "$RESTORE_DIR"
     echo "ROLLBACK_CODE_RESTORE_FAILED: current source preserved; restoring running images"
   fi
   for service in $SERVICES; do

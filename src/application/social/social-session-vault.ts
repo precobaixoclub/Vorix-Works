@@ -8,12 +8,13 @@ import type { SocialProviderSession } from "./social-publishing-provider.port.js
  * governadas, cifradas). A conta guarda só a referência; o segredo nunca vai ao frontend nem a log.
  */
 export class SocialSessionVault {
-  constructor(private readonly secrets: PublicationSecretResolverPort) {}
+  constructor(private readonly secrets: PublicationSecretResolverPort, private readonly isolatedSession?: (account: SocialAccount, providerType: SocialProviderType, reference: string) => Promise<SocialProviderSession | undefined>) {}
 
   /** `undefined` = sem credencial utilizável (precisa reconectar). */
   async load(account: SocialAccount, providerType: SocialProviderType): Promise<SocialProviderSession | undefined> {
     const connection = activeConnection(account, providerType);
     if (!connection) return undefined;
+    if (providerType === `${account.network}_unofficial` && this.isolatedSession) return this.isolatedSession(account, providerType, connection.credentialReferenceId);
     // A credencial é sempre lida no escopo do tenant/workspace da própria conta: uma conta nunca
     // resolve credencial de outro tenant, mesmo que a referência seja adulterada.
     const secret = await this.secrets.resolve({ tenantId: account.tenantId, workspaceId: account.workspaceId, providerId: account.network, credentialReferenceId: connection.credentialReferenceId });

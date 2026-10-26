@@ -40,6 +40,7 @@ export type SocialTenantProviderOverview = {
 
 export type SocialPublishingMetrics = {
   since: string;
+  unofficial: { network: SocialNetwork; providerType: SocialProviderType; unofficialConnectedAccounts: number; unofficialHealthyAccounts: number; unofficialReauthRequired: number; unofficialPublishSuccess: number; unofficialPublishFailure: number; unofficialReconciliationRequired: number }[];
   byProvider: { network: SocialNetwork; providerType: SocialProviderType; attempts: number; published: number; failed: number; unknown: number; inProgress: number; workerDurationMs: number; mediaBytes: number }[];
   blocked: { network: SocialNetwork; reason: string; count: number }[];
 };
@@ -204,7 +205,14 @@ export class SocialProviderAdminService {
         blocked[key] = (blocked[key] ?? 0) + 1;
       }
     }
-    return { since, byProvider: [...rows.values()], blocked: Object.entries(blocked).map(([key, count]) => ({ network: key.split(":")[0] as SocialNetwork, reason: key.split(":")[1]!, count })) };
+    const unofficial = [];
+    for (const network of SOCIAL_NETWORKS) {
+      const providerType = `${network}_unofficial`;
+      const accounts = (await this.deps.repository.listAccountsByProvider({ providerType, tenantId: input.tenantId })).filter(account => account.network === network);
+      const totals = rows.get(`${network}:${providerType}`);
+      unofficial.push({ network, providerType, unofficialConnectedAccounts: accounts.filter(account => ["CONNECTED", "HEALTHY", "TEMPORARY_ERROR"].includes(account.status)).length, unofficialHealthyAccounts: accounts.filter(account => account.status === "HEALTHY").length, unofficialReauthRequired: accounts.filter(account => ["REAUTH_REQUIRED", "CHECKPOINT_REQUIRED"].includes(account.status)).length, unofficialPublishSuccess: totals?.published ?? 0, unofficialPublishFailure: totals?.failed ?? 0, unofficialReconciliationRequired: totals?.unknown ?? 0 });
+    }
+    return { since, unofficial, byProvider: [...rows.values()], blocked: Object.entries(blocked).map(([key, count]) => ({ network: key.split(":")[0] as SocialNetwork, reason: key.split(":")[1]!, count })) };
   }
 
   private async releaseProviderPaused(accounts: readonly SocialAccount[]): Promise<void> {

@@ -3,7 +3,10 @@
 export type SocialNetwork = "instagram" | "facebook" | "tiktok";
 export const SOCIAL_NETWORKS: readonly SocialNetwork[] = ["instagram", "facebook", "tiktok"];
 
-export type SocialPostFormat = "feed_image" | "feed_video" | "carousel" | "story_image" | "story_video" | "reel" | "short_video" | "photo_post";
+export type SocialPostFormat = "feed_text" | "feed_image" | "feed_video" | "carousel" | "story_image" | "story_video" | "reel" | "short_video" | "photo_post";
+
+export type SocialMusicTrack = { musicId: string; title: string; artist?: string; coverUrl?: string; previewUrl?: string; durationSec?: number; available: boolean; supportsSegment: boolean };
+export type SocialConnectionFrame = { image: string; width: number; height: number; status: "CONNECTING" | "CHECKPOINT_REQUIRED"; expiresAt: string };
 export type SocialFeature = "caption" | "hashtags" | "mentions" | "location" | "link" | "nativeMusic" | "embeddedAudio" | "musicSegment";
 export type SocialConnectionStatus = "CONNECTED" | "HEALTHY" | "REAUTH_REQUIRED" | "CHECKPOINT_REQUIRED" | "DISCONNECTED" | "TEMPORARY_ERROR" | "DISABLED";
 export type SocialDestinationState = "DRAFT" | "AWAITING_APPROVAL" | "SCHEDULED" | "PUBLISHING" | "PUBLISHED" | "FAILED" | "RECONCILIATION_REQUIRED" | "WAITING_REAUTH" | "AWAITING_CONFIRMATION" | "PAUSED" | "CANCELLED" | "SKIPPED";
@@ -103,7 +106,7 @@ export type SocialComposeRequest = {
   workspaceId: string;
   idempotencyKey: string;
   base: { caption: string; hashtags: string[]; media: SocialMediaItem[] };
-  destinations: { accountId: string; format: SocialPostFormat; caption?: string; hashtags?: string[]; audioMode?: SocialAudioMode }[];
+  destinations: { accountId: string; format: SocialPostFormat; caption?: string; hashtags?: string[]; music?: SocialMusicSelection; audioMode?: SocialAudioMode }[];
   when: { mode: "now" } | { mode: "schedule"; localDateTime: string; timezone?: string };
   source?: { executionRunId?: string };
 };

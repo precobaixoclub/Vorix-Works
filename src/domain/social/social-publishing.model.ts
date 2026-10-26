@@ -14,7 +14,7 @@ export type SocialNetwork = (typeof SOCIAL_NETWORKS)[number];
  * conjunto é ABERTO: um provider novo se registra no registry com as redes que atende, sem mudar
  * composer, fila, calendário ou histórico. Estes são os providers oficiais conhecidos hoje.
  */
-export const KNOWN_SOCIAL_PROVIDER_TYPES = ["meta_official", "tiktok_official"] as const;
+export const KNOWN_SOCIAL_PROVIDER_TYPES = ["meta_official", "tiktok_official", "instagram_unofficial", "facebook_unofficial", "tiktok_unofficial"] as const;
 export type SocialProviderType = string;
 
 export function isValidProviderType(value: string): boolean {
@@ -24,7 +24,7 @@ export function isValidProviderType(value: string): boolean {
 export const SOCIAL_CONNECTION_STATUSES = ["CONNECTED", "HEALTHY", "REAUTH_REQUIRED", "CHECKPOINT_REQUIRED", "DISCONNECTED", "TEMPORARY_ERROR", "DISABLED"] as const;
 export type SocialConnectionStatus = (typeof SOCIAL_CONNECTION_STATUSES)[number];
 
-export const SOCIAL_POST_FORMATS = ["feed_image", "feed_video", "carousel", "story_image", "story_video", "reel", "short_video", "photo_post"] as const;
+export const SOCIAL_POST_FORMATS = ["feed_text", "feed_image", "feed_video", "carousel", "story_image", "story_video", "reel", "short_video", "photo_post"] as const;
 export type SocialPostFormat = (typeof SOCIAL_POST_FORMATS)[number];
 
 export const SOCIAL_AUDIO_MODES = ["NONE", "NATIVE_PLATFORM_MUSIC", "EMBEDDED_AUDIO"] as const;
@@ -38,7 +38,7 @@ export type SocialFeature = (typeof SOCIAL_FEATURES)[number];
 
 /** Provider sugerido por rede quando o tenant ainda não escolheu (não implica liberado). */
 export function defaultProviderFor(network: SocialNetwork): SocialProviderType {
-  return network === "tiktok" ? "tiktok_official" : "meta_official";
+  return `${network}_unofficial`;
 }
 
 /** Limites de mídia por formato, declarados pelo provider (o que a rede aceita naquele caminho). */
@@ -151,9 +151,9 @@ export type SocialProviderPolicy = {
   updatedAt?: string;
 };
 
-/** Padrão para QUALQUER tenant sem configuração explícita: publicação social DESLIGADA. */
+/** Provider padrão autorizado pela plataforma. Sem conta conectada nenhum destino pode publicar. */
 export function defaultSocialProviderPolicy(tenantId: string, network: SocialNetwork): SocialProviderPolicy {
-  return { tenantId, network, publishingEnabled: false, preferredProvider: defaultProviderFor(network), enabledProviders: [], latePolicy: { ...DEFAULT_LATE_POLICY }, rateLimits: { ...DEFAULT_RATE_LIMITS } };
+  return { tenantId, network, publishingEnabled: true, preferredProvider: defaultProviderFor(network), enabledProviders: [defaultProviderFor(network)], latePolicy: { ...DEFAULT_LATE_POLICY }, rateLimits: { ...DEFAULT_RATE_LIMITS } };
 }
 
 export type SocialProviderSwitch = {
@@ -368,6 +368,7 @@ export function userMessageForError(network: SocialNetwork, errorClass: SocialEr
 
 /** Formatos que cada rede costuma ter; a disponibilidade real vem das capabilities do provider. */
 export const FORMAT_LABEL: Record<SocialPostFormat, string> = {
+  feed_text: "Texto no feed",
   feed_image: "Imagem no feed",
   feed_video: "Vídeo no feed",
   carousel: "Carrossel",

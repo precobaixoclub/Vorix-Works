@@ -42,6 +42,8 @@ services:
     environment:
       API_PORT: "3000"
       API_HOST: "0.0.0.0"
+      SOCIAL_GATEWAY_URL: "http://social-provider-gateway:3210"
+      SOCIAL_GATEWAY_TOKEN: "${SOCIAL_GATEWAY_TOKEN:-}"
       AUTH_MODE: jwt
       JWT_SECRET: "${ZUNO_JWT_SECRET}"
       DATABASE_URL: "postgres://zuno:${ZUNO_POSTGRES_PASSWORD}@zuno-postgres:5432/zuno"
@@ -280,6 +282,40 @@ services:
     mem_limit: 256m
     mem_reservation: 128m
 
+  # Private organic publishing gateway: one replica owns its encrypted session volume and locks.
+  # No host port, Traefik router, DB credentials, browser recordings or persistent browser profiles.
+  social-provider-gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: social-gateway
+    restart: unless-stopped
+    init: true
+    environment:
+      SOCIAL_GATEWAY_TOKEN: "${SOCIAL_GATEWAY_TOKEN:-}"
+      SOCIAL_GATEWAY_ENCRYPTION_KEY: "${SOCIAL_GATEWAY_ENCRYPTION_KEY:-}"
+      SOCIAL_GATEWAY_MAX_CONTEXTS: "${SOCIAL_GATEWAY_MAX_CONTEXTS:-2}"
+      SOCIAL_GATEWAY_MEDIA_ORIGINS: "${SOCIAL_GATEWAY_MEDIA_ORIGINS:-https://api.vorixworks.com}"
+      SOCIAL_GATEWAY_CHROMIUM_SANDBOX: "false"
+    volumes:
+      - zuno_social_gateway:/data
+    tmpfs:
+      - /tmp:size=256m,mode=1777
+    read_only: true
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    networks: [zuno_network]
+    mem_limit: 1024m
+    mem_reservation: 128m
+    pids_limit: 192
+    shm_size: 128m
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3210/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
 networks:
   zuno_network:
     name: zuno_network
@@ -289,6 +325,8 @@ networks:
     external: true
 
 volumes:
+  zuno_social_gateway:
+    name: zuno_social_gateway
   zuno_postgres_data:
     name: zuno_postgres_data
   zuno_uploads:

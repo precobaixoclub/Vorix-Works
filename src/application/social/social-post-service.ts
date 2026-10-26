@@ -404,6 +404,13 @@ export class SocialPostService {
     const reconciliation = (await this.deps.publicationRepository.listReconciliations({ tenantId: input.tenantId, workspaceId: input.workspaceId }))
       .find((item) => item.targetId === target.id && (item.status === "pending" || item.status === "inconclusive"));
     if (!reconciliation) throw new Error("SOCIAL_DESTINATION_NOT_UNKNOWN: esta publicação não está aguardando verificação.");
+    const originalProvider = destination.lastProviderType && this.deps.resolver.providers.get(destination.lastProviderType);
+    if (originalProvider && originalProvider.acknowledgePublicationOutcome) {
+      const account = await this.deps.accounts.requireAccount({ tenantId: input.tenantId, workspaceId: input.workspaceId, accountId: destination.socialAccountId });
+      const session = await this.deps.vault.load(account, originalProvider.descriptor.type);
+      if (!session) throw new Error("SOCIAL_REAUTH_REQUIRED: reconecte a conta para concluir a verificação.");
+      await originalProvider.acknowledgePublicationOutcome({ account: this.deps.accounts.context(account, session), idempotencyKey: reconciliation.idempotencyKey, outcome: input.outcome, externalUrl: input.externalUrl });
+    }
     if (reconciliation.status === "inconclusive") await this.deps.publicationRepository.updateReconciliationStatus({ id: reconciliation.id, status: "pending" });
     const now = this.now().toISOString();
     if (input.outcome === "published") {

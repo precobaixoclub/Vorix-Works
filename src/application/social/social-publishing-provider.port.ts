@@ -117,6 +117,8 @@ export type SocialPublishingProvider = {
   validatePost(input: { network: SocialNetwork; format: SocialPostFormat; caption: string; media: readonly SocialMediaItem[]; music?: SocialMusicSelection }): SocialValidationIssue[];
   publish(request: SocialPublishRequest): Promise<SocialPublishResult>;
   getPublicationStatus(input: { account: SocialProviderAccountContext; externalPostId?: string; providerReference?: string; caption: string; attemptStartedAt: string }): Promise<SocialPublicationStatus>;
+  /** Explicit human reconciliation, already authorized/audited by the core. Never an automatic retry. */
+  acknowledgePublicationOutcome?(input: { account: SocialProviderAccountContext; idempotencyKey: string; outcome: "published" | "not_published"; externalUrl?: string }): Promise<void>;
   deletePublication?(input: { account: SocialProviderAccountContext; externalPostId: string }): Promise<{ ok: boolean; failure?: SocialProviderFailure }>;
   searchMusic?(input: { account: SocialProviderAccountContext; query: string; format: SocialPostFormat; limit: number }): Promise<{ ok: true; tracks: SocialMusicTrack[] } | { ok: false; failure: SocialProviderFailure }>;
   getMusicDetails?(input: { account: SocialProviderAccountContext; musicId: string; providerData?: Record<string, string> }): Promise<{ ok: true; track: SocialMusicTrack } | { ok: false; failure: SocialProviderFailure }>;

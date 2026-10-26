@@ -112,6 +112,7 @@ import type { SchedulingRepositoryPort } from "../../../application/ports/schedu
 import type { SessionRepositoryPort } from "../../../application/ports/session-repository.port.js";
 import type { TenantMembershipRepositoryPort } from "../../../application/ports/tenant-membership-repository.port.js";
 import { createSocialPublishingModule, type SocialPublishingModule } from "../../../infrastructure/social/social-publishing-module.js";
+import { SocialGatewayClient } from "../../../infrastructure/social/gateway/client.js";
 import { PostgresSocialRepository } from "../../../infrastructure/storage/postgres/postgres-social-repository.js";
 import { InMemorySocialRepository } from "../../../infrastructure/storage/in-memory-social-repository.js";
 import { InMemoryOAuthStateStore, PostgresOAuthStateStore } from "../../../infrastructure/storage/oauth-state-stores.js";
@@ -1543,6 +1544,7 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
   // Providers oficiais (Meta/TikTok) ficam registrados, mas desligados por kill switch, homologação e
   // política por tenant até liberação explícita.
   const social = config?.social.enabled === false ? undefined : createSocialPublishingModule({
+    gateway: new SocialGatewayClient(config?.social.gatewayUrl, config?.social.gatewayToken),
     repository: repositories.pool ? new PostgresSocialRepository(repositories.pool) : new InMemorySocialRepository(),
     publicationRepository: repositories.publicationRepository,
     credentials: publicationSecretResolver,

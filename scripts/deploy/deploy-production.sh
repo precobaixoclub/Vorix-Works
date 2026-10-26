@@ -17,6 +17,7 @@
 #  8. health: containers healthy, /readyz, web 200, logs sem fatal/uncaught;
 #  9. se o health falhar: ROLLBACK automático para as imagens `:rollback-<stamp>` e código anterior.
 set -eu
+umask 077
 # O passo 4 substitui scripts/: o sh lê o arquivo aos poucos, então nunca executa a partir do repo.
 case "$0" in
   /tmp/vorix-deploy-run-*) ;;
@@ -35,10 +36,10 @@ cd "$ROOT"
 case "$TARGET" in
   api) SERVICES="zuno-api vorix-worker" ;;
   web) SERVICES="zuno-web" ;;
-  all) SERVICES="zuno-api vorix-worker zuno-web" ;;
+  all) SERVICES="zuno-api vorix-worker social-provider-gateway zuno-web" ;;
   *) echo "alvo inválido: $TARGET"; echo DEPLOY_FAILED; exit 2 ;;
 esac
-image_of() { case "$1" in zuno-api) echo zuno-zuno-api ;; vorix-worker) echo zuno-vorix-worker ;; zuno-web) echo zuno-zuno-web ;; esac; }
+image_of() { case "$1" in zuno-api) echo zuno-zuno-api ;; vorix-worker) echo zuno-vorix-worker ;; zuno-web) echo zuno-zuno-web ;; social-provider-gateway) echo zuno-social-provider-gateway ;; esac; }
 
 # 1. preflight
 [ -f "$TARBALL" ] || { echo "tarball ausente"; echo DEPLOY_FAILED; exit 1; }
@@ -60,6 +61,11 @@ docker exec zuno-zuno-postgres-1 sh -c 'pg_dump -U "$POSTGRES_USER" -d "$POSTGRE
 gzip "$DB_DUMP"
 gzip -t "$DB_DUMP.gz"
 echo "BACKUP code=deploy_backups/pre-$SHA-$STAMP.tgz db=deploy_backups/db-pre-$SHA-$STAMP.sql.gz env=/root/.env.zuno.pre-$SHA-$STAMP"
+if docker volume inspect zuno_social_gateway >/dev/null 2>&1; then
+  docker run --rm --user 0:0 --network none -v zuno_social_gateway:/data:ro -v "$ROOT/deploy_backups:/backup" \
+    --entrypoint tar zuno-social-provider-gateway:latest -czf "/backup/social-sessions-pre-$SHA-$STAMP.tgz" -C /data . \
+    || { echo "BACKUP_SOCIAL_SESSIONS_FAILED"; echo DEPLOY_FAILED; exit 1; }
+fi
 
 # 3. imagens atuais → :rollback-<stamp>
 for service in $SERVICES; do
@@ -69,13 +75,21 @@ done
 
 rollback() {
   echo "ROLLBACK: $1"
+  # On the first gateway rollout there is no previous gateway image to restore. Stop the new
+  # service before restoring the old compose; retain the encrypted volume for investigation.
+  if ! docker image inspect "zuno-social-provider-gateway:rollback-$STAMP" >/dev/null 2>&1; then
+    $COMPOSE stop social-provider-gateway >/dev/null 2>&1 || true
+  fi
   rm -rf assets db docs examples scripts src tests web Dockerfile docker-compose.zuno.yml package.json package-lock.json tsconfig.json
   tar -xzf "deploy_backups/pre-$SHA-$STAMP.tgz" -C "$ROOT"
   for service in $SERVICES; do
     image=$(image_of "$service")
     docker image inspect "$image:rollback-$STAMP" >/dev/null 2>&1 && docker tag "$image:rollback-$STAMP" "$image:latest"
   done
-  $COMPOSE up -d --no-build $SERVICES
+  RESTORE_SERVICES="zuno-api vorix-worker zuno-web"
+  if docker image inspect "zuno-social-provider-gateway:rollback-$STAMP" >/dev/null 2>&1; then RESTORE_SERVICES="$RESTORE_SERVICES social-provider-gateway"; fi
+  case "$TARGET" in api) RESTORE_SERVICES="zuno-api vorix-worker" ;; web) RESTORE_SERVICES="zuno-web" ;; esac
+  $COMPOSE up -d --no-build $RESTORE_SERVICES
   echo "ROLLED_BACK (banco não é revertido: migrations são aditivas; dump em deploy_backups/db-pre-$SHA-$STAMP.sql.gz)"
   echo DEPLOY_FAILED
   exit 1

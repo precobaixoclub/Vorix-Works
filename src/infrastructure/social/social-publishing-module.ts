@@ -17,8 +17,12 @@ import type { SocialPublishingProvider } from "../../application/social/social-p
 import { SocialSessionVault } from "../../application/social/social-session-vault.js";
 import { MetaOfficialSocialProvider, OfficialOAuthConnection, TikTokOfficialSocialProvider, type OfficialOAuthServiceLike } from "./official-social-providers.js";
 import { SocialMediaProbe } from "./social-media-io.js";
+import { FacebookUnofficialProvider, InstagramUnofficialProvider, TikTokUnofficialProvider } from "./unofficial-social-providers.js";
+import { SocialGatewayClient } from "./gateway/client.js";
+import type { GatewayTransport } from "./gateway/protocol.js";
 
 export type SocialPublishingModuleDeps = {
+  gateway?: GatewayTransport;
   repository: SocialRepositoryPort;
   publicationRepository: PublicationRepositoryPort;
   /** Cofre central das credenciais OAuth (cifrado). */
@@ -42,6 +46,7 @@ export type SocialPublishingModuleDeps = {
 };
 
 export type SocialPublishingModule = {
+  gateway: GatewayTransport;
   repository: SocialRepositoryPort;
   registry: SocialProviderRegistry;
   resolver: SocialProviderResolver;
@@ -70,14 +75,20 @@ export function createOfficialSocialProviders(input: Pick<SocialPublishingModule
 
 export function createSocialPublishingModule(deps: SocialPublishingModuleDeps): SocialPublishingModule {
   const idGenerator = deps.idGenerator ?? (() => `soc-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`);
-  const registry = new SocialProviderRegistry(deps.providers ?? createOfficialSocialProviders(deps));
-  const resolver = new SocialProviderResolver(registry, deps.repository, deps.platformDefaults ?? DEFAULT_SOCIAL_PLATFORM_DEFAULTS);
-  const vault = new SocialSessionVault(deps.credentials);
+  const gateway = deps.gateway ?? new SocialGatewayClient(undefined, undefined);
+  const registry = new SocialProviderRegistry(deps.providers ?? [...createOfficialSocialProviders(deps), new InstagramUnofficialProvider(gateway), new FacebookUnofficialProvider(gateway), new TikTokUnofficialProvider(gateway)]);
+  const resolver = new SocialProviderResolver(registry, deps.repository, { ...DEFAULT_SOCIAL_PLATFORM_DEFAULTS, ...deps.platformDefaults });
+  const vault = new SocialSessionVault(deps.credentials, async (account, providerType, reference) => {
+    if (providerType !== `${account.network}_unofficial` || !reference.startsWith("socgw-")) return undefined;
+    // Only an opaque reference reaches the core. The gateway verifies scope + identity on EVERY
+    // operation. A gateway outage must not be misclassified as expired customer authentication.
+    return { value: { credentialReferenceId: reference } };
+  });
   const notifier = new SocialNotifier({ repository: deps.repository, memberships: deps.memberships, notification: deps.notification, email: deps.email, now: deps.now });
   const audit = new SocialAuditLog(deps.auditRepository, idGenerator);
   const accounts = new SocialAccountService({ repository: deps.repository, publicationRepository: deps.publicationRepository, resolver, vault, notifier, audit, idGenerator, now: deps.now });
   const posts = new SocialPostService({ repository: deps.repository, publicationRepository: deps.publicationRepository, accounts, resolver, vault, audit, mediaProbe: deps.mediaProbe === null ? undefined : deps.mediaProbe ?? new SocialMediaProbe(), idGenerator, now: deps.now, defaultTimezone: deps.defaultTimezone, timezoneFor: deps.timezoneFor });
   const admin = new SocialProviderAdminService({ repository: deps.repository, publicationRepository: deps.publicationRepository, resolver, notifier, audit, now: deps.now });
   const router = new SocialPublicationRouter({ repository: deps.repository, publicationRepository: deps.publicationRepository, accounts, resolver, vault, notifier, audit, idGenerator, now: deps.now });
-  return { repository: deps.repository, registry, resolver, vault, notifier, audit, accounts, posts, admin, router };
+  return { gateway, repository: deps.repository, registry, resolver, vault, notifier, audit, accounts, posts, admin, router };
 }

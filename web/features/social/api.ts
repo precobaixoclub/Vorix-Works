@@ -17,6 +17,11 @@ import type {
 
 const q = (workspaceId: string) => `workspaceId=${encodeURIComponent(workspaceId)}`;
 
+export const interactiveSocialConnection = <T>(workspaceId: string, network: SocialNetwork, flowId: string, operation: "frame" | "interact" | "finish" | "cancel", action?: unknown) =>
+  apiClient.post<T>(`/v1/social/connections/interactive/${encodeURIComponent(flowId)}/${operation}`, { workspaceId, network, ...(action ? { action } : {}) });
+export const searchSocialMusic = (workspaceId: string, accountId: string, format: import("./types").SocialPostFormat, query: string) =>
+  apiClient.get<{ tracks: import("./types").SocialMusicTrack[] }>(`/v1/social/music/search?${q(workspaceId)}&accountId=${encodeURIComponent(accountId)}&format=${format}&q=${encodeURIComponent(query)}`);
+
 /** Marca que o próximo retorno de OAuth pertence ao fluxo social (as páginas de callback são compartilhadas). */
 export const SOCIAL_OAUTH_FLOW_KEY = "social:oauth-flow";
 

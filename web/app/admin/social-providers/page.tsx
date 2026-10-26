@@ -18,7 +18,7 @@ import { useSocialProviderSwitches, useSocialTenantOverview } from "@/features/s
 import { NETWORK_LABEL } from "@/features/social/presentation";
 import type { SocialProviderSwitchView, SocialTenantOverview } from "@/features/social/types";
 
-const PROVIDER_LABEL: Record<string, string> = { meta_official: "Meta oficial (Instagram e Facebook)", tiktok_official: "TikTok oficial" };
+const PROVIDER_LABEL: Record<string, string> = { meta_official: "Meta oficial (Instagram e Facebook)", tiktok_official: "TikTok oficial", instagram_unofficial: "Instagram não oficial", facebook_unofficial: "Facebook não oficial", tiktok_unofficial: "TikTok não oficial" };
 const providerLabel = (type: string) => PROVIDER_LABEL[type] ?? type;
 
 type PendingSwitch = { provider: SocialProviderSwitchView; field: "enabled" | "approved"; value: boolean };
@@ -54,7 +54,7 @@ export default function AdminSocialProvidersPage() {
 
   return (
     <div className="mx-auto w-full max-w-6xl p-4 md:p-8">
-      <PageHeader title="Social Providers" description="Mecanismos de publicação do Vorix Marketing. Ativação é sempre explícita: provider, homologação e empresa." />
+      <PageHeader title="Social Providers" description="Providers não oficiais são o padrão. Configure a escolha por empresa ou pause um provider globalmente." />
 
       <Card className="mb-6 overflow-hidden p-0">
         <div className="border-b border-border px-5 py-3 text-sm font-semibold">Status global</div>
@@ -134,6 +134,16 @@ function TenantPolicy({ tenantId, providers }: { tenantId: string; providers: So
       {data.networks.map((item) => (
         <div key={item.network} className="space-y-3 rounded-lg border border-border p-4">
           <div className="flex items-center gap-2"><NetworkMark network={item.network} size="sm" /><span className="font-medium">{NETWORK_LABEL[item.network]}</span></div>
+          <Select aria-label={`Modo do provider para ${NETWORK_LABEL[item.network]}`} value={item.policy.enabledProviders.length > 1 ? "AUTO" : item.policy.preferredProvider.endsWith("_unofficial") ? "UNOFFICIAL" : "OFFICIAL"} onValueChange={mode => {
+            const unofficial = `${item.network}_unofficial`;
+            const official = item.network === "tiktok" ? "tiktok_official" : "meta_official";
+            const enabledProviders = mode === "AUTO" ? [unofficial, official] : [mode === "UNOFFICIAL" ? unofficial : official];
+            void save(item.network, { enabledProviders, preferredProvider: enabledProviders[0] });
+          }}>
+            <SelectItem value="UNOFFICIAL">UNOFFICIAL</SelectItem>
+            <SelectItem value="OFFICIAL" disabled={!item.providers.find(provider => provider.providerType === (item.network === "tiktok" ? "tiktok_official" : "meta_official"))?.approved}>OFFICIAL</SelectItem>
+            <SelectItem value="AUTO" disabled={!item.providers.find(provider => provider.providerType === (item.network === "tiktok" ? "tiktok_official" : "meta_official"))?.approved}>AUTO</SelectItem>
+          </Select>
           <label className="flex items-center gap-2 text-sm">
             <Switch disabled={saving === item.network} checked={item.policy.publishingEnabled} onCheckedChange={(value) => void save(item.network, { publishingEnabled: value, enabledProviders: item.policy.enabledProviders, preferredProvider: item.policy.preferredProvider })} aria-label={`Publicação liberada no ${NETWORK_LABEL[item.network]}`} />
             Publicação liberada

@@ -198,6 +198,8 @@ export type ApiConfig = {
    * separadas da homologação e da política por tenant: Meta/TikTok oficiais DESLIGADOS por padrão.
    */
   social: {
+    gatewayUrl?: string;
+    gatewayToken?: string;
     enabled: boolean;
     metaOfficialGlobalEnabled: boolean;
     tiktokOfficialGlobalEnabled: boolean;
@@ -622,6 +624,8 @@ export function loadApiConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
       },
     },
     social: {
+      gatewayUrl: env.SOCIAL_GATEWAY_URL?.trim() || undefined,
+      gatewayToken: env.SOCIAL_GATEWAY_TOKEN?.trim() || undefined,
       enabled: env.SOCIAL_PUBLISHING_ENABLED?.trim() !== "false",
       // Provider só liga com "true" explícito — nunca por omissão.
       metaOfficialGlobalEnabled: env.META_OFFICIAL_GLOBAL_ENABLED?.trim() === "true",

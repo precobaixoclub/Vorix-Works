@@ -12,6 +12,7 @@ import type {
   SocialDestinationState,
   SocialLatePolicy,
   SocialMediaItem,
+  SocialMusicSelection,
   SocialNetwork,
   SocialNetworkAvailability,
   SocialPostFormat,
@@ -184,7 +185,7 @@ export function compatibleFormats(account: SocialComposerAccount, media: readonl
 }
 
 const FORMAT_PREFERENCE: Record<ReturnType<typeof mediaShape>, readonly SocialPostFormat[]> = {
-  none: ["feed_image", "photo_post", "short_video"],
+  none: ["feed_text", "feed_image", "photo_post", "short_video"],
   image: ["feed_image", "photo_post", "story_image"],
   images: ["carousel", "photo_post"],
   video: ["reel", "short_video", "feed_video", "story_video"],
@@ -222,7 +223,7 @@ export type ComposerDraft = {
   caption: string;
   hashtags: string;
   media: SocialMediaItem[];
-  destinations: { accountId: string; network: SocialNetwork; format?: SocialPostFormat; customize: boolean; caption: string; hashtags: string }[];
+  destinations: { accountId: string; network: SocialNetwork; format?: SocialPostFormat; customize: boolean; caption: string; hashtags: string; music?: SocialMusicSelection }[];
   when: { mode: "now" } | { mode: "schedule"; date: string; time: string; timezone: string };
   sourceExecutionRunId?: string;
 };
@@ -235,6 +236,7 @@ export function buildComposeRequest(workspaceId: string, draft: ComposerDraft, i
     destinations: draft.destinations.filter((destination) => destination.format).map((destination) => ({
       accountId: destination.accountId,
       format: destination.format!,
+      ...(destination.music ? { music: destination.music, audioMode: "NATIVE_PLATFORM_MUSIC" as const } : draft.media.some(item => item.kind === "video" && item.hasAudio) ? { audioMode: "EMBEDDED_AUDIO" as const } : {}),
       ...(destination.customize ? { caption: destination.caption, hashtags: splitHashtags(destination.hashtags) } : {}),
     })),
     when: draft.when.mode === "now" ? { mode: "now" } : { mode: "schedule", localDateTime: `${draft.when.date}T${draft.when.time}`, timezone: draft.when.timezone },
@@ -247,7 +249,8 @@ export function composerBlockers(draft: ComposerDraft, now: Date = new Date()): 
   const blockers: string[] = [];
   if (draft.destinations.length === 0) blockers.push("Escolha ao menos uma rede.");
   if (draft.destinations.some((destination) => !destination.format)) blockers.push("Escolha o formato de cada rede.");
-  if (draft.media.length === 0) blockers.push("Adicione uma imagem ou vídeo.");
+  if (draft.media.length === 0 && (draft.destinations.length === 0 || draft.destinations.some(destination => destination.format !== "feed_text"))) blockers.push("Adicione uma imagem ou vídeo.");
+  if (draft.destinations.some(destination => destination.format === "feed_text" && !(destination.customize ? destination.caption : draft.caption).trim())) blockers.push("Escreva o texto da publicação.");
   if (draft.when.mode === "schedule") {
     if (!draft.when.date || !draft.when.time) blockers.push("Informe data e hora do agendamento.");
     else if (zonedToUtc(`${draft.when.date}T${draft.when.time}`, draft.when.timezone).getTime() < now.getTime()) blockers.push("Escolha um horário no futuro.");

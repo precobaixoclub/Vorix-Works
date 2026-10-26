@@ -18,7 +18,7 @@ import {
  */
 export type SocialPlatformDefaults = Readonly<Record<SocialProviderType, { enabled: boolean }>>;
 
-export const DEFAULT_SOCIAL_PLATFORM_DEFAULTS: SocialPlatformDefaults = { meta_official: { enabled: false }, tiktok_official: { enabled: false } };
+export const DEFAULT_SOCIAL_PLATFORM_DEFAULTS: SocialPlatformDefaults = { meta_official: { enabled: false }, tiktok_official: { enabled: false }, instagram_unofficial: { enabled: true }, facebook_unofficial: { enabled: true }, tiktok_unofficial: { enabled: true } };
 
 export class SocialProviderRegistry {
   private readonly providers = new Map<SocialProviderType, SocialPublishingProvider>();
@@ -75,13 +75,18 @@ export class SocialProviderResolver {
   }
 
   async switchFor(providerType: SocialProviderType): Promise<SocialProviderSwitch> {
-    return (await this.repository.getSwitch(providerType)) ?? { providerType, enabled: this.defaults[providerType]?.enabled ?? false, approved: false };
+    return (await this.repository.getSwitch(providerType)) ?? { providerType, enabled: this.defaults[providerType]?.enabled ?? false, approved: this.unofficialAuthorized(providerType) };
   }
 
   async listSwitches(): Promise<SocialProviderSwitch[]> {
     const stored = new Map((await this.repository.listSwitches()).map((item) => [item.providerType, item]));
     const types = [...new Set<SocialProviderType>([...KNOWN_SOCIAL_PROVIDER_TYPES, ...this.registry.list().map((provider) => provider.descriptor.type)])];
-    return types.map((type) => stored.get(type) ?? { providerType: type, enabled: this.defaults[type]?.enabled ?? false, approved: false });
+    return types.map((type) => stored.get(type) ?? { providerType: type, enabled: this.defaults[type]?.enabled ?? false, approved: this.unofficialAuthorized(type) });
+  }
+
+  /** Internal operator authorization is separate from realPublishingValidated and platform app review. */
+  private unofficialAuthorized(type: SocialProviderType): boolean {
+    return ["instagram_unofficial", "facebook_unofficial", "tiktok_unofficial"].includes(type);
   }
 
   /** Camadas separadas: implementado, configurado, ligado, homologado, liberado ao tenant, validado. */

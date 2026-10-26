@@ -17,7 +17,14 @@ case "$TARGET" in
   all) SERVICES="zuno-api vorix-worker zuno-web" ;;
   *) echo "alvo inválido"; exit 2 ;;
 esac
-image_of() { case "$1" in zuno-api) echo zuno-zuno-api ;; vorix-worker) echo zuno-vorix-worker ;; zuno-web) echo zuno-zuno-web ;; esac; }
+image_of() { case "$1" in zuno-api) echo zuno-zuno-api ;; vorix-worker) echo zuno-vorix-worker ;; zuno-web) echo zuno-zuno-web ;; social-provider-gateway) echo zuno-social-provider-gateway ;; esac; }
+if [ "$TARGET" = all ]; then
+  if docker image inspect "zuno-social-provider-gateway:rollback-$STAMP" >/dev/null 2>&1; then
+    SERVICES="$SERVICES social-provider-gateway"
+  else
+    $COMPOSE stop social-provider-gateway >/dev/null 2>&1 || true
+  fi
+fi
 BACKUP=$(ls deploy_backups/pre-*-"$STAMP".tgz 2>/dev/null | head -1)
 [ -n "$BACKUP" ] || { echo "backup de código do stamp $STAMP não encontrado"; exit 1; }
 for service in $SERVICES; do

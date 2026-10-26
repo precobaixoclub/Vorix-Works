@@ -53,3 +53,16 @@ RUN mkdir -p /usr/local/share/fonts/vorix /etc/fonts/conf.d \
 
 EXPOSE 3000
 CMD ["node", "dist/interfaces/api/server.js"]
+
+# Only the isolated gateway image contains a browser. Share the application's vetted runtime
+# layers so the single production host does not duplicate the large dependency tree.
+FROM runtime AS social-gateway
+ENV HOME=/tmp SOCIAL_GATEWAY_CHROMIUM_PATH=/usr/bin/chromium SOCIAL_GATEWAY_DATA_DIR=/data
+RUN apt-get update && apt-get install -y --no-install-recommends chromium fonts-liberation \
+    && rm -rf /var/lib/apt/lists/* && mkdir /data && chown node:node /data
+USER node
+EXPOSE 3210
+CMD ["node", "dist/interfaces/social-gateway/server.js"]
+
+# Keep the default target and API command unchanged for all existing compose services.
+FROM runtime AS production

@@ -24,6 +24,7 @@ import { useMyAccess } from "@/features/auth/access";
 import { uploadPublicationMedia } from "@/features/media-upload/api";
 import { createSocialPost, validateSocialPost } from "@/features/social/api";
 import { AccountAvatar, NetworkMark } from "@/features/social/components";
+import { SocialMusicPicker } from "@/features/social/music-picker";
 import { useComposerOptions, useSocialSettings } from "@/features/social/hooks";
 import { readMediaMetadata } from "@/features/social/media";
 import {
@@ -102,7 +103,7 @@ function SocialComposer() {
         const format = defaultFormat(account, current.media);
         if (format === destination.format) return destination;
         changed = true;
-        return { ...destination, format };
+        return { ...destination, format, music: undefined };
       });
       // Sem mudança real, devolve o mesmo estado (não dispara nova renderização).
       return changed ? { ...current, destinations } : current;
@@ -270,7 +271,7 @@ function SocialComposer() {
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <div className="flex items-center gap-2"><AccountAvatar name={accountName(account)} avatarUrl={account.avatarUrl} network={account.network} /><div><p className="text-sm font-medium">{NETWORK_LABEL[account.network]}</p><p className="text-xs text-muted-foreground">{accountName(account)}</p></div></div>
                       {formats.length > 0 ? (
-                        <Select value={destination.format ?? ""} onValueChange={(value) => update({ format: value as SocialPostFormat })} className="w-48" placeholder="Formato">
+                        <Select value={destination.format ?? ""} onValueChange={(value) => update({ format: value as SocialPostFormat, music: undefined })} className="w-48" placeholder="Formato">
                           {formats.map((item) => <SelectItem key={item.format} value={item.format}>{item.label}</SelectItem>)}
                         </Select>
                       ) : <p className="text-xs text-amber-700 dark:text-amber-400">Nenhum formato do {NETWORK_LABEL[account.network]} aceita esta mídia.</p>}
@@ -292,6 +293,7 @@ function SocialComposer() {
                         ) : null}
                       </div>
                     ) : format ? <p className="text-xs text-muted-foreground">{format.label} não tem legenda — o texto não é enviado.</p> : null}
+                    {account.musicSearch && format?.features.includes("nativeMusic") && destination.format ? <SocialMusicPicker key={`${account.accountId}:${destination.format}`} workspaceId={workspace.id} accountId={account.accountId} format={destination.format} segment={format.features.includes("musicSegment")} value={destination.music} onChange={music => update({ music })} /> : null}
                     {check?.issues.map((issue) => <p key={issue.code + issue.message} className="text-sm text-rose-600 dark:text-rose-400">{issue.message}</p>)}
                     {check?.warnings.map((warning) => <p key={warning} className="text-sm text-amber-700 dark:text-amber-400">{warning}</p>)}
                   </div>
@@ -377,6 +379,7 @@ function PostPreviewCard({ account, draft, destination }: { account: SocialCompo
         {draft.media.length > 1 ? <span className="absolute right-2 top-2 rounded-full bg-background/90 px-2 text-[11px] tabular-nums">1/{draft.media.length}</span> : null}
       </div>
       {formatSupportsCaption(format) ? <p className="line-clamp-4 whitespace-pre-wrap p-3 text-sm">{caption || <span className="text-muted-foreground">Sua legenda aparece aqui.</span>}{tags ? <span className="block text-sky-600 dark:text-sky-400">{tags}</span> : null}</p> : <p className="p-3 text-xs text-muted-foreground">Sem legenda neste formato.</p>}
+      {destination.music ? <p className="px-3 pb-3 text-xs text-muted-foreground">♪ {destination.music.title}{destination.music.artist ? ` · ${destination.music.artist}` : ""}</p> : null}
     </div>
   );
 }

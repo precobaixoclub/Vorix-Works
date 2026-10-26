@@ -203,16 +203,16 @@ function harness(options = {}) {
 
 // ---------------------------------------------------------------------------------------------
 
-test("Padrão: publicação social DESLIGADA para todo tenant; camadas de disponibilidade separadas", async () => {
+test("Padrão: providers não oficiais preferidos; oficiais permanecem desligados e não autorizados", async () => {
   const h = harness();
   for (const network of ["instagram", "facebook", "tiktok"]) {
     const policy = await h.social.resolver.policyFor("tenant-novo", network);
-    assert.equal(policy.publishingEnabled, false);
-    assert.deepEqual(policy.enabledProviders, []);
+    assert.equal(policy.publishingEnabled, true);
+    assert.deepEqual(policy.enabledProviders, [`${network}_unofficial`]);
     const resolution = await h.social.resolver.connectionProviderFor("tenant-novo", network);
     assert.equal(resolution.ok, false);
-    assert.equal(resolution.reason, "PUBLISHING_NOT_ENABLED");
-    await assert.rejects(() => h.social.accounts.beginConnection({ tenantId: "tenant-novo", workspaceId: "ws", network }), /SOCIAL_PUBLISHING_NOT_ENABLED/);
+    assert.equal(resolution.reason, "NOT_IMPLEMENTED", "este harness registra apenas fixtures dos providers oficiais");
+    await assert.rejects(() => h.social.accounts.beginConnection({ tenantId: "tenant-novo", workspaceId: "ws", network }), /SOCIAL_CONNECTION_UNAVAILABLE/);
   }
   for (const [network, type] of [["instagram", "meta_official"], ["facebook", "meta_official"], ["tiktok", "tiktok_official"]]) {
     const availability = await h.social.resolver.availability({ tenantId: "tenant-novo", network, providerType: type });
@@ -221,7 +221,7 @@ test("Padrão: publicação social DESLIGADA para todo tenant; camadas de dispon
   }
   assert.equal((await h.social.resolver.switchFor("meta_official")).enabled, false);
   assert.equal((await h.social.resolver.switchFor("tiktok_official")).enabled, false);
-  assert.equal(defaultSocialProviderPolicy("x", "tiktok").preferredProvider, "tiktok_official");
+  assert.equal(defaultSocialProviderPolicy("x", "tiktok").preferredProvider, "tiktok_unofficial");
 });
 
 test("Liberação explícita: provider só é habilitado ao tenant depois de homologado; tenant por tenant; auditado", async () => {

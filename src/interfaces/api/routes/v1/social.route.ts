@@ -9,6 +9,7 @@ import { AppError, NotFoundError } from "../../http/app-error.js";
 import { requirePermission, requirePlatformAdmin } from "../../http/require-principal.js";
 import { successEnvelope } from "../../http/response-envelope.js";
 import { assertWorkspaceBelongsToTenant } from "./workspace-ownership.js";
+import { GatewayError, interactionSchema } from "../../../../infrastructure/social/gateway/protocol.js";
 
 /**
  * Vorix Marketing → Redes sociais. O cliente comum vê contas, status e publicações; nunca tokens,
@@ -133,6 +134,44 @@ function translate(error: unknown): never {
 export async function registerSocialRoutes(app: FastifyInstance, deps: SocialRoutesDeps): Promise<void> {
   const { social } = deps;
   const ownWorkspace = (tenantId: string, workspaceId: string) => assertWorkspaceBelongsToTenant(deps.workspaceRepository, { tenantId, workspaceId });
+
+  // Authenticated proxy for the private browser gateway. The flow is also bound to the initiating
+  // user inside the gateway. No service token, session cookie or provider identifier is returned.
+  app.post("/social/connections/interactive/:flowId/:operation", {
+    schema: {
+      params: { type: "object", required: ["flowId", "operation"], properties: { flowId: { type: "string", format: "uuid" }, operation: { type: "string", enum: ["frame", "interact", "finish", "cancel"] } } },
+      body: { type: "object", required: ["workspaceId", "network"], additionalProperties: false, properties: { workspaceId: { type: "string", minLength: 1 }, network: NETWORK_SCHEMA, action: { type: "object" } } },
+    },
+    config: { readOnlyGuard: true },
+  }, async (request, reply) => {
+    const { tenantId, actor: who } = actor(request, "marketing:social_connect");
+    const { flowId, operation } = request.params as { flowId: string; operation: "frame" | "interact" | "finish" | "cancel" };
+    const body = request.body as { workspaceId: string; network: SocialNetwork; action?: unknown };
+    await ownWorkspace(tenantId, body.workspaceId);
+    const scope = { tenantId, workspaceId: body.workspaceId, network: body.network, userId: who.userId, flowId };
+    reply.header("Cache-Control", "no-store");
+    try {
+      if (operation !== "cancel") {
+        const selected = await social.resolver.connectionProviderFor(tenantId, body.network);
+        if (!selected.ok || selected.providerType !== `${body.network}_unofficial`) throw new GatewayError("UNSUPPORTED");
+      }
+      if (operation === "interact") {
+        const parsed = interactionSchema.safeParse(body.action);
+        if (!parsed.success) throw new AppError({ code: "SOCIAL_INPUT_INVALID", message: "Ação inválida.", statusCode: 400 });
+        await social.gateway.call("interact", { ...scope, action: parsed.data });
+        return successEnvelope({ accepted: true }, request.id);
+      }
+      if (operation === "finish") {
+        const connected = await social.gateway.call<{ externalAccountId: string }>("finish", scope);
+        await social.accounts.syncConnections({ tenantId, workspaceId: body.workspaceId, actor: who, network: body.network, externalAccountIds: [connected.externalAccountId] });
+        return successEnvelope({ connected: true }, request.id);
+      }
+      return successEnvelope(await social.gateway.call(operation, scope), request.id);
+    } catch (error) {
+      if (error instanceof GatewayError) throw new AppError({ code: "SOCIAL_CONNECTION_ACTION_REQUIRED", message: error.code === "NOT_FOUND" ? "Esta conexão expirou. Clique em Conectar novamente." : error.code === "CHECKPOINT_REQUIRED" ? "Conclua a confirmação de segurança solicitada pela rede e tente continuar." : error.code === "AUTH_REQUIRED" || error.code === "SESSION_INVALID" ? "Conclua o login na rede antes de continuar." : "A conexão está indisponível no momento. Tente novamente.", statusCode: error.code === "NOT_FOUND" ? 404 : 409, recoverable: true });
+      translate(error);
+    }
+  });
 
   // ---------- Contas / Integrações ----------
   app.get("/social/accounts", { schema: { querystring: WORKSPACE_QUERY } }, async (request) => {

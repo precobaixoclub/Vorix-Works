@@ -3,7 +3,7 @@ import type { SocialRepositoryPort } from "../ports/social-repository.port.js";
 import type { SocialAuditActor, SocialAuditLog } from "./social-audit.js";
 import { SOCIAL_SYSTEM_ACTOR } from "./social-audit.js";
 import type { SocialNotifier } from "./social-notifier.js";
-import { reauthAlert } from "./social-notifier.js";
+import { reauthAlert, SOCIAL_PATHS } from "./social-notifier.js";
 import type { SocialProviderResolver } from "./social-provider-resolver.js";
 import type { SocialConnectedAccount, SocialProviderAccountContext, SocialProviderFailure, SocialProviderSession } from "./social-publishing-provider.port.js";
 import type { SocialSessionVault } from "./social-session-vault.js";
@@ -30,6 +30,9 @@ export type SocialAccountServiceDeps = {
   idGenerator: () => string;
   now?: () => Date;
 };
+
+/** Conta autorizada no provider, como o cliente vê para escolher (sem credencial nem ids técnicos internos). */
+export type SocialAuthorizedAccountView = { externalAccountId: string; username?: string; displayName?: string; avatarUrl?: string; alreadyConnected: boolean };
 
 /** Visão do cliente comum: sem token, cookie, sessão, endpoint ou nome técnico de provider. */
 export type SocialAccountView = {
@@ -107,7 +110,7 @@ export class SocialAccountService {
    * Início da conexão pelo provider liberado ao tenant (OAuth oficial hoje). O cliente só vê
    * "Conectar Instagram": a URL de autorização vem do provider; nada técnico chega à tela.
    */
-  async beginConnection(input: { tenantId: string; workspaceId: string; network: SocialNetwork }): Promise<{ redirectUrl: string }> {
+  async beginConnection(input: { tenantId: string; workspaceId: string; network: SocialNetwork; userId: string; returnPath?: string }): Promise<{ redirectUrl: string }> {
     const label = NETWORK_LABEL[input.network];
     const resolution = await this.deps.resolver.connectionProviderFor(input.tenantId, input.network);
     if (!resolution.ok) {
@@ -120,17 +123,63 @@ export class SocialAccountService {
   }
 
   /**
+   * Retorno da autorização: o provider troca o código pela credencial (cofre central) e devolve o
+   * contexto guardado no servidor (workspace, rede, retorno). Com uma única conta autorizada nova,
+   * ela já é conectada; com várias, o cliente escolhe quais usar.
+   */
+  async completeConnection(input: { tenantId: string; userId: string; network: SocialNetwork; state: string; code: string; actor: SocialAuditActor }): Promise<{ workspaceId: string; network: SocialNetwork; returnPath?: string; autoConnected: boolean; accounts: SocialAuthorizedAccountView[] }> {
+    const label = NETWORK_LABEL[input.network];
+    const resolution = await this.deps.resolver.connectionProviderFor(input.tenantId, input.network);
+    if (!resolution.ok || !resolution.provider.connection) throw new Error(`SOCIAL_CONNECTION_UNAVAILABLE: a conexão com o ${label} está indisponível no momento.`);
+    const flow = await resolution.provider.connection.complete({ state: input.state, code: input.code, tenantId: input.tenantId, userId: input.userId, role: input.actor.role });
+    const network = flow.network ?? input.network;
+    let accounts = await this.authorizedAccounts({ tenantId: input.tenantId, workspaceId: flow.workspaceId, network });
+    const pending = accounts.filter((account) => !account.alreadyConnected);
+    let autoConnected = false;
+    if (pending.length === 1) {
+      await this.syncConnections({ tenantId: input.tenantId, workspaceId: flow.workspaceId, actor: input.actor, network, externalAccountIds: [pending[0]!.externalAccountId] });
+      accounts = await this.authorizedAccounts({ tenantId: input.tenantId, workspaceId: flow.workspaceId, network });
+      autoConnected = true;
+    } else if (pending.length === 0) {
+      // Reconexão de contas já conhecidas: atualiza status/credencial e libera a fila.
+      await this.syncConnections({ tenantId: input.tenantId, workspaceId: flow.workspaceId, actor: input.actor, network });
+      autoConnected = accounts.length > 0;
+    }
+    return { workspaceId: flow.workspaceId, network, ...(flow.returnPath ? { returnPath: flow.returnPath } : {}), autoConnected, accounts };
+  }
+
+  /** Contas autorizadas no provider para a rede — só o necessário para o cliente escolher. */
+  async authorizedAccounts(input: { tenantId: string; workspaceId: string; network: SocialNetwork }): Promise<SocialAuthorizedAccountView[]> {
+    const resolution = await this.deps.resolver.connectionProviderFor(input.tenantId, input.network);
+    if (!resolution.ok || !resolution.provider.connection) return [];
+    const remote = await resolution.provider.connection.listAccounts(input).catch((): SocialConnectedAccount[] => []);
+    const local = await this.deps.repository.listAccounts({ tenantId: input.tenantId, workspaceId: input.workspaceId, network: input.network });
+    return remote
+      .filter((account) => account.status === "active")
+      .map((account) => {
+        const existing = local.find((item) => item.externalAccountId === account.externalAccountId);
+        return {
+          externalAccountId: account.externalAccountId,
+          ...(account.username ? { username: account.username } : {}),
+          ...(account.displayName ? { displayName: account.displayName } : {}),
+          ...(account.avatarUrl ? { avatarUrl: account.avatarUrl } : {}),
+          alreadyConnected: !!existing?.connections.some((connection) => connection.providerType === resolution.providerType && connection.status === "active" && connection.credentialReferenceId === account.credentialReferenceId),
+        };
+      });
+  }
+
+  /**
    * Sincroniza as contas autorizadas no provider com as contas sociais do Vorix. A MESMA conta
    * (rede + id externo) recebe a conexão do provider — trocar de provider nunca duplica a conta.
    * Credencial revogada/expirada → REAUTH_REQUIRED (agendamentos preservados).
    */
-  async syncConnections(input: { tenantId: string; workspaceId: string; actor: SocialAuditActor }): Promise<{ connected: number; reconnected: number; revoked: number }> {
+  async syncConnections(input: { tenantId: string; workspaceId: string; actor: SocialAuditActor; network?: SocialNetwork; /** Contas novas a importar (as já conectadas sempre atualizam). */ externalAccountIds?: readonly string[] }): Promise<{ connected: number; reconnected: number; revoked: number }> {
     let connected = 0;
     let reconnected = 0;
     let revoked = 0;
     for (const provider of this.deps.resolver.providers.list()) {
       if (!provider.connection) continue;
-      for (const network of SOCIAL_NETWORKS.filter((item) => provider.descriptor.networks.includes(item))) {
+      for (const network of SOCIAL_NETWORKS.filter((item) => provider.descriptor.networks.includes(item) && (!input.network || item === input.network))) {
         const authorized = await provider.connection.listAccounts({ tenantId: input.tenantId, workspaceId: input.workspaceId, network }).catch((): SocialConnectedAccount[] => []);
         for (const remote of authorized) {
           const outcome = await this.applyConnectedAccount(input, provider.descriptor.type, remote);
@@ -143,12 +192,14 @@ export class SocialAccountService {
     return { connected, reconnected, revoked };
   }
 
-  private async applyConnectedAccount(input: { tenantId: string; workspaceId: string; actor: SocialAuditActor }, providerType: SocialProviderType, remote: SocialConnectedAccount): Promise<"connected" | "reconnected" | "revoked" | "unchanged"> {
+  private async applyConnectedAccount(input: { tenantId: string; workspaceId: string; actor: SocialAuditActor; externalAccountIds?: readonly string[] }, providerType: SocialProviderType, remote: SocialConnectedAccount): Promise<"connected" | "reconnected" | "revoked" | "unchanged"> {
     const now = this.now().toISOString();
     let account = await this.deps.repository.findAccountByExternalId({ tenantId: input.tenantId, workspaceId: input.workspaceId, network: remote.network, externalAccountId: remote.externalAccountId });
     const previous = account?.connections.find((connection) => connection.providerType === providerType);
     if (!account) {
       if (remote.status !== "active") return "unchanged";
+      // Conta nova só entra se o cliente escolheu (quando houve escolha).
+      if (input.externalAccountIds && !input.externalAccountIds.includes(remote.externalAccountId)) return "unchanged";
       account = await this.deps.repository.createAccount({
         id: this.deps.idGenerator(),
         tenantId: input.tenantId,
@@ -301,7 +352,7 @@ export class SocialAccountService {
     const status: SocialConnectionStatus = nextStatus === "TEMPORARY_ERROR" && consecutiveFailures >= maxConsecutiveFailures ? "TEMPORARY_ERROR" : account.status;
     const updated = (await this.deps.repository.updateAccount({ tenantId: account.tenantId, id: account.id, patch: { status, lastErrorCode: failure.code, lastErrorAt: now, lastHealthCheckAt: now, consecutiveFailures } }))!;
     if (status === "TEMPORARY_ERROR" && account.status !== "TEMPORARY_ERROR") {
-      await this.deps.notifier.notify({ tenantId: account.tenantId, workspaceId: account.workspaceId, kind: "account_problem", network: account.network, subjectId: account.id, title: `Conta do ${NETWORK_LABEL[account.network]} com problema`, body: `O ${NETWORK_LABEL[account.network]} está instável para esta conta. Vamos continuar tentando com cuidado.`, sourceUrl: `/workspaces/${account.workspaceId}/connections?social=${account.id}` });
+      await this.deps.notifier.notify({ tenantId: account.tenantId, workspaceId: account.workspaceId, kind: "account_problem", network: account.network, subjectId: account.id, title: `Conta do ${NETWORK_LABEL[account.network]} com problema`, body: `O ${NETWORK_LABEL[account.network]} está instável para esta conta. Vamos continuar tentando com cuidado.`, sourceUrl: SOCIAL_PATHS.integrations(account.workspaceId) });
     }
     return updated;
   }
@@ -343,7 +394,7 @@ export class SocialAccountService {
         subjectId: account.id,
         title: "Publicações atrasadas aguardando confirmação",
         body: `${awaitingConfirmation === 1 ? "1 publicação passou" : `${awaitingConfirmation} publicações passaram`} do horário enquanto a conta do ${NETWORK_LABEL[account.network]} estava desconectada. Confirme se ainda devem sair.`,
-        sourceUrl: `/workspaces/${account.workspaceId}/calendar`,
+        sourceUrl: SOCIAL_PATHS.calendar(account.workspaceId),
       });
     }
     return { released, awaitingConfirmation, skipped };

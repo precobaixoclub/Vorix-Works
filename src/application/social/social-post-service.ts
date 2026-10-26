@@ -1,7 +1,7 @@
 import type { PublicationRepositoryPort } from "../ports/publication-repository.port.js";
 import type { SocialRepositoryPort } from "../ports/social-repository.port.js";
 import { ensurePublicationOutboxIntents } from "../publication/publication-outbox-intent.js";
-import { assertIanaTimezone, zonedTimeToUtc } from "../scheduling/timezone.js";
+import { assertIanaTimezone, isValidIanaTimezone, zonedTimeToUtc } from "../scheduling/timezone.js";
 import type { SocialAccountService } from "./social-account-service.js";
 import type { SocialAuditActor, SocialAuditLog } from "./social-audit.js";
 import { type SocialMediaProbePort, validateAgainstCapability } from "./social-media-validation.js";
@@ -42,6 +42,8 @@ export type SocialPostServiceDeps = {
   idGenerator: () => string;
   now?: () => Date;
   defaultTimezone?: string;
+  /** Fuso do workspace (configuração do cliente); prevalece sobre o padrão da plataforma. */
+  timezoneFor?: (input: { tenantId: string; workspaceId: string }) => Promise<string | undefined>;
 };
 
 /** Conteúdo base + personalização opcional por rede (legenda, hashtags, música, formato, mídia). */
@@ -111,6 +113,16 @@ export type SocialDestinationView = {
   actions: ("retry" | "cancel" | "confirm_late" | "skip_late" | "reconnect" | "resolve_unknown")[];
 };
 
+/** Linha do tempo amigável — sem logs técnicos. */
+export type SocialPostHistoryEntry = {
+  at: string;
+  kind: "created" | "scheduled" | "attempt" | "retry" | "published" | "failed" | "reconnect_needed" | "confirmation_pending" | "reconciled" | "cancelled";
+  label: string;
+  network?: SocialNetwork;
+  /** Para "agendada": o horário escolhido (a tela formata no fuso do usuário). */
+  scheduledFor?: string;
+};
+
 export type SocialPostView = {
   id: string;
   state: SocialPostState;
@@ -119,6 +131,7 @@ export type SocialPostView = {
   createdAt: string;
   requiresApproval: boolean;
   destinations: SocialDestinationView[];
+  history: SocialPostHistoryEntry[];
 };
 
 export class SocialPostService {
@@ -200,7 +213,7 @@ export class SocialPostService {
       throw error;
     }
 
-    const timezone = input.when.mode === "schedule" ? (input.when.timezone ?? this.deps.defaultTimezone ?? "America/Sao_Paulo") : (this.deps.defaultTimezone ?? "America/Sao_Paulo");
+    const timezone = (input.when.mode === "schedule" ? input.when.timezone : undefined) ?? await this.workspaceTimezone(input);
     let scheduledAt: string | undefined;
     if (input.when.mode === "schedule") {
       assertIanaTimezone(timezone);
@@ -326,7 +339,7 @@ export class SocialPostService {
     if (detail.targets.some((target) => target.status === "published" || target.status === "publishing") || detail.outbox.some((message) => message.status === "claimed")) {
       throw new Error("SOCIAL_POST_ALREADY_STARTED: parte desta publicação já saiu; não é possível reagendar.");
     }
-    const timezone = input.timezone ?? detail.plan.timezone ?? this.deps.defaultTimezone ?? "America/Sao_Paulo";
+    const timezone = input.timezone ?? detail.plan.timezone ?? await this.workspaceTimezone(input);
     assertIanaTimezone(timezone);
     const scheduledAt = zonedTimeToUtc(input.localDateTime, timezone);
     if (Date.parse(scheduledAt) < this.now().getTime() - 60_000) throw new Error("SOCIAL_SCHEDULE_IN_PAST: escolha um horário no futuro.");
@@ -515,7 +528,14 @@ export class SocialPostService {
       createdAt: detail.plan.createdAt,
       requiresApproval: detail.plan.state === "waiting_for_approval",
       destinations: views,
+      history: buildHistory(detail, destinations),
     };
+  }
+
+  /** Fuso efetivo: do workspace do cliente; senão o padrão da plataforma. */
+  async workspaceTimezone(input: { tenantId: string; workspaceId: string }): Promise<string> {
+    const configured = await this.deps.timezoneFor?.(input).catch(() => undefined);
+    return configured && isValidIanaTimezone(configured) ? configured : this.deps.defaultTimezone ?? "America/Sao_Paulo";
   }
 
   private async startNow(tenantId: string, workspaceId: string, publicationId: string): Promise<void> {
@@ -550,4 +570,44 @@ export class SocialPostService {
   private now(): Date {
     return (this.deps.now ?? (() => new Date()))();
   }
+}
+
+const HISTORY_LABEL: Record<SocialPostHistoryEntry["kind"], string> = {
+  created: "Publicação criada",
+  scheduled: "Agendada",
+  attempt: "Envio iniciado",
+  retry: "Nova tentativa",
+  published: "Publicada",
+  failed: "Não publicada",
+  reconnect_needed: "Aguardando reconexão",
+  confirmation_pending: "Confirmação de publicação pendente",
+  reconciled: "Publicação confirmada",
+  cancelled: "Cancelada",
+};
+
+/** Histórico derivado do motor de publicação (tentativas, recibos, reconciliação) — nunca payload técnico. */
+function buildHistory(detail: PublicationDetail, destinations: readonly SocialPostDestination[]): SocialPostHistoryEntry[] {
+  const networkOf = (targetId: string | undefined) => destinations.find((destination) => destination.targetId === targetId)?.network;
+  const entries: SocialPostHistoryEntry[] = [{ at: detail.plan.createdAt, kind: "created", label: HISTORY_LABEL.created }];
+  for (const schedule of detail.schedules) entries.push({ at: schedule.createdAt, kind: "scheduled", label: schedule.status === "cancelled" ? "Agendamento substituído" : HISTORY_LABEL.scheduled, scheduledFor: schedule.scheduledAt });
+  for (const attempt of detail.attempts) {
+    const network = networkOf(attempt.targetId);
+    entries.push({ at: attempt.startedAt, kind: attempt.attemptNumber > 1 ? "retry" : "attempt", label: attempt.attemptNumber > 1 ? HISTORY_LABEL.retry : HISTORY_LABEL.attempt, ...(network ? { network } : {}) });
+    if (attempt.state === "failed" && attempt.finishedAt) entries.push({ at: attempt.finishedAt, kind: "failed", label: HISTORY_LABEL.failed, ...(network ? { network } : {}) });
+    if (attempt.state === "unknown_outcome" && attempt.finishedAt) entries.push({ at: attempt.finishedAt, kind: "confirmation_pending", label: HISTORY_LABEL.confirmation_pending, ...(network ? { network } : {}) });
+  }
+  for (const receipt of detail.receipts) {
+    const network = networkOf(receipt.targetId);
+    entries.push({ at: receipt.publishedAt, kind: "published", label: HISTORY_LABEL.published, ...(network ? { network } : {}) });
+  }
+  for (const reconciliation of detail.reconciliations.filter((item) => item.status === "confirmed_published" || item.status === "confirmed_not_published")) {
+    const network = networkOf(reconciliation.targetId);
+    entries.push({ at: reconciliation.updatedAt, kind: "reconciled", label: reconciliation.status === "confirmed_published" ? HISTORY_LABEL.reconciled : "Confirmado que não foi publicada", ...(network ? { network } : {}) });
+  }
+  for (const destination of destinations) {
+    if (destination.blockReason === "WAITING_REAUTH" && destination.blockedAt) entries.push({ at: destination.blockedAt, kind: "reconnect_needed", label: HISTORY_LABEL.reconnect_needed, network: destination.network });
+    if (destination.skippedAt) entries.push({ at: destination.skippedAt, kind: "cancelled", label: "Não publicada (atrasada)", network: destination.network });
+  }
+  if (detail.plan.cancelledAt) entries.push({ at: detail.plan.cancelledAt, kind: "cancelled", label: HISTORY_LABEL.cancelled });
+  return entries.sort((left, right) => left.at.localeCompare(right.at));
 }

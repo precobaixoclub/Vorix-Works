@@ -65,7 +65,7 @@ test("Meta OAuth: conecta e resolve múltiplas Páginas, cada uma com facebook e
     httpClient,
   });
 
-  const begin = service.begin({ tenantId: "tenant-1", workspaceId: "workspace-1" });
+  const begin = await service.begin({ tenantId: "tenant-1", workspaceId: "workspace-1" });
   assert.ok(begin.authorizationUrl.startsWith("https://www.facebook.com/v21.0/dialog/oauth"));
   assert.ok(begin.authorizationUrl.includes("code_challenge_method=S256"));
 
@@ -103,7 +103,7 @@ test("Meta OAuth: usa Facebook Login for Business config_id quando configurado",
     secretStore,
   });
 
-  const begin = service.begin({ tenantId: "tenant-1", workspaceId: "workspace-1" });
+  const begin = await service.begin({ tenantId: "tenant-1", workspaceId: "workspace-1" });
   const url = new URL(begin.authorizationUrl);
   assert.equal(url.searchParams.get("config_id"), "config-1");
   assert.equal(url.searchParams.has("scope"), false);
@@ -124,16 +124,16 @@ test("Meta OAuth: sem Página encontrada falha, e state expirado é recusado", a
     now: () => now,
   });
 
-  const begin = service.begin({ tenantId: "t", workspaceId: "w" });
+  const begin = await service.begin({ tenantId: "t", workspaceId: "w" });
   await assert.rejects(() => service.complete({ state: begin.state, code: "c" }), /META_NO_PAGES_FOUND/);
 
-  const begin2 = service.begin({ tenantId: "t", workspaceId: "w" });
+  const begin2 = await service.begin({ tenantId: "t", workspaceId: "w" });
   now = new Date("2026-01-01T00:11:00.000Z");
   await assert.rejects(() => service.complete({ state: begin2.state, code: "c" }), /META_OAUTH_STATE_INVALID/);
 
   const disabled = new MetaInstagramOAuthService({ config: { enabled: false, scopes: [] }, repository, secretStore });
   assert.equal(disabled.isConfigured(), false);
-  assert.throws(() => disabled.begin({ tenantId: "t", workspaceId: "w" }), /META_OAUTH_NOT_CONFIGURED/);
+  await assert.rejects(() => disabled.begin({ tenantId: "t", workspaceId: "w" }), /META_OAUTH_NOT_CONFIGURED/);
 });
 
 test("Instagram Provider: imagem única publica via media/media_publish e retorna permalink", async () => {

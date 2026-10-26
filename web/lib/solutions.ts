@@ -41,6 +41,8 @@ const MARKETING_SEGMENTS: ReadonlySet<string> = new Set([
   "campaigns",
   "calendar",
   "publish",
+  // Redes sociais: criar publicação, calendário e integrações (Instagram/Facebook/TikTok).
+  "social",
   "meta-ads",
   "knowledge",
   "assets",

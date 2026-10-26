@@ -1,4 +1,7 @@
 import { createHash, randomBytes } from "node:crypto";
+import type { OAuthStateStorePort } from "../../application/ports/oauth-state-store.port.js";
+import { safeReturnPath } from "../../application/ports/oauth-state-store.port.js";
+import { InMemoryOAuthStateStore } from "../storage/oauth-state-stores.js";
 import type { CredentialGovernanceActor, CredentialGovernanceService } from "../../application/credential/credential-governance-service.js";
 import type { PublicationRepositoryPort } from "../../application/ports/publication-repository.port.js";
 import type { PublicationSecretStoragePort } from "../../application/publication/publication-secret-store.js";
@@ -72,7 +75,6 @@ type ResolvedPage = {
 const STATE_TTL_MS = 10 * 60 * 1000;
 
 export class MetaInstagramOAuthService {
-  private readonly states = new Map<string, MetaInstagramOAuthState>();
   private telemetry: MetaInstagramOAuthTelemetry = { oauthSuccess: 0, oauthFailure: 0, tokenRefreshSuccess: 0, tokenRefreshFailure: 0 };
 
   constructor(
@@ -82,9 +84,18 @@ export class MetaInstagramOAuthService {
       secretStore: PublicationSecretStoragePort;
       credentialGovernanceService?: CredentialGovernanceService;
       httpClient?: typeof fetch;
+      /** Estado OAuth compartilhado e persistente (Postgres em produção). */
+      stateStore?: OAuthStateStorePort;
       now?: () => Date;
     },
   ) {}
+
+  private stateStoreInstance?: OAuthStateStorePort;
+
+  private get stateStore(): OAuthStateStorePort {
+    this.stateStoreInstance ??= this.input.stateStore ?? new InMemoryOAuthStateStore();
+    return this.stateStoreInstance;
+  }
 
   isConfigured(): boolean {
     const { enabled, appId, appSecret, redirectUri } = this.input.config;
@@ -92,14 +103,24 @@ export class MetaInstagramOAuthService {
   }
 
   /** Passo 1 — devolve a URL de autorização do Meta (com PKCE) para o cliente aprovar o acesso. */
-  begin(input: { tenantId: string; workspaceId: string }): { authorizationUrl: string; state: string; expiresAt: string } {
+  async begin(input: { tenantId: string; workspaceId: string; userId?: string; network?: string; returnPath?: string }): Promise<{ authorizationUrl: string; state: string; expiresAt: string }> {
     this.assertConfigured();
     const now = this.now();
-    this.pruneExpiredStates(now);
+    await this.stateStore.purgeExpired(now.toISOString()).catch(() => 0);
     const state = randomBytes(24).toString("base64url");
     const codeVerifier = randomBytes(48).toString("base64url");
     const expiresAt = new Date(now.getTime() + STATE_TTL_MS).toISOString();
-    this.states.set(state, { state, tenantId: input.tenantId, workspaceId: input.workspaceId, codeVerifier, createdAt: now.toISOString(), expiresAt });
+    await this.stateStore.create(state, {
+      provider: "meta_instagram",
+      tenantId: input.tenantId,
+      workspaceId: input.workspaceId,
+      ...(input.userId ? { userId: input.userId } : {}),
+      ...(input.network ? { network: input.network } : {}),
+      ...(safeReturnPath(input.returnPath) ? { returnPath: safeReturnPath(input.returnPath) } : {}),
+      ...(codeVerifier ? { codeVerifier } : {}),
+      createdAt: now.toISOString(),
+      expiresAt,
+    });
 
     const url = new URL(`${this.oauthDialogBaseUrl()}/dialog/oauth`);
     url.searchParams.set("client_id", this.input.config.appId!);
@@ -117,20 +138,26 @@ export class MetaInstagramOAuthService {
   }
 
   /** Passo 2 — troca o `code` por tokens, resolve as Páginas + contas do Instagram vinculadas e registra as credenciais governadas do cliente. */
-  async complete(input: { state: string; code: string; actor?: CredentialGovernanceActor; context?: AuditContext }): Promise<{ accounts: readonly MetaConnectedAccount[] }> {
+  async complete(input: { state: string; code: string; actor?: CredentialGovernanceActor; context?: AuditContext }): Promise<{ accounts: readonly MetaConnectedAccount[]; flow: { workspaceId: string; network?: string; returnPath?: string } }> {
     this.assertConfigured();
-    const pending = this.states.get(input.state);
-    if (!pending || pending.expiresAt <= this.now().toISOString()) {
-      this.states.delete(input.state);
+    // Uso único, expiração curta e vínculo com quem iniciou (tenant/usuário): replay ou state de
+    // outro tenant é recusado — e o state é queimado mesmo assim.
+    const consumed = await this.stateStore.consume({ state: input.state, provider: "meta_instagram", now: this.now().toISOString(), ...(input.actor ? { tenantId: input.actor.tenantId, userId: input.actor.userId } : {}) });
+    if (!consumed.ok) {
       this.recordOAuthFailure("META_OAUTH_STATE_INVALID");
-      throw new Error("META_OAUTH_STATE_INVALID: state OAuth inválido ou expirado.");
+      throw new Error(`META_OAUTH_STATE_INVALID: state OAuth inválido, expirado ou já utilizado (${consumed.reason}).`);
     }
-    this.states.delete(input.state);
+    const pending = consumed.record;
+    if (!pending.codeVerifier) {
+      this.recordOAuthFailure("META_OAUTH_STATE_INVALID");
+      throw new Error("META_OAUTH_STATE_INVALID: state OAuth sem verificador PKCE.");
+    }
+    const codeVerifier = pending.codeVerifier;
 
     let pages: readonly ResolvedPage[];
     let userAccessToken: string;
     try {
-      const shortLived = await this.exchangeCode(input.code, pending.codeVerifier);
+      const shortLived = await this.exchangeCode(input.code, codeVerifier);
       const longLived = await this.exchangeLongLivedToken(shortLived.accessToken);
       userAccessToken = longLived.accessToken;
       pages = await this.resolvePages(userAccessToken);
@@ -177,7 +204,8 @@ export class MetaInstagramOAuthService {
     }
 
     this.telemetry = { ...this.telemetry, oauthSuccess: this.telemetry.oauthSuccess + 1 };
-    return { accounts };
+    // Contexto do fluxo vem do state persistido no servidor, não do navegador.
+    return { accounts, flow: { workspaceId: pending.workspaceId, ...(pending.network ? { network: pending.network } : {}), ...(pending.returnPath ? { returnPath: pending.returnPath } : {}) } };
   }
 
   /**
@@ -411,12 +439,6 @@ export class MetaInstagramOAuthService {
     if (!this.isConfigured()) throw new Error("META_OAUTH_NOT_CONFIGURED: defina META_APP_ID, META_APP_SECRET e META_INSTAGRAM_OAUTH_REDIRECT_URI.");
   }
 
-  private pruneExpiredStates(now: Date): void {
-    const nowIso = now.toISOString();
-    for (const [key, value] of this.states) {
-      if (value.expiresAt <= nowIso) this.states.delete(key);
-    }
-  }
 
   private graphBaseUrl(): string {
     return this.input.config.graphBaseUrl ?? "https://graph.facebook.com/v21.0";

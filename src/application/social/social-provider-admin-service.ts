@@ -1,7 +1,7 @@
 import type { PublicationRepositoryPort } from "../ports/publication-repository.port.js";
 import type { SocialRepositoryPort } from "../ports/social-repository.port.js";
 import type { SocialAuditActor, SocialAuditLog } from "./social-audit.js";
-import type { SocialNotifier } from "./social-notifier.js";
+import { SOCIAL_PATHS, type SocialNotifier } from "./social-notifier.js";
 import type { SocialProviderResolver } from "./social-provider-resolver.js";
 import {
   DEFAULT_LATE_POLICY,
@@ -151,7 +151,7 @@ export class SocialProviderAdminService {
         const key = `${account.tenantId}:${account.workspaceId}:${account.network}`;
         if (notified.has(key)) continue;
         notified.add(key);
-        await this.deps.notifier.notify({ tenantId: account.tenantId, workspaceId: account.workspaceId, kind: "provider_paused", network: account.network, subjectId: `${account.network}:${input.providerType}`, title: `Publicações no ${NETWORK_LABEL[account.network]} pausadas`, body: `As publicações no ${NETWORK_LABEL[account.network]} foram pausadas temporariamente. Nada foi apagado: os agendamentos sairão assim que a integração voltar.`, sourceUrl: `/workspaces/${account.workspaceId}/calendar` });
+        await this.deps.notifier.notify({ tenantId: account.tenantId, workspaceId: account.workspaceId, kind: "provider_paused", network: account.network, subjectId: `${account.network}:${input.providerType}`, title: `Publicações no ${NETWORK_LABEL[account.network]} pausadas`, body: `As publicações no ${NETWORK_LABEL[account.network]} foram pausadas temporariamente. Nada foi apagado: os agendamentos sairão assim que a integração voltar.`, sourceUrl: SOCIAL_PATHS.calendar(account.workspaceId) });
       }
     }
     if (!current.enabled && saved.enabled) await this.releaseProviderPaused(affected);

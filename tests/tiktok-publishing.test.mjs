@@ -57,7 +57,7 @@ test("TikTok OAuth: cada workspace conecta a própria conta e o token fica só n
     httpClient,
   });
 
-  const begin = service.begin({ tenantId: "tenant-1", workspaceId: "workspace-1" });
+  const begin = await service.begin({ tenantId: "tenant-1", workspaceId: "workspace-1" });
   assert.ok(begin.authorizationUrl.startsWith("https://www.tiktok.com/v2/auth/authorize/"));
   assert.ok(begin.authorizationUrl.includes("code_challenge_method=S256"));
   assert.ok(begin.authorizationUrl.includes("disable_auto_auth=1"));
@@ -105,7 +105,7 @@ test("TikTok OAuth: Web inicia autorização sem PKCE por padrão", async () => 
     httpClient,
   });
 
-  const begin = service.begin({ tenantId: "tenant-1", workspaceId: "workspace-1" });
+  const begin = await service.begin({ tenantId: "tenant-1", workspaceId: "workspace-1" });
   assert.ok(begin.authorizationUrl.includes("disable_auto_auth=1"));
   assert.equal(begin.authorizationUrl.includes("code_challenge"), false);
   assert.equal(begin.authorizationUrl.includes("code_challenge_method"), false);
@@ -124,13 +124,13 @@ test("TikTok OAuth: state expirado é recusado e serviço sem credenciais não i
     httpClient: async () => jsonResponse({ access_token: "x", open_id: "o" }),
     now: () => now,
   });
-  const begin = service.begin({ tenantId: "t", workspaceId: "w" });
+  const begin = await service.begin({ tenantId: "t", workspaceId: "w" });
   now = new Date("2026-01-01T00:11:00.000Z");
   await assert.rejects(() => service.complete({ state: begin.state, code: "c" }), /TIKTOK_OAUTH_STATE_INVALID/);
 
   const disabled = new TikTokOAuthService({ config: { enabled: false, scopes: [] }, repository, secretStore });
   assert.equal(disabled.isConfigured(), false);
-  assert.throws(() => disabled.begin({ tenantId: "t", workspaceId: "w" }), /TIKTOK_OAUTH_NOT_CONFIGURED/);
+  await assert.rejects(() => disabled.begin({ tenantId: "t", workspaceId: "w" }), /TIKTOK_OAUTH_NOT_CONFIGURED/);
 });
 
 test("TikTok Provider: vídeo com descrição vira DIRECT_POST e receipt confirma post publicado", async () => {

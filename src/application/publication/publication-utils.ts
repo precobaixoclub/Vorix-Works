@@ -11,6 +11,9 @@ export function stableStringify(value: unknown): string {
   return `{${Object.keys(record).sort().map((key) => `${JSON.stringify(key)}:${stableStringify(record[key])}`).join(",")}}`;
 }
 
+/** Falhas transitórias com nova tentativa automática antes do dead-letter (a 4ª falha é final). */
+export const MAX_TRANSIENT_RETRIES = 3;
+
 export function isRetryablePublicationFailure(category: string): boolean {
   return category === "timeout" || category === "provider_unavailable" || category === "rate_limited";
 }

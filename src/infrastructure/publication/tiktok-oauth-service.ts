@@ -1,4 +1,7 @@
 import { createHash, randomBytes } from "node:crypto";
+import type { OAuthStateStorePort } from "../../application/ports/oauth-state-store.port.js";
+import { safeReturnPath } from "../../application/ports/oauth-state-store.port.js";
+import { InMemoryOAuthStateStore } from "../storage/oauth-state-stores.js";
 import type { CredentialGovernanceActor, CredentialGovernanceService } from "../../application/credential/credential-governance-service.js";
 import type { PublicationRepositoryPort } from "../../application/ports/publication-repository.port.js";
 import type { PublicationSecretStoragePort } from "../../application/publication/publication-secret-store.js";
@@ -71,7 +74,6 @@ export type TikTokTokenSet = {
 const STATE_TTL_MS = 10 * 60 * 1000;
 
 export class TikTokOAuthService {
-  private readonly states = new Map<string, TikTokOAuthState>();
   private telemetry: TikTokOAuthTelemetry = { oauthSuccess: 0, oauthFailure: 0, tokenRefreshSuccess: 0, tokenRefreshFailure: 0 };
 
   constructor(
@@ -81,9 +83,18 @@ export class TikTokOAuthService {
       secretStore: PublicationSecretStoragePort;
       credentialGovernanceService?: CredentialGovernanceService;
       httpClient?: typeof fetch;
+      /** Estado OAuth compartilhado e persistente (Postgres em produção). */
+      stateStore?: OAuthStateStorePort;
       now?: () => Date;
     },
   ) {}
+
+  private stateStoreInstance?: OAuthStateStorePort;
+
+  private get stateStore(): OAuthStateStorePort {
+    this.stateStoreInstance ??= this.input.stateStore ?? new InMemoryOAuthStateStore();
+    return this.stateStoreInstance;
+  }
 
   isConfigured(): boolean {
     const { enabled, clientKey, clientSecret, redirectUri } = this.input.config;
@@ -91,14 +102,24 @@ export class TikTokOAuthService {
   }
 
   /** Passo 1 — devolve a URL de autorização do TikTok (com PKCE) para o cliente aprovar o acesso. */
-  begin(input: { tenantId: string; workspaceId: string }): { authorizationUrl: string; state: string; expiresAt: string } {
+  async begin(input: { tenantId: string; workspaceId: string; userId?: string; network?: string; returnPath?: string }): Promise<{ authorizationUrl: string; state: string; expiresAt: string }> {
     this.assertConfigured();
     const now = this.now();
-    this.pruneExpiredStates(now);
+    await this.stateStore.purgeExpired(now.toISOString()).catch(() => 0);
     const state = randomBytes(24).toString("base64url");
     const codeVerifier = this.input.config.pkceEnabled ? randomBytes(48).toString("base64url") : undefined;
     const expiresAt = new Date(now.getTime() + STATE_TTL_MS).toISOString();
-    this.states.set(state, { state, tenantId: input.tenantId, workspaceId: input.workspaceId, codeVerifier, createdAt: now.toISOString(), expiresAt });
+    await this.stateStore.create(state, {
+      provider: "tiktok",
+      tenantId: input.tenantId,
+      workspaceId: input.workspaceId,
+      ...(input.userId ? { userId: input.userId } : {}),
+      ...(input.network ? { network: input.network } : {}),
+      ...(safeReturnPath(input.returnPath) ? { returnPath: safeReturnPath(input.returnPath) } : {}),
+      ...(codeVerifier ? { codeVerifier } : {}),
+      createdAt: now.toISOString(),
+      expiresAt,
+    });
 
     const url = new URL(`${this.authorizeBaseUrl()}/v2/auth/authorize/`);
     url.searchParams.set("client_key", this.input.config.clientKey!);
@@ -115,15 +136,16 @@ export class TikTokOAuthService {
   }
 
   /** Passo 2 — troca o `code` do callback por tokens e registra a credencial governada do cliente. */
-  async complete(input: { state: string; code: string; actor?: CredentialGovernanceActor; context?: AuditContext }): Promise<{ credentialReferenceId: string; providerSubjectId: string; displayName?: string }> {
+  async complete(input: { state: string; code: string; actor?: CredentialGovernanceActor; context?: AuditContext }): Promise<{ credentialReferenceId: string; providerSubjectId: string; displayName?: string; flow: { workspaceId: string; network?: string; returnPath?: string } }> {
     this.assertConfigured();
-    const pending = this.states.get(input.state);
-    if (!pending || pending.expiresAt <= this.now().toISOString()) {
-      this.states.delete(input.state);
+    // Uso único, expiração curta e vínculo com quem iniciou (tenant/usuário): replay ou state de
+    // outro tenant é recusado — e o state é queimado mesmo assim.
+    const consumed = await this.stateStore.consume({ state: input.state, provider: "tiktok", now: this.now().toISOString(), ...(input.actor ? { tenantId: input.actor.tenantId, userId: input.actor.userId } : {}) });
+    if (!consumed.ok) {
       this.recordOAuthFailure("TIKTOK_OAUTH_STATE_INVALID");
-      throw new Error("TIKTOK_OAUTH_STATE_INVALID: state OAuth inválido ou expirado.");
+      throw new Error(`TIKTOK_OAUTH_STATE_INVALID: state OAuth inválido, expirado ou já utilizado (${consumed.reason}).`);
     }
-    this.states.delete(input.state);
+    const pending = consumed.record;
 
     let tokens: TikTokTokenSet;
     let profile: { displayName?: string; avatarUrl?: string };
@@ -150,7 +172,7 @@ export class TikTokOAuthService {
     });
 
     this.telemetry = { ...this.telemetry, oauthSuccess: this.telemetry.oauthSuccess + 1 };
-    return { credentialReferenceId, providerSubjectId: tokens.openId, displayName: profile.displayName };
+    return { credentialReferenceId, providerSubjectId: tokens.openId, displayName: profile.displayName, flow: { workspaceId: pending.workspaceId, ...(pending.network ? { network: pending.network } : {}), ...(pending.returnPath ? { returnPath: pending.returnPath } : {}) } };
   }
 
   /** Renova o access token com o refresh token guardado. Usado pelo provider antes de publicar. */
@@ -350,12 +372,6 @@ export class TikTokOAuthService {
     if (!this.isConfigured()) throw new Error("TIKTOK_OAUTH_NOT_CONFIGURED: defina TIKTOK_CLIENT_KEY, TIKTOK_CLIENT_SECRET e TIKTOK_OAUTH_REDIRECT_URI.");
   }
 
-  private pruneExpiredStates(now: Date): void {
-    const nowIso = now.toISOString();
-    for (const [key, value] of this.states) {
-      if (value.expiresAt <= nowIso) this.states.delete(key);
-    }
-  }
 
   private environment(): "sandbox" | "production" {
     return this.input.config.environment ?? "production";

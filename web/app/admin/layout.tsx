@@ -79,6 +79,7 @@ function AdminShell({ children }: { children: ReactNode }) {
             Contas de gravação
           </SidebarLink>
           <SidebarLink href="/admin/site" active={isActive("/admin/site")}>Vorix Site</SidebarLink>
+          <SidebarLink href="/admin/social-providers" active={isActive("/admin/social-providers")}>Social Providers</SidebarLink>
           <SidebarLink href="/admin/billing-provider" active={isActive("/admin/billing-provider")}>
             Mercado Pago
           </SidebarLink>
@@ -109,6 +110,7 @@ function AdminShell({ children }: { children: ReactNode }) {
             Contas de gravação
           </SidebarLink>
           <SidebarLink href="/admin/site" active={isActive("/admin/site")}>Vorix Site</SidebarLink>
+          <SidebarLink href="/admin/social-providers" active={isActive("/admin/social-providers")}>Social Providers</SidebarLink>
           <SidebarLink href="/admin/billing-provider" active={isActive("/admin/billing-provider")}>
             Mercado Pago (billing)
           </SidebarLink>

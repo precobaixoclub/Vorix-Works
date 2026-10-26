@@ -4,6 +4,7 @@ import { Suspense, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/contexts/auth-context";
 import { completeMetaOAuth } from "@/features/meta/api";
+import { finishSocialOAuth, takeSocialOAuthFlow } from "@/features/social/oauth-callback";
 import { OAuthCallbackPanel, type OAuthCallbackState } from "@/features/oauth/OAuthCallbackPanel";
 
 export const META_RETURN_PATH_KEY = "meta:return-path";
@@ -32,6 +33,8 @@ function MetaOAuthCallbackContent() {
 
     if (started.current) return;
     started.current = true;
+    // Consumida já no início: um retorno com erro também encerra o fluxo social pendente.
+    const socialNetwork = takeSocialOAuthFlow();
 
     const returnPath = window.sessionStorage.getItem(META_RETURN_PATH_KEY);
     setReturnHref(returnPath ?? undefined);
@@ -53,6 +56,22 @@ function MetaOAuthCallbackContent() {
     if (!code || !state) {
       setCallbackState("error");
       setMessage("Callback inválido: code ou state ausente.");
+      return;
+    }
+
+    // Fluxo das Redes sociais do Marketing: conclui pela rota social (state persistido e vinculado
+    // ao usuário) e volta para a tela de Integrações, abrindo a escolha de contas quando houver várias.
+    if (socialNetwork) {
+      finishSocialOAuth(socialNetwork, state, code)
+        .then((target) => {
+          setCallbackState("success");
+          setMessage("Conta conectada. Redirecionando...");
+          router.replace(target);
+        })
+        .catch((cause: unknown) => {
+          setCallbackState("error");
+          setMessage(cause instanceof Error ? cause.message : "Não foi possível concluir a conexão.");
+        });
       return;
     }
 

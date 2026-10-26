@@ -1,4 +1,5 @@
 import type { PublicationProviderAdapterPort, PublicationProviderAdapterPublishRequest, PublicationProviderStatusResult, PublicationReceiptVerificationResult } from "../publication/publication-provider-adapter.port.js";
+import { MAX_TRANSIENT_RETRIES } from "../publication/publication-utils.js";
 import type { PublicationRepositoryPort } from "../ports/publication-repository.port.js";
 import type { SocialRepositoryPort } from "../ports/social-repository.port.js";
 import type { SocialAccountService } from "./social-account-service.js";
@@ -6,7 +7,7 @@ import { SOCIAL_FAR_FUTURE } from "./social-account-service.js";
 import type { SocialAuditLog } from "./social-audit.js";
 import { SOCIAL_SYSTEM_ACTOR } from "./social-audit.js";
 import { validateAgainstCapability } from "./social-media-validation.js";
-import { reauthAlert, type SocialNotifier } from "./social-notifier.js";
+import { reauthAlert, SOCIAL_PATHS, type SocialNotifier } from "./social-notifier.js";
 import type { SocialProviderResolver } from "./social-provider-resolver.js";
 import type { SocialProviderFailure, SocialPublishResult } from "./social-publishing-provider.port.js";
 import type { SocialSessionVault } from "./social-session-vault.js";
@@ -100,7 +101,7 @@ export class SocialPublicationRouter implements PublicationProviderAdapterPort {
       if (resolution.reason === "CONNECTION_MISSING") return this.waitReauth(destination, account);
       // Provider pausado pela plataforma (kill switch, homologação, política): preserva e reavalia depois.
       await this.deps.repository.updateDestination({ tenantId: destination.tenantId, id: destination.id, patch: { blockReason: "PROVIDER_DISABLED", blockedAt: this.nowIso() } });
-      await this.deps.notifier.notify({ tenantId: account.tenantId, workspaceId: account.workspaceId, kind: "provider_paused", network: account.network, subjectId: `${account.network}:${resolution.providerType}`, title: `Publicações no ${NETWORK_LABEL[account.network]} pausadas`, body: `As publicações no ${NETWORK_LABEL[account.network]} estão pausadas temporariamente. Os agendamentos foram preservados e sairão assim que a integração voltar.`, sourceUrl: `/workspaces/${account.workspaceId}/calendar` });
+      await this.deps.notifier.notify({ tenantId: account.tenantId, workspaceId: account.workspaceId, kind: "provider_paused", network: account.network, subjectId: `${account.network}:${resolution.providerType}`, title: `Publicações no ${NETWORK_LABEL[account.network]} pausadas`, body: `As publicações no ${NETWORK_LABEL[account.network]} estão pausadas temporariamente. Os agendamentos foram preservados e sairão assim que a integração voltar.`, sourceUrl: SOCIAL_PATHS.calendar(account.workspaceId) });
       return this.defer("SOCIAL_PROVIDER_PAUSED", "Integração pausada pela plataforma.", new Date(this.now().getTime() + (this.deps.providerPausedRecheckMs ?? 15 * 60_000)).toISOString());
     }
     const provider = resolution.provider;
@@ -174,7 +175,7 @@ export class SocialPublicationRouter implements PublicationProviderAdapterPort {
         await this.deps.accounts.recordPublishSuccess(account);
         await this.deps.repository.updateDestination({ tenantId: destination.tenantId, id: destination.id, patch: { lastErrorCode: undefined, lastErrorMessage: undefined, clearBlock: true } });
         await this.deps.audit.record({ tenantId: account.tenantId, workspaceId: account.workspaceId, event: "POST_PUBLISHED", actor: SOCIAL_SYSTEM_ACTOR, resource: { type: "social_post", id: destination.publicationId }, metadata: { destinationId: destination.id, network: account.network, externalPostId: result.externalPostId } });
-        await this.deps.notifier.notify({ tenantId: account.tenantId, workspaceId: account.workspaceId, kind: "publication_published", network: account.network, subjectId: destination.id, title: `Publicado no ${NETWORK_LABEL[account.network]}`, body: account.username ? `Publicação feita em @${account.username}.` : "Publicação feita.", sourceUrl: `/workspaces/${account.workspaceId}/calendar`, onlyUserId: destination.createdBy });
+        await this.notifyPostOutcome(destination, "published");
         return { kind: "published", providerPublicationId: result.externalPostId, publishedAt: result.publishedAt, ...(result.externalUrl ? { url: result.externalUrl } : {}) };
       }
       if (result.ok === "unknown") {
@@ -224,6 +225,9 @@ export class SocialPublicationRouter implements PublicationProviderAdapterPort {
     await this.deps.accounts.applyFailure(account, failure, maxConsecutiveFailures);
     await this.deps.repository.updateDestination({ tenantId: destination.tenantId, id: destination.id, patch: { lastErrorCode: failure.code, lastErrorMessage: userMessage } });
     if (isRetryableSocialError(failure.errorClass)) {
+      // Esgotou as tentativas automáticas? Então o destino termina como falha: avisa uma vez.
+      const failures = (await this.deps.repository.listPublishLog({ tenantId: destination.tenantId, since: destination.createdAt, limit: 10_000 })).filter((entry) => entry.targetId === destination.targetId && entry.outcome === "failed").length;
+      if (failures > MAX_TRANSIENT_RETRIES) await this.notifyPostOutcome(destination, "failed", userMessage);
       const retryAfter = failure.retryAfterSec ? new Date(this.now().getTime() + failure.retryAfterSec * 1000).toISOString() : undefined;
       return failure.errorClass === "RATE_LIMITED"
         ? { kind: "rate_limited", errorCode: failure.code, safeMessage: userMessage, ...(retryAfter ? { retryAfter } : {}) }
@@ -241,6 +245,8 @@ export class SocialPublicationRouter implements PublicationProviderAdapterPort {
       const pending = (await this.deps.repository.listBlockedDestinations({ tenantId: account.tenantId, socialAccountId: account.id, blockReason: "WAITING_REAUTH" })).length;
       await this.deps.notifier.notify(reauthAlert({ tenantId: account.tenantId, workspaceId: account.workspaceId, accountId: account.id, network: account.network, pendingCount: pending, checkpoint: account.status === "CHECKPOINT_REQUIRED" }));
     }
+    // Quem criou a publicação sabe que ela está parada (uma vez por publicação, agrupado).
+    await this.deps.notifier.notify({ tenantId: destination.tenantId, workspaceId: destination.workspaceId, kind: "publication_blocked", network: destination.network, subjectId: destination.publicationId, title: `Publicação aguardando reconexão do ${NETWORK_LABEL[destination.network]}`, body: `A publicação vai sair assim que a conta do ${NETWORK_LABEL[destination.network]} for reconectada. Nada foi perdido.`, sourceUrl: SOCIAL_PATHS.post(destination.workspaceId, destination.publicationId), onlyUserId: destination.createdBy });
     return this.defer("SOCIAL_WAITING_REAUTH", `Aguardando reconexão da conta do ${NETWORK_LABEL[account.network]}.`, SOCIAL_FAR_FUTURE);
   }
 
@@ -255,14 +261,34 @@ export class SocialPublicationRouter implements PublicationProviderAdapterPort {
   private async failDestination(destination: SocialPostDestination, result: Extract<PublicationProviderCallResult, { kind: "rejected" | "permanent_failure" }>, userMessage: string, account?: SocialAccount): Promise<PublicationProviderCallResult> {
     await this.deps.repository.updateDestination({ tenantId: destination.tenantId, id: destination.id, patch: { lastErrorCode: result.errorCode, lastErrorMessage: userMessage } });
     await this.deps.audit.record({ tenantId: destination.tenantId, workspaceId: destination.workspaceId, event: "POST_FAILED", actor: SOCIAL_SYSTEM_ACTOR, resource: { type: "social_post", id: destination.publicationId }, result: { status: "failure", code: result.errorCode }, metadata: { destinationId: destination.id, network: destination.network } });
-    if (account) {
-      await this.deps.notifier.notify({ tenantId: destination.tenantId, workspaceId: destination.workspaceId, kind: "publication_failed", network: destination.network, subjectId: destination.id, title: `Publicação no ${NETWORK_LABEL[destination.network]} falhou`, body: userMessage, sourceUrl: `/workspaces/${destination.workspaceId}/calendar`, onlyUserId: destination.createdBy });
-    }
+    if (account) await this.notifyPostOutcome(destination, "failed", userMessage);
     return result;
   }
 
+  /**
+   * Um aviso por PUBLICAÇÃO quando todos os destinos terminaram — não um por rede: concluída,
+   * parcialmente concluída (com a rede que falhou) ou falhou.
+   */
+  private async notifyPostOutcome(destination: SocialPostDestination, outcome: "published" | "failed", reason?: string): Promise<void> {
+    const detail = await this.deps.publicationRepository.getDetail(destination.publicationId);
+    if (!detail) return;
+    const destinations = await this.deps.repository.listDestinationsByPublication({ tenantId: destination.tenantId, workspaceId: destination.workspaceId, publicationId: destination.publicationId });
+    const statuses = destinations.map((item) => ({
+      network: item.network,
+      status: item.id === destination.id ? outcome : item.skippedAt ? "cancelled" : detail.targets.find((target) => target.id === item.targetId)?.status ?? "pending",
+    })).filter((item) => item.status !== "cancelled");
+    if (statuses.some((item) => item.status !== "published" && item.status !== "failed")) return;
+    const names = (status: string) => [...new Set(statuses.filter((item) => item.status === status).map((item) => NETWORK_LABEL[item.network]))].join(", ");
+    const published = names("published");
+    const failed = names("failed");
+    const base = { tenantId: destination.tenantId, workspaceId: destination.workspaceId, network: destination.network, subjectId: destination.publicationId, sourceUrl: SOCIAL_PATHS.post(destination.workspaceId, destination.publicationId), onlyUserId: destination.createdBy };
+    if (!failed) await this.deps.notifier.notify({ ...base, kind: "publication_published", title: "Publicação concluída", body: `Publicada em ${published}.` });
+    else if (published) await this.deps.notifier.notify({ ...base, kind: "publication_partial", title: "Publicação parcialmente concluída", body: `Publicada em ${published}. Não saiu em ${failed}${reason ? `: ${reason}` : "."} Você pode tentar novamente só ${failed.includes(",") ? "nessas redes" : "nessa rede"}.` });
+    else await this.deps.notifier.notify({ ...base, kind: "publication_failed", title: "Publicação não foi concluída", body: reason ?? `Não foi possível publicar em ${failed}.` });
+  }
+
   private async notifyMusic(account: SocialAccount, destination: SocialPostDestination): Promise<void> {
-    await this.deps.notifier.notify({ tenantId: account.tenantId, workspaceId: account.workspaceId, kind: "music_unavailable", network: account.network, subjectId: destination.id, title: "Música indisponível", body: userMessageForError(account.network, "MUSIC_UNAVAILABLE"), sourceUrl: `/workspaces/${account.workspaceId}/calendar`, onlyUserId: destination.createdBy });
+    await this.deps.notifier.notify({ tenantId: account.tenantId, workspaceId: account.workspaceId, kind: "music_unavailable", network: account.network, subjectId: destination.id, title: "Música indisponível", body: userMessageForError(account.network, "MUSIC_UNAVAILABLE"), sourceUrl: SOCIAL_PATHS.calendar(account.workspaceId), onlyUserId: destination.createdBy });
   }
 
   private now(): Date {

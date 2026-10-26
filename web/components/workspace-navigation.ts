@@ -44,6 +44,11 @@ const MEETINGS_ASK: WorkspaceNavItem = { href: "/meetings/ask", label: "Pergunte
 const MEETINGS_SETTINGS: WorkspaceNavItem = { href: "/meetings/settings", label: "Preferências", icon: "settings" };
 const MEETINGS_RECORDER_ACCOUNTS: WorkspaceNavItem = { href: "/meetings/recorder-accounts", label: "Contas de gravação", icon: "recordings" };
 
+// Redes sociais (publicação multi-rede): criar, acompanhar e conectar contas.
+const SOCIAL_COMPOSE: WorkspaceNavItem = { href: "/social/compose", label: "Criar publicação", icon: "publish" };
+const SOCIAL_CALENDAR: WorkspaceNavItem = { href: "/social/calendar", label: "Publicações", icon: "calendar" };
+const SOCIAL_INTEGRATIONS: WorkspaceNavItem = { href: "/social/integrations", label: "Integrações", icon: "connections" };
+
 const MARKETING_BACKSTAGE: readonly WorkspaceNavItem[] = [
   { href: "/planning", label: "Planejamento", icon: "planning" },
   { href: "/runtime", label: "Runtime", icon: "runtime" },
@@ -143,6 +148,10 @@ export const SOLUTION_NAVIGATION: Readonly<Record<SolutionKey, SolutionNavigatio
         ],
       },
       {
+        label: "REDES SOCIAIS",
+        items: [SOCIAL_COMPOSE, SOCIAL_CALENDAR, SOCIAL_INTEGRATIONS],
+      },
+      {
         label: "MARCA",
         items: [{ href: "/knowledge", label: "Marca", icon: "brand" }],
       },
@@ -150,6 +159,10 @@ export const SOLUTION_NAVIGATION: Readonly<Record<SolutionKey, SolutionNavigatio
     backstage: MARKETING_BACKSTAGE,
     mobilePrimary: [MARKETING_HOME, CREATE_NAV_ITEM, { href: "/campaigns", label: "Conteúdos", icon: "content" }, { href: "/calendar", label: "Calendário", icon: "calendar" }],
     mobileMenu: [
+      {
+        label: "Redes sociais",
+        items: [SOCIAL_COMPOSE, SOCIAL_CALENDAR, SOCIAL_INTEGRATIONS],
+      },
       {
         label: "Conteúdo",
         items: [

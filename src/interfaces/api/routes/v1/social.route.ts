@@ -152,28 +152,68 @@ export async function registerSocialRoutes(app: FastifyInstance, deps: SocialRou
     return successEnvelope({ accounts, networks }, request.id);
   });
 
-  // Conectar/Reconectar: devolve a URL de autorização da própria rede (o retorno volta ao Vorix).
+  // Conectar/Reconectar: devolve a URL de autorização da própria rede. O retorno (workspace, rede,
+  // tela de volta) fica guardado no servidor junto do state — nunca confiado ao navegador.
   app.post("/social/connections", {
-    schema: { body: { type: "object", required: ["workspaceId", "network"], additionalProperties: false, properties: { workspaceId: { type: "string", minLength: 1 }, network: NETWORK_SCHEMA } } },
+    schema: { body: { type: "object", required: ["workspaceId", "network"], additionalProperties: false, properties: { workspaceId: { type: "string", minLength: 1 }, network: NETWORK_SCHEMA, returnPath: { type: "string", maxLength: 300 } } } },
     config: { readOnlyGuard: true },
   }, async (request, reply) => {
-    const { tenantId } = actor(request, "marketing:social_connect");
-    const body = request.body as { workspaceId: string; network: SocialNetwork };
+    const { tenantId, actor: who } = actor(request, "marketing:social_connect");
+    const body = request.body as { workspaceId: string; network: SocialNetwork; returnPath?: string };
     await ownWorkspace(tenantId, body.workspaceId);
+    const workspacePrefix = `/workspaces/${body.workspaceId}/`;
+    const returnPath = body.returnPath?.startsWith(workspacePrefix) ? body.returnPath : `${workspacePrefix}social/integrations`;
     try {
-      const started = await social.accounts.beginConnection({ tenantId, workspaceId: body.workspaceId, network: body.network });
+      const started = await social.accounts.beginConnection({ tenantId, workspaceId: body.workspaceId, network: body.network, userId: who.userId, returnPath });
       reply.code(201);
       return successEnvelope(started, request.id);
     } catch (error) { translate(error); }
   });
 
-  // Depois do retorno da autorização: importa/atualiza as contas autorizadas (sem duplicar).
-  app.post("/social/accounts/sync", { schema: { querystring: WORKSPACE_QUERY }, config: { readOnlyGuard: true } }, async (request) => {
+  // Retorno da autorização (a página de callback repassa code+state já autenticada). O state é de
+  // uso único e precisa ser do mesmo tenant e usuário que iniciaram a conexão.
+  app.post("/social/connections/callback", {
+    schema: { body: { type: "object", required: ["network", "state", "code"], additionalProperties: false, properties: { network: NETWORK_SCHEMA, state: { type: "string", minLength: 8, maxLength: 200 }, code: { type: "string", minLength: 1, maxLength: 2_000 } } } },
+    config: { readOnlyGuard: true },
+  }, async (request) => {
+    const { tenantId, actor: who } = actor(request, "marketing:social_connect");
+    const body = request.body as { network: SocialNetwork; state: string; code: string };
+    try {
+      const result = await social.accounts.completeConnection({ tenantId, userId: who.userId, network: body.network, state: body.state, code: body.code, actor: who });
+      await ownWorkspace(tenantId, result.workspaceId);
+      return successEnvelope(result, request.id);
+    } catch (error) {
+      if (error instanceof Error && /_OAUTH_STATE_INVALID/.test(error.message)) {
+        throw new AppError({ code: "SOCIAL_CONNECTION_EXPIRED", message: "Esta autorização expirou ou já foi usada. Clique em Conectar novamente.", statusCode: 400, recoverable: true });
+      }
+      translate(error);
+    }
+  });
+
+  // Contas autorizadas na rede — para o cliente escolher quais usar quando houver mais de uma.
+  app.get("/social/connections/authorized", {
+    schema: { querystring: { type: "object", required: ["workspaceId", "network"], properties: { workspaceId: { type: "string", minLength: 1 }, network: NETWORK_SCHEMA } } },
+  }, async (request) => {
+    const { tenantId } = actor(request, "marketing:social_connect");
+    const query = request.query as { workspaceId: string; network: SocialNetwork };
+    await ownWorkspace(tenantId, query.workspaceId);
+    return successEnvelope({ accounts: await social.accounts.authorizedAccounts({ tenantId, workspaceId: query.workspaceId, network: query.network }) }, request.id);
+  });
+
+  // Importa/atualiza as contas autorizadas (sem duplicar). Com seleção: só as escolhidas entram.
+  app.post("/social/accounts/sync", {
+    schema: {
+      querystring: WORKSPACE_QUERY,
+      body: { type: ["object", "null"], additionalProperties: false, properties: { network: NETWORK_SCHEMA, externalAccountIds: { type: "array", maxItems: 50, items: { type: "string", minLength: 1, maxLength: 200 } } } },
+    },
+    config: { readOnlyGuard: true },
+  }, async (request) => {
     const { tenantId, actor: who } = actor(request, "marketing:social_connect");
     const { workspaceId } = request.query as { workspaceId: string };
+    const body = (request.body ?? {}) as { network?: SocialNetwork; externalAccountIds?: string[] };
     await ownWorkspace(tenantId, workspaceId);
     try {
-      const result = await social.accounts.syncConnections({ tenantId, workspaceId, actor: who });
+      const result = await social.accounts.syncConnections({ tenantId, workspaceId, actor: who, ...(body.network ? { network: body.network } : {}), ...(body.externalAccountIds ? { externalAccountIds: body.externalAccountIds } : {}) });
       return successEnvelope({ ...result, accounts: await social.accounts.listAccountViews({ tenantId, workspaceId }) }, request.id);
     } catch (error) { translate(error); }
   });
@@ -325,7 +365,7 @@ export async function registerSocialRoutes(app: FastifyInstance, deps: SocialRou
       const policy = await social.resolver.policyFor(tenantId, network);
       return { network, latePolicy: policy.latePolicy, rateLimits: policy.rateLimits };
     }));
-    return successEnvelope({ networks }, request.id);
+    return successEnvelope({ networks, timezone: await social.posts.workspaceTimezone({ tenantId, workspaceId }) }, request.id);
   });
 
   app.put("/social/settings/:network", {

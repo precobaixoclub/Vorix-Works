@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { Button } from "@/components/Button";
 import { Card, CardBody } from "@/components/Card";
 import { EmptyState } from "@/components/EmptyState";
@@ -338,10 +339,18 @@ function RunWorkspace({ workspaceId, run, onDecided }: { workspaceId: string; ru
               </Button>
             </div>
           ) : (
-            <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground">
-              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-              Aprovada
-            </span>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground">
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                Aprovada
+              </span>
+              {images.length > 0 ? (
+                // Leva a peça aprovada (mídia + legenda) para o composer das redes sociais.
+                <Link href={socialComposeHref(workspaceId, run.id, images.map((image) => image.uri), description)}>
+                  <Button size="sm">Publicar nas redes</Button>
+                </Link>
+              ) : null}
+            </div>
           )}
         </CardBody>
       </Card>
@@ -442,4 +451,12 @@ function CopyButton({ text, label }: { text: string; label: string }) {
       {copied ? "✓" : "⧉"}
     </button>
   );
+}
+
+function socialComposeHref(workspaceId: string, runId: string, mediaUrls: readonly string[], caption: string): string {
+  const params = new URLSearchParams();
+  for (const url of mediaUrls) params.append("media", url);
+  if (caption && caption !== "Sem descrição.") params.set("caption", caption);
+  params.set("source", runId);
+  return `/workspaces/${workspaceId}/social/compose?${params.toString()}`;
 }

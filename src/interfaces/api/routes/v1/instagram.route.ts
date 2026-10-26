@@ -102,7 +102,7 @@ export async function registerInstagramRoutes(app: FastifyInstance, deps: Instag
   app.post("/publication-providers/meta/oauth/connect", { schema: { body: { type: "object", required: ["workspaceId"], properties: { workspaceId: { type: "string", minLength: 1 } } } } }, async (request) => {
     const principal = requirePermission(request, "publication:admin");
     const { workspaceId } = request.body as { workspaceId: string };
-    return successEnvelope(deps.metaInstagramOAuthService.begin({ tenantId: principal.tenantId, workspaceId }), request.id);
+    return successEnvelope(await deps.metaInstagramOAuthService.begin({ tenantId: principal.tenantId, workspaceId, userId: principal.userId }), request.id);
   });
 
   // O Meta redireciona o navegador do cliente para o frontend; o frontend repassa code+state aqui

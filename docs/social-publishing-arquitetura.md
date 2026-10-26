@@ -123,6 +123,39 @@ O áudio embutido no vídeo continua funcionando.
 - A auditoria descarta qualquer chave sensível (token, senha, cookie, sessão, authorization).
 - O backend valida RBAC (`marketing:social_*`) e o isolamento por tenant. As rotas `/v1/social/*` pertencem à solução Marketing. Política, kill switch e homologação ficam em `/v1/admin/social-providers` (platform admin).
 
+## Conexão (OAuth) e estado persistente
+
+1. **Conectar:** `POST /v1/social/connections` devolve a URL de autorização da rede. O state OAuth fica em `oauth_states` (migration 0177) e guarda:
+   - só o **hash** do state;
+   - tenant, workspace, usuário, rede e caminho de retorno;
+   - o verificador PKCE.
+
+   O state tem uso único e expira em 10 minutos. Vale entre instâncias e sobrevive a restart ou deploy.
+2. **Retorno:** as páginas `/instagram/callback` e `/tiktok/callback` (URIs registradas na Meta e no TikTok) chamam `POST /v1/social/connections/callback`. O state precisa ser do mesmo tenant e do mesmo usuário que iniciaram. Tentativa errada também queima o state.
+3. **Contas:**
+   - Uma conta nova autorizada é conectada direto.
+   - Várias abrem a escolha (`GET /v1/social/connections/authorized`, depois `POST /v1/social/accounts/sync` com as escolhidas).
+4. **Health check e retomada** seguem o fluxo de reconexão descrito acima.
+
+## Telas (Vorix Marketing)
+
+| Tela | Rota | O que faz |
+|---|---|---|
+| Integrações | `/workspaces/:id/social/integrations` | Cards de Instagram, Facebook e TikTok: conectar, reconectar, testar, desconectar, publicações aguardando reconexão e política de atraso |
+| Criar publicação | `/workspaces/:id/social/compose` | Composer único: conteúdo, mídia (upload, biblioteca, conteúdo gerado na Revisão), redes guiadas por capabilities, ajustes por rede, prévia, publicar agora ou agendar no fuso do workspace |
+| Publicações | `/workspaces/:id/social/calendar` | Calendário (mês e lista) com o estado do post e de cada rede; ações por destino e histórico |
+| Social Providers | `/admin/social-providers` | Platform admin: kill switch, homologação e política por empresa e rede |
+
+As notificações dentro do Vorix (sino) seguem estas regras:
+
+- **Publicação:** um aviso por publicação concluída, parcial ou que falhou, enviado a quem criou.
+- **Publicação aguardando reconexão:** aviso a quem criou, uma vez por publicação.
+- **Conta precisando de reconexão:** alerta agrupado a quem gerencia contas.
+
+O e-mail continua como porta preparada (`SocialEmailNotifierPort`), sem envio nesta versão.
+
+A homologação real segue `docs/social-publishing-homologacao.md`.
+
 ## Manutenção
 
 `registerSocialMaintenanceScheduler` roda dentro da API e faz:

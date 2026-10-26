@@ -114,6 +114,7 @@ import type { TenantMembershipRepositoryPort } from "../../../application/ports/
 import { createSocialPublishingModule, type SocialPublishingModule } from "../../../infrastructure/social/social-publishing-module.js";
 import { PostgresSocialRepository } from "../../../infrastructure/storage/postgres/postgres-social-repository.js";
 import { InMemorySocialRepository } from "../../../infrastructure/storage/in-memory-social-repository.js";
+import { InMemoryOAuthStateStore, PostgresOAuthStateStore } from "../../../infrastructure/storage/oauth-state-stores.js";
 import type { TenantMemberInviteRepositoryPort } from "../../../application/ports/tenant-member-invite-repository.port.js";
 import type { TeamRepositoryPort, TeamMembershipRepositoryPort } from "../../../application/ports/team-repository.port.js";
 import type { ChannelRoutingRepositoryPort } from "../../../application/ports/channel-routing-repository.port.js";
@@ -1451,7 +1452,10 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
     secretStore: publicationSecretStore,
     credentialGovernanceService,
   });
+  // Estado OAuth compartilhado/persistente (sobrevive a restart, deploy e múltiplas instâncias).
+  const oauthStateStore = repositories.pool ? new PostgresOAuthStateStore(repositories.pool) : new InMemoryOAuthStateStore();
   const tiktokOAuthService = new TikTokOAuthService({
+    stateStore: oauthStateStore,
     config: {
       enabled: config?.publication.tiktokEnabled ?? false,
       clientKey: config?.publication.tiktokClientKey,
@@ -1499,6 +1503,7 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
   });
   youtubeOAuthServiceRef = youtubeOAuthService;
   const metaInstagramOAuthService = new MetaInstagramOAuthService({
+    stateStore: oauthStateStore,
     config: {
       enabled: config?.publication.metaInstagramEnabled ?? false,
       appId: config?.publication.metaAppId,
@@ -1554,6 +1559,10 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
       tiktok_official: { enabled: config?.social.tiktokOfficialGlobalEnabled ?? false },
     },
     defaultTimezone: config?.social.defaultTimezone,
+    timezoneFor: async ({ tenantId, workspaceId }) => {
+      const workspace = await repositories.workspaceRepository.getById(workspaceId);
+      return workspace && workspace.tenantId === tenantId ? workspace.settings?.timezone : undefined;
+    },
   });
   if (social) publicationProviderRegistry.register(social.router);
   const scheduleOccurrenceGenerator = new ScheduleOccurrenceGenerator({

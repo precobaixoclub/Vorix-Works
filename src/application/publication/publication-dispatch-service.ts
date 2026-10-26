@@ -2,7 +2,7 @@ import type { PublicationRepositoryPort } from "../ports/publication-repository.
 import type { OperationalCircuitBreaker } from "../operations/operational-services.js";
 import type { PublicationProviderRegistry } from "./publication-provider-registry.js";
 import type { PublicationSecretResolverPort } from "./publication-secret-resolver.js";
-import { checksumPublicationPayload, isRetryablePublicationFailure, providerManagesOwnCredentials } from "./publication-utils.js";
+import { checksumPublicationPayload, isRetryablePublicationFailure, MAX_TRANSIENT_RETRIES, providerManagesOwnCredentials } from "./publication-utils.js";
 import type { PublicationContentType, PublicationFailure, PublicationOutboxMessage, PublicationProviderCallResult, PublicationSourceArtifact } from "../../domain/publication/publication.model.js";
 
 export type PublicationDispatchDeps = {
@@ -164,7 +164,7 @@ export class PublicationDispatchService {
       return "unknown_outcome";
     }
     const failure = failureFromProviderResult(result);
-    const retryable = failure.retryable && isRetryablePublicationFailure(failure.category) && message.attemptCount < 3;
+    const retryable = failure.retryable && isRetryablePublicationFailure(failure.category) && message.attemptCount < MAX_TRANSIENT_RETRIES;
     const retryAfter = (result.kind === "rate_limited" || result.kind === "transient_failure") ? result.retryAfter : undefined;
     const committed = await this.commitFailure(message, workerId, failure, !retryable, retryable ? retryAfter : undefined);
     return committed ? "failed" : "fencing_rejected";

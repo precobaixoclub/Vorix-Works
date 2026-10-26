@@ -46,9 +46,21 @@ class ScriptedProvider {
       FORMAT("photo_post", ["image"], { maxItems: 35 }),
     ];
     const self = this;
+    this.flows = new Map();
     this.connection = {
       isConfigured: () => options.configured ?? true,
-      begin: async ({ network }) => ({ redirectUrl: `https://auth.example.test/${type}/${network}` }),
+      begin: async ({ tenantId, workspaceId, network, userId, returnPath }) => {
+        const state = `state-${type}-${self.flows.size + 1}-${Math.random().toString(36).slice(2, 8)}`;
+        self.flows.set(state, { tenantId, workspaceId, network, userId, returnPath });
+        return { redirectUrl: `https://auth.example.test/${type}/${network}?state=${state}` };
+      },
+      // OAuth simulado: uso único e vinculado ao tenant/usuário que iniciou.
+      complete: async ({ state, tenantId, userId }) => {
+        const flow = self.flows.get(state);
+        self.flows.delete(state);
+        if (!flow || flow.tenantId !== tenantId || flow.userId !== userId) throw new Error("META_OAUTH_STATE_INVALID: state OAuth inválido, expirado ou já utilizado.");
+        return { workspaceId: flow.workspaceId, network: flow.network, ...(flow.returnPath ? { returnPath: flow.returnPath } : {}) };
+      },
       listAccounts: async ({ tenantId, workspaceId, network }) => self.authorized.filter((item) => item.tenantId === tenantId && item.workspaceId === workspaceId && item.network === network).map(({ tenantId: _t, workspaceId: _w, ...account }) => account),
       disconnect: async (input) => { self.disconnected.push(input); },
     };
@@ -122,6 +134,7 @@ function harness(options = {}) {
     auditRepository,
     idGenerator: nextId,
     now,
+    timezoneFor: async () => options.workspaceTimezone,
   });
   const registry = createDefaultPublicationProviderRegistry([social.router]);
   const dispatcher = new PublicationDispatchService({ repository: publicationRepository, providerRegistry: registry, secretResolver: new FakePublicationSecretResolver(), idGenerator: nextId, maxBatch: 1, now });
@@ -178,7 +191,14 @@ function harness(options = {}) {
   const get = (postId) => social.posts.get({ tenantId: "tenant-a", workspaceId: "ws-a", postId });
   const advance = (ms) => { clock.now = new Date(clock.now.getTime() + ms); };
   const notifications = async (userId = "owner-a") => notificationRepository.listActive({ tenantId: "tenant-a", workspaceId: "ws-a", userId, limit: 100 });
-  return { social, providers, credentials, publicationRepository, repository, auditRepository, enable, connect, compose, runDue, drain, reconcile, get, advance, now, notifications, owner };
+  /** Conta autorizada no provider, sem passar pelo sync (para testar o callback/seleção). */
+  function authorize(input) {
+    const providerType = input.providerType ?? "meta_official";
+    const credentialReferenceId = `${providerType}:tenant-a:${input.network}:${input.externalAccountId}`;
+    credentials.put("tenant-a", "ws-a", credentialReferenceId, { accessToken: `token-${credentialReferenceId}` });
+    providers[providerType].authorized.push({ tenantId: "tenant-a", workspaceId: "ws-a", network: input.network, externalAccountId: input.externalAccountId, credentialReferenceId, username: input.username, displayName: input.displayName, status: "active" });
+  }
+  return { social, providers, credentials, authorize, notificationRepository, publicationRepository, repository, auditRepository, enable, connect, compose, runDue, drain, reconcile, get, advance, now, notifications, owner };
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -214,7 +234,7 @@ test("Liberação explícita: provider só é habilitado ao tenant depois de hom
   assert.equal((await h.social.resolver.connectionProviderFor("tenant-b", "instagram")).ok, false, "outro tenant continua desligado");
   assert.equal((await h.social.resolver.connectionProviderFor("tenant-a", "facebook")).ok, false, "liberação é por rede");
   const { redirectUrl } = await h.social.accounts.beginConnection({ tenantId: "tenant-a", workspaceId: "ws-a", network: "instagram" });
-  assert.equal(redirectUrl, "https://auth.example.test/meta_official/instagram");
+  assert.ok(redirectUrl.startsWith("https://auth.example.test/meta_official/instagram?state="));
   const events = (await h.auditRepository.list({ tenantId: "tenant-a" })).map((event) => event.eventType);
   assert.ok(events.includes("PROVIDER_ENABLED_FOR_TENANT"));
   assert.ok(events.includes("PROVIDER_POLICY_CHANGED"));
@@ -770,4 +790,99 @@ test("Estados derivados por destino e do post agregado", () => {
   assert.equal(derivePostState(["FAILED", "FAILED"]), "FAILED");
   assert.equal(derivePostState(["SCHEDULED", "WAITING_REAUTH"]), "WAITING_REAUTH");
   assert.equal(derivePostState(["CANCELLED", "SKIPPED"]), "CANCELLED");
+});
+
+test("Conexão pelo callback: várias contas autorizadas → cliente escolhe; uma só → conecta direto; state reutilizado/outro usuário recusado", async () => {
+  const h = harness();
+  await h.enable("instagram", ["meta_official"]);
+  const { redirectUrl } = await h.social.accounts.beginConnection({ tenantId: "tenant-a", workspaceId: "ws-a", network: "instagram", userId: "owner-a", returnPath: "/workspaces/ws-a/social/integrations" });
+  const state = new URL(redirectUrl).searchParams.get("state");
+  h.authorize({ network: "instagram", externalAccountId: "ig-loja", username: "loja", displayName: "@loja" });
+  h.authorize({ network: "instagram", externalAccountId: "ig-outlet", username: "outlet", displayName: "@outlet" });
+  const result = await h.social.accounts.completeConnection({ tenantId: "tenant-a", userId: "owner-a", network: "instagram", state, code: "c", actor: h.owner });
+  assert.equal(result.workspaceId, "ws-a");
+  assert.equal(result.returnPath, "/workspaces/ws-a/social/integrations");
+  assert.equal(result.autoConnected, false, "duas contas: o cliente escolhe");
+  assert.deepEqual(result.accounts.map((account) => [account.externalAccountId, account.alreadyConnected]), [["ig-loja", false], ["ig-outlet", false]]);
+  assert.ok(!JSON.stringify(result).includes("credentialReferenceId") && !JSON.stringify(result).includes("token"), "nada técnico na resposta");
+  assert.deepEqual(await h.repository.listAccounts({ tenantId: "tenant-a", workspaceId: "ws-a" }), [], "nada importado antes da escolha");
+  await h.social.accounts.syncConnections({ tenantId: "tenant-a", workspaceId: "ws-a", actor: h.owner, network: "instagram", externalAccountIds: ["ig-outlet"] });
+  const accounts = await h.repository.listAccounts({ tenantId: "tenant-a", workspaceId: "ws-a" });
+  assert.deepEqual(accounts.map((account) => [account.externalAccountId, account.status]), [["ig-outlet", "HEALTHY"]]);
+  await assert.rejects(() => h.social.accounts.completeConnection({ tenantId: "tenant-a", userId: "owner-a", network: "instagram", state, code: "c", actor: h.owner }), /OAUTH_STATE_INVALID/, "state de uso único");
+
+  // Uma conta nova só: conecta direto.
+  const single = harness();
+  await single.enable("tiktok", ["tiktok_official"]);
+  const begin = await single.social.accounts.beginConnection({ tenantId: "tenant-a", workspaceId: "ws-a", network: "tiktok", userId: "owner-a" });
+  single.authorize({ providerType: "tiktok_official", network: "tiktok", externalAccountId: "tt-1", username: "lojatt" });
+  const auto = await single.social.accounts.completeConnection({ tenantId: "tenant-a", userId: "owner-a", network: "tiktok", state: new URL(begin.redirectUrl).searchParams.get("state"), code: "c", actor: single.owner });
+  assert.equal(auto.autoConnected, true);
+  assert.equal((await single.repository.listAccounts({ tenantId: "tenant-a", workspaceId: "ws-a" }))[0].status, "HEALTHY");
+
+  // Callback com usuário diferente de quem iniciou é recusado.
+  const other = await h.social.accounts.beginConnection({ tenantId: "tenant-a", workspaceId: "ws-a", network: "instagram", userId: "owner-a" });
+  await assert.rejects(() => h.social.accounts.completeConnection({ tenantId: "tenant-a", userId: "editor-a", network: "instagram", state: new URL(other.redirectUrl).searchParams.get("state"), code: "c", actor: { userId: "editor-a", role: "editor" } }), /OAUTH_STATE_INVALID/);
+});
+
+test("Notificações: um aviso por publicação (parcial / concluída), bloqueio avisa o criador uma vez, responsáveis recebem reconexão", async () => {
+  const h = harness();
+  await h.enable("instagram", ["meta_official"]);
+  await h.enable("facebook", ["meta_official"]);
+  const ig = await h.connect({ network: "instagram" });
+  const fb = await h.connect({ network: "facebook" });
+  h.providers.meta_official.results.push((request) => request.account.network === "instagram" ? { ok: true, externalPostId: "p1", publishedAt: h.now().toISOString() } : { ok: false, failure: { errorClass: "MEDIA_REJECTED", code: "X" } });
+  h.providers.meta_official.results.push((request) => request.account.network === "instagram" ? { ok: true, externalPostId: "p1", publishedAt: h.now().toISOString() } : { ok: false, failure: { errorClass: "MEDIA_REJECTED", code: "X" } });
+  const post = await h.compose([{ accountId: ig.id, format: "feed_image" }, { accountId: fb.id, format: "feed_image" }]);
+  await h.drain();
+  let mine = (await h.notifications()).filter((item) => item.sourceId === post.id);
+  assert.deepEqual(mine.map((item) => item.sourceType), ["social_publication_partial"], "um único aviso, não um por rede");
+  assert.match(mine[0].body, /Publicada em Instagram\. Não saiu em Facebook/);
+  assert.equal(mine[0].sourceUrl, `/workspaces/ws-a/social/calendar?post=${post.id}`);
+  assert.equal((await h.notifications("editor-a")).filter((item) => item.sourceId === post.id).length, 0, "publicação avisa só quem criou");
+
+  await h.social.posts.retryDestination({ tenantId: "tenant-a", workspaceId: "ws-a", destinationId: (await h.get(post.id)).destinations.find((item) => item.network === "facebook").id, actor: h.owner });
+  h.advance(121_000);
+  await h.drain();
+  mine = (await h.notifications()).filter((item) => item.sourceId === post.id);
+  assert.ok(mine.some((item) => item.sourceType === "social_publication_published"), "conclusão após o retry");
+
+  // Conta precisa reconectar: criador recebe "aguardando reconexão" (uma vez por post); responsáveis
+  // (Administrador e Gerente) recebem o alerta de reconexão — Atendente/editor não.
+  h.providers.meta_official.results.push({ ok: false, failure: { errorClass: "AUTH_REQUIRED", code: "EXPIRED" } });
+  const blocked = await h.compose([{ accountId: ig.id, format: "feed_image" }]);
+  h.advance(121_000);
+  await h.drain();
+  await h.drain();
+  assert.equal((await h.notifications()).filter((item) => item.sourceType === "social_publication_blocked" && item.sourceId === blocked.id).length, 1);
+  assert.equal((await h.notifications()).filter((item) => item.sourceType === "social_account_reauth").length, 1);
+  assert.equal((await h.notifications("editor-a")).filter((item) => item.sourceType === "social_account_reauth").length, 0, "não notifica todos indiscriminadamente");
+});
+
+test("Histórico da publicação: linha do tempo amigável por rede, sem detalhe técnico", async () => {
+  const h = harness();
+  await h.enable("instagram", ["meta_official"]);
+  const account = await h.connect();
+  h.providers.meta_official.results.push({ ok: false, failure: { errorClass: "NETWORK_ERROR", code: "NET" } });
+  const post = await h.compose([{ accountId: account.id, format: "feed_image" }]);
+  await h.drain();
+  h.advance(10 * 60_000);
+  await h.drain();
+  const view = await h.get(post.id);
+  assert.equal(view.state, "PUBLISHED");
+  const kinds = view.history.map((entry) => entry.kind);
+  assert.equal(kinds[0], "created");
+  assert.ok(kinds.includes("attempt") && kinds.includes("published"));
+  assert.ok(view.history.filter((entry) => entry.kind === "published").every((entry) => entry.network === "instagram"));
+  assert.ok(!view.history.some((entry) => /NET|outbox|fencing|_official|provider/i.test(entry.label)), "sem códigos internos");
+});
+
+test("Agendamento usa o fuso do workspace quando o cliente não informa", async () => {
+  const h = harness({ workspaceTimezone: "America/Manaus" });
+  await h.enable("instagram", ["meta_official"]);
+  const account = await h.connect();
+  const post = await h.social.posts.create({ tenantId: "tenant-a", workspaceId: "ws-a", actor: h.owner, idempotencyKey: "tz-key-123", base: { caption: "x", media: [IMAGE] }, destinations: [{ accountId: account.id, format: "feed_image" }], when: { mode: "schedule", localDateTime: "2026-11-01T10:00" } });
+  assert.equal(post.timezone, "America/Manaus");
+  assert.equal(post.scheduledAt, "2026-11-01T14:00:00.000Z");
+  assert.equal(await h.social.posts.workspaceTimezone({ tenantId: "tenant-a", workspaceId: "ws-a" }), "America/Manaus");
 });

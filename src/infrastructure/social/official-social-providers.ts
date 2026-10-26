@@ -13,7 +13,8 @@ import type {
   SocialValidationIssue,
 } from "../../application/social/social-publishing-provider.port.js";
 import type { PublicationProviderCallResult } from "../../domain/publication/publication.model.js";
-import type { SocialNetwork, SocialNetworkCapabilities, SocialPostFormat } from "../../domain/social/social-publishing.model.js";
+import { SOCIAL_NETWORKS, type SocialNetwork, type SocialNetworkCapabilities, type SocialPostFormat } from "../../domain/social/social-publishing.model.js";
+import type { TenantRole } from "../../domain/identity/identity.model.js";
 
 /**
  * Providers OFICIAIS (Meta Graph / TikTok Content Posting) atrás do contrato social genérico.
@@ -79,7 +80,8 @@ export const TIKTOK_OFFICIAL_CAPABILITIES: SocialNetworkCapabilities = {
 type OAuthStatusAccount = { credentialReferenceId: string; providerId?: string; providerSubjectId?: string; openId?: string; displayName?: string; avatarUrl?: string; status: string };
 export type OfficialOAuthServiceLike = {
   isConfigured(): boolean;
-  begin(input: { tenantId: string; workspaceId: string }): { authorizationUrl: string };
+  begin(input: { tenantId: string; workspaceId: string; userId?: string; network?: string; returnPath?: string }): Promise<{ authorizationUrl: string }>;
+  complete(input: { state: string; code: string; actor?: { tenantId: string; userId: string; role: TenantRole } }): Promise<{ flow: { workspaceId: string; network?: string; returnPath?: string } }>;
   status(input: { tenantId: string; workspaceId: string }): Promise<{ accounts: readonly OAuthStatusAccount[] }>;
   disconnect(input: { tenantId: string; workspaceId: string; credentialReferenceId: string }): Promise<boolean>;
 };
@@ -95,10 +97,19 @@ export class OfficialOAuthConnection implements SocialProviderConnectionPort {
     return this.service()?.isConfigured() ?? false;
   }
 
-  async begin(input: { tenantId: string; workspaceId: string; network: SocialNetwork }): Promise<{ redirectUrl: string }> {
+  async begin(input: { tenantId: string; workspaceId: string; network: SocialNetwork; userId: string; returnPath?: string }): Promise<{ redirectUrl: string }> {
     const service = this.service();
     if (!service?.isConfigured()) throw new Error("SOCIAL_CONNECTION_UNAVAILABLE: a conexão oficial não está configurada neste ambiente.");
-    return { redirectUrl: service.begin({ tenantId: input.tenantId, workspaceId: input.workspaceId }).authorizationUrl };
+    const started = await service.begin({ tenantId: input.tenantId, workspaceId: input.workspaceId, userId: input.userId, network: input.network, ...(input.returnPath ? { returnPath: input.returnPath } : {}) });
+    return { redirectUrl: started.authorizationUrl };
+  }
+
+  async complete(input: { state: string; code: string; tenantId: string; userId: string; role: TenantRole }): Promise<{ workspaceId: string; network?: SocialNetwork; returnPath?: string }> {
+    const service = this.service();
+    if (!service?.isConfigured()) throw new Error("SOCIAL_CONNECTION_UNAVAILABLE: a conexão oficial não está configurada neste ambiente.");
+    const result = await service.complete({ state: input.state, code: input.code, actor: { tenantId: input.tenantId, userId: input.userId, role: input.role } });
+    const network = SOCIAL_NETWORKS.find((item) => item === result.flow.network);
+    return { workspaceId: result.flow.workspaceId, ...(network ? { network } : {}), ...(result.flow.returnPath ? { returnPath: result.flow.returnPath } : {}) };
   }
 
   async listAccounts(input: { tenantId: string; workspaceId: string; network: SocialNetwork }): Promise<SocialConnectedAccount[]> {

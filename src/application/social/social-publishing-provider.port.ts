@@ -8,6 +8,7 @@ import type {
   SocialPostFormat,
   SocialProviderType,
 } from "../../domain/social/social-publishing.model.js";
+import type { TenantRole } from "../../domain/identity/identity.model.js";
 
 /**
  * Contrato único de publicação social. O restante do Vorix Marketing (composer, calendário,
@@ -88,7 +89,9 @@ export type SocialConnectedAccount = {
 export type SocialProviderConnectionPort = {
   /** App/credenciais do provider configurados neste ambiente. */
   isConfigured(): boolean;
-  begin(input: { tenantId: string; workspaceId: string; network: SocialNetwork }): Promise<{ redirectUrl: string }>;
+  begin(input: { tenantId: string; workspaceId: string; network: SocialNetwork; userId: string; returnPath?: string }): Promise<{ redirectUrl: string }>;
+  /** Callback: troca o código pela credencial (guardada no cofre) e devolve o contexto do fluxo. */
+  complete(input: { state: string; code: string; tenantId: string; userId: string; role: TenantRole }): Promise<{ workspaceId: string; network?: SocialNetwork; returnPath?: string }>;
   listAccounts(input: { tenantId: string; workspaceId: string; network: SocialNetwork }): Promise<SocialConnectedAccount[]>;
   disconnect(input: { tenantId: string; workspaceId: string; credentialReferenceId: string }): Promise<void>;
 };

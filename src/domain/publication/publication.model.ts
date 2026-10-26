@@ -12,7 +12,11 @@ export type PublicationMode = (typeof PUBLICATION_MODES)[number];
 export const PUBLICATION_CHANNELS = ["instagram", "facebook", "threads", "linkedin", "x", "tiktok", "kwai", "pinterest", "youtube", "google_business"] as const;
 export type PublicationChannel = (typeof PUBLICATION_CHANNELS)[number];
 
-export const PUBLICATION_PROVIDERS = ["dry_run", "fake", "meta_pages_sandbox", "linkedin_sandbox", "x_sandbox", "instagram", "facebook", "linkedin", "x", "tiktok", "kwai", "youtube"] as const;
+/**
+ * `social` = roteador do Social Publishing (Vorix Marketing): o provider real (oficial ou não
+ * oficial) é resolvido por conta social no momento do dispatch — trocar de mecanismo não muda o target.
+ */
+export const PUBLICATION_PROVIDERS = ["dry_run", "fake", "meta_pages_sandbox", "linkedin_sandbox", "x_sandbox", "instagram", "facebook", "linkedin", "x", "tiktok", "kwai", "youtube", "social"] as const;
 export type PublicationProvider = (typeof PUBLICATION_PROVIDERS)[number];
 export type PublicationContentType = "text" | "image" | "carousel" | "video" | "document";
 export type PublicationProviderStatus = "enabled" | "disabled" | "sandbox_only" | "degraded";
@@ -96,6 +100,10 @@ export type PublicationProviderDescriptor = {
   supportsReceiptVerification: boolean;
   maxPayloadBytes: number;
   maxAssets: number;
+  /** Credencial resolvida pelo próprio provider (por conta), não por credential reference. */
+  managesOwnCredentials?: boolean;
+  /** Falhas isoladas por conta/rede dentro do provider: o circuit breaker genérico não se aplica. */
+  isolatesFailures?: boolean;
 };
 
 export type PublicationProviderCapabilities = {
@@ -291,7 +299,9 @@ export type PublicationProviderCallResult =
   | { kind: "permanent_failure"; errorCode: string; safeMessage: string; statusCode?: number; rawResponseReference?: string }
   | { kind: "authentication_failure"; errorCode: string; safeMessage: string; statusCode?: number; rawResponseReference?: string }
   | { kind: "rate_limited"; errorCode: string; safeMessage: string; retryAfter?: string; statusCode?: number; rawResponseReference?: string }
-  | { kind: "unknown_outcome"; providerRequestId?: string; errorCode?: string; safeMessage: string; statusCode?: number; rawResponseReference?: string };
+  | { kind: "unknown_outcome"; providerRequestId?: string; errorCode?: string; safeMessage: string; statusCode?: number; rawResponseReference?: string }
+  /** Ainda não é hora (conta aguardando reconexão, limite operacional, conta ocupada): não consome tentativa. */
+  | { kind: "deferred"; errorCode: string; safeMessage: string; availableAt: string };
 
 export type PublicationReconciliation = {
   id: string;

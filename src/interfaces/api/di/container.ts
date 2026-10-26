@@ -111,6 +111,9 @@ import { SystemClock, type ClockPort } from "../../../application/ports/clock.po
 import type { SchedulingRepositoryPort } from "../../../application/ports/scheduling-repository.port.js";
 import type { SessionRepositoryPort } from "../../../application/ports/session-repository.port.js";
 import type { TenantMembershipRepositoryPort } from "../../../application/ports/tenant-membership-repository.port.js";
+import { createSocialPublishingModule, type SocialPublishingModule } from "../../../infrastructure/social/social-publishing-module.js";
+import { PostgresSocialRepository } from "../../../infrastructure/storage/postgres/postgres-social-repository.js";
+import { InMemorySocialRepository } from "../../../infrastructure/storage/in-memory-social-repository.js";
 import type { TenantMemberInviteRepositoryPort } from "../../../application/ports/tenant-member-invite-repository.port.js";
 import type { TeamRepositoryPort, TeamMembershipRepositoryPort } from "../../../application/ports/team-repository.port.js";
 import type { ChannelRoutingRepositoryPort } from "../../../application/ports/channel-routing-repository.port.js";
@@ -335,6 +338,8 @@ export type ApiContainer = {
   clock: ClockPort;
   notificationRepository: NotificationRepositoryPort;
   notificationRealtimePublisher: NotificationRealtimePublisherPort;
+  /** Social Publishing multiprovider (Vorix Marketing). Ausente quando `SOCIAL_PUBLISHING_ENABLED=false`. */
+  social?: SocialPublishingModule;
   /** Acesso por SOLUÇÃO (Vorix Conversas / Vorix Marketing / futuras) — só existe com identidade
    * real (Postgres). Ausente = guarda de solução desligado (dev/teste em memória). */
   solutionAccess?: SolutionAccessService;
@@ -1528,6 +1533,29 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
   // persistência. Ver `infrastructure/realtime/notification-event-bus.ts` (trade-off in-process,
   // não RabbitMQ, documentado lá).
   const notificationRealtimePublisher = new InProcessNotificationRealtimePublisher();
+  // Social Publishing multiprovider (Vorix Marketing): o roteador `social` entra no MESMO registry de
+  // Publication — agendamento, outbox, retry e reconciliação continuam sendo os do motor existente.
+  // Providers oficiais (Meta/TikTok) ficam registrados, mas desligados por kill switch, homologação e
+  // política por tenant até liberação explícita.
+  const social = config?.social.enabled === false ? undefined : createSocialPublishingModule({
+    repository: repositories.pool ? new PostgresSocialRepository(repositories.pool) : new InMemorySocialRepository(),
+    publicationRepository: repositories.publicationRepository,
+    credentials: publicationSecretResolver,
+    officialAdapters: {
+      ...(config?.publication.metaInstagramEnabled ? { instagram: instagramProvider, facebook: facebookProvider } : {}),
+      ...(config?.publication.tiktokEnabled ? { tiktok: tiktokProvider } : {}),
+    },
+    oauth: { meta: () => metaInstagramOAuthServiceRef, tiktok: () => tiktokOAuthServiceRef },
+    memberships: identityRepositories?.membershipRepository,
+    notification: { notificationRepository: repositories.notificationRepository, realtimePublisher: notificationRealtimePublisher },
+    auditRepository: repositories.operationalAuditRepository,
+    platformDefaults: {
+      meta_official: { enabled: config?.social.metaOfficialGlobalEnabled ?? false },
+      tiktok_official: { enabled: config?.social.tiktokOfficialGlobalEnabled ?? false },
+    },
+    defaultTimezone: config?.social.defaultTimezone,
+  });
+  if (social) publicationProviderRegistry.register(social.router);
   const scheduleOccurrenceGenerator = new ScheduleOccurrenceGenerator({
     windowDays: config?.scheduling.occurrenceWindowDays ?? 30,
     maxOccurrencesPerRun: config?.scheduling.maxOccurrencesPerRun ?? 200,
@@ -1727,6 +1755,7 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
       executionEnvironmentPolicy,
       executionSideEffectGuard,
       executionCircuitBreaker,
+      social,
       publicationProviders,
       publicationProviderAdapters,
       publicationProviderRegistry,
@@ -1825,6 +1854,7 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
     executionEnvironmentPolicy,
     executionSideEffectGuard,
     executionCircuitBreaker,
+    social,
     publicationProviders,
     publicationProviderAdapters,
     publicationProviderRegistry,

@@ -193,6 +193,18 @@ export type ApiConfig = {
     canaryWorkspaceIds: readonly string[];
     webhookSecrets: Partial<Record<"meta_pages_sandbox" | "linkedin_sandbox" | "x_sandbox", string>>;
   };
+  /**
+   * Social Publishing multiprovider (Vorix Marketing). Chaves GLOBAIS (kill switch) por provider,
+   * separadas da homologação e da política por tenant: Meta/TikTok oficiais DESLIGADOS por padrão.
+   */
+  social: {
+    enabled: boolean;
+    metaOfficialGlobalEnabled: boolean;
+    tiktokOfficialGlobalEnabled: boolean;
+    defaultTimezone: string;
+    maintenanceIntervalMs: number;
+    healthCheckMaxAgeMs: number;
+  };
   /** Módulo Meta Ads Manager (Fase 1) — DELIBERADAMENTE separado de `publication.meta*`: mesmo
    * App do Meta pode reutilizar App ID/Secret, mas o fluxo OAuth pede escopos de anúncios
    * (`ads_management`/`business_management`) numa Configuração de Login própria, para nunca
@@ -608,6 +620,15 @@ export function loadApiConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
         linkedin_sandbox: env.LINKEDIN_SANDBOX_WEBHOOK_SECRET?.trim() || undefined,
         x_sandbox: env.X_SANDBOX_WEBHOOK_SECRET?.trim() || undefined,
       },
+    },
+    social: {
+      enabled: env.SOCIAL_PUBLISHING_ENABLED?.trim() !== "false",
+      // Provider só liga com "true" explícito — nunca por omissão.
+      metaOfficialGlobalEnabled: env.META_OFFICIAL_GLOBAL_ENABLED?.trim() === "true",
+      tiktokOfficialGlobalEnabled: env.TIKTOK_OFFICIAL_GLOBAL_ENABLED?.trim() === "true",
+      defaultTimezone: env.SOCIAL_DEFAULT_TIMEZONE?.trim() || "America/Sao_Paulo",
+      maintenanceIntervalMs: parsePositiveInt(env.SOCIAL_MAINTENANCE_INTERVAL_MS) ?? 15 * 60_000,
+      healthCheckMaxAgeMs: parsePositiveInt(env.SOCIAL_HEALTH_CHECK_MAX_AGE_MS) ?? 6 * 3_600_000,
     },
     metaAds: {
       enabled: metaAdsEnabled,

@@ -1,5 +1,5 @@
 import type { PublicationRepositoryPort } from "../ports/publication-repository.port.js";
-import { checksumPublicationPayload } from "./publication-utils.js";
+import { checksumPublicationPayload, providerManagesOwnCredentials } from "./publication-utils.js";
 import type { PublicationDetail, PublicationProvider } from "../../domain/publication/publication.model.js";
 
 export type PublicationOutboxIntentDeps = {
@@ -8,7 +8,7 @@ export type PublicationOutboxIntentDeps = {
   now?: () => Date;
 };
 
-export async function ensurePublicationOutboxIntents(deps: PublicationOutboxIntentDeps, input: { tenantId: string; workspaceId: string; publicationId: string; causationId?: string }): Promise<PublicationDetail> {
+export async function ensurePublicationOutboxIntents(deps: PublicationOutboxIntentDeps, input: { tenantId: string; workspaceId: string; publicationId: string; causationId?: string; /** Retry por destino: só estes targets. */ targetIds?: readonly string[] }): Promise<PublicationDetail> {
   const detail = await deps.repository.getDetail(input.publicationId);
   if (!detail || detail.plan.tenantId !== input.tenantId || detail.plan.workspaceId !== input.workspaceId) throw new Error("PUBLICATION_NOT_FOUND: publicação não encontrada.");
   if (detail.plan.state === "published") return detail;
@@ -19,7 +19,7 @@ export async function ensurePublicationOutboxIntents(deps: PublicationOutboxInte
     await deps.repository.updatePlanState({ id: detail.plan.id, state: "publishing", expectedVersion: detail.plan.version });
     await deps.repository.appendEvent({ id: deps.idGenerator(), publicationId: detail.plan.id, eventType: "publication_started", correlationId: detail.plan.correlationId, causationId: input.causationId, traceId: detail.plan.traceId });
   }
-  for (const target of detail.targets.filter((candidate) => candidate.status === "pending" || candidate.status === "failed")) {
+  for (const target of detail.targets.filter((candidate) => (candidate.status === "pending" || candidate.status === "failed") && (!input.targetIds || input.targetIds.includes(candidate.id)))) {
     if (detail.outbox.some((message) => message.targetId === target.id && message.status !== "dead_lettered")) continue;
     const candidate = detail.candidates.find((item) => item.id === target.candidateId);
     if (!candidate) throw new Error(`PUBLICATION_CANDIDATE_NOT_FOUND: candidate "${target.candidateId}" não existe.`);
@@ -82,7 +82,7 @@ export async function ensurePublicationOutboxIntents(deps: PublicationOutboxInte
 }
 
 async function resolveCredentialReference(repository: PublicationRepositoryPort, detail: PublicationDetail, providerId: PublicationProvider, content: Record<string, unknown>): Promise<string | undefined> {
-  if (providerId === "dry_run" || providerId === "fake") return undefined;
+  if (providerManagesOwnCredentials(providerId)) return undefined;
   const references = await repository.listCredentialReferences({ tenantId: detail.plan.tenantId, workspaceId: detail.plan.workspaceId, providerId });
   const requestedCredentialReferenceId = extractCredentialReferenceId(content);
   if (requestedCredentialReferenceId) {

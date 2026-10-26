@@ -27,6 +27,7 @@ import { registerRuntimeRoutes } from "./runtime.route.js";
 import { registerSchedulingRoutes } from "./scheduling.route.js";
 import { registerSystemRoutes } from "./system.route.js";
 import { registerTikTokRoutes } from "./tiktok.route.js";
+import { registerSocialRoutes } from "./social.route.js";
 import { registerYouTubeRoutes } from "./youtube.route.js";
 import { registerInstagramRoutes } from "./instagram.route.js";
 import { registerInboxRoutes } from "./inbox.route.js";
@@ -264,6 +265,14 @@ export async function registerV1Routes(app: FastifyInstance): Promise<void> {
     backpressure: app.zunoContainer.operationalBackpressure,
     idGenerator: () => `publication-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
   });
+  // Social Publishing multiprovider (Vorix Marketing) + admin de providers (platform admin).
+  if (app.zunoContainer.social) {
+    await registerSocialRoutes(app, {
+      social: app.zunoContainer.social,
+      workspaceRepository: app.zunoContainer.workspaceRepository,
+      idGenerator: () => `soc-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`,
+    });
+  }
   await registerTikTokRoutes(app, {
     publicationRepository: app.zunoContainer.publicationRepository,
     providers: app.zunoContainer.publicationProviders,

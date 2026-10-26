@@ -14,3 +14,8 @@ export function stableStringify(value: unknown): string {
 export function isRetryablePublicationFailure(category: string): boolean {
   return category === "timeout" || category === "provider_unavailable" || category === "rate_limited";
 }
+
+/** Providers que não usam credential reference de Publication (resolvem a própria credencial). */
+export function providerManagesOwnCredentials(providerId: string): boolean {
+  return providerId === "dry_run" || providerId === "fake" || providerId === "social";
+}

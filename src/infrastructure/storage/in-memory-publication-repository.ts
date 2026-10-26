@@ -301,7 +301,8 @@ export class InMemoryPublicationRepository implements PublicationRepositoryPort 
     const updated = { ...message!, status: "dispatched" as const, updatedAt: input.now };
     this.outbox.set(updated.outboxMessageId, updated);
     const detail = await this.getDetail(updated.publicationId);
-    if (detail && detail.targets.every((target) => target.status === "published")) {
+    // Destino cancelado individualmente não impede a publicação de concluir.
+    if (detail && detail.targets.every((target) => target.status === "published" || target.status === "cancelled") && detail.targets.some((target) => target.status === "published")) {
       await this.updatePlanState({ id: updated.publicationId, state: "published", publishedAt: input.now });
     }
     return { committed: true, receipt };
@@ -349,6 +350,46 @@ export class InMemoryPublicationRepository implements PublicationRepositoryPort 
     const updated = { ...message!, status: "failed" as const, lastFailureCode: "UNKNOWN_OUTCOME", retryAfter: undefined, claimedBy: undefined, claimedAt: undefined, leaseExpiresAt: undefined, updatedAt: input.now };
     this.outbox.set(updated.outboxMessageId, updated);
     await this.createReconciliation({ id: input.reconciliationId, publicationId: message!.publicationId, targetId: message!.targetId, attemptId: message!.attemptId, outboxMessageId: message!.outboxMessageId, tenantId: message!.tenantId, workspaceId: message!.workspaceId, providerId: message!.providerId, status: "pending", providerRequestId: input.providerRequestId, idempotencyKey: message!.idempotencyKey });
+    return true;
+  }
+
+  async deferOutbox(input: { outboxMessageId: string; workerId: string; fencingToken: number; now: string; availableAt: string; code: string }): Promise<boolean> {
+    const message = this.outbox.get(input.outboxMessageId);
+    if (!this.isCurrentClaim(message, input.workerId, input.fencingToken, input.now)) return false;
+    this.outbox.set(message!.outboxMessageId, { ...message!, status: "pending", availableAt: input.availableAt, lastFailureCode: input.code, updatedAt: input.now, claimedBy: undefined, claimedAt: undefined, leaseExpiresAt: undefined });
+    return true;
+  }
+
+  async rescheduleTargetOutbox(input: { targetId: string; availableAt: string }): Promise<number> {
+    let count = 0;
+    for (const message of this.outbox.values()) {
+      if (message.targetId !== input.targetId || (message.status !== "pending" && message.status !== "failed") || message.lastFailureCode === "UNKNOWN_OUTCOME") continue;
+      this.outbox.set(message.outboxMessageId, { ...message, availableAt: input.availableAt, lastFailureCode: undefined, updatedAt: new Date().toISOString() });
+      count += 1;
+    }
+    return count;
+  }
+
+  async retireTargetOutbox(input: { targetId: string; now: string }): Promise<number> {
+    let count = 0;
+    for (const message of this.outbox.values()) {
+      if (message.targetId !== input.targetId || (message.status !== "pending" && message.status !== "failed")) continue;
+      this.outbox.set(message.outboxMessageId, { ...message, status: "dead_lettered", lastFailureCode: message.lastFailureCode ?? "RETRY_SUPERSEDED", updatedAt: input.now });
+      count += 1;
+    }
+    return count;
+  }
+
+  async cancelTarget(input: { targetId: string; now: string }): Promise<boolean> {
+    const target = this.targets.get(input.targetId);
+    if (!target || target.status === "published" || target.status === "publishing") return false;
+    if ([...this.outbox.values()].some((message) => message.targetId === input.targetId && message.status === "claimed")) return false;
+    await this.updateTargetStatus({ id: input.targetId, status: "cancelled" });
+    for (const message of this.outbox.values()) {
+      if (message.targetId === input.targetId && (message.status === "pending" || message.status === "failed")) {
+        this.outbox.set(message.outboxMessageId, { ...message, status: "dead_lettered", lastFailureCode: "TARGET_CANCELLED", updatedAt: input.now });
+      }
+    }
     return true;
   }
 

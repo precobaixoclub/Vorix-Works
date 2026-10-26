@@ -2,7 +2,7 @@ import type { PublicationRepositoryPort } from "../ports/publication-repository.
 import type { OperationalCircuitBreaker } from "../operations/operational-services.js";
 import type { PublicationProviderRegistry } from "./publication-provider-registry.js";
 import type { PublicationSecretResolverPort } from "./publication-secret-resolver.js";
-import { checksumPublicationPayload, isRetryablePublicationFailure } from "./publication-utils.js";
+import { checksumPublicationPayload, isRetryablePublicationFailure, providerManagesOwnCredentials } from "./publication-utils.js";
 import type { PublicationContentType, PublicationFailure, PublicationOutboxMessage, PublicationProviderCallResult, PublicationSourceArtifact } from "../../domain/publication/publication.model.js";
 
 export type PublicationDispatchDeps = {
@@ -34,7 +34,7 @@ export class PublicationDispatchService {
     return { dispatched, fencingRejected, unknownOutcomes };
   }
 
-  async dispatchClaimed(message: PublicationOutboxMessage, workerId: string): Promise<"dispatched" | "failed" | "unknown_outcome" | "fencing_rejected"> {
+  async dispatchClaimed(message: PublicationOutboxMessage, workerId: string): Promise<"dispatched" | "failed" | "unknown_outcome" | "fencing_rejected" | "deferred"> {
     const payload = await this.deps.repository.getPayloadReference(message.payloadReference);
     const detail = await this.deps.repository.getDetail(message.publicationId);
     if (!payload || !detail) return "failed";
@@ -72,7 +72,10 @@ export class PublicationDispatchService {
       return (await this.commitFailure(message, workerId, { code: "PUBLICATION_PROVIDER_CAPABILITY_UNSUPPORTED", message: messageText, category: "invalid_content", retryable: false }, true)) ? "failed" : "fencing_rejected";
     }
     const circuitKey = { tenantId: message.tenantId, workspaceId: message.workspaceId, scope: "publication_provider" as const, target: message.providerId };
-    const circuit = await this.deps.providerCircuitBreaker?.canExecute(circuitKey);
+    // Provider que isola falhas por conta/rede (ex.: social) não entra no circuito genérico: falha do
+    // TikTok não pode bloquear Instagram.
+    const circuitBreaker = provider.descriptor.isolatesFailures ? undefined : this.deps.providerCircuitBreaker;
+    const circuit = await circuitBreaker?.canExecute(circuitKey);
     if (circuit && !circuit.allowed) {
       return (await this.commitFailure(message, workerId, { code: "PROVIDER_CIRCUIT_OPEN", message: "Circuit breaker aberto para provider de publicação.", category: "provider_unavailable", retryable: true }, false)) ? "failed" : "fencing_rejected";
     }
@@ -80,8 +83,9 @@ export class PublicationDispatchService {
     if (credentialFailure) {
       return (await this.commitFailure(message, workerId, credentialFailure, true)) ? "failed" : "fencing_rejected";
     }
-    const secret = await this.deps.secretResolver.resolve({ tenantId: message.tenantId, workspaceId: message.workspaceId, providerId: message.providerId, credentialReferenceId: message.credentialReferenceId });
-    if (!secret) {
+    const ownCredentials = provider.descriptor.managesOwnCredentials ?? false;
+    const secret = ownCredentials ? undefined : await this.deps.secretResolver.resolve({ tenantId: message.tenantId, workspaceId: message.workspaceId, providerId: message.providerId, credentialReferenceId: message.credentialReferenceId });
+    if (!secret && !ownCredentials) {
       return (await this.commitFailure(message, workerId, { code: "CREDENTIAL_RESOLUTION_FAILED", message: "Credential reference não resolvida.", category: "authentication", retryable: false }, true)) ? "failed" : "fencing_rejected";
     }
     const result = await this.callProviderSafely(provider, {
@@ -99,12 +103,12 @@ export class PublicationDispatchService {
       traceId: detail.plan.traceId,
       secret,
     });
-    if (result.kind === "published") await this.deps.providerCircuitBreaker?.recordSuccess(circuitKey);
-    else await this.deps.providerCircuitBreaker?.recordFailure(circuitKey, failureForCircuit(result));
+    if (result.kind === "published") await circuitBreaker?.recordSuccess(circuitKey);
+    else if (result.kind !== "deferred") await circuitBreaker?.recordFailure(circuitKey, failureForCircuit(result));
     return this.commitProviderResult(message, workerId, result);
   }
 
-  private async commitProviderResult(message: PublicationOutboxMessage, workerId: string, result: PublicationProviderCallResult): Promise<"dispatched" | "failed" | "unknown_outcome" | "fencing_rejected"> {
+  private async commitProviderResult(message: PublicationOutboxMessage, workerId: string, result: PublicationProviderCallResult): Promise<"dispatched" | "failed" | "unknown_outcome" | "fencing_rejected" | "deferred"> {
     if (result.kind === "published") {
       const detail = await this.deps.repository.getDetail(message.publicationId);
       const target = detail?.targets.find((item) => item.id === message.targetId);
@@ -142,6 +146,14 @@ export class PublicationDispatchService {
       await this.deps.repository.appendEvent({ id: this.deps.idGenerator(), publicationId: message.publicationId, eventType: "outbox_dispatched", targetId: message.targetId, attemptId: message.attemptId, receiptId: committed.receipt?.id, correlationId: detail?.plan.correlationId, traceId: detail?.plan.traceId });
       return "dispatched";
     }
+    if (result.kind === "deferred") {
+      const committed = await this.deps.repository.deferOutbox({ outboxMessageId: message.outboxMessageId, workerId, fencingToken: message.fencingToken, now: this.now(), availableAt: result.availableAt, code: result.errorCode });
+      if (!committed) {
+        await this.appendFencingRejected(message, workerId);
+        return "fencing_rejected";
+      }
+      return "deferred";
+    }
     if (result.kind === "unknown_outcome") {
       const committed = await this.deps.repository.markOutboxUnknown({ outboxMessageId: message.outboxMessageId, workerId, fencingToken: message.fencingToken, now: this.now(), reconciliationId: this.deps.idGenerator(), providerRequestId: result.providerRequestId, safeMessage: result.safeMessage });
       if (!committed) {
@@ -166,7 +178,7 @@ export class PublicationDispatchService {
 
   private async validateCredentialReference(message: PublicationOutboxMessage): Promise<PublicationFailure | undefined> {
     if (!message.credentialReferenceId) {
-      if (message.providerId === "dry_run" || message.providerId === "fake") return undefined;
+      if (providerManagesOwnCredentials(message.providerId)) return undefined;
       return { code: "CREDENTIAL_REFERENCE_REQUIRED", message: "Credential reference obrigatória para provider externo.", category: "authentication", retryable: false };
     }
     const references = await this.deps.repository.listCredentialReferences({ tenantId: message.tenantId, workspaceId: message.workspaceId, providerId: message.providerId });
@@ -251,14 +263,14 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function failureForCircuit(result: PublicationProviderCallResult): { code: string; category: string; retryable: boolean } {
-  if (result.kind === "published") return { code: "OK", category: "none", retryable: false };
+  if (result.kind === "published" || result.kind === "deferred") return { code: "OK", category: "none", retryable: false };
   if (result.kind === "rate_limited") return { code: result.errorCode, category: "rate_limited", retryable: true };
   if (result.kind === "transient_failure" || result.kind === "unknown_outcome") return { code: result.errorCode ?? "PROVIDER_UNKNOWN_OUTCOME", category: "provider_unavailable", retryable: true };
   if (result.kind === "authentication_failure") return { code: result.errorCode, category: "authentication", retryable: false };
   return { code: result.errorCode, category: "invalid_content", retryable: false };
 }
 
-function failureFromProviderResult(result: Exclude<PublicationProviderCallResult, { kind: "published" | "unknown_outcome" }>): PublicationFailure {
+function failureFromProviderResult(result: Exclude<PublicationProviderCallResult, { kind: "published" | "unknown_outcome" | "deferred" }>): PublicationFailure {
   if (result.kind === "rate_limited") return { code: result.errorCode, message: result.safeMessage, category: "rate_limited", retryable: true };
   if (result.kind === "transient_failure") return { code: result.errorCode, message: result.safeMessage, category: "provider_unavailable", retryable: true };
   if (result.kind === "authentication_failure") return { code: result.errorCode, message: result.safeMessage, category: "authentication", retryable: false };

@@ -188,6 +188,9 @@ export const MARKETING_ROUTE_PREFIXES: readonly string[] = [
   "calendar",
   "analytics",
   "instagram/posts",
+  // Social Publishing multiprovider (contas, composer, calendário, música). O admin de providers
+  // fica em `/admin/social-providers` (plataforma), fora desta solução.
+  "social",
   "tiktok",
   "kwai",
   "youtube",

@@ -120,7 +120,7 @@ export type AuditActor = {
 };
 
 export type AuditResource = {
-  type: "credential" | "credential_reference" | "publication" | "provider" | "policy" | "canary" | "audit" | "compliance" | "rbac" | "schedule" | "schedule_occurrence" | "schedule_dead_letter" | "scheduling" | "analytics" | "analytics_export" | "analytics_snapshot" | "analytics_alert" | "analytics_dead_letter" | "system";
+  type: "credential" | "credential_reference" | "publication" | "provider" | "policy" | "canary" | "audit" | "compliance" | "rbac" | "schedule" | "schedule_occurrence" | "schedule_dead_letter" | "scheduling" | "analytics" | "analytics_export" | "analytics_snapshot" | "analytics_alert" | "analytics_dead_letter" | "system" | "social_account" | "social_post" | "social_provider";
   id: string;
   providerId?: PublicationProvider;
 };

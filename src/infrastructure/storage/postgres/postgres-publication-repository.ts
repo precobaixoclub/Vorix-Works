@@ -372,6 +372,59 @@ export class PostgresPublicationRepository implements PublicationRepositoryPort 
     return result.rows.map(toOutbox);
   }
 
+  async deferOutbox(input: { outboxMessageId: string; workerId: string; fencingToken: number; now: string; availableAt: string; code: string }): Promise<boolean> {
+    // Adiamento operacional: devolve à fila sem contar tentativa (attempt continua "running").
+    const result = await this.pool.query(
+      `update publication_outbox
+       set status = 'pending', available_at = $5, last_failure_code = $6, retry_after = null,
+           claimed_by = null, claimed_at = null, lease_expires_at = null, updated_at = now()
+       where outbox_message_id = $1 and claimed_by = $2 and fencing_token = $3 and lease_expires_at > $4`,
+      [input.outboxMessageId, input.workerId, input.fencingToken, input.now, input.availableAt, input.code],
+    );
+    return (result.rowCount ?? 0) > 0;
+  }
+
+  async rescheduleTargetOutbox(input: { targetId: string; availableAt: string }): Promise<number> {
+    const result = await this.pool.query(
+      `update publication_outbox set available_at = $2, last_failure_code = null, updated_at = now()
+       where target_id = $1 and status in ('pending','failed') and coalesce(last_failure_code, '') <> 'UNKNOWN_OUTCOME'`,
+      [input.targetId, input.availableAt],
+    );
+    return result.rowCount ?? 0;
+  }
+
+  async retireTargetOutbox(input: { targetId: string; now: string }): Promise<number> {
+    const result = await this.pool.query(
+      "update publication_outbox set status = 'dead_lettered', last_failure_code = coalesce(last_failure_code, 'RETRY_SUPERSEDED'), updated_at = now() where target_id = $1 and status in ('pending','failed')",
+      [input.targetId],
+    );
+    return result.rowCount ?? 0;
+  }
+
+  async cancelTarget(input: { targetId: string; now: string }): Promise<boolean> {
+    const client = await this.pool.connect();
+    try {
+      await client.query("begin");
+      // Trava o target; não cancela o que já publicou ou está em voo.
+      const target = await client.query<{ status: string }>("select status from publication_targets where id = $1 for update", [input.targetId]);
+      const status = target.rows[0]?.status;
+      const inFlight = await client.query("select 1 from publication_outbox where target_id = $1 and status = 'claimed' and lease_expires_at > $2 limit 1", [input.targetId, input.now]);
+      if (!status || status === "published" || status === "publishing" || inFlight.rowCount) {
+        await client.query("rollback");
+        return false;
+      }
+      await client.query("update publication_targets set status = 'cancelled', updated_at = now() where id = $1", [input.targetId]);
+      await client.query("update publication_outbox set status = 'dead_lettered', last_failure_code = 'TARGET_CANCELLED', updated_at = now() where target_id = $1 and status in ('pending','failed','claimed')", [input.targetId]);
+      await client.query("commit");
+      return true;
+    } catch (error) {
+      await client.query("rollback");
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
   async completeOutbox(input: { outboxMessageId: string; workerId: string; fencingToken: number; now: string; receipt?: Omit<PublicationReceipt, "id" | "createdAt">; receiptId?: string }): Promise<{ committed: boolean; receipt?: PublicationReceipt }> {
     const client = await this.pool.connect();
     try {
@@ -406,7 +459,8 @@ export class PostgresPublicationRepository implements PublicationRepositoryPort 
         receipt = toReceipt(receiptResult.rows[0]);
         await client.query("update publication_attempts set state = 'completed', failure = null, finished_at = now() where id = $1", [message.attemptId]);
         await client.query("update publication_targets set status = 'published', updated_at = now() where id = $1", [message.targetId]);
-        const remaining = await client.query<{ count: string }>("select count(*) from publication_targets where publication_id = $1 and status <> 'published'", [message.publicationId]);
+        // Destino cancelado individualmente não impede a publicação de concluir.
+        const remaining = await client.query<{ count: string }>("select count(*) from publication_targets where publication_id = $1 and status not in ('published','cancelled')", [message.publicationId]);
         if (Number(remaining.rows[0]?.count ?? 0) === 0) {
           await client.query("update publication_plans set state = 'published', published_at = coalesce(published_at, $2), updated_at = now(), version = version + 1 where id = $1", [message.publicationId, input.now]);
         }

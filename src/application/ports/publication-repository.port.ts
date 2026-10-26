@@ -80,6 +80,15 @@ export type PublicationRepositoryPort = {
   getPayloadReference(id: string): Promise<PublicationPayloadReference | undefined>;
   listOutbox(filter?: { tenantId?: string; workspaceId?: string; status?: PublicationOutboxMessage["status"] }): Promise<PublicationOutboxMessage[]>;
   claimOutbox(input: { workerId: string; now: string; leaseMs: number; limit: number; tenantId?: string; workspaceId?: string; publicationId?: string }): Promise<PublicationOutboxMessage[]>;
+  /** Devolve uma mensagem reivindicada à fila sem contar tentativa (adiamento operacional). */
+  deferOutbox(input: { outboxMessageId: string; workerId: string; fencingToken: number; now: string; availableAt: string; code: string }): Promise<boolean>;
+  /** Reprograma as mensagens ainda não despachadas de um target (ex.: conta reconectada). */
+  rescheduleTargetOutbox(input: { targetId: string; availableAt: string }): Promise<number>;
+  /** Retry manual de um target que falhou: aposenta mensagens antigas não despachadas (inclusive
+   * resultado desconhecido já reconciliado como "não publicado") para um novo intent nascer. */
+  retireTargetOutbox(input: { targetId: string; now: string }): Promise<number>;
+  /** Cancela um único target (destino) sem afetar os demais da publicação. */
+  cancelTarget(input: { targetId: string; now: string }): Promise<boolean>;
   completeOutbox(input: { outboxMessageId: string; workerId: string; fencingToken: number; now: string; receipt?: Omit<PublicationReceipt, "id" | "createdAt">; receiptId?: string }): Promise<{ committed: boolean; receipt?: PublicationReceipt }>;
   failOutbox(input: { outboxMessageId: string; workerId: string; fencingToken: number; now: string; failure: PublicationFailure; retryAt?: string; deadLetter?: boolean }): Promise<boolean>;
   markOutboxUnknown(input: { outboxMessageId: string; workerId: string; fencingToken: number; now: string; reconciliationId: string; providerRequestId?: string; safeMessage: string }): Promise<boolean>;

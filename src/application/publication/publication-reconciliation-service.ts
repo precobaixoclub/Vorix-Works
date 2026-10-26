@@ -12,12 +12,12 @@ export type PublicationReconciliationDeps = {
 export class PublicationReconciliationService {
   constructor(private readonly deps: PublicationReconciliationDeps) {}
 
-  async reconcile(input: { tenantId: string; workspaceId: string; publicationId?: string }): Promise<{ confirmed: number; inconclusive: number; notPublished: number }> {
+  async reconcile(input: { tenantId: string; workspaceId: string; publicationId?: string; providerIds?: readonly string[] }): Promise<{ confirmed: number; inconclusive: number; notPublished: number }> {
     const reconciliations = await this.deps.repository.listReconciliations({ tenantId: input.tenantId, workspaceId: input.workspaceId, status: "pending" });
     let confirmed = 0;
     let inconclusive = 0;
     let notPublished = 0;
-    for (const reconciliation of reconciliations.filter((item) => !input.publicationId || item.publicationId === input.publicationId)) {
+    for (const reconciliation of reconciliations.filter((item) => (!input.publicationId || item.publicationId === input.publicationId) && (!input.providerIds || input.providerIds.includes(item.providerId)))) {
       const provider = this.deps.providerRegistry.resolve(reconciliation.providerId);
       if (!provider.descriptor.supportsStatusLookup) {
         await this.deps.repository.updateReconciliationStatus({ id: reconciliation.id, status: "inconclusive" });

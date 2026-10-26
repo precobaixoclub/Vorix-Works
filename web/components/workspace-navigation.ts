@@ -69,6 +69,7 @@ export const SOLUTION_NAVIGATION: Readonly<Record<SolutionKey, SolutionNavigatio
         items: [
           { href: "/conversas", label: "Conversas", icon: "conversas" },
           { href: "/kanban", label: "Kanban", icon: "kanban" },
+          { href: "/radar", label: "Radar", icon: "radar" },
         ],
       },
       {
@@ -100,7 +101,10 @@ export const SOLUTION_NAVIGATION: Readonly<Record<SolutionKey, SolutionNavigatio
     mobileMenu: [
       {
         label: "Atendimento",
-        items: [{ href: "/kanban", label: "Kanban", icon: "kanban" }],
+        items: [
+          { href: "/kanban", label: "Kanban", icon: "kanban" },
+          { href: "/radar", label: "Radar", icon: "radar" },
+        ],
       },
       {
         label: "Comercial",

@@ -60,6 +60,13 @@ import { PostgresAiProvidersRepository } from "../../infrastructure/storage/post
 import { PostgresPlatformBillingRepository } from "../../infrastructure/storage/postgres/postgres-platform-billing-repository.js";
 import { PostgresUserRepository } from "../../infrastructure/storage/postgres/postgres-user-repository.js";
 import { createPromInboxMetrics, inboxMetricsRegistry } from "../../infrastructure/observability/prom-inbox-metrics.js";
+import { evaluateRadarForMessage, type RadarUseCaseDeps } from "../../application/radar/radar-use-cases.js";
+import type { RadarAiAnalystPort, RadarCreditGatePort } from "../../application/ports/radar-ai.port.js";
+import { isModelRegisteredAndActive } from "../../application/ai-gateway/model-registry.js";
+import { AiGatewayRadarAnalyst } from "../../infrastructure/ai-gateway/radar-ai-analyst-adapter.js";
+import { CreditAccountingRadarCreditGate } from "../../infrastructure/radar/credit-accounting-radar-credit-gate.js";
+import { PostgresRadarRepository } from "../../infrastructure/storage/postgres/postgres-radar-repository.js";
+import { createPromRadarMetrics } from "../../infrastructure/observability/prom-radar-metrics.js";
 import { reconcileMergeableIdentities, reconcileUnresolvedLidContacts } from "../../infrastructure/storage/postgres/inbox-identity-reconciliation.js";
 import { reconcilePendingContactPictures, reconcilePendingGroupPictures } from "../../infrastructure/storage/postgres/inbox-avatar-reconciliation.js";
 import { reconcilePendingMediaDownloads } from "../../infrastructure/storage/postgres/inbox-media-retry-reconciliation.js";
@@ -109,6 +116,10 @@ type InboxWorkerConfig = {
    * IA ausente (`enabled=false`, o padrão, é um no-op completo — `deps.aiResponder` fica
    * `undefined` e `maybeGenerateAiResponse` vira um no-op silencioso). */
   ai: { enabled: boolean; anthropicApiKey?: string; anthropicInboxAutoReplyModel: string; billingEnabled: boolean };
+  /** Radar de Sentimento — dois kill switches de processo, ambos desligados por padrão. `enabled`
+   * (`RADAR_ENABLED`) liga a camada heurística gratuita, que roda a cada mensagem; `aiEnabled`
+   * (`RADAR_AI_ENABLED`) libera a análise profunda por IA, que consome crédito do cliente. */
+  radar: { enabled: boolean; aiEnabled: boolean; anthropicModel?: string };
   /** Fase 6 — resiliência/observabilidade. Todos com defaults conservadores; nenhum exige setup
    * extra para o worker continuar funcionando exatamente como nas Fases 1-5. */
   resilience: {
@@ -186,6 +197,11 @@ function loadInboxWorkerConfig(): InboxWorkerConfig {
       // (postgres), o crédito É verificado por padrão — quem quer IA sem cobrança (ex.: ambiente
       // interno) desliga explicitamente via env, nunca por omissão.
       billingEnabled: process.env.AI_INBOX_AUTO_REPLY_BILLING_ENABLED?.trim() !== "false",
+    },
+    radar: {
+      enabled: process.env.RADAR_ENABLED?.trim() === "true",
+      aiEnabled: process.env.RADAR_AI_ENABLED?.trim() === "true",
+      anthropicModel: process.env.ANTHROPIC_SENTIMENT_RADAR_MODEL?.trim() || undefined,
     },
     resilience: {
       healthCheckIntervalMs: parsePositiveInt(process.env.INBOX_HEALTH_CHECK_INTERVAL_MS, 60_000),
@@ -574,6 +590,73 @@ async function main(): Promise<void> {
   const { connection, channel } = await connectInboxRabbitMq(config.inbox.rabbitMqUrl);
   console.log("[inbox-worker] conectado ao RabbitMQ, iniciando consumers.");
 
+  // Radar de Sentimento (réplica adaptada do CMDesk). A camada heurística é gratuita e roda a cada
+  // mensagem. A análise profunda só existe com `RADAR_AI_ENABLED=true` E billing real (Postgres):
+  // ela SEMPRE consome crédito, pelo mesmo `CreditAccountingService`/`CreditGatedAiGateway` das
+  // demais operações de IA — sem gate de crédito disponível ela simplesmente não é montada.
+  let radarDeps: RadarUseCaseDeps | undefined;
+  if (config.radar.enabled && repositories.pool) {
+    let radarAiAnalyst: RadarAiAnalystPort | undefined;
+    let radarCreditGate: RadarCreditGatePort | undefined;
+    if (config.radar.aiEnabled) {
+      const radarModel = config.radar.anthropicModel && isModelRegisteredAndActive("anthropic", config.radar.anthropicModel) ? config.radar.anthropicModel : undefined;
+      if (config.radar.anthropicModel && !radarModel) {
+        console.warn(`[inbox-worker] ANTHROPIC_SENTIMENT_RADAR_MODEL="${config.radar.anthropicModel}" não está registrado/ativo no Model Registry — usando o modelo padrão do Radar.`);
+      }
+      const { aiGateway: radarGateway } = buildAiGateway({
+        aiConfig: {
+          enabled: true,
+          briefingExtractionEnabled: false,
+          anthropicApiKey: config.ai.anthropicApiKey,
+          // Mesmo racional dos campos "unused" do gateway da IA de atendimento, acima.
+          anthropicBriefingExtractionModel: "unused-in-inbox-worker",
+          commercialCopilotEnabled: false,
+          anthropicCommercialCopilotModel: "unused-in-inbox-worker",
+          anthropicSentimentRadarModel: radarModel,
+        },
+        executionRepository: repositories.aiExecutionRepository,
+      });
+      const radarCreditAccounting = new CreditAccountingService({
+        platformBillingRepository: new PostgresPlatformBillingRepository(repositories.pool),
+        aiProvidersRepository: new PostgresAiProvidersRepository(repositories.pool),
+        idGenerator: (prefix) => `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+      });
+      radarAiAnalyst = new AiGatewayRadarAnalyst(new CreditGatedAiGateway({ inner: radarGateway, creditAccounting: radarCreditAccounting, now: () => new Date() }));
+      radarCreditGate = new CreditAccountingRadarCreditGate({ creditAccounting: radarCreditAccounting });
+      console.log("[inbox-worker] Radar: análise profunda por IA habilitada — consome crédito Vorix real (operação \"sentiment_radar_analysis\").");
+    } else {
+      console.log("[inbox-worker] RADAR_AI_ENABLED=false — Radar roda só com a camada heurística, sem consumir crédito.");
+    }
+    radarDeps = {
+      radarRepository: new PostgresRadarRepository(repositories.pool),
+      aiAnalyst: radarAiAnalyst,
+      creditGate: radarCreditGate,
+      realtimePublisher: { publish: (event) => publishRealtimeNotification(channel, event) },
+      metrics: config.resilience.metricsEnabled ? createPromRadarMetrics() : undefined,
+    };
+    console.log("[inbox-worker] Radar de Sentimento habilitado.");
+  } else if (config.radar.enabled) {
+    console.log("[inbox-worker] RADAR_ENABLED=true, mas PERSISTENCE_DRIVER != postgres — Radar desligado (depende de Postgres).");
+  } else {
+    console.log("[inbox-worker] RADAR_ENABLED=false — Radar de Sentimento desligado.");
+  }
+
+  // O score do Radar é incremental (lê o anterior, soma, grava): duas mensagens da MESMA conversa
+  // avaliadas em paralelo (o consumer tem prefetch > 1) perderiam uma das somas. Serializa por
+  // conversa dentro deste processo; conversas diferentes continuam em paralelo.
+  const radarChains = new Map<string, Promise<unknown>>();
+  const runRadarSerialized = (conversationId: string, task: () => Promise<unknown>): void => {
+    const next: Promise<unknown> = (radarChains.get(conversationId) ?? Promise.resolve())
+      .then(task)
+      .catch((error) => {
+        console.error("[inbox-worker] falha ao avaliar o Radar:", error instanceof Error ? error.message : error);
+      })
+      .finally(() => {
+        if (radarChains.get(conversationId) === next) radarChains.delete(conversationId);
+      });
+    radarChains.set(conversationId, next);
+  };
+
   const deps: InboxUseCaseDeps = {
     userRepository: repositories.pool ? new PostgresUserRepository(repositories.pool) : undefined,
     connectionRepository: repositories.messagingConnectionRepository,
@@ -803,6 +886,16 @@ async function main(): Promise<void> {
     // docs/conversas-canonical-chat-identity.md) — um evento `fromMe` que virou uma mensagem NOVA
     // (o próprio número mandou por fora do Vorix) é registrado como `outbound`; a IA nunca deve
     // "responder" à própria mensagem do operador.
+    // Radar de Sentimento — camada heurística gratuita, uma vez por mensagem nova (`wasCreated`,
+    // nunca numa reentrega). Grupo, Radar desligado e conversa sem keyword são tratados lá dentro.
+    // Nunca `await`-ado (mesmo racional da IA de atendimento abaixo): nunca derruba o ACK deste evento.
+    if (radarDeps && wasCreated) {
+      const radar = radarDeps;
+      runRadarSerialized(conversation.id, () =>
+        evaluateRadarForMessage(radar, { tenantId: event.tenantId, workspaceId: event.workspaceId, conversationId: conversation.id, messageId: message.id, direction: message.direction, text: message.body }),
+      );
+    }
+
     if (wasCreated && message.direction === "inbound") {
       // Regras de atendimento ANTES da IA: nota da pesquisa (a IA não responde a ela), reabrir
       // conversa finalizada e mensagem de ausência. Falha nas regras nunca impede a IA.
@@ -914,6 +1007,14 @@ async function main(): Promise<void> {
       const message = await processOutboundMessage(deps, { messageId: payload.messageId });
       if (message) {
         publishRealtimeNotification(channel, { type: "message.updated", tenantId: message.tenantId, workspaceId: message.workspaceId, conversationId: message.conversationId });
+        // Radar — uma resposta efetivamente enviada zera os sinais de espera de um alerta já
+        // existente (nunca cria alerta, nunca dispara IA).
+        if (radarDeps && message.status === "sent") {
+          const radar = radarDeps;
+          runRadarSerialized(message.conversationId, () =>
+            evaluateRadarForMessage(radar, { tenantId: message.tenantId, workspaceId: message.workspaceId, conversationId: message.conversationId, messageId: message.id, direction: "outbound" }),
+          );
+        }
       }
     },
     metrics,

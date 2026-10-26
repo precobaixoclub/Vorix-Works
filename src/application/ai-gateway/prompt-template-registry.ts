@@ -53,6 +53,14 @@ import {
   COMMERCIAL_COPILOT_SUGGESTIONS_TOOL_INPUT_SCHEMA,
   type CommercialCopilotSuggestionsResult,
 } from "./schemas/commercial-copilot-suggestions-result.v1.js";
+import { sentimentRadarAnalysisPromptV1, type SentimentRadarPromptContext, type SentimentRadarPromptMessage } from "./prompts/sentiment-radar-analysis.v1.js";
+import {
+  applySentimentRadarAnalysisSemanticValidation,
+  validateSentimentRadarAnalysisStructure,
+  SENTIMENT_RADAR_ANALYSIS_RESULT_SCHEMA_VERSION,
+  SENTIMENT_RADAR_ANALYSIS_TOOL_INPUT_SCHEMA,
+  type SentimentRadarAnalysisResult,
+} from "./schemas/sentiment-radar-analysis-result.v1.js";
 
 /**
  * Registro operação → template + validação — Sprint 08 (Fase 9/11). Único ponto do Gateway que
@@ -191,6 +199,22 @@ function buildReportTemplateContext(input: Readonly<Record<string, unknown>>): R
   return { request: String(input.request ?? ""), catalog };
 }
 
+function buildSentimentRadarAnalysisContext(input: Readonly<Record<string, unknown>>): SentimentRadarPromptContext {
+  const rawMessages = Array.isArray(input.recentMessages) ? (input.recentMessages as unknown[]) : [];
+  const recentMessages: SentimentRadarPromptMessage[] = rawMessages
+    .filter((entry): entry is Record<string, unknown> => typeof entry === "object" && entry !== null)
+    .map((entry) => ({ direction: entry.direction === "outbound" ? "outbound" : "inbound", body: typeof entry.body === "string" ? entry.body : "" }));
+  return {
+    score: typeof input.score === "number" ? input.score : 0,
+    level: typeof input.level === "string" ? input.level : "low",
+    reasons: Array.isArray(input.reasons) ? (input.reasons as unknown[]).filter((reason): reason is string => typeof reason === "string") : [],
+    waitingMinutes: typeof input.waitingMinutes === "number" ? input.waitingMinutes : 0,
+    transferCount: typeof input.transferCount === "number" ? input.transferCount : 0,
+    reopenCount: typeof input.reopenCount === "number" ? input.reopenCount : 0,
+    recentMessages,
+  };
+}
+
 export const PROMPT_TEMPLATE_REGISTRY: Partial<Record<AiOperation, PromptTemplateRegistration>> = {
   report_ai_analysis: {
     template: reportAnalysisPromptV1 as PromptTemplate<unknown>,
@@ -252,6 +276,16 @@ export const PROMPT_TEMPLATE_REGISTRY: Partial<Record<AiOperation, PromptTemplat
       const durationMs = typeof sanitizedInput.durationMs === "number" ? sanitizedInput.durationMs : Number.MAX_SAFE_INTEGER;
       return applyMeetingAiAnalysisSemanticValidation({ structural: structural as MeetingAiAnalysisResult, transcriptText: meetingTranscriptPlainText(context.segments), durationMs });
     },
+  },
+  sentiment_radar_analysis: {
+    template: sentimentRadarAnalysisPromptV1 as PromptTemplate<unknown>,
+    buildContext: (input) => buildSentimentRadarAnalysisContext(input),
+    toolName: "submit_sentiment_radar_analysis",
+    toolDescription: "Envia o diagnóstico de risco desta conversa de atendimento.",
+    toolInputSchema: SENTIMENT_RADAR_ANALYSIS_TOOL_INPUT_SCHEMA,
+    outputSchemaRef: { id: "sentiment-radar-analysis-result", version: SENTIMENT_RADAR_ANALYSIS_RESULT_SCHEMA_VERSION },
+    validateStructure: (raw) => validateSentimentRadarAnalysisStructure(raw),
+    validateSemantics: (structural, _sanitizedInput) => applySentimentRadarAnalysisSemanticValidation({ structural: structural as SentimentRadarAnalysisResult }),
   },
   commercial_copilot_suggestions: {
     template: commercialCopilotSuggestionsPromptV1 as PromptTemplate<unknown>,

@@ -126,6 +126,9 @@ services:
       # Módulo Conversas (Fase 1) — kill switch global por padrão; sem WUZAPI/RABBITMQ configurados
       # o container usa duplos de teste (Fake/InMemory), nunca falha o boot.
       CONVERSATIONS_MODULE_ENABLED: "${CONVERSATIONS_MODULE_ENABLED:-false}"
+      # Radar de Sentimento — rotas /v1/radar/* e "Analisar agora"; ambos "false" por padrão.
+      RADAR_ENABLED: "${RADAR_ENABLED:-false}"
+      RADAR_AI_ENABLED: "${RADAR_AI_ENABLED:-false}"
       INBOX_WUZAPI_BASE_URL: "${INBOX_WUZAPI_BASE_URL:-http://wuzapi:8080}"
       INBOX_WUZAPI_ADMIN_TOKEN: "${WUZAPI_ADMIN_TOKEN:-}"
       INBOX_RABBITMQ_URL: "${INBOX_RABBITMQ_URL:-}"
@@ -244,6 +247,11 @@ services:
       # Fase 6 (Resiliência/Observabilidade) — todos com default conservador embutido no código;
       # só precisam existir aqui se algum precisar ser ajustado por evidência real de produção.
       AI_INBOX_AUTO_REPLY_BILLING_ENABLED: "${AI_INBOX_AUTO_REPLY_BILLING_ENABLED:-true}"
+      # Radar de Sentimento — ambos "false" por padrão. RADAR_ENABLED liga a camada heurística
+      # gratuita; RADAR_AI_ENABLED libera a análise profunda, que consome crédito do cliente.
+      RADAR_ENABLED: "${RADAR_ENABLED:-false}"
+      RADAR_AI_ENABLED: "${RADAR_AI_ENABLED:-false}"
+      ANTHROPIC_SENTIMENT_RADAR_MODEL: "${ANTHROPIC_SENTIMENT_RADAR_MODEL:-}"
       INBOX_WORKER_METRICS_PORT: "${INBOX_WORKER_METRICS_PORT:-9464}"
       INBOX_WORKER_HEARTBEAT_FILE: /tmp/inbox-worker-heartbeat
       # Fase 7 — kill switches de emergência (ver docs/conversas-runbook.md). Nunca "true" por padrão.

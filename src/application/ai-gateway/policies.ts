@@ -36,6 +36,22 @@ export const INBOX_AUTO_REPLY_POLICY: AiPolicy = {
   providerFallbackAllowed: false,
 };
 
+/** Política de `sentiment_radar_analysis` — Radar de Sentimento, Camada 2. Entrada limitada a uma
+ * janela curta de mensagens recentes (ver `AI_CONTEXT_MESSAGE_LIMIT` em `radar-use-cases.ts`);
+ * saída pequena e estruturada; `temperature` baixa porque é um diagnóstico, não texto criativo.
+ * `providerFallbackAllowed: false` pelo mesmo motivo das demais políticas. */
+export const SENTIMENT_RADAR_ANALYSIS_POLICY: AiPolicy = {
+  preferredCapability: "structured_text",
+  maxInputTokens: 3_000,
+  maxOutputTokens: 600,
+  timeoutMs: 12_000,
+  retryPolicy: DEFAULT_AI_RETRY_POLICY,
+  temperature: 0.2,
+  structuredOutputRequired: true,
+  sensitiveDataPolicy: "strict",
+  providerFallbackAllowed: false,
+};
+
 /** Política de `commercial_copilot_suggestions` — CRM/Comercial, Fase 5. `temperature` baixa
  * (0.2, não 0) porque a tarefa é "sugerir", não extrair um valor determinístico único, mas ainda
  * baixa o bastante pra minimizar invenção; `maxOutputTokens` modesto (no máximo 5 sugestões

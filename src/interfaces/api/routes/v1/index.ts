@@ -41,6 +41,7 @@ import { registerMeetingsRecorderAdminRoutes } from "./meetings-recorder-admin.r
 import { registerMeetingRecorderAccountRoutes } from "./meetings-recorder-accounts.route.js";
 import { newViewerToken } from "../../../../infrastructure/meetings/provisioning-link-auth.js";
 import { encryptSecret } from "../../../../infrastructure/crypto/secret-cipher.js";
+import { registerRadarRoutes } from "./radar.route.js";
 import { registerInboxMetricsRoutes } from "./inbox-metrics.route.js";
 import { registerTeamsRoutes } from "./teams.route.js";
 import { registerTenantMembersRoutes } from "./tenant-members.route.js";
@@ -354,6 +355,11 @@ export async function registerV1Routes(app: FastifyInstance): Promise<void> {
     await registerInboxRoutes(app, sharedInboxDeps);
     // Fase 7 (Resultados) — métricas agregadas de atendimento, mesmo kill switch do módulo.
     await registerInboxMetricsRoutes(app, { inboxMetricsRepository: app.zunoContainer.inboxMetricsRepository });
+    // Radar de Sentimento (réplica adaptada do CMDesk) — lê conversas da Inbox, então só existe
+    // com o módulo Conversas ligado, e ainda atrás do próprio kill switch (`RADAR_ENABLED`).
+    if (app.zunoContainer.radar) {
+      await registerRadarRoutes(app, { ...app.zunoContainer.radar, teamMembershipRepository: app.zunoContainer.identity?.teamMembershipRepository });
+    }
   }
   // CRM/Comercial (Fase 1) — sempre postgres-backed (mesmo racional de Identidade); registrado
   // só quando `identity` existe (driver postgres), nunca em modo memória (dev/teste sem banco).

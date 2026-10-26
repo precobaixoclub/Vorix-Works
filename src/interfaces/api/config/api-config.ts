@@ -137,6 +137,15 @@ export type ApiConfig = {
   solutions?: {
     killSwitches: readonly string[];
   };
+  /** Radar de Sentimento (réplica adaptada do CMDesk). Dois kill switches de processo, ambos
+   * desligados por padrão: `enabled` (`RADAR_ENABLED`) registra as rotas `/v1/radar/*`;
+   * `aiEnabled` (`RADAR_AI_ENABLED`) libera a análise profunda por IA, que consome crédito do
+   * cliente. O ajuste fino por workspace/equipe vive no banco (`radar_settings`,
+   * `teams.radar_enabled`). Opcional no tipo só para configs montadas à mão em teste. */
+  radar?: {
+    enabled: boolean;
+    aiEnabled: boolean;
+  };
   execution: {
     realExecutionEnabled: boolean;
     realExecutionResearchEnabled: boolean;
@@ -700,6 +709,10 @@ export function loadApiConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
     },
     solutions: {
       killSwitches: (env.SOLUTION_KILL_SWITCHES ?? "").split(",").map((item) => item.trim()).filter(Boolean),
+    },
+    radar: {
+      enabled: env.RADAR_ENABLED?.trim() === "true",
+      aiEnabled: env.RADAR_AI_ENABLED?.trim() === "true",
     },
     objectStorage: {
       enabled: objectStorageEnabled,

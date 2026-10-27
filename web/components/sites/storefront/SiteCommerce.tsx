@@ -16,8 +16,9 @@ export const useStorefront=()=>useContext(StorefrontContext);
 
 export function StorefrontProvider({site,basePath,preview,path,children}:{site:PublicTenantSite;basePath:string;preview:boolean;path:string[];children:ReactNode}){
  const [cart,setCart]=useState<PublicCart>(),[cartOpen,setCartOpen]=useState(false);
+ const trackedPath=useRef<string|undefined>(undefined);
  const cartEnabled=!!site.commerce?.cartEnabled&&!preview;
- useEffect(()=>{if(preview)return;captureUtm(site.slug);if(!(path[0]==="produto"))trackSiteEvent(site.slug,"SITE_VIEW");},[preview,site.slug,path.join("/")]);
+ useEffect(()=>{const key=site.slug+"/"+path.join("/");if(preview||trackedPath.current===key)return;trackedPath.current=key;captureUtm(site.slug);trackSiteEvent(site.slug,"SITE_VIEW");},[preview,site.slug,path.join("/")]);
  useEffect(()=>{if(!cartEnabled)return;let alive=true;fetchCart(site.slug).then(value=>{if(alive)setCart(value);}).catch(()=>undefined);return()=>{alive=false;};},[cartEnabled,site.slug]);
  const updateItem=useCallback(async(input:{productId:string;variantId?:string;quantity:number})=>{const next=await setCartItem(site.slug,input);setCart(next);return next;},[site.slug]);
  const value=useMemo(()=>({site,basePath,preview,cart,cartOpen,openCart:()=>setCartOpen(true),closeCart:()=>setCartOpen(false),resetCart:()=>{storeCartToken(site.slug,undefined);setCart(undefined);},refreshCart:async()=>{setCart(await fetchCart(site.slug).catch(()=>undefined));},updateItem}),[site,basePath,preview,cart,cartOpen,updateItem]);
@@ -90,7 +91,8 @@ export function ProductCommerceActions({product,variantId,complete,onInterest}:{
  const store=useStorefront();const site=store?.site,preview=!!store?.preview;
  const [quantity,setQuantity]=useState(1),[busy,setBusy]=useState<"cart"|"whatsapp">(),[message,setMessage]=useState<{kind:"ok"|"error";text:string}>();
  const mainRef=useRef<HTMLDivElement>(null),[stickyVisible,setStickyVisible]=useState(false);
- useEffect(()=>{if(!preview&&site)trackSiteEvent(site.slug,"PRODUCT_VIEW",product.id);},[preview,site?.slug,product.id]);
+ const trackedProduct=useRef<string|undefined>(undefined);
+ useEffect(()=>{if(!preview&&site&&trackedProduct.current!==`${site.slug}:${product.id}`){trackedProduct.current=`${site.slug}:${product.id}`;trackSiteEvent(site.slug,"PRODUCT_VIEW",product.id);}},[preview,site?.slug,product.id]);
  // CTA fixo no celular: aparece quando o botão principal saiu da tela por cima (rolagem/resize com rAF).
  useEffect(()=>{
   let frame=0;const update=()=>{frame=0;const node=mainRef.current;if(node)setStickyVisible(node.getBoundingClientRect().bottom<0);};

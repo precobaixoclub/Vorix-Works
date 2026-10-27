@@ -17,7 +17,7 @@ export function visitorSessionId(slug:string):string{const key=`vx_sid:${slug}`;
 /** Guarda as UTMs da entrada e mantém durante a navegação da sessão (a última campanha com UTM vence). */
 export function captureUtm(slug:string):StorefrontUtm{
  const key=`vx_utm:${slug}`;const params=new URLSearchParams(window.location.search);
- const fresh=Object.fromEntries(UTM_KEYS.map(name=>[name,params.get(`utm_${name}`)?.trim().slice(0,200)]).filter(([,value])=>value)) as StorefrontUtm;
+ const fresh=Object.fromEntries(UTM_KEYS.map(name=>[name,params.get(`utm_${name}`)?.trim().slice(0,name==="source"||name==="medium"?120:200)]).filter(([,value])=>value)) as StorefrontUtm;
  if(Object.keys(fresh).length){write("session",key,JSON.stringify(fresh));return fresh;}
  try{return JSON.parse(read("session",key)??"{}") as StorefrontUtm;}catch{return {};}
 }
@@ -54,7 +54,9 @@ export async function checkoutCart(slug:string,requestKey:string){
  return call<WhatsappIntent>(slug,"checkout",{token,requestKey,...visitorContext(slug)});
 }
 export function trackSiteEvent(slug:string,type:"SITE_VIEW"|"PRODUCT_VIEW",productId?:string){
- call(slug,"events",{type,productId,...visitorContext(slug)}).catch(()=>undefined);
+ const device=window.matchMedia("(max-width: 600px)").matches?"mobile":window.matchMedia("(max-width: 1024px)").matches?"tablet":"desktop";
+ let referrer:string|undefined;try{const url=new URL(document.referrer);if(url.hostname!==window.location.hostname)referrer=url.origin;}catch{}
+ call(slug,"events",{type,productId,...visitorContext(slug),eventKey:crypto.randomUUID(),referrer,device}).catch(()=>undefined);
 }
 
 // ------------------------------------------------------------------ Fase 2: checkout e pedido

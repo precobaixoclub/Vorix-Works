@@ -54,7 +54,14 @@ export function planCatalogProduct(context:BulkContext,rows:BulkRow[],options:Bu
   const extras=catalogExtras(existing);
   for(const key of ["ean","externalChannel","externalProductId","externalListingId"] as const)if(r[key]){if(r[key]==="[LIMPAR]")delete extras[key];else extras[key]=bounded(r[key]!,key,160);}
   if(r.ean&&r.ean!=="[LIMPAR]"&&!/^\d{8,14}$/.test(r.ean))throw new BulkValidationError("ean",r.ean,"EAN/GTIN deve conter de 8 a 14 dígitos.");
-  for(const key of ["weight","height","width","length"] as const)if(r[key])extras[key]=bulkNumber(r[key]!,key);
+  // Peso/medidas alimentam o frete do checkout (details.shipping): peso em gramas, medidas em cm.
+  for(const [key,target] of [["weight","weightGrams"],["height","heightCm"],["width","widthCm"],["length","lengthCm"]] as const){
+   delete extras[key];const raw=r[key];if(!raw)continue;
+   const shipping={...details.shipping};
+   if(raw==="[LIMPAR]")delete shipping[target];
+   else{const value=bulkNumber(raw,key);if(value<=0||(key==="weight"?!Number.isInteger(value)||value>1_000_000:value>1000))throw new BulkValidationError(key,raw,key==="weight"?"Peso em gramas inteiros, de 1 a 1.000.000.":"Medida em cm, maior que 0 e até 1000.");shipping[target]=value;}
+   details.shipping=Object.keys(shipping).length?shipping:undefined;
+  }
   if(Object.keys(extras).length||existing?.taxMetadata?.catalog)p.taxMetadata={...existing?.taxMetadata,catalog:extras};
   const category=(name:string,parentId?:string):string=>{
    const matches=[...metadata.categories,...plan.categories].filter(c=>c.name.toLowerCase()===name.toLowerCase()&&c.parentId===parentId);

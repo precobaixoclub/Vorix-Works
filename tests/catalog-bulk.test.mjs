@@ -178,3 +178,13 @@ test("worker authorization uses the transaction connection, including a pool of 
  c.bulk=new PostgresCatalogBulk(single,()=>{},undefined,async(context,transaction)=>{assert.equal((await transaction.query("select 1 as authorized")).rows[0].authorized,1);return context;});
  try{await settle(c,job.id);assert.equal((await run(c,job)).status,"COMPLETED");assert.equal((await products(c)).length,1);}finally{await single.end();}
 });
+test("Commerce contract: weight/measures feed checkout shipping and stock adjustments keep checkout reservations",async()=>{
+ const c=await setup();await run(c,await preview(c,"SKU;Nome;Preço;Peso (g);Altura (cm);Largura;Comprimento\nSHIP;Caixa;10;850;10,5;20;30"));
+ const p=(await products(c))[0];assert.deepEqual(p.details.shipping,{weightGrams:850,heightCm:10.5,widthCm:20,lengthCm:30});assert.equal(p.taxMetadata?.catalog?.weight,undefined);
+ const exported=await c.bulk.download(c.actor,"csv",{},false),sheet=await readCatalogSheet(exported.filename,exported.bytes),row=sheet.rows[0].cells;
+ assert.equal(row[sheet.headers.indexOf("Peso (g)")],"850");assert.equal(row[sheet.headers.indexOf("Altura (cm)")],"10.5");
+ let job=await preview(c,"SKU;Peso\nSHIP;1,5");assert.equal(job.summary.errors,1);
+ job=await preview(c,"SKU;Altura (cm)\nSHIP;[LIMPAR]");await run(c,job);assert.deepEqual((await c.d.productRepository.getById(p.id)).details.shipping,{weightGrams:850,widthCm:20,lengthCm:30});
+ const r=await c.product({code:"RESV",trackStock:true});await c.d.productEngineRepository.move({...c.actor,productId:r.id,quantity:5,kind:"IN",operationKey:randomUUID()});await c.d.productEngineRepository.move({...c.actor,productId:r.id,quantity:3,kind:"RESERVATION",operationKey:"order:qa:reserve:1"});
+ await run(c,await preview(c,"SKU;Estoque\nRESV;8"));const after=await c.d.productRepository.getById(r.id);assert.equal(after.stockQuantity,8);assert.equal(after.reservedQuantity,3);
+});

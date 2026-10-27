@@ -3,7 +3,7 @@ import { z } from "zod";
 export const bulkFields = {
  productId:"ID produto", sku:"SKU", name:"Nome", description:"Descrição", type:"Tipo", category:"Categoria", subcategory:"Subcategoria", brand:"Marca",
  price:"Preço", minimumPrice:"Preço mínimo", cost:"Custo", unit:"Unidade", active:"Ativo", siteVisible:"Aparecer no site", saleMode:"Modo comercial",
- trackStock:"Controlar estoque", stock:"Estoque", ean:"EAN/GTIN", weight:"Peso", height:"Altura", width:"Largura", length:"Comprimento", images:"Imagens (JSON)",
+ trackStock:"Controlar estoque", stock:"Estoque", ean:"EAN/GTIN", weight:"Peso (g)", height:"Altura (cm)", width:"Largura (cm)", length:"Comprimento (cm)", images:"Imagens (JSON)",
  attributes:"Especificações (JSON)", specialization:"Ficha específica (JSON)", variantId:"ID variante", variantSku:"SKU variante", variantName:"Nome variante",
  options:"Opções variante (JSON)", color:"Cor", size:"Tamanho", variantPrice:"Preço variante", variantMinimumPrice:"Preço mínimo variante", variantCost:"Custo variante",
  variantActive:"Variante ativa", priceOverride:"Preço próprio da variante", optionDefinitions:"Definições de opções (JSON)",
@@ -22,7 +22,7 @@ export type BulkSummary={rows:number;newProducts:number;updates:number;ignored:n
 export type BulkJobView={id:string;status:BulkStatus;headers:string[];mapping:Record<string,BulkField>;sample:string[][];summary:BulkSummary;failure?:string;options:BulkOptions};
 export type BulkFilters={search?:string;category?:string;brand?:string;type?:string;active?:boolean;site?:boolean;stock?:"in"|"out"|"low"};
 export const normalizeHeader=(value:string)=>value.normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().replace(/[^a-z0-9]/g,"");
-const aliases:Record<string,BulkField>={codproduto:"sku",codigo:"sku",cod:"sku",valorvenda:"price",precovenda:"price",preco:"price",ean:"ean",gtin:"ean",codigobarras:"ean",produto:"name",nomeproduto:"name",marca:"brand",servico:"type",quantidade:"stock",saldo:"stock"};
+const aliases:Record<string,BulkField>={codproduto:"sku",codigo:"sku",cod:"sku",valorvenda:"price",precovenda:"price",preco:"price",ean:"ean",gtin:"ean",codigobarras:"ean",produto:"name",nomeproduto:"name",marca:"brand",servico:"type",quantidade:"stock",saldo:"stock",peso:"weight",pesogramas:"weight",altura:"height",largura:"width",comprimento:"length"};
 export function suggestMapping(headers:string[]):Record<string,BulkField>{
  const names=new Map(Object.entries(bulkFields).flatMap(([key,label])=>[[normalizeHeader(key),key],[normalizeHeader(label),key]]) as [string,BulkField][]);
  const used=new Set<BulkField>();const result:Record<string,BulkField>={};

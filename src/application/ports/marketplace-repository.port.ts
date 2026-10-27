@@ -25,6 +25,7 @@ export interface MarketplaceRepositoryPort {
  claimJob():Promise<MarketplaceJob|undefined>;
  checkpoint(job:MarketplaceJob,progress:number,total:number,payload?:Record<string,unknown>):Promise<void>;
  finishJob(job:MarketplaceJob,status:MarketplaceJob["status"],code?:string,delayMs?:number):Promise<void>;
+ completeRecoveredPublication(scope:MarketplaceScope,id:string,externalId:string):Promise<void>;
  jobItems(scope:MarketplaceScope,jobId:string):Promise<{externalId:string;status:string;result:Record<string,unknown>}[]>;
  item(job:MarketplaceJob,externalId:string):Promise<{status:string;result:Record<string,unknown>}|undefined>;
  saveItem(job:MarketplaceJob,externalId:string,status:string,result:Record<string,unknown>):Promise<void>;

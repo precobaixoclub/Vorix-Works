@@ -13,7 +13,7 @@ export type ExternalListing = {
   id: string; sellerId: string; title: string; description?: string; sku?: string; ean?: string;
   categoryId: string; priceCents: number; quantity: number; status: string; url?: string; currency: string;
   pictures: string[]; attributes: ExternalAttribute[]; variants: ExternalVariant[];
-  userProductId?: string; familyName?: string; model: "LEGACY" | "USER_PRODUCT";
+  userProductId?: string; familyName?: string; correlation?: string; model: "LEGACY" | "USER_PRODUCT";
   stockWritable: boolean; priceWritable: boolean; updatedAt?: string;
 };
 export type VariantLink = { externalVariantId: string; variantId: string };
@@ -22,7 +22,7 @@ export type ChannelListing = MarketplaceScope & {
   externalListingId?: string; externalProductId?: string; externalCategoryId: string; externalUrl?: string; externalSku?: string;
   status: string; syncStatus: SyncStatus; externalPrice?: number; externalQuantity?: number;
   lastSyncedPrice?: number; lastSyncedQuantity?: number; lastSyncAt?: string; lastError?: string;
-  variantLinks: VariantLink[]; snapshot?: ExternalListing; draft?: PublishDraft; productName?: string;
+  variantLinks: VariantLink[]; lastSyncedVariants?: {id:string;quantity:number}[]; snapshot?: ExternalListing; draft?: PublishDraft; productName?: string;
 };
 export type PublishDraft = {
   categoryId: string; title: string; description: string; condition: "new" | "used" | "not_specified";
@@ -54,6 +54,7 @@ export type MarketplaceJob = MarketplaceScope & {
   leaseToken?: string; createdAt?: string;
 };
 export class MarketplaceError extends Error {
+  issues?:string[];
   constructor(public readonly code: string, public readonly retryable=false, public readonly retryAfterMs=0) { super(code); }
 }
 export const safeMarketplaceError=(error:unknown):string=>error instanceof MarketplaceError?error.code:

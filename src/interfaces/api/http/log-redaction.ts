@@ -4,7 +4,7 @@
  * (`media_token`, `avatar_token`, `stream_token`). O resto da URL fica (rota, chave, `exp`) —
  * suficiente para operar sem expor um token reutilizável.
  */
-const SENSITIVE_QUERY_PARAMS = /([?&](?:sig|media_token|avatar_token|stream_token)=)[^&#]*/gi;
+const SENSITIVE_QUERY_PARAMS = /([?&](?:sig|media_token|avatar_token|stream_token|code|state|access_token|refresh_token)=)[^&#]*/gi;
 
 export function redactSensitiveQuery(url: string | undefined): string | undefined {
   return url?.replace(SENSITIVE_QUERY_PARAMS, "$1[REDACTED]");

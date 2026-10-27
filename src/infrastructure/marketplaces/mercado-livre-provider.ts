@@ -1,5 +1,6 @@
 import type { CategoryRequirements, ListingWrite, MarketplaceProvider, MarketplaceTokens } from "../../application/ports/marketplace-provider.port.js";
 import { MarketplaceError, type ExternalAttribute, type ExternalListing, type PublishDraft } from "../../domain/marketplaces/marketplace.model.js";
+import { setTimeout as sleep } from "node:timers/promises";
 
 export type MercadoLivreConfig = { clientId:string; clientSecret:string; redirectUri:string };
 type Json = Record<string,any>;
@@ -19,6 +20,7 @@ const image=(value:unknown):string|undefined=>{
 /** All network calls are confined to the official API origin. Provider errors never include response bodies. */
 export class MercadoLivreProvider implements MarketplaceProvider {
  readonly id="MERCADO_LIVRE" as const;
+ private nextCallAt=0;
  constructor(private readonly config:MercadoLivreConfig,private readonly fetcher:typeof fetch=fetch){}
  authorizationUrl(state:string,challenge:string):string{
   const url=new URL("https://auth.mercadolivre.com.br/authorization");
@@ -27,6 +29,8 @@ export class MercadoLivreProvider implements MarketplaceProvider {
  private async request(path:string,token?:string,method="GET",body?:unknown,headers:Record<string,string>={}):Promise<{data:Json;headers:Headers}>{
   if(!path.startsWith("/")||path.startsWith("//")||path.includes("\\")||path.includes("#"))throw new MarketplaceError("INVALID_EXTERNAL_RESOURCE");
   let response:Response;
+  const start=Math.max(Date.now(),this.nextCallAt);this.nextCallAt=start+500;
+  if(start>Date.now())await sleep(start-Date.now());
   try{response=await this.fetcher("https://api.mercadolibre.com"+path,{method,redirect:"error",signal:AbortSignal.timeout(20000),
    headers:{...(token?{Authorization:"Bearer "+token}:{}),...(body?{"Content-Type":"application/json"}:{}),...headers},
    ...(body?{body:body instanceof URLSearchParams?body.toString():JSON.stringify(body)}:{})});
@@ -37,7 +41,16 @@ export class MercadoLivreProvider implements MarketplaceProvider {
    if(response.status===404)throw new MarketplaceError("ML_LISTING_NOT_FOUND");
    if(response.status===409)throw new MarketplaceError("ML_EXTERNAL_CONFLICT");
    if(response.status>=500)throw new MarketplaceError("ML_UNAVAILABLE",true);
-   throw new MarketplaceError("ML_REQUEST_REJECTED_"+response.status);
+   const error=new MarketplaceError("ML_REQUEST_REJECTED_"+response.status);
+   if(response.status===400)try{
+    const body=await response.json() as Json;
+    error.issues=(Array.isArray(body.cause)?body.cause:[]).slice(0,20).map((cause:Json)=>{
+     const code=typeof cause.code==="string"&&/^[a-zA-Z0-9_.:-]{1,160}$/.test(cause.code)?cause.code:"validation";
+     const fields=String(cause.message??"").match(/\b[A-Z][A-Z0-9_]{2,60}\b/g)??[];
+     return "Regra Mercado Livre: "+code+(fields.length?" · Campos: "+[...new Set(fields)].slice(0,15).join(", "):"");
+    });
+   }catch{}
+   throw error;
   }
   if(response.status===204)return {data:{},headers:response.headers};
   try{return {data:await response.json() as Json,headers:response.headers};}catch{throw new MarketplaceError("ML_INVALID_RESPONSE",true);}
@@ -68,15 +81,19 @@ export class MercadoLivreProvider implements MarketplaceProvider {
   if(!standard?.length)throw new MarketplaceError("ML_STANDARD_PRICE_UNAVAILABLE");
   if(new Set(standard.map(p=>cents(p.amount))).size!==1)throw new MarketplaceError("ML_PRICE_CONTEXT_AMBIGUOUS");
   const priceCents=cents(standard[0].amount);
+  let description:string|undefined;
+  try{const result=await this.request("/items/"+identifier(id)+"/description",token);description=String(result.data.plain_text??"").slice(0,50000);}
+  catch(error){if(!(error instanceof MarketplaceError&&error.code==="ML_LISTING_NOT_FOUND"))throw error;}
   const dataAttrs=Array.isArray(data.attributes)?data.attributes:[];
   const tags:Array<string>=data.tags??[];
   const normalized:ExternalListing={
-   id:String(data.id),sellerId:String(data.seller_id),title:String(data.title??data.family_name??""),
-   sku:attribute(dataAttrs,"SELLER_SKU")??data.seller_custom_field??undefined,ean:attribute(dataAttrs,"GTIN"),
+   id:String(data.id),sellerId:String(data.seller_id),title:String(data.title??data.family_name??""),description,
+   sku:attribute(dataAttrs,"SELLER_SKU")??(String(data.seller_custom_field??"").startsWith("vorix:")?undefined:data.seller_custom_field??undefined),ean:attribute(dataAttrs,"GTIN"),
    categoryId:String(data.category_id),priceCents,quantity:Number(data.available_quantity??0),
    status:String(data.status),url:image(data.permalink),currency:String(standard[0].currency_id??data.currency_id??"BRL"),
    pictures:(data.pictures??[]).map((p:Json)=>image(p.secure_url??p.url)).filter(Boolean),
    attributes:attrs(dataAttrs),userProductId:data.user_product_id??undefined,familyName:data.family_name??undefined,
+   correlation:typeof data.seller_custom_field==="string"&&data.seller_custom_field.startsWith("vorix:")?data.seller_custom_field:undefined,
    model:tags.includes("user_product_listing")||data.family_name?"USER_PRODUCT":"LEGACY",
    stockWritable:data.shipping?.logistic_type!=="fulfillment"&&!data.inventory_id&&!tags.includes("multi_warehouse"),
    priceWritable:!tags.includes("dynamic_standard_price")&&!(prices.data.prices??[]).some((p:Json)=>p.type==="promotion"),
@@ -90,9 +107,10 @@ export class MercadoLivreProvider implements MarketplaceProvider {
  async category(token:string,id:string):Promise<CategoryRequirements>{
   const category=await this.request("/categories/"+identifier(id,/^MLB\d+$/),token);
   const attributes=await this.request("/categories/"+identifier(id)+"/attributes",token);
+  const terms=await this.request("/categories/"+identifier(id)+"/sale_terms",token);
+  const definition=(a:Json)=>({id:String(a.id),name:String(a.name),required:!!a.tags?.required,variation:!!a.tags?.allow_variations,values:a.values?.map((v:Json)=>({id:String(v.id),name:String(v.name)}))});
   return {id,name:String(category.data.name),leaf:!(category.data.children_categories??[]).length,allowed:category.data.settings?.listing_allowed!==false,
-   attributes:(attributes.data as unknown as Json[]).map(a=>({id:String(a.id),name:String(a.name),required:!!(a.tags?.required||a.tags?.conditional_required),
-    variation:!!a.tags?.allow_variations,values:a.values?.map((v:Json)=>({id:String(v.id),name:String(v.name)}))}))};
+   attributes:(attributes.data as unknown as Json[]).map(definition),saleTerms:(terms.data as unknown as Json[]).map(definition)};
  }
  private payload(input:ListingWrite):Json{
   if(input.userProducts&&input.variants?.length)throw new MarketplaceError("ML_UP_REQUIRES_ONE_LISTING_PER_VARIANT");
@@ -119,13 +137,15 @@ export class MercadoLivreProvider implements MarketplaceProvider {
     !(attribute.variation&&input.variants?.every(v=>v.attributes.some(a=>a.id===attribute.id&&(a.value_id||a.value_name)))))
     errors.push("Falta atributo: "+attribute.name+" ("+attribute.id+").");
   }
+  const terms=Array.isArray(input.draft.settings.sale_terms)?input.draft.settings.sale_terms as ExternalAttribute[]:[];
+  for(const term of category.saleTerms?.filter(a=>a.required)??[])if(!terms.some(a=>a.id===term.id&&(a.value_id||a.value_name)))errors.push("Falta condição de venda: "+term.name+".");
   if(!input.draft.pictures.length)errors.push("Falta imagem.");
   if(!input.draft.title.trim())errors.push("Falta título/nome da família.");
   if(input.priceCents<=0||!Number.isSafeInteger(input.priceCents))errors.push("Preço deve ser positivo.");
   if(input.quantity<0||!Number.isSafeInteger(input.quantity))errors.push("Quantidade inválida.");
   if(errors.length)return errors;
   try{await this.request("/items/validate",token,"POST",this.payload(input));}catch(error){
-   if(error instanceof MarketplaceError&&error.code==="ML_REQUEST_REJECTED_400")return ["Mercado Livre rejeitou a configuração. Confira atributos, imagens, condição, tipo de anúncio e configurações da categoria."];
+   if(error instanceof MarketplaceError&&error.code==="ML_REQUEST_REJECTED_400")return error.issues?.length?error.issues:["Mercado Livre rejeitou a configuração. Confira atributos, imagens, condição, tipo de anúncio e configurações da categoria."];
    throw error;
   }return [];
  }
@@ -142,8 +162,16 @@ export class MercadoLivreProvider implements MarketplaceProvider {
   if(input.title)body[userProducts?"family_name":"title"]=input.title;
   if(input.attributes)body.attributes=input.attributes;
   if(input.pictures)body.pictures=input.pictures.map(source=>({source}));
+  if(input.settings?.sale_terms)body.sale_terms=input.settings.sale_terms;
+  if(input.settings?.shipping)body.shipping=input.settings.shipping;
   if(Object.keys(body).length)await this.request("/items/"+identifier(id),token,"PUT",body);
-  if(input.description!==undefined)await this.request("/items/"+identifier(id)+"/description",token,"PUT",{plain_text:input.description});
+  if(input.description!==undefined){
+   const path="/items/"+identifier(id)+"/description";let exists=false,current:string|undefined;
+   try{const result=await this.request(path,token);exists=true;current=String(result.data.plain_text??"");}
+   catch(error){if(!(error instanceof MarketplaceError&&error.code==="ML_LISTING_NOT_FOUND"))throw error;}
+   if(current!==input.description&&(exists||input.description.trim()))
+    await this.request(path+(exists?"?api_version=2":""),token,exists?"PUT":"POST",{plain_text:input.description});
+  }
  }
  async setStatus(token:string,id:string,status:"paused"|"active"|"closed"){await this.request("/items/"+identifier(id),token,"PUT",{status});}
  async syncPrice(token:string,id:string,priceCents:number){await this.request("/items/"+identifier(id),token,"PUT",{price:priceCents/100});}

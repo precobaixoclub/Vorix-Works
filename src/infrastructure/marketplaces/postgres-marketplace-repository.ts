@@ -17,7 +17,7 @@ function listing(r:Row):ChannelListing{return {id:r.id,tenantId:r.tenant_id,work
  externalListingId:r.external_listing_id??undefined,externalProductId:r.external_product_id??undefined,externalCategoryId:r.external_category_id,externalUrl:r.external_url??undefined,
  externalSku:r.external_sku??undefined,status:r.status,syncStatus:r.sync_status,externalPrice:num(r.external_price),externalQuantity:num(r.external_quantity),
  lastSyncedPrice:num(r.last_synced_price),lastSyncedQuantity:num(r.last_synced_quantity),lastSyncAt:iso(r.last_sync_at),lastError:r.last_error??undefined,
- variantLinks:r.variant_links??[],snapshot:r.snapshot??undefined,draft:r.draft??undefined,productName:r.product_name};}
+ variantLinks:r.variant_links??[],lastSyncedVariants:r.last_synced_variants??[],snapshot:r.snapshot??undefined,draft:r.draft??undefined,productName:r.product_name};}
 function job(r:Row):MarketplaceJob{return {id:r.id,tenantId:r.tenant_id,workspaceId:r.workspace_id,connectionId:r.connection_id,kind:r.kind,status:r.status,payload:r.payload,
  progress:r.progress,total:r.total,attempts:r.attempts,lastError:r.last_error??undefined,leaseToken:r.lease_token??undefined,createdAt:iso(r.created_at)};}
 /** Adapt existing repositories to one transaction; nested inventory transactions become savepoints. */
@@ -47,7 +47,9 @@ export class PostgresMarketplaceRepository implements MarketplaceRepositoryPort 
   await this.pool.query(`insert into marketplace_connections(id,tenant_id,workspace_id,provider,external_account_id,external_account_name,application_id,site_id,user_products,status,credentials_ref,safety_stock,token_expires_at,connected_at)
    values($1,$2,$3,'MERCADO_LIVRE',$4,$5,$6,$7,$8,$9,$10,$11,$12,now())
    on conflict(id) do update set external_account_name=excluded.external_account_name,user_products=excluded.user_products,status=excluded.status,
-   token_expires_at=excluded.token_expires_at,safety_stock=excluded.safety_stock,refresh_owner=null,refresh_lease_until=null,last_error=null,updated_at=now()
+   refresh_owner=case when excluded.token_expires_at is distinct from marketplace_connections.token_expires_at then null else marketplace_connections.refresh_owner end,
+   refresh_lease_until=case when excluded.token_expires_at is distinct from marketplace_connections.token_expires_at then null else marketplace_connections.refresh_lease_until end,
+   token_expires_at=excluded.token_expires_at,safety_stock=excluded.safety_stock,last_error=null,updated_at=now()
    where marketplace_connections.tenant_id=excluded.tenant_id and marketplace_connections.workspace_id=excluded.workspace_id`,
    [c.id,c.tenantId,c.workspaceId,c.externalAccountId,c.externalAccountName,c.applicationId,c.siteId,c.userProducts,c.status,c.credentialsRef,c.safetyStock,c.tokenExpiresAt??null]);
  }
@@ -82,6 +84,7 @@ export class PostgresMarketplaceRepository implements MarketplaceRepositoryPort 
    last_sync_at=excluded.last_sync_at,last_error=excluded.last_error,updated_at=now()
    where channel_listings.tenant_id=excluded.tenant_id and channel_listings.workspace_id=excluded.workspace_id and channel_listings.connection_id=excluded.connection_id`,
    [l.id,l.tenantId,l.workspaceId,l.connectionId,l.productId,l.variantId??null,l.externalListingId??null,l.externalProductId??null,l.externalCategoryId,l.externalUrl??null,l.externalSku??null,l.status,l.syncStatus,l.externalPrice??null,l.externalQuantity??null,l.lastSyncedPrice??null,l.lastSyncedQuantity??null,JSON.stringify(l.snapshot??null),JSON.stringify(l.draft??null),JSON.stringify(l.variantLinks),l.lastSyncAt??null,l.lastError??null]);
+  await this.pool.query("update channel_listings set last_synced_variants=$4::jsonb where tenant_id=$1 and workspace_id=$2 and id=$3",[...scopeArgs(l),l.id,JSON.stringify(l.lastSyncedVariants??[])]);
  }
  async enqueue(a:MarketplaceActor,connectionId:string,kind:MarketplaceJob["kind"],payload:Record<string,unknown>,operationKey:string){
   if(!await this.connection(a,connectionId))throw new MarketplaceError("MARKETPLACE_CONNECTION_NOT_FOUND");
@@ -96,17 +99,32 @@ export class PostgresMarketplaceRepository implements MarketplaceRepositoryPort 
  async claimJob(){
   // Never resend a publication whose worker disappeared after a POST may have reached ML.
   await this.pool.query("update marketplace_jobs set status='UNKNOWN_RESULT',last_error='ML_PUBLICATION_OUTCOME_UNCERTAIN',lease_token=null where status='RUNNING' and kind='PUBLISH' and lease_until<now()");
-  const r=await this.pool.query(`update marketplace_jobs set status='RUNNING',attempts=attempts+1,lease_token=$1,lease_until=now()+interval '5 minutes',updated_at=now()
-   where id=(select id from marketplace_jobs where ((status='PENDING' and run_after<=now()) or (status='RUNNING' and lease_until<now() and kind<>'PUBLISH')) order by run_after for update skip locked limit 1) returning *`,[randomUUID()]);
-  return r.rows[0]?job(r.rows[0]):undefined;
+  const client=await this.pool.connect();
+  try{
+   await client.query("begin");
+   const account=await client.query(`select c.id from marketplace_connections c where
+    exists(select 1 from marketplace_jobs j where j.connection_id=c.id and ((j.status='PENDING' and j.run_after<=now()) or (j.status='RUNNING' and j.lease_until<now() and j.kind<>'PUBLISH')))
+    and not exists(select 1 from marketplace_jobs j where j.connection_id=c.id and j.status='RUNNING' and j.lease_until>now())
+    order by c.id for update skip locked limit 1`);
+   if(!account.rows[0]){await client.query("commit");return;}
+   const r=await client.query(`update marketplace_jobs set status='RUNNING',attempts=attempts+1,lease_token=$1,lease_until=now()+interval '5 minutes',updated_at=now()
+    where id=(select id from marketplace_jobs where connection_id=$2 and ((status='PENDING' and run_after<=now()) or (status='RUNNING' and lease_until<now() and kind<>'PUBLISH')) order by run_after for update skip locked limit 1) returning *`,[randomUUID(),account.rows[0].id]);
+   await client.query("commit");return r.rows[0]?job(r.rows[0]):undefined;
+  }catch(error){await client.query("rollback");throw error;}finally{client.release();}
  }
  async checkpoint(j:MarketplaceJob,progress:number,total:number,payload?:Record<string,unknown>){
   const r=await this.pool.query("update marketplace_jobs set progress=$5,total=$6,payload=coalesce($7::jsonb,payload),lease_until=now()+interval '5 minutes',updated_at=now() where tenant_id=$1 and workspace_id=$2 and id=$3 and lease_token=$4 and status='RUNNING' returning id",[...scopeArgs(j),j.id,j.leaseToken,progress,total,payload?JSON.stringify(payload):null]);if(!r.rowCount)throw new MarketplaceError("MARKETPLACE_JOB_LEASE_LOST");
  }
  async finishJob(j:MarketplaceJob,status:MarketplaceJob["status"],code?:string,delayMs=0){
   await this.pool.query("update marketplace_jobs set status=$5,last_error=$6,run_after=now()+($7::bigint*interval '1 millisecond'),lease_token=null,lease_until=null,updated_at=now() where tenant_id=$1 and workspace_id=$2 and id=$3 and lease_token=$4",[...scopeArgs(j),j.id,j.leaseToken,status,code??null,delayMs]);
+  if(j.kind==="RECONCILE"&&status==="COMPLETED")await this.pool.query("update marketplace_connections set last_sync_at=now() where tenant_id=$1 and workspace_id=$2 and id=$3",[...scopeArgs(j),j.connectionId]);
  }
  async jobItems(s:MarketplaceScope,jobId:string){return (await this.pool.query("select i.* from marketplace_job_items i join marketplace_jobs j on j.id=i.job_id where j.tenant_id=$1 and j.workspace_id=$2 and j.id=$3 order by i.external_id",[...scopeArgs(s),jobId])).rows.map(r=>({externalId:r.external_id,status:r.status,result:r.result}));}
+ async completeRecoveredPublication(s:MarketplaceScope,id:string,externalId:string){
+  const r=await this.pool.query("update marketplace_jobs set status='COMPLETED',last_error=null,progress=1,total=1,updated_at=now() where tenant_id=$1 and workspace_id=$2 and id=$3 and kind='PUBLISH' and status='UNKNOWN_RESULT' returning id",[...scopeArgs(s),id]);
+  if(!r.rowCount)throw new MarketplaceError("ML_PUBLICATION_RECOVERY_CONFLICT");
+  await this.pool.query("insert into marketplace_job_items(job_id,external_id,status,result) values($1,'publication','PUBLISHED',$2::jsonb) on conflict(job_id,external_id) do update set status=excluded.status,result=excluded.result",[id,JSON.stringify({externalListingId:externalId,recovered:true})]);
+ }
  async item(j:MarketplaceJob,id:string){return (await this.jobItems(j,j.id)).find(v=>v.externalId===id);}
  async saveItem(j:MarketplaceJob,id:string,status:string,result:Record<string,unknown>){
   const lease=await this.pool.query("select id from marketplace_jobs where tenant_id=$1 and workspace_id=$2 and id=$3 and lease_token=$4 and status='RUNNING' and lease_until>now() for update",[...scopeArgs(j),j.id,j.leaseToken]);if(!lease.rowCount)throw new MarketplaceError("MARKETPLACE_JOB_LEASE_LOST");

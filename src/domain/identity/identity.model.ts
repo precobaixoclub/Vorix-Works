@@ -191,6 +191,8 @@ export const PERMISSIONS = [
   "task:manage",
   "product:read",
   "product:manage",
+  "marketplace:read",
+  "marketplace:manage",
   "inventory:read",
   "inventory:manage",
   "site:read",
@@ -302,11 +304,11 @@ const GLOBAL_SCOPE_PERMISSIONS: readonly Permission[] = ["inbox:view_all", "deal
 const TEAM_MANAGER_PERMISSIONS: readonly Permission[] = ["inbox:configure_kanban", "pipeline:configure", "inbox:waive_csat"];
 /** Só o Administrador: estrutura de acesso e configurações críticas da empresa. */
 const ACCESS_ADMIN_PERMISSIONS: readonly Permission[] = ["tenant_member:manage", "tenant_member:manage_permissions", "team:manage"];
-const CRM_READ_PERMISSIONS: readonly Permission[] = ["inventory:read", "site:read", "commerce:read", "order:read", "contact:read", "deal:read", "task:read", "product:read", "proposal:read"];
+const CRM_READ_PERMISSIONS: readonly Permission[] = ["marketplace:read", "inventory:read", "site:read", "commerce:read", "order:read", "contact:read", "deal:read", "task:read", "product:read", "proposal:read"];
 // Vorix Commerce, Fase 1: editar o Site é configuração estrutural — sai do Atendente por padrão
 // (continua concedível individualmente). Produto e estoque seguem operação do dia a dia.
 const CRM_OPERATOR_PERMISSIONS: readonly Permission[] = ["inventory:manage", "order:manage", "contact:manage", "deal:manage", "task:manage", "product:manage", "proposal:manage", "proposal:send"];
-const CRM_ADMIN_PERMISSIONS: readonly Permission[] = ["site:manage", "site:publish", "commerce:manage", "automation:manage", "product:view_cost", "deal:view_margin", "deal:approve_discount", "deal:edit_closed", "deal:change_final_value", "deal:change_loss_reason", "goal:manage"];
+const CRM_ADMIN_PERMISSIONS: readonly Permission[] = ["marketplace:manage", "site:manage", "site:publish", "commerce:manage", "automation:manage", "product:view_cost", "deal:view_margin", "deal:approve_discount", "deal:edit_closed", "deal:change_final_value", "deal:change_loss_reason", "goal:manage"];
 /** Configurações administrativas que o Gerente NÃO recebe por padrão (canais, finalização,
  * automações, metas) — continuam concedíveis individualmente pelo Administrador. */
 const ADMIN_ONLY_SETTINGS_PERMISSIONS: readonly Permission[] = ["inbox:manage_connections", "inbox:delete_connections", "inbox:manage_service", "automation:manage", "goal:manage"];

@@ -1,6 +1,7 @@
 import type { ExternalListing, ExternalAttribute, MarketplaceConnection, PublishDraft } from "../../domain/marketplaces/marketplace.model.js";
 export type MarketplaceTokens = { accessToken: string; refreshToken: string; expiresAt: string; userId: string };
-export type CategoryRequirements = { id: string; name: string; leaf: boolean; allowed: boolean; attributes: {id:string;name:string;required:boolean;variation:boolean;values?:{id:string;name:string}[]}[] };
+export type CategoryAttribute={id:string;name:string;required:boolean;variation:boolean;values?:{id:string;name:string}[]};
+export type CategoryRequirements = { id: string; name: string; leaf: boolean; allowed: boolean; attributes: CategoryAttribute[]; saleTerms?:CategoryAttribute[] };
 export type ListingWrite = { draft: PublishDraft; priceCents: number; quantity: number; currency: string; sku?: string; userProducts: boolean; correlation: string; variants?: {id?:string;sku?:string;priceCents:number;quantity:number;attributes:ExternalAttribute[]}[] };
 export interface MarketplaceProvider {
   readonly id: "MERCADO_LIVRE";

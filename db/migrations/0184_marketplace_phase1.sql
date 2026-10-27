@@ -6,12 +6,11 @@ create table marketplace_connections (
  user_products boolean not null default false, status text not null default 'CONNECTED'
  check(status in('CONNECTED','DISCONNECTED','REAUTH_REQUIRED','ERROR')),
  credentials_ref text not null, safety_stock integer not null default 0 check(safety_stock between 0 and 1000000000),
- token_expires_at timestamptz, refresh_lease_until timestamptz, refresh_token text,
+ token_expires_at timestamptz, refresh_lease_until timestamptz, refresh_owner text,
  connected_at timestamptz, last_sync_at timestamptz, last_error text, updated_at timestamptz not null default now(),
- unique(tenant_id,workspace_id,id), unique(application_id,external_account_id)
+ unique(tenant_id,workspace_id,id), unique(application_id,external_account_id),
+ foreign key(tenant_id,workspace_id) references workspaces(tenant_id,id) on delete cascade
 );
--- refresh_token above is a lease OWNER token, never an OAuth credential; rename for clarity.
-alter table marketplace_connections rename column refresh_token to refresh_owner;
 create table marketplace_oauth_states (
  state_hash text primary key, tenant_id text not null, workspace_id text not null references workspaces(id) on delete cascade,
  user_id text not null, verifier_ref text not null, expires_at timestamptz not null
@@ -24,9 +23,11 @@ create table channel_listings (
  external_url text, external_sku text, status text not null default 'DRAFT',
  sync_status text not null default 'PENDING' check(sync_status in('SYNCED','PENDING','ERROR','DIVERGED','REAUTH_REQUIRED')),
  external_price bigint, external_quantity numeric, last_synced_price bigint, last_synced_quantity numeric,
- snapshot jsonb, draft jsonb, variant_links jsonb not null default '[]'::jsonb,
+ snapshot jsonb, draft jsonb, variant_links jsonb not null default '[]'::jsonb, last_synced_variants jsonb not null default '[]'::jsonb,
  last_sync_at timestamptz, last_error text, updated_at timestamptz not null default now(),
  foreign key(tenant_id,workspace_id,connection_id) references marketplace_connections(tenant_id,workspace_id,id) on delete cascade,
+ foreign key(tenant_id,workspace_id,product_id) references products(tenant_id,workspace_id,id),
+ foreign key(tenant_id,workspace_id,product_id,variant_id) references product_variants(tenant_id,workspace_id,product_id,id),
  unique(connection_id,external_listing_id)
 );
 create index channel_listings_product_scope on channel_listings(tenant_id,workspace_id,product_id);
@@ -35,6 +36,7 @@ create table marketplace_category_mappings (
  category_id text not null references product_categories(id) on delete cascade, external_category_id text not null,
  attributes jsonb not null default '[]'::jsonb,
  primary key(tenant_id,workspace_id,connection_id,category_id),
+ foreign key(tenant_id,workspace_id,category_id) references product_categories(tenant_id,workspace_id,id) on delete cascade,
  foreign key(tenant_id,workspace_id,connection_id) references marketplace_connections(tenant_id,workspace_id,id) on delete cascade
 );
 create table marketplace_jobs (
@@ -53,9 +55,10 @@ create table marketplace_job_items (
  job_id text not null references marketplace_jobs(id) on delete cascade, external_id text not null,
  status text not null, result jsonb not null default '{}'::jsonb, primary key(job_id,external_id)
 );
+create sequence marketplace_outbox_revision;
 create table marketplace_outbox (
  tenant_id text not null, workspace_id text not null, product_id text not null references products(id) on delete cascade,
- revision bigint not null default 1, updated_at timestamptz not null default now(),
+ revision bigint not null default nextval('marketplace_outbox_revision'), updated_at timestamptz not null default now(),
  primary key(tenant_id,workspace_id,product_id)
 );
 create table marketplace_notifications (
@@ -75,7 +78,7 @@ begin
  if tg_table_name='products' then pid:=new.id; else pid:=new.product_id; end if;
  if exists(select 1 from channel_listings where tenant_id=new.tenant_id and workspace_id=new.workspace_id and product_id=pid) then
   insert into marketplace_outbox(tenant_id,workspace_id,product_id) values(new.tenant_id,new.workspace_id,pid)
-  on conflict(tenant_id,workspace_id,product_id) do update set revision=marketplace_outbox.revision+1,updated_at=now();
+  on conflict(tenant_id,workspace_id,product_id) do update set revision=nextval('marketplace_outbox_revision'),updated_at=now();
  end if;
  return new;
 end $$;

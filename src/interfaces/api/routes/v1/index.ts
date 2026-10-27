@@ -62,6 +62,8 @@ import { registerDealsRoutes } from "./deals.route.js";
 import { registerTasksRoutes } from "./tasks.route.js";
 import { registerProductsRoutes } from "./products.route.js";
 import { registerProductEngineRoutes } from "./product-engine.route.js";
+import {registerSiteAnalyticsRoutes} from "./site-analytics.route.js";
+import {PostgresSiteAnalyticsRepository} from "../../../../infrastructure/storage/postgres/postgres-site-analytics-repository.js";
 import { registerSiteRoutes } from "./sites.route.js";
 import { registerCommercialSuggestionsRoutes } from "./commercial-suggestions.route.js";
 import { registerAutomationRulesRoutes } from "./automation-rules.route.js";
@@ -472,6 +474,7 @@ export async function registerV1Routes(app: FastifyInstance): Promise<void> {
     // carrinho para WhatsApp. A conversão da mensagem com referência roda no worker.
     if (app.zunoContainer.siteEngine) {
       const commerceRepository = new PostgresSiteCommerceRepository(identity.pool);
+      await registerSiteAnalyticsRoutes(app,{repository:new PostgresSiteAnalyticsRepository(identity.pool),workspaceRepository:app.zunoContainer.workspaceRepository,siteRepository:app.zunoContainer.siteEngine.repository,productRepository:identity.productRepository,teamRepository:identity.teamRepository,teamMembershipRepository:identity.teamMembershipRepository,hasAccess:app.zunoContainer.siteEngine.hasAccess});
       const siteLead: SiteLeadDeps = {
         commerceRepository,
         siteRepository: app.zunoContainer.siteEngine.repository,

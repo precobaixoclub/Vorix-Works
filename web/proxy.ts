@@ -48,6 +48,8 @@ export function proxy(request: NextRequest) {
   if (
     pathname.startsWith("/p/") ||
     pathname.startsWith("/s/") ||
+    // Vorix Commerce: redirecionamento da intenção de venda para o WhatsApp (a referência é o acesso).
+    pathname.startsWith("/i/") ||
     pathname.startsWith("/modelos/") ||
     pathname.startsWith("/site-domain/") ||
     pathname.startsWith("/api/tenant-site/") ||

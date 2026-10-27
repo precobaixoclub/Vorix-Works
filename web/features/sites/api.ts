@@ -1,5 +1,5 @@
 import {apiClient} from "@/lib/api-client";
-import type {TenantSite,SiteDomain,SiteSnapshot,PublicTenantSite} from "./types";
+import type {TenantSite,SiteDomain,SiteSnapshot,PublicTenantSite,SiteCommerceSettings,SalesIntentSummary} from "./types";
 const q=encodeURIComponent;
 export const listSites=(workspaceId:string)=>apiClient.get<{sites:TenantSite[];publicBaseDomain?:string}>(`/v1/sites?workspaceId=${q(workspaceId)}`);
 export const createSite=(workspaceId:string,slug:string,draft:SiteSnapshot)=>apiClient.post<TenantSite>(`/v1/sites?workspaceId=${q(workspaceId)}`,{slug,draft});
@@ -11,3 +11,7 @@ export const listDomains=(site:TenantSite)=>apiClient.get<SiteDomain[]>(`/v1/sit
 export const claimDomain=(site:TenantSite,hostname:string)=>apiClient.post<SiteDomain>(`/v1/sites/${q(site.id)}/domains?workspaceId=${q(site.workspaceId)}`,{hostname});
 export const verifyDomain=(site:TenantSite,domain:SiteDomain)=>apiClient.post<SiteDomain>(`/v1/sites/${q(site.id)}/domains/${q(domain.id)}/verify?workspaceId=${q(site.workspaceId)}`,{});
 export const removeDomain=(site:TenantSite,domain:SiteDomain)=>apiClient.delete<null>(`/v1/sites/${q(site.id)}/domains/${q(domain.id)}?workspaceId=${q(site.workspaceId)}`);
+export type SiteCommerceSettingsView={settings:SiteCommerceSettings;configured:boolean;hasWhatsapp:boolean};
+export const getSiteCommerce=(site:TenantSite)=>apiClient.get<SiteCommerceSettingsView>(`/v1/sites/${q(site.id)}/commerce?workspaceId=${q(site.workspaceId)}`);
+export const saveSiteCommerce=(site:TenantSite,settings:SiteCommerceSettings)=>apiClient.put<SiteCommerceSettingsView>(`/v1/sites/${q(site.id)}/commerce?workspaceId=${q(site.workspaceId)}`,{settings});
+export const listSiteSalesIntents=(site:TenantSite)=>apiClient.get<SalesIntentSummary[]>(`/v1/sites/${q(site.id)}/sales-intents?workspaceId=${q(site.workspaceId)}&limit=50`);

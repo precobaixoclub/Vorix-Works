@@ -2,14 +2,18 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import type { OperationalRateLimiter } from "../../../application/operations/operational-services.js";
 import { AppError } from "../http/app-error.js";
 
+const PUBLIC_SITE_LIMIT = 1200;
 const SKIP_PATHS = new Set(["/health", "/livez", "/readyz", "/v1/health"]);
 
 export function registerRateLimitMiddleware(app: FastifyInstance, rateLimiter: OperationalRateLimiter): void {
   app.addHook("preHandler", async (request: FastifyRequest, reply: FastifyReply) => {
     if (SKIP_PATHS.has(request.url.split("?")[0])) return;
     const principal = request.zunoContext.principal;
+    const group = routeGroup(request.method, request.url);
     const result = await rateLimiter.consume({
-      routeGroup: routeGroup(request.method, request.url),
+      routeGroup: group,
+      // Vitrine pública chega pelo servidor do Next (mesmo IP para todos os visitantes): limite próprio, maior.
+      ...(group === "public_site" ? { limit: PUBLIC_SITE_LIMIT } : {}),
       tenantId: principal?.tenantId,
       principalId: principal?.userId,
       ip: request.ip,
@@ -27,6 +31,7 @@ export function registerRateLimitMiddleware(app: FastifyInstance, rateLimiter: O
 function routeGroup(method: string, url: string): string {
   const path = url.split("?")[0];
   if (path.startsWith("/v1/auth")) return "auth";
+  if (path.startsWith("/v1/public/sites") || path.startsWith("/v1/public/sales-intents")) return "public_site";
   if (path.startsWith("/webhooks") || path.startsWith("/v1/webhooks")) return "webhook";
   if (path.startsWith("/v1/analytics")) return method === "GET" ? "analytics_read" : "analytics_write";
   if (path.startsWith("/v1/publications") || path.startsWith("/v1/publication-providers")) return method === "GET" ? "publication_read" : "publication_operate";

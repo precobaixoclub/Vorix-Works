@@ -19,7 +19,7 @@ export type InboxAttendanceStatus = (typeof INBOX_ATTENDANCE_STATUSES)[number];
 
 /** Por que o atendimento abriu. `assignment` = um atendente atribuiu/assumiu uma conversa aberta
  * que ainda não tinha atendimento; `migration` = conversa já em atendimento quando a 0172 rodou. */
-export const INBOX_ATTENDANCE_OPEN_REASONS = ["inbound_message", "agent_started", "assignment", "migration"] as const;
+export const INBOX_ATTENDANCE_OPEN_REASONS = ["inbound_message", "agent_started", "assignment", "migration", "site_lead"] as const;
 export type InboxAttendanceOpenReason = (typeof INBOX_ATTENDANCE_OPEN_REASONS)[number];
 
 /** Regra que decidiu o responsável na abertura — auditoria/testes das regras de distribuição. */

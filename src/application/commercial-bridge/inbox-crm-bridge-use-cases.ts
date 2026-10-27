@@ -74,7 +74,7 @@ export type EnsureCrmContactResult = { contactId: string; created: boolean };
  */
 export async function ensureCrmContactForInboxContact(
   deps: InboxCrmBridgeDeps,
-  input: { tenantId: string; workspaceId: string; inboxContactId: string; contactName?: string; contactPhone?: string },
+  input: { tenantId: string; workspaceId: string; inboxContactId: string; contactName?: string; contactPhone?: string; origin?: string },
 ): Promise<EnsureCrmContactResult | undefined> {
   const inboxContact = await deps.inboxContactRepository.getById(input.inboxContactId);
   if (!inboxContact) return undefined;
@@ -97,7 +97,7 @@ export async function ensureCrmContactForInboxContact(
     tenantId: input.tenantId,
     workspaceId: input.workspaceId,
     name: displayName,
-    origin: AUTO_CONTACT_ORIGIN,
+    origin: input.origin ?? AUTO_CONTACT_ORIGIN,
   });
 
   const { identity, conflictsWithAnotherContact } = await linkContactIdentity(deps.contact, {

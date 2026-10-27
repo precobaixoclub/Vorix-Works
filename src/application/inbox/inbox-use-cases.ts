@@ -716,6 +716,26 @@ export async function setConversationTeam(deps: InboxUseCaseDeps, input: SetConv
   return deps.conversationRepository.setTeam(conversation.id, input.teamId);
 }
 
+/**
+ * Leva uma conversa SEM responsável para uma equipe e escolhe o próximo da distribuição da própria
+ * equipe (mesmo caminho da triagem). Usado pelos leads do Site; nunca tira uma conversa de quem já
+ * está atendendo. Devolve a conversa como ficou.
+ */
+export async function routeUnassignedConversationToTeam(deps: InboxUseCaseDeps, input: { tenantId: string; workspaceId: string; conversationId: string; teamId: string; replaceAutomaticAssignment?: boolean }): Promise<InboxConversation> {
+  const conversation = await mustConversationBelongToTenantAndWorkspace(deps, input.conversationId, input.tenantId, input.workspaceId);
+  if (!deps.teamRepository || !deps.teamMembershipRepository) return conversation;
+  // `replaceAutomaticAssignment`: conversa que acabou de nascer e só foi distribuída pela regra do canal.
+  if (conversation.assignedUserId && !input.replaceAutomaticAssignment) return conversation;
+  if (conversation.assignedUserId && conversation.currentTeamId === input.teamId) return conversation;
+  let routed = await setConversationTeam(deps, { tenantId: input.tenantId, workspaceId: input.workspaceId, conversationId: input.conversationId, teamId: input.teamId, performedBy: INBOX_SYSTEM_ACTOR });
+  const nextMember = await resolveNextTeamMember({ teamRepository: deps.teamRepository, teamMembershipRepository: deps.teamMembershipRepository }, { teamId: input.teamId }).catch(() => undefined);
+  if (!nextMember) return routed;
+  routed = await deps.conversationRepository.assign(conversation.id, nextMember.userId);
+  await trackResponsibleChange(deps, routed, { performedBy: INBOX_SYSTEM_ACTOR, source: "routing", endReason: "reassigned" });
+  await deps.conversationEventRepository.record({ tenantId: input.tenantId, workspaceId: input.workspaceId, conversationId: conversation.id, type: "assigned", performedBy: INBOX_SYSTEM_ACTOR, fromUserId: conversation.assignedUserId, toUserId: nextMember.userId });
+  return routed;
+}
+
 // ------------------------------------------------------------------------------------------
 // Bloco "etiquetas" (pedido explícito do usuário: "criar e configurar etiquetas dentro do
 // sistema e nas conversas ser possível adicionar mais do que uma"). Taxonomia por WORKSPACE

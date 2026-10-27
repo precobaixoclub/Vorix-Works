@@ -18,6 +18,7 @@ const realPg=process.env.VORIX_CAPACITY_FIXTURE_PG_URL;
 if(realPg&&!/^\/vorix_capacity_fixture/.test(new URL(realPg).pathname))throw Error("CAPACITY_FIXTURE_DATABASE_REQUIRED");
 if(process.argv.includes("--capacity")&&!realPg)throw Error("CAPACITY_BROWSER_REQUIRES_DISPOSABLE_POSTGRES");
 const fixturePool=realPg?new pg.Pool({connectionString:realPg}):undefined;
+let commerceFixture;
 const db=fixturePool?{pool:fixturePool,connectionString:realPg,stop:()=>fixturePool.end()}:await startTestPostgres({maxConnections:30});let app,closed=false;
 async function close(){if(closed)return;closed=true;await app?.close();await db.stop();}
 for(const signal of["SIGINT","SIGTERM"])process.on(signal,()=>void close().then(()=>process.exit(0)));
@@ -28,6 +29,18 @@ try{
  const info={fixtureOnly:true,database:realPg?"disposable-postgresql":"ephemeral-pglite",email,password,tenantId,workspaceId:"",slug:"product-site-fixture",productId:"",variantId:"",vehicleId:"",generalId:"",siteId:""};
  app.addHook("onError",async(request,_reply,error)=>{console.error("FIXTURE_API_ERROR",request.method,request.url.split("?")[0],error.message);});
  app.get("/fixture-only/scope",async()=>info);
+  app.post("/fixture-only/whatsapp-inbound",async request=>{
+   const fx=commerceFixture;if(!fx)throw Error("SITE_COMMERCE_FIXTURE_DISABLED");
+   const {body,phone="+5511987650000",externalMessageId=randomUUID()}=request.body;
+   const {registerInboundMessage}=await import("../../dist/application/inbox/inbox-use-cases.js");const {convertSalesIntentFromInbound,attachAttendanceToConvertedIntent}=await import("../../dist/application/commercial-bridge/site-lead-use-cases.js");
+   const event=await registerInboundMessage(fx.inbox,{tenantId,workspaceId:fx.workspaceId,connectionId:fx.connection.id,chatId:`${phone.slice(1)}@s.whatsapp.net`,chatPhoneE164:phone,isGroup:false,fromMe:false,senderId:phone,senderName:"Cliente de fixture",externalMessageId,type:"text",body,occurredAt:new Date().toISOString()});
+   const result=event.wasCreated?await convertSalesIntentFromInbound(fx.lead,{tenantId,workspaceId:fx.workspaceId,conversation:event.conversation,inboxContact:event.contact,messageBody:event.message.body}):{status:"duplicate"};
+   if(result.status==="converted")await attachAttendanceToConvertedIntent(fx.lead,{intentId:result.intentId,conversationId:event.conversation.id});
+   const items=result.dealId?(await fx.id.dealItemRepository.listByDeal(result.dealId)).map(item=>({productId:item.productId,variantId:item.variantId,quantity:Number(item.quantity),name:item.productNameSnapshot})):[];
+   const counts=(await fx.pool.query("select (select count(*) from deals where workspace_id=$1)::int deals,(select count(*) from contacts where workspace_id=$1)::int contacts,(select count(*) from inbox_attendances where workspace_id=$1)::int attendances",[fx.workspaceId])).rows[0];
+   return {result,items,counts,deal:result.dealId?await fx.id.dealRepository.getById(result.dealId):undefined};
+  });
+  app.get("/fixture-only/crm-counts",async()=>{const fx=commerceFixture;if(!fx)throw Error("SITE_COMMERCE_FIXTURE_DISABLED");return (await fx.pool.query("select (select count(*) from deals where workspace_id=$1)::int deals,(select count(*) from contacts where workspace_id=$1)::int contacts,(select count(*) from inbox_conversations where workspace_id=$1)::int conversations,(select count(*) from sales_intents where workspace_id=$1)::int intents",[fx.workspaceId])).rows[0];});
  await registerUser({...app.zunoContainer.identity,passwordHasher:app.zunoContainer.identity.passwordHasher},{tenantId,email,password,name:"Administrador de fixture",role:"owner"});
  await app.zunoContainer.identity.platformBillingRepository.ensureTenantBilling({tenantId,now:new Date().toISOString()});
  await db.pool.query("update users set is_platform_admin=true where email=$1",[email]);
@@ -79,6 +92,30 @@ try{
  const site=await api("POST","/v1/sites"+ws,{slug:info.slug,draft:{content:fixtureContent,theme:fixtureTheme}});info.siteId=site.id;
  if(info.siteBuilderFixture)info.initialSiteSnapshot=site.draft;
  await api("POST",`/v1/sites/${site.id}/publish${ws}`,{revision:site.revision});
+ if(process.argv.includes("--site-commerce")){
+  // Vorix Commerce, Fase 1: modo híbrido (vestuário/geral no carrinho, veículo em conversa) e um
+  // "WhatsApp simulado": o endpoint abaixo faz o papel do WuzAPI + worker, pelo MESMO código de conversão.
+  await api("PUT",`/v1/sites/${site.id}/commerce${ws}`,{settings:{mode:"HYBRID"}});
+  const {registerInboundMessage}=await import("../../dist/application/inbox/inbox-use-cases.js");
+  const {convertSalesIntentFromInbound,attachAttendanceToConvertedIntent}=await import("../../dist/application/commercial-bridge/site-lead-use-cases.js");
+  const {PostgresSiteCommerceRepository}=await import("../../dist/infrastructure/storage/postgres/postgres-site-commerce-repository.js");
+  const {PostgresMessagingConnectionRepository}=await import("../../dist/infrastructure/storage/postgres/postgres-messaging-connection-repository.js");
+  const {PostgresInboxContactRepository}=await import("../../dist/infrastructure/storage/postgres/postgres-inbox-contact-repository.js");
+  const {PostgresInboxConversationRepository}=await import("../../dist/infrastructure/storage/postgres/postgres-inbox-conversation-repository.js");
+  const {PostgresInboxConversationEventRepository}=await import("../../dist/infrastructure/storage/postgres/postgres-inbox-conversation-event-repository.js");
+  const {PostgresInboxMessageRepository}=await import("../../dist/infrastructure/storage/postgres/postgres-inbox-message-repository.js");
+  const {PostgresInboxAttendanceRepository}=await import("../../dist/infrastructure/storage/postgres/postgres-inbox-attendance-repository.js");
+  const {PostgresContactIdentityRepository}=await import("../../dist/infrastructure/storage/postgres/postgres-contact-identity-repository.js");
+  const {PostgresPipelineRepository,PostgresPipelineStageRepository}=await import("../../dist/infrastructure/storage/postgres/postgres-pipeline-repository.js");
+  const id=app.zunoContainer.identity,pool=db.pool;
+  const inbox={workspaceRepository:app.zunoContainer.workspaceRepository,connectionRepository:new PostgresMessagingConnectionRepository(pool),contactRepository:new PostgresInboxContactRepository(pool),conversationRepository:new PostgresInboxConversationRepository(pool),conversationEventRepository:new PostgresInboxConversationEventRepository(pool),messageRepository:new PostgresInboxMessageRepository(pool),attendanceRepository:new PostgresInboxAttendanceRepository(pool),teamRepository:id.teamRepository,teamMembershipRepository:id.teamMembershipRepository,outboundQueue:{async publish(){}},providers:{}};
+  const connection=await inbox.connectionRepository.create({tenantId,workspaceId:workspace.id,provider:"wuzapi",displayName:"WhatsApp de fixture"});
+  await inbox.connectionRepository.updateStatus(connection.id,{status:"connected",externalSessionId:"fixture-session"});
+  const sales={workspaceRepository:app.zunoContainer.workspaceRepository,dealRepository:id.dealRepository,pipelineStageRepository:id.pipelineStageRepository,productRepository:id.productRepository,timelineEventRepository:id.timelineEventRepository,dealItemRepository:id.dealItemRepository,salesCatalogRepository:id.salesCatalogRepository,salesConfigRepository:id.salesConfigRepository,approvalRepository:id.commercialApprovalRepository,membershipRepository:id.membershipRepository,teamMembershipRepository:id.teamMembershipRepository};
+  const lead={commerceRepository:new PostgresSiteCommerceRepository(pool),siteRepository:id.siteRepository,crm:{dealRepository:id.dealRepository,pipelineRepository:new PostgresPipelineRepository(pool),pipelineStageRepository:new PostgresPipelineStageRepository(pool),timelineEventRepository:id.timelineEventRepository,sales},sales,inbox,crmBridge:{inboxContactRepository:inbox.contactRepository,inboxMessageRepository:inbox.messageRepository,contact:{contactRepository:id.contactRepository,contactIdentityRepository:new PostgresContactIdentityRepository(pool),timelineEventRepository:id.timelineEventRepository}}};
+  commerceFixture={inbox,connection,lead,id,pool,workspaceId:workspace.id};
+  info.siteCommerceFixture=true;
+ }
  await mkdir("tmp/product-site-browser",{recursive:true});await writeFile("tmp/product-site-browser/fixture.json",JSON.stringify(info,null,2));
  await app.listen({host:"127.0.0.1",port});console.log(`FIXTURE_READY http://127.0.0.1:${port} — banco efêmero; somente dados fictícios .invalid`);
 }catch(error){console.error(error);await close();process.exitCode=1;}

@@ -378,3 +378,16 @@ export function getInboxServiceSettings(workspaceId: string): Promise<InboxServi
 export function updateInboxServiceSettings(workspaceId: string, changes: Partial<InboxServiceSettings>): Promise<InboxServiceSettings> {
   return apiClient.put<InboxServiceSettings>("/v1/inbox/service-settings", { workspaceId, ...changes });
 }
+
+// Vorix Commerce, Fase 1 — produto dentro da conversa (o card é montado pelo backend a partir do catálogo).
+export type ConversationProduct = { id: string; name: string; sku?: string; description: string; priceCents: number; currency: string; imageUrl?: string; availableQuantity?: number; siteUrl?: string; requiresVariant: boolean; variants: { id: string; label: string; sku?: string; priceCents: number; availableQuantity?: number }[] };
+export type AddProductToOpportunityResult = { status: "added"; dealId: string; dealTitle: string; created: boolean } | { status: "choose"; deals: { id: string; title: string }[] } | { status: "no_deal" } | { status: "no_contact" };
+export function listConversationProducts(workspaceId: string, conversationId: string, search: string): Promise<ConversationProduct[]> {
+  return apiClient.get<ConversationProduct[]>(`/v1/inbox/conversations/${encodeURIComponent(conversationId)}/products?workspaceId=${encodeURIComponent(workspaceId)}${search ? `&search=${encodeURIComponent(search)}` : ""}`);
+}
+export function sendConversationProduct(workspaceId: string, conversationId: string, input: { productId: string; variantId?: string; withImage: boolean }): Promise<InboxMessage> {
+  return apiClient.post<InboxMessage>(`/v1/inbox/conversations/${encodeURIComponent(conversationId)}/products/send`, { workspaceId, ...input });
+}
+export function addConversationProductToOpportunity(workspaceId: string, conversationId: string, input: { productId: string; variantId?: string; quantity: number; dealId?: string; createIfMissing?: boolean }): Promise<AddProductToOpportunityResult> {
+  return apiClient.post<AddProductToOpportunityResult>(`/v1/inbox/conversations/${encodeURIComponent(conversationId)}/products/opportunity`, { workspaceId, ...input });
+}

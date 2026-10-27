@@ -10,5 +10,5 @@ export type SiteRepositoryPort={
  claimDomain(input:{siteId:string;tenantId:string;hostname:string}):Promise<SiteDomain|undefined>;
  verifyDomain(input:{id:string;siteId:string;tenantId:string;challenge:string}):Promise<SiteDomain|undefined>;
  removeDomain(input:{id:string;siteId:string;tenantId:string}):Promise<void>;
- addInquiry(input:{site:Site;name:string;email?:string;phone?:string;message:string;productId?:string;variantId?:string;requestKey:string}):Promise<{id:string}>;
+ addInquiry(input:{site:Site;name:string;email?:string;phone?:string;message:string;productId?:string;variantId?:string;requestKey:string}):Promise<{id:string;contactId?:string}>;
 };

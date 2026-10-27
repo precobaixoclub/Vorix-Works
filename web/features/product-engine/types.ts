@@ -1,8 +1,8 @@
 export type ProductOption={key:string;name:string;values:string[]};
 import type {VehicleDetails,RealEstateDetails} from "./specializations";
 export type {VehicleDetails,RealEstateDetails} from "./specializations";
-export type ProductDetails={type:"GENERAL"|"APPAREL"|"VEHICLE"|"REAL_ESTATE";slug?:string;attributes:Record<string,string|number|boolean>;options:ProductOption[];apparel?:{gender?:string;collection?:string;material?:string};vehicle?:VehicleDetails;realEstate?:RealEstateDetails;siteVisible:boolean;catalogVisible:boolean;canPurchaseOnline:boolean;seo:{title?:string;description?:string};media:{url:string;alt:string}[]};
-export const newProductDetails=():ProductDetails=>({type:"GENERAL",attributes:{},options:[],siteVisible:false,catalogVisible:true,canPurchaseOnline:false,seo:{},media:[]});
+export type ProductDetails={type:"GENERAL"|"APPAREL"|"VEHICLE"|"REAL_ESTATE";slug?:string;attributes:Record<string,string|number|boolean>;options:ProductOption[];apparel?:{gender?:string;collection?:string;material?:string};vehicle?:VehicleDetails;realEstate?:RealEstateDetails;siteVisible:boolean;catalogVisible:boolean;canPurchaseOnline:boolean;saleMode?:"INHERIT_SITE_DEFAULT"|"SHOW_ONLY"|"WHATSAPP_DIRECT"|"WHATSAPP_CART"|"ONLINE_CHECKOUT";seo:{title?:string;description?:string};media:{url:string;alt:string}[]};
+export const newProductDetails=():ProductDetails=>({type:"GENERAL",attributes:{},options:[],siteVisible:false,catalogVisible:true,canPurchaseOnline:false,saleMode:"INHERIT_SITE_DEFAULT",seo:{},media:[]});
 export type ProductCategory={id:string;name:string;slug:string;parentId?:string;active:boolean;siteVisible:boolean;position:number;imageUrl?:string};
 export type ProductBrand={id:string;name:string;slug:string;active:boolean;logoUrl?:string};
 export type AttributeDefinition={id:string;categoryId?:string;key:string;label:string;kind:"text"|"number"|"boolean"|"select";choices:string[];required:boolean;unit?:string;active:boolean};

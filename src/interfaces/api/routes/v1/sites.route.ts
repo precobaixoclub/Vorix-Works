@@ -13,7 +13,10 @@ import type {ObjectStoragePort} from "../../../../application/ports/object-stora
 import {canonicalWorkspaceImages,uploadWorkspaceImage} from "../../http/workspace-images.js";
 import {parseOwnedObjectUrl,stripObjectUrlSignature} from "../../../../shared/utils/object-url-signing.js";
 import type {Permission} from "../../../../domain/identity/identity.model.js";
-export type SiteRouteDeps=SiteEngineDeps&{workspaceRepository:WorkspaceRepositoryPort;objectStorage:ObjectStoragePort;publicBaseDomain?:string};
+import {processSiteFormLead,type SiteLeadDeps} from "../../../../application/commercial-bridge/site-lead-use-cases.js";
+import {safePageUrl} from "../../../../application/sites/site-commerce-use-cases.js";
+import {utmSchema} from "../../../../domain/sites/site-commerce.js";
+export type SiteRouteDeps=SiteEngineDeps&{workspaceRepository:WorkspaceRepositoryPort;objectStorage:ObjectStoragePort;publicBaseDomain?:string;siteLead?:SiteLeadDeps};
 const id=z.string().min(1).max(160);
 export async function registerSiteRoutes(app:FastifyInstance,deps:SiteRouteDeps):Promise<void>{
  const guard=async<T>(run:()=>Promise<T>)=>{try{return await run();}catch(error){
@@ -51,12 +54,21 @@ export async function registerSiteRoutes(app:FastifyInstance,deps:SiteRouteDeps)
  app.get("/public/sites/resolve",async request=>guard(async()=>successEnvelope(await publicSite(deps,publicLookup(request)),request.id)));
  app.get("/public/sites/:slug",async request=>guard(async()=>successEnvelope(await publicSite(deps,publicLookup(request)),request.id)));
  app.post("/public/sites/:slug/inquiries",async request=>guard(async()=>{
-  const input=z.object({name:z.string().trim().min(2).max(160),email:z.email().max(320).optional(),phone:z.string().regex(/^\+?\d{10,15}$/).optional(),message:z.string().trim().min(3).max(4000),productId:id.optional(),variantId:id.optional(),requestKey:z.string().uuid(),website:z.literal("").optional()}).strict().parse(request.body);
+  const {sessionId,pageUrl,utm,...input}=z.object({name:z.string().trim().min(2).max(160),email:z.email().max(320).optional(),phone:z.string().regex(/^\+?\d{10,15}$/).optional(),message:z.string().trim().min(3).max(4000),productId:id.optional(),variantId:id.optional(),requestKey:z.string().uuid(),website:z.literal("").optional(),sessionId:z.string().regex(/^[A-Za-z0-9_-]{8,64}$/).optional(),pageUrl:z.string().max(2000).optional(),utm:utmSchema.optional()}).strict().parse(request.body);
   if(!input.email&&!input.phone)throw new ValidationError("Informe seu e-mail ou telefone.");
   const lookup=publicLookup(request);const data=await publicSite(deps,lookup);const site=await deps.repository.findPublic(lookup);
   if(!site||!data.content.contactForm)throw new NotFoundError();
   const product=input.productId?data.products.find(item=>item.id===input.productId):undefined;
   if(input.productId&&!product||input.variantId&&!product?.variants.some(item=>item.id===input.variantId))throw new NotFoundError();
-  return successEnvelope(await deps.repository.addInquiry({...input,site}),request.id);
+  const saved=await deps.repository.addInquiry({...input,site});
+  // Regras configuráveis do Site (abrir atendimento, criar oportunidade, avisar a equipe). Falha aqui
+  // nunca perde o contato já gravado: o visitante recebe sucesso e o erro fica no log.
+  if(deps.siteLead&&saved.contactId){
+   const variant=product?.variants.find(item=>item.id===input.variantId);
+   const item=product?{productId:product.id,variantId:variant?.id,name:product.name,variantLabel:variant?product.options.map(option=>`${option.name}: ${variant.optionValues[option.key]}`).join(", "):undefined,sku:variant?.sku??product.sku,quantity:1,unitPriceCents:variant?.priceCents??product.priceCents,currency:product.currency}:undefined;
+   await processSiteFormLead(deps.siteLead,{siteId:site.id,tenantId:site.tenantId,workspaceId:site.workspaceId,inquiryId:saved.id,contactId:saved.contactId,name:input.name,phone:input.phone,productId:product?.id,variantId:variant?.id,item,requestKey:input.requestKey,anonymousSessionId:sessionId,pageUrl:safePageUrl(pageUrl),utm:Object.fromEntries(Object.entries(utm??{}).filter(([,value])=>value))})
+    .catch(error=>request.log.error({err:error,siteId:site.id},"ConversionError: regras do formulário do site"));
+  }
+  return successEnvelope({id:saved.id},request.id);
  }));
 }

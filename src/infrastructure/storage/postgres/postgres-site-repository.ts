@@ -35,14 +35,14 @@ export class PostgresSiteRepository implements SiteRepositoryPort{
  async addInquiry(input:Parameters<SiteRepositoryPort["addInquiry"]>[0]){
   const client=await this.pool.connect();try{await client.query("begin");
    await client.query("select pg_advisory_xact_lock(hashtext($1))",[input.site.id+":"+input.requestKey]);
-   const previous=await client.query("select id from site_inquiries where site_id=$1 and request_key=$2",[input.site.id,input.requestKey]);
-   if(previous.rowCount){await client.query("commit");return {id:String(previous.rows[0].id)};}
+   const previous=await client.query("select id,contact_id from site_inquiries where site_id=$1 and request_key=$2",[input.site.id,input.requestKey]);
+   if(previous.rowCount){await client.query("commit");return {id:String(previous.rows[0].id),contactId:previous.rows[0].contact_id??undefined};}
    await client.query("select pg_advisory_xact_lock(hashtext($1))",[`site-contact:${input.site.tenantId}:${input.site.workspaceId}:${input.phone??input.email}`]);
    const existing=await client.query("select id from contacts where tenant_id=$1 and workspace_id=$2 and (($3::text is not null and custom_fields->>'phone'=$3) or ($4::text is not null and custom_fields->>'email'=$4)) order by id limit 1",[input.site.tenantId,input.site.workspaceId,input.phone??null,input.email??null]);
    const contactId=existing.rows[0]?.id??"contact-"+randomUUID();
    if(!existing.rowCount)await client.query("insert into contacts(id,tenant_id,workspace_id,name,origin,notes,custom_fields) values($1,$2,$3,$4,'site',$5,$6)",[contactId,input.site.tenantId,input.site.workspaceId,input.name,input.message,JSON.stringify({email:input.email,phone:input.phone,siteId:input.site.id,productId:input.productId,variantId:input.variantId})]);
    const id="inquiry-"+randomUUID();await client.query("insert into site_inquiries(id,site_id,tenant_id,workspace_id,contact_id,product_id,variant_id,message,request_key) values($1,$2,$3,$4,$5,$6,$7,$8,$9)",[id,input.site.id,input.site.tenantId,input.site.workspaceId,contactId,input.productId??null,input.variantId??null,input.message,input.requestKey]);
-   await client.query("commit");return {id};
+   await client.query("commit");return {id,contactId};
   }catch(error){await client.query("rollback");throw error;}finally{client.release();}
  }
 }

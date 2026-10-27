@@ -86,6 +86,15 @@ import {
 import { PostgresContactRepository } from "../../infrastructure/storage/postgres/postgres-contact-repository.js";
 import { PostgresContactIdentityRepository } from "../../infrastructure/storage/postgres/postgres-contact-identity-repository.js";
 import { PostgresTimelineEventRepository } from "../../infrastructure/storage/postgres/postgres-timeline-event-repository.js";
+// Vorix Commerce, Fase 1 — mensagem com "Ref: VX-XXXXXX" vira contato/atendimento/oportunidade do Site.
+import { attachAttendanceToConvertedIntent, convertSalesIntentFromInbound, type SiteLeadDeps } from "../../application/commercial-bridge/site-lead-use-cases.js";
+import { extractSalesIntentReference } from "../../domain/sites/site-commerce.js";
+import { PostgresSiteCommerceRepository } from "../../infrastructure/storage/postgres/postgres-site-commerce-repository.js";
+import { PostgresSiteRepository } from "../../infrastructure/storage/postgres/postgres-site-repository.js";
+import { PostgresDealRepository } from "../../infrastructure/storage/postgres/postgres-deal-repository.js";
+import { PostgresPipelineRepository, PostgresPipelineStageRepository } from "../../infrastructure/storage/postgres/postgres-pipeline-repository.js";
+import { PostgresProductRepository } from "../../infrastructure/storage/postgres/postgres-product-repository.js";
+import { PostgresSalesCatalogRepository, PostgresDealItemRepository, PostgresSalesConfigRepository, PostgresCommercialApprovalRepository } from "../../infrastructure/storage/postgres/postgres-sales-engine-repositories.js";
 
 /**
  * Processo separado do módulo Conversas — `vorix-worker` (Fase 1/2, resiliência reforçada na
@@ -722,6 +731,42 @@ async function main(): Promise<void> {
   } else {
     console.log("[inbox-worker] PERSISTENCE_DRIVER != postgres — ponte Inbox→CRM desligada (CRM real sempre vive em Postgres).");
   }
+  // Vorix Commerce, Fase 1 — conversão da intenção do Site. Mesmo pool, mesmos repositórios do CRM;
+  // só existe com Postgres (sem ele não há Site nem CRM real).
+  const siteLeadDeps: SiteLeadDeps | undefined = repositories.pool && commercialBridgeDeps && repositories.membershipRepository && repositories.teamMembershipRepository
+    ? (() => {
+        const pool = repositories.pool;
+        const timelineEventRepository = commercialBridgeDeps.contact.timelineEventRepository;
+        const dealRepository = new PostgresDealRepository(pool);
+        const pipelineStageRepository = new PostgresPipelineStageRepository(pool);
+        const sales = {
+          workspaceRepository: repositories.workspaceRepository,
+          dealRepository,
+          pipelineStageRepository,
+          productRepository: new PostgresProductRepository(pool),
+          timelineEventRepository,
+          dealItemRepository: new PostgresDealItemRepository(pool),
+          salesCatalogRepository: new PostgresSalesCatalogRepository(pool),
+          salesConfigRepository: new PostgresSalesConfigRepository(pool),
+          approvalRepository: new PostgresCommercialApprovalRepository(pool),
+          membershipRepository: repositories.membershipRepository!,
+          teamMembershipRepository: repositories.teamMembershipRepository!,
+          contactRepository: commercialBridgeDeps.contact.contactRepository,
+        };
+        return {
+          commerceRepository: new PostgresSiteCommerceRepository(pool),
+          siteRepository: new PostgresSiteRepository(pool),
+          crm: { dealRepository, pipelineRepository: new PostgresPipelineRepository(pool), pipelineStageRepository, timelineEventRepository, sales },
+          sales,
+          teamMembershipRepository: repositories.teamMembershipRepository,
+          // Sem SSE no worker: o sino pega a notificação no próximo polling.
+          notification: { notificationRepository: repositories.notificationRepository },
+          inbox: deps,
+          crmBridge: commercialBridgeDeps,
+          log: (event: string, data: Record<string, unknown>) => console.log(`[inbox-worker] site-commerce ${event} ${JSON.stringify(data)}`),
+        };
+      })()
+    : undefined;
   // Cache curto (30s) do WorkspaceSettings.autoContactEnabled por workspace — evita 1 SELECT extra
   // por mensagem inbound; mesma classe já usada pela API (`InMemoryTtlCache`), primeiro uso dela
   // no worker.
@@ -862,7 +907,17 @@ async function main(): Promise<void> {
     // `undefined` só em driver memória; ligada por padrão, mas cada workspace pode desligar em
     // Configurações — checado aqui (cache de 30s), nunca no boot do processo (decisão passou a
     // ser por workspace, não mais global).
-    if (contact && commercialBridgeDeps) {
+    // Mensagem com referência do Site: a conversão cuida do contato (origem "site"), então a ponte
+    // automática de 3 mensagens não roda para esta mensagem.
+    const siteReference = wasCreated && message.direction === "inbound" && contact && siteLeadDeps ? extractSalesIntentReference(message.body) : undefined;
+    const siteConversion = siteReference && siteLeadDeps
+      ? convertSalesIntentFromInbound(siteLeadDeps, { tenantId: event.tenantId, workspaceId: event.workspaceId, conversation, inboxContact: contact, messageBody: message.body })
+          .catch((error) => {
+            console.error("[inbox-worker] site-commerce ConversionError:", error instanceof Error ? error.message : error);
+            return undefined;
+          })
+      : Promise.resolve(undefined);
+    if (contact && commercialBridgeDeps && !siteReference) {
       isAutoContactEnabledForWorkspace(event.workspaceId)
         .then((enabled) => {
           if (!enabled) return undefined;
@@ -899,7 +954,17 @@ async function main(): Promise<void> {
     if (wasCreated && message.direction === "inbound") {
       // Regras de atendimento ANTES da IA: nota da pesquisa (a IA não responde a ela), reabrir
       // conversa finalizada e mensagem de ausência. Falha nas regras nunca impede a IA.
-      applyInboundServiceRules(deps, { tenantId: event.tenantId, workspaceId: event.workspaceId, conversationId: conversation.id, messageId: message.id })
+      // A conversão do Site roda ANTES das regras: com a equipe do Site já atribuída, a triagem não manda menu.
+      siteConversion
+        .then(() => applyInboundServiceRules(deps, { tenantId: event.tenantId, workspaceId: event.workspaceId, conversationId: conversation.id, messageId: message.id }))
+        .then(async (rules) => {
+          const converted = await siteConversion;
+          if (converted?.status === "converted" && converted.intentId && siteLeadDeps) {
+            await attachAttendanceToConvertedIntent(siteLeadDeps, { intentId: converted.intentId, conversationId: conversation.id }).catch(() => undefined);
+            publishRealtimeNotification(channel, { type: "conversation.updated", tenantId: event.tenantId, workspaceId: event.workspaceId, conversationId: conversation.id });
+          }
+          return rules;
+        })
         .catch((error) => {
           console.error("[inbox-worker] falha nas regras de atendimento:", error instanceof Error ? error.message : error);
           return { csatAnswered: false, reopened: false, awayMessageSent: false } as InboundServiceRulesResult;

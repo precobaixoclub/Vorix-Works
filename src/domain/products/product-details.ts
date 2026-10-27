@@ -35,6 +35,8 @@ export const productDetailsSchema = z.preprocess(raw=>{
   vehicle: vehicleDetailsSchema.optional(),
   realEstate: realEstateDetailsSchema.optional(),
   siteVisible: z.boolean().default(false), catalogVisible: z.boolean().default(true), canPurchaseOnline: z.boolean().default(false),
+  /** Como o Site comercializa este produto; herda o modo do Site por padrão (Vorix Commerce, Fase 1). */
+  saleMode: z.enum(["INHERIT_SITE_DEFAULT","SHOW_ONLY","WHATSAPP_DIRECT","WHATSAPP_CART","ONLINE_CHECKOUT"]).default("INHERIT_SITE_DEFAULT"),
   seo: z.object({ title: z.string().max(160).optional(), description: z.string().max(320).optional() }).strict().default({}),
   media: z.array(z.object({ url: z.string().max(2000), alt: z.string().max(200).default("") }).strict()).max(30).default([]),
 }).strict().superRefine((value, ctx) => {

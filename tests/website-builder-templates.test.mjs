@@ -41,7 +41,8 @@ test("modelo oculto não aceita imagem de outro tenant; RBAC, workspace e confli
   response=await app.inject({method:"PUT",url,headers:{authorization:`${c.tenantId}:viewer`},payload:{revision:site.revision,draft:snapshot()}});assert.equal(response.statusCode,403);
   response=await app.inject({method:"POST",url:`/sites/${site.id}/publish?workspaceId=${c.workspaceId}`,headers:{authorization:`${c.tenantId}:editor`},payload:{revision:site.revision}});assert.equal(response.statusCode,403);
   for(const path of[`/sites/${site.id}/preview?workspaceId=${other.workspaceId}`,`/sites/${site.id}?workspaceId=${other.workspaceId}`]){response=await app.inject({method:path.includes("preview")?"GET":"PUT",url:path,headers:{authorization:`${other.tenantId}:owner`},...(!path.includes("preview")?{payload:{revision:site.revision,draft:snapshot()}}:{})});assert.equal(response.statusCode,404,response.body);}
-  response=await app.inject({method:"PUT",url,headers:{authorization:`${c.tenantId}:editor`},payload:{revision:site.revision,draft:snapshot()}});assert.equal(response.statusCode,200,response.body);
+  assert.equal((await app.inject({method:"PUT",url,headers:{authorization:`${c.tenantId}:editor`},payload:{revision:site.revision,draft:snapshot()}})).statusCode,403,"Atendente não altera a estrutura do site por padrão");
+  response=await app.inject({method:"PUT",url,headers:{authorization:`${c.tenantId}:admin`},payload:{revision:site.revision,draft:snapshot()}});assert.equal(response.statusCode,200,response.body);
   response=await app.inject({method:"PUT",url,payload:{revision:site.revision,draft:snapshot()}});assert.equal(response.statusCode,409,response.body);
  }finally{await app.close();}
 });

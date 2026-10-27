@@ -104,6 +104,7 @@ import { AttendanceCloseModal, AttendanceHistorySection, type CsatCloseMode } fr
 import { attendanceEventLabel, isShadowedStatusEvent } from "@/features/inbox/attendance-labels";
 import { useMyAccess } from "@/features/auth/access";
 import { StickerPickerButton } from "./sticker-picker";
+import { ProductPickerButton, ProductPickerModal } from "./product-picker";
 import { CreateOpportunityButton } from "./create-opportunity-button";
 import { PersonAvatar } from "@/components/DashboardKit";
 import { ProposalMessageCard } from "./proposal-card";
@@ -1494,6 +1495,7 @@ export function ConversationTimelinePane({
   // Nota interna: mesmo campo de texto, mas vai só para a timeline da equipe.
   const [composerMode, setComposerMode] = useState<"message" | "note">("message");
   const [quickRepliesOpen, setQuickRepliesOpen] = useState(false);
+  const [productPickerOpen, setProductPickerOpen] = useState(false);
   // Finalizar com motivo (quando o workspace cadastrou motivos de encerramento).
   const { data: serviceSettings, isLoading: serviceSettingsLoading } = useInboxServiceSettings(workspaceId);
   const [closeDialogOpen, setCloseDialogOpen] = useState(false);
@@ -2104,6 +2106,7 @@ export function ConversationTimelinePane({
             <EmojiPickerButton disabled={!canOperate} onSelect={insertEmoji} />
             {composerMode === "message" ? <StickerPickerButton workspaceId={workspaceId} conversationId={conversation.id} disabled={!canOperate || attaching} onSent={refreshThread} /> : null}
             {composerMode === "message" ? <QuickRepliesButton disabled={!canOperate} onOpen={() => setQuickRepliesOpen(true)} /> : null}
+            {composerMode === "message" && can("product:read") ? <ProductPickerButton disabled={!canOperate} onOpen={() => setProductPickerOpen(true)} /> : null}
             <Textarea
               ref={textareaRef}
               value={draft}
@@ -2209,6 +2212,9 @@ export function ConversationTimelinePane({
             setCloseDialogOpen(false);
           }}
         />
+      ) : null}
+      {productPickerOpen ? (
+        <ProductPickerModal workspaceId={workspaceId} conversationId={conversation.id} canAddToOpportunity={can("deal:manage")} onClose={() => setProductPickerOpen(false)} onSent={() => void refreshThread()} />
       ) : null}
       {quickRepliesOpen ? (
         <QuickRepliesModal

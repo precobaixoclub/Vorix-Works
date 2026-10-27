@@ -1,3 +1,7 @@
+import {PostgresSiteCommerceRepository} from "../../../../infrastructure/storage/postgres/postgres-site-commerce-repository.js";
+import {registerSiteCommerceRoutes} from "./site-commerce.route.js";
+import {registerConversationProductRoutes} from "./conversation-products.route.js";
+import type {SiteLeadDeps} from "../../../../application/commercial-bridge/site-lead-use-cases.js";
 import { registerCommercialResponseVisibility } from "../../http/commercial-response-visibility.js";
 import { registerWorkspaceTenantGuard } from "../../http/workspace-tenant-guard.js";
 import { registerCrmAccessGuards } from "../../http/crm-access.js";
@@ -120,7 +124,6 @@ export async function registerV1Routes(app: FastifyInstance): Promise<void> {
     : undefined;
 
   await registerHealthRoutes(app);
-  if(app.zunoContainer.siteEngine)await registerSiteRoutes(app,{...app.zunoContainer.siteEngine,workspaceRepository:app.zunoContainer.workspaceRepository,objectStorage:app.zunoContainer.objectStorage,publicBaseDomain:app.zunoConfig.sitePublicBaseDomain});
   // Soluções da plataforma (Core) — sempre registrada: é ela que diz ao frontend quais soluções
   // este tenant enxerga.
   await registerSolutionRoutes(app, { solutionAccess: app.zunoContainer.solutionAccess });
@@ -460,6 +463,47 @@ export async function registerV1Routes(app: FastifyInstance): Promise<void> {
       sales: salesDeps,
     });
     await registerSalesEngineRoutes(app, salesDeps);
+    // Vorix Commerce, Fase 1 — Site como entrada comercial: formulário com regras, intenção de venda,
+    // carrinho para WhatsApp. A conversão da mensagem com referência roda no worker.
+    if (app.zunoContainer.siteEngine) {
+      const commerceRepository = new PostgresSiteCommerceRepository(identity.pool);
+      const siteLead: SiteLeadDeps = {
+        commerceRepository,
+        siteRepository: app.zunoContainer.siteEngine.repository,
+        crm: { dealRepository: identity.dealRepository, pipelineRepository: identity.pipelineRepository, pipelineStageRepository: identity.pipelineStageRepository, timelineEventRepository: identity.timelineEventRepository, sales: salesDeps },
+        sales: salesDeps,
+        teamMembershipRepository: identity.teamMembershipRepository,
+        notification: salesDeps.notification,
+        inbox: sharedInboxDeps,
+        crmBridge: sharedInboxDeps ? { inboxContactRepository: sharedInboxDeps.contactRepository, inboxMessageRepository: sharedInboxDeps.messageRepository, contact: { contactRepository: identity.contactRepository, contactIdentityRepository: identity.contactIdentityRepository, timelineEventRepository: identity.timelineEventRepository } } : undefined,
+        log: (event, data) => app.log.info({ event, ...data }, `site-commerce ${event}`),
+      };
+      const siteEngine = { ...app.zunoContainer.siteEngine, commerceRepository };
+      await registerSiteRoutes(app, { ...siteEngine, workspaceRepository: app.zunoContainer.workspaceRepository, objectStorage: app.zunoContainer.objectStorage, publicBaseDomain: app.zunoConfig.sitePublicBaseDomain, siteLead });
+      await registerSiteCommerceRoutes(app, {
+        ...siteEngine,
+        workspaceRepository: app.zunoContainer.workspaceRepository,
+        teamBelongsToWorkspace: async ({ tenantId, workspaceId, teamId }) => { const team = await identity.teamRepository.getById(teamId); return !!team && team.tenantId === tenantId && team.workspaceId === workspaceId; },
+        log: siteLead.log,
+      });
+    }
+    // Produto dentro do Vorix Conversas (buscar, enviar card do catálogo, levar para a oportunidade).
+    if (sharedInboxDeps) {
+      await registerConversationProductRoutes(app, {
+        inbox: sharedInboxDeps,
+        routes: sharedInboxDeps,
+        productRepository: identity.productRepository,
+        salesCatalogRepository: identity.salesCatalogRepository,
+        productEngineRepository: identity.productEngineRepository,
+        siteRepository: app.zunoContainer.siteEngine?.repository,
+        objectStorage: app.zunoContainer.objectStorage,
+        publicBaseDomain: app.zunoConfig.sitePublicBaseDomain,
+        appBaseUrl: app.zunoConfig.billing?.appBaseUrl,
+        crmBridge: { inboxContactRepository: sharedInboxDeps.contactRepository, inboxMessageRepository: sharedInboxDeps.messageRepository, contact: { contactRepository: identity.contactRepository, contactIdentityRepository: identity.contactIdentityRepository, timelineEventRepository: identity.timelineEventRepository } },
+        sales: salesDeps,
+        crm: { dealRepository: identity.dealRepository, pipelineRepository: identity.pipelineRepository, pipelineStageRepository: identity.pipelineStageRepository, timelineEventRepository: identity.timelineEventRepository, sales: salesDeps },
+      });
+    }
     // IA comercial: leitura da conversa do contato por ponte (sales nunca importa inbox) e gerador
     // via AI Gateway (mesmo stack/créditos do Copiloto Comercial).
     const inboxForInsights = sharedInboxDeps;

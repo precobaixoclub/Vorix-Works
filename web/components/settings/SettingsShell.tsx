@@ -16,6 +16,7 @@ const SETTINGS_SECTIONS: ReadonlyArray<{ value: string; label: string; href: str
   { value: "users", label: "Usuários", href: "/settings/users", icon: UsersRound, group: GLOBAL_GROUP },
   { value: "teams", label: "Equipes", href: "/settings/teams", icon: UsersRound, group: GLOBAL_GROUP },
   { value: "integrations", label: "Integrações", href: "/connections", icon: PlugZap, group: GLOBAL_GROUP },
+  { value: "marketplaces", label: "Marketplaces", href: "/settings/marketplaces", icon: Boxes, group: GLOBAL_GROUP },
   { value: "billing", label: "Plano e cobrança", href: "/settings/plano", icon: CreditCard, group: GLOBAL_GROUP },
   { value: "attendance", label: "Atendimento", href: "/settings/attendance", icon: Headset, group: "Vorix Conversas", solution: "conversations" },
   { value: "products", label: "Produtos", href: "/products", icon: Boxes, group: "Vorix Conversas", solution: "conversations" },

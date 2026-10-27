@@ -198,6 +198,7 @@ export function isBackstagePath(pathname: string, base: string): boolean {
 /** Rótulos de breadcrumb SÓ das soluções a que a conta tem acesso — uma URL do Marketing aberta
  * por quem não tem a solução não ganha nem o nome da tela no breadcrumb. */
 const SETTINGS_SUBPAGE_LABELS: Record<string, string> = {
+  marketplaces: "Marketplaces",
   users: "Usuários",
   teams: "Equipes",
   plano: "Plano e cobrança",

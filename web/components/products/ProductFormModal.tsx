@@ -1,6 +1,7 @@
 "use client";
 
 import { createContext, useContext, useRef, useState } from "react";
+import { ProductChannels } from "@/components/marketplaces/ProductChannels";
 import { PageSubnav } from "@/components/PageSubnav";
 import { ProductEngineEditor, PRODUCT_SECTIONS } from "@/components/products/ProductEngineEditor";
 import { newProductDetails,type ProductDetails } from "@/features/product-engine/types";
@@ -235,6 +236,7 @@ export function ProductFormModal({ workspaceId, product, canViewCost, isManager,
 
         <ProductEngineEditor section={section} workspaceId={workspaceId} product={product} details={details} onChange={value=>{setDetails(value);setError(undefined);}} categoryId={categoryId} onCategory={setCategoryId} brandId={brandId} onBrand={setBrandId} photos={photos} isManager={isManager} canViewCost={canViewCost}/>
 
+        {product&&section==="geral"&&<ProductChannels workspaceId={workspaceId} productId={product.id} siteVisible={details.siteVisible}/>}
         <div className="sticky bottom-0 -mx-1 flex justify-end gap-2 bg-popover px-1 pt-2">
           <Button variant="secondary" onClick={onClose} disabled={busy}>Cancelar</Button>
           <Button onClick={handleSave} loading={busy} disabled={!name.trim() || busy || uploading}>{product ? "Salvar alterações" : "Cadastrar produto"}</Button>

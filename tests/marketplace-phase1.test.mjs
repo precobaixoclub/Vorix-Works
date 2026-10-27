@@ -16,6 +16,7 @@ import {effectivePermissions,ROLE_PERMISSIONS} from "../dist/domain/identity/ide
 import {redactSensitiveQuery} from "../dist/interfaces/api/http/log-redaction.js";
 import {defaultProductDetails} from "../dist/domain/products/product-details.js";
 import {createVariant} from "../dist/application/sales/catalog-use-cases.js";
+import {PostgresCatalogBulk} from "../dist/infrastructure/storage/postgres/postgres-catalog-bulk.js";
 let db,repo,secrets;let counter=100000;
 before(async()=>{db=await startTestPostgres();await applyMigrations(db.pool,join(process.cwd(),"db/migrations"));repo=new PostgresMarketplaceRepository(db.pool);secrets=new PostgresSecretManager(db.pool,"fixture-marketplace-master-key");});
 after(async()=>{await db?.stop();});
@@ -382,4 +383,30 @@ test("listing reads do not truncate reconciliation after the first thousand reco
  await db.pool.query(`insert into channel_listings(id,tenant_id,workspace_id,connection_id,product_id,external_listing_id,external_category_id)
   select $1||n,$2,$3,$4,$5,'MLB'||n,'MLB123' from generate_series(1,1001) n`,["volume-"+randomUUID(),f.tenantId,f.workspaceId,f.connectionId,p.id]);
  assert.equal((await repo.listings(f.scope)).length,1001);
+});
+test("Catalog Bulk and Site reservations feed the listing through central Inventory without losing the listing",async()=>{
+ const f=await fixture(),bulk=new PostgresCatalogBulk(db.pool),ctx={...f.actor,canViewCost:true,canSetMinimum:true,inventoryRead:true,inventoryManage:true};
+ const importSheet=async csv=>{let job=await bulk.upload(ctx,{name:"bulk.csv",bytes:Buffer.from(csv)},randomUUID());await bulk.map(ctx,job.id,job.mapping,{mode:"upsert",createTaxonomy:false});
+  const settle=async stop=>{for(let i=0;i<300;i++){job=await bulk.get(ctx,job.id);if(job.status===stop||["FAILED","COMPLETED","COMPLETED_WITH_ERRORS"].includes(job.status))return job;await bulk.tick();}assert.fail("bulk job did not settle");};
+  assert.equal((await settle("PREVIEW")).status,"PREVIEW");await bulk.confirm(ctx,job.id);assert.equal((await settle("COMPLETED")).status,"COMPLETED");};
+ await importSheet("SKU;Nome;Preço;Controlar estoque;Estoque;Peso (g);Altura (cm);Largura (cm);Comprimento (cm)\nML-BULK-1;Produto do Bulk;100,00;sim;10;500;10;20;30");
+ const product=(await f.d.productRepository.listByWorkspace(f.scope)).find(p=>p.code==="ML-BULK-1");
+ const publish=await f.service.enqueue(f.actor,f.connectionId,"PUBLISH",{productId:product.id,draft:draft()},randomUUID());assert.equal((await drive(f,publish.id)).status,"COMPLETED");
+ assert.equal(f.calls.find(c=>c[0]==="create")[1].quantity,10,"publica o saldo central");
+ const listing=(await repo.listings(f.scope)).find(l=>l.productId===product.id),externalId=listing.externalListingId??[...f.externalItems.keys()].at(-1);
+ // Reserva de um pedido do Site (mesmo Inventory) + safety stock do canal: 10 - 3 - 2 = 5.
+ await f.d.productEngineRepository.move({...f.scope,productId:product.id,kind:"RESERVATION",quantity:3,operationKey:"order:qa:reserve:1",userId:f.actor.userId});
+ await f.service.setSafetyStock(f.actor,f.connectionId,2);
+ let sync=await f.service.enqueue(f.actor,f.connectionId,"SYNC",{listingId:listing.id},randomUUID());assert.equal((await drive(f,sync.id)).status,"COMPLETED");
+ assert.equal(f.externalItems.get(externalId).quantity,5,"nunca publica o saldo bruto");
+ // Bulk altera estoque (via Inventory) e preço: entra no outbox, o listing continua vinculado.
+ const revision=Number((await db.pool.query("select revision from marketplace_outbox where product_id=$1",[product.id])).rows[0]?.revision??0);
+ await importSheet("SKU;Preço;Estoque\nML-BULK-1;110,00;12");
+ assert.ok(Number((await db.pool.query("select revision from marketplace_outbox where product_id=$1",[product.id])).rows[0].revision)>revision);
+ assert.ok((await repo.listings(f.scope)).some(l=>l.id===listing.id&&l.productId===product.id));
+ const updated=await f.d.productRepository.getById(product.id);assert.equal(updated.stockQuantity,12);assert.equal(updated.reservedQuantity,3);
+ assert.deepEqual(updated.details.shipping,{weightGrams:500,heightCm:10,widthCm:20,lengthCm:30},"frete do Site preservado");
+ assert.equal((await db.pool.query("select count(*)::int n from product_stock_movements where product_id=$1 and operation_key like 'BULK_IMPORT:%'",[product.id])).rows[0].n,2);
+ sync=await f.service.enqueue(f.actor,f.connectionId,"SYNC",{listingId:listing.id},randomUUID());assert.equal((await drive(f,sync.id)).status,"COMPLETED");
+ assert.equal(f.externalItems.get(externalId).quantity,7);assert.equal(f.externalItems.get(externalId).priceCents,11000);
 });

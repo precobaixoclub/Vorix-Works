@@ -46,13 +46,19 @@ function activityQuery(input:SiteAnalyticsQuery){
  and not exists(select 1 from sales_intents other where other.tenant_id=i.tenant_id and other.workspace_id=i.workspace_id and other.deal_id=i.deal_id and (other.created_at,other.id)<(i.created_at,i.id))
  and not exists(select 1 from site_analytics_order_facts o where o.tenant_id=$1 and o.workspace_id=$2 and o.opportunity_id=i.deal_id and o.paid_at is not null)
  union all
- select o.site_id,stage.at,stage.type,coalesce(o.actor,''),coalesce(o.product_id,''),coalesce(case when o.utm='{}'::jsonb then entry.dimensions else jsonb_strip_nulls(jsonb_build_object('referrer',entry.dimensions->'referrer')) end,'{}'::jsonb)||o.utm,1,'order:'||o.order_id,true,
- case when stage.type='SALE' then o.amount_cents::numeric end,coalesce(o.currency,''),case when stage.type='SALE' and o.product_id is not null then o.amount_cents::numeric end
+ select o.site_id,stage.at,stage.type,coalesce(o.actor,''),coalesce(item.product_id,''),coalesce(case when o.utm='{}'::jsonb then entry.dimensions else jsonb_strip_nulls(jsonb_build_object('referrer',entry.dimensions->'referrer')) end,'{}'::jsonb)||o.utm,1,'order:'||o.order_id,item.primary_row,
+ case when stage.type='SALE' and item.primary_row then o.amount_cents::numeric end,coalesce(o.currency,''),case when stage.type='SALE' then item.amount end
  from site_analytics_order_facts o
+ left join commerce_orders co on co.id=o.order_id and co.tenant_id=o.tenant_id and co.workspace_id=o.workspace_id
+ -- Checkout orders attribute each cart line to its product (line total, without shipping); a discounted order gets no per-product estimate.
+ cross join lateral(select x.product_id,x.amount,x.n=1 primary_row from(
+  select i.product_id,case when co.discount_cents=0 then i.total_cents::numeric end amount,row_number() over(order by i.position,i.id) n from commerce_order_items i where i.order_id=co.id
+  union all select o.product_id,case when o.product_id is not null then o.amount_cents::numeric end,1 where not exists(select 1 from commerce_order_items i where i.order_id=co.id)
+ )x)item
  cross join lateral(values('ORDER',coalesce(o.created_at,o.paid_at)),('SALE',case when o.cancelled_at is null then o.paid_at end))stage(type,at)
  left join lateral(select b.dimensions from site_analytics_buckets b where b.site_id=o.site_id and b.tenant_id=$1 and b.workspace_id=$2 and b.actor=o.actor and b.type='SITE_VIEW' and b.bucket<=coalesce(o.created_at,o.paid_at) and b.bucket>coalesce(o.created_at,o.paid_at)-interval '30 days' order by b.bucket desc limit 1)entry on true
  where o.tenant_id=$1 and o.workspace_id=$2 and ($5::text is null or o.site_id=$5) and stage.at is not null
- and ($6::boolean or exists(select 1 from visible_intents i where i.deal_id=o.opportunity_id))
+ and ($6::boolean or exists(select 1 from visible_intents i where i.deal_id=o.opportunity_id) or exists(select 1 from deals d where d.id=o.opportunity_id and d.tenant_id=$1 and d.workspace_id=$2 and (d.owner_user_id=any($7::text[]) or d.team_id=any($8::text[]))))
  ), product_actors as (
  select distinct r.site_id,r.actor from raw_activity r join products p on p.id=r.product_key and p.tenant_id=$1 and p.workspace_id=$2
  where r.at >=$3::timestamptz and r.at<$4::timestamptz and ($10::text is null or p.id=$10) and ($11::text is null or p.category_id in(select id from category_tree))

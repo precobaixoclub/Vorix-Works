@@ -131,6 +131,11 @@ services:
       # Radar de Sentimento — rotas /v1/radar/* e "Analisar agora"; ambos "false" por padrão.
       RADAR_ENABLED: "${RADAR_ENABLED:-false}"
       RADAR_AI_ENABLED: "${RADAR_AI_ENABLED:-false}"
+      # Vorix Commerce, Fase 2 — webhooks de pagamento do lojista e modo de teste (desligado por
+      # padrão; quando ligado, pode ficar restrito a tenants de QA por COMMERCE_SANDBOX_TENANTS).
+      COMMERCE_WEBHOOK_BASE_URL: "${COMMERCE_WEBHOOK_BASE_URL:-}"
+      COMMERCE_SANDBOX_PAYMENTS_ENABLED: "${COMMERCE_SANDBOX_PAYMENTS_ENABLED:-false}"
+      COMMERCE_SANDBOX_TENANTS: "${COMMERCE_SANDBOX_TENANTS:-}"
       INBOX_WUZAPI_BASE_URL: "${INBOX_WUZAPI_BASE_URL:-http://wuzapi:8080}"
       INBOX_WUZAPI_ADMIN_TOKEN: "${WUZAPI_ADMIN_TOKEN:-}"
       INBOX_RABBITMQ_URL: "${INBOX_RABBITMQ_URL:-}"

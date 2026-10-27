@@ -34,7 +34,7 @@ async function refreshOnce(): Promise<string | undefined> {
   return pendingRefresh;
 }
 
-async function request<T>(path: string, init: RequestInit = {}, isRetry = false): Promise<T> {
+async function request<T>(path: string, init: RequestInit = {}, isRetry = false, binary = false): Promise<T> {
   const token = getAccessToken();
   // FormData (upload de arquivo) precisa que o navegador defina o Content-Type (com o boundary do
   // multipart) sozinho — setar "application/json" aqui quebraria o parsing no servidor.
@@ -61,6 +61,7 @@ async function request<T>(path: string, init: RequestInit = {}, isRetry = false)
     throw new ApiError("NETWORK_ERROR", "Não foi possível conectar à API do Vorix. Ela está rodando?", 0, true);
   }
 
+  if (binary && response.ok) return await response.blob() as T;
   const body = (await response.json().catch(() => undefined)) as ApiEnvelope<T> | undefined;
   if (!body) {
     throw new ApiError("INVALID_RESPONSE", "Resposta inválida da API.", response.status, false);
@@ -68,7 +69,7 @@ async function request<T>(path: string, init: RequestInit = {}, isRetry = false)
   if (!body.ok) {
     if (body.error.code === "TOKEN_EXPIRED" && !isRetry) {
       const newToken = await refreshOnce();
-      if (newToken) return request<T>(path, init, true);
+      if (newToken) return request<T>(path, init, true, binary);
     }
     throw new ApiError(body.error.code, body.error.message, response.status, body.error.recoverable);
   }
@@ -76,6 +77,7 @@ async function request<T>(path: string, init: RequestInit = {}, isRetry = false)
 }
 
 export const apiClient = {
+  download: (path: string) => request<Blob>(path, { method: "GET" }, false, true),
   get: <T>(path: string) => request<T>(path, { method: "GET" }),
   post: <T>(path: string, payload?: unknown, options?: { headers?: Record<string, string> }) =>
     request<T>(path, { method: "POST", body: payload !== undefined ? JSON.stringify(payload) : undefined, headers: options?.headers }),
@@ -84,7 +86,7 @@ export const apiClient = {
   patch: <T>(path: string, payload?: unknown) =>
     request<T>(path, { method: "PATCH", body: payload !== undefined ? JSON.stringify(payload) : undefined }),
   delete: <T>(path: string) => request<T>(path, { method: "DELETE" }),
-  upload: <T>(path: string, formData: FormData) => request<T>(path, { method: "POST", body: formData }),
+  upload: <T>(path: string, formData: FormData, options?: { headers?: Record<string,string> }) => request<T>(path, { method: "POST", body: formData, headers: options?.headers }),
 };
 
 export { ApiError } from "./api-error";

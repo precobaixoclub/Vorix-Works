@@ -62,6 +62,14 @@ import { registerDealsRoutes } from "./deals.route.js";
 import { registerTasksRoutes } from "./tasks.route.js";
 import { registerProductsRoutes } from "./products.route.js";
 import { registerProductEngineRoutes } from "./product-engine.route.js";
+import {registerCatalogBulkRoutes} from "./catalog-bulk.route.js";
+import {PostgresCatalogBulk} from "../../../../infrastructure/storage/postgres/postgres-catalog-bulk.js";
+import {canonicalWorkspaceImages} from "../../http/workspace-images.js";
+import {hasPermission} from "../../../../domain/identity/identity.model.js";
+import {loadCommercialSettings,resolveVisibility} from "../../../../application/sales/sales-context.js";
+import {AccessResolver} from "../../../../application/identity/access-resolver.js";
+import {PostgresTenantMembershipRepository} from "../../../../infrastructure/storage/postgres/postgres-tenant-membership-repository.js";
+import {PostgresSalesConfigRepository} from "../../../../infrastructure/storage/postgres/postgres-sales-engine-repositories.js";
 import { registerSiteRoutes } from "./sites.route.js";
 import { registerCommercialSuggestionsRoutes } from "./commercial-suggestions.route.js";
 import { registerAutomationRulesRoutes } from "./automation-rules.route.js";
@@ -571,6 +579,16 @@ export async function registerV1Routes(app: FastifyInstance): Promise<void> {
       maxUploadBytes: app.zunoConfig.objectStorage.maxUploadBytes,
     });
     if(identity.productEngineRepository) await registerProductEngineRoutes(app,{repository:identity.productEngineRepository,productRepository:identity.productRepository,workspaceRepository:app.zunoContainer.workspaceRepository,objectStorage:app.zunoContainer.objectStorage});
+    const catalogBulk=new PostgresCatalogBulk(identity.pool,error=>app.log.error({err:error},"catalog_bulk_worker_failed"),(scope,urls)=>canonicalWorkspaceImages(app.zunoContainer.objectStorage,scope,urls),async(scope,pool)=>{
+      const principal=await new AccessResolver(new PostgresTenantMembershipRepository(pool)).resolve({tenantId:scope.tenantId,userId:scope.userId,role:"viewer",sessionId:"catalog-bulk-worker",isPlatformAdmin:false});
+      if(!principal||!hasPermission(principal,"product:manage"))throw Error("BULK_VALIDATION: Sem product:manage; o acesso mudou desde a confirmação.");
+      const visibility=resolveVisibility(principal,await loadCommercialSettings({salesConfigRepository:new PostgresSalesConfigRepository(pool)},scope.tenantId,scope.workspaceId));
+      return {...scope,canViewCost:visibility.canViewCost,canSetMinimum:visibility.isManager,inventoryRead:hasPermission(principal,"inventory:read"),inventoryManage:hasPermission(principal,"inventory:manage")};
+    });
+    await registerCatalogBulkRoutes(app,{catalog:catalogBulk,workspaceRepository:app.zunoContainer.workspaceRepository,salesConfigRepository:identity.salesConfigRepository});
+    let catalogBulkTimer:ReturnType<typeof setInterval>|undefined;
+    app.addHook("onReady",async()=>{catalogBulkTimer=setInterval(()=>{void catalogBulk.tick();},500);catalogBulkTimer.unref();});
+    app.addHook("preClose",async()=>{if(catalogBulkTimer)clearInterval(catalogBulkTimer);await catalogBulk.tick();});
     const proposalUseCaseDeps = {
       proposalRepository: identity.proposalRepository,
       timelineEventRepository: identity.timelineEventRepository,

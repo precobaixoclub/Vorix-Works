@@ -1,0 +1,37 @@
+import type { ProductUseCaseDeps } from "../crm/product-use-cases.js";
+import type { ProductEngineRepositoryPort } from "./product-engine-repository.port.js";
+import type { SalesCatalogRepositoryPort } from "./sales-engine-repository.port.js";
+import type { ChannelListing, MarketplaceActor, MarketplaceConnection, MarketplaceJob, MarketplaceScope } from "../../domain/marketplaces/marketplace.model.js";
+export type StoredConnection=MarketplaceConnection&{credentialsRef:string;tokenExpiresAt?:string;applicationId:string;refreshLeaseUntil?:string};
+export type OAuthState=MarketplaceActor&{verifierRef:string};
+export type CatalogTransaction=ProductUseCaseDeps&{productEngineRepository:ProductEngineRepositoryPort;salesCatalogRepository:SalesCatalogRepositoryPort;marketplace:MarketplaceRepositoryPort};
+export interface MarketplaceRepositoryPort {
+ transaction<T>(scope:MarketplaceScope,key:string,run:(tx:CatalogTransaction)=>Promise<T>):Promise<T>;
+ connections(scope:MarketplaceScope):Promise<StoredConnection[]>;
+ connection(scope:MarketplaceScope,id:string):Promise<StoredConnection|undefined>;
+ saveConnection(input:StoredConnection):Promise<void>;
+ connectionError(scope:MarketplaceScope,id:string,status:MarketplaceConnection["status"],code?:string):Promise<void>;
+ refreshClaim(scope:MarketplaceScope,id:string,owner:string):Promise<"CLAIMED"|"BUSY"|"EXPIRED">;
+ refreshComplete(scope:MarketplaceScope,id:string,owner:string,expiresAt?:string):Promise<void>;
+ oauthSave(hash:string,state:OAuthState):Promise<void>;
+ oauthConsume(hash:string):Promise<OAuthState|undefined>;
+ listings(scope:MarketplaceScope,productId?:string):Promise<ChannelListing[]>;
+ listing(scope:MarketplaceScope,id:string):Promise<ChannelListing|undefined>;
+ externalListing(scope:MarketplaceScope,connectionId:string,externalId:string):Promise<ChannelListing|undefined>;
+ saveListing(input:ChannelListing):Promise<void>;
+ enqueue(actor:MarketplaceActor,connectionId:string,kind:MarketplaceJob["kind"],payload:Record<string,unknown>,operationKey:string):Promise<MarketplaceJob>;
+ jobs(scope:MarketplaceScope):Promise<MarketplaceJob[]>;
+ job(scope:MarketplaceScope,id:string):Promise<MarketplaceJob|undefined>;
+ claimJob():Promise<MarketplaceJob|undefined>;
+ checkpoint(job:MarketplaceJob,progress:number,total:number,payload?:Record<string,unknown>):Promise<void>;
+ finishJob(job:MarketplaceJob,status:MarketplaceJob["status"],code?:string,delayMs?:number):Promise<void>;
+ jobItems(scope:MarketplaceScope,jobId:string):Promise<{externalId:string;status:string;result:Record<string,unknown>}[]>;
+ item(job:MarketplaceJob,externalId:string):Promise<{status:string;result:Record<string,unknown>}|undefined>;
+ saveItem(job:MarketplaceJob,externalId:string,status:string,result:Record<string,unknown>):Promise<void>;
+ audit(actor:MarketplaceActor,action:string,targetId:string,code?:string):Promise<void>;
+ auditLog(scope:MarketplaceScope):Promise<Record<string,unknown>[]>;
+ mappings(scope:MarketplaceScope):Promise<Record<string,unknown>[]>;
+ saveMapping(actor:MarketplaceActor,input:{connectionId:string;categoryId:string;externalCategoryId:string;attributes:unknown[]}):Promise<void>;
+ notifications(input:{applicationId:string;sellerId:string;eventId:string;topic:string;resource:string}):Promise<boolean>;
+ scheduleDue():Promise<void>;
+}

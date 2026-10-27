@@ -86,6 +86,14 @@ export class MercadoLivreProvider implements MarketplaceProvider {
   catch(error){if(!(error instanceof MarketplaceError&&error.code==="ML_LISTING_NOT_FOUND"))throw error;}
   const dataAttrs=Array.isArray(data.attributes)?data.attributes:[];
   const tags:Array<string>=data.tags??[];
+  let stockWritable=data.shipping?.logistic_type!=="fulfillment"&&!data.inventory_id;
+  const userProductIds=[...new Set([data.user_product_id,...(data.variations??[]).map((v:Json)=>v.user_product_id)].filter(Boolean).map(String))];
+  for(const userProductId of userProductIds){
+   const stock=await this.request("/user-products/"+identifier(userProductId,/^MLBU\d+$/)+"/stock",token);
+   if(String(stock.data.user_id)!==String(data.seller_id))throw new MarketplaceError("ML_STOCK_OWNER_MISMATCH");
+   const locations=stock.data.locations;
+   if(!Array.isArray(locations)||locations.length!==1||locations[0].type!=="selling_address")stockWritable=false;
+  }
   const normalized:ExternalListing={
    id:String(data.id),sellerId:String(data.seller_id),title:String(data.title??data.family_name??""),description,
    sku:attribute(dataAttrs,"SELLER_SKU")??(String(data.seller_custom_field??"").startsWith("vorix:")?undefined:data.seller_custom_field??undefined),ean:attribute(dataAttrs,"GTIN"),
@@ -95,7 +103,7 @@ export class MercadoLivreProvider implements MarketplaceProvider {
    attributes:attrs(dataAttrs),userProductId:data.user_product_id??undefined,familyName:data.family_name??undefined,
    correlation:typeof data.seller_custom_field==="string"&&data.seller_custom_field.startsWith("vorix:")?data.seller_custom_field:undefined,
    model:tags.includes("user_product_listing")||data.family_name?"USER_PRODUCT":"LEGACY",
-   stockWritable:data.shipping?.logistic_type!=="fulfillment"&&!data.inventory_id&&!tags.includes("multi_warehouse"),
+   stockWritable,
    priceWritable:!tags.includes("dynamic_standard_price")&&!(prices.data.prices??[]).some((p:Json)=>p.type==="promotion"),
    updatedAt:data.last_updated,
    variants:(data.variations??[]).map((v:Json)=>({id:String(v.id),sku:attribute(v.attributes??[],"SELLER_SKU")??v.seller_custom_field??undefined,

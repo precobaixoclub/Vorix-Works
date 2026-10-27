@@ -369,8 +369,9 @@ export class MarketplaceService {
     const local=await this.localState(j,c,l);
     let diverged=e.priceCents!==local.priceCents||e.quantity!==local.quantity||e.variants.some(v=>local.variants.find(lv=>lv.id===v.id)?.quantity!==v.quantity)||
      ["paused","closed","under_review","inactive"].includes(e.status);
-    const externalChanged=(l.lastSyncedPrice!==undefined&&e.priceCents!==l.lastSyncedPrice)||(l.lastSyncedQuantity!==undefined&&e.quantity!==l.lastSyncedQuantity)||
-     e.variants.some(v=>l.lastSyncedVariants?.find(before=>before.id===v.id)?.quantity!==v.quantity);
+    const externalChanged=(e.priceCents!==local.priceCents&&l.lastSyncedPrice!==undefined&&e.priceCents!==l.lastSyncedPrice)||
+     (e.quantity!==local.quantity&&l.lastSyncedQuantity!==undefined&&e.quantity!==l.lastSyncedQuantity)||
+     e.variants.some(v=>v.quantity!==local.variants.find(desired=>desired.id===v.id)?.quantity&&l.lastSyncedVariants?.find(before=>before.id===v.id)?.quantity!==v.quantity);
     const expectedVariants=j.payload.expectedVariantQuantities as {id:string;quantity:number}[]|undefined;
     const override=j.payload.resolveConflict===true&&j.payload.expectedExternalPrice===e.priceCents&&j.payload.expectedExternalQuantity===e.quantity&&
      (!e.variants.length||(expectedVariants?.length===e.variants.length&&e.variants.every(v=>expectedVariants.some(x=>x.id===v.id&&x.quantity===v.quantity))));
@@ -379,7 +380,7 @@ export class MarketplaceService {
      if(!["paused","active","closed"].includes(status))throw new MarketplaceError("INVALID_LISTING_STATUS");
      if(status==="closed"&&j.payload.confirm!==true)throw new MarketplaceError("CLOSE_CONFIRMATION_REQUIRED");
      if(e.status==="closed"&&status!=="closed")throw new MarketplaceError("ML_CLOSED_LISTING_REQUIRES_NEW_PUBLICATION");
-     await this.d.provider.setStatus(token,e.id,status);
+     if(e.status!==status)await this.d.provider.setStatus(token,e.id,status);
      await this.d.repository.audit(actor,"LISTING_"+status.toUpperCase(),l.id);
      e=await this.d.provider.getListing(token,e.id);this.assertSeller(c,e);
     }else if(j.kind==="UPDATE"){
@@ -397,11 +398,15 @@ export class MarketplaceService {
      }
      if(e.priceCents!==local.priceCents){
       if(!e.priceWritable)throw new MarketplaceError("ML_PRICE_AUTOMATION_OR_PROMOTION_ACTIVE");
-      await this.d.provider.syncPrice(token,e.id,local.priceCents);await this.d.repository.audit(actor,"PRICE_SYNCED",l.id);
+      await this.d.provider.syncPrice(token,e.id,local.priceCents);
+      l.lastSyncedPrice=local.priceCents;await this.d.repository.saveListing({...l,syncStatus:"PENDING"});
+      await this.d.repository.audit(actor,"PRICE_SYNCED",l.id);
      }
      if(e.quantity!==local.quantity||e.variants.some(v=>local.variants.find(lv=>lv.id===v.id)?.quantity!==v.quantity)){
       if(!e.stockWritable)throw new MarketplaceError("ML_STOCK_LOCATION_REQUIRES_CONFIGURATION");
-      await this.d.provider.syncStock(token,e.id,local.quantity,local.variants);await this.d.repository.audit(actor,"INVENTORY_SYNCED",l.id);
+      await this.d.provider.syncStock(token,e.id,local.quantity,local.variants);
+      l.lastSyncedQuantity=local.quantity;l.lastSyncedVariants=local.variants;
+      await this.d.repository.saveListing({...l,syncStatus:"PENDING"});await this.d.repository.audit(actor,"INVENTORY_SYNCED",l.id);
      }
      e=await this.d.provider.getListing(token,e.id);this.assertSeller(c,e);
     }

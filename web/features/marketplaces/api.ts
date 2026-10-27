@@ -1,7 +1,7 @@
 import { apiClient } from "@/lib/api-client";
 export type Connection={id:string;externalAccountName:string;externalAccountId:string;status:string;safetyStock:number;lastSyncAt?:string;lastError?:string;userProducts:boolean};
 export type ExternalVariant={id:string;sku?:string;ean?:string;quantity:number;options:Record<string,string>};
-export type External={id:string;title:string;sku?:string;ean?:string;categoryId:string;priceCents:number;quantity:number;status:string;pictures:string[];variants:ExternalVariant[]};
+export type External={id:string;title:string;sku?:string;ean?:string;categoryId:string;priceCents:number;quantity:number;status:string;pictures:string[];variants:ExternalVariant[];stockWritable?:boolean};
 export type Identity={productId:string;variantId?:string;name:string;sku?:string;ean?:string};
 export type Match={kind:string;candidates:Identity[]};
 export type Listing={id:string;connectionId:string;productId:string;productName?:string;variantId?:string;externalListingId?:string;externalUrl?:string;status:string;syncStatus:string;externalPrice?:number;externalQuantity?:number;lastError?:string;lastSyncAt?:string;snapshot?:External;draft?:Draft};

@@ -171,7 +171,8 @@ test("E2E 51 — mensagem com a referência cria contato, conversa, atendimento 
  assert.equal(items.length,1);assert.equal(items[0].productId,c.productA.id);assert.equal(Number(items[0].quantity),3);assert.equal(items[0].proposedUnitPriceCents,5990);
  const attendance=await c.inbox.attendanceRepository.getOpenByConversation(conversation.id);assert.equal(attendance.id,intent.attendanceId);
  // Eventos anônimos da sessão passam a apontar para o contato conhecido.
- assert.equal(await count("select count(*) n from site_events where site_id=$1 and anonymous_session_id='sess-visitante-51' and contact_id is null",[c.site.id]),0);
+ assert.ok(await count("select count(*) n from site_events where site_id=$1 and anonymous_session_id='sess-visitante-51' and contact_id is null",[c.site.id])>0,"eventos anônimos históricos são preservados");
+ assert.equal(await count("select count(*) n from site_analytics_identities where site_id=$1 and anonymous_session_id='sess-visitante-51' and contact_id is not null and not ambiguous",[c.site.id]),1);
  assert.equal(await count("select count(*) n from site_events where site_id=$1 and type='SALES_INTENT_CONVERTED'",[c.site.id]),1);
  // Webhook duplicado (mesmo id do provedor) e nova mensagem com a mesma referência: nada duplica.
  assert.equal((await c.inbound(`Ref: ${reference}`,{externalMessageId})).result.status,"duplicate");

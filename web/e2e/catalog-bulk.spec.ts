@@ -1,0 +1,23 @@
+import {test,expect} from "@playwright/test";
+import {mkdir} from "node:fs/promises";
+import path from "node:path";
+test("catalog import mapping, preview, completion, bulk edit and download at every width",async({page,request},info)=>{
+ const scope=await (await request.get("http://127.0.0.1:3390/fixture-only/scope")).json();
+ await page.goto("/login");await page.getByLabel("E-mail",{exact:true}).fill(scope.email);await page.getByLabel("Senha",{exact:true}).fill(scope.password);await page.getByRole("button",{name:"Entrar",exact:true}).click();await page.waitForURL(/\/workspaces(?:\/|$)/);
+ await page.goto(`/workspaces/${scope.workspaceId}/products`);await expect(page.getByText("Camiseta de fixture",{exact:true})).toBeVisible({timeout:15000});await page.getByRole("button",{name:"Importar produtos",exact:true}).click();
+ const dialog=page.getByRole("dialog",{name:"Importar produtos"});await expect(dialog).toBeVisible();
+ const sku=`BROWSER-${info.project.name}`;
+ await dialog.locator('input[type="file"]').setInputFiles({name:"bulk.csv",mimeType:"text/csv",buffer:Buffer.from(`Cod Produto;Nome;Valor venda;Controlar estoque;Estoque\n${sku};Produto bulk ${info.project.name};12,90;sim;5\nBAD-${sku};Inválido;abc;sim;2`)});
+ await expect(dialog.getByLabel("Mapear Cod Produto",{exact:true})).toHaveValue("sku");await expect(dialog.getByLabel("Mapear Valor venda",{exact:true})).toHaveValue("price");
+ expect(await dialog.evaluate(el=>el.scrollWidth<=el.clientWidth+1)).toBe(true);
+ await dialog.getByRole("button",{name:"Validar e gerar preview"}).click();await expect(dialog.getByText("Preview pronto para revisão",{exact:true})).toBeVisible();
+ await expect(dialog.getByText(/1 novos.*1 erros/)).toBeVisible();
+ const dir=path.resolve("../tmp/catalog-bulk-evidence");await mkdir(dir,{recursive:true});await page.screenshot({path:path.join(dir,`${info.project.name}-preview.png`),fullPage:true});
+ const report=page.waitForEvent("download");await dialog.getByRole("button",{name:"Baixar relatório de erros e avisos"}).click();expect((await report).suggestedFilename()).toBe("relatorio-importacao.csv");
+ await dialog.getByRole("button",{name:"Confirmar importação dos produtos válidos"}).click();await expect(dialog.getByText("Concluído com erros",{exact:true})).toBeVisible();
+ await page.keyboard.press("Escape");await page.getByRole("textbox",{name:"Buscar produto",exact:true}).fill(sku);await expect(page.getByRole("checkbox",{name:`Selecionar Produto bulk ${info.project.name}`,exact:true})).toBeVisible();
+ await page.getByRole("checkbox",{name:`Selecionar Produto bulk ${info.project.name}`,exact:true}).check();await page.getByRole("button",{name:"Revisar alterações",exact:true}).click();await expect(dialog.getByText("Preview pronto para revisão",{exact:true})).toBeVisible();
+ await dialog.getByRole("button",{name:"Confirmar importação dos produtos válidos"}).click();await expect(dialog.getByText("Concluído",{exact:true})).toBeVisible();await page.keyboard.press("Escape");
+ const download=page.waitForEvent("download");await page.getByRole("button",{name:"Exportar produtos",exact:true}).click();expect((await download).suggestedFilename()).toBe("produtos.xlsx");
+ expect(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth+1)).toBe(true);await page.screenshot({path:path.join(dir,`${info.project.name}-catalog.png`),fullPage:true});
+});

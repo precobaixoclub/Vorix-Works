@@ -20,7 +20,7 @@ function activityQuery(input:SiteAnalyticsQuery){
  select s.*,item.value as item,item.ordinality=1 as primary_row,
  coalesce(item.value->>'productId',s.product_id,'') product_key,
  case when s.anonymous_session_id is not null then s.site_id||':a:'||s.anonymous_session_id else '' end actor,
- coalesce(entry.dimensions,'{}'::jsonb)||jsonb_strip_nulls(jsonb_build_object('source',nullif(s.utm_source,''),'medium',nullif(s.utm_medium,''),'campaign',nullif(s.utm_campaign,''),'content',nullif(s.utm_content,''),'term',nullif(s.utm_term,''))) dimensions
+ coalesce(case when coalesce(nullif(s.utm_source,''),nullif(s.utm_medium,''),nullif(s.utm_campaign,''),nullif(s.utm_content,''),nullif(s.utm_term,'')) is null then entry.dimensions else jsonb_strip_nulls(jsonb_build_object('referrer',entry.dimensions->'referrer')) end,'{}'::jsonb)||jsonb_strip_nulls(jsonb_build_object('source',nullif(s.utm_source,''),'medium',nullif(s.utm_medium,''),'campaign',nullif(s.utm_campaign,''),'content',nullif(s.utm_content,''),'term',nullif(s.utm_term,''))) dimensions
  from visible_intents s cross join lateral jsonb_array_elements(case when jsonb_typeof(s.snapshot->'items')='array' and jsonb_array_length(s.snapshot->'items')>0 then s.snapshot->'items' else '[{}]'::jsonb end) with ordinality item(value,ordinality)
  left join lateral(select b.dimensions from site_analytics_buckets b where b.site_id=s.site_id and b.tenant_id=$1 and b.workspace_id=$2 and b.actor='a:'||s.anonymous_session_id and b.type='SITE_VIEW' and b.bucket<=s.created_at and b.bucket>s.created_at-interval '30 days' order by b.bucket desc limit 1)entry on true
  ), raw_activity as (
@@ -46,7 +46,7 @@ function activityQuery(input:SiteAnalyticsQuery){
  and not exists(select 1 from sales_intents other where other.tenant_id=i.tenant_id and other.workspace_id=i.workspace_id and other.deal_id=i.deal_id and (other.created_at,other.id)<(i.created_at,i.id))
  and not exists(select 1 from site_analytics_order_facts o where o.tenant_id=$1 and o.workspace_id=$2 and o.opportunity_id=i.deal_id and o.paid_at is not null)
  union all
- select o.site_id,stage.at,stage.type,coalesce(o.actor,''),coalesce(o.product_id,''),coalesce(entry.dimensions,'{}'::jsonb)||o.utm,1,'order:'||o.order_id,true,
+ select o.site_id,stage.at,stage.type,coalesce(o.actor,''),coalesce(o.product_id,''),coalesce(case when o.utm='{}'::jsonb then entry.dimensions else jsonb_strip_nulls(jsonb_build_object('referrer',entry.dimensions->'referrer')) end,'{}'::jsonb)||o.utm,1,'order:'||o.order_id,true,
  case when stage.type='SALE' then o.amount_cents::numeric end,coalesce(o.currency,''),case when stage.type='SALE' and o.product_id is not null then o.amount_cents::numeric end
  from site_analytics_order_facts o
  cross join lateral(values('ORDER',coalesce(o.created_at,o.paid_at)),('SALE',case when o.cancelled_at is null then o.paid_at end))stage(type,at)
@@ -112,6 +112,7 @@ export class PostgresSiteAnalyticsRepository implements SiteAnalyticsRepositoryP
   const interest=await this.pool.query(`${sql} select null::text source_key,count(distinct visitor)::int n from activity where type in ('PRODUCT_WHATSAPP_CLICK','ADD_TO_CART','CART_WHATSAPP_START','CONTACT_FORM_SUBMITTED','INTENT') union all select ${acquisitionKey} source_key,count(distinct visitor)::int n from activity where type in ('PRODUCT_WHATSAPP_CLICK','ADD_TO_CART','CART_WHATSAPP_START','CONTACT_FORM_SUBMITTED','INTENT') group by ${acquisitionKey}`,params);
   total.metrics.INTEREST={count:Number(interest.rows[0].n),visitors:Number(interest.rows[0].n)};
   for(const source of acquisition){const n=Number(interest.rows.find(r=>r.source_key===source.key)?.n??0);source.metrics.INTEREST={count:n,visitors:n};}
+  for(let index=acquisition.length-1;index>=0;index--)if(!["SITE_VIEW","PRODUCT_VIEW","INTENT","OPPORTUNITY","SALE","ORDER","INTEREST"].some(key=>metric(acquisition[index],key).count))acquisition.splice(index,1);
   const leads=await this.pool.query(`${sql} select distinct i.id,i.reference,i.type,i.contact_id,i.deal_id,i.created_at from visible_intents i where exists(select 1 from activity a where a.entity=i.id and a.type='INTENT') order by i.created_at desc limit 20`,params);
   return {range:input.range,scope:input.scope.global?"workspace":"team_or_own",metrics:total.metrics,revenue:total.revenue,
    funnel:stages.map(([key,label])=>({key,label,visitors:key==="INTEREST"?Number(interest.rows[0].n):metric(total,key).visitors})),

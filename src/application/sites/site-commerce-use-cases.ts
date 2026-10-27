@@ -8,7 +8,7 @@ import {signOwnedUrl,OBJECT_URL_TTL} from "../../shared/utils/object-url-signing
 
 export type SiteCommerceDeps=SiteEngineDeps&{commerceRepository:SiteCommerceRepositoryPort;teamBelongsToWorkspace?:(input:{tenantId:string;workspaceId:string;teamId:string})=>Promise<boolean>;now?:()=>Date;log?:(event:string,data:Record<string,unknown>)=>void};
 export type PublicLookup={slug?:string;hostname?:string};
-export type VisitorContext={sessionId?:string;pageUrl?:string;utm?:Utm};
+export type VisitorContext={sessionId?:string;pageUrl?:string;utm?:Utm;eventKey?:string;referrer?:string;device?:"mobile"|"tablet"|"desktop"|"unknown"};
 const CART_TTL_MS=30*24*60*60*1000;
 const MAX_CART_LINES=50;
 const now=(deps:SiteCommerceDeps)=>deps.now?.()??new Date();
@@ -87,9 +87,9 @@ export async function resolveSalesIntentRedirect(deps:SiteCommerceDeps,reference
 export async function recordPublicSiteEvent(deps:SiteCommerceDeps,input:{lookup:PublicLookup;type:"SITE_VIEW"|"PRODUCT_VIEW";productId?:string}&VisitorContext){
  const {site}=await resolvePublishedSite(deps,input.lookup);
  let productId:string|undefined;
- if(input.productId){const product=await deps.productRepository.getById(input.productId);if(product&&product.tenantId===site.tenantId&&product.workspaceId===site.workspaceId)productId=product.id;}
+ if(input.productId){const product=await deps.productRepository.getById(input.productId);if(product&&product.tenantId===site.tenantId&&product.workspaceId===site.workspaceId&&isPublicCatalogProduct(product,await deps.productEngineRepository.metadata(site)))productId=product.id;}
  if(input.type==="PRODUCT_VIEW"&&!productId)return;
- await deps.commerceRepository.recordEvent({tenantId:site.tenantId,workspaceId:site.workspaceId,siteId:site.id,type:input.type,anonymousSessionId:input.sessionId,productId,pageUrl:safePageUrl(input.pageUrl),utm:cleanUtm(input.utm)});
+ await deps.commerceRepository.recordEvent({tenantId:site.tenantId,workspaceId:site.workspaceId,siteId:site.id,type:input.type,anonymousSessionId:input.sessionId,productId,pageUrl:safePageUrl(input.pageUrl),utm:cleanUtm(input.utm),eventKey:input.eventKey,referrer:input.referrer,device:input.device});
 }
 
 // ---------------------------------------------------------------- carrinho (intenção, não pedido)

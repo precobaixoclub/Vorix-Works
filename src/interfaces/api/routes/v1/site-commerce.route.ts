@@ -7,6 +7,7 @@ import {assertWorkspaceBelongsToTenant} from "./workspace-ownership.js";
 import {mustSite} from "../../../../application/sites/site-use-cases.js";
 import {checkoutPublicCartToWhatsapp,getPublicCart,getSiteCommerceSettings,listSiteSalesIntents,recordPublicSiteEvent,resolveSalesIntentRedirect,saveSiteCommerceSettings,setPublicCartItem,startProductWhatsapp,type SiteCommerceDeps} from "../../../../application/sites/site-commerce-use-cases.js";
 import {utmSchema} from "../../../../domain/sites/site-commerce.js";
+import {analyticsEventContextSchema} from "../../../../domain/sites/site-analytics.js";
 import type {WorkspaceRepositoryPort} from "../../../../application/ports/workspace-repository.port.js";
 import type {Permission} from "../../../../domain/identity/identity.model.js";
 export type SiteCommerceRouteDeps=SiteCommerceDeps&{workspaceRepository:WorkspaceRepositoryPort};
@@ -39,7 +40,7 @@ export async function registerSiteCommerceRoutes(app:FastifyInstance,deps:SiteCo
   return successEnvelope(await checkoutPublicCartToWhatsapp(deps,{...body,lookup:lookup(request)}),request.id);
  }));
  app.post("/public/sites/:slug/events",async(request,reply)=>guard(async()=>{
-  const body=z.object({type:z.enum(["SITE_VIEW","PRODUCT_VIEW"]),productId:id.optional(),...visitor}).strict().parse(request.body);
+  const body=z.object({type:z.enum(["SITE_VIEW","PRODUCT_VIEW"]),productId:id.optional(),...visitor,...analyticsEventContextSchema.shape}).strict().parse(request.body);
   await recordPublicSiteEvent(deps,{...body,lookup:lookup(request)});reply.code(204);return null;
  }));
  app.get("/public/sales-intents/:reference",async request=>guard(async()=>{

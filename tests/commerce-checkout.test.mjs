@@ -21,6 +21,8 @@ import {OwnShippingProvider} from "../dist/infrastructure/commerce/shipping-prov
 import {quoteOwnShipping,shippingSettingsSchema} from "../dist/domain/commerce/shipping.js";
 import {assertOrderTransition,validTaxDocument,orderTotals} from "../dist/domain/commerce/order.model.js";
 import {resolveProductCommerce,siteCommerceSettingsSchema,checkoutReadiness} from "../dist/domain/sites/site-commerce.js";
+import {PostgresSiteAnalyticsRepository} from "../dist/infrastructure/storage/postgres/postgres-site-analytics-repository.js";
+import {analyticsRange} from "../dist/domain/sites/site-analytics.js";
 
 let db;before(async()=>{db=await startTestPostgres();await applyMigrations(db.pool,join(process.cwd(),"db/migrations"));});after(async()=>{await db?.stop();});
 const visible=(value={})=>({...defaultProductDetails(),siteVisible:true,...value});
@@ -263,4 +265,44 @@ test("catálogo público paginado no banco: 24 primeiros, total, próxima págin
  assert.equal((await publicSite(s.siteDeps,s.lookup,undefined,{includeSlugs:true})).catalog.slugs.length,33);
  const hidden=await s.product({name:"Oculto",details:defaultProductDetails()});
  assert.equal((await publicCatalogPage(s.siteDeps,s.lookup,{offset:0,limit:48,ids:[hidden.id]})).products.length,0);
+});
+
+test("contrato com Analytics: eventos do pedido, receita por produto, cancelamento e venda única com a oportunidade ganha",async()=>{
+ const s=await store({settings:{...READY,checkout:{...READY.checkout,orderCrm:"CONTACT_AND_WON_OPPORTUNITY"}}});
+ const facts=async()=>q("select order_id,actor,opportunity_id,utm->>'source' source,amount_cents::int amount,currency,paid_at is not null paid,cancelled_at is not null cancelled from site_analytics_order_facts where workspace_id=$1 order by created_at",[s.workspaceId]);
+ const until=async check=>{for(let i=0;i<100;i++){if(await check())return;await new Promise(r=>setTimeout(r,20));}assert.fail("eventos do pedido não chegaram ao Analytics");};
+ // Carrinho com dois produtos (2 canecas + 1 camiseta M), cotação e pagamento aprovado.
+ const token=await s.cart([{productId:s.a.id,quantity:2},{productId:s.b.id,variantId:s.m.id,quantity:1}]);
+ await quoteCheckout(s.deps,{lookup:s.lookup,token,sessionId:"sess-checkout-1",utm:{source:"google",campaign:"verao"}});
+ await quoteCheckout(s.deps,{lookup:s.lookup,token,postalCode:"01310100",sessionId:"sess-checkout-1",utm:{source:"google",campaign:"verao"}});
+ const paid=await order(s,token,{deliveryOptionId:"fixed",address:ADDRESS});const paidId=await byNumber(s,paid.number);
+ await simulateSandboxPayment(s.deps,s.scope,{id:paidId,outcome:"APPROVED"});
+ const dealId=(await getOrderDetail(s.deps,s.scope,paidId)).order.crmDealId;assert.ok(dealId);
+ // Segundo pedido pago e depois cancelado: a receita dele sai do Analytics.
+ const gone=await order(s,await s.cart([{productId:s.a.id,quantity:1}]),{sessionId:"sess-checkout-2"});const goneId=await byNumber(s,gone.number);
+ await simulateSandboxPayment(s.deps,s.scope,{id:goneId,outcome:"APPROVED"});await cancelOrder(s.deps,s.scope,{id:goneId,reason:"cliente desistiu"});
+ await until(async()=>(await facts()).filter(f=>f.paid).length===2&&(await facts()).some(f=>f.cancelled));
+ const events=await q("select type,tenant_id,workspace_id,site_id,anonymous_session_id,order_id,opportunity_id,amount_cents::int amount,currency,utm->>'source' source from site_events where order_id=$1 order by created_at",[paidId]);
+ assert.deepEqual(events.map(e=>e.type).sort(),["ORDER_CREATED","ORDER_PAID","PAYMENT_APPROVED","PAYMENT_STARTED"]);
+ for(const e of events)assert.deepEqual([e.tenant_id,e.workspace_id,e.site_id,e.anonymous_session_id,e.source],[s.tenantId,s.workspaceId,s.site.id,"sess-checkout-1","google"]);
+ const orderPaid=events.find(e=>e.type==="ORDER_PAID");assert.deepEqual([orderPaid.amount,orderPaid.currency,orderPaid.opportunity_id],[paid.totalCents,"BRL",dealId]);
+ assert.deepEqual((await q("select type from site_events where site_id=$1 and type in ('CHECKOUT_STARTED','SHIPPING_QUOTED') order by type",[s.site.id])).map(e=>e.type),["CHECKOUT_STARTED","SHIPPING_QUOTED"]);
+ // A mesma oportunidade também ligada a uma intenção do site (ex.: começou no WhatsApp) não pode virar segunda venda.
+ await q("insert into sales_intents(id,tenant_id,workspace_id,site_id,reference,type,status,snapshot,anonymous_session_id,deal_id,expires_at,converted_at) values('intent-dup',$1,$2,$3,'VX-DUP001','PRODUCT_WHATSAPP','CONVERTED',$4,'sess-checkout-1',$5,now()+interval '1 day',now())",[s.tenantId,s.workspaceId,s.site.id,JSON.stringify({items:[{productId:s.a.id}]}),dealId]);
+ const analytics=new PostgresSiteAnalyticsRepository(db.pool);
+ const query={scope:{tenantId:s.tenantId,workspaceId:s.workspaceId,global:true,ownerUserIds:[],teamIds:[]},filters:{},range:analyticsRange({period:"today",timezone:"UTC"}),offset:0,limit:20,sort:"revenue"};
+ const report=await analytics.report(query);
+ assert.deepEqual(report.revenue,{BRL:paid.totalCents},"só o pedido pago e não cancelado, uma vez");
+ assert.equal(report.metrics.SALE.count,1);assert.equal(report.metrics.ORDER.count,2);
+ const product=id=>report.products.find(p=>p.key===id);
+ assert.deepEqual(product(s.a.id).revenue,{BRL:6000});assert.deepEqual(product(s.b.id).revenue,{BRL:5000});
+ assert.equal(product(s.a.id).metrics.SALE.count,1);assert.equal(product(s.b.id).metrics.SALE.count,1);
+ assert.equal(report.acquisition.find(g=>g.utm?.source==="google")?.revenue.BRL,paid.totalCents);
+ assert.deepEqual((await analytics.report({...query,filters:{productId:s.b.id}})).revenue,{BRL:5000});
+ // Visão restrita: pedidos aparecem para o dono da oportunidade, nunca para quem não tem vínculo.
+ const deal=(await q("select owner_user_id,team_id from deals where id=$1",[dealId]))[0];
+ assert.deepEqual((await analytics.report({...query,scope:{...query.scope,global:false,ownerUserIds:["user-sem-vinculo"],teamIds:[]}})).revenue,{});
+ if(deal.owner_user_id||deal.team_id)assert.deepEqual((await analytics.report({...query,scope:{...query.scope,global:false,ownerUserIds:[deal.owner_user_id??"-"],teamIds:deal.team_id?[deal.team_id]:[]}})).revenue,{BRL:paid.totalCents});
+ // Outro tenant não enxerga nada desta loja.
+ const other=await store();assert.deepEqual((await analytics.report({...query,scope:{...query.scope,tenantId:other.tenantId,workspaceId:other.workspaceId}})).revenue,{});
 });

@@ -182,7 +182,7 @@ export async function placeOrder(deps:CheckoutDeps,input:PlaceOrderInput){
   await deps.orders.update(order.id,{status:"CANCELLED",cancelReason:"out_of_stock",cancelledAt:now(deps).toISOString(),paymentStatus:"CANCELLED",reservationExpiresAt:null},{type:"order_cancelled",fromStatus:"PENDING",toStatus:"CANCELLED",actorType:"system",data:{reason:"out_of_stock"}});
   throw error;
  }
- emit(deps,{...base,type:"ORDER_CREATED"});
+ emit(deps,{...base,amountCents:order.totalCents,currency:order.currency,type:"ORDER_CREATED"});
  // Contato no CRM assim que os dados são confirmados (falha aqui nunca derruba a compra).
  if(deps.crm)await ensureOrderContact(deps.crm,order).then(contactId=>deps.orders.update(order.id,{contactId},{type:"contact_linked",actorType:"system",data:{contactId}})).then(updated=>{if(updated)order=updated;}).catch(error=>deps.log?.("order_contact_failed",{orderId:order.id,error:errorText(error)}));
  try{
@@ -256,9 +256,10 @@ export async function applyPaymentState(deps:CheckoutDeps,payment:Payment,state:
   if(order.stockState==="RESERVED")await moveStock(deps,order,"SALE","sale",true);
   const paid=await deps.orders.update(order.id,{status:"PAID",paymentStatus:"APPROVED",stockState:order.stockState==="RESERVED"?"SOLD":order.stockState,paidAt:at,reservationExpiresAt:null},{type:"payment_approved",fromStatus:"AWAITING_PAYMENT",toStatus:"PAID",actorType:input.actor,actorId:input.actorId,data:{paymentId:payment.id,provider:payment.provider}},{statuses:["AWAITING_PAYMENT"]});
   if(!paid)return {status:"ignored" as const};
-  const event={tenantId:paid.tenantId,workspaceId:paid.workspaceId,siteId:paid.siteId??"",anonymousSessionId:paid.anonymousSessionId,contactId:paid.contactId,orderId:paid.id,utm:paid.utm};
-  emit(deps,{...event,type:"PAYMENT_APPROVED"});emit(deps,{...event,type:"ORDER_PAID"});
+  emit(deps,{...orderEvent(paid),type:"PAYMENT_APPROVED"});
   await afterPaid(deps,paid).catch(error=>deps.log?.("order_after_paid_failed",{orderId:paid.id,error:errorText(error)}));
+  // ORDER_PAID depois do CRM: leva a oportunidade ganha (se criada) para o Analytics não contar a venda duas vezes.
+  emit(deps,{...orderEvent(await deps.orders.get(paid.id)??paid),type:"ORDER_PAID"});
   deps.log?.("OrderPaid",{orderId:paid.id,number:paid.number});
   return {status:"paid" as const};
  }
@@ -270,6 +271,8 @@ export async function applyPaymentState(deps:CheckoutDeps,payment:Payment,state:
  if(state.status==="REFUNDED"){await deps.orders.updatePayment(payment.id,{status:"REFUNDED"},["APPROVED","PENDING"]);await deps.orders.addEvent(order.id,{type:"payment_refunded",actorType:input.actor,data:{paymentId:payment.id}});}
  return {status:"ignored" as const};
 }
+/** Evento analítico do pedido: valor total pago (com frete), moeda e a oportunidade ganha da mesma venda (deduplicação). */
+const orderEvent=(order:Order)=>({tenantId:order.tenantId,workspaceId:order.workspaceId,siteId:order.siteId??"",anonymousSessionId:order.anonymousSessionId,contactId:order.contactId,orderId:order.id,opportunityId:order.crmDealId,utm:order.utm,amountCents:order.totalCents,currency:order.currency});
 async function afterPaid(deps:CheckoutDeps,order:Order){
  const context=order.siteId?await deps.commerceRepository.getSettings(order.siteId):undefined;
  if(deps.crm){
@@ -317,8 +320,9 @@ async function cancelOrderInternal(deps:CheckoutDeps,order:Order,input:{reason:s
    await deps.orders.updatePayment(payment.id,{status:"CANCELLED"},["PENDING"]);
   }else if(payment.status==="APPROVED")await refundPayment(deps,order,payment,input.reason);
  }
- emit(deps,{tenantId:order.tenantId,workspaceId:order.workspaceId,siteId:order.siteId??"",anonymousSessionId:order.anonymousSessionId,contactId:order.contactId,orderId:order.id,utm:order.utm,type:"ORDER_CANCELLED"});
- return deps.orders.get(order.id);
+ const cancelled=await deps.orders.get(order.id);
+ emit(deps,{...orderEvent(cancelled??updated),type:"ORDER_CANCELLED"});
+ return cancelled;
 }
 async function expireOrder(deps:CheckoutDeps,order:Order){return cancelOrderInternal(deps,order,{reason:"payment_expired",actorType:"system"});}
 /** Varredura periódica: pedidos aguardando pagamento além do prazo devolvem o estoque. */
@@ -356,7 +360,7 @@ export async function advanceOrder(deps:CheckoutDeps,scope:OrderAdminScope,input
  const shippingStatus=input.to==="PROCESSING"&&pickup?"READY_FOR_PICKUP":input.to==="SHIPPED"?"SHIPPED":input.to==="DELIVERED"?"DELIVERED":undefined;
  const updated=await deps.orders.update(order.id,{status:input.to,...(shippingStatus?{shippingStatus}:{})},{type:"status_changed",fromStatus:order.status,toStatus:input.to,actorType:"user",actorId:scope.actorUserId,data:{...(input.trackingCode?{trackingCode:input.trackingCode.slice(0,80)}:{})}},{statuses:[order.status]});
  if(!updated)throw Error("SITE_VALIDATION: o pedido mudou enquanto você editava. Atualize a tela.");
- if(input.to==="DELIVERED")emit(deps,{tenantId:order.tenantId,workspaceId:order.workspaceId,siteId:order.siteId??"",contactId:order.contactId,orderId:order.id,utm:order.utm,type:"ORDER_COMPLETED"});
+ if(input.to==="DELIVERED")emit(deps,{...orderEvent(order),type:"ORDER_COMPLETED"});
  return updated;
 }
 export async function cancelOrder(deps:CheckoutDeps,scope:OrderAdminScope,input:{id:string;reason?:string;restock?:boolean}){

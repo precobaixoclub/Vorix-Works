@@ -6,7 +6,7 @@ import { Input,Label,Textarea } from "@/components/Field";
 import { SettingsShell } from "@/components/settings/SettingsShell";
 import { useCurrentWorkspace } from "@/contexts/workspace-context";
 import { useMyAccess } from "@/features/auth/access";
-import { marketplaceApi,marketplaceMessage,type Category,type Decision,type Draft,type Identity,type Job,type Listing } from "@/features/marketplaces/api";
+import { marketplaceApi,marketplaceMessage,type Category,type Dashboard,type Decision,type Draft,type Identity,type Job,type Listing } from "@/features/marketplaces/api";
 import { apiClient } from "@/lib/api-client";
 import { formatCurrencyCents } from "@/lib/format";
 const selectClass="h-10 w-full min-w-0 rounded-md border border-border bg-background px-2 text-sm";
@@ -62,7 +62,7 @@ export function MarketplacesPanel(){
       </div>}
      </div>}
     </section>
-    {publish&&manage&&connection&&<PublishForm key={connection.id+":"+(editing?.id??"new")} workspaceId={workspace.id} connectionId={connection.id} catalog={catalog} initialProduct={initialProduct} listing={editing} disabled={busy}
+    {publish&&manage&&connection&&<PublishForm key={connection.id+":"+(editing?.id??"new")} workspaceId={workspace.id} connectionId={connection.id} catalog={catalog} mappings={data?.mappings??[]} initialProduct={initialProduct} listing={editing} disabled={busy}
      onSubmit={(operation,key)=>queue(operation,key)} onClose={()=>{setPublish(false);setEditing(undefined);}}/>}
     {job&&<section className={box} aria-label="Progresso da importação"><h2 className="font-semibold">Processamento: {status(job.status)}</h2><p className="mt-1 text-sm">{job.progress} de {job.total||"—"}</p>
      <progress className="mt-2 w-full" max={Math.max(1,job.total)} value={job.progress} aria-label="Progresso"/>
@@ -131,7 +131,7 @@ function ImportPreview({job,catalog,disabled,onImport}:{job:Job;catalog:Identity
   <Button disabled={disabled||!valid||decisions.every(d=>d.action==="IGNORE")} onClick={()=>onImport(decisions)}>Confirmar importação em lote</Button>
  </div>;
 }
-function PublishForm({workspaceId,connectionId,catalog,initialProduct,listing,disabled,onSubmit,onClose}:{workspaceId:string;connectionId:string;catalog:Identity[];initialProduct:string;listing?:Listing;disabled:boolean;onSubmit:(operation:Record<string,unknown>,key:string)=>void;onClose:()=>void}){
+function PublishForm({workspaceId,connectionId,catalog,mappings,initialProduct,listing,disabled,onSubmit,onClose}:{workspaceId:string;connectionId:string;catalog:Identity[];mappings:Dashboard["mappings"];initialProduct:string;listing?:Listing;disabled:boolean;onSubmit:(operation:Record<string,unknown>,key:string)=>void;onClose:()=>void}){
  const api=useMemo(()=>marketplaceApi(workspaceId),[workspaceId]),[selected,setSelected]=useState(listing?listing.productId+":"+(listing.variantId??""):"");
  const [draft,setDraft]=useState<Draft>(listing?.draft??{categoryId:listing?.snapshot?.categoryId??"",title:listing?.snapshot?.title??"",description:"",condition:"new",listingTypeId:"gold_special",buyingMode:"buy_it_now",attributes:[],pictures:listing?.snapshot?.pictures??[],settings:{}});
  const [category,setCategory]=useState<Category>(),[error,setError]=useState(""),[validated,setValidated]=useState(""),[loading,setLoading]=useState(false),[vorixCategory,setVorixCategory]=useState("");
@@ -143,6 +143,11 @@ function PublishForm({workspaceId,connectionId,catalog,initialProduct,listing,di
  },[selected,workspaceId,listing]);
  const [productId,variantId]=selected.split(":"),body={connectionId,productId,variantId:variantId||undefined,listingId:listing?.id,draft},fingerprint=JSON.stringify(body);
  const patch=(p:Partial<Draft>)=>{setDraft(d=>({...d,...p}));setError("");};
+ useEffect(()=>{
+  if(listing||draft.categoryId||!vorixCategory)return;
+  const mapping=mappings.find(m=>m.connection_id===connectionId&&m.category_id===vorixCategory);
+  if(mapping)setDraft(d=>({...d,categoryId:mapping.external_category_id,attributes:mapping.attributes}));
+ },[connectionId,vorixCategory,mappings,listing,draft.categoryId]);
  const field=(a:{id:string;name:string;required:boolean;values?:{id:string;name:string}[]},term=false)=>{
   const attributes=term?(draft.settings.sale_terms as Draft["attributes"]??[]):draft.attributes;
   const current=attributes.find(item=>item.id===a.id),setValue=(value:string,isId=false)=>{

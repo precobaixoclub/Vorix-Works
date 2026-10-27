@@ -13,7 +13,7 @@ async function fixture(page:Page,manage=true){
  await page.route("**/v1/**",async route=>{
   const url=new URL(route.request().url()),path=url.pathname;let data:unknown;
   if(path==="/v1/auth/me")data={user:{id:"user-qa",email:"qa@vorix.dev",name:"QA"},tenantId:"tenant-qa",role:manage?"owner":"viewer",permissions:[...OWNER_PERMISSIONS.filter(p=>p!=="marketplace:manage"),"marketplace:read",...(manage?["marketplace:manage"]:[])],teams:[],isAccountOwner:manage};
-  else if(path==="/v1/marketplaces")data={configured:true,connections:[connection],listings:[listing],jobs:[],mappings:[]};
+  else if(path==="/v1/marketplaces")data={configured:true,connections:[connection],listings:[listing],jobs:[],mappings:[{connection_id:connection.id,category_id:"category-qa",external_category_id:"MLB123",attributes:[{id:"BRAND",value_name:"Vorix"}]}]};
   else if(path==="/v1/marketplaces/catalog")data=catalog;
   else if(path==="/v1/product-metadata")data={categories:[{id:"category-qa",name:"Roupas"}],brands:[],attributes:[]};
   else if(path==="/v1/products/product-qa")data={name:"Camiseta Vorix",description:"Descrição da camiseta do catálogo",imageUrls:["https://images.example.test/qa.jpg"],categoryId:"category-qa"};
@@ -45,7 +45,7 @@ test("conexão, divergência, importação, mapeamento e publicação em todas a
  expect(operations.find(o=>o.kind==="IMPORT")?.decisions[0]).toMatchObject({action:"LINK",productId:"product-qa",useExternalInitialStock:false});
  await page.getByRole("button",{name:"Publicar produto",exact:true}).click();
  const form=page.getByLabel("Publicação no Mercado Livre");await form.getByLabel("Produto / variação Vorix",{exact:true}).selectOption("product-qa:");
- await form.getByLabel("Código da categoria Mercado Livre").fill("MLB123");await form.getByRole("button",{name:"Consultar",exact:true}).click();
+ await expect(form.getByLabel("Código da categoria Mercado Livre")).toHaveValue("MLB123");await form.getByRole("button",{name:"Consultar",exact:true}).click();
  await form.getByLabel("Marca *",{exact:true}).fill("Vorix");await form.getByLabel("EAN / GTIN *",{exact:true}).fill("7891234567890");
  await form.getByLabel("Tipo de garantia *",{exact:true}).selectOption("2230279");await form.getByLabel("Modalidade de envio do anúncio").selectOption("me2");
  await noOverflow(page);await page.screenshot({path:join(output,"mapping-"+info.project.name+".png"),fullPage:true});

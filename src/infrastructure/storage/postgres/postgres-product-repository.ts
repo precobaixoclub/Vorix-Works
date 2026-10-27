@@ -1,3 +1,4 @@
+import type { PublicCatalogQuery } from "../../../application/ports/product-repository.port.js";
 import type { Pool } from "pg";
 import { defaultProductDetails, type ProductDetails } from "../../../domain/products/product-details.js";
 import type { AdjustStockInput, CreateProductInput, ProductRepositoryPort, UpdateProductInput } from "../../../application/ports/product-repository.port.js";
@@ -89,6 +90,31 @@ export class PostgresProductRepository implements ProductRepositoryPort {
     return result.rows[0] ? toDomain(result.rows[0]) : undefined;
   }
 
+  private publicCatalogWhere(input: Pick<PublicCatalogQuery, "tenantId" | "workspaceId" | "visibleCategoryIds">, params: unknown[]): string[] {
+    params.push(input.tenantId, input.workspaceId, [...input.visibleCategoryIds]);
+    return ["tenant_id = $1", "workspace_id = $2", "active", "(details->>'siteVisible') = 'true'", "coalesce((details->>'catalogVisible')::boolean, true)",
+      "not (details->>'type' = 'REAL_ESTATE' and coalesce(details->'realEstate'->>'status', '') in ('sold', 'rented', 'inactive'))", "(category_id is null or category_id = any($3::text[]))"];
+  }
+  async listPublicCatalog(input: PublicCatalogQuery): Promise<{ products: Product[]; total: number }> {
+    const params: unknown[] = [];
+    const conditions = this.publicCatalogWhere(input, params);
+    const add = (sql: (p: string) => string, value: unknown) => { params.push(value); conditions.push(sql(`$${params.length}`)); };
+    if (input.search?.trim()) add((p) => `(name ilike ${p} or code ilike ${p} or description ilike ${p} or (details->'vehicle'->>'make') ilike ${p} or (details->'vehicle'->>'model') ilike ${p})`, `%${input.search.trim()}%`);
+    if (input.categoryIds?.length) add((p) => `category_id = any(${p}::text[])`, [...input.categoryIds]);
+    if (input.brandId) add((p) => `brand_id = ${p}`, input.brandId);
+    if (input.ids) add((p) => `id = any(${p}::text[])`, [...input.ids]);
+    if (input.slug) add((p) => `(details->>'slug' = ${p} or id = ${p})`, input.slug);
+    const order = input.sort === "price_asc" ? "price_cents asc, name asc" : input.sort === "price_desc" ? "price_cents desc, name asc" : "name asc";
+    const where = conditions.join(" and ");
+    const total = Number((await this.pool.query(`select count(*) n from products where ${where}`, params)).rows[0].n);
+    const result = await this.pool.query<ProductRow>(`select * from products where ${where} order by ${order}, id limit ${Math.min(200, Math.max(1, input.limit))} offset ${Math.max(0, input.offset)}`, params);
+    return { products: result.rows.map(toDomain), total };
+  }
+  async listPublicCatalogSlugs(input: Pick<PublicCatalogQuery, "tenantId" | "workspaceId" | "visibleCategoryIds">): Promise<{ id: string; slug: string }[]> {
+    const params: unknown[] = [];
+    const result = await this.pool.query(`select id, coalesce(details->>'slug', id) slug from products where ${this.publicCatalogWhere(input, params).join(" and ")} order by name asc limit 50000`, params);
+    return result.rows.map((row) => ({ id: String(row.id), slug: String(row.slug) }));
+  }
   async listByWorkspace(input: { tenantId: string; workspaceId: string; search?: string; activeOnly?: boolean }): Promise<Product[]> {
     const conditions: string[] = ["tenant_id = $1", "workspace_id = $2"];
     const params: unknown[] = [input.tenantId, input.workspaceId];

@@ -103,6 +103,20 @@ export const PERMISSION_CATALOG: readonly PermissionCategory[] = [
     ],
   },
   {
+    key: "site",
+    label: "Site, produtos e loja",
+    description: "Catálogo, estoque, site público, pedidos e configuração da loja online.",
+    permissions: [
+      { permission: "product:manage", label: "Cadastrar e editar produtos" },
+      { permission: "inventory:manage", label: "Movimentar estoque" },
+      { permission: "site:manage", label: "Editar a estrutura do site", description: "Modelos, páginas, seções, catálogo e contato." },
+      { permission: "site:publish", label: "Publicar o site e configurar domínio", sensitive: true },
+      { permission: "order:read", label: "Ver pedidos da loja" },
+      { permission: "order:manage", label: "Operar pedidos", description: "Avançar status, registrar envio e cancelar pedidos." },
+      { permission: "commerce:manage", label: "Configurar vendas, pagamento e frete", description: "Como vender, gateway de pagamento, métodos de entrega.", sensitive: true },
+    ],
+  },
+  {
     key: "settings",
     label: "Configurações",
     description: "Configurações administrativas da empresa.",

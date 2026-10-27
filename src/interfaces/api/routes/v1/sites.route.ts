@@ -6,7 +6,7 @@ import {requirePermission} from "../../http/require-principal.js";
 import {AppError,NotFoundError,ValidationError,ForbiddenError,ConflictError} from "../../http/app-error.js";
 import {successEnvelope} from "../../http/response-envelope.js";
 import {assertWorkspaceBelongsToTenant} from "./workspace-ownership.js";
-import {mustSite,publicSite,publishSite,validateSiteSnapshot,verifySiteDomain,type SiteEngineDeps} from "../../../../application/sites/site-use-cases.js";
+import {mustSite,publicCatalogPage,publicSite,publishSite,validateSiteSnapshot,verifySiteDomain,type SiteEngineDeps} from "../../../../application/sites/site-use-cases.js";
 import {normalizeSiteHostname,siteImageUrls} from "../../../../domain/sites/site.model.js";
 import type {WorkspaceRepositoryPort} from "../../../../application/ports/workspace-repository.port.js";
 import type {ObjectStoragePort} from "../../../../application/ports/object-storage.port.js";
@@ -51,14 +51,20 @@ export async function registerSiteRoutes(app:FastifyInstance,deps:SiteRouteDeps)
  app.post("/sites/:id/domains/:domainId/verify",async request=>guard(async()=>{const {site}=await owned(request,"site:publish");return successEnvelope(await verifySiteDomain(deps,{siteId:site.id,tenantId:site.tenantId,id:(request.params as {domainId:string}).domainId}),request.id);}));
  app.delete("/sites/:id/domains/:domainId",async(request,reply)=>guard(async()=>{const {site}=await owned(request,"site:publish");await deps.repository.removeDomain({siteId:site.id,tenantId:site.tenantId,id:(request.params as {domainId:string}).domainId});reply.code(204);return null;}));
  const publicLookup=(request:FastifyRequest)=>{const slug=(request.params as {slug?:string})?.slug;if(slug)return {slug};return {hostname:normalizeSiteHostname(z.object({hostname:z.string()}).parse(request.query).hostname)};};
- app.get("/public/sites/resolve",async request=>guard(async()=>successEnvelope(await publicSite(deps,publicLookup(request)),request.id)));
- app.get("/public/sites/:slug",async request=>guard(async()=>successEnvelope(await publicSite(deps,publicLookup(request)),request.id)));
+ // `?path=produto/slug` traz o produto/categoria da URL junto (SEO server-side); `?sitemap=1` traz todos os slugs.
+ const siteOptions=(request:FastifyRequest)=>{const query=z.object({path:z.string().max(400).optional(),sitemap:z.literal("1").optional()}).parse({path:(request.query as {path?:string}).path,sitemap:(request.query as {sitemap?:string}).sitemap});return {path:query.path?query.path.split("/").filter(Boolean).slice(0,3):[],includeSlugs:query.sitemap==="1"};};
+ app.get("/public/sites/resolve",async request=>guard(async()=>successEnvelope(await publicSite(deps,publicLookup(request),undefined,siteOptions(request)),request.id)));
+ app.get("/public/sites/:slug",async request=>guard(async()=>successEnvelope(await publicSite(deps,publicLookup(request),undefined,siteOptions(request)),request.id)));
+ app.get("/public/sites/:slug/products",async request=>guard(async()=>{
+  const query=z.object({offset:z.coerce.number().int().min(0).max(100000).default(0),limit:z.coerce.number().int().min(1).max(48).default(24),search:z.string().trim().max(120).optional(),category:z.string().max(160).optional(),brand:z.string().max(160).optional(),sort:z.enum(["manual","name","price_asc","price_desc"]).optional(),ids:z.string().max(4000).optional()}).parse(request.query);
+  return successEnvelope(await publicCatalogPage(deps,publicLookup(request),{...query,ids:query.ids?query.ids.split(",").filter(Boolean).slice(0,100):undefined}),request.id);
+ }));
  app.post("/public/sites/:slug/inquiries",async request=>guard(async()=>{
   const {sessionId,pageUrl,utm,...input}=z.object({name:z.string().trim().min(2).max(160),email:z.email().max(320).optional(),phone:z.string().regex(/^\+?\d{10,15}$/).optional(),message:z.string().trim().min(3).max(4000),productId:id.optional(),variantId:id.optional(),requestKey:z.string().uuid(),website:z.literal("").optional(),sessionId:z.string().regex(/^[A-Za-z0-9_-]{8,64}$/).optional(),pageUrl:z.string().max(2000).optional(),utm:utmSchema.optional()}).strict().parse(request.body);
   if(!input.email&&!input.phone)throw new ValidationError("Informe seu e-mail ou telefone.");
   const lookup=publicLookup(request);const data=await publicSite(deps,lookup);const site=await deps.repository.findPublic(lookup);
   if(!site||!data.content.contactForm)throw new NotFoundError();
-  const product=input.productId?data.products.find(item=>item.id===input.productId):undefined;
+  const product=input.productId?(await publicCatalogPage(deps,lookup,{offset:0,limit:1,ids:[input.productId]})).products[0]:undefined;
   if(input.productId&&!product||input.variantId&&!product?.variants.some(item=>item.id===input.variantId))throw new NotFoundError();
   const saved=await deps.repository.addInquiry({...input,site});
   // Regras configuráveis do Site (abrir atendimento, criar oportunidade, avisar a equipe). Falha aqui

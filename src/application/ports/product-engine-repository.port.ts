@@ -7,5 +7,5 @@ export type ProductEngineRepositoryPort = {
   saveBrand(input: ProductBrand): Promise<ProductBrand>;
   saveAttribute(input: AttributeDefinition): Promise<AttributeDefinition>;
   movements(input: ProductScope & { productId: string; variantId?: string }): Promise<Record<string, unknown>[]>;
-  move(input: ProductScope & { productId: string; variantId?: string; kind: "IN" | "OUT" | "ADJUSTMENT" | "RESERVATION" | "RELEASE" | "SALE" | "RETURN"; quantity: number; operationKey: string; userId: string }): Promise<{ quantity: number; reserved: number; replay: boolean }>;
+  move(input: ProductScope & { productId: string; variantId?: string; kind: "IN" | "OUT" | "ADJUSTMENT" | "RESERVATION" | "RELEASE" | "SALE" | "RETURN"; quantity: number; operationKey: string; userId: string; /** SALE que consome uma reserva na MESMA transação (checkout pago): baixa saldo e reservado juntos. */ consumeReservation?: boolean }): Promise<{ quantity: number; reserved: number; replay: boolean }>;
 };

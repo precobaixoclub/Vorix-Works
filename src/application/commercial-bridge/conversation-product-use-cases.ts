@@ -80,7 +80,9 @@ export async function sendProductToConversation(deps:ConversationProductDeps,inp
  if(input.variantId&&!view.variants.some(item=>item.id===input.variantId))throw Error("CONVERSATION_PRODUCT_NOT_FOUND: opção do produto não encontrada.");
  const text=productShareText(view,input.variantId);
  const image=input.withImage?await readProductImage(deps,product):undefined;
- if(image)return sendInboxMediaMessage(deps.inbox,{tenantId:input.tenantId,workspaceId:input.workspaceId,conversationId:conversation.id,sentByUserId:input.userId,type:"image",body:image.body,mimeType:image.mimeType,fileName:image.fileName,caption:text});
+ // Sem storage de mídia no servidor, o card segue em texto (nome, preço, descrição e link) — nunca falha o envio.
+ if(image)try{return await sendInboxMediaMessage(deps.inbox,{tenantId:input.tenantId,workspaceId:input.workspaceId,conversationId:conversation.id,sentByUserId:input.userId,type:"image",body:image.body,mimeType:image.mimeType,fileName:image.fileName,caption:text});}
+ catch(error){if(!(error instanceof Error&&error.message.startsWith("INBOX_MEDIA_STORAGE_NOT_CONFIGURED")))throw error;}
  return sendInboxMessage(deps.inbox,{tenantId:input.tenantId,workspaceId:input.workspaceId,conversationId:conversation.id,sentByUserId:input.userId,body:text,linkPreview:!!view.siteUrl});
 }
 async function readProductImage(deps:ConversationProductDeps,product:Product){

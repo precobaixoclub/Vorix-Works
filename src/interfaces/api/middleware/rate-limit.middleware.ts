@@ -31,7 +31,7 @@ export function registerRateLimitMiddleware(app: FastifyInstance, rateLimiter: O
 function routeGroup(method: string, url: string): string {
   const path = url.split("?")[0];
   if (path.startsWith("/v1/auth")) return "auth";
-  if (path.startsWith("/v1/public/sites") || path.startsWith("/v1/public/sales-intents")) return "public_site";
+  if (path.startsWith("/v1/public/sites") || path.startsWith("/v1/public/sales-intents") || path.startsWith("/v1/public/orders")) return "public_site";
   if (path.startsWith("/webhooks") || path.startsWith("/v1/webhooks")) return "webhook";
   if (path.startsWith("/v1/analytics")) return method === "GET" ? "analytics_read" : "analytics_write";
   if (path.startsWith("/v1/publications") || path.startsWith("/v1/publication-providers")) return method === "GET" ? "publication_read" : "publication_operate";

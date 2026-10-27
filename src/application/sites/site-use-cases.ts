@@ -8,7 +8,9 @@ import {publicVehicleDetails,publicRealEstateDetails} from "../../domain/product
 import type {Product} from "../../domain/crm/crm.model.js";
 import type {SiteCommerceRepositoryPort} from "../ports/site-commerce-repository.port.js";
 import {defaultSiteCommerceSettings,resolveProductCommerce,siteCommerceSummary,type SiteCommerceSettings} from "../../domain/sites/site-commerce.js";
-export type SiteEngineDeps={repository:SiteRepositoryPort;productRepository:ProductRepositoryPort;productEngineRepository:ProductEngineRepositoryPort;salesCatalogRepository:SalesCatalogRepositoryPort;hasAccess:(tenantId:string)=>Promise<boolean>;canPublish:(tenantId:string)=>Promise<boolean>;resolveTxt:(hostname:string)=>Promise<string[][]>;publicBaseDomain?:string;commerceRepository?:SiteCommerceRepositoryPort};
+export type SiteEngineDeps={repository:SiteRepositoryPort;productRepository:ProductRepositoryPort;productEngineRepository:ProductEngineRepositoryPort;salesCatalogRepository:SalesCatalogRepositoryPort;hasAccess:(tenantId:string)=>Promise<boolean>;canPublish:(tenantId:string)=>Promise<boolean>;resolveTxt:(hostname:string)=>Promise<string[][]>;publicBaseDomain?:string;commerceRepository?:SiteCommerceRepositoryPort;
+ /** Fase 2 — loja pronta para vender online (pagamento + entrega + credencial). Sem isso, nunca há checkout. */
+ checkoutStatus?:(site:Site,settings:SiteCommerceSettings)=>Promise<{ready:boolean;missing:string[]}>};
 export async function mustSite(deps:Pick<SiteEngineDeps,"repository">,input:{id:string;tenantId:string;workspaceId:string}):Promise<Site>{
  const site=await deps.repository.get(input.id);if(!site||site.tenantId!==input.tenantId||site.workspaceId!==input.workspaceId)throw Error("SITE_NOT_FOUND: site não encontrado.");return site;
 }
@@ -30,10 +32,12 @@ function visibleCategory(metadata:CatalogMetadata,id:string|undefined):boolean{
 export function isPublicCatalogProduct(product:Product,metadata:CatalogMetadata):boolean{
  return product.active&&!!product.details?.siteVisible&&product.details.catalogVisible&&!(product.details.type==="REAL_ESTATE"&&product.details.realEstate&&["sold","rented","inactive"].includes(product.details.realEstate.status))&&visibleCategory(metadata,product.categoryId);
 }
-export type SiteCommerceContext={settings:SiteCommerceSettings;hasWhatsapp:boolean;contactForm:boolean};
-export async function commerceContext(deps:Pick<SiteEngineDeps,"commerceRepository">,site:Site,snapshot:SiteSnapshot):Promise<SiteCommerceContext>{
+export type SiteCommerceContext={settings:SiteCommerceSettings;hasWhatsapp:boolean;contactForm:boolean;checkoutReady:boolean};
+export async function commerceContext(deps:Pick<SiteEngineDeps,"commerceRepository"|"checkoutStatus">,site:Site,snapshot:SiteSnapshot):Promise<SiteCommerceContext>{
  const hasWhatsapp=!!snapshot.content.whatsapp;
- return {settings:await deps.commerceRepository?.getSettings(site.id)??defaultSiteCommerceSettings(hasWhatsapp),hasWhatsapp,contactForm:snapshot.content.contactForm};
+ const settings=await deps.commerceRepository?.getSettings(site.id)??defaultSiteCommerceSettings(hasWhatsapp);
+ const checkoutReady=deps.checkoutStatus?(await deps.checkoutStatus(site,settings).catch(()=>({ready:false}))).ready:false;
+ return {settings,hasWhatsapp,contactForm:snapshot.content.contactForm,checkoutReady};
 }
 export async function presentPublicProduct(deps:Pick<SiteEngineDeps,"salesCatalogRepository">,product:Product,metadata:CatalogMetadata,commerce:SiteCommerceContext){
   const variants=(await deps.salesCatalogRepository.listVariants(product.id)).filter(variant=>variant.active&&(!product.details?.options.length||(Object.keys(variant.optionValues??{}).length===product.details.options.length&&product.details.options.every(option=>option.values.includes(variant.optionValues?.[option.key]??"")))));
@@ -44,7 +48,7 @@ export async function presentPublicProduct(deps:Pick<SiteEngineDeps,"salesCatalo
    availableQuantity,
    // Compra online depende do fluxo de checkout do Site (Fase 2), não de um booleano do produto.
    canPurchaseOnline:false as const,
-   commerce:resolveProductCommerce({settings:commerce.settings,hasWhatsapp:commerce.hasWhatsapp,contactForm:commerce.contactForm,product:{type:details.type,itemType:product.itemType,saleMode:details.saleMode,trackStock:product.trackStock,availableQuantity}}),
+   commerce:resolveProductCommerce({settings:commerce.settings,hasWhatsapp:commerce.hasWhatsapp,contactForm:commerce.contactForm,checkoutReady:commerce.checkoutReady,product:{type:details.type,itemType:product.itemType,saleMode:details.saleMode,trackStock:product.trackStock,availableQuantity,priceCents:product.priceCents}}),
    variants:variants.map(variant=>({id:variant.id,name:variant.name,sku:variant.code,optionValues:variant.optionValues??{},priceCents:variant.priceOverride===false?product.priceCents:variant.listPriceCents,imageUrl:variant.imageUrl?signOwnedUrl(variant.imageUrl,OBJECT_URL_TTL.preview):undefined,availableQuantity:product.trackStock?Math.max(0,(variant.stockQuantity??0)-(variant.reservedQuantity??0)):undefined})),
   };
 }
@@ -59,20 +63,46 @@ export async function resolvePublishedSite(deps:Pick<SiteEngineDeps,"repository"
  if(!site.published)throw Error("SITE_NOT_FOUND: site não publicado.");
  return {site,snapshot:site.published};
 }
-export async function publicSite(deps:SiteEngineDeps,lookup:{slug?:string;hostname?:string},preview?:Site){
+/** Primeira carga do catálogo público; o restante vem paginado do banco (busca, filtros, "mostrar mais"). */
+export const PUBLIC_CATALOG_INITIAL=24;
+function descendants(metadata:CatalogMetadata,rootId:string):string[]{const ids=[rootId];for(let i=0;i<ids.length;i++)for(const category of metadata.categories)if(category.parentId===ids[i]&&!ids.includes(category.id))ids.push(category.id);return ids;}
+export type PublicSiteOptions={path?:readonly string[];includeSlugs?:boolean};
+export async function publicSite(deps:SiteEngineDeps,lookup:{slug?:string;hostname?:string},preview?:Site,options:PublicSiteOptions={}){
  let site:Site,snapshot:SiteSnapshot;
  if(preview){if(!await deps.hasAccess(preview.tenantId))throw Error("SITE_NOT_FOUND: site não encontrado.");site=preview;snapshot=preview.draft;}
  else ({site,snapshot}=await resolvePublishedSite(deps,lookup));
  const metadata=await deps.productEngineRepository.metadata(site);
  const commerce=await commerceContext(deps,site,snapshot);
- const products=await deps.productRepository.listByWorkspace({...site,activeOnly:true});
+ const visibleCategoryIds=metadata.categories.filter(category=>category.active&&category.siteVisible&&visibleCategory(metadata,category.id)).map(category=>category.id);
+ let products:Product[],catalogTotal:number,slugs:{id:string;slug:string}[]|undefined;
+ if(deps.productRepository.listPublicCatalog){
+  // Paginação no banco (Fase 2): só o que esta página precisa — 1ª página, produtos citados nas seções e o produto/categoria da URL.
+  const list=deps.productRepository.listPublicCatalog.bind(deps.productRepository),scope={tenantId:site.tenantId,workspaceId:site.workspaceId,visibleCategoryIds};
+  const blocks=[...snapshot.content.blocks,...snapshot.content.pages.flatMap(page=>page.blocks)];
+  const referenced=[...new Set([...blocks.flatMap(block=>block.productIds),...(snapshot.layoutConfig?.featuredProductId?[snapshot.layoutConfig.featuredProductId]:[])])].slice(0,200);
+  const path=options.path??[];const category=path[0]==="categoria"?metadata.categories.find(item=>item.slug===path[1]):undefined;
+  const sort=snapshot.theme.catalog?.sort;
+  const empty=Promise.resolve({products:[] as Product[],total:0});
+  const [first,cited,byPath,byCategory]=await Promise.all([
+   list({...scope,sort,offset:0,limit:PUBLIC_CATALOG_INITIAL}),
+   referenced.length?list({...scope,ids:referenced,offset:0,limit:200}):empty,
+   path[0]==="produto"&&path[1]?list({...scope,slug:path[1],offset:0,limit:1}):empty,
+   category?list({...scope,categoryIds:descendants(metadata,category.id),sort,offset:0,limit:PUBLIC_CATALOG_INITIAL}):empty,
+  ]);
+  const unique=new Map<string,Product>();for(const product of [...first.products,...cited.products,...byPath.products,...byCategory.products])unique.set(product.id,product);
+  products=[...unique.values()];catalogTotal=first.total;
+  if(options.includeSlugs&&deps.productRepository.listPublicCatalogSlugs)slugs=await deps.productRepository.listPublicCatalogSlugs(scope);
+ }else{
+  products=(await deps.productRepository.listByWorkspace({...site,activeOnly:true})).filter(product=>isPublicCatalogProduct(product,metadata));catalogTotal=products.length;
+  if(options.includeSlugs)slugs=products.map(product=>({id:product.id,slug:product.details?.slug??product.id}));
+ }
  const catalog=await Promise.all(products.filter(product=>isPublicCatalogProduct(product,metadata)).map(product=>presentPublicProduct(deps,product,metadata,commerce)));
  const ids=new Set(catalog.map(product=>product.id));
  const ownedImages=new Set(siteImageUrls(snapshot));
  const signed=<T>(value:T):T=>JSON.parse(JSON.stringify(value,(_key,value)=>typeof value==="string"&&ownedImages.has(value)?signOwnedUrl(value,OBJECT_URL_TTL.preview):value));
  const blocks=(items:SiteSnapshot["content"]["blocks"])=>items.filter(item=>item.enabled).map(item=>signed({...item,slides:item.slides?.filter(slide=>slide.enabled&&(preview||(!slide.startsAt||Date.parse(slide.startsAt)<=Date.now())&&(!slide.endsAt||Date.parse(slide.endsAt)>Date.now()))),productIds:item.productIds.filter(id=>ids.has(id))}));
  const content={...snapshot.content,logoUrl:snapshot.content.logoUrl?signOwnedUrl(snapshot.content.logoUrl,OBJECT_URL_TTL.preview):undefined,faviconUrl:snapshot.content.faviconUrl?signOwnedUrl(snapshot.content.faviconUrl,OBJECT_URL_TTL.preview):undefined,blocks:blocks(snapshot.content.blocks),pages:snapshot.content.pages.filter(page=>preview||page.published).map(page=>({...page,blocks:blocks(page.blocks)}))};
- return {id:site.id,slug:site.slug,content,theme:snapshot.theme,activeTemplateId:snapshot.activeTemplateId??snapshot.theme.template,templateVersion:snapshot.templateConfigs?.[snapshot.theme.template]?.templateVersion??1,layoutConfig:signed(snapshot.layoutConfig??{heroVariant:"signature",productGallery:"split"}),publishedAt:site.publishedAt,products:catalog,categories:metadata.categories.filter(category=>category.active&&category.siteVisible&&visibleCategory(metadata,category.id)).map(({id,name,slug,parentId,position,imageUrl})=>({id,name,slug,parentId,position,imageUrl:imageUrl?signOwnedUrl(imageUrl,OBJECT_URL_TTL.preview):undefined})),brands:metadata.brands.filter(brand=>brand.active).map(({id,name,slug,logoUrl})=>({id,name,slug,logoUrl:logoUrl?signOwnedUrl(logoUrl,OBJECT_URL_TTL.preview):undefined})),commerceEnabled:false,commerce:siteCommerceSummary(commerce.settings,commerce.hasWhatsapp)};
+ return {id:site.id,slug:site.slug,content,theme:snapshot.theme,activeTemplateId:snapshot.activeTemplateId??snapshot.theme.template,templateVersion:snapshot.templateConfigs?.[snapshot.theme.template]?.templateVersion??1,layoutConfig:signed(snapshot.layoutConfig??{heroVariant:"signature",productGallery:"split"}),publishedAt:site.publishedAt,products:catalog,categories:metadata.categories.filter(category=>category.active&&category.siteVisible&&visibleCategory(metadata,category.id)).map(({id,name,slug,parentId,position,imageUrl})=>({id,name,slug,parentId,position,imageUrl:imageUrl?signOwnedUrl(imageUrl,OBJECT_URL_TTL.preview):undefined})),brands:metadata.brands.filter(brand=>brand.active).map(({id,name,slug,logoUrl})=>({id,name,slug,logoUrl:logoUrl?signOwnedUrl(logoUrl,OBJECT_URL_TTL.preview):undefined})),commerceEnabled:false,commerce:siteCommerceSummary(commerce.settings,commerce.hasWhatsapp,commerce.checkoutReady),catalog:{total:catalogTotal,initial:PUBLIC_CATALOG_INITIAL,...(slugs?{slugs}:{})}};
 }
 export async function verifySiteDomain(deps:SiteEngineDeps,input:{siteId:string;tenantId:string;id:string}){
  const domains=await deps.repository.domains(input.siteId,input.tenantId);const domain=domains.find(item=>item.id===input.id);
@@ -81,4 +111,19 @@ export async function verifySiteDomain(deps:SiteEngineDeps,input:{siteId:string;
  const records=await deps.resolveTxt(`_vorix-site.${hostname}`).catch(()=>[]);
  if(!records.some(parts=>parts.join("")===`vorix-site-verification=${domain.challenge}`))throw Error("SITE_VALIDATION: registro TXT ainda não encontrado. Confira a configuração DNS.");
  const verified=await deps.repository.verifyDomain({...input,challenge:domain.challenge});if(!verified)throw Error("SITE_VALIDATION: verificação expirada. Gere um novo registro.");return verified;
+}
+
+/** Página do catálogo público (busca, categoria, marca, ordenação). Mesmas regras de vitrine. */
+export async function publicCatalogPage(deps:SiteEngineDeps,lookup:{slug?:string;hostname?:string},query:{offset:number;limit:number;search?:string;category?:string;brand?:string;sort?:"manual"|"name"|"price_asc"|"price_desc";ids?:readonly string[]}){
+ const {site,snapshot}=await resolvePublishedSite(deps,lookup);
+ const metadata=await deps.productEngineRepository.metadata(site);const commerce=await commerceContext(deps,site,snapshot);
+ const visibleCategoryIds=metadata.categories.filter(category=>category.active&&category.siteVisible&&visibleCategory(metadata,category.id)).map(category=>category.id);
+ const category=query.category?metadata.categories.find(item=>item.id===query.category||item.slug===query.category):undefined;
+ if(query.category&&(!category||!visibleCategoryIds.includes(category.id)))return {products:[],total:0};
+ if(!deps.productRepository.listPublicCatalog){
+  const all=(await deps.productRepository.listByWorkspace({...site,activeOnly:true})).filter(product=>isPublicCatalogProduct(product,metadata));
+  return {products:await Promise.all(all.slice(query.offset,query.offset+query.limit).map(product=>presentPublicProduct(deps,product,metadata,commerce))),total:all.length};
+ }
+ const page=await deps.productRepository.listPublicCatalog({tenantId:site.tenantId,workspaceId:site.workspaceId,visibleCategoryIds,search:query.search,categoryIds:category?descendants(metadata,category.id):undefined,brandId:query.brand,ids:query.ids,sort:query.sort,offset:query.offset,limit:query.limit});
+ return {products:await Promise.all(page.products.filter(product=>isPublicCatalogProduct(product,metadata)).map(product=>presentPublicProduct(deps,product,metadata,commerce))),total:page.total};
 }

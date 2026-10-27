@@ -1,6 +1,6 @@
 "use client";
 import {createContext,useCallback,useContext,useEffect,useMemo,useRef,useState,type ReactNode} from "react";
-import {MessageCircle,Minus,Plus,ShoppingBag,Trash2,X} from "lucide-react";
+import {CreditCard,MessageCircle,Minus,Plus,ShoppingBag,Trash2,X} from "lucide-react";
 import type {ProductCommerce,PublicCart,PublicSiteProduct,PublicTenantSite} from "@/features/sites/types";
 import {checkoutCart,fetchCart,openWhatsapp,setCartItem,startProductWhatsapp,storeCartToken,trackSiteEvent,captureUtm} from "@/features/sites/storefront";
 import {formatCurrencyCents} from "@/lib/format";
@@ -10,7 +10,7 @@ import {formatCurrencyCents} from "@/lib/format";
  * (`product.commerce`); aqui só existe apresentação: CTA do produto, CTA fixo no celular, carrinho
  * e "Finalizar pelo WhatsApp". Para o visitante é um site comum — nada de CRM ou intenção.
  */
-type StorefrontState={site:PublicTenantSite;basePath:string;preview:boolean;cart?:PublicCart;cartOpen:boolean;openCart:()=>void;closeCart:()=>void;resetCart:()=>void;updateItem:(input:{productId:string;variantId?:string;quantity:number})=>Promise<PublicCart|undefined>};
+type StorefrontState={site:PublicTenantSite;basePath:string;preview:boolean;cart?:PublicCart;cartOpen:boolean;openCart:()=>void;closeCart:()=>void;resetCart:()=>void;refreshCart:()=>Promise<void>;updateItem:(input:{productId:string;variantId?:string;quantity:number})=>Promise<PublicCart|undefined>};
 const StorefrontContext=createContext<StorefrontState|undefined>(undefined);
 export const useStorefront=()=>useContext(StorefrontContext);
 
@@ -20,7 +20,7 @@ export function StorefrontProvider({site,basePath,preview,path,children}:{site:P
  useEffect(()=>{if(preview)return;captureUtm(site.slug);if(!(path[0]==="produto"))trackSiteEvent(site.slug,"SITE_VIEW");},[preview,site.slug,path.join("/")]);
  useEffect(()=>{if(!cartEnabled)return;let alive=true;fetchCart(site.slug).then(value=>{if(alive)setCart(value);}).catch(()=>undefined);return()=>{alive=false;};},[cartEnabled,site.slug]);
  const updateItem=useCallback(async(input:{productId:string;variantId?:string;quantity:number})=>{const next=await setCartItem(site.slug,input);setCart(next);return next;},[site.slug]);
- const value=useMemo(()=>({site,basePath,preview,cart,cartOpen,openCart:()=>setCartOpen(true),closeCart:()=>setCartOpen(false),resetCart:()=>{storeCartToken(site.slug,undefined);setCart(undefined);},updateItem}),[site,basePath,preview,cart,cartOpen,updateItem]);
+ const value=useMemo(()=>({site,basePath,preview,cart,cartOpen,openCart:()=>setCartOpen(true),closeCart:()=>setCartOpen(false),resetCart:()=>{storeCartToken(site.slug,undefined);setCart(undefined);},refreshCart:async()=>{setCart(await fetchCart(site.slug).catch(()=>undefined));},updateItem}),[site,basePath,preview,cart,cartOpen,updateItem]);
  return <StorefrontContext.Provider value={value}>{children}{cartEnabled?<><CartLauncher/><CartDrawer/></>:null}</StorefrontContext.Provider>;
 }
 
@@ -48,14 +48,17 @@ function CartDrawer(){
   return()=>{document.removeEventListener("keydown",onKey);document.body.style.overflow=overflow;(returnFocus.current as HTMLElement|null)?.focus?.();};
  },[cartOpen,closeCart]);
  if(!cartOpen)return null;
- const items=cart?.items??[],blocked=items.some(item=>!item.available);
+ const items=cart?.items??[];
+ // Fase 2: no modo híbrido o carrinho pode ter itens de compra online e itens de WhatsApp.
+ const checkoutItems=items.filter(item=>item.channel==="checkout"),whatsappItems=items.filter(item=>item.channel!=="checkout");
+ const blockedCheckout=checkoutItems.some(item=>!item.available),blocked=whatsappItems.some(item=>!item.available);
  async function change(productId:string,variantId:string|undefined,quantity:number){
   const key=`${productId}:${variantId??""}`;setBusyLine(key);setError(undefined);
   try{await store.updateItem({productId,variantId,quantity});}catch(caught){setError(caught instanceof Error?caught.message:"Não foi possível atualizar o carrinho.");}finally{setBusyLine(undefined);}
  }
  async function finish(){
   setCheckingOut(true);setError(undefined);
-  try{await openWhatsapp(()=>checkoutCart(site.slug,requestKey),store.basePath);setRequestKey(crypto.randomUUID());closeCart();store.resetCart();}
+  try{await openWhatsapp(()=>checkoutCart(site.slug,requestKey),store.basePath);setRequestKey(crypto.randomUUID());closeCart();if(checkoutItems.length)await store.refreshCart();else store.resetCart();}
   catch(caught){setError(caught instanceof Error?caught.message:"Não foi possível abrir o WhatsApp.");}
   finally{setCheckingOut(false);}
  }
@@ -71,9 +74,10 @@ function CartDrawer(){
      </div></li>;})}</ul>
     <footer className="sc-drawer-footer">
      <p className="sc-subtotal" aria-live="polite"><span>Total estimado</span><strong>{formatCurrencyCents(cart!.subtotalCents,cart!.currency)}</strong></p>
-     <small>Você confirma os itens, a entrega e o pagamento direto com a nossa equipe no WhatsApp.</small>
+     {checkoutItems.length?<small>Frete e pagamento você escolhe na próxima etapa.</small>:<small>Você confirma os itens, a entrega e o pagamento direto com a nossa equipe no WhatsApp.</small>}
      {error?<p role="alert" className="sc-error">{error}</p>:null}
-     <button type="button" className="ts-button sc-full" disabled={checkingOut||blocked} onClick={finish}><MessageCircle size={18} aria-hidden="true"/>{checkingOut?"Abrindo o WhatsApp...":"Finalizar pelo WhatsApp"}</button>
+     {checkoutItems.length?<a className={`ts-button sc-full ${blockedCheckout?"is-disabled":""}`} aria-disabled={blockedCheckout} href={blockedCheckout?undefined:`${store.basePath}/checkout`} onClick={()=>closeCart()}><CreditCard size={18} aria-hidden="true"/>{whatsappItems.length?`Finalizar compra (${checkoutItems.reduce((n,item)=>n+item.quantity,0)} itens)`:"Finalizar compra"}</a>:null}
+     {whatsappItems.length?<button type="button" className={`ts-button sc-full ${checkoutItems.length?"ts-button-secondary":""}`} disabled={checkingOut||blocked} onClick={finish}><MessageCircle size={18} aria-hidden="true"/>{checkingOut?"Abrindo o WhatsApp...":checkoutItems.length?"Itens sob consulta: finalizar pelo WhatsApp":"Finalizar pelo WhatsApp"}</button>:null}
      <button type="button" className="ts-button ts-button-secondary sc-full" onClick={closeCart}>Continuar navegando</button>
     </footer>
    </>}
@@ -101,6 +105,7 @@ export function ProductCommerceActions({product,variantId,complete,onInterest}:{
  const available=variant?variant.availableQuantity:product.availableQuantity;
  const optionOut=complete&&available===0;
  const canCart=commerce.allowedActions.includes("add_to_cart")&&complete&&!optionOut;
+ const canBuy=commerce.allowedActions.includes("buy_now")&&complete&&!optionOut;
  const canWhatsapp=commerce.allowedActions.includes("whatsapp")&&!!site;
  const canInquiry=commerce.allowedActions.includes("inquiry");
  const whatsappLabel=optionOut||commerce.availability==="unavailable"?"Consultar disponibilidade":"Falar no WhatsApp";
@@ -110,20 +115,28 @@ export function ProductCommerceActions({product,variantId,complete,onInterest}:{
   try{await store.updateItem({productId:product.id,variantId,quantity:quantity+((store.cart?.items.find(item=>item.productId===product.id&&(item.variantId??"")===(variantId??""))?.quantity)??0)});setMessage({kind:"ok",text:"Adicionado ao carrinho."});store.openCart();}
   catch(caught){setMessage({kind:"error",text:caught instanceof Error?caught.message:"Não foi possível adicionar."});}finally{setBusy(undefined);}
  }
+ /** Comprar agora = coloca no carrinho e vai direto para o checkout. */
+ async function buyNow(){
+  if(!store||preview)return;setBusy("cart");setMessage(undefined);
+  try{const current=store.cart?.items.find(item=>item.productId===product.id&&(item.variantId??"")===(variantId??""))?.quantity??0;await store.updateItem({productId:product.id,variantId,quantity:Math.max(current,quantity)});window.location.assign(`${store.basePath}/checkout`);}
+  catch(caught){setMessage({kind:"error",text:caught instanceof Error?caught.message:"Não foi possível continuar."});setBusy(undefined);}
+ }
  async function talk(){
   if(!site||preview)return;setBusy("whatsapp");setMessage(undefined);
   try{await openWhatsapp(()=>startProductWhatsapp(site.slug,{productId:product.id,variantId,quantity}),store!.basePath);}
   catch(caught){setMessage({kind:"error",text:caught instanceof Error?caught.message:"Não foi possível abrir o WhatsApp."});}finally{setBusy(undefined);}
  }
  const disabledTitle=preview?"Desabilitado na prévia":undefined;
- const primary=canCart
+ const primary=canBuy
+  ?<button type="button" className="ts-button sc-grow" disabled={preview||!!busy} title={disabledTitle} onClick={buyNow}><CreditCard size={18} aria-hidden="true"/>{busy==="cart"?"Indo para o pagamento...":"Comprar agora"}</button>
+  :canCart
   ?<button type="button" className="ts-button sc-grow" disabled={preview||!!busy} title={disabledTitle} onClick={addToCart}><ShoppingBag size={18} aria-hidden="true"/>{busy==="cart"?"Adicionando...":"Adicionar ao carrinho"}</button>
   :canWhatsapp&&(complete||!product.options.length||optionOut)
    ?<button type="button" className="ts-button sc-grow" disabled={preview||!!busy||needsOptions} title={disabledTitle} onClick={talk}><MessageCircle size={18} aria-hidden="true"/>{busy==="whatsapp"?"Abrindo o WhatsApp...":whatsappLabel}</button>
    :commerce.saleMode==="SHOW_ONLY"&&canInquiry
     ?<button type="button" className="ts-button sc-grow" onClick={onInterest}>{commerce.ctaLabel}</button>
     :null;
- const secondary=canCart&&canWhatsapp?<button type="button" className="ts-button ts-button-secondary" disabled={preview||!!busy} title={disabledTitle} onClick={talk}><MessageCircle size={18} aria-hidden="true"/><span className="sc-hide-narrow">Falar no WhatsApp</span><span className="sc-show-narrow">WhatsApp</span></button>:null;
+ const secondary=canBuy?<button type="button" className="ts-button ts-button-secondary" disabled={preview||!!busy} title={disabledTitle} onClick={addToCart}><ShoppingBag size={18} aria-hidden="true"/><span className="sc-hide-narrow">Adicionar ao carrinho</span><span className="sc-show-narrow">Carrinho</span></button>:canCart&&canWhatsapp?<button type="button" className="ts-button ts-button-secondary" disabled={preview||!!busy} title={disabledTitle} onClick={talk}><MessageCircle size={18} aria-hidden="true"/><span className="sc-hide-narrow">Falar no WhatsApp</span><span className="sc-show-narrow">WhatsApp</span></button>:null;
  return <>
   <div ref={mainRef} className="sc-actions">
    {needsOptions&&(commerce.allowedActions.includes("add_to_cart")||canWhatsapp)?<p className="ts-meta">Escolha {product.options.map(option=>option.name.toLowerCase()).join(" e ")} para continuar.</p>:null}
@@ -141,7 +154,7 @@ export const STOREFRONT_STYLES=`
 .sc-stepper{display:inline-flex;align-items:center;gap:4px;border:1px solid var(--site-line);border-radius:999px;padding:3px;width:max-content}
 .sc-stepper button{display:grid;place-items:center;width:36px;height:36px;border-radius:999px;border:0;background:transparent;color:inherit;cursor:pointer}.sc-stepper button:hover:not(:disabled){background:var(--site-soft)}.sc-stepper button:disabled{opacity:.35;cursor:not-allowed}
 .sc-stepper span{min-width:28px;text-align:center;font-variant-numeric:tabular-nums;font-weight:600}.sc-stepper-large button{width:44px;height:44px}.sc-stepper .sc-remove{margin-left:6px}
-.sc-error{color:#b42318;font-size:.86em}.sc-ok{color:var(--site-primary);font-size:.86em}
+.sc-error{color:#b42318;font-size:.86em}.ts-button.is-disabled{opacity:.5;pointer-events:none}.sc-ok{color:var(--site-primary);font-size:.86em}
 .sc-actions button:focus-visible,.sc-drawer button:focus-visible,.sc-drawer a:focus-visible,.sc-cart-launcher:focus-visible,.sc-sticky-cta button:focus-visible{outline:3px solid var(--site-primary);outline-offset:3px}
 .sc-cart-launcher{position:fixed;right:16px;bottom:calc(16px + env(safe-area-inset-bottom));z-index:60;display:grid;place-items:center;width:58px;height:58px;border-radius:999px;border:0;background:var(--site-primary);color:var(--site-on-primary);box-shadow:0 12px 30px rgba(15,23,42,.25);cursor:pointer}
 .sc-cart-count{position:absolute;top:-4px;right:-4px;min-width:24px;height:24px;padding:0 6px;border-radius:999px;background:var(--site-fg);color:var(--site-bg);font-size:12px;font-weight:700;display:grid;place-items:center;font-variant-numeric:tabular-nums}

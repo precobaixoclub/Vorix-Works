@@ -37,6 +37,8 @@ export const productDetailsSchema = z.preprocess(raw=>{
   siteVisible: z.boolean().default(false), catalogVisible: z.boolean().default(true), canPurchaseOnline: z.boolean().default(false),
   /** Como o Site comercializa este produto; herda o modo do Site por padrão (Vorix Commerce, Fase 1). */
   saleMode: z.enum(["INHERIT_SITE_DEFAULT","SHOW_ONLY","WHATSAPP_DIRECT","WHATSAPP_CART","ONLINE_CHECKOUT"]).default("INHERIT_SITE_DEFAULT"),
+  /** Peso/medidas para cálculo de frete (Fase 2). A variação pode sobrescrever no próprio cadastro. */
+  shipping: z.object({ weightGrams: z.number().int().positive().max(1_000_000).optional(), heightCm: z.number().positive().max(1000).optional(), widthCm: z.number().positive().max(1000).optional(), lengthCm: z.number().positive().max(1000).optional() }).strict().optional(),
   seo: z.object({ title: z.string().max(160).optional(), description: z.string().max(320).optional() }).strict().default({}),
   media: z.array(z.object({ url: z.string().max(2000), alt: z.string().max(200).default("") }).strict()).max(30).default([]),
 }).strict().superRefine((value, ctx) => {

@@ -507,7 +507,7 @@ export async function assertTermsApproved(deps: SalesEngineDeps, input: { deal: 
 // Fechamento: ganho, perda, cancelamento, reabertura
 // --------------------------------------------------------------------------------------------
 
-export type WinDealInput = { workspaceId: string; dealId: string; wonReason?: string; proposalId?: string; comment?: string; finalValueCents?: number; closedAt?: string; source?: string };
+export type WinDealInput = { workspaceId: string; dealId: string; wonReason?: string; proposalId?: string; comment?: string; finalValueCents?: number; closedAt?: string; source?: string; /** Venda já liquidada fora do funil (pedido pago da loja online): o preço já foi cobrado — sem aprovação de política e sem nova baixa de estoque. */ settledSale?: boolean };
 
 /** Snapshot definitivo do ganho — a venda histórica nunca muda quando o catálogo muda. */
 export async function buildWonClosure(deps: SalesEngineDeps, deal: Deal, actorUserId: string | undefined, input: Omit<WinDealInput, "workspaceId" | "dealId">) {
@@ -619,7 +619,7 @@ export async function winDeal(deps: SalesEngineDeps & { onDealWon?: DealClosedHo
     const proposal = await deps.proposalRepository.getById(input.proposalId);
     if (!proposal || proposal.tenantId !== deal.tenantId || proposal.workspaceId !== deal.workspaceId || proposal.dealId !== deal.id) throw new Error("DEAL_PROPOSAL_INVALID: a proposta não pertence a esta oportunidade.");
   }
-  await evaluateForClose(deps, deal, actor, input.finalValueCents);
+  if (!input.settledSale) await evaluateForClose(deps, deal, actor, input.finalValueCents);
   const closure = await buildWonClosure(deps, deal, actor.userId, input);
   if (!(closure.finalValueCents > 0)) throw new Error("DEAL_FINAL_VALUE_REQUIRED: informe o valor final para marcar como ganha.");
   const stageId = await terminalStageId(deps, deal, "won");
@@ -628,7 +628,7 @@ export async function winDeal(deps: SalesEngineDeps & { onDealWon?: DealClosedHo
   const won = await deps.dealRepository.setClosure(deal.id, { ...closure, stageId, expectedStatus: deal.status, expectedUpdatedAt: deal.updatedAt,
     auditEvents: closureEvents(deal, stageId, actor, closure.closureSource, "deal_won", { finalValueCents: closure.finalValueCents, previousValueCents: deal.valueCents, finalMarginBp: closure.finalMarginBp, wonReason: closure.wonReason, comment: closure.closeComment, proposalId: closure.wonProposalId, creditedOwnerUserId: closure.creditedOwnerUserId, snapshot: closure.finalSnapshot }),
   });
-  await deductStockForWonDeal(deps, won, actor.userId);
+  if (!input.settledSale) await deductStockForWonDeal(deps, won, actor.userId);
   await deps.dealRepository.archiveDueClosedDeals({ tenantId: won.tenantId, workspaceId: won.workspaceId });
   await fireDealAutomation(deps, won, "deal_won");
   await deps.onDealWon?.(won).catch(() => undefined);

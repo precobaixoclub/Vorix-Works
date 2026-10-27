@@ -12,19 +12,19 @@ export type VisitorContext={sessionId?:string;pageUrl?:string;utm?:Utm};
 const CART_TTL_MS=30*24*60*60*1000;
 const MAX_CART_LINES=50;
 const now=(deps:SiteCommerceDeps)=>deps.now?.()??new Date();
-const hashToken=(token:string)=>createHash("sha256").update(token).digest("hex");
-const cleanUtm=(utm:Utm|undefined):Utm=>Object.fromEntries(Object.entries(utm??{}).filter(([,value])=>typeof value==="string"&&value.trim()).map(([key,value])=>[key,String(value).trim()]));
+export const hashToken=(token:string)=>createHash("sha256").update(token).digest("hex");
+export const cleanUtm=(utm:Utm|undefined):Utm=>Object.fromEntries(Object.entries(utm??{}).filter(([,value])=>typeof value==="string"&&value.trim()).map(([key,value])=>[key,String(value).trim()]));
 /** Só guarda URL http(s) sem credenciais; query e fragmento são descartados (UTMs vêm em campo próprio). */
 export function safePageUrl(value:string|undefined):string|undefined{try{if(!value)return undefined;const url=new URL(value);if(!["https:","http:"].includes(url.protocol)||url.username||url.password)return undefined;return `${url.origin}${url.pathname}`.slice(0,500);}catch{return undefined;}}
-function emit(deps:SiteCommerceDeps,input:SiteEventInput){deps.commerceRepository.recordEvent(input).catch(error=>deps.log?.("site_event_failed",{type:input.type,error:error instanceof Error?error.message:String(error)}));}
+export function emit(deps:SiteCommerceDeps,input:SiteEventInput){deps.commerceRepository.recordEvent(input).catch(error=>deps.log?.("site_event_failed",{type:input.type,error:error instanceof Error?error.message:String(error)}));}
 
-type PublicContext={site:Site;snapshot:SiteSnapshot;commerce:SiteCommerceContext;metadata:Awaited<ReturnType<SiteEngineDeps["productEngineRepository"]["metadata"]>>};
-async function publicContext(deps:SiteCommerceDeps,lookup:PublicLookup):Promise<PublicContext>{
+export type PublicContext={site:Site;snapshot:SiteSnapshot;commerce:SiteCommerceContext;metadata:Awaited<ReturnType<SiteEngineDeps["productEngineRepository"]["metadata"]>>};
+export async function publicContext(deps:SiteCommerceDeps,lookup:PublicLookup):Promise<PublicContext>{
  const {site,snapshot}=await resolvePublishedSite(deps,lookup);
  return {site,snapshot,commerce:await commerceContext(deps,site,snapshot),metadata:await deps.productEngineRepository.metadata(site)};
 }
 /** Produto e variação validados contra o site publicado — nunca confia no ID vindo do navegador. */
-async function publicProduct(deps:SiteCommerceDeps,context:PublicContext,productId:string,variantId?:string){
+export async function publicProduct(deps:SiteCommerceDeps,context:PublicContext,productId:string,variantId?:string){
  const product=await deps.productRepository.getById(productId);
  if(!product||product.tenantId!==context.site.tenantId||product.workspaceId!==context.site.workspaceId||!isPublicCatalogProduct(product,context.metadata))throw Error("SITE_NOT_FOUND: produto não encontrado.");
  const presented=await presentPublicProduct(deps,product,context.metadata,context.commerce);
@@ -33,10 +33,10 @@ async function publicProduct(deps:SiteCommerceDeps,context:PublicContext,product
  if(presented.options.length&&!variant)throw Error("SITE_VALIDATION: escolha todas as opções do produto.");
  return {product,presented,variant};
 }
-type Resolved=Awaited<ReturnType<typeof publicProduct>>;
+export type Resolved=Awaited<ReturnType<typeof publicProduct>>;
 function variantLabel(resolved:Resolved){return resolved.variant?resolved.presented.options.map(option=>`${option.name}: ${resolved.variant!.optionValues[option.key]}`).join(", "):undefined;}
-function availableQuantity(resolved:Resolved){return resolved.variant?resolved.variant.availableQuantity:resolved.presented.availableQuantity;}
-function itemSnapshot(resolved:Resolved,quantity:number):SalesIntentItem{
+export function availableQuantity(resolved:Resolved){return resolved.variant?resolved.variant.availableQuantity:resolved.presented.availableQuantity;}
+export function itemSnapshot(resolved:Resolved,quantity:number):SalesIntentItem{
  const {product,presented,variant}=resolved;
  const specifications=Object.entries(presented.attributes).slice(0,12).map(([key,value])=>({label:presented.attributeLabels[key]??key,value:typeof value==="boolean"?(value?"Sim":"Não"):String(value)}));
  return {productId:product.id,variantId:variant?.id,name:product.name,variantLabel:variantLabel(resolved),sku:variant?.sku??product.code,imageUrl:canonicalImage(product),quantity,unitPriceCents:variant?.priceCents??product.priceCents,currency:product.currency,...(specifications.length?{specifications}:{})};
@@ -93,20 +93,22 @@ export async function recordPublicSiteEvent(deps:SiteCommerceDeps,input:{lookup:
 }
 
 // ---------------------------------------------------------------- carrinho (intenção, não pedido)
-async function activeCart(deps:SiteCommerceDeps,context:PublicContext,token:string|undefined){
+export async function activeCart(deps:SiteCommerceDeps,context:PublicContext,token:string|undefined){
  if(!token)return undefined;const cart=await deps.commerceRepository.getCart({siteId:context.site.id,tokenHash:hashToken(token)});
  return cart&&cart.status==="ACTIVE"&&Date.parse(cart.expiresAt)>now(deps).getTime()?cart:undefined;
 }
-async function presentCart(deps:SiteCommerceDeps,context:PublicContext,cart:{id:string}|undefined,token:string|undefined){
+export async function presentCart(deps:SiteCommerceDeps,context:PublicContext,cart:{id:string}|undefined,token:string|undefined){
  const items=cart?await deps.commerceRepository.listCartItems(cart.id):[];
  const lines=await Promise.all(items.map(async item=>{
   try{
    const resolved=await publicProduct(deps,context,item.productId,item.variantId);const available=availableQuantity(resolved);
    const purchasable=resolved.presented.commerce.allowedActions.includes("add_to_cart")&&(available===undefined||available>=item.quantity);
    const snapshot=itemSnapshot(resolved,item.quantity);
-   return {productId:item.productId,variantId:item.variantId,quantity:item.quantity,name:snapshot.name,variantLabel:snapshot.variantLabel,sku:snapshot.sku,slug:resolved.presented.slug,imageUrl:resolved.variant?.imageUrl??resolved.presented.imageUrls[0],unitPriceCents:snapshot.unitPriceCents,currency:snapshot.currency,availableQuantity:available,available:purchasable,resolved};
+   // Fase 2: cada linha sabe por onde fecha — compra online ou WhatsApp (modo híbrido pode ter os dois).
+   const channel:"checkout"|"whatsapp"=resolved.presented.commerce.allowedActions.includes("buy_now")?"checkout":"whatsapp";
+   return {productId:item.productId,variantId:item.variantId,quantity:item.quantity,name:snapshot.name,variantLabel:snapshot.variantLabel,sku:snapshot.sku,slug:resolved.presented.slug,imageUrl:resolved.variant?.imageUrl??resolved.presented.imageUrls[0],unitPriceCents:snapshot.unitPriceCents,currency:snapshot.currency,availableQuantity:available,available:purchasable,channel,resolved};
   }catch{
-   return {productId:item.productId,variantId:item.variantId,quantity:item.quantity,name:item.productSnapshot.name,variantLabel:item.productSnapshot.variantLabel,sku:item.productSnapshot.sku,slug:undefined,imageUrl:undefined,unitPriceCents:item.productSnapshot.unitPriceCents,currency:item.productSnapshot.currency,availableQuantity:0,available:false,resolved:undefined};
+   return {productId:item.productId,variantId:item.variantId,quantity:item.quantity,name:item.productSnapshot.name,variantLabel:item.productSnapshot.variantLabel,sku:item.productSnapshot.sku,slug:undefined,imageUrl:undefined,unitPriceCents:item.productSnapshot.unitPriceCents,currency:item.productSnapshot.currency,availableQuantity:0,available:false,channel:"whatsapp" as const,resolved:undefined};
   }
  }));
  const valid=lines.filter(line=>line.available);const currency=valid[0]?.currency??lines[0]?.currency??"BRL";
@@ -144,20 +146,25 @@ export async function checkoutPublicCartToWhatsapp(deps:SiteCommerceDeps,input:{
  if(!number)throw Error("SITE_VALIDATION: o WhatsApp da empresa não está configurado.");
  const cart=await deps.commerceRepository.getCart({siteId:context.site.id,tokenHash:hashToken(input.token)});
  if(!cart)throw Error("SITE_NOT_FOUND: carrinho não encontrado.");
+ const repeated=await deps.commerceRepository.findIntentByRequestKey({siteId:context.site.id,requestKey:input.requestKey});
+ if(repeated)return intentResult(repeated,number);
  if(cart.status==="CHECKED_OUT"&&cart.salesIntentId){
   const previous=await deps.commerceRepository.getIntent(cart.salesIntentId);
   if(previous)return intentResult(previous,number);
  }
  if(cart.status!=="ACTIVE"||Date.parse(cart.expiresAt)<=now(deps).getTime())throw Error("SITE_VALIDATION: este carrinho expirou. Monte um novo carrinho.");
- const {lines}=await presentCart(deps,context,cart,input.token);
- if(!lines.length)throw Error("SITE_VALIDATION: o carrinho está vazio.");
+ const {lines:allLines}=await presentCart(deps,context,cart,input.token);
+ // Itens de compra online seguem para o checkout; aqui só os que fecham pelo WhatsApp.
+ const lines=allLines.filter(line=>line.channel==="whatsapp");
+ if(!lines.length)throw Error(allLines.length?"SITE_VALIDATION: estes itens são finalizados pela compra online.":"SITE_VALIDATION: o carrinho está vazio.");
  const blocked=lines.find(line=>!line.available||!line.resolved);
  if(blocked)throw Error(`SITE_VALIDATION: revise o carrinho — ${blocked.name}${blocked.variantLabel?` (${blocked.variantLabel})`:""} não está disponível nessa quantidade.`);
  const items=lines.map(line=>itemSnapshot(line.resolved!,line.quantity));
  const currencies=new Set(items.map(item=>item.currency));if(currencies.size>1)throw Error("SITE_VALIDATION: o carrinho tem produtos em moedas diferentes.");
  const utm=cleanUtm(input.utm),pageUrl=safePageUrl(input.pageUrl);
  const {intent,created}=await createIntent(deps,{tenantId:cart.tenantId,workspaceId:cart.workspaceId,siteId:cart.siteId,type:"CART_WHATSAPP",snapshot:{items,subtotalCents:items.reduce((sum,item)=>sum+item.unitPriceCents*item.quantity,0),currency:items[0].currency,siteName:context.snapshot.content.name},pageUrl,utm,anonymousSessionId:input.sessionId,requestKey:input.requestKey});
- await deps.commerceRepository.checkoutCart({cartId:cart.id,salesIntentId:intent.id});
+ if(lines.length===allLines.length)await deps.commerceRepository.checkoutCart({cartId:cart.id,salesIntentId:intent.id});
+ else for(const line of lines)await deps.commerceRepository.removeCartItem({cartId:cart.id,productId:line.productId,variantId:line.variantId});
  const base={tenantId:intent.tenantId,workspaceId:intent.workspaceId,siteId:intent.siteId,anonymousSessionId:input.sessionId,cartId:cart.id,salesIntentId:intent.id,pageUrl,utm};
  if(created){emit(deps,{...base,type:"CART_WHATSAPP_START"});emit(deps,{...base,type:"SALES_INTENT_CREATED"});deps.log?.("WhatsAppCartStarted",{intentId:intent.id,siteId:intent.siteId,lines:items.length});}
  return intentResult(intent,number);

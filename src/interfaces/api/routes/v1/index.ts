@@ -1,6 +1,11 @@
 import {PostgresSiteCommerceRepository} from "../../../../infrastructure/storage/postgres/postgres-site-commerce-repository.js";
 import {registerSiteCommerceRoutes} from "./site-commerce.route.js";
 import {registerConversationProductRoutes} from "./conversation-products.route.js";
+import {registerCommerceRoutes} from "./commerce.route.js";
+import {siteCheckoutStatus} from "../../../../application/commerce/checkout-use-cases.js";
+import {PostgresCommerceOrderRepository} from "../../../../infrastructure/storage/postgres/postgres-commerce-order-repository.js";
+import {SandboxPaymentProvider,MercadoPagoPaymentProvider} from "../../../../infrastructure/commerce/payment-providers.js";
+import {OwnShippingProvider,MelhorEnvioShippingProvider} from "../../../../infrastructure/commerce/shipping-providers.js";
 import type {SiteLeadDeps} from "../../../../application/commercial-bridge/site-lead-use-cases.js";
 import { registerCommercialResponseVisibility } from "../../http/commercial-response-visibility.js";
 import { registerWorkspaceTenantGuard } from "../../http/workspace-tenant-guard.js";
@@ -478,13 +483,33 @@ export async function registerV1Routes(app: FastifyInstance): Promise<void> {
         crmBridge: sharedInboxDeps ? { inboxContactRepository: sharedInboxDeps.contactRepository, inboxMessageRepository: sharedInboxDeps.messageRepository, contact: { contactRepository: identity.contactRepository, contactIdentityRepository: identity.contactIdentityRepository, timelineEventRepository: identity.timelineEventRepository } } : undefined,
         log: (event, data) => app.log.info({ event, ...data }, `site-commerce ${event}`),
       };
-      const siteEngine = { ...app.zunoContainer.siteEngine, commerceRepository };
+      // Vorix Commerce, Fase 2 — pedidos, checkout, pagamento (conta do lojista) e frete.
+      const orders = new PostgresCommerceOrderRepository(identity.pool);
+      const commerceConfig = app.zunoConfig.commerce ?? { sandboxPaymentsEnabled: false };
+      // Modo de teste: desligado por padrão; quando ligado, pode ficar restrito a tenants de QA.
+      const sandboxTenants = new Set(commerceConfig.sandboxTenantIds ?? []);
+      const checkoutBase = { secrets: app.zunoContainer.secretManager, sandboxAllowed: (tenantId: string) => commerceConfig.sandboxPaymentsEnabled && (!sandboxTenants.size || sandboxTenants.has(tenantId)) };
+      const siteEngine = { ...app.zunoContainer.siteEngine, commerceRepository, checkoutStatus: (site: import("../../../../domain/sites/site.model.js").Site, settings: import("../../../../domain/sites/site-commerce.js").SiteCommerceSettings) => siteCheckoutStatus(checkoutBase, site, settings) };
       await registerSiteRoutes(app, { ...siteEngine, workspaceRepository: app.zunoContainer.workspaceRepository, objectStorage: app.zunoContainer.objectStorage, publicBaseDomain: app.zunoConfig.sitePublicBaseDomain, siteLead });
       await registerSiteCommerceRoutes(app, {
         ...siteEngine,
         workspaceRepository: app.zunoContainer.workspaceRepository,
         teamBelongsToWorkspace: async ({ tenantId, workspaceId, teamId }) => { const team = await identity.teamRepository.getById(teamId); return !!team && team.tenantId === tenantId && team.workspaceId === workspaceId; },
         log: siteLead.log,
+      });
+      await registerCommerceRoutes(app, {
+        ...siteEngine,
+        ...checkoutBase,
+        workspaceRepository: app.zunoContainer.workspaceRepository,
+        orders,
+        paymentProviders: { SANDBOX: new SandboxPaymentProvider(), MERCADO_PAGO: new MercadoPagoPaymentProvider() },
+        shippingProviders: { OWN: new OwnShippingProvider(), MELHOR_ENVIO: new MelhorEnvioShippingProvider() },
+        webhookBaseUrl: commerceConfig.webhookBaseUrl,
+        crm: { orders, contact: siteLead.crmBridge?.contact ?? { contactRepository: identity.contactRepository, contactIdentityRepository: identity.contactIdentityRepository, timelineEventRepository: identity.timelineEventRepository }, crm: siteLead.crm, sales: salesDeps },
+        notification: salesDeps.notification,
+        teamMembershipRepository: identity.teamMembershipRepository,
+        log: siteLead.log,
+        expirationIntervalMs: 60_000,
       });
     }
     // Produto dentro do Vorix Conversas (buscar, enviar card do catálogo, levar para a oportunidade).

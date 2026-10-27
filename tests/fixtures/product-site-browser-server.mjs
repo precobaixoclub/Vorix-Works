@@ -24,7 +24,7 @@ async function close(){if(closed)return;closed=true;await app?.close();await db.
 for(const signal of["SIGINT","SIGTERM"])process.on(signal,()=>void close().then(()=>process.exit(0)));
 try{
  await applyMigrations(db.pool,join(process.cwd(),"db/migrations"));
- app=await buildApp({config:loadApiConfig({AUTH_MODE:"jwt",JWT_SECRET:"public-fixture-only-product-site-jwt-key",DATABASE_URL:db.connectionString,PERSISTENCE_DRIVER:"postgres",BILLING_PROVIDER:"sandbox",API_CORS_ORIGIN:webOrigin,COOKIE_SECURE:"false",ZUNO_LOG_LEVEL:"silent",OPERATIONAL_RATE_LIMIT_DEFAULT:"10000",AI_GATEWAY_ENABLED:"false",OBJECT_STORAGE_ENABLED:"true",OBJECT_STORAGE_DRIVER:"local",OBJECT_STORAGE_LOCAL_DIR:root,OBJECT_STORAGE_PUBLIC_BASE_URL:`http://127.0.0.1:${port}/uploads`,MEETINGS_REAL_RECORDING_ENABLED:"false",SITE_PUBLIC_BASE_DOMAIN:"fixture.example.com"})});
+ app=await buildApp({config:loadApiConfig({...(process.argv.includes("--site-commerce")?{CONVERSATIONS_MODULE_ENABLED:"true",COMMERCE_SANDBOX_PAYMENTS_ENABLED:"true"}:{}),AUTH_MODE:"jwt",JWT_SECRET:"public-fixture-only-product-site-jwt-key",DATABASE_URL:db.connectionString,PERSISTENCE_DRIVER:"postgres",BILLING_PROVIDER:"sandbox",API_CORS_ORIGIN:webOrigin,COOKIE_SECURE:"false",ZUNO_LOG_LEVEL:"silent",OPERATIONAL_RATE_LIMIT_DEFAULT:"10000",AI_GATEWAY_ENABLED:"false",OBJECT_STORAGE_ENABLED:"true",OBJECT_STORAGE_DRIVER:"local",OBJECT_STORAGE_LOCAL_DIR:root,OBJECT_STORAGE_PUBLIC_BASE_URL:`http://127.0.0.1:${port}/uploads`,MEETINGS_REAL_RECORDING_ENABLED:"false",SITE_PUBLIC_BASE_DOMAIN:"fixture.example.com"})});
  const tenantId="tenant-site-browser-"+randomUUID(),email="owner@product-site-fixture.invalid",password="Fixture-only-product-site-2026!";
  const info={fixtureOnly:true,database:realPg?"disposable-postgresql":"ephemeral-pglite",email,password,tenantId,workspaceId:"",slug:"product-site-fixture",productId:"",variantId:"",vehicleId:"",generalId:"",siteId:""};
  app.addHook("onError",async(request,_reply,error)=>{console.error("FIXTURE_API_ERROR",request.method,request.url.split("?")[0],error.message);});
@@ -40,6 +40,8 @@ try{
    const counts=(await fx.pool.query("select (select count(*) from deals where workspace_id=$1)::int deals,(select count(*) from contacts where workspace_id=$1)::int contacts,(select count(*) from inbox_attendances where workspace_id=$1)::int attendances",[fx.workspaceId])).rows[0];
    return {result,items,counts,deal:result.dealId?await fx.id.dealRepository.getById(result.dealId):undefined};
   });
+  app.get("/fixture-only/stock/:variantId",async request=>{const fx=commerceFixture;if(!fx)throw Error("SITE_COMMERCE_FIXTURE_DISABLED");return (await fx.pool.query("select stock_quantity::int stock,reserved_quantity::int reserved from product_variants where id=$1",[request.params.variantId])).rows[0];});
+  app.get("/fixture-only/variant",async request=>{const fx=commerceFixture;if(!fx)throw Error("SITE_COMMERCE_FIXTURE_DISABLED");return (await fx.pool.query("select id from product_variants where workspace_id=$1 and option_values->>'size'=$2 and option_values->>'color'=$3",[fx.workspaceId,request.query.size,request.query.color])).rows[0];});
   app.get("/fixture-only/crm-counts",async()=>{const fx=commerceFixture;if(!fx)throw Error("SITE_COMMERCE_FIXTURE_DISABLED");return (await fx.pool.query("select (select count(*) from deals where workspace_id=$1)::int deals,(select count(*) from contacts where workspace_id=$1)::int contacts,(select count(*) from inbox_conversations where workspace_id=$1)::int conversations,(select count(*) from sales_intents where workspace_id=$1)::int intents",[fx.workspaceId])).rows[0];});
  await registerUser({...app.zunoContainer.identity,passwordHasher:app.zunoContainer.identity.passwordHasher},{tenantId,email,password,name:"Administrador de fixture",role:"owner"});
  await app.zunoContainer.identity.platformBillingRepository.ensureTenantBilling({tenantId,now:new Date().toISOString()});
@@ -65,7 +67,7 @@ try{
  const png=Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAQAAAAECAYAAACp8Z5+AAAACXBIWXMAAAPoAAAD6AG1e1JrAAAAEklEQVQImWNYtfvMf2TMQLoAAL4eMwFtMcU2AAAAAElFTkSuQmCC","base64");
  const uploaded=await app.zunoContainer.objectStorage.put({key:`assets/${tenantId}/${workspace.id}/products/fixture-product.png`,body:png,contentType:"image/png"});
  const create=async(input)=>api("POST","/v1/products",{workspaceId:workspace.id,name:"Fixture",priceCents:10000,costCents:4000,minimumPriceCents:8000,details:defaultProductDetails(),...input});
- const general=await create({name:"Pulverizador de fixture",imageUrls:[uploaded.url],details:{...defaultProductDetails(),type:"GENERAL",siteVisible:true,slug:"pulverizador-fixture"}});info.generalId=general.id;
+ const general=await create({name:"Pulverizador de fixture",imageUrls:[uploaded.url],details:{...defaultProductDetails(),type:"GENERAL",siteVisible:true,slug:"pulverizador-fixture",...(process.argv.includes("--site-commerce")?{saleMode:"WHATSAPP_CART"}:{})}});info.generalId=general.id;
  const apparel=await create({name:"Camiseta de fixture",code:"CAM-FIX",trackStock:true,categoryId:category.id,imageUrls:[uploaded.url],details:{...defaultProductDetails(),type:"APPAREL",siteVisible:true,slug:"camiseta-fixture",apparel:{material:"Algodão",collection:"Coleção fixture"},options:[{key:"size",name:"Tamanho",values:["P","M"]},{key:"color",name:"Cor",values:["Preto","Branco"]}]}});info.productId=apparel.id;
  const variants=await api("POST",`/v1/products/${apparel.id}/variant-grid`,{workspaceId:workspace.id});info.variantId=variants[0].id;
  for(const variant of variants)await api("POST",`/v1/products/${apparel.id}/inventory${ws}`,{variantId:variant.id,kind:"IN",quantity:variant.optionValues.size==="P"?4:8,operationKey:randomUUID()});
@@ -95,7 +97,7 @@ try{
  if(process.argv.includes("--site-commerce")){
   // Vorix Commerce, Fase 1: modo híbrido (vestuário/geral no carrinho, veículo em conversa) e um
   // "WhatsApp simulado": o endpoint abaixo faz o papel do WuzAPI + worker, pelo MESMO código de conversão.
-  await api("PUT",`/v1/sites/${site.id}/commerce${ws}`,{settings:{mode:"HYBRID"}});
+  await api("PUT",`/v1/sites/${site.id}/commerce${ws}`,{settings:{mode:"HYBRID",checkout:{payment:{provider:"SANDBOX"},shipping:{pickup:{enabled:true,address:"Rua da Fixture, 100 — Centro",instructions:"Seg a sex, 9h às 18h"},fixed:{enabled:true,label:"Entrega padrão",priceCents:1990,days:5},table:[{id:"capital",label:"Expresso capital",from:"01000000",to:"05999999",priceCents:2990,days:1}]}}}});
   const {registerInboundMessage}=await import("../../dist/application/inbox/inbox-use-cases.js");
   const {convertSalesIntentFromInbound,attachAttendanceToConvertedIntent}=await import("../../dist/application/commercial-bridge/site-lead-use-cases.js");
   const {PostgresSiteCommerceRepository}=await import("../../dist/infrastructure/storage/postgres/postgres-site-commerce-repository.js");

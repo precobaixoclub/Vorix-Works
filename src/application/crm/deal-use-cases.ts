@@ -34,7 +34,7 @@ export async function getContactOpenDealsSummary(deps: Pick<DealUseCaseDeps, "de
   return deps.dealRepository.summarizeOpenByContact(input);
 }
 
-export async function createDeal(deps: DealUseCaseDeps, input: { tenantId: string; workspaceId: string; pipelineId: string; stageId: string; contactId?: string; title: string; valueCents?: number; currency?: string; ownerUserId?: string; teamId?: string; origin?: string; expectedCloseDate?: string; probability?: number; forecastCategory?: Deal["forecastCategory"]; contractMonths?: number; priceBookId?: string; actorUserId?: string }): Promise<Deal> {
+export async function createDeal(deps: DealUseCaseDeps, input: { customFields?: Record<string, unknown>; tenantId: string; workspaceId: string; pipelineId: string; stageId: string; contactId?: string; title: string; valueCents?: number; currency?: string; ownerUserId?: string; teamId?: string; origin?: string; expectedCloseDate?: string; probability?: number; forecastCategory?: Deal["forecastCategory"]; contractMonths?: number; priceBookId?: string; actorUserId?: string }): Promise<Deal> {
   const stage = await deps.pipelineStageRepository.getById(input.stageId);
   if (!stage || stage.pipelineId !== input.pipelineId) {
     throw new Error(`DEAL_STAGE_PIPELINE_MISMATCH: etapa "${input.stageId}" não pertence ao pipeline "${input.pipelineId}".`);

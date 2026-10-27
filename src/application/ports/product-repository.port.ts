@@ -44,4 +44,8 @@ export type ProductRepositoryPort = {
   netStockByDeal(dealId: string): Promise<{ productId: string; delta: number }[]>;
   /** Quantidade pedida em oportunidades ABERTAS, por oportunidade e produto com controle de estoque. */
   listOpenStockDemand(input: { tenantId: string; workspaceId: string }): Promise<{ dealId: string; productId: string; variantId?:string; quantity: number }[]>;
+  /** Vitrine pública paginada no banco (Fase 2): só produtos ativos, visíveis e de categoria visível. */
+  listPublicCatalog?(input: PublicCatalogQuery): Promise<{ products: Product[]; total: number }>;
+  listPublicCatalogSlugs?(input: Pick<PublicCatalogQuery, "tenantId" | "workspaceId" | "visibleCategoryIds">): Promise<{ id: string; slug: string }[]>;
 };
+export type PublicCatalogQuery = { tenantId: string; workspaceId: string; visibleCategoryIds: readonly string[]; search?: string; categoryIds?: readonly string[]; brandId?: string; ids?: readonly string[]; slug?: string; sort?: "manual" | "name" | "price_asc" | "price_desc"; offset: number; limit: number };

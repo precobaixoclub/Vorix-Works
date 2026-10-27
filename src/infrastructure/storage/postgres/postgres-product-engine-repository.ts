@@ -43,7 +43,7 @@ export class PostgresProductEngineRepository implements ProductEngineRepositoryP
  async move(input: Parameters<ProductEngineRepositoryPort["move"]>[0]): ReturnType<ProductEngineRepositoryPort["move"]> {
   if(!Number.isFinite(input.quantity)||input.quantity<0||input.quantity>1e9||Math.abs(input.quantity*1000-Math.round(input.quantity*1000))>1e-5)throw Error("PRODUCT_VALIDATION: informe uma quantidade não negativa com até três casas decimais.");
   if(!["IN","OUT","ADJUSTMENT","RESERVATION","RELEASE","SALE","RETURN"].includes(input.kind))throw Error("PRODUCT_VALIDATION: tipo de movimentação inválido.");
-  const fingerprint=createHash("sha256").update(JSON.stringify([input.productId,input.variantId??null,input.kind,input.quantity])).digest("hex");
+  const fingerprint=createHash("sha256").update(JSON.stringify([input.productId,input.variantId??null,input.kind,input.quantity,...(input.consumeReservation?["consume"]:[])])).digest("hex");
   const client=await this.pool.connect();
   try{
    await client.query("begin");
@@ -59,7 +59,7 @@ export class PostgresProductEngineRepository implements ProductEngineRepositoryP
    const row=target.rows[0];if(!row)throw Error("PRODUCT_VARIANT_NOT_FOUND: variante não encontrada.");
    const quantity=Number(row.stock_quantity),reserved=Number(row.reserved_quantity);
    const delta=input.kind==="ADJUSTMENT"?input.quantity-quantity:["IN","RETURN"].includes(input.kind)?input.quantity:["OUT","SALE"].includes(input.kind)?-input.quantity:0;
-   const reservedDelta=input.kind==="RESERVATION"?input.quantity:input.kind==="RELEASE"?-input.quantity:0;
+   const reservedDelta=input.kind==="RESERVATION"?input.quantity:input.kind==="RELEASE"||(input.kind==="SALE"&&input.consumeReservation)?-input.quantity:0;
    const next=quantity+delta,nextReserved=reserved+reservedDelta;
    if(next<0||nextReserved<0||next<nextReserved)throw Error("INVENTORY_INSUFFICIENT: saldo disponível insuficiente.");
    await client.query(`update ${table} set stock_quantity=$2,reserved_quantity=$3,updated_at=now() where id=$1`,[row.id,next,nextReserved]);

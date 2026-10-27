@@ -64,8 +64,14 @@ export class PostgresSiteCommerceRepository implements SiteCommerceRepositoryPor
  }
  async checkoutCart(input:{cartId:string;salesIntentId:string}){const result=await this.pool.query("update site_carts set status='CHECKED_OUT',sales_intent_id=$2,updated_at=now() where id=$1 and status='ACTIVE'",[input.cartId,input.salesIntentId]);return (result.rowCount??0)>0;}
  async recordEvent(input:SiteEventInput){
-  await this.pool.query("insert into site_events(id,tenant_id,workspace_id,site_id,type,anonymous_session_id,contact_id,product_id,variant_id,sales_intent_id,cart_id,page_url,utm) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)",
-   ["site-event-"+randomUUID(),input.tenantId,input.workspaceId,input.siteId,input.type,input.anonymousSessionId??null,input.contactId??null,input.productId??null,input.variantId??null,input.salesIntentId??null,input.cartId??null,input.pageUrl??null,JSON.stringify(input.utm??{})]);
+  await this.pool.query("insert into site_events(id,tenant_id,workspace_id,site_id,type,anonymous_session_id,contact_id,product_id,variant_id,sales_intent_id,cart_id,page_url,utm,order_id) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)",
+   ["site-event-"+randomUUID(),input.tenantId,input.workspaceId,input.siteId,input.type,input.anonymousSessionId??null,input.contactId??null,input.productId??null,input.variantId??null,input.salesIntentId??null,input.cartId??null,input.pageUrl??null,JSON.stringify(input.utm??{}),input.orderId??null]);
+ }
+ async markCartOrdered(cartId:string){await this.pool.query("update site_carts set status='ORDERED',updated_at=now() where id=$1 and status='ACTIVE'",[cartId]);}
+ async variantMeasures(variantIds:readonly string[]){
+  const result=new Map<string,{weightGrams?:number;heightCm?:number;widthCm?:number;lengthCm?:number}>();if(!variantIds.length)return result;
+  for(const row of (await this.pool.query("select id,weight_grams,height_cm,width_cm,length_cm from product_variants where id=any($1)",[[...variantIds]])).rows)result.set(row.id,{weightGrams:row.weight_grams??undefined,heightCm:row.height_cm===null?undefined:Number(row.height_cm),widthCm:row.width_cm===null?undefined:Number(row.width_cm),lengthCm:row.length_cm===null?undefined:Number(row.length_cm)});
+  return result;
  }
  async attachContactToSession(input:{siteId:string;anonymousSessionId:string;contactId:string}){await this.pool.query("update site_events set contact_id=$3 where site_id=$1 and anonymous_session_id=$2 and contact_id is null",[input.siteId,input.anonymousSessionId,input.contactId]);}
 }

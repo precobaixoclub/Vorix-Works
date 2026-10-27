@@ -15,3 +15,7 @@ export type SiteCommerceSettingsView={settings:SiteCommerceSettings;configured:b
 export const getSiteCommerce=(site:TenantSite)=>apiClient.get<SiteCommerceSettingsView>(`/v1/sites/${q(site.id)}/commerce?workspaceId=${q(site.workspaceId)}`);
 export const saveSiteCommerce=(site:TenantSite,settings:SiteCommerceSettings)=>apiClient.put<SiteCommerceSettingsView>(`/v1/sites/${q(site.id)}/commerce?workspaceId=${q(site.workspaceId)}`,{settings});
 export const listSiteSalesIntents=(site:TenantSite)=>apiClient.get<SalesIntentSummary[]>(`/v1/sites/${q(site.id)}/sales-intents?workspaceId=${q(site.workspaceId)}&limit=50`);
+// Vorix Commerce, Fase 2 — prontidão da loja online e credenciais do lojista (o token nunca volta).
+export type CheckoutStatusView={ready:boolean;missing:string[];sandboxAllowed:boolean;credentials:{MERCADO_PAGO:{connected:boolean;publicKey?:string};MELHOR_ENVIO:{connected:boolean}}};
+export const getCheckoutStatus=(site:TenantSite)=>apiClient.get<CheckoutStatusView>(`/v1/sites/${q(site.id)}/commerce/checkout-status?workspaceId=${q(site.workspaceId)}`);
+export const saveCommerceCredential=(site:TenantSite,provider:"MERCADO_PAGO"|"MELHOR_ENVIO",input:{accessToken?:string;publicKey?:string})=>apiClient.put<{connected:boolean}>(`/v1/sites/${q(site.id)}/commerce/credentials/${provider}?workspaceId=${q(site.workspaceId)}`,input);

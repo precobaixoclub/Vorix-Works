@@ -17,6 +17,8 @@ const DEFAULT_ANTHROPIC_COMMERCIAL_COPILOT_MODEL = "claude-haiku-4-5-20251001";
  */
 export type ApiConfig = {
   sitePublicBaseDomain?: string;
+  /** Vorix Commerce, Fase 2: pagamento de teste liberado (QA/homologação) e base pública da API para webhooks de pagamento do lojista. */
+  commerce?: { sandboxPaymentsEnabled: boolean; sandboxTenantIds?: string[]; webhookBaseUrl?: string };
   port: number;
   host: string;
   persistenceDriver: PersistenceDriver;
@@ -534,6 +536,7 @@ export function loadApiConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
     port,
     host,
     sitePublicBaseDomain: env.SITE_PUBLIC_BASE_DOMAIN?.trim() || undefined,
+    commerce: { sandboxPaymentsEnabled: env.COMMERCE_SANDBOX_PAYMENTS_ENABLED?.trim() === "true", sandboxTenantIds: env.COMMERCE_SANDBOX_TENANTS?.split(",").map((item) => item.trim()).filter(Boolean), webhookBaseUrl: env.COMMERCE_WEBHOOK_BASE_URL?.trim() || undefined },
     persistenceDriver,
     databaseUrl,
     logLevel,

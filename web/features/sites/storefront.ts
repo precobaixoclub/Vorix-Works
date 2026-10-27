@@ -56,3 +56,19 @@ export async function checkoutCart(slug:string,requestKey:string){
 export function trackSiteEvent(slug:string,type:"SITE_VIEW"|"PRODUCT_VIEW",productId?:string){
  call(slug,"events",{type,productId,...visitorContext(slug)}).catch(()=>undefined);
 }
+
+// ------------------------------------------------------------------ Fase 2: checkout e pedido
+export const quoteCheckout=(slug:string,postalCode?:string)=>{const token=cartToken(slug);if(!token)throw Error("Seu carrinho está vazio.");return call<import("./types").CheckoutQuote>(slug,"checkout-quote",{token,...(postalCode?{postalCode}:{}),...visitorContext(slug)});};
+export function placeOrder(slug:string,input:{requestKey:string;customer:Record<string,string|undefined>;address?:Record<string,string|undefined>;deliveryOptionId:string;payment:{method:"PIX"|"CARD"|"SANDBOX";cardToken?:string;cardPaymentMethodId?:string;installments?:number}}){
+ const token=cartToken(slug);if(!token)throw Error("Seu carrinho está vazio.");
+ return call<import("./types").PublicOrder>(slug,"checkout-orders",{token,...input,...visitorContext(slug)});
+}
+export async function fetchPublicOrder(token:string){
+ const response=await fetch(`/api/tenant-site/orders/${encodeURIComponent(token)}`,{cache:"no-store"});const data=await response.json().catch(()=>({}));
+ if(!response.ok)throw Error(data?.error?.message||"Não foi possível consultar o pedido.");return data.data as import("./types").PublicOrder;
+}
+export async function fetchCatalogPage(slug:string,query:{offset:number;limit:number;search?:string;category?:string;brand?:string;sort?:string}){
+ const params=new URLSearchParams({slug,offset:String(query.offset),limit:String(query.limit)});for(const key of ["search","category","brand","sort"] as const){const value=query[key];if(value)params.set(key,value);}
+ const response=await fetch(`/api/tenant-site/catalog?${params}`);const data=await response.json().catch(()=>({}));
+ if(!response.ok)throw Error(data?.error?.message||"Não foi possível carregar mais produtos.");return data.data as {products:import("./types").PublicSiteProduct[];total:number};
+}

@@ -158,7 +158,15 @@ wait_healthy() {
 wait_healthy || rollback "containers não ficaram healthy"
 
 # 8. health final
-READY=$(curl -s https://api.vorixworks.com/readyz | grep -o '"ready":[a-z]*' || true)
+# O proxy pode responder vazio logo após recriar os containers: repete antes de concluir que falhou.
+READY=""
+for _ in $(seq 1 12); do
+  BODY=$(curl -s -m 10 https://api.vorixworks.com/readyz || true)
+  READY=$(printf '%s' "$BODY" | grep -o '"ready":[a-z]*' || true)
+  [ "$READY" = '"ready":true' ] && break
+  sleep 5
+done
+[ "$READY" = '"ready":true' ] || echo "READYZ_BODY $(printf '%s' "$BODY" | head -c 600)"
 WEB="000"
 for _ in $(seq 1 12); do
   WEB=$(curl -s -o /dev/null -w '%{http_code}' https://vorixworks.com/ || true)

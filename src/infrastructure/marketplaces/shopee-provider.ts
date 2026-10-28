@@ -1,4 +1,4 @@
-import type { CategoryRequirements, ExternalOrder, ExternalOrderItem, ExternalOrderState, ExternalReturn, ExternalReturnState, ExternalShipmentState, ListingWrite, MarketplaceProvider, MarketplaceTokens, ProviderAuth, ProviderCapabilities, ProviderNotification, ShippingLabel } from "../../application/ports/marketplace-provider.port.js";
+import type { CancelReason, CategoryRequirements, ExternalOrder, ExternalOrderItem, ExternalOrderState, ExternalReturn, ExternalReturnState, ExternalShipmentState, ListingCloseEffect, ListingWrite, MarketplaceProvider, MarketplaceTokens, ProviderAuth, ProviderCapabilities, ProviderNotification, ShippingLabel } from "../../application/ports/marketplace-provider.port.js";
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import { MarketplaceError, type ExternalAttribute, type ExternalListing, type ExternalVariant, type PublishDraft } from "../../domain/marketplaces/marketplace.model.js";
 import { setTimeout as sleep } from "node:timers/promises";
@@ -80,7 +80,9 @@ const untilShopeeMidnight=(now:number)=>{const next=new Date(now);next.setUTCHou
 export class ShopeeProvider implements MarketplaceProvider {
  readonly id="SHOPEE" as const;
  readonly pkce=false;
- readonly capabilities:ProviderCapabilities={listings:"SUPPORTED",publish:"SUPPORTED",priceSync:"SUPPORTED",stockSync:"SUPPORTED",orders:"SUPPORTED",shipments:"SUPPORTED",labels:"SUPPORTED",cancelOrder:"SUPPORTED",returns:"SUPPORTED",webhooks:"SUPPORTED"};
+ readonly capabilities:ProviderCapabilities={listings:"SUPPORTED",publish:"SUPPORTED",priceSync:"SUPPORTED",stockSync:"SUPPORTED",orders:"SUPPORTED",shipments:"SUPPORTED",labels:"SUPPORTED",cancelOrder:"SUPPORTED",returns:"SUPPORTED",webhooks:"SUPPORTED",pauseListing:"SUPPORTED",closeListing:"SUPPORTED"};
+ /** delete_item é a única forma de encerrar pela API e é irreversível (guia 221): a interface trata como exclusão. */
+ readonly closeListingEffect:ListingCloseEffect="DELETE";
  private nextCallAt=0;
  private readonly minInterval:number;private readonly labelPoll:number;private readonly tierDelay:number;private readonly now:()=>number;
  private readonly categoryCache=new Map<string,{at:number;list:Promise<Json[]>}>();
@@ -573,9 +575,15 @@ export class ShopeeProvider implements MarketplaceProvider {
   return {contentType:headers.get("content-type")?.includes("zip")?"application/zip":"application/pdf",base64:Buffer.from(bytes).toString("base64"),filename:`etiqueta-shopee-${sn}.pdf`};
  }
  /** Cancelamento pelo vendedor antes do envio. Motivo livre é traduzido para os motivos oficiais; OUT_OF_STOCK exige os itens. */
+ private cancellable(order:ExternalOrder){
+  return !["SHIPPED","DELIVERED","CANCELLED"].includes(order.state)&&!order.shipment?.fulfilledByMarketplace&&["UNPAID","READY_TO_SHIP","INVOICE_PENDING","PROCESSED","RETRY_SHIP"].includes(order.externalStatus);
+ }
+ /** cancel_reason (Data Definition): COD_NOT_SUPPORTED é só para pagamento na entrega — não é oferecido. */
+ async cancelReasons(_auth:ProviderAuth,order:ExternalOrder):Promise<CancelReason[]>{
+  return this.cancellable(order)?[{code:"OUT_OF_STOCK",label:"Sem estoque"},{code:"CUSTOMER_REQUEST",label:"A pedido do comprador"}]:[];
+ }
  async cancelOrder(auth:ProviderAuth,order:ExternalOrder,reason:string):Promise<void>{
-  if(["SHIPPED","DELIVERED","CANCELLED"].includes(order.state)||order.shipment?.fulfilledByMarketplace||!["UNPAID","READY_TO_SHIP","INVOICE_PENDING","PROCESSED","RETRY_SHIP"].includes(order.externalStatus))
-   throw new MarketplaceError("SHOPEE_ORDER_NOT_CANCELLABLE");
+  if(!this.cancellable(order))throw new MarketplaceError("SHOPEE_ORDER_NOT_CANCELLABLE");
   const raw=reason.trim(),upper=raw.toUpperCase();
   const cancel_reason=(CANCEL_REASONS as readonly string[]).includes(upper)?upper:/estoque|stock|falta/i.test(raw)?"OUT_OF_STOCK":/cliente|comprador|customer|buyer/i.test(raw)?"CUSTOMER_REQUEST":undefined;
   if(!cancel_reason)throw new MarketplaceError("SHOPEE_CANCEL_REASON_UNSUPPORTED");

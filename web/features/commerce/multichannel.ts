@@ -14,9 +14,9 @@ export type ProviderId="MERCADO_LIVRE"|"SHOPEE"|"TIKTOK_SHOP";
 export const PROVIDER_SLUGS:Record<ProviderId,string>={MERCADO_LIVRE:"mercado-livre",SHOPEE:"shopee",TIKTOK_SHOP:"tiktok-shop"};
 export const providerSlug=(provider:string)=>PROVIDER_SLUGS[provider as ProviderId]??provider.toLowerCase().replace(/_/g,"-");
 export type CapabilityState="SUPPORTED"|"BLOCKED_EXTERNAL_CAPABILITY";
-export const CAPABILITY_KEYS=["listings","publish","priceSync","stockSync","orders","shipments","labels","cancelOrder","returns","webhooks"] as const;
+export const CAPABILITY_KEYS=["listings","publish","priceSync","stockSync","orders","shipments","labels","cancelOrder","returns","webhooks","pauseListing","closeListing"] as const;
 export type CapabilityKey=(typeof CAPABILITY_KEYS)[number];
-export const CAPABILITY_LABELS:Record<CapabilityKey,string>={listings:"Importar anúncios",publish:"Publicar anúncios",priceSync:"Sincronizar preço",stockSync:"Sincronizar estoque",orders:"Receber pedidos",shipments:"Acompanhar envios",labels:"Baixar etiquetas",cancelOrder:"Cancelar pedido pela API",returns:"Devoluções",webhooks:"Notificações em tempo real"};
+export const CAPABILITY_LABELS:Record<CapabilityKey,string>={listings:"Importar anúncios",publish:"Publicar anúncios",priceSync:"Sincronizar preço",stockSync:"Sincronizar estoque",orders:"Receber pedidos",shipments:"Acompanhar envios",labels:"Baixar etiquetas",cancelOrder:"Cancelar pedido pela API",returns:"Devoluções",webhooks:"Notificações em tempo real",pauseListing:"Pausar anúncios",closeListing:"Encerrar anúncios"};
 /** Divide as capacidades em liberadas e bloqueadas pelo canal (na ordem fixa acima). */
 export function splitCapabilities(capabilities:Partial<Record<string,string>>|undefined){
  const supported:CapabilityKey[]=[],blocked:CapabilityKey[]=[];

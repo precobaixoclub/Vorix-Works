@@ -206,6 +206,9 @@ test("seller cancel: reason must come from the official aftersale eligibility (S
   {sku_id:"1729100000000000002",line_item_eligibility:[{request_type:"CANCEL",eligible:true,order_line_list:[{order_line_item_id:"L3"}],available_reason_names:["seller_cancel_reason_out_of_stock"]}]}]};
  const {calls,provider}=mock({[ELIGIBILITY]:eligible,"POST /return_refund/202602/cancellations":{cancel_id:"4035319218955782461",cancel_status:"CANCELLATION_REQUEST_SUCCESS"}});
  const base={id:"576000000000000001",externalStatus:"AWAITING_SHIPMENT"};
+ // Lista para a equipe = interseção das linhas, com rótulo em português; nada fixo no código.
+ assert.deepEqual(await provider.cancelReasons(AUTH,base),[{code:"seller_cancel_reason_out_of_stock",label:"Sem estoque"}]);
+ calls.length=0;
  await provider.cancelOrder(AUTH,base,"seller_cancel_reason_out_of_stock");
  assert.equal(calls[0].url.searchParams.get("initiate_aftersale_user"),"SELLER");assert.equal(calls[0].url.searchParams.get("request_types"),"CANCEL");
  const q=Object.fromEntries(calls[0].url.searchParams);assert.equal(q.sign,tiktokShopSign(CONFIG.appSecret,"/return_refund/202602/orders/576000000000000001/aftersale_eligibility",q,""));
@@ -220,6 +223,10 @@ test("seller cancel: reason must come from the official aftersale eligibility (S
  const ineligible=mock({[ELIGIBILITY]:{sku_eligibility:[{sku_id:"1",line_item_eligibility:[{request_type:"CANCEL",eligible:false,ineligible_code:25001001,ineligible_reason:"invalid order status"}]}]}});
  await assert.rejects(ineligible.provider.cancelOrder(AUTH,base,"seller_cancel_reason_out_of_stock"),e=>e.code==="TIKTOK_ORDER_NOT_CANCELLABLE");
  assert.ok(!ineligible.calls.some(c=>c.method==="POST"));
+ assert.deepEqual(await ineligible.provider.cancelReasons(AUTH,base),[]);
+ assert.deepEqual(await provider.cancelReasons(AUTH,{...base,externalStatus:"IN_TRANSIT"}),[]);
+ assert.equal(provider.capabilities.closeListing,"BLOCKED_EXTERNAL_CAPABILITY");assert.equal(provider.capabilities.pauseListing,"SUPPORTED");
+ await assert.rejects(provider.setStatus(AUTH,"1729000000000000001","closed"),e=>e.code==="BLOCKED_EXTERNAL_CAPABILITY");
  const empty=mock({[ELIGIBILITY]:{}}).provider;
  await assert.rejects(empty.cancelOrder(AUTH,base,"seller_cancel_reason_out_of_stock"),e=>e.code==="TIKTOK_ORDER_NOT_CANCELLABLE");
 });

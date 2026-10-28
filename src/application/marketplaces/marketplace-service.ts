@@ -32,7 +32,7 @@ export class MarketplaceService {
  private readonly providers:Partial<Record<MarketplaceProviderId,MarketplaceProvider>>;
  constructor(private readonly d:MarketplaceServiceDeps){this.providers=d.providers??(d.provider?{[d.provider.id]:d.provider}:{});}
  /** Canais com credenciais de app configuradas (a interface só oferece conectar esses). */
- configuredProviders(){return Object.values(this.providers).filter(Boolean).map(p=>({id:p!.id,capabilities:p!.capabilities}));}
+ configuredProviders(){return Object.values(this.providers).filter(Boolean).map(p=>({id:p!.id,capabilities:p!.capabilities,closeListingEffect:p!.closeListingEffect}));}
  private provider(id:MarketplaceProviderId):MarketplaceProvider{const p=this.providers[id];if(!p)throw new MarketplaceError("MARKETPLACE_PROVIDER_NOT_CONFIGURED");return p;}
  private p(c:{provider:MarketplaceProviderId}){return this.provider(c.provider);}
  private appId(p:MarketplaceProvider){return p.applicationId??this.d.applicationId??"";}
@@ -163,6 +163,11 @@ export class MarketplaceService {
   if(payload.publicationJobId){
    const source=await this.d.repository.job(actor,String(payload.publicationJobId));
    if(!source||source.connectionId!==connectionId||source.kind!=="PUBLISH"||source.status!=="UNKNOWN_RESULT")throw new MarketplaceError("ML_PUBLICATION_NOT_RECOVERABLE");
+  }
+  if(kind==="STATUS"){
+   const provider=this.p(c),closing=payload.status==="closed";
+   if(provider.capabilities[closing?"closeListing":"pauseListing"]!=="SUPPORTED")throw new MarketplaceError("BLOCKED_EXTERNAL_CAPABILITY");
+   if(closing&&payload.confirm!==(provider.closeListingEffect==="DELETE"?"DELETE":true))throw new MarketplaceError("CLOSE_CONFIRMATION_REQUIRED");
   }
   if(kind==="PUBLISH")await this.localListingWrite(actor,c,payload as {productId:string;variantId?:string;draft:PublishDraft},key);
   const result=await this.d.repository.enqueue(actor,connectionId,kind,payload,key);
@@ -410,10 +415,14 @@ export class MarketplaceService {
     if(j.kind==="STATUS"){
      const status=j.payload.status as "paused"|"active"|"closed";
      if(!["paused","active","closed"].includes(status))throw new MarketplaceError("INVALID_LISTING_STATUS");
-     if(status==="closed"&&j.payload.confirm!==true)throw new MarketplaceError("CLOSE_CONFIRMATION_REQUIRED");
+     const provider=this.p(c);
+     if(provider.capabilities[status==="closed"?"closeListing":"pauseListing"]!=="SUPPORTED")throw new MarketplaceError("BLOCKED_EXTERNAL_CAPABILITY");
+     // Exclusão definitiva (Shopee delete_item) exige confirmação própria, nunca a mesma de "finalizar".
+     const deletes=status==="closed"&&provider.closeListingEffect==="DELETE";
+     if(status==="closed"&&j.payload.confirm!==(deletes?"DELETE":true))throw new MarketplaceError("CLOSE_CONFIRMATION_REQUIRED");
      if(e.status==="closed"&&status!=="closed")throw new MarketplaceError("ML_CLOSED_LISTING_REQUIRES_NEW_PUBLICATION");
      if(e.status!==status)await this.p(c).setStatus(token,e.id,status);
-     await this.d.repository.audit(actor,"LISTING_"+status.toUpperCase(),l.id);
+     await this.d.repository.audit(actor,deletes?"LISTING_DELETED":"LISTING_"+status.toUpperCase(),l.id);
      e=await this.p(c).getListing(token,e.id);this.assertSeller(c,e);
     }else if(j.kind==="UPDATE"){
      const draft=j.payload.draft as PublishDraft;
@@ -566,6 +575,12 @@ export class MarketplaceService {
   if(provider.capabilities.labels!=="SUPPORTED")throw new MarketplaceError("BLOCKED_EXTERNAL_CAPABILITY");
   const label=await provider.shippingLabel(token,await provider.getOrder(token,order.externalOrderId!));
   await this.d.repository.audit(actor,"SHIPPING_LABEL_DOWNLOADED",order.id);return label;
+ }
+ /** Motivos de cancelamento aceitos pelo canal para este pedido agora (vazio = canal não cancela pela API). */
+ async cancelReasons(actor:MarketplaceActor,orderId:string){
+  const {order,provider,token}=await this.externalOrder(actor,orderId);
+  if(provider.capabilities.cancelOrder!=="SUPPORTED")return [];
+  return provider.cancelReasons(token,await provider.getOrder(token,order.externalOrderId!));
  }
  /** Cancelamento no canal (quando a API permite); o estoque volta pelo mesmo caminho da sincronização. */
  async cancelExternalOrder(actor:MarketplaceActor,orderId:string,reason:string){

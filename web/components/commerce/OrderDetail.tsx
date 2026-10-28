@@ -10,7 +10,7 @@ import {DetailModal} from "@/components/DetailModal";
 import {ConfirmDialog} from "@/components/ConfirmDialog";
 import {Tooltip,TooltipContent,TooltipProvider,TooltipTrigger} from "@/components/ui/tooltip";
 import {formatCurrencyCents,formatDateTime} from "@/lib/format";
-import {advanceCommerceOrder,cancelCommerceOrder,CANCEL_REASON_LABELS,getCommerceOrder,ORDER_EVENT_LABELS,ORDER_STATUS_LABELS,PAYMENT_STATUS_LABELS,refreshCommerceOrder,SHIPPING_STATUS_LABELS,simulateOrderPayment,type CommerceOrderDetail,type OrderStatus} from "@/features/commerce/api";
+import {advanceCommerceOrder,cancelCommerceOrder,CANCEL_REASON_LABELS,getCommerceOrder,ORDER_EVENT_LABELS,ORDER_STATUS_LABELS,PAYMENT_STATUS_LABELS,getCancelReasons,refreshCommerceOrder,SHIPPING_STATUS_LABELS,simulateOrderPayment,type CommerceOrderDetail,type OrderStatus} from "@/features/commerce/api";
 import {isMarketplaceSource,sourceLabel,STOCK_STATE_LABELS} from "@/features/commerce/multichannel";
 import {commerceErrorMessage,SourceBadge,StockConflictBadge} from "./commerce-ui";
 import {OrderShipments} from "./OrderShipments";
@@ -27,9 +27,12 @@ export function OrderDetail({workspaceId,id,onClose,onChanged}:{workspaceId:stri
  const {can}=useMyAccess();
  const canManage=can("order:manage");
  const {data,error,mutate}=useSWR(["commerce-order",workspaceId,id],()=>getCommerceOrder(workspaceId,id));
- const [section,setSection]=useState("resumo"),[busy,setBusy]=useState(false),[confirmCancel,setConfirmCancel]=useState(false),[restock,setRestock]=useState(true),[tracking,setTracking]=useState("");
+ const [section,setSection]=useState("resumo"),[busy,setBusy]=useState(false),[confirmCancel,setConfirmCancel]=useState(false),[restock,setRestock]=useState(true),[tracking,setTracking]=useState(""),[cancelCode,setCancelCode]=useState("");
  const order=data?.order,actions=data?.actions,marketplace=!!order&&isMarketplaceSource(order.source);
  async function run(action:()=>Promise<unknown>,success:string){setBusy(true);try{await action();toast.success(success);await mutate();onChanged();}catch(caught){toast.error(commerceErrorMessage(caught));}finally{setBusy(false);}}
+ // Motivo oficial do canal (Shopee/TikTok só aceitam códigos próprios); buscado ao abrir a confirmação.
+ const reasons=useSWR(confirmCancel&&marketplace?["commerce-cancel-reasons",workspaceId,id]:null,()=>getCancelReasons(workspaceId,id));
+ const reasonList=reasons.data?.reasons??[],needsReason=marketplace&&reasonList.length>0;
  const pickup=order?.delivery?.kind==="PICKUP";
  const next=order&&!marketplace?(order.status==="PROCESSING"?(pickup?{to:"DELIVERED" as const,label:"Marcar como retirado"}:{to:"SHIPPED" as const,label:"Marcar como enviado"}):order.status==="SHIPPED"?{to:"DELIVERED" as const,label:"Marcar como entregue"}:NEXT_STEP[order.status]):undefined;
  const sandbox=data?.payments.at(-1)?.provider==="SANDBOX";
@@ -57,9 +60,13 @@ export function OrderDetail({workspaceId,id,onClose,onChanged}:{workspaceId:stri
    :section==="devolucoes"?<OrderReturns workspaceId={workspaceId} order={order} returns={data.returns??[]} actions={actions} canManage={canManage} canRefundPermission={can("payment:refund")} onChanged={async()=>{await mutate();onChanged();}}/>
    :<OrderSection workspaceId={workspaceId} detail={data} section={section}/>}
   </DetailModal>
-  {confirmCancel&&order?<ConfirmDialog open variant="danger" title={`Cancelar o pedido #${order.number}?`} description={`${marketplace?`O cancelamento será enviado ao ${sourceLabel(order.source)}. `:""}${order.paymentStatus==="APPROVED"&&!marketplace?"O pagamento será estornado ao cliente. ":""}${order.stockState==="RESERVED"?"A reserva volta para o estoque. ":""}Esta ação não pode ser desfeita.`} confirmLabel="Cancelar pedido" busy={busy}
-   onCancel={()=>setConfirmCancel(false)} onConfirm={()=>{setConfirmCancel(false);void run(()=>cancelCommerceOrder(workspaceId,order.id,{restock}),"Pedido cancelado.");}}>
+  {confirmCancel&&order?<ConfirmDialog open variant="danger" title={`Cancelar o pedido #${order.number}?`} description={`${marketplace?`O cancelamento será enviado ao ${sourceLabel(order.source)}. `:""}${order.paymentStatus==="APPROVED"&&!marketplace?"O pagamento será estornado ao cliente. ":""}${order.stockState==="RESERVED"?"A reserva volta para o estoque. ":""}Esta ação não pode ser desfeita.`} confirmLabel="Cancelar pedido" busy={busy} confirmDisabled={marketplace&&(!needsReason||!cancelCode)}
+   onCancel={()=>setConfirmCancel(false)} onConfirm={()=>{setConfirmCancel(false);void run(()=>cancelCommerceOrder(workspaceId,order.id,needsReason?{reason:cancelCode}:{restock}),"Pedido cancelado.");}}>
    {order.stockState==="SOLD"?<label className="mt-2 flex items-center gap-2 text-sm"><input type="checkbox" className="h-4 w-4" checked={restock} onChange={event=>setRestock(event.target.checked)}/>Devolver os itens ao estoque (ainda não saíram da loja)</label>:null}
+   {marketplace?reasons.isLoading?<p className="mt-2 text-sm text-muted-foreground">Consultando motivos aceitos pelo canal...</p>
+    :reasons.error?<p className="mt-2 text-sm text-destructive">{commerceErrorMessage(reasons.error)}</p>
+    :needsReason?<label className="mt-2 grid gap-1 text-sm">Motivo enviado ao canal ({sourceLabel(order.source)})<select className="h-9 rounded-md border bg-background px-2" value={cancelCode} onChange={event=>setCancelCode(event.target.value)}><option value="">Selecione</option>{reasonList.map(reason=><option key={reason.code} value={reason.code}>{reason.label}</option>)}</select></label>
+    :<p className="mt-2 text-sm text-muted-foreground">O {sourceLabel(order.source)} não aceita cancelar este pedido agora. Confira no painel do canal.</p>:null}
   </ConfirmDialog>:null}
  </>;
 }

@@ -32,6 +32,9 @@ async function fixture(page:Page){
   else if(path==="/v1/commerce/orders/ord-ml")data={order:mlOrder,payments:[],events:[{id:"ev-1",type:"external_order_imported",actorType:"provider",data:{},createdAt:at(120)},{id:"ev-2",type:"stock_conflict",actorType:"system",data:{},createdAt:at(119)}],
    shipments:[{id:"shp-1",provider:"MERCADO_LIVRE",status:"SHIPPED",carrier:"Mercado Envios",trackingNumber:"BR123456789ML",trackingUrl:"https://tracking.example.test/BR123456789ML",labelAvailable:true,fulfilledByMarketplace:false,shippedAt:at(30),events:[{status:"READY_TO_SHIP",at:at(90)},{status:"SHIPPED",at:at(30)}]}],
    returns:[],actions:{canCancel:false,cancelBlockedReason:CANCEL_BLOCKED,canRefund:false,partialRefund:false,canLabel:true,canManageReturns:false,canRefresh:true}};
+  else if(path==="/v1/commerce/orders/ord-sh")data={order:shopeeOrder,payments:[],events:[],shipments:[],returns:[],actions:{canCancel:true,canRefund:false,partialRefund:false,canLabel:false,canManageReturns:false,canRefresh:true}};
+  else if(path==="/v1/commerce/orders/ord-sh/cancel-reasons")data={reasons:[{code:"OUT_OF_STOCK",label:"Sem estoque"},{code:"CUSTOMER_REQUEST",label:"A pedido do comprador"}]};
+  else if(path==="/v1/commerce/orders/ord-sh/cancel"&&method==="POST")data={...shopeeOrder,status:"CANCELLED"};
   else if(path==="/v1/commerce/orders/ord-ml/label")data={contentType:"application/pdf",base64:LABEL_PDF,filename:"etiqueta-2000009876543210.pdf"};
   else if(path==="/v1/commerce/orders/ord-ml/refresh")data={ok:true};
   else if(path==="/v1/commerce/orders/ord-site")data={order:siteOrder,payments:[{id:"pay-1",provider:"MERCADO_PAGO",method:"PIX",status:"APPROVED",amountCents:18000,refundedCents:0,currency:"BRL",instructions:{},createdAt:at(300)}],events:[],shipments:[],returns,
@@ -50,9 +53,12 @@ async function fixture(page:Page){
   else if(path==="/v1/sites")data={sites:[]};
   else if(path==="/v1/product-metadata")data={categories:[],brands:[],attributes:[]};
   else if(path==="/v1/marketplaces"&&method==="GET")data={configured:true,
-   providers:[{id:"MERCADO_LIVRE",capabilities:{listings:"SUPPORTED",publish:"SUPPORTED",priceSync:"SUPPORTED",stockSync:"SUPPORTED",orders:"SUPPORTED",shipments:"SUPPORTED",labels:"SUPPORTED",cancelOrder:"BLOCKED_EXTERNAL_CAPABILITY",returns:"SUPPORTED",webhooks:"SUPPORTED"}},
-    {id:"SHOPEE",capabilities:{listings:"SUPPORTED",publish:"BLOCKED_EXTERNAL_CAPABILITY",priceSync:"SUPPORTED",stockSync:"SUPPORTED",orders:"SUPPORTED",shipments:"SUPPORTED",labels:"SUPPORTED",cancelOrder:"SUPPORTED",returns:"BLOCKED_EXTERNAL_CAPABILITY",webhooks:"SUPPORTED"}}],
-   connections:[{id:"conn-ml",provider:"MERCADO_LIVRE",externalAccountName:"Loja Vorix ML",externalAccountId:"123",status:"CONNECTED",safetyStock:0,settings:{createContacts},userProducts:true,lastSyncAt:at(10),ordersSyncedAt:at(5)}],listings:[],jobs:[],mappings:[]};
+   providers:[{id:"MERCADO_LIVRE",capabilities:{listings:"SUPPORTED",publish:"SUPPORTED",priceSync:"SUPPORTED",stockSync:"SUPPORTED",orders:"SUPPORTED",shipments:"SUPPORTED",labels:"SUPPORTED",cancelOrder:"BLOCKED_EXTERNAL_CAPABILITY",returns:"SUPPORTED",webhooks:"SUPPORTED",pauseListing:"SUPPORTED",closeListing:"SUPPORTED"},closeListingEffect:"END"},
+    {id:"SHOPEE",capabilities:{listings:"SUPPORTED",publish:"BLOCKED_EXTERNAL_CAPABILITY",priceSync:"SUPPORTED",stockSync:"SUPPORTED",orders:"SUPPORTED",shipments:"SUPPORTED",labels:"SUPPORTED",cancelOrder:"SUPPORTED",returns:"BLOCKED_EXTERNAL_CAPABILITY",webhooks:"SUPPORTED",pauseListing:"SUPPORTED",closeListing:"SUPPORTED"},closeListingEffect:"DELETE"}],
+   connections:[{id:"conn-ml",provider:"MERCADO_LIVRE",externalAccountName:"Loja Vorix ML",externalAccountId:"123",status:"CONNECTED",safetyStock:0,settings:{createContacts},userProducts:true,lastSyncAt:at(10),ordersSyncedAt:at(5)},
+    {id:"conn-shopee",provider:"SHOPEE",externalAccountName:"Loja Vorix Shopee",externalAccountId:"777",status:"CONNECTED",safetyStock:0,settings:{},userProducts:false,lastSyncAt:at(10),ordersSyncedAt:at(5)}],
+   listings:[{id:"lst-ml",connectionId:"conn-ml",productId:"p1",productName:"Camiseta ML",externalListingId:"MLB1",status:"active",syncStatus:"SYNCED"},{id:"lst-shopee",connectionId:"conn-shopee",productId:"p2",productName:"Camiseta Shopee",externalListingId:"3001",status:"active",syncStatus:"SYNCED"}],jobs:[],mappings:[]};
+  else if(path==="/v1/marketplaces/jobs"&&method==="POST")data={id:"job-1",connectionId:body.connectionId,kind:"STATUS",status:"PENDING",progress:0,total:1,items:[]};
   else if(path==="/v1/marketplaces/catalog")data=[];
   else if(path==="/v1/marketplaces/shopee/connect")data={url:"/workspaces/"+WORKSPACE_ID+"/settings/marketplaces?connected=shopee"};
   else if(path==="/v1/marketplaces/connections/conn-ml/settings"){createContacts=!!body.createContacts;data={ok:true};}
@@ -94,6 +100,23 @@ test("filtro por canal, pedido do marketplace com envio, etiqueta, atualização
  await dialog.getByRole("button",{name:"Atualizar do canal"}).click();
  await expect.poll(()=>calls.filter(c=>c.path==="/v1/commerce/orders/ord-ml/refresh"&&c.method==="POST").length).toBe(1);
  expect(calls.some(c=>c.path.endsWith("/cancel"))).toBe(false);
+});
+
+test("cancelar pedido Shopee exige um motivo oficial do canal",async({page},info)=>{
+ const calls=await fixture(page);
+ await page.goto(`/workspaces/${WORKSPACE_ID}/site/pedidos`);
+ const list=page.getByRole(info.project.name==="1024"||info.project.name==="1440"?"table":"list",{name:"Pedidos"});
+ await list.getByText("#1003").click();
+ const dialog=page.getByRole("dialog");await expect(dialog.getByRole("heading",{name:"Pedido #1003"})).toBeVisible();
+ await dialog.getByRole("button",{name:"Cancelar pedido"}).click();
+ const confirm=page.getByRole("alertdialog").or(page.getByRole("dialog",{name:/Cancelar o pedido #1003/}));
+ const reason=confirm.getByLabel("Motivo enviado ao canal (Shopee)");await expect(reason).toBeVisible();
+ expect(calls.some(c=>c.path==="/v1/commerce/orders/ord-sh/cancel-reasons")).toBe(true);
+ await expect(confirm.getByRole("button",{name:"Cancelar pedido"})).toBeDisabled();
+ await reason.selectOption("CUSTOMER_REQUEST");
+ await noOverflow(page);await shot(page,"marketplace-cancel-reason",info.project.name);
+ await confirm.getByRole("button",{name:"Cancelar pedido"}).click();
+ await expect.poll(()=>calls.find(c=>c.path==="/v1/commerce/orders/ord-sh/cancel")?.body).toEqual({reason:"CUSTOMER_REQUEST"});
 });
 
 test("devolução parcial: registrar com chave estável, receber com reposição e reembolsar",async({page},info)=>{
@@ -155,6 +178,16 @@ test("marketplaces: conectar por canal, capacidades bloqueadas e contato do comp
  await toggle.click();await expect(toggle).toBeChecked();
  await expect.poll(()=>calls.find(c=>c.path==="/v1/marketplaces/connections/conn-ml/settings")?.body).toEqual({createContacts:true});
  expect(calls.find(c=>c.path==="/v1/marketplaces/connections/conn-ml/settings")?.method).toBe("PATCH");
+ // Encerrar na Shopee = exclusão definitiva (delete_item): botão próprio e confirmação digitada; no ML segue "Finalizar".
+ const mlListing=page.getByRole("article").filter({hasText:"Camiseta ML"}),shopeeListing=page.getByRole("article").filter({hasText:"Camiseta Shopee"});
+ await expect(mlListing.getByRole("button",{name:"Finalizar"})).toBeVisible();await expect(mlListing.getByRole("button",{name:"Excluir anúncio"})).toHaveCount(0);
+ await expect(shopeeListing.getByRole("button",{name:"Finalizar"})).toHaveCount(0);
+ page.once("dialog",dialog=>{expect(dialog.message()).toContain("não permite desfazer");void dialog.accept("sim");});
+ await shopeeListing.getByRole("button",{name:"Excluir anúncio"}).click();
+ expect(calls.some(c=>c.path==="/v1/marketplaces/jobs")).toBe(false);
+ page.once("dialog",dialog=>void dialog.accept("EXCLUIR"));
+ await shopeeListing.getByRole("button",{name:"Excluir anúncio"}).click();
+ await expect.poll(()=>calls.find(c=>c.path==="/v1/marketplaces/jobs")?.body).toMatchObject({connectionId:"conn-shopee",operation:{kind:"STATUS",listingId:"lst-shopee",status:"closed",confirm:"DELETE"}});
  await shopee.getByRole("button",{name:"Conectar Shopee"}).click();
  await expect.poll(()=>calls.some(c=>c.path==="/v1/marketplaces/shopee/connect"&&c.method==="POST")).toBe(true);
  await page.waitForURL(/connected=shopee/);

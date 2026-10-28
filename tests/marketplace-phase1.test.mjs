@@ -26,7 +26,8 @@ async function fixture(){
  const c=await productSiteContext(db.pool),sellerId=String(counter++),calls=[],externalItems=new Map();let allowed=true,failCreate;
  const tokens=(suffix="initial")=>({accessToken:"access-"+sellerId+"-"+suffix,refreshToken:"refresh-"+sellerId+"-"+suffix,userId:sellerId,expiresAt:new Date(Date.now()+3600000).toISOString()});
  const provider={
-  id:"MERCADO_LIVRE",authorizationUrl:(state,challenge)=>"https://auth.mercadolivre.com.br/authorization?"+new URLSearchParams({state,code_challenge:challenge}),
+  id:"MERCADO_LIVRE",closeListingEffect:"END",
+  capabilities:{listings:"SUPPORTED",publish:"SUPPORTED",priceSync:"SUPPORTED",stockSync:"SUPPORTED",orders:"SUPPORTED",shipments:"SUPPORTED",labels:"SUPPORTED",cancelOrder:"BLOCKED_EXTERNAL_CAPABILITY",returns:"SUPPORTED",webhooks:"SUPPORTED",pauseListing:"SUPPORTED",closeListing:"SUPPORTED"},authorizationUrl:(state,challenge)=>"https://auth.mercadolivre.com.br/authorization?"+new URLSearchParams({state,code_challenge:challenge}),
   connect:async()=>tokens(),account:async()=>({id:sellerId,name:"Loja QA "+sellerId,siteId:"MLB",userProducts:false}),
   refreshConnection:async token=>{calls.push(["refresh",token]);return tokens("rotated");},disconnect:async()=>{calls.push(["disconnect"]);},
   listExternalProducts:async()=>({ids:[...externalItems.keys()],total:externalItems.size}),
@@ -501,6 +502,21 @@ test("deactivated product or variant publishes zero (ML pauses) instead of faili
  const pause=await f.service.enqueue(f.actor,f.connectionId,"STATUS",{listingId:r.listing.id,status:"paused"},randomUUID());
  assert.equal((await drive(f,pause.id)).status,"COMPLETED","a pause never depends on the product being sellable");
  assert.equal(f.externalItems.get(e.id).status,"paused");
+});
+test("closing a listing needs the channel's own confirmation: END takes true, DELETE (Shopee) takes the literal DELETE; blocked channels refuse at enqueue",async()=>{
+ const f=await fixture(),e=f.add(),r=await imported(f,e,{useExternalInitialStock:true});
+ const close=confirm=>f.service.enqueue(f.actor,f.connectionId,"STATUS",{listingId:r.listing.id,status:"closed",...(confirm===undefined?{}:{confirm})},randomUUID());
+ await assert.rejects(close(),e=>e.code==="CLOSE_CONFIRMATION_REQUIRED");
+ await assert.rejects(close("DELETE"),e=>e.code==="CLOSE_CONFIRMATION_REQUIRED","END channels never accept the delete confirmation");
+ f.provider.closeListingEffect="DELETE";
+ await assert.rejects(close(true),e=>e.code==="CLOSE_CONFIRMATION_REQUIRED","a plain confirm never deletes");
+ f.provider.capabilities={...f.provider.capabilities,closeListing:"BLOCKED_EXTERNAL_CAPABILITY",pauseListing:"BLOCKED_EXTERNAL_CAPABILITY"};
+ await assert.rejects(close("DELETE"),e=>e.code==="BLOCKED_EXTERNAL_CAPABILITY");
+ await assert.rejects(f.service.enqueue(f.actor,f.connectionId,"STATUS",{listingId:r.listing.id,status:"paused"},randomUUID()),e=>e.code==="BLOCKED_EXTERNAL_CAPABILITY");
+ f.provider.capabilities={...f.provider.capabilities,closeListing:"SUPPORTED",pauseListing:"SUPPORTED"};
+ const j=await close("DELETE");assert.equal((await drive(f,j.id)).status,"COMPLETED");
+ assert.equal(f.externalItems.get(e.id).status,"closed");
+ assert.equal((await db.pool.query("select count(*)::int n from marketplace_audit where action='LISTING_DELETED'")).rows[0].n>=1,true);
 });
 test("notification bursts and long reconciliations never pile up RECONCILE jobs ahead of stock sync",async()=>{
  const f=await fixture(),e=f.add();

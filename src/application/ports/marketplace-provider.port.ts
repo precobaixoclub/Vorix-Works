@@ -19,7 +19,13 @@ export type ProviderCapabilities = {
   listings: CapabilityState; publish: CapabilityState; priceSync: CapabilityState; stockSync: CapabilityState;
   orders: CapabilityState; shipments: CapabilityState; labels: CapabilityState; cancelOrder: CapabilityState;
   returns: CapabilityState; webhooks: CapabilityState;
+  /** Pausar/reativar anúncio (reversível) e encerrar anúncio (definitivo). */
+  pauseListing: CapabilityState; closeListing: CapabilityState;
 };
+/** O que "encerrar anúncio" faz no canal: END = finaliza (Mercado Livre); DELETE = exclui o anúncio (Shopee delete_item), irreversível. */
+export type ListingCloseEffect = "END" | "DELETE";
+/** Motivo de cancelamento aceito pelo canal: código oficial enviado à API + rótulo para a equipe. */
+export type CancelReason = { code: string; label: string };
 
 // ---------------------------------------------------------------- pedidos externos normalizados
 /** Estado do pedido no canal, já traduzido. O canal é a autoridade (pagamento e logística). */
@@ -53,6 +59,7 @@ export interface MarketplaceProvider {
   readonly id: MarketplaceProviderId;
   /** Identifica o app no canal (client_id/partner_id/app_key) — notificações de outros apps são ignoradas. */
   readonly applicationId: string;
+  readonly closeListingEffect?: ListingCloseEffect;
   readonly capabilities: ProviderCapabilities;
   /** PKCE só onde o canal suporta (Mercado Livre). */
   readonly pkce: boolean;
@@ -78,6 +85,8 @@ export interface MarketplaceProvider {
   /** Devoluções/reclamações de um pedido (o canal decide o reembolso). */
   getReturns(auth:ProviderAuth,orderId:string):Promise<ExternalReturn[]>;
   shippingLabel(auth:ProviderAuth,order:ExternalOrder):Promise<ShippingLabel>;
+  /** Motivos aceitos AGORA para este pedido (vazio quando o canal não cancela pela API). `cancelOrder` só aceita um destes códigos. */
+  cancelReasons(auth:ProviderAuth,order:ExternalOrder):Promise<CancelReason[]>;
   cancelOrder(auth:ProviderAuth,order:ExternalOrder,reason:string):Promise<void>;
   /** Recurso de notificação que não é o próprio pedido (envio, reclamação) → id do pedido. */
   resolveOrderId?(auth:ProviderAuth,resource:string):Promise<string|undefined>;

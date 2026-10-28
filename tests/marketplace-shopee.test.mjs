@@ -289,6 +289,10 @@ test("cancel_order payload; shipped orders are refused", async()=>{
  await provider.cancelOrder(auth,order,"CUSTOMER_REQUEST");assert.deepEqual(body,{order_sn:"2410270ABCDEF1",cancel_reason:"CUSTOMER_REQUEST"});
  await rejectsCode(()=>provider.cancelOrder(auth,{...order,state:"SHIPPED",externalStatus:"SHIPPED"},"Sem estoque"),"SHOPEE_ORDER_NOT_CANCELLABLE");
  await rejectsCode(()=>provider.cancelOrder(auth,order,"qualquer coisa"),"SHOPEE_CANCEL_REASON_UNSUPPORTED");
+ assert.deepEqual((await provider.cancelReasons(auth,order)).map(r=>r.code),["OUT_OF_STOCK","CUSTOMER_REQUEST"]);
+ assert.deepEqual(await provider.cancelReasons(auth,{...order,state:"SHIPPED",externalStatus:"SHIPPED"}),[]);
+ assert.deepEqual(await provider.cancelReasons(auth,{...order,shipment:{fulfilledByMarketplace:true}}),[],"FBS: Shopee handles it");
+ assert.equal(provider.closeListingEffect,"DELETE");assert.equal(provider.capabilities.closeListing,"SUPPORTED");
  // UNDELIVERABLE_AREA: "Only apply for TW and MY".
  await rejectsCode(()=>provider.cancelOrder(auth,order,"UNDELIVERABLE_AREA"),"SHOPEE_CANCEL_REASON_UNSUPPORTED");
  await rejectsCode(()=>provider.cancelOrder(auth,order,"Área de entrega não atendida"),"SHOPEE_CANCEL_REASON_UNSUPPORTED");

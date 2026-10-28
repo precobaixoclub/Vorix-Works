@@ -1,4 +1,4 @@
-import type { CategoryRequirements, ExternalOrder, ExternalOrderItem, ExternalOrderState, ExternalReturn, ExternalReturnState, ExternalShipmentState, ListingWrite, MarketplaceProvider, MarketplaceTokens, ProviderAuth, ProviderCapabilities, ProviderNotification, ShippingLabel } from "../../application/ports/marketplace-provider.port.js";
+import type { CancelReason, CategoryRequirements, ExternalOrder, ExternalOrderItem, ExternalOrderState, ExternalReturn, ExternalReturnState, ExternalShipmentState, ListingWrite, MarketplaceProvider, MarketplaceTokens, ProviderAuth, ProviderCapabilities, ProviderNotification, ShippingLabel } from "../../application/ports/marketplace-provider.port.js";
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import { isIP } from "node:net";
 import { setTimeout as sleep } from "node:timers/promises";
@@ -31,6 +31,11 @@ const RATE_LIMIT_CODE=36009002;
 const MAX_STOCK=99999;
 // Status em que o vendedor pode cancelar (Cancel reasons, docv2/page/67e61eee427345048595487d).
 const CANCELLABLE=new Set(["UNPAID","ON_HOLD","AWAITING_SHIPMENT"]);
+/** Rótulos dos motivos do mercado BR (Cancel reasons, docv2/page/67e61eee427345048595487d); código desconhecido aparece como veio. */
+const CANCEL_REASON_LABELS:Record<string,string>={
+ seller_cancel_unpaid_reason_out_of_stock:"Sem estoque",seller_cancel_unpaid_reason_wrong_price:"Preço incorreto",
+ seller_cancel_unpaid_reason_buyer_hasnt_paid_within_time_allowed:"Comprador não pagou no prazo",seller_cancel_unpaid_reason_buyer_requested_cancellation:"A pedido do comprador",
+ seller_cancel_reason_out_of_stock:"Sem estoque",seller_cancel_paid_reason_buyer_requested_cancellation:"A pedido do comprador",seller_cancel_paid_reason_address_not_deliver:"Endereço sem entrega"};
 const ID=/^\d{1,30}$/;
 
 const identifier=(value:string,pattern=ID):string=>{if(!pattern.test(value))throw new MarketplaceError("INVALID_EXTERNAL_IDENTIFIER");return encodeURIComponent(value);};
@@ -83,7 +88,9 @@ export class TikTokShopProvider implements MarketplaceProvider {
  readonly pkce=false;
  // Cancelamento: o motivo vem da API oficial de elegibilidade (available_reason_names), nunca de lista fixa — ver cancelOrder.
  readonly capabilities:ProviderCapabilities={listings:"SUPPORTED",publish:"SUPPORTED",priceSync:"SUPPORTED",stockSync:"SUPPORTED",orders:"SUPPORTED",shipments:"SUPPORTED",
-  labels:"SUPPORTED",cancelOrder:"SUPPORTED",returns:"SUPPORTED",webhooks:"SUPPORTED"};
+  labels:"SUPPORTED",cancelOrder:"SUPPORTED",returns:"SUPPORTED",webhooks:"SUPPORTED",
+  // Desativar (deactivate) é reversível = pausar. Encerrar definitivamente não é exposto: faça no Seller Center.
+  pauseListing:"SUPPORTED",closeListing:"BLOCKED_EXTERNAL_CAPABILITY"};
  private nextCallAt=0;
  constructor(private readonly config:TikTokShopConfig,private readonly fetcher:typeof fetch=fetch){}
  get applicationId(){return this.config.appKey;}
@@ -320,6 +327,7 @@ export class TikTokShopProvider implements MarketplaceProvider {
  }
  /** "closed" desativa (reversível): excluir no TikTok é irreversível e não é necessário para parar a venda. */
  async setStatus(auth:ProviderAuth,id:string,status:"paused"|"active"|"closed"){
+  if(status==="closed")throw new MarketplaceError("BLOCKED_EXTERNAL_CAPABILITY");
   await this.request("POST","/product/202309/products/"+(status==="active"?"activate":"deactivate"),{auth,shop:true,body:{product_ids:[identifier(id)]}});
  }
  private async skuIds(auth:ProviderAuth,id:string):Promise<string[]>{return ((await this.product(auth,id)).skus??[]).filter((s:Json)=>s.id).map((s:Json)=>String(s.id));}
@@ -448,15 +456,25 @@ export class TikTokShopProvider implements MarketplaceProvider {
   * (initiate_aftersale_user=SELLER, request_types=CANCEL → available_reason_names) porque a lista varia por mercado/status e muda
   * (ex.: dois motivos removidos em 31/10/2026). Texto livre ou motivo fora da lista atual nunca é enviado.
   */
+ /** Linhas CANCEL da elegibilidade; cancelamento parcial por item só existe em US/UK: qualquer linha inelegível bloqueia o total. */
+ private async cancelEligibility(auth:ProviderAuth,order:ExternalOrder):Promise<Json[]|undefined>{
+  if(!CANCELLABLE.has(order.externalStatus))return undefined;
+  const data=await this.request("GET","/return_refund/202602/orders/"+identifier(order.id)+"/aftersale_eligibility",{auth,shop:true,query:{initiate_aftersale_user:"SELLER",request_types:"CANCEL"}});
+  const entries:Json[]=(Array.isArray(data.sku_eligibility)?data.sku_eligibility:[]).flatMap((s:Json)=>Array.isArray(s.line_item_eligibility)?s.line_item_eligibility:[])
+   .filter((e:Json)=>e.request_type==="CANCEL");
+  return entries.length&&entries.every(e=>e.eligible===true)?entries:undefined;
+ }
+ /** Só motivos aceitos por TODAS as linhas (cancelamento total), na ordem do canal. */
+ async cancelReasons(auth:ProviderAuth,order:ExternalOrder):Promise<CancelReason[]>{
+  const entries=await this.cancelEligibility(auth,order);if(!entries)return [];
+  const lists:string[][]=entries.map(e=>Array.isArray(e.available_reason_names)?e.available_reason_names.map(String):[]);
+  return lists[0].filter(code=>/^[a-z0-9_]{1,120}$/.test(code)&&lists.every(l=>l.includes(code))).map(code=>({code,label:CANCEL_REASON_LABELS[code]??code}));
+ }
  async cancelOrder(auth:ProviderAuth,order:ExternalOrder,reason:string):Promise<void>{
   if(!CANCELLABLE.has(order.externalStatus))throw new MarketplaceError("TIKTOK_ORDER_NOT_CANCELLABLE");
   const code=reason.trim();if(!/^[a-z0-9_]{1,120}$/.test(code))throw new MarketplaceError("TIKTOK_CANCEL_REASON_CODE_REQUIRED");
   const orderId=identifier(order.id);
-  const data=await this.request("GET","/return_refund/202602/orders/"+orderId+"/aftersale_eligibility",{auth,shop:true,query:{initiate_aftersale_user:"SELLER",request_types:"CANCEL"}});
-  const entries:Json[]=(Array.isArray(data.sku_eligibility)?data.sku_eligibility:[]).flatMap((s:Json)=>Array.isArray(s.line_item_eligibility)?s.line_item_eligibility:[])
-   .filter((e:Json)=>e.request_type==="CANCEL");
-  // Cancelamento parcial por item só existe em US/UK: qualquer linha inelegível bloqueia o cancelamento total.
-  if(!entries.length||entries.some(e=>e.eligible!==true))throw new MarketplaceError("TIKTOK_ORDER_NOT_CANCELLABLE");
+  const entries=await this.cancelEligibility(auth,order);if(!entries)throw new MarketplaceError("TIKTOK_ORDER_NOT_CANCELLABLE");
   if(!entries.every(e=>Array.isArray(e.available_reason_names)&&e.available_reason_names.map(String).includes(code)))throw new MarketplaceError("TIKTOK_CANCEL_REASON_NOT_AVAILABLE");
   await this.request("POST","/return_refund/202602/cancellations",{auth,shop:true,body:{order_id:orderId,cancel_reason:code}});
  }

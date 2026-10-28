@@ -1,4 +1,4 @@
-import type { CategoryRequirements, ExternalOrder, ExternalOrderState, ExternalReturn, ExternalReturnState, ExternalShipmentState, ListingWrite, MarketplaceProvider, MarketplaceTokens, ProviderAuth, ProviderCapabilities, ProviderNotification, ShippingLabel } from "../../application/ports/marketplace-provider.port.js";
+import type { CancelReason, CategoryRequirements, ExternalOrder, ExternalOrderState, ExternalReturn, ExternalReturnState, ExternalShipmentState, ListingCloseEffect, ListingWrite, MarketplaceProvider, MarketplaceTokens, ProviderAuth, ProviderCapabilities, ProviderNotification, ShippingLabel } from "../../application/ports/marketplace-provider.port.js";
 import { createHash } from "node:crypto";
 import { MarketplaceError, type ExternalAttribute, type ExternalListing, type PublishDraft } from "../../domain/marketplaces/marketplace.model.js";
 import { setTimeout as sleep } from "node:timers/promises";
@@ -41,7 +41,8 @@ export class MercadoLivreProvider implements MarketplaceProvider {
  readonly id="MERCADO_LIVRE" as const;
  readonly pkce=true;
  // Venda cancelada pelo vendedor não existe na API pública do Mercado Livre (só o comprador/mediação cancela).
- readonly capabilities:ProviderCapabilities={listings:"SUPPORTED",publish:"SUPPORTED",priceSync:"SUPPORTED",stockSync:"SUPPORTED",orders:"SUPPORTED",shipments:"SUPPORTED",labels:"SUPPORTED",cancelOrder:"BLOCKED_EXTERNAL_CAPABILITY",returns:"SUPPORTED",webhooks:"SUPPORTED"};
+ readonly capabilities:ProviderCapabilities={listings:"SUPPORTED",publish:"SUPPORTED",priceSync:"SUPPORTED",stockSync:"SUPPORTED",orders:"SUPPORTED",shipments:"SUPPORTED",labels:"SUPPORTED",cancelOrder:"BLOCKED_EXTERNAL_CAPABILITY",returns:"SUPPORTED",webhooks:"SUPPORTED",pauseListing:"SUPPORTED",closeListing:"SUPPORTED"};
+ readonly closeListingEffect:ListingCloseEffect="END";
  private nextCallAt=0;
  constructor(private readonly config:MercadoLivreConfig,private readonly fetcher:typeof fetch=fetch){}
  get applicationId(){return this.config.clientId;}
@@ -306,6 +307,7 @@ export class MercadoLivreProvider implements MarketplaceProvider {
   if(!bytes?.length)throw new MarketplaceError("ML_LABEL_NOT_AVAILABLE");
   return {contentType:headers.get("content-type")?.includes("zip")?"application/zip":"application/pdf",base64:Buffer.from(bytes).toString("base64"),filename:`etiqueta-ml-${order.id}.pdf`};
  }
+ async cancelReasons():Promise<CancelReason[]>{return [];}
  async cancelOrder():Promise<void>{throw new MarketplaceError("BLOCKED_EXTERNAL_CAPABILITY");}
  /** Envio/reclamação apontam para o pedido de origem. */
  async resolveOrderId(auth:ProviderAuth,resource:string):Promise<string|undefined>{

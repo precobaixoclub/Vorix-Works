@@ -87,7 +87,8 @@ async function applyStatus(deps:MarketplaceOrderDeps,order:Order,external:Extern
  if(!advance&&!changedExternal)return order;
  const wasPaid=!!order.paidAt||!!external.paidAt||RANK[order.status]>=RANK.PAID;
  const paymentStatus:PaymentStatus=target==="CANCELLED"?(wasPaid?"REFUNDED":"CANCELLED"):target==="AWAITING_PAYMENT"?"PENDING":"APPROVED";
- const patch={externalStatus:external.externalStatus,externalUpdatedAt:external.updatedAt,externalData:external.data,
+ // Snapshot do canal + controle interno de baixa (nunca apagado por um snapshot novo).
+ const patch={externalStatus:external.externalStatus,externalUpdatedAt:external.updatedAt,externalData:{...external.data,...(order.externalData?.vorixSoldItemIds?{vorixSoldItemIds:order.externalData.vorixSoldItemIds}:{})},
   ...(advance?{status:target,paymentStatus,shippingStatus:SHIPPING[external.state],
    ...(RANK[target]>=RANK.PAID&&target!=="CANCELLED"&&!order.paidAt?{paidAt:external.paidAt??external.updatedAt}:{}),
    ...(target==="CANCELLED"?{cancelledAt:external.cancelledAt??external.updatedAt,cancelReason:external.cancelReason??"marketplace_cancelled"}:{}),

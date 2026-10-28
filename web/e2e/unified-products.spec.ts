@@ -15,7 +15,7 @@ test("oferta pública contém três produtos e apresenta Site sem um Commerce se
 
 test("admin classifica somente Marketing como interno e libera Meetings por concessão normal",async({page},info)=>{
  const headers=await login(page);const grant=await page.request.put(`${api}/v1/admin/tenants/${scope.tenantId}/solutions/meetings`,{headers,data:{enabled:true,source:"manual",limits:{maxConcurrentRecordings:1},reason:"Fixture — decisão de produto"}});expect(grant.status()).toBe(200);
- const state=(await(await page.request.get(`${api}/v1/admin/tenants/${scope.tenantId}/solutions`,{headers})).json()).data.solutions;expect(state.filter((product:{internal:boolean})=>product.internal).map((product:{key:string})=>product.key)).toEqual(["marketing"]);expect(state.some((product:{key:string})=>product.key==="commerce")).toBe(false);
+ const state=(await(await page.request.get(`${api}/v1/admin/tenants/${scope.tenantId}/solutions`,{headers})).json()).data.solutions;expect(state.filter((product:{internal:boolean})=>product.internal).map((product:{key:string})=>product.key)).toEqual([]);expect(state.some((product:{key:string})=>product.key==="commerce")).toBe(false);
  await page.goto(`/admin/tenants/${scope.tenantId}`);await expect(page.getByText("acesso interno",{exact:true})).toHaveCount(1);await expect(page.getByRole("switch",{name:"Desligar Vorix Site",exact:true})).toBeVisible();await expect(page.getByText("Vorix Commerce",{exact:true})).toHaveCount(0);await proof(page,"admin-products",info.project.name);
 });
 

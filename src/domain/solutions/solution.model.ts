@@ -83,7 +83,7 @@ export type SolutionDefinition = {
 export const SOLUTIONS: Readonly<Record<SolutionKey, SolutionDefinition>> = Object.freeze({
   conversations: { key: "conversations", name: "Vorix Conversas", commercialAvailability: "public", defaultEntitlement: true },
   meetings: { key: "meetings", name: "Vorix Meetings", commercialAvailability: "public", defaultEntitlement: false },
-  marketing: { key: "marketing", name: "Vorix Marketing", commercialAvailability: "internal", defaultEntitlement: false },
+  marketing: { key: "marketing", name: "Vorix Marketing", commercialAvailability: "public", defaultEntitlement: false },
   site: { key: "site", name: "Vorix Site", commercialAvailability: "public", defaultEntitlement: false },
 });
 

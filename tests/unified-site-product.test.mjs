@@ -11,9 +11,9 @@ import {PostgresSubscriptionRepository,PostgresSubscriptionItemRepository} from 
 import {SolutionAccessService} from "../dist/application/solutions/solution-access.service.js";
 import {listPublicSolutions,SOLUTIONS,SOLUTION_KEYS,isSolutionKey} from "../dist/domain/solutions/solution.model.js";
 
-test("produtos públicos são Conversas, Meetings e Site; somente Marketing é interno",()=>{
- assert.deepEqual(listPublicSolutions().map(product=>product.key),["conversations","meetings","site"]);
- assert.deepEqual(SOLUTION_KEYS.filter(key=>SOLUTIONS[key].commercialAvailability==="internal"),["marketing"]);
+test("produtos públicos são Conversas, Meetings, Marketing e Site; nenhum interno",()=>{
+ assert.deepEqual(listPublicSolutions().map(product=>product.key),["conversations","meetings","marketing","site"]);
+ assert.deepEqual(SOLUTION_KEYS.filter(key=>SOLUTIONS[key].commercialAvailability==="internal"),[]);
  assert.equal(isSolutionKey("commerce"),false);
 });
 
@@ -39,6 +39,6 @@ test("upgrade 0167 → 0168 unifica concessões e capacidades sem alterar preço
   assert.equal((await db.pool.query("select count(*)::int as n from solution_entitlements where solution_key='commerce'")).rows[0].n,2,"histórico preservado");
   await service.setEntitlement({tenantId:"fixture-manual-test",solutionKey:"meetings",enabled:true,source:"manual"});await service.setEntitlement({tenantId:"fixture-manual-test",solutionKey:"site",enabled:true,source:"manual"});
   assert.deepEqual((await service.listAccess("fixture-manual-test")).filter(product=>product.enabled).map(product=>[product.key,product.internal]),[["conversations",false],["meetings",false],["site",false]]);
-  await assert.rejects(service.setEntitlement({tenantId:"fixture-manual-test",solutionKey:"marketing",enabled:true,source:"manual"}),/SOLUTION_NOT_CONTRACTABLE/);
+  await service.setEntitlement({tenantId:"fixture-manual-test",solutionKey:"marketing",enabled:true,source:"manual"});assert.equal(await service.hasAccess("fixture-manual-test","marketing"),true);
  }finally{await db.stop();const absolute=resolve(directory);assert.equal(dirname(absolute),resolve(tmpdir()));assert.ok(absolute.startsWith(join(resolve(tmpdir()),"vorix-unified-site-fixture-")));await rm(absolute,{recursive:true,force:true});}
 });

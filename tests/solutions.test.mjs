@@ -38,9 +38,9 @@ after(async () => {
 
 // --- Modelo -----------------------------------------------------------------------------------
 
-test("DISPONIBILIDADE COMERCIAL: Conversas, Meetings e Site públicos; somente Marketing interno", () => {
-  assert.deepEqual(listPublicSolutions().map((solution) => solution.key), ["conversations", "meetings", "site"]);
-  assert.equal(SOLUTIONS.marketing.commercialAvailability, "internal");
+test("DISPONIBILIDADE COMERCIAL: Conversas, Meetings, Marketing e Site públicos", () => {
+  assert.deepEqual(listPublicSolutions().map((solution) => solution.key), ["conversations", "meetings", "marketing", "site"]);
+  assert.equal(SOLUTIONS.marketing.commercialAvailability, "public");
   assert.equal(SOLUTIONS.marketing.defaultEntitlement, false, "Marketing é fail-closed");
   assert.equal(SOLUTIONS.conversations.defaultEntitlement, true, "nenhum cliente atual perde o Conversas por falta de linha");
   assert.equal(SOLUTIONS.meetings.commercialAvailability, "public", "Meetings é um produto público");
@@ -53,13 +53,15 @@ test("ACESSO: kill switch, entitlement e default são conceitos separados", () =
   assert.equal(resolveSolutionAccess({ solution: marketing, entitlement: { enabled: true, source: "internal" }, killSwitchOn: false }).enabled, true);
   assert.equal(resolveSolutionAccess({ solution: marketing, entitlement: { enabled: true, source: "internal" }, killSwitchOn: true }).enabled, false, "kill switch vence a concessão");
   assert.equal(resolveSolutionAccess({ solution: SOLUTIONS.conversations, entitlement: { enabled: false, source: "manual" }, killSwitchOn: false }).enabled, false, "linha explícita vence o default");
-  assert.equal(resolveSolutionAccess({ solution: marketing, killSwitchOn: false }).internal, true);
+  assert.equal(resolveSolutionAccess({ solution: marketing, killSwitchOn: false }).internal, false);
 });
 
 test("CONCESSÃO: solução não comercial só aceita origem interna", () => {
-  assert.doesNotThrow(() => assertGrantSourceAllowed(SOLUTIONS.marketing, "internal"));
-  assert.throws(() => assertGrantSourceAllowed(SOLUTIONS.marketing, "subscription"), /SOLUTION_NOT_CONTRACTABLE/);
-  assert.throws(() => assertGrantSourceAllowed(SOLUTIONS.marketing, "manual"), /SOLUTION_NOT_CONTRACTABLE/);
+  const internalOnly = { ...SOLUTIONS.marketing, commercialAvailability: "internal" };
+  assert.doesNotThrow(() => assertGrantSourceAllowed(internalOnly, "internal"));
+  assert.throws(() => assertGrantSourceAllowed(internalOnly, "subscription"), /SOLUTION_NOT_CONTRACTABLE/);
+  assert.throws(() => assertGrantSourceAllowed(internalOnly, "manual"), /SOLUTION_NOT_CONTRACTABLE/);
+  assert.doesNotThrow(() => assertGrantSourceAllowed(SOLUTIONS.marketing, "manual"), "Marketing é público");
   assert.doesNotThrow(() => assertGrantSourceAllowed(SOLUTIONS.conversations, "subscription"));
 });
 
@@ -106,8 +108,7 @@ test("ENTITLEMENT: tenant comum tem Conversas e NÃO tem Marketing; concessão i
   assert.deepEqual((await service.listAccess(tenantId)).map((a) => [a.key, a.enabled]), [["conversations", true], ["meetings", false], ["marketing", false], ["site", false]]);
   assert.equal(await service.hasAccess(tenantId, "marketing"), false);
 
-  await assert.rejects(() => service.setEntitlement({ tenantId, solutionKey: "marketing", enabled: true, source: "subscription" }), /SOLUTION_NOT_CONTRACTABLE/);
-  assert.equal(await service.hasAccess(tenantId, "marketing"), false, "tentativa de 'venda' não concede nada");
+  assert.equal(await service.hasAccess(tenantId, "marketing"), false, "Marketing público continua fail-closed sem concessão");
 
   const granted = await service.setEntitlement({ tenantId, solutionKey: "marketing", enabled: true, source: "internal", reason: "homologação", actorUserId: "platform-admin-1" });
   assert.equal(granted.source, "internal");
@@ -230,7 +231,7 @@ test("API: tenant com concessão INTERNA acessa o Marketing e vê as duas soluç
     assert.equal(response.statusCode, 200, url);
   }
   const solutions = await app.inject({ method: "GET", url: "/v1/solutions" });
-  assert.deepEqual(solutions.json().data.solutions.map((s) => [s.key, s.internal]), [["conversations", false], ["marketing", true]]);
+  assert.deepEqual(solutions.json().data.solutions.map((s) => [s.key, s.internal]), [["conversations", false], ["marketing", false]]);
   await app.close();
 });
 
@@ -254,9 +255,8 @@ test("API: conceder solução é só de administrador da plataforma, e Marketing
   await ownerApp.close();
 
   const adminApp = await buildTestApp({ tenantId: "tenant-plataforma", role: "owner", isPlatformAdmin: true, service });
-  const commercial = await adminApp.inject({ method: "PUT", url: "/v1/admin/tenants/tenant-api-dono/solutions/marketing", payload: { enabled: true, source: "subscription" } });
-  assert.equal(commercial.statusCode, 409);
-  assert.equal(commercial.json().error.code, "SOLUTION_NOT_CONTRACTABLE");
+  const commercial = await adminApp.inject({ method: "PUT", url: "/v1/admin/tenants/tenant-api-dono/solutions/marketing", payload: { enabled: false, source: "subscription" } });
+  assert.equal(commercial.statusCode, 200, "Marketing público aceita origem comercial");
   const unknown = await adminApp.inject({ method: "PUT", url: "/v1/admin/tenants/tenant-api-dono/solutions/agenda-x", payload: { enabled: true, source: "internal" } });
   assert.equal(unknown.statusCode, 400);
 
@@ -264,7 +264,7 @@ test("API: conceder solução é só de administrador da plataforma, e Marketing
   assert.equal(granted.statusCode, 200);
   assert.equal(await service.hasAccess("tenant-api-dono", "marketing"), true);
   const listed = await adminApp.inject({ method: "GET", url: "/v1/admin/tenants/tenant-api-dono/solutions" });
-  assert.deepEqual(listed.json().data.solutions.map((s) => [s.key, s.enabled, s.commercialAvailability]), [["conversations", true, "public"], ["meetings", false, "public"], ["marketing", true, "internal"], ["site", false, "public"]]);
+  assert.deepEqual(listed.json().data.solutions.map((s) => [s.key, s.enabled, s.commercialAvailability]), [["conversations", true, "public"], ["meetings", false, "public"], ["marketing", true, "public"], ["site", false, "public"]]);
   await adminApp.close();
 });
 

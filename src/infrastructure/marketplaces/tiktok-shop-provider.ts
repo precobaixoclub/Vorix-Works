@@ -66,8 +66,10 @@ type RequestOptions={query?:Record<string,string>;body?:unknown;form?:FormData;a
 export class TikTokShopProvider implements MarketplaceProvider {
  readonly id="TIKTOK_SHOP" as const;
  readonly pkce=false;
+ // Cancelamento existe na API, mas exige códigos oficiais de motivo (seller_cancel_*) que não confirmamos para o TikTok Shop BR:
+ // bloqueado até a homologação real (nunca enviamos um motivo inventado em nome do lojista).
  readonly capabilities:ProviderCapabilities={listings:"SUPPORTED",publish:"SUPPORTED",priceSync:"SUPPORTED",stockSync:"SUPPORTED",orders:"SUPPORTED",shipments:"SUPPORTED",
-  labels:"SUPPORTED",cancelOrder:"SUPPORTED",returns:"SUPPORTED",webhooks:"SUPPORTED"};
+  labels:"SUPPORTED",cancelOrder:"BLOCKED_EXTERNAL_CAPABILITY",returns:"SUPPORTED",webhooks:"SUPPORTED"};
  private nextCallAt=0;
  constructor(private readonly config:TikTokShopConfig,private readonly fetcher:typeof fetch=fetch){}
  get applicationId(){return this.config.appKey;}

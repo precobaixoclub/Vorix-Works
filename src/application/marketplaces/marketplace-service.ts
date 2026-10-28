@@ -21,6 +21,8 @@ export type MarketplaceServiceDeps = {
  /** Pedidos externos entram no MESMO pedido/estoque do Site. Sem isso, jobs de pedido são recusados. */
  orders?:CommerceOrderRepositoryPort; orderDeps?:Omit<MarketplaceOrderDeps,"orders"|"repository"|"productEngineRepository"|"productRepository">;
 };
+// Códigos equivalentes entre canais (cada provider usa o próprio prefixo).
+const RATE_LIMIT=/^(ML|SHOPEE|TIKTOK)_RATE_LIMIT$/,REJECTED=/^(ML|SHOPEE|TIKTOK)_REQUEST_REJECTED/,LISTING_GONE=new Set(["ML_LISTING_NOT_FOUND","SHOPEE_LISTING_NOT_FOUND","TIKTOK_NOT_FOUND"]);
 const hash=(v:string)=>createHash("sha256").update(v).digest("hex");
 const gtin=(p:Product):string|undefined=>{
  const metadata=p.taxMetadata as {catalog?:{ean?:unknown}}|undefined;
@@ -98,7 +100,7 @@ export class MarketplaceService {
    await this.d.repository.audit({...c,userId:"marketplace-worker"},"TOKEN_REFRESHED",c.id);
    return auth(refreshed.accessToken);
   }catch(error){
-   if(error instanceof MarketplaceError&&error.code==="ML_RATE_LIMIT"){await this.d.repository.refreshComplete(c,c.id,owner);throw error;}
+   if(error instanceof MarketplaceError&&RATE_LIMIT.test(error.code)){await this.d.repository.refreshComplete(c,c.id,owner);throw error;}
    await this.d.repository.connectionError(c,c.id,"REAUTH_REQUIRED","ML_REFRESH_REAUTH_REQUIRED");
    try{await this.d.repository.refreshComplete(c,c.id,owner);}catch{}
    throw new MarketplaceError("REAUTH_REQUIRED");
@@ -355,12 +357,12 @@ export class MarketplaceService {
   try{external=await this.p(c).createListing(token,write);}
   catch(error){
    // A 429 is a definite refusal, so retry is safe. Network/5xx outcomes remain uncertain.
-   if(error instanceof MarketplaceError&&(error.code==="ML_RATE_LIMIT"||error.code.startsWith("ML_REQUEST_REJECTED_")))
-    await this.d.repository.saveListing({...pending,status:error.code==="ML_RATE_LIMIT"?"RETRYABLE":"REJECTED",syncStatus:"ERROR",lastError:error.code});
+   if(error instanceof MarketplaceError&&(RATE_LIMIT.test(error.code)||REJECTED.test(error.code)))
+    await this.d.repository.saveListing({...pending,status:RATE_LIMIT.test(error.code)?"RETRYABLE":"REJECTED",syncStatus:"ERROR",lastError:error.code});
    throw error;
   }
   this.assertSeller(c,external);
-  if(!/^MLB\d+$/.test(external.id))throw new MarketplaceError("ML_INVALID_RESPONSE",true);
+  if(!(c.provider==="MERCADO_LIVRE"?/^MLB\d+$/:/^[A-Za-z0-9_-]{1,64}$/).test(external.id))throw new MarketplaceError("ML_INVALID_RESPONSE",true);
   await this.d.repository.saveListing({...pending,externalListingId:external.id,externalProductId:external.userProductId,externalUrl:external.url,status:external.status,
    syncStatus:"SYNCED",externalPrice:write.priceCents,externalQuantity:write.quantity,lastSyncedPrice:write.priceCents,lastSyncedQuantity:write.quantity,snapshot:external,lastSyncAt:new Date().toISOString()});
   await this.d.repository.saveItem(j,"publication","PUBLISHED",{externalListingId:external.id});
@@ -449,7 +451,7 @@ export class MarketplaceService {
     if(error instanceof MarketplaceError&&error.retryable)throw error;
     const code=safeMarketplaceError(error);
     if(code==="REAUTH_REQUIRED")throw error;
-    await this.d.repository.saveListing({...l,status:code==="ML_LISTING_NOT_FOUND"?"MISSING":l.status,syncStatus:code==="ML_EXTERNAL_CONFLICT"?"DIVERGED":"ERROR",lastError:code,lastSyncAt:new Date().toISOString()});
+    await this.d.repository.saveListing({...l,status:LISTING_GONE.has(code)?"MISSING":l.status,syncStatus:code==="ML_EXTERNAL_CONFLICT"?"DIVERGED":"ERROR",lastError:code,lastSyncAt:new Date().toISOString()});
     await this.d.repository.saveItem(j,l.id,"ERROR",{code});
     await this.d.repository.audit(actor,"LISTING_ERROR",l.id,code);
    }

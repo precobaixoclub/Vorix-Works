@@ -380,6 +380,75 @@ test("UP stock writability is confirmed from canonical locations, not guessed fr
  });
  assert.equal((await provider.getListing("token","MLB123")).stockWritable,true);warehouse=true;assert.equal((await provider.getListing("token","MLB123")).stockWritable,false);
 });
+test("listing reads variation attributes (include_attributes=all), blocks Full per-variation inventory and survives UP without stock-locations",async()=>{
+ const urls=[];const provider=new MercadoLivreProvider({clientId:"123",clientSecret:"private",redirectUri:"https://qa.test"},async(url)=>{
+  urls.push(url);if(url.endsWith("/stock"))return new Response(JSON.stringify({message:"stock-locations not found"}),{status:404});
+  const body=url.endsWith("/prices")?{prices:[{type:"standard",amount:100,currency_id:"BRL"}]}:url.endsWith("/description")?{plain_text:""}:
+   {id:"MLB123",seller_id:123,title:"Camiseta",category_id:"MLB1",available_quantity:4,status:"active",tags:[],shipping:{logistic_type:"drop_off"},attributes:[],pictures:[],user_product_id:"MLBU9",
+    variations:[{id:174390848694,available_quantity:4,inventory_id:"LCQI05831",attribute_combinations:[{id:"SIZE",value_name:"M"}],attributes:[{id:"SELLER_SKU",value_name:"CAM-M"}]}]};
+  return new Response(JSON.stringify(body),{status:200});
+ });
+ const listing=await provider.getListing({accessToken:"t",accountId:"123",metadata:{}},"MLB123");
+ assert.ok(urls[0].endsWith("/items/MLB123?include_attributes=all"));assert.equal(listing.variants[0].sku,"CAM-M");assert.equal(listing.stockWritable,false);
+});
+test("price sync on a variation listing sends the same price to every variation id; YouTube video_id is dropped",async()=>{
+ const bodies=[];const provider=new MercadoLivreProvider({clientId:"123",clientSecret:"private",redirectUri:"https://qa.test"},async(_url,options)=>{bodies.push(JSON.parse(options.body));return new Response(JSON.stringify({id:"MLB123",seller_id:123,status:"active"}),{status:200});});
+ const auth={accessToken:"t",accountId:"123",metadata:{}};
+ await provider.syncPrice(auth,"MLB123",30000,[{id:"1",priceCents:30000},{id:"2",priceCents:30000}]);
+ assert.deepEqual(bodies[0],{variations:[{id:"1",price:300},{id:"2",price:300}]});
+ await assert.rejects(()=>provider.syncPrice(auth,"MLB123",30000,[{id:"1",priceCents:29000}]),/SAME_PRICE/);
+ await provider.syncPrice(auth,"MLB124",5000);assert.deepEqual(bodies[1],{price:50});
+ const d={...draft(),settings:{video_id:"yt123",sale_terms:[]}};await provider.createListing(auth,{draft:d,priceCents:1000,quantity:1,currency:"BRL",userProducts:false,correlation:"vorix:qa"});
+ assert.equal(bodies[2].video_id,undefined);assert.deepEqual(bodies[2].sale_terms,[]);
+});
+test("orders use the current shipments contract (x-format-new, /history dates, me2 labels) and documented order/return enums",async()=>{
+ const calls=[];let orderStatus="paid";
+ const provider=new MercadoLivreProvider({clientId:"123",clientSecret:"private",redirectUri:"https://qa.test"},async(url,options)=>{
+  const path=new URL(url).pathname+new URL(url).search;calls.push({path,headers:options.headers});
+  const json=body=>new Response(JSON.stringify(body),{status:200});
+  if(path==="/orders/2000003508897196")return json({id:2000003508897196,status:orderStatus,date_created:"2026-10-01T10:00:00.000-03:00",last_updated:"2026-10-02T10:00:00.000-03:00",pack_id:2000003508553677,
+   currency_id:"BRL",coupon:{id:null,amount:0},order_items:[{item:{id:"MLB2608564035",title:"Camiseta Basica",variation_id:174390848694,seller_sku:null,variation_attributes:[{id:"SIZE",name:"Tamanho",value_name:"M"}]},quantity:1,unit_price:50,currency_id:"BRL"}],
+   payments:[{id:1,status:"approved",date_approved:"2026-10-01T10:00:01.000-03:00"}],shipping:{id:41297142475},buyer:{id:266272126},seller:{id:123},tags:["paid"],
+   cancel_detail:orderStatus==="cancelled"?{group:"buyer",code:"x",description:"Comprador desistiu",requested_by:"buyer",date:"2026-10-02T09:00:00.000-03:00"}:undefined});
+  if(path==="/shipments/41297142475")return json({id:41297142475,status:"delivered",substatus:null,tracking_number:"BR123",tracking_method:"Correios",logistic:{mode:"me2",type:"drop_off",direction:"forward"},
+   lead_time:{cost:19.9,estimated_delivery_time:{date:"2026-10-05T00:00:00.000-03:00"}},destination:{shipping_address:{city:{name:"São Paulo"},state:{id:"BR-SP"},zip_code:"01000000"}}});
+  if(path==="/shipments/41297142475/history")return json([{status:"delivered",substatus:null,date:"2026-10-04T12:00:00.000Z"},{status:"shipped",substatus:"in_transit",date:"2026-10-02T12:00:00.000Z"},{status:"shipped",substatus:null,date:"2026-10-02T09:00:00.000Z"}]);
+  if(path==="/post-purchase/v1/claims/search?order_id=2000003508897196&limit=100")return json({paging:{total:1,offset:0,limit:100},data:[{id:5298178312,resource:"order",resource_id:2000003508897196,status:"opened",type:"returns",reason_id:"PDD9502",date_created:"2026-10-06T10:00:00.000-03:00",last_updated:"2026-10-07T10:00:00.000-03:00"}]});
+  if(path==="/post-purchase/v2/claims/5298178312/returns")return json({id:57341011,claim_id:5298178312,status:"pending_delivered",subtype:"return_partial",last_updated:"2026-10-08T10:00:00.000+00:00",
+   orders:[{order_id:2000003508897196,item_id:"MLB2608564035",variation_id:174390848694,context_type:"partial",total_quantity:"2.0",return_quantity:"1.0"}]});
+  if(path==="/shipments/999/orders")return json([{order_id:"2000000000000001",seller_id:6789},{order_id:"2000003508897196",seller_id:123}]);
+  if(path==="/post-purchase/v1/claims/777")return json({id:777,resource:"shipment",resource_id:999});
+  return new Response("{}",{status:404});
+ });
+ const auth={accessToken:"t",accountId:"123",metadata:{}};
+ const order=await provider.getOrder(auth,"2000003508897196");
+ assert.equal(order.state,"DELIVERED");assert.equal(order.shippingCents,1990);assert.equal(order.totalCents,6990);assert.equal(order.shipment.shippedAt,"2026-10-02T09:00:00.000Z");assert.equal(order.shipment.deliveredAt,"2026-10-04T12:00:00.000Z");
+ assert.equal(order.shipment.labelAvailable,false);assert.equal(order.shippingAddress.postalCode,"01000000");assert.equal(order.buyer.name,undefined);
+ assert.ok(calls.filter(c=>c.path.startsWith("/shipments/41297142475")).every(c=>c.headers["x-format-new"]==="true"));
+ for(const [status,state] of [["pending_cancel","CANCELLED"],["invalid","CANCELLED"],["payment_in_process","PENDING_PAYMENT"]]){orderStatus=status;assert.equal((await provider.getOrder(auth,"2000003508897196")).state,state);}
+ const [ret]=await provider.getReturns(auth,"2000003508897196");
+ assert.equal(ret.state,"IN_TRANSIT");assert.deepEqual(ret.items,[{externalItemId:"MLB2608564035",externalVariationId:"174390848694",quantity:1}]);
+ assert.equal(await provider.resolveOrderId(auth,"/shipments/999"),"2000003508897196");assert.equal(calls.find(c=>c.path==="/shipments/999/orders").headers["X-New-Domain"],"true");
+ assert.equal(await provider.resolveOrderId(auth,"/post-purchase/v1/claims/777"),"2000003508897196");
+});
+test("labels need ME2 ready_to_print and never exist for Full; notifications accept post_purchase claims and reject other apps",async()=>{
+ let requested;const provider=new MercadoLivreProvider({clientId:"123",clientSecret:"private",redirectUri:"https://qa.test"},async(url)=>{requested=url;return new Response(new Uint8Array([37,80,68,70]),{status:200,headers:{"content-type":"application/pdf"}});});
+ const auth={accessToken:"t",accountId:"123",metadata:{}};
+ const label=await provider.shippingLabel(auth,{id:"1",shipment:{externalId:"43308302844",labelAvailable:true}});
+ assert.equal(requested,"https://api.mercadolibre.com/shipment_labels?shipment_ids=43308302844&response_type=pdf");assert.equal(label.contentType,"application/pdf");
+ await assert.rejects(()=>provider.shippingLabel(auth,{id:"1",shipment:{externalId:"43308302844",labelAvailable:false}}),/LABEL_NOT_AVAILABLE/);
+ const raw=b=>JSON.stringify({user_id:123,application_id:123,attempts:1,sent:"2026-10-28T10:00:00.000Z",received:"2026-10-28T10:00:00.000Z",...b});
+ const claim=provider.parseNotification({headers:{},url:"",rawBody:raw({id:"5e2827f2",resource:"post-purchase/v1/claims/5108684499",topic:"post_purchase",actions:["claims"]})});
+ assert.deepEqual([claim.kind,claim.resource,claim.eventId],["RETURN","/post-purchase/v1/claims/5108684499","5e2827f2"]);
+ assert.equal(provider.parseNotification({headers:{},url:"",rawBody:raw({resource:"/orders/2195160686",topic:"orders_v2"})}).externalOrderId,"2195160686");
+ assert.equal(provider.parseNotification({headers:{},url:"",rawBody:raw({resource:"/orders/2195160686",topic:"orders_v2",application_id:999})}),undefined);
+ assert.equal(provider.parseNotification({headers:{},url:"",rawBody:raw({resource:"/orders/2195160686",topic:"constructor"})}),undefined);
+});
+test("service accepts post_purchase claim notifications as RETURN jobs and ignores prototype topics",async()=>{
+ const f=await fixture(),base={application_id:"123456",user_id:f.sellerId,sent:"2026-10-28T10:00:00.000Z"};
+ assert.equal((await f.service.notification({...base,topic:"post_purchase",resource:"post-purchase/v1/claims/5108684499",id:randomUUID()})).accepted,true);
+ assert.equal((await f.service.notification({...base,topic:"constructor",resource:"/orders/1",_id:randomUUID()})).accepted,false);
+});
 test("partial price success followed by stock retry completes without false conflict or duplicate price write",async()=>{
  const f=await fixture(),e=f.add(),r=await imported(f,e,{useExternalInitialStock:true});
  await f.d.productRepository.update(r.listing.productId,{priceCents:12000});await f.d.productEngineRepository.move({...f.scope,productId:r.listing.productId,kind:"RESERVATION",quantity:2,operationKey:randomUUID(),userId:f.actor.userId});

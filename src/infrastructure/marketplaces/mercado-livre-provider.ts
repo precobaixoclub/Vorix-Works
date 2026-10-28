@@ -18,11 +18,23 @@ const image=(value:unknown):string|undefined=>{
  if(typeof value!=="string")return;try{const u=new URL(value);if(u.protocol==="https:"&&!u.username&&!u.password)return u.href;}catch{}return;
 };
 
+// Docs oficiais pt_br (out/2026): gerenciamento-de-envios, gerenciamento-de-vendas, gerenciar-devolucoes, produto-receba-notificacoes.
 const ML_SHIPMENT:Record<string,ExternalShipmentState>={pending:"PENDING",handling:"READY_TO_SHIP",ready_to_ship:"READY_TO_SHIP",shipped:"SHIPPED",delivered:"DELIVERED",not_delivered:"NOT_DELIVERED",cancelled:"CANCELLED"};
-// Devolução física (post-purchase v2): "delivered" = chegou ao vendedor — a reposição ainda é decisão manual no Vorix.
-const ML_RETURN:Record<string,ExternalReturnState>={pending:"APPROVED",label_generated:"APPROVED",shipped:"IN_TRANSIT",delivered:"RECEIVED",not_delivered:"CANCELLED",cancelled:"CANCELLED",failed:"CANCELLED",expired:"CANCELLED",closed:"COMPLETED"};
-const ML_TOPICS:Record<string,RegExp>={items:/^\/items\/MLB\d+$/,items_prices:/^\/items\/MLB\d+\/prices$/,user_products:/^\/user-products\/MLBU\d+$/,"stock-location":/^\/user-products\/MLBU\d+\/stock$/,
- orders_v2:/^\/orders\/\d{1,20}$/,shipments:/^\/shipments\/\d{1,20}$/,claims:/^\/post-purchase\/v1\/claims\/\d{1,20}$/};
+// Status de /orders: pending_cancel = cancelada com reembolso pendente; invalid = comprador malicioso (nunca vira venda).
+const ML_ORDER_CANCELLED=new Set(["cancelled","pending_cancel","invalid"]),ML_ORDER_PAID=new Set(["paid","partially_refunded"]);
+// Devolução física (post-purchase v2, enum oficial): "delivered" = chegou ao vendedor — a reposição ainda é decisão manual no Vorix.
+// return_to_buyer = o produto volta ao comprador (nada retorna ao estoque).
+const ML_RETURN:Record<string,ExternalReturnState>={pending:"APPROVED",label_generated:"APPROVED",scheduled:"APPROVED",pending_cancel:"APPROVED",pending_expiration:"APPROVED",pending_failure:"APPROVED",
+ shipped:"IN_TRANSIT",pending_delivered:"IN_TRANSIT",delivered:"RECEIVED",not_delivered:"CANCELLED",return_to_buyer:"CANCELLED",cancelled:"CANCELLED",failed:"CANCELLED",expired:"CANCELLED"};
+const CLAIM=/^\/post-purchase\/v1\/claims\/\d{1,20}$/;
+/** Tópicos aceitos. Reclamações chegam em "post_purchase" (actions claims/claims_actions); "claims" fica para assinaturas antigas.
+ * items_prices: a doc manda reler /prices, mas o formato exato do resource não é confirmado — aceita o item ou o subrecurso. */
+export const ML_TOPICS:Record<string,RegExp>={items:/^\/items\/MLB\d+$/,items_prices:/^\/items\/MLB\d+(\/prices)?$/,user_products:/^\/user-products\/MLBU\d+$/,"stock-location":/^\/user-products\/MLBU\d+\/stock$/,
+ orders_v2:/^\/orders\/\d{1,20}$/,shipments:/^\/shipments\/\d{1,20}$/,post_purchase:CLAIM,claims:CLAIM};
+/** O exemplo oficial de post_purchase traz o resource sem a barra inicial: normaliza antes de validar. */
+export const mercadoLivreResource=(topic:string,resource:string)=>(topic==="post_purchase"||topic==="claims")&&resource.startsWith("post-purchase/")?"/"+resource:resource;
+export const mercadoLivreNotificationKind=(topic:string):"ORDER"|"RETURN"|"LISTING"=>topic==="orders_v2"||topic==="shipments"?"ORDER":topic==="post_purchase"||topic==="claims"?"RETURN":"LISTING";
+const firstAt=(history:Json[],status:string)=>history.filter(h=>h?.status===status&&typeof h.date==="string").map(h=>String(h.date)).sort()[0];
 
 /** All network calls are confined to the official API origin. Provider errors never include response bodies. */
 export class MercadoLivreProvider implements MarketplaceProvider {
@@ -73,7 +85,7 @@ export class MercadoLivreProvider implements MarketplaceProvider {
   const scopes=String(data.scope??"").split(" ");if(!["read","write","offline_access"].every(s=>scopes.includes(s)))throw new MarketplaceError("ML_REQUIRED_SCOPES_MISSING");
   return {accessToken:String(data.access_token),refreshToken:String(data.refresh_token),expiresAt:new Date(Date.now()+Number(data.expires_in)*1000).toISOString(),userId:String(data.user_id)};
  }
- connect(input:{code:string;verifier?:string}){return this.token({grant_type:"authorization_code",code:input.code,redirect_uri:this.config.redirectUri,code_verifier:input.verifier??""});}
+ connect(input:{code:string;verifier?:string}){return this.token({grant_type:"authorization_code",code:input.code,redirect_uri:this.config.redirectUri,...(input.verifier?{code_verifier:input.verifier}:{})});}
  refreshConnection(refreshToken:string){return this.token({grant_type:"refresh_token",refresh_token:refreshToken});}
  async disconnect(auth:ProviderAuth){await this.request("/users/"+identifier(auth.accountId)+"/applications/"+identifier(this.config.clientId),auth.accessToken,"DELETE");}
  async account(auth:ProviderAuth){
@@ -89,7 +101,8 @@ export class MercadoLivreProvider implements MarketplaceProvider {
  }
  async getListing(auth:ProviderAuth,id:string):Promise<ExternalListing>{
   const token=auth.accessToken;
-  const {data}=await this.request("/items/"+identifier(id,/^MLB\d+$/),token);
+  // include_attributes=all: sem ele as variações não trazem attributes (SELLER_SKU/GTIN) nem seller_custom_field.
+  const {data}=await this.request("/items/"+identifier(id,/^MLB\d+$/)+"?include_attributes=all",token);
   const prices=await this.request("/items/"+identifier(id)+"/prices",token);
   const standard=(prices.data.prices as Json[]|undefined)?.filter(p=>p.type==="standard"&&(!p.conditions?.context_restrictions?.length||p.conditions.context_restrictions.includes("channel_marketplace")));
   if(!standard?.length)throw new MarketplaceError("ML_STANDARD_PRICE_UNAVAILABLE");
@@ -100,10 +113,13 @@ export class MercadoLivreProvider implements MarketplaceProvider {
   catch(error){if(!(error instanceof MarketplaceError&&error.code==="ML_LISTING_NOT_FOUND"))throw error;}
   const dataAttrs=Array.isArray(data.attributes)?data.attributes:[];
   const tags:Array<string>=data.tags??[];
-  let stockWritable=data.shipping?.logistic_type!=="fulfillment"&&!data.inventory_id;
+  // Full: o estoque é do meli_facility (só entra por envio físico ao CD); inventory_id existe por item ou por variação.
+  let stockWritable=data.shipping?.logistic_type!=="fulfillment"&&!data.inventory_id&&!(data.variations??[]).some((v:Json)=>v.inventory_id);
   const userProductIds=[...new Set([data.user_product_id,...(data.variations??[]).map((v:Json)=>v.user_product_id)].filter(Boolean).map(String))];
   for(const userProductId of userProductIds){
-   const stock=await this.request("/user-products/"+identifier(userProductId,/^MLBU\d+$/)+"/stock",token);
+   // 404 = UP sem stock-locations inicializadas: não dá para afirmar onde o estoque vive, então não escrevemos (o anúncio continua existindo).
+   const stock=await this.request("/user-products/"+identifier(userProductId,/^MLBU\d+$/)+"/stock",token).catch(error=>{if(error instanceof MarketplaceError&&error.code==="ML_LISTING_NOT_FOUND")return undefined;throw error;});
+   if(!stock){stockWritable=false;continue;}
    if(String(stock.data.user_id)!==String(data.seller_id))throw new MarketplaceError("ML_STOCK_OWNER_MISMATCH");
    const locations=stock.data.locations;
    if(!Array.isArray(locations)||locations.length!==1||locations[0].type!=="selling_address")stockWritable=false;
@@ -140,9 +156,11 @@ export class MercadoLivreProvider implements MarketplaceProvider {
   if(input.variants?.some(v=>v.priceCents!==input.priceCents))throw new MarketplaceError("ML_LEGACY_VARIANTS_REQUIRE_SAME_PRICE");
   const draft=input.draft;
   // No arbitrary settings may replace stock, prices, catalog identity or seller correlation.
-  const allowed=new Set(["shipping","sale_terms","warranty","video_id","catalog_product_id","catalog_listing"]);
-  if(Object.keys(draft.settings).some(k=>!allowed.has(k)))throw new MarketplaceError("ML_UNSUPPORTED_LISTING_SETTING");
-  return {...draft.settings,category_id:draft.categoryId,...(input.userProducts?{family_name:draft.title}:{title:draft.title}),
+  // video_id (YouTube) foi desativado pelo ML em 09/2024: rascunhos antigos perdem o campo em vez de quebrar.
+  const {video_id:_youtube,...settings}=draft.settings as Json;
+  const allowed=new Set(["shipping","sale_terms","warranty","catalog_product_id","catalog_listing"]);
+  if(Object.keys(settings).some(k=>!allowed.has(k)))throw new MarketplaceError("ML_UNSUPPORTED_LISTING_SETTING");
+  return {...settings,category_id:draft.categoryId,...(input.userProducts?{family_name:draft.title}:{title:draft.title}),
    price:input.priceCents/100,currency_id:input.currency,available_quantity:input.quantity,buying_mode:draft.buyingMode,
    listing_type_id:draft.listingTypeId,condition:draft.condition,attributes:[...draft.attributes,...(draft.variantAttributes??[]),
     ...(input.sku&&!draft.attributes.some(a=>a.id==="SELLER_SKU")?[{id:"SELLER_SKU",value_name:input.sku}]:[])],
@@ -198,7 +216,11 @@ export class MercadoLivreProvider implements MarketplaceProvider {
   }
  }
  async setStatus(auth:ProviderAuth,id:string,status:"paused"|"active"|"closed"){await this.request("/items/"+identifier(id),auth.accessToken,"PUT",{status});}
- async syncPrice(auth:ProviderAuth,id:string,priceCents:number){await this.request("/items/"+identifier(id),auth.accessToken,"PUT",{price:priceCents/100});}
+ /** Com variações o preço vai em TODAS (mesmo valor): variação omitida no PUT é apagada pelo ML. Item com automação de preço rejeita price (400). */
+ async syncPrice(auth:ProviderAuth,id:string,priceCents:number,variants?:{id:string;priceCents:number}[]){
+  if(variants?.some(v=>v.priceCents!==priceCents))throw new MarketplaceError("ML_LEGACY_VARIANTS_REQUIRE_SAME_PRICE");
+  await this.request("/items/"+identifier(id),auth.accessToken,"PUT",variants?.length?{variations:variants.map(v=>({id:v.id,price:priceCents/100}))}:{price:priceCents/100});
+ }
  async syncStock(auth:ProviderAuth,id:string,quantity:number,variants?:{id:string;quantity:number}[]){
   await this.request("/items/"+identifier(id),auth.accessToken,"PUT",variants?.length?{variations:variants.map(v=>({id:v.id,available_quantity:v.quantity}))}:{available_quantity:quantity});
  }
@@ -213,6 +235,17 @@ export class MercadoLivreProvider implements MarketplaceProvider {
  private async shipment(token:string,id:string):Promise<Json>{
   return (await this.request("/shipments/"+identifier(id,/^\d{1,20}$/),token,"GET",undefined,{"x-format-new":"true"})).data;
  }
+ /** O JSON novo de /shipments não tem status_history: as datas reais vêm de /history (lista {status,substatus,date}). */
+ private async shipmentHistory(token:string,id:string):Promise<Json[]>{
+  try{const {data}=await this.request("/shipments/"+identifier(id,/^\d{1,20}$/)+"/history",token,"GET",undefined,{"x-format-new":"true"});return Array.isArray(data)?data as Json[]:[];}
+  catch(error){if(error instanceof MarketplaceError&&error.code==="ML_LISTING_NOT_FOUND")return [];throw error;}
+ }
+ /** order_id saiu de /shipments em 12/10/2025: envio→pedidos é /shipments/{id}/orders (X-New-Domain obrigatório; lista pode ter outros sellers). */
+ private async shipmentOrderId(auth:ProviderAuth,id:string):Promise<string|undefined>{
+  const {data}=await this.request("/shipments/"+identifier(id,/^\d{1,20}$/)+"/orders",auth.accessToken,"GET",undefined,{"X-New-Domain":"true"});
+  const own=(Array.isArray(data)?data as Json[]:[]).find(o=>String(o.seller_id)===auth.accountId&&/^\d{1,20}$/.test(String(o.order_id)));
+  return own?String(own.order_id):undefined;
+ }
  async getOrder(auth:ProviderAuth,id:string):Promise<ExternalOrder>{
   const {data}=await this.request("/orders/"+identifier(id,/^\d{1,20}$/),auth.accessToken);
   if(String(data.seller?.id)!==auth.accountId)throw new MarketplaceError("ML_ORDER_OWNER_MISMATCH");
@@ -223,14 +256,16 @@ export class MercadoLivreProvider implements MarketplaceProvider {
   let shipmentData:Json|undefined;
   if(data.shipping?.id)shipmentData=await this.shipment(auth.accessToken,String(data.shipping.id)).catch(error=>{if(error instanceof MarketplaceError&&error.code==="ML_LISTING_NOT_FOUND")return undefined;throw error;});
   const shipmentState=shipmentData?ML_SHIPMENT[String(shipmentData.status)]??"PENDING":undefined;
-  const logisticType=shipmentData?String(shipmentData.logistic?.type??shipmentData.logistic_type??""):undefined;
+  const logisticType=shipmentData?String(shipmentData.logistic?.type??""):undefined;
+  const history=shipmentData&&["shipped","delivered","not_delivered"].includes(String(shipmentData.status))?await this.shipmentHistory(auth.accessToken,String(shipmentData.id)):[];
   const status=String(data.status);
-  let state:ExternalOrderState=status==="cancelled"?"CANCELLED":["paid","partially_refunded","pending_cancel"].includes(status)?"PAID":"PENDING_PAYMENT";
+  let state:ExternalOrderState=ML_ORDER_CANCELLED.has(status)?"CANCELLED":ML_ORDER_PAID.has(status)?"PAID":"PENDING_PAYMENT";
   if(state==="PAID"&&shipmentState&&shipmentState!=="PENDING"&&shipmentState!=="CANCELLED")state=shipmentState==="NOT_DELIVERED"?"SHIPPED":shipmentState as ExternalOrderState;
   const subtotalCents=items.reduce((sum:number,i:{unitPriceCents:number;quantity:number})=>sum+i.unitPriceCents*i.quantity,0);
   const discountCents=Math.min(subtotalCents,data.coupon?.amount?cents(data.coupon.amount):0);
-  const shippingCents=shipmentData?cents(shipmentData.lead_time?.cost??shipmentData.shipping_option?.cost??0):0;
-  const address=shipmentData?.destination?.shipping_address??shipmentData?.receiver_address;
+  // Frete do comprador = lead_time.cost (fórmula oficial: total_amount + taxes.amount + lead_time.cost); o ML é a autoridade.
+  const shippingCents=shipmentData?cents(shipmentData.lead_time?.cost??0):0;
+  const address=shipmentData?.destination?.shipping_address;
   const paidAt=(data.payments??[]).filter((p:Json)=>p.status==="approved").map((p:Json)=>p.date_approved).filter(Boolean).sort()[0];
   return {id:String(data.id),accountId:String(data.seller.id),state,externalStatus:status,createdAt:String(data.date_created),updatedAt:String(data.last_updated??data.date_closed??data.date_created),
    paidAt:paidAt?String(paidAt):undefined,cancelledAt:state==="CANCELLED"?String(data.cancel_detail?.date??data.last_updated??data.date_closed):undefined,cancelReason:data.cancel_detail?.description?String(data.cancel_detail.description).slice(0,200):undefined,
@@ -239,15 +274,16 @@ export class MercadoLivreProvider implements MarketplaceProvider {
    shippingAddress:address?{city:address.city?.name??undefined,state:address.state?.id??address.state?.name??undefined,postalCode:address.zip_code??undefined}:undefined,
    shipment:shipmentData?{externalId:String(shipmentData.id),state:shipmentState!,externalStatus:String(shipmentData.status),substatus:shipmentData.substatus??undefined,logisticType:logisticType||undefined,
     carrier:shipmentData.tracking_method??undefined,trackingNumber:shipmentData.tracking_number??undefined,
-    // Etiqueta só existe para envios Mercado Envios prontos para despachar (o ML gera o PDF).
-    labelAvailable:String(shipmentData.status)==="ready_to_ship"&&["ready_to_print","printed"].includes(String(shipmentData.substatus))&&logisticType!=="fulfillment",
-    fulfilledByMarketplace:logisticType==="fulfillment",shippedAt:shipmentData.status_history?.date_shipped??undefined,deliveredAt:shipmentData.status_history?.date_delivered??undefined,
+    // Etiqueta só em Mercado Envios 2 pronto para despachar (ready_to_print; printed = reimpressão); nunca em Full (o ML imprime).
+    labelAvailable:shipmentData.logistic?.mode==="me2"&&String(shipmentData.status)==="ready_to_ship"&&["ready_to_print","printed"].includes(String(shipmentData.substatus))&&logisticType!=="fulfillment",
+    fulfilledByMarketplace:logisticType==="fulfillment",shippedAt:firstAt(history,"shipped"),deliveredAt:firstAt(history,"delivered"),
     estimatedDeliveryAt:shipmentData.lead_time?.estimated_delivery_time?.date??undefined}:undefined,
    data:{packId:data.pack_id??undefined,paidAmountCents:data.paid_amount!==undefined?cents(data.paid_amount):undefined,tags:Array.isArray(data.tags)?data.tags.slice(0,20):[],shippingId:data.shipping?.id?String(data.shipping.id):undefined}};
  }
  /** Reclamações do pedido (post-purchase) e, quando houver, a devolução física de cada uma. */
  async getReturns(auth:ProviderAuth,orderId:string):Promise<ExternalReturn[]>{
-  const q=new URLSearchParams({resource:"order",resource_id:identifier(orderId,/^\d{1,20}$/)});
+  // order_id traz todas as reclamações do pedido (inclusive as abertas sobre o envio ou o pagamento).
+  const q=new URLSearchParams({order_id:identifier(orderId,/^\d{1,20}$/),limit:"100"});
   const {data}=await this.request("/post-purchase/v1/claims/search?"+q,auth.accessToken);
   const result:ExternalReturn[]=[];
   for(const claim of (data.data??[]) as Json[]){
@@ -274,21 +310,25 @@ export class MercadoLivreProvider implements MarketplaceProvider {
  /** Envio/reclamação apontam para o pedido de origem. */
  async resolveOrderId(auth:ProviderAuth,resource:string):Promise<string|undefined>{
   const order=resource.match(/^\/orders\/(\d{1,20})$/);if(order)return order[1];
-  const shipment=resource.match(/^\/shipments\/(\d{1,20})$/);if(shipment){const data=await this.shipment(auth.accessToken,shipment[1]);return data.order_id?String(data.order_id):undefined;}
-  const claim=resource.match(/^\/post-purchase\/v1\/claims\/(\d{1,20})$/);
-  if(claim){const {data}=await this.request("/post-purchase/v1/claims/"+claim[1],auth.accessToken);return data.resource==="order"&&data.resource_id?String(data.resource_id):undefined;}
+  const shipment=resource.match(/^\/shipments\/(\d{1,20})$/);if(shipment)return this.shipmentOrderId(auth,shipment[1]);
+  const claim=mercadoLivreResource("post_purchase",resource).match(/^\/post-purchase\/v1\/claims\/(\d{1,20})$/);
+  if(claim){
+   const {data}=await this.request("/post-purchase/v1/claims/"+claim[1],auth.accessToken);const target=String(data.resource_id??"");
+   if(!/^\d{1,20}$/.test(target))return undefined;
+   if(data.resource==="order")return target;if(data.resource==="shipment")return this.shipmentOrderId(auth,target);
+  }
   return undefined;
  }
  /** O Mercado Livre não assina notificações: só aceita o app certo, tópicos conhecidos e recursos no formato oficial. */
  parseNotification(input:{rawBody:string}):ProviderNotification|undefined{
   let body:Json;try{body=JSON.parse(input.rawBody);}catch{return undefined;}
   if(String(body.application_id)!==this.config.clientId||!body.user_id)return undefined;
-  const topic=String(body.topic??""),resource=String(body.resource??"");
-  const pattern=ML_TOPICS[topic];if(!pattern||!pattern.test(resource))return undefined;
+  const topic=String(body.topic??""),resource=mercadoLivreResource(topic,String(body.resource??""));
+  const pattern=Object.prototype.hasOwnProperty.call(ML_TOPICS,topic)?ML_TOPICS[topic]:undefined;if(!pattern||!pattern.test(resource))return undefined;
   // Fallback estável exige o timestamp: o recurso sozinho não pode suprimir mudanças futuras.
   const eventId=body._id??body.id??(body.sent?createHash("sha256").update([body.user_id,topic,resource,body.sent].join(":")).digest("hex"):undefined);
   if(!eventId||String(eventId).length>200)return undefined;
-  const kind=topic==="orders_v2"||topic==="shipments"?"ORDER":topic==="claims"?"RETURN":"LISTING";
+  const kind=mercadoLivreNotificationKind(topic);
   return {accountId:String(body.user_id),eventId:String(eventId),topic,kind,resource,externalOrderId:resource.match(/^\/orders\/(\d{1,20})$/)?.[1]};
  }
 }

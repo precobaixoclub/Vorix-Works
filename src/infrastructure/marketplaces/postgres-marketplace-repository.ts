@@ -66,8 +66,9 @@ export class PostgresMarketplaceRepository implements MarketplaceRepositoryPort 
   const r=await this.pool.query("update marketplace_connections set refresh_owner=null,refresh_lease_until=null,token_expires_at=coalesce($5::timestamptz,token_expires_at) where tenant_id=$1 and workspace_id=$2 and id=$3 and refresh_owner=$4 returning id",[...scopeArgs(s),id,owner,expiresAt??null]);
   if(!r.rowCount)throw new MarketplaceError("ML_REFRESH_LEASE_LOST");
  }
- async oauthSave(hash:string,s:OAuthState){await this.pool.query("insert into marketplace_oauth_states(state_hash,tenant_id,workspace_id,user_id,verifier_ref,expires_at) values($1,$2,$3,$4,$5,now()+interval '10 minutes')",[hash,s.tenantId,s.workspaceId,s.userId,s.verifierRef]);}
- async oauthConsume(hash:string){const r=await this.pool.query("delete from marketplace_oauth_states where state_hash=$1 and expires_at>now() returning *",[hash]);const v=r.rows[0];return v?{tenantId:v.tenant_id,workspaceId:v.workspace_id,userId:v.user_id,verifierRef:v.verifier_ref}:undefined;}
+ async oauthSave(hash:string,s:OAuthState){await this.pool.query("insert into marketplace_oauth_states(state_hash,tenant_id,workspace_id,user_id,verifier_ref,browser_hash,expires_at) values($1,$2,$3,$4,$5,$6,now()+interval '10 minutes')",[hash,s.tenantId,s.workspaceId,s.userId,s.verifierRef,s.browserHash]);}
+ // Single use even when the browser does not match: a state opened in another browser is burned, never reusable.
+ async oauthConsume(hash:string,browserHash:string){const r=await this.pool.query("delete from marketplace_oauth_states where state_hash=$1 and expires_at>now() returning *",[hash]);const v=r.rows[0];return v&&v.browser_hash&&v.browser_hash===browserHash?{tenantId:v.tenant_id,workspaceId:v.workspace_id,userId:v.user_id,verifierRef:v.verifier_ref,browserHash:v.browser_hash}:undefined;}
  async listings(s:MarketplaceScope,productId?:string){return (await this.pool.query("select l.*,p.name as product_name from channel_listings l join products p on p.id=l.product_id where l.tenant_id=$1 and l.workspace_id=$2 and ($3::text is null or l.product_id=$3) order by l.updated_at desc",[...scopeArgs(s),productId??null])).rows.map(listing);}
  async listing(s:MarketplaceScope,id:string){const r=await this.pool.query("select * from channel_listings where tenant_id=$1 and workspace_id=$2 and id=$3",[...scopeArgs(s),id]);return r.rows[0]?listing(r.rows[0]):undefined;}
  async externalListing(s:MarketplaceScope,connectionId:string,externalId:string){const r=await this.pool.query("select * from channel_listings where tenant_id=$1 and workspace_id=$2 and connection_id=$3 and external_listing_id=$4",[...scopeArgs(s),connectionId,externalId]);return r.rows[0]?listing(r.rows[0]):undefined;}
@@ -99,6 +100,8 @@ export class PostgresMarketplaceRepository implements MarketplaceRepositoryPort 
  async claimJob(){
   // Never resend a publication whose worker disappeared after a POST may have reached ML.
   await this.pool.query("update marketplace_jobs set status='UNKNOWN_RESULT',last_error='ML_PUBLICATION_OUTCOME_UNCERTAIN',lease_token=null where status='RUNNING' and kind='PUBLISH' and lease_until<now()");
+  // A job that keeps killing its worker stops being reclaimed (the retry cap otherwise only applies to caught errors).
+  await this.pool.query("update marketplace_jobs set status='FAILED',last_error='MARKETPLACE_JOB_ABANDONED',lease_token=null,lease_until=null,updated_at=now() where status='RUNNING' and kind<>'PUBLISH' and lease_until<now() and attempts>=6");
   const client=await this.pool.connect();
   try{
    await client.query("begin");
@@ -107,8 +110,9 @@ export class PostgresMarketplaceRepository implements MarketplaceRepositoryPort 
     and not exists(select 1 from marketplace_jobs j where j.connection_id=c.id and j.status='RUNNING' and j.lease_until>now())
     order by c.id for update skip locked limit 1`);
    if(!account.rows[0]){await client.query("commit");return;}
+   // Stock/price writes go before read-only reconciliations queued for the same account.
    const r=await client.query(`update marketplace_jobs set status='RUNNING',attempts=attempts+1,lease_token=$1,lease_until=now()+interval '5 minutes',updated_at=now()
-    where id=(select id from marketplace_jobs where connection_id=$2 and ((status='PENDING' and run_after<=now()) or (status='RUNNING' and lease_until<now() and kind<>'PUBLISH')) order by run_after for update skip locked limit 1) returning *`,[randomUUID(),account.rows[0].id]);
+    where id=(select id from marketplace_jobs where connection_id=$2 and ((status='PENDING' and run_after<=now()) or (status='RUNNING' and lease_until<now() and kind<>'PUBLISH')) order by (kind='RECONCILE'),run_after for update skip locked limit 1) returning *`,[randomUUID(),account.rows[0].id]);
    await client.query("commit");return r.rows[0]?job(r.rows[0]):undefined;
   }catch(error){await client.query("rollback");throw error;}finally{client.release();}
  }
@@ -117,7 +121,8 @@ export class PostgresMarketplaceRepository implements MarketplaceRepositoryPort 
  }
  async finishJob(j:MarketplaceJob,status:MarketplaceJob["status"],code?:string,delayMs=0){
   await this.pool.query("update marketplace_jobs set status=$5,last_error=$6,run_after=now()+($7::bigint*interval '1 millisecond'),lease_token=null,lease_until=null,updated_at=now() where tenant_id=$1 and workspace_id=$2 and id=$3 and lease_token=$4",[...scopeArgs(j),j.id,j.leaseToken,status,code??null,delayMs]);
-  if(j.kind==="RECONCILE"&&status==="COMPLETED")await this.pool.query("update marketplace_connections set last_sync_at=now() where tenant_id=$1 and workspace_id=$2 and id=$3",[...scopeArgs(j),j.connectionId]);
+  // Only a full reconciliation counts: one scoped to a notification or listing must not postpone the periodic sweep.
+  if(j.kind==="RECONCILE"&&status==="COMPLETED"&&!j.payload.resource&&!j.payload.publicationJobId&&!j.payload.listingId)await this.pool.query("update marketplace_connections set last_sync_at=now() where tenant_id=$1 and workspace_id=$2 and id=$3",[...scopeArgs(j),j.connectionId]);
  }
  async jobItems(s:MarketplaceScope,jobId:string){return (await this.pool.query("select i.* from marketplace_job_items i join marketplace_jobs j on j.id=i.job_id where j.tenant_id=$1 and j.workspace_id=$2 and j.id=$3 order by i.external_id",[...scopeArgs(s),jobId])).rows.map(r=>({externalId:r.external_id,status:r.status,result:r.result}));}
  async completeRecoveredPublication(s:MarketplaceScope,id:string,externalId:string){
@@ -145,6 +150,8 @@ export class PostgresMarketplaceRepository implements MarketplaceRepositoryPort 
   return this.transaction(c,"notification:"+n.eventId,async tx=>{
    const store=tx.marketplace as PostgresMarketplaceRepository;
    const inserted=await store.pool.query("insert into marketplace_notifications(connection_id,event_id,topic,resource) values($1,$2,$3,$4) on conflict do nothing returning event_id",[c.id,n.eventId,n.topic,n.resource]);if(!inserted.rowCount)return false;
+   // A pending reconciliation of the same resource already covers this event (bursts or forged ids never pile up jobs).
+   const queued=await store.pool.query("select 1 from marketplace_jobs where connection_id=$1 and kind='RECONCILE' and status='PENDING' and payload->>'resource'=$2 limit 1",[c.id,n.resource]);if(queued.rowCount)return true;
    await store.enqueue({...c,userId:"marketplace-notification"},c.id,"RECONCILE",{resource:n.resource},"notification:"+c.id+":"+n.eventId);return true;
   });
  }
@@ -157,7 +164,9 @@ export class PostgresMarketplaceRepository implements MarketplaceRepositoryPort 
    for(const r of rows.rows)await store.enqueue({tenantId:d.tenant_id,workspaceId:d.workspace_id,userId:"marketplace-outbox"},r.connection_id,"SYNC",{productId:d.product_id},"outbox:"+d.product_id+":"+d.revision+":"+r.connection_id);
    await store.pool.query("delete from marketplace_outbox where tenant_id=$1 and workspace_id=$2 and product_id=$3 and revision=$4",[d.tenant_id,d.workspace_id,d.product_id,d.revision]);
   });
-  const connections=await this.pool.query("select * from marketplace_connections where status='CONNECTED' and (last_sync_at is null or last_sync_at<now()-interval '15 minutes') limit 50");
+  // A full reconciliation still queued or running blocks the next one: large catalogs otherwise pile up RECONCILE jobs ahead of stock SYNC.
+  const connections=await this.pool.query(`select * from marketplace_connections c where c.status='CONNECTED' and (c.last_sync_at is null or c.last_sync_at<now()-interval '15 minutes')
+   and not exists(select 1 from marketplace_jobs j where j.connection_id=c.id and j.kind='RECONCILE' and j.status in ('PENDING','RUNNING') and not (j.payload ? 'resource') and not (j.payload ? 'publicationJobId') and not (j.payload ? 'listingId')) limit 50`);
   for(const r of connections.rows){
    const c=connection(r);
    await this.enqueue({...c,userId:"marketplace-reconciliation"},c.id,"RECONCILE",{},"periodic:"+c.id+":"+Math.floor(Date.now()/900000));

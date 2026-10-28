@@ -41,7 +41,7 @@ async function fixture(){
  };
  const actor={...c.scope,userId:c.actor.userId},service=new MarketplaceService({repository:repo,secrets,provider,catalog:c.d,applicationId:"123456",canManageActor:async()=>allowed});
  const start=await service.startOAuth(actor),state=new URL(start.url).searchParams.get("state");
- const connection=await service.callback(state,"fixture-code");
+ const connection=await service.callback(state,"fixture-code",start.browserNonce);
  await db.pool.query("update marketplace_connections set last_sync_at=now() where id=$1",[connection.connectionId]);
  return {...c,actor,service,provider,calls,externalItems,connectionId:connection.connectionId,sellerId,tokens,setAllowed:v=>{allowed=v;},setFailCreate:v=>{failCreate=v;},add:(patch={})=>{const e=external({sellerId,...patch});externalItems.set(e.id,e);return e;}};
 }
@@ -71,14 +71,23 @@ test("matching uses exact SKU before exact EAN; duplicate matches require manual
 });
 test("OAuth state is single use; token values are encrypted and never returned by dashboard",async()=>{
  const f=await fixture(),start=await f.service.startOAuth(f.actor),state=new URL(start.url).searchParams.get("state");
- await f.service.callback(state,"fixture-code");await assert.rejects(()=>f.service.callback(state,"fixture-code"),/OAUTH_STATE/);
+ await f.service.callback(state,"fixture-code",start.browserNonce);await assert.rejects(()=>f.service.callback(state,"fixture-code",start.browserNonce),/OAUTH_STATE/);
  const c=await repo.connection(f.scope,f.connectionId),raw=await db.pool.query("select ciphertext from operational_secrets where reference=$1",[c.credentialsRef]);
  assert.ok(raw.rows[0].ciphertext);assert.ok(!raw.rows[0].ciphertext.includes("access-"));
  const dashboard=JSON.stringify(await f.service.dashboard(f.scope));assert.ok(!dashboard.includes("credentialsRef"));assert.ok(!dashboard.includes("accessToken"));assert.ok(!dashboard.includes("refreshToken"));
 });
 test("OAuth rejects an actor whose permission was revoked while away",async()=>{
  const f=await fixture(),s=await f.service.startOAuth(f.actor);f.setAllowed(false);
- await assert.rejects(()=>f.service.callback(new URL(s.url).searchParams.get("state"),"code"),/PERMISSION_REVOKED/);
+ await assert.rejects(()=>f.service.callback(new URL(s.url).searchParams.get("state"),"code",s.browserNonce),/PERMISSION_REVOKED/);
+});
+test("OAuth completes only in the browser that started it (authorize link sent to someone else is useless)",async()=>{
+ const f=await fixture(),s=await f.service.startOAuth(f.actor),state=new URL(s.url).searchParams.get("state");
+ assert.ok(s.browserNonce&&!s.url.includes(s.browserNonce));
+ await assert.rejects(()=>f.service.callback(state,"code",undefined),/OAUTH_STATE/);
+ const other=await f.service.startOAuth(f.actor),otherState=new URL(other.url).searchParams.get("state");
+ await assert.rejects(()=>f.service.callback(otherState,"code",s.browserNonce),/OAUTH_STATE/);
+ // A wrong-browser attempt burns the state: the real browser cannot reuse it either.
+ await assert.rejects(()=>f.service.callback(otherState,"code",other.browserNonce),/OAUTH_STATE/);
 });
 test("refresh rotates single-use credentials, then reuses the renewed token",async()=>{
  const f=await fixture(),c=await repo.connection(f.scope,f.connectionId),t=f.tokens();
@@ -134,7 +143,9 @@ test("import preview ownership is required and external seller identity is verif
  await assert.rejects(()=>f.service.enqueue(f.actor,f.connectionId,"IMPORT",{previewJobId:"foreign",decisions:[]},randomUUID()),/PREVIEW_REQUIRED/);
  const p=await preview(f);f.externalItems.get(e.id).sellerId="another-seller";
  const j=await f.service.enqueue(f.actor,f.connectionId,"IMPORT",{previewJobId:p.job.id,decisions:[{externalId:e.id,action:"CREATE",useExternalInitialStock:false}]},randomUUID());
- assert.equal((await drive(f,j.id)).status,"FAILED");assert.equal((await f.d.productRepository.listByWorkspace(f.scope)).length,0);
+ // Seller mismatch is an item error (other decisions still run); nothing is created for it.
+ assert.notEqual((await drive(f,j.id)).status,"COMPLETED");assert.equal((await f.d.productRepository.listByWorkspace(f.scope)).length,0);
+ assert.deepEqual((await repo.jobItems(f.scope,j.id)).map(i=>[i.status,i.result.code]),[["ERROR","ML_LISTING_OWNER_MISMATCH"]]);
 });
 test("variants create real ProductVariant rows and import stock per mapped variation",async()=>{
  const f=await fixture(),e=f.add({quantity:7,variants:[{id:"100",sku:"QA-M",priceCents:10000,quantity:3,options:{SIZE:"M"}},{id:"101",sku:"QA-G",priceCents:10000,quantity:4,options:{SIZE:"G"}}]}),r=await imported(f,e,{useExternalInitialStock:true});
@@ -409,4 +420,45 @@ test("Catalog Bulk and Site reservations feed the listing through central Invent
  assert.equal((await db.pool.query("select count(*)::int n from product_stock_movements where product_id=$1 and operation_key like 'BULK_IMPORT:%'",[product.id])).rows[0].n,2);
  sync=await f.service.enqueue(f.actor,f.connectionId,"SYNC",{listingId:listing.id},randomUUID());assert.equal((await drive(f,sync.id)).status,"COMPLETED");
  assert.equal(f.externalItems.get(externalId).quantity,7);assert.equal(f.externalItems.get(externalId).priceCents,11000);
+});
+
+// ------------------------------------------------------------------ multichannel audit regressions
+test("deactivated product or variant publishes zero (ML pauses) instead of failing and keeping the old quantity",async()=>{
+ const f=await fixture(),e=f.add(),r=await imported(f,e,{useExternalInitialStock:true});
+ assert.ok(f.externalItems.get(e.id).quantity>0);
+ await f.d.productRepository.update(r.listing.productId,{active:false});
+ const j=await f.service.enqueue(f.actor,f.connectionId,"SYNC",{listingId:r.listing.id},randomUUID());assert.equal((await drive(f,j.id)).status,"COMPLETED");
+ assert.equal(f.externalItems.get(e.id).quantity,0);
+ const pause=await f.service.enqueue(f.actor,f.connectionId,"STATUS",{listingId:r.listing.id,status:"paused"},randomUUID());
+ assert.equal((await drive(f,pause.id)).status,"COMPLETED","a pause never depends on the product being sellable");
+ assert.equal(f.externalItems.get(e.id).status,"paused");
+});
+test("notification bursts and long reconciliations never pile up RECONCILE jobs ahead of stock sync",async()=>{
+ const f=await fixture(),e=f.add();
+ const n=id=>({application_id:"123456",user_id:f.sellerId,topic:"items",resource:"/items/"+e.id,_id:id});
+ for(let i=0;i<5;i++)assert.equal((await f.service.notification(n(randomUUID()))).accepted,true);
+ const pending=async()=>(await db.pool.query("select count(*)::int n from marketplace_jobs where connection_id=$1 and kind='RECONCILE' and status='PENDING'",[f.connectionId])).rows[0].n;
+ assert.equal(await pending(),1,"one queued reconciliation covers the whole burst");
+ await db.pool.query("update marketplace_jobs set status='COMPLETED' where connection_id=$1",[f.connectionId]);
+ await db.pool.query("update marketplace_connections set last_sync_at=now()-interval '1 hour' where id=$1",[f.connectionId]);
+ await repo.scheduleDue();await repo.scheduleDue();
+ assert.equal(await pending(),1);
+ await db.pool.query("update marketplace_jobs set status='RUNNING',lease_until=now()+interval '5 minutes' where connection_id=$1 and status='PENDING'",[f.connectionId]);
+ await repo.scheduleDue();
+ assert.equal(await pending(),0,"a running full reconciliation blocks the next periodic one");
+});
+test("a scoped reconciliation does not postpone the periodic full sweep",async()=>{
+ const f=await fixture(),e=f.add();
+ await db.pool.query("update marketplace_connections set last_sync_at=now()-interval '1 hour' where id=$1",[f.connectionId]);
+ await f.service.notification({application_id:"123456",user_id:f.sellerId,topic:"items",resource:"/items/"+e.id,_id:randomUUID()});
+ await db.pool.query("update marketplace_jobs set status='COMPLETED' where connection_id<>$1 and status in ('PENDING','RUNNING')",[f.connectionId]);
+ const job=await repo.claimJob();assert.equal(job.payload.resource,"/items/"+e.id);
+ await repo.finishJob(job,"COMPLETED");
+ const c=(await db.pool.query("select last_sync_at<now()-interval '30 minutes' stale from marketplace_connections where id=$1",[f.connectionId])).rows[0];
+ assert.equal(c.stale,true);
+});
+test("dashboard and job detail never expose the worker lease token",async()=>{
+ const f=await fixture();await f.service.enqueue(f.actor,f.connectionId,"RECONCILE",{},randomUUID());
+ await db.pool.query("update marketplace_jobs set lease_token='secret-lease' where connection_id=$1",[f.connectionId]);
+ assert.ok(!JSON.stringify(await f.service.dashboard(f.scope)).includes("secret-lease"));
 });

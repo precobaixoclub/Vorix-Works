@@ -3,7 +3,7 @@ import type { ProductEngineRepositoryPort } from "./product-engine-repository.po
 import type { SalesCatalogRepositoryPort } from "./sales-engine-repository.port.js";
 import type { ChannelListing, MarketplaceActor, MarketplaceConnection, MarketplaceJob, MarketplaceScope } from "../../domain/marketplaces/marketplace.model.js";
 export type StoredConnection=MarketplaceConnection&{credentialsRef:string;tokenExpiresAt?:string;applicationId:string;refreshLeaseUntil?:string};
-export type OAuthState=MarketplaceActor&{verifierRef:string};
+export type OAuthState=MarketplaceActor&{verifierRef:string;browserHash:string};
 export type CatalogTransaction=ProductUseCaseDeps&{productEngineRepository:ProductEngineRepositoryPort;salesCatalogRepository:SalesCatalogRepositoryPort;marketplace:MarketplaceRepositoryPort};
 export interface MarketplaceRepositoryPort {
  transaction<T>(scope:MarketplaceScope,key:string,run:(tx:CatalogTransaction)=>Promise<T>):Promise<T>;
@@ -14,7 +14,7 @@ export interface MarketplaceRepositoryPort {
  refreshClaim(scope:MarketplaceScope,id:string,owner:string):Promise<"CLAIMED"|"BUSY"|"EXPIRED">;
  refreshComplete(scope:MarketplaceScope,id:string,owner:string,expiresAt?:string):Promise<void>;
  oauthSave(hash:string,state:OAuthState):Promise<void>;
- oauthConsume(hash:string):Promise<OAuthState|undefined>;
+ oauthConsume(hash:string,browserHash:string):Promise<OAuthState|undefined>;
  listings(scope:MarketplaceScope,productId?:string):Promise<ChannelListing[]>;
  listing(scope:MarketplaceScope,id:string):Promise<ChannelListing|undefined>;
  externalListing(scope:MarketplaceScope,connectionId:string,externalId:string):Promise<ChannelListing|undefined>;

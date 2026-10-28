@@ -46,11 +46,19 @@ export async function registerMarketplaceRoutes(app:FastifyInstance,deps:{servic
   if(!deps.service)return successEnvelope({configured:false,connections:[],listings:[],jobs:[],mappings:[]},request.id);
   return successEnvelope({configured:true,...await deps.service.dashboard(s,productId)},request.id);
  }));
- app.post("/marketplaces/mercado-livre/connect",{config:{readOnlyGuard:true}},async request=>guard(async()=>successEnvelope(await ready().service.startOAuth(await context(request,true)),request.id)));
+ const OAUTH_COOKIE="vorix_ml_oauth",OAUTH_COOKIE_PATH="/v1/marketplaces/mercado-livre/callback";
+ app.post("/marketplaces/mercado-livre/connect",{config:{readOnlyGuard:true}},async(request,reply)=>guard(async()=>{
+  const {url,browserNonce}=await ready().service.startOAuth(await context(request,true));
+  // Browser binding for the callback; host-only, readable only by the callback path, gone in 10 minutes.
+  reply.setCookie(OAUTH_COOKIE,browserNonce,{httpOnly:true,secure:request.protocol==="https"||process.env.NODE_ENV==="production",sameSite:"lax",path:OAUTH_COOKIE_PATH,maxAge:600});
+  return successEnvelope({url},request.id);
+ }));
  app.get("/marketplaces/mercado-livre/callback",async(request,reply)=>{
   try{
    const q=z.object({state:z.string().min(20).max(200),code:z.string().max(2000).optional(),error:z.string().max(200).optional()}).parse(request.query);
-   await ready().service.callback(q.state,q.error?undefined:q.code);
+   const nonce=(request.cookies as Record<string,string|undefined>|undefined)?.[OAUTH_COOKIE];
+   reply.clearCookie(OAUTH_COOKIE,{path:OAUTH_COOKIE_PATH});
+   await ready().service.callback(q.state,q.error?undefined:q.code,nonce);
    return reply.header("Cache-Control","no-store").header("Referrer-Policy","no-referrer").type("text/html; charset=utf-8").send("<!doctype html><html lang='pt-BR'><meta name='viewport' content='width=device-width'><title>Mercado Livre</title><p>Conta conectada. Volte ao Vorix e atualize a tela de Marketplaces.</p></html>");
   }catch{return reply.code(400).header("Cache-Control","no-store").type("text/plain; charset=utf-8").send("Não foi possível conectar. Volte ao Vorix e inicie uma nova autorização.");}
  });
@@ -94,7 +102,9 @@ export async function registerMarketplaceRoutes(app:FastifyInstance,deps:{servic
  app.get("/marketplaces/jobs/:id",async request=>guard(async()=>{
   const s=await context(request),jobId=id.parse((request.params as {id:string}).id),r=ready().repository;
   const job=await r.job(s,jobId);if(!job)throw new NotFoundError();
-  return successEnvelope({...job,items:await r.jobItems(s,jobId)},request.id);
+  // The worker lease token never leaves the server.
+  const {leaseToken,...visible}=job;
+  return successEnvelope({...visible,items:await r.jobItems(s,jobId)},request.id);
  }));
  app.get("/marketplaces/audit",async request=>guard(async()=>successEnvelope(await ready().repository.auditLog(await context(request)),request.id)));
 }

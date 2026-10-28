@@ -15,7 +15,8 @@ export function marketplaceApi(workspaceId:string){
  return {
   dashboard:(productId?:string)=>apiClient.get<Dashboard>("/v1/marketplaces"+q+(productId?"&productId="+encodeURIComponent(productId):"")),
   catalog:()=>apiClient.get<Identity[]>("/v1/marketplaces/catalog"+q),
-  connect:()=>apiClient.post<{url:string}>("/v1/marketplaces/mercado-livre/connect"+q),
+  // `include`: the API answers with the OAuth browser-binding cookie that the callback requires.
+  connect:()=>apiClient.post<{url:string}>("/v1/marketplaces/mercado-livre/connect"+q,undefined,{credentials:"include"}),
   disconnect:(id:string)=>apiClient.post("/v1/marketplaces/connections/"+encodeURIComponent(id)+"/disconnect"+q,{confirm:true}),
   safetyStock:(id:string,safetyStock:number)=>apiClient.patch("/v1/marketplaces/connections/"+encodeURIComponent(id)+q,{safetyStock}),
   enqueue:(connectionId:string,operation:Record<string,unknown>,operationKey=crypto.randomUUID())=>apiClient.post<Job>("/v1/marketplaces/jobs"+q,{connectionId,operation,operationKey}),

@@ -28,12 +28,14 @@ export class MarketplaceService {
   const state=randomBytes(32).toString("base64url"),verifier=randomBytes(48).toString("base64url");
   const verifierRef=this.ref(actor,"oauth-"+hash(state));
   await this.d.secrets.put(verifierRef,{value:{verifier},expiresAt:new Date(Date.now()+600000).toISOString()});
-  await this.d.repository.oauthSave(hash(state),{...actor,verifierRef});
+  // The nonce goes to the starting browser as an HttpOnly cookie: the callback only completes in that same browser (no login CSRF).
+  const browserNonce=randomBytes(32).toString("base64url");
+  await this.d.repository.oauthSave(hash(state),{...actor,verifierRef,browserHash:hash(browserNonce)});
   await this.d.repository.audit(actor,"OAUTH_STARTED","MERCADO_LIVRE");
-  return {url:this.d.provider.authorizationUrl(state,createHash("sha256").update(verifier).digest("base64url"))};
+  return {url:this.d.provider.authorizationUrl(state,createHash("sha256").update(verifier).digest("base64url")),browserNonce};
  }
- async callback(state:string,code?:string){
-  const actor=await this.d.repository.oauthConsume(hash(state));if(!actor)throw new MarketplaceError("OAUTH_STATE_INVALID_OR_EXPIRED");
+ async callback(state:string,code:string|undefined,browserNonce:string|undefined){
+  const actor=browserNonce?await this.d.repository.oauthConsume(hash(state),hash(browserNonce)):undefined;if(!actor)throw new MarketplaceError("OAUTH_STATE_INVALID_OR_EXPIRED");
   try{
    if(!code)throw new MarketplaceError("OAUTH_AUTHORIZATION_DENIED");
    if(!await this.d.canManageActor(actor))throw new MarketplaceError("MARKETPLACE_PERMISSION_REVOKED");
@@ -93,7 +95,7 @@ export class MarketplaceService {
  }
  async dashboard(s:MarketplaceScope,productId?:string){
   const connections=(await this.d.repository.connections(s)).map(({credentialsRef,tokenExpiresAt,applicationId,refreshLeaseUntil,...c})=>c);
-  return {connections,listings:await this.d.repository.listings(s,productId),jobs:await this.d.repository.jobs(s),mappings:await this.d.repository.mappings(s)};
+  return {connections,listings:await this.d.repository.listings(s,productId),jobs:(await this.d.repository.jobs(s)).map(({leaseToken,...job})=>job),mappings:await this.d.repository.mappings(s)};
  }
  async setSafetyStock(actor:MarketplaceActor,id:string,value:number){
   if(!Number.isInteger(value)||value<0||value>1e9)throw new MarketplaceError("INVALID_SAFETY_STOCK");
@@ -147,11 +149,11 @@ export class MarketplaceService {
   const result=await this.d.repository.enqueue(actor,connectionId,kind,payload,key);
   await this.d.repository.audit(actor,"JOB_"+kind,result.id);return result;
  }
- private async product(s:MarketplaceScope,id:string,variantId?:string){
+ private async product(s:MarketplaceScope,id:string,variantId?:string,allowInactive=false){
   const product=await mustProductBelongToTenantAndWorkspace(this.d.catalog,id,s.tenantId,s.workspaceId);
   const variant=variantId?await this.d.catalog.salesCatalogRepository!.getVariant(variantId):undefined;
   if(variantId&&(!variant||variant.productId!==id||variant.tenantId!==s.tenantId||variant.workspaceId!==s.workspaceId))throw new MarketplaceError("MARKETPLACE_VARIANT_NOT_FOUND");
-  if(!product.active||variant?.active===false)throw new MarketplaceError("MARKETPLACE_INACTIVE_PRODUCT");
+  if(!allowInactive&&(!product.active||variant?.active===false))throw new MarketplaceError("MARKETPLACE_INACTIVE_PRODUCT");
   if(product.itemType==="service"||product.details?.type==="REAL_ESTATE"||product.details?.type==="VEHICLE")throw new MarketplaceError("ML_PRODUCT_TYPE_UNSUPPORTED");
   if(product.currency!=="BRL")throw new MarketplaceError("ML_CURRENCY_UNSUPPORTED");
   return {product,variant};
@@ -224,9 +226,15 @@ export class MarketplaceService {
    const page=await this.d.provider.listExternalProducts(token,c.externalAccountId,cursor);total=page.total;
    for(const id of page.ids){
     if(await this.d.repository.item(j,id))continue;
-    const external=await this.d.provider.getListing(token,id);this.assertSeller(c,external);
-    await this.d.repository.saveItem(j,id,"PREVIEW",{external,match:matchIdentity(external,identities),
-     variantMatches:external.variants.map(v=>({externalVariantId:v.id,match:matchIdentity(v,identities)}))});
+    try{
+     const external=await this.d.provider.getListing(token,id);this.assertSeller(c,external);
+     await this.d.repository.saveItem(j,id,"PREVIEW",{external,match:matchIdentity(external,identities),
+      variantMatches:external.variants.map(v=>({externalVariantId:v.id,match:matchIdentity(v,identities)}))});
+    }catch(error){
+     if(error instanceof MarketplaceError&&error.retryable)throw error;
+     if(safeMarketplaceError(error)==="REAUTH_REQUIRED")throw error;
+     await this.d.repository.saveItem(j,id,"ERROR",{code:safeMarketplaceError(error)});
+    }
     progress++;await this.d.repository.checkpoint(j,progress,total);
    }
    cursor=page.cursor;await this.d.repository.checkpoint(j,progress,total,{...j.payload,cursor});
@@ -239,8 +247,9 @@ export class MarketplaceService {
    if(await this.d.repository.item(j,decision.externalId)){progress++;continue;}
    if(!preview.some(p=>p.externalId===decision.externalId))throw new MarketplaceError("IMPORT_ITEM_NOT_IN_PREVIEW");
    if(decision.action==="IGNORE"){await this.d.repository.saveItem(j,decision.externalId,"IGNORED",{});progress++;continue;}
-   const external=await this.d.provider.getListing(token,decision.externalId);this.assertSeller(c,external);
+   // One item removed on ML (or now owned by someone else) is an item error, never the end of the whole import.
    try{
+    const external=await this.d.provider.getListing(token,decision.externalId);this.assertSeller(c,external);
     await this.d.repository.transaction(j,"catalog-import",async tx=>{
      const exists=await tx.marketplace.externalListing(j,c.id,external.id);
      if(exists){await tx.marketplace.saveItem(j,external.id,"IMPORTED",{listingId:exists.id,replay:true});return;}
@@ -301,8 +310,9 @@ export class MarketplaceService {
     });
    }catch(error){
     if(error instanceof MarketplaceError&&error.retryable)throw error;
-    await this.d.repository.saveItem(j,external.id,"ERROR",{code:safeMarketplaceError(error)});
-    await this.d.repository.audit(actor,"IMPORT_ERROR",external.id,safeMarketplaceError(error));
+    if(safeMarketplaceError(error)==="REAUTH_REQUIRED")throw error;
+    await this.d.repository.saveItem(j,decision.externalId,"ERROR",{code:safeMarketplaceError(error)});
+    await this.d.repository.audit(actor,"IMPORT_ERROR",decision.externalId,safeMarketplaceError(error));
    }
    progress++;await this.d.repository.checkpoint(j,progress,decisions.length);
   }
@@ -339,16 +349,17 @@ export class MarketplaceService {
   await this.d.provider.updateListing(token,external.id,{description:p.draft.description},c.userProducts);
  }
  private async localState(j:MarketplaceScope,c:StoredConnection,l:ChannelListing){
-  const {product,variant}=await this.product(j,l.productId,l.variantId);
+  // Anúncio já existente: produto/variante desativado ou sem controle de estoque publica 0 (o ML pausa) em vez de falhar e seguir vendendo.
+  const {product,variant}=await this.product(j,l.productId,l.variantId,true);
   const variants:ProductVariant[]=[];
   for(const link of l.variantLinks){
    const v=await this.d.catalog.salesCatalogRepository!.getVariant(link.variantId);
-   if(!v||v.productId!==product.id||v.tenantId!==j.tenantId||v.workspaceId!==j.workspaceId||!v.active)throw new MarketplaceError("MARKETPLACE_VARIANT_NOT_FOUND");
+   if(!v||v.productId!==product.id||v.tenantId!==j.tenantId||v.workspaceId!==j.workspaceId)throw new MarketplaceError("MARKETPLACE_VARIANT_NOT_FOUND");
    variants.push(v);
   }
-  if(!product.trackStock)throw new MarketplaceError("ML_TRACKED_STOCK_REQUIRED");
+  const sellable=product.active&&product.trackStock&&variant?.active!==false;
   const price=(v?:ProductVariant)=>v&&(v.priceOverride??true)?v.listPriceCents:product.priceCents;
-  const quantity=(v?:ProductVariant)=>publishedQuantity(v?.stockQuantity??product.stockQuantity,v?.reservedQuantity??product.reservedQuantity??0,c.safetyStock);
+  const quantity=(v?:ProductVariant)=>!sellable||v?.active===false?0:publishedQuantity(v?.stockQuantity??product.stockQuantity,v?.reservedQuantity??product.reservedQuantity??0,c.safetyStock);
   if(variants.some(v=>price(v)!==price(variants[0])))throw new MarketplaceError("ML_LEGACY_VARIANTS_REQUIRE_SAME_PRICE");
   return {priceCents:price(variant??variants[0]),quantity:variants.length?variants.reduce((n,v)=>n+quantity(v),0):quantity(variant),
    variants:variants.map(v=>({id:l.variantLinks.find(link=>link.variantId===v.id)!.externalVariantId,quantity:quantity(v)}))};

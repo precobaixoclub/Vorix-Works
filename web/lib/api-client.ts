@@ -79,8 +79,8 @@ async function request<T>(path: string, init: RequestInit = {}, isRetry = false,
 export const apiClient = {
   download: (path: string) => request<Blob>(path, { method: "GET" }, false, true),
   get: <T>(path: string) => request<T>(path, { method: "GET" }),
-  post: <T>(path: string, payload?: unknown, options?: { headers?: Record<string, string> }) =>
-    request<T>(path, { method: "POST", body: payload !== undefined ? JSON.stringify(payload) : undefined, headers: options?.headers }),
+  post: <T>(path: string, payload?: unknown, options?: { headers?: Record<string, string>; credentials?: RequestCredentials }) =>
+    request<T>(path, { method: "POST", body: payload !== undefined ? JSON.stringify(payload) : undefined, headers: options?.headers, credentials: options?.credentials }),
   put: <T>(path: string, payload?: unknown) =>
     request<T>(path, { method: "PUT", body: payload !== undefined ? JSON.stringify(payload) : undefined }),
   patch: <T>(path: string, payload?: unknown) =>

@@ -32,7 +32,7 @@ export class MarketplaceService {
  private readonly providers:Partial<Record<MarketplaceProviderId,MarketplaceProvider>>;
  constructor(private readonly d:MarketplaceServiceDeps){this.providers=d.providers??(d.provider?{[d.provider.id]:d.provider}:{});}
  /** Canais com credenciais de app configuradas (a interface só oferece conectar esses). */
- configuredProviders(){return Object.values(this.providers).filter(Boolean).map(p=>({id:p!.id,capabilities:p!.capabilities}));}
+ configuredProviders(){return Object.values(this.providers).filter(Boolean).map(p=>({id:p!.id,capabilities:p!.capabilities,closeListingEffect:p!.closeListingEffect}));}
  private provider(id:MarketplaceProviderId):MarketplaceProvider{const p=this.providers[id];if(!p)throw new MarketplaceError("MARKETPLACE_PROVIDER_NOT_CONFIGURED");return p;}
  private p(c:{provider:MarketplaceProviderId}){return this.provider(c.provider);}
  private appId(p:MarketplaceProvider){return p.applicationId??this.d.applicationId??"";}
@@ -163,6 +163,11 @@ export class MarketplaceService {
   if(payload.publicationJobId){
    const source=await this.d.repository.job(actor,String(payload.publicationJobId));
    if(!source||source.connectionId!==connectionId||source.kind!=="PUBLISH"||source.status!=="UNKNOWN_RESULT")throw new MarketplaceError("ML_PUBLICATION_NOT_RECOVERABLE");
+  }
+  if(kind==="STATUS"){
+   const provider=this.p(c),closing=payload.status==="closed";
+   if(provider.capabilities[closing?"closeListing":"pauseListing"]!=="SUPPORTED")throw new MarketplaceError("BLOCKED_EXTERNAL_CAPABILITY");
+   if(closing&&payload.confirm!==(provider.closeListingEffect==="DELETE"?"DELETE":true))throw new MarketplaceError("CLOSE_CONFIRMATION_REQUIRED");
   }
   if(kind==="PUBLISH")await this.localListingWrite(actor,c,payload as {productId:string;variantId?:string;draft:PublishDraft},key);
   const result=await this.d.repository.enqueue(actor,connectionId,kind,payload,key);
@@ -410,10 +415,14 @@ export class MarketplaceService {
     if(j.kind==="STATUS"){
      const status=j.payload.status as "paused"|"active"|"closed";
      if(!["paused","active","closed"].includes(status))throw new MarketplaceError("INVALID_LISTING_STATUS");
-     if(status==="closed"&&j.payload.confirm!==true)throw new MarketplaceError("CLOSE_CONFIRMATION_REQUIRED");
+     const provider=this.p(c);
+     if(provider.capabilities[status==="closed"?"closeListing":"pauseListing"]!=="SUPPORTED")throw new MarketplaceError("BLOCKED_EXTERNAL_CAPABILITY");
+     // Exclusão definitiva (Shopee delete_item) exige confirmação própria, nunca a mesma de "finalizar".
+     const deletes=status==="closed"&&provider.closeListingEffect==="DELETE";
+     if(status==="closed"&&j.payload.confirm!==(deletes?"DELETE":true))throw new MarketplaceError("CLOSE_CONFIRMATION_REQUIRED");
      if(e.status==="closed"&&status!=="closed")throw new MarketplaceError("ML_CLOSED_LISTING_REQUIRES_NEW_PUBLICATION");
      if(e.status!==status)await this.p(c).setStatus(token,e.id,status);
-     await this.d.repository.audit(actor,"LISTING_"+status.toUpperCase(),l.id);
+     await this.d.repository.audit(actor,deletes?"LISTING_DELETED":"LISTING_"+status.toUpperCase(),l.id);
      e=await this.p(c).getListing(token,e.id);this.assertSeller(c,e);
     }else if(j.kind==="UPDATE"){
      const draft=j.payload.draft as PublishDraft;
@@ -430,7 +439,8 @@ export class MarketplaceService {
      }
      if(e.priceCents!==local.priceCents){
       if(!e.priceWritable)throw new MarketplaceError("ML_PRICE_AUTOMATION_OR_PROMOTION_ACTIVE");
-      await this.p(c).syncPrice(token,e.id,local.priceCents);
+      // Mercado Livre com variações: o preço vai em todas as variações (as omitidas são apagadas pelo ML).
+      await this.p(c).syncPrice(token,e.id,local.priceCents,c.provider==="MERCADO_LIVRE"&&e.variants.length?e.variants.map(v=>({id:v.id,priceCents:local.priceCents})):undefined);
       l.lastSyncedPrice=local.priceCents;await this.d.repository.saveListing({...l,syncStatus:"PENDING"});
       await this.d.repository.audit(actor,"PRICE_SYNCED",l.id);
      }
@@ -491,14 +501,19 @@ export class MarketplaceService {
   const provider=this.providers.MERCADO_LIVRE;if(!provider)return {accepted:false};
   const applicationId=this.appId(provider);
   if(String(body.application_id)!==applicationId)return {accepted:false};
-  const patterns:Record<string,RegExp>={items:/^\/items\/MLB\d+$/,items_prices:/^\/items\/MLB\d+\/prices$/,user_products:/^\/user-products\/MLBU\d+$/,"stock-location":/^\/user-products\/MLBU\d+\/stock$/,
-   orders_v2:/^\/orders\/\d{1,20}$/,shipments:/^\/shipments\/\d{1,20}$/,claims:/^\/post-purchase\/v1\/claims\/\d{1,20}$/};
-  if(!patterns[body.topic]?.test(body.resource))return {accepted:false};
+  // Mesmo contrato de MercadoLivreProvider.parseNotification: reclamações chegam em "post_purchase" (resource às vezes sem a barra inicial);
+  // "claims" fica para assinaturas antigas; items_prices aceita o item ou /prices (formato do resource não confirmado na doc).
+  const claim=/^\/post-purchase\/v1\/claims\/\d{1,20}$/;
+  const patterns:Record<string,RegExp>={items:/^\/items\/MLB\d+$/,items_prices:/^\/items\/MLB\d+(\/prices)?$/,user_products:/^\/user-products\/MLBU\d+$/,"stock-location":/^\/user-products\/MLBU\d+\/stock$/,
+   orders_v2:/^\/orders\/\d{1,20}$/,shipments:/^\/shipments\/\d{1,20}$/,post_purchase:claim,claims:claim};
+  const topic=String(body.topic),returns=topic==="post_purchase"||topic==="claims";
+  const resource=returns&&String(body.resource).startsWith("post-purchase/")?"/"+body.resource:String(body.resource);
+  if(!Object.prototype.hasOwnProperty.call(patterns,topic)||!patterns[topic].test(resource))return {accepted:false};
   // Stable event fallback requires timestamp; resource alone must not suppress future changes.
-  const eventId=body._id??body.id??(body.sent?hash([body.user_id,body.topic,body.resource,body.sent].join(":")):undefined);
+  const eventId=body._id??body.id??(body.sent?hash([body.user_id,topic,resource,body.sent].join(":")):undefined);
   if(!eventId||eventId.length>200)return {accepted:false};
-  const kind=body.topic==="orders_v2"||body.topic==="shipments"?"ORDER":body.topic==="claims"?"RETURN":"LISTING";
-  return {accepted:await this.d.repository.notifications({provider:"MERCADO_LIVRE",applicationId,sellerId:String(body.user_id),eventId,topic:body.topic,resource:body.resource,kind,externalOrderId:body.resource.match(/^\/orders\/(\d{1,20})$/)?.[1]})};
+  const kind=topic==="orders_v2"||topic==="shipments"?"ORDER":returns?"RETURN":"LISTING";
+  return {accepted:await this.d.repository.notifications({provider:"MERCADO_LIVRE",applicationId,sellerId:String(body.user_id),eventId,topic,resource,kind,externalOrderId:resource.match(/^\/orders\/(\d{1,20})$/)?.[1]})};
  }
  /** Shopee/TikTok Shop: o provider confere a assinatura do canal antes de qualquer gravação. */
  async providerNotification(providerId:MarketplaceProviderId,input:{headers:Record<string,string|undefined>;rawBody:string;url:string}){
@@ -560,6 +575,12 @@ export class MarketplaceService {
   if(provider.capabilities.labels!=="SUPPORTED")throw new MarketplaceError("BLOCKED_EXTERNAL_CAPABILITY");
   const label=await provider.shippingLabel(token,await provider.getOrder(token,order.externalOrderId!));
   await this.d.repository.audit(actor,"SHIPPING_LABEL_DOWNLOADED",order.id);return label;
+ }
+ /** Motivos de cancelamento aceitos pelo canal para este pedido agora (vazio = canal não cancela pela API). */
+ async cancelReasons(actor:MarketplaceActor,orderId:string){
+  const {order,provider,token}=await this.externalOrder(actor,orderId);
+  if(provider.capabilities.cancelOrder!=="SUPPORTED")return [];
+  return provider.cancelReasons(token,await provider.getOrder(token,order.externalOrderId!));
  }
  /** Cancelamento no canal (quando a API permite); o estoque volta pelo mesmo caminho da sincronização. */
  async cancelExternalOrder(actor:MarketplaceActor,orderId:string,reason:string){

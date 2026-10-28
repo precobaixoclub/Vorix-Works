@@ -32,6 +32,8 @@ const MARKETPLACE_MESSAGES:Record<string,string>={
  MARKETPLACE_ORDER_ALREADY_SHIPPED:"O pedido já saiu para entrega no canal: use devolução.",
  ML_LABEL_NOT_AVAILABLE:"A etiqueta ainda não está disponível no Mercado Livre (envio precisa estar pronto para despachar).",
  SHOPEE_LABEL_NOT_AVAILABLE:"A etiqueta ainda não está disponível na Shopee.",TIKTOK_LABEL_NOT_AVAILABLE:"A etiqueta ainda não está disponível no TikTok Shop.",
+ SHOPEE_ORDER_NOT_CANCELLABLE:"A Shopee não permite cancelar este pedido no status atual.",TIKTOK_ORDER_NOT_CANCELLABLE:"O TikTok Shop não permite cancelar este pedido agora.",
+ SHOPEE_CANCEL_REASON_UNSUPPORTED:"Escolha um dos motivos aceitos pela Shopee.",TIKTOK_CANCEL_REASON_CODE_REQUIRED:"Escolha um dos motivos aceitos pelo TikTok Shop.",TIKTOK_CANCEL_REASON_NOT_AVAILABLE:"Este motivo não é mais aceito pelo TikTok Shop para o pedido. Abra o cancelamento de novo.",
  REAUTH_REQUIRED:"A conta do marketplace precisa ser reconectada.",MARKETPLACE_DISCONNECTED:"A conta do marketplace está desconectada.",MARKETPLACE_PROVIDER_NOT_CONFIGURED:"Este canal não está configurado neste ambiente.",
 };
 /** Vorix Commerce, Fase 2 — checkout público, webhook de pagamento e central de pedidos. */
@@ -125,6 +127,8 @@ export async function registerCommerceRoutes(app:FastifyInstance,deps:CommerceRo
   return {order,actor:{tenantId:scope.tenantId,workspaceId:scope.workspaceId,userId:scope.actorUserId}};
  };
  app.get("/commerce/orders/:id/label",async request=>guard(async()=>{const {order,actor}=await marketplaceOrder(request,"order:manage");return successEnvelope(await deps.marketplace!.shippingLabel(actor,order.id),request.id);}));
+ // Motivos oficiais aceitos pelo canal agora (Shopee: enum fixo; TikTok: elegibilidade do pedido). Exige poder cancelar.
+ app.get("/commerce/orders/:id/cancel-reasons",async request=>guard(async()=>{const {order,actor}=await marketplaceOrder(request,"order:cancel");return successEnvelope({reasons:await deps.marketplace!.cancelReasons(actor,order.id)},request.id);}));
  app.post("/commerce/orders/:id/refresh",{config:{readOnlyGuard:true}},async request=>guard(async()=>{const {order,actor}=await marketplaceOrder(request,"order:manage");return successEnvelope(await deps.marketplace!.refreshExternalOrder(actor,order.id),request.id);}));
  // Devoluções (parciais) ---------------------------------------------------------------------------
  const returnItems=z.array(z.object({orderItemId:id,quantity:z.number().int().min(1).max(100000)}).strict()).min(1).max(200);

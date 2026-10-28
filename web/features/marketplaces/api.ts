@@ -1,6 +1,6 @@
 import { apiClient } from "@/lib/api-client";
 export type Connection={id:string;provider?:string;externalAccountName:string;externalAccountId:string;status:string;safetyStock:number;settings?:{createContacts?:boolean};lastSyncAt?:string;ordersSyncedAt?:string;lastError?:string;userProducts?:boolean};
-export type Provider={id:string;capabilities?:Partial<Record<string,"SUPPORTED"|"BLOCKED_EXTERNAL_CAPABILITY">>};
+export type Provider={id:string;capabilities?:Partial<Record<string,"SUPPORTED"|"BLOCKED_EXTERNAL_CAPABILITY">>;closeListingEffect?:"END"|"DELETE"};
 export type ExternalVariant={id:string;sku?:string;ean?:string;quantity:number;options:Record<string,string>};
 export type External={id:string;title:string;sku?:string;ean?:string;categoryId:string;priceCents:number;quantity:number;status:string;pictures:string[];variants:ExternalVariant[];stockWritable?:boolean};
 export type Identity={productId:string;variantId?:string;name:string;sku?:string;ean?:string};
@@ -44,6 +44,8 @@ const messages:Record<string,string>={
  IMPORT_IDENTITY_EXISTS_USE_LINK:"Já existe produto com este SKU ou EAN. Use o vínculo com o catálogo.",
  ML_SELECT_ONE_VARIANT_FOR_PUBLICATION:"Selecione uma variação. Cada variação será publicada como anúncio próprio.",
  ML_TRACKED_STOCK_REQUIRED:"Ative o controle de estoque do produto antes de publicar.",
+ CLOSE_CONFIRMATION_REQUIRED:"Confirme explicitamente o encerramento do anúncio.",
+ BLOCKED_EXTERNAL_CAPABILITY:"O canal não permite esta operação pela API oficial — faça no painel do marketplace.",
 };
 export const marketplaceMessage=(value:unknown):string=>{
  const text=value instanceof Error?value.message:String(value??"");

@@ -20,7 +20,7 @@ function mk(routes,options={}){
   if(!route)return json({error:"error_not_found",message:"no route "+u.pathname});
   const result=await route(u,body,init);return result instanceof Response?result:json(result);
  };
- return {provider:new ShopeeProvider(config,fetcher,{minIntervalMs:0,labelPollMs:0,now:()=>NOW,...options}),calls};
+ return {provider:new ShopeeProvider(config,fetcher,{minIntervalMs:0,labelPollMs:0,tierDelayMs:0,now:()=>NOW,...options}),calls};
 }
 const rejectsCode=(fn,code,extra=()=>true)=>assert.rejects(fn,e=>e instanceof MarketplaceError&&e.code===code&&extra(e));
 
@@ -41,26 +41,32 @@ test("public API signature = partner_id+path+timestamp; shop API adds access_tok
  assert.equal(calls[1].init.redirect,"error");assert.ok(calls[1].init.signal);
 });
 
-test("authorization URL is signed and embeds state inside the redirect", ()=>{
+test("authorization URL: BR fixed link with state (production); legacy signed link on sandbox", ()=>{
  const {provider}=mk({});
  assert.equal(provider.pkce,false);assert.equal(provider.applicationId,"1001");
+ // Guia 20: https://open.shopee.com.br/auth?partner_id&auth_type=seller&redirect_uri&response_type=code&state (state volta intacto).
  const url=new URL(provider.authorizationUrl("state-xyz","ignored-challenge"));
- assert.equal(url.origin+url.pathname,"https://partner.shopeemobile.com/api/v2/shop/auth_partner");
- assert.equal(url.searchParams.get("sign"),hmac("1001/api/v2/shop/auth_partner"+TS));
- const redirect=new URL(url.searchParams.get("redirect"));
+ assert.equal(url.origin+url.pathname,"https://open.shopee.com.br/auth");
+ assert.deepEqual(Object.fromEntries(url.searchParams),{partner_id:"1001",auth_type:"seller",redirect_uri:"https://app.vorix.test/v1/marketplaces/shopee/callback",response_type:"code",state:"state-xyz"});
+ const sandbox=new ShopeeProvider({...config,apiBaseUrl:"https://openplatform.sandbox.test-stable.shopee.sg"},async()=>json({}),{now:()=>NOW});
+ const legacy=new URL(sandbox.authorizationUrl("state-xyz","c"));
+ assert.equal(legacy.origin+legacy.pathname,"https://openplatform.sandbox.test-stable.shopee.sg/api/v2/shop/auth_partner");
+ assert.equal(legacy.searchParams.get("sign"),hmac("1001/api/v2/shop/auth_partner"+TS));
+ const redirect=new URL(legacy.searchParams.get("redirect"));
  assert.equal(redirect.origin+redirect.pathname,"https://app.vorix.test/v1/marketplaces/shopee/callback");
  assert.equal(redirect.searchParams.get("state"),"state-xyz");
 });
 
 test("token and refresh bodies; refresh rotates; failures map without leaking", async()=>{
  const bodies=[];const {provider}=mk({
-  "/api/v2/auth/token/get":(_u,b)=>{bodies.push(b);return {access_token:"a1",refresh_token:"r1",expire_in:14400};},
-  "/api/v2/auth/access_token/get":(_u,b)=>{bodies.push(b);return {access_token:"a2",refresh_token:"r2",expire_in:14400,shop_id:555,partner_id:1001};},
+  // Respostas planas, como no guia 20 (sem envelope `response`).
+  "/api/v2/auth/token/get":(_u,b)=>{bodies.push(b);return {refresh_token:"r1",access_token:"a1",expire_in:13859,request_id:"c040",error:"",message:""};},
+  "/api/v2/auth/access_token/get":(_u,b)=>{bodies.push(b);return {partner_id:1001,refresh_token:"r2",access_token:"a2",expire_in:14400,request_id:"6d79",error:"",message:"",shop_id:555};},
  });
  const tokens=await provider.connect({code:"code-1",params:{shop_id:"555",state:"s"}});
  assert.deepEqual(bodies[0],{code:"code-1",shop_id:555,partner_id:1001});
  assert.equal(tokens.userId,"555");assert.deepEqual(tokens.metadata,{shopId:"555"});
- assert.equal(tokens.expiresAt,new Date(NOW+14400000).toISOString());
+ assert.equal(tokens.expiresAt,new Date(NOW+13859000).toISOString());
  const refreshed=await provider.refreshConnection("r1",{accountId:"555",metadata:{shopId:"555"}});
  assert.deepEqual(bodies[1],{refresh_token:"r1",shop_id:555,partner_id:1001});
  assert.equal(refreshed.refreshToken,"r2");assert.equal(refreshed.userId,"555");
@@ -70,6 +76,8 @@ test("token and refresh bodies; refresh rotates; failures map without leaking", 
  await rejectsCode(()=>bad.refreshConnection("r1-secret",{accountId:"555",metadata:{}}),"REAUTH_REQUIRED",e=>!e.message.includes("r1-secret"));
  const wrongShop=mk({"/api/v2/auth/access_token/get":()=>({access_token:"a",refresh_token:"r",expire_in:10,shop_id:999})}).provider;
  await assert.rejects(()=>wrongShop.refreshConnection("r",{accountId:"555",metadata:{}}),MarketplaceError);
+ const otherList=mk({"/api/v2/auth/token/get":()=>({access_token:"a",refresh_token:"r",expire_in:10,shop_id_list:[777],error:""})}).provider;
+ await rejectsCode(()=>otherList.connect({code:"c",params:{shop_id:"555"}}),"SHOPEE_AUTHORIZATION_REJECTED");
  await provider.disconnect(auth); // no-op: no per-shop revoke in v2
 });
 
@@ -108,9 +116,14 @@ test("listing normalization: simple item, variations, locks and status mapping",
  l=await provider.getListing(auth,"3001");
  assert.equal(l.status,"paused");assert.equal(l.priceCents,6990);assert.equal(l.quantity,7);
  assert.deepEqual(l.variants,[{id:"91",sku:"CAM-AZ-M",priceCents:6990,quantity:3,options:{Cor:"Azul",Tamanho:"M"}},{id:"92",sku:"CAM-PR-P",priceCents:6990,quantity:4,options:{Cor:"Preto",Tamanho:"P"}}]);
- item=baseItem({item_status:"BANNED",promotion_id:77,price_info:[{original_price:50,current_price:40}],stock_info_v2:{seller_stock:[{stock:1}],shopee_stock:[{stock:5}]}});
+ item=baseItem({item_status:"BANNED",has_promotion:true,price_info:[{original_price:50,current_price:40}],stock_info_v2:{seller_stock:[{stock:1}],shopee_stock:[{location_id:"BRFBS",stock:5}]}});
  l=await provider.getListing(auth,"3001");
  assert.equal(l.status,"closed");assert.equal(l.priceWritable,false);assert.equal(l.stockWritable,false);assert.equal(l.priceCents,5000);
+ // has_promotion sem diferença de preço também trava preço; FBS (is_fulfillment_by_shopee) trava estoque mesmo sem shopee_stock.
+ item=baseItem({has_promotion:true,is_fulfillment_by_shopee:true,price_info:[{original_price:50,current_price:50}],stock_info_v2:{seller_stock:[{stock:0}],shopee_stock:[]}});
+ l=await provider.getListing(auth,"3001");assert.equal(l.priceWritable,false);assert.equal(l.stockWritable,false);
+ item=baseItem({item_status:"SELLER_DELETE",price_info:[{original_price:50,current_price:50}]});
+ assert.equal((await provider.getListing(auth,"3001")).status,"closed");
  item=baseItem({item_status:"NORMAL",price_info:[{original_price:50,current_price:50}],stock_info_v2:{seller_stock:[{location_id:"A",stock:1},{location_id:"B",stock:2}]}});
  l=await provider.getListing(auth,"3001");assert.equal(l.stockWritable,false);assert.equal(l.quantity,3);
  await rejectsCode(()=>provider.getListing(auth,"../3001"),"INVALID_EXTERNAL_IDENTIFIER");
@@ -119,12 +132,13 @@ test("listing normalization: simple item, variations, locks and status mapping",
 test("stock and price payloads; failure_list is an error", async()=>{
  const sent={};let fail=false;
  const {provider}=mk({
-  "/api/v2/product/update_stock":(_u,b)=>{sent.stock=b;return {response:{failure_list:fail?[{model_id:91,failed_reason:"stock locked token=abc"}]:[],success_list:[]}};},
-  "/api/v2/product/update_price":(_u,b)=>{sent.price=b;return {response:{failure_list:[],success_list:[]}};},
+  "/api/v2/product/update_stock":(_u,b)=>{sent.stock=b;return {response:{failure_list:fail?[{model_id:91,failed_reason:"stock locked token=abc"}]:[],success_list:fail?[]:b.stock_list.map(s=>({model_id:s.model_id,location_id:"",stock:s.seller_stock[0].stock}))}};},
+  "/api/v2/product/update_price":(_u,b)=>{sent.price=b;return {response:{failure_list:[],success_list:b.price_list.map(p=>({model_id:p.model_id,original_price:p.original_price}))}};},
   "/api/v2/product/get_item_base_info":()=>({response:{item_list:[baseItem({has_model:true})]}}),
   "/api/v2/product/get_model_list":()=>({response:{tier_variation:[],model:[{model_id:91},{model_id:92}]}}),
-  "/api/v2/product/unlist_item":(_u,b)=>{sent.unlist=b;return {response:{failure_list:[],success_list:[{item_id:3001}]}};},
-  "/api/v2/product/delete_item":(_u,b)=>{sent.delete=b;return {response:{}};},
+  "/api/v2/product/unlist_item":(_u,b)=>{sent.unlist=b;return {error:"",message:"",response:{failure_list:[],success_list:[{item_id:3001,unlist:b.item_list[0].unlist}]}};},
+  // delete_item não tem objeto `response`: só error/message/warning/request_id.
+  "/api/v2/product/delete_item":(_u,b)=>{sent.delete=b;return {error:"",message:"",warning:"",request_id:"r"};},
  });
  await provider.syncStock(auth,"3001",9);
  assert.deepEqual(sent.stock,{item_id:3001,stock_list:[{model_id:0,seller_stock:[{stock:9}]}]});
@@ -148,9 +162,12 @@ test("publish: validates settings, downloads https image, uploads to media_space
   "/api/v2/media_space/upload_image":(_u,b)=>{sent.form=b;return {response:{image_info:{image_id:"img-abc",image_url_list:[]}}};},
   "/api/v2/logistics/get_channel_list":()=>({response:{logistics_channel_list:[{logistics_channel_id:90001,enabled:true,mask_channel_id:0,fee_type:"SIZE_INPUT"},
    {logistics_channel_id:90002,enabled:false},{logistics_channel_id:90003,enabled:true,mask_channel_id:90001},{logistics_channel_id:90004,enabled:true,fee_type:"SIZE_SELECTION"}]}}),
-  "/api/v2/product/add_item":(_u,b)=>{sent.add=b;return {response:{item_id:4001,item_status:"NORMAL"}};},
-  "/api/v2/product/get_category":()=>({response:{category_list:[{category_id:100182,display_category_name:"Camisetas",has_children:false},{category_id:100,has_children:true}]}}),
-  "/api/v2/product/get_attribute_tree":()=>({response:{list:[{category_id:100182,attribute_tree:[{attribute_id:100037,mandatory:true,name:"Material",attribute_value_list:[]}]}]}}),
+  "/api/v2/product/add_item":(_u,b)=>{sent.add=b;return {response:{item_id:4001,item_status:"NORMAL",item_name:b.item_name,price_info:{original_price:b.original_price,current_price:b.original_price}}};},
+  "/api/v2/product/get_category":u=>{assert.equal(u.searchParams.get("language"),"pt-br");return {response:{category_list:[{category_id:100182,parent_category_id:100,original_category_name:"T-Shirts",display_category_name:"Camisetas",has_children:false},{category_id:100,parent_category_id:0,has_children:true}]}};},
+  "/api/v2/product/get_attribute_tree":u=>{assert.equal(u.searchParams.get("language"),"pt-BR");assert.equal(u.searchParams.get("category_id_list"),"100182");
+   return {response:{list:[{category_id:100182,attribute_tree:[{attribute_id:100037,mandatory:true,name:"Material",attribute_value_list:[],attribute_info:{input_type:3}}]}]}};},
+  "/api/v2/product/init_tier_variation":(_u,b)=>{sent.tier=b;return {response:{item_id:b.item_id,model:b.model.map((m,i)=>({tier_index:m.tier_index,model_id:9100+i,model_sku:m.model_sku,price_info:[{original_price:m.original_price}],seller_stock:m.seller_stock}))}};},
+  "/api/v2/product/update_item":(_u,b)=>{sent.update=b;return {response:{item_id:b.item_id}};},
  });
  const draft={categoryId:"100182",title:"Camiseta QA",description:"Descrição completa",condition:"new",listingTypeId:"",buyingMode:"buy_it_now",
   attributes:[{id:"100037",value_name:"Algodão"},{id:"GTIN",value_name:"7891234567895"}],pictures:["https://images.vorix.test/p.jpg"],settings:{brand:{brand_id:0,original_brand_name:"NoBrand"}}};
@@ -170,6 +187,22 @@ test("publish: validates settings, downloads https image, uploads to media_space
   dimension:{package_height:5,package_width:20,package_length:30},condition:"NEW",item_sku:"CAM-1",gtin_code:"7891234567895",brand:{brand_id:0,original_brand_name:"NoBrand"},item_status:"NORMAL"});
  await rejectsCode(()=>provider.createListing(auth,{...write,draft:{...draft,pictures:["https://localhost/p.jpg"]}}),"SHOPEE_IMAGE_URL_INVALID");
  await rejectsCode(()=>provider.createListing(auth,{...write,draft:{...draft,settings:{item_status:"NORMAL"}}}),"SHOPEE_UNSUPPORTED_LISTING_SETTING");
+ // add_item: condition obrigatória no BR (2026-09-01) e brand exige original_brand_name.
+ assert.ok((await provider.validateListing(auth,{...write,draft:{...draft,condition:"not_specified"}})).some(e=>e.includes("condição")));
+ await rejectsCode(()=>provider.createListing(auth,{...write,draft:{...draft,condition:"not_specified"}}),"SHOPEE_CONDITION_REQUIRED");
+ await rejectsCode(()=>provider.createListing(auth,{...write,draft:{...draft,settings:{brand:{brand_id:0}}}}),"SHOPEE_INVALID_BRAND");
+ // Variações: standardise_tier_variation (tier_variation descontinuado em 2025-09-12) com ids 0 = variação própria.
+ const variants=[{sku:"CAM-AZ-P",priceCents:6990,quantity:2,attributes:[{id:"Cor",value_name:"Azul"},{id:"Tamanho",value_name:"P"}]},
+  {sku:"CAM-PR-M",priceCents:7990,quantity:0,attributes:[{id:"Cor",value_name:"Preto"},{id:"Tamanho",value_name:"M"}]}];
+ const withModels=await provider.createListing(auth,{...write,variants});
+ assert.deepEqual(sent.tier,{item_id:4001,standardise_tier_variation:[
+  {variation_id:0,variation_group_id:0,variation_name:"Cor",variation_option_list:[{variation_option_id:0,variation_option_name:"Azul"},{variation_option_id:0,variation_option_name:"Preto"}]},
+  {variation_id:0,variation_group_id:0,variation_name:"Tamanho",variation_option_list:[{variation_option_id:0,variation_option_name:"P"},{variation_option_id:0,variation_option_name:"M"}]}],
+  model:[{tier_index:[0,0],original_price:69.9,seller_stock:[{stock:2}],model_sku:"CAM-AZ-P"},{tier_index:[1,1],original_price:79.9,seller_stock:[{stock:0}],model_sku:"CAM-PR-M"}]});
+ assert.deepEqual(withModels.variants.map(v=>v.id),["9100","9101"]);
+ // update_item não tem logistic_info.
+ await rejectsCode(()=>provider.updateListing(auth,"4001",{settings:{logistic_info:[{logistic_id:90001,enabled:true}]}}),"SHOPEE_LOGISTICS_UPDATE_UNSUPPORTED");
+ await provider.updateListing(auth,"4001",{title:"Novo",condition:"used"});assert.deepEqual(sent.update,{item_id:4001,item_name:"Novo",condition:"USED"});
 });
 
 const orderDetail=(patch={})=>({order_sn:"2410270ABCDEF1",region:"BR",currency:"BRL",total_amount:139.7,order_status:"READY_TO_SHIP",create_time:TS-7200,update_time:TS-60,pay_time:TS-7000,
@@ -183,7 +216,10 @@ test("order normalization: status mapping, cents, masked buyer, items/models", a
  let detail=orderDetail();const {provider,calls}=mk({
   "/api/v2/order/get_order_detail":u=>{assert.equal(u.searchParams.get("order_sn_list"),"2410270ABCDEF1");assert.ok(u.searchParams.get("response_optional_fields").includes("item_list"));return {response:{order_list:[detail]}};},
   "/api/v2/logistics/get_tracking_number":()=>({response:{tracking_number:"BR123456789"}}),
-  "/api/v2/logistics/get_tracking_info":()=>({response:{tracking_info:[{update_time:TS-3000,logistics_status:"LOGISTICS_DELIVERY_DONE"},{update_time:TS-6000,logistics_status:"LOGISTICS_PICKUP_DONE"}]}}),
+  // TrackingLogisticsStatus (Data Definition): FAILED_* não pode contar como entregue/coletado.
+  "/api/v2/logistics/get_tracking_info":()=>({response:{order_sn:"2410270ABCDEF1",package_number:"PKG1",logistics_status:"LOGISTICS_DELIVERY_DONE",tracking_info:[
+   {update_time:TS-2000,description:"Entregue",logistics_status:"DELIVERED"},{update_time:TS-3500,description:"Falha",logistics_status:"FAILED_DELIVERED"},
+   {update_time:TS-6000,description:"Coletado",logistics_status:"PICKED_UP"},{update_time:TS-6500,description:"Falha coleta",logistics_status:"FAILED_PICKED_UP"}]}}),
  });
  let o=await provider.getOrder(auth,"2410270ABCDEF1");
  assert.equal(o.state,"PAID");assert.equal(o.externalStatus,"READY_TO_SHIP");assert.equal(o.accountId,"555");assert.equal(o.currency,"BRL");
@@ -200,8 +236,11 @@ test("order normalization: status mapping, cents, masked buyer, items/models", a
  assert.equal(o.state,"READY_TO_SHIP");assert.equal(o.shipment.trackingNumber,"BR123456789");assert.equal(o.shipment.labelAvailable,true);assert.equal(o.shipment.externalId,"PKG1");
  assert.equal(o.shippingCents,1030);assert.equal(o.totalCents,o.subtotalCents-o.discountCents+o.shippingCents);
  detail=orderDetail({order_status:"COMPLETED"});o=await provider.getOrder(auth,"2410270ABCDEF1");
- assert.equal(o.state,"DELIVERED");assert.equal(o.shipment.shippedAt,new Date((TS-6000)*1000).toISOString());assert.equal(o.shipment.deliveredAt,new Date((TS-3000)*1000).toISOString());
- for(const [status,state] of [["UNPAID","PENDING_PAYMENT"],["SHIPPED","SHIPPED"],["TO_CONFIRM_RECEIVE","SHIPPED"],["IN_CANCEL","PAID"],["CANCELLED","CANCELLED"],["TO_RETURN","DELIVERED"],["INVOICE_PENDING","PAID"]]){
+ assert.equal(o.state,"DELIVERED");assert.equal(o.shipment.shippedAt,new Date((TS-6000)*1000).toISOString());assert.equal(o.shipment.deliveredAt,new Date((TS-2000)*1000).toISOString());
+ detail=orderDetail({order_status:"SHIPPED",fulfillment_flag:"fulfilled_by_shopee",pickup_done_time:TS-7100});o=await provider.getOrder(auth,"2410270ABCDEF1");
+ assert.equal(o.shipment.shippedAt,new Date((TS-7100)*1000).toISOString(),"pickup_done_time when tracking is not read");
+ // TO_CONFIRM_RECEIVE = "The order has been received by buyer" (Data Definition OrderStatus).
+ for(const [status,state] of [["UNPAID","PENDING_PAYMENT"],["SHIPPED","SHIPPED"],["TO_CONFIRM_RECEIVE","DELIVERED"],["IN_CANCEL","PAID"],["CANCELLED","CANCELLED"],["TO_RETURN","DELIVERED"],["INVOICE_PENDING","PAID"]]){
   detail=orderDetail({order_status:status});assert.equal((await provider.getOrder(auth,"2410270ABCDEF1")).state,state,status);
  }
  detail=orderDetail({order_status:"READY_TO_SHIP",package_list:[{package_number:"PKG1",logistics_status:"LOGISTICS_REQUEST_CREATED"}]});
@@ -214,7 +253,8 @@ test("order normalization: status mapping, cents, masked buyer, items/models", a
 test("listOrders splits windows at 15 days and follows the Shopee cursor", async()=>{
  const seen=[];const {provider}=mk({"/api/v2/order/get_order_list":u=>{
   const q=Object.fromEntries(u.searchParams);seen.push(q);assert.equal(q.time_range_field,"update_time");assert.ok(Number(q.time_to)-Number(q.time_from)<=15*86400);assert.ok(Number(q.page_size)<=100);
-  return q.cursor===""&&seen.length===1?{response:{more:true,next_cursor:"c2",order_list:[{order_sn:"ORDER000001"}]}}:{response:{more:false,next_cursor:"",order_list:[{order_sn:"ORDER00000"+(seen.length+1)}]}};
+  assert.equal(q.response_optional_fields,"order_status");
+  return q.cursor===undefined&&seen.length===1?{response:{more:true,next_cursor:"c2",order_list:[{order_sn:"ORDER000001"}]}}:{response:{more:false,next_cursor:"",order_list:[{order_sn:"ORDER00000"+(seen.length+1)}]}};
  }});
  const from=new Date(NOW-20*86400000).toISOString(),to=new Date(NOW).toISOString();
  let page=await provider.listOrders(auth,{updatedFrom:from,updatedTo:to});assert.deepEqual(page.ids,["ORDER000001"]);
@@ -249,10 +289,21 @@ test("cancel_order payload; shipped orders are refused", async()=>{
  await provider.cancelOrder(auth,order,"CUSTOMER_REQUEST");assert.deepEqual(body,{order_sn:"2410270ABCDEF1",cancel_reason:"CUSTOMER_REQUEST"});
  await rejectsCode(()=>provider.cancelOrder(auth,{...order,state:"SHIPPED",externalStatus:"SHIPPED"},"Sem estoque"),"SHOPEE_ORDER_NOT_CANCELLABLE");
  await rejectsCode(()=>provider.cancelOrder(auth,order,"qualquer coisa"),"SHOPEE_CANCEL_REASON_UNSUPPORTED");
+ assert.deepEqual((await provider.cancelReasons(auth,order)).map(r=>r.code),["OUT_OF_STOCK","CUSTOMER_REQUEST"]);
+ assert.deepEqual(await provider.cancelReasons(auth,{...order,state:"SHIPPED",externalStatus:"SHIPPED"}),[]);
+ assert.deepEqual(await provider.cancelReasons(auth,{...order,shipment:{fulfilledByMarketplace:true}}),[],"FBS: Shopee handles it");
+ assert.equal(provider.closeListingEffect,"DELETE");assert.equal(provider.capabilities.closeListing,"SUPPORTED");
+ // UNDELIVERABLE_AREA: "Only apply for TW and MY".
+ await rejectsCode(()=>provider.cancelOrder(auth,order,"UNDELIVERABLE_AREA"),"SHOPEE_CANCEL_REASON_UNSUPPORTED");
+ await rejectsCode(()=>provider.cancelOrder(auth,order,"Área de entrega não atendida"),"SHOPEE_CANCEL_REASON_UNSUPPORTED");
 });
 
 test("returns: scans 60 days in windows, filters by order and maps status/items", async()=>{
- const windows=[];const {provider}=mk({"/api/v2/returns/get_return_list":u=>{
+ const windows=[],details=[];const {provider}=mk({
+  // get_return_list não traz logística reversa; get_return_detail traz reverse_logistics_status (e o legado logistics_status).
+  "/api/v2/returns/get_return_detail":u=>{details.push(u.searchParams.get("return_sn"));return {response:{return_sn:u.searchParams.get("return_sn"),order_sn:"2410270ABCDEF1",status:"ACCEPTED",
+   logistics_status:"LOGISTICS_REQUEST_CREATED",reverse_logistics_status:"LOGISTICS_PICKUP_DONE"}};},
+  "/api/v2/returns/get_return_list":u=>{
   windows.push([Number(u.searchParams.get("create_time_from")),Number(u.searchParams.get("create_time_to"))]);
   if(windows.length>1)return {response:{more:false,return:[]}};
   return {response:{more:false,return:[
@@ -262,7 +313,8 @@ test("returns: scans 60 days in windows, filters by order and maps status/items"
  }});
  const returns=await provider.getReturns(auth,"2410270ABCDEF1");
  assert.equal(windows.length,4);assert.ok(windows.every(([a,b])=>b-a<=15*86400));assert.equal(windows[0][0],TS-60*86400);assert.equal(windows.at(-1)[1],TS);
- assert.deepEqual(returns.map(r=>[r.id,r.state,r.externalStatus,r.refundCents,r.reason]),[["R1","APPROVED","ACCEPTED",5990,"NOT_RECEIPT"],["R2","COMPLETED","CLOSED",1990,"DAMAGED"]]);
+ assert.deepEqual(returns.map(r=>[r.id,r.state,r.externalStatus,r.refundCents,r.reason]),[["R1","IN_TRANSIT","ACCEPTED",5990,"NOT_RECEIPT"],["R2","COMPLETED","CLOSED",1990,"DAMAGED"]]);
+ assert.deepEqual(details,["R1"],"detail only for approved returns of this order");
  assert.deepEqual(returns[0].items,[{externalItemId:"3001",externalVariationId:"91",quantity:1}]);assert.deepEqual(returns[1].items,[{externalItemId:"3002",quantity:1}]);
  assert.ok(!JSON.stringify(returns).includes("a@b.c"));
  await provider.getReturns(auth,"2410270ABCDEF1");assert.equal(windows.length,4,"short per-shop cache");
@@ -271,7 +323,8 @@ test("returns: scans 60 days in windows, filters by order and maps status/items"
 test("push: signature over configured URL + body, rejects tampering, stable eventId", ()=>{
  const {provider}=mk({});
  const pushUrl="https://app.vorix.test/v1/marketplaces/shopee/notifications";
- const raw=JSON.stringify({shop_id:555,code:3,timestamp:TS,data:{ordersn:"2410270ABCDEF1",status:"READY_TO_SHIP",update_time:TS}});
+ // Formato oficial do order_status_push (código 3).
+ const raw=JSON.stringify({data:{items:[],ordersn:"2410270ABCDEF1",status:"READY_TO_SHIP",completed_scenario:"",update_time:TS},shop_id:555,code:3,timestamp:TS});
  const sig=hmac(pushUrl+"|"+raw);
  const n=provider.parseNotification({headers:{authorization:sig},rawBody:raw,url:"https://evil.test/whatever"});
  assert.deepEqual({...n,eventId:undefined},{accountId:"555",eventId:undefined,topic:"order_status_push",kind:"ORDER",resource:"/orders/2410270ABCDEF1",externalOrderId:"2410270ABCDEF1"});
@@ -283,7 +336,7 @@ test("push: signature over configured URL + body, rejects tampering, stable even
  assert.equal(provider.parseNotification({headers:{authorization:hmac("https://evil.test/v1/marketplaces/shopee/notifications|"+raw)},rawBody:raw,url:"https://evil.test/v1/marketplaces/shopee/notifications"}),undefined,"wrong URL");
  assert.equal(provider.parseNotification({headers:{authorization:sig},rawBody:raw+" ",url:""}),undefined,"tampered body");
  assert.equal(provider.parseNotification({headers:{},rawBody:raw,url:""}),undefined);
- const tracking=JSON.stringify({shop_id:555,code:4,timestamp:TS,data:{ordersn:"2410270ABCDEF1",tracking_no:"BR1"}});
+ const tracking=JSON.stringify({data:{ordersn:"2410270ABCDEF1",forder_id:"4965804244309504855",package_number:"PKG1",tracking_no:"BR1"},shop_id:555,code:4,timestamp:TS});
  assert.equal(provider.parseNotification({headers:{authorization:hmac(pushUrl+"|"+tracking)},rawBody:tracking,url:""}).topic,"order_trackingno_push");
  const partner=JSON.stringify({partner_id:9999,shop_id:555,code:3,timestamp:TS,data:{ordersn:"2410270ABCDEF1"}});
  assert.equal(provider.parseNotification({headers:{authorization:hmac(pushUrl+"|"+partner)},rawBody:partner,url:""}),undefined,"other partner");
@@ -311,6 +364,19 @@ test("errors: 429 retryable with Retry-After, 401/invalid token → REAUTH_REQUI
  await rejectsCode(()=>r.account(auth),"SHOPEE_NETWORK_UNCERTAIN",e=>e.retryable&&!e.message.includes("secret"));
  r=mk({"/api/v2/shop/get_shop_info":()=>({error:"error_too_many_request",message:leak})}).provider;
  await rejectsCode(()=>r.account(auth),"SHOPEE_RATE_LIMIT",e=>e.retryable);
+ // Lista comum de erros da referência v2.
+ const shopeeError=(error,message)=>mk({"/api/v2/shop/get_shop_info":()=>({request_id:"r",error,message})}).provider;
+ await rejectsCode(()=>shopeeError("error_rate_limit","Too many requests. You have reached the rate limit. Please try again later.").account(auth),"SHOPEE_RATE_LIMIT",e=>e.retryable&&e.retryAfterMs===60000);
+ // NOW = 12:00 UTC; a cota diária zera 00:00 UTC+8 = 16:00 UTC.
+ await rejectsCode(()=>shopeeError("error_limit","The total API call number made by your APP has reached the daily API call limit").account(auth),"SHOPEE_DAILY_LIMIT",e=>e.retryable&&e.retryAfterMs===4*3600000);
+ await rejectsCode(()=>shopeeError("error_auth","Invalid access_token.").account(auth),"REAUTH_REQUIRED");
+ await rejectsCode(()=>shopeeError("error_auth","No permission to current api.").account(auth),"SHOPEE_PERMISSION_DENIED");
+ await rejectsCode(()=>shopeeError("error_auth","partner_id is invalid").account(auth),"SHOPEE_PARTNER_CREDENTIALS_INVALID");
+ await rejectsCode(()=>shopeeError("error_partner_key_expired","Your API partner key has expired").account(auth),"SHOPEE_PARTNER_CREDENTIALS_INVALID");
+ await rejectsCode(()=>shopeeError("source_ip_undeclared","Request Source IP (1.2.3.4) is undeclared").account(auth),"SHOPEE_SOURCE_IP_UNDECLARED");
+ await rejectsCode(()=>shopeeError("error_sign","Wrong sign.").account(auth),"SHOPEE_SIGNATURE_REJECTED");
+ await rejectsCode(()=>shopeeError("shop_no_linked","Partner and shop has no linked.").account(auth),"REAUTH_REQUIRED");
+ await rejectsCode(()=>shopeeError("error_server","Something wrong. Please try later.").account(auth),"SHOPEE_UNAVAILABLE",e=>e.retryable);
 });
 
 test("shopeeConfig validates partner, redirect and API origin", ()=>{
@@ -318,6 +384,8 @@ test("shopeeConfig validates partner, redirect and API origin", ()=>{
  assert.deepEqual(shopeeConfig(env),{partnerId:"1001",partnerKey:"k",redirectUri:env.SHOPEE_REDIRECT_URI,apiBaseUrl:"https://partner.shopeemobile.com"});
  assert.equal(shopeeConfig({...env,SHOPEE_API_BASE_URL:"https://openplatform.shopee.com.br"}).apiBaseUrl,"https://openplatform.shopee.com.br");
  assert.equal(shopeeConfig({...env,SHOPEE_API_BASE_URL:"https://partner.test-stable.shopeemobile.com/"}).apiBaseUrl,"https://partner.test-stable.shopeemobile.com");
+ // Guia 16: sandbox oficial atual.
+ assert.equal(shopeeConfig({...env,SHOPEE_API_BASE_URL:"https://openplatform.sandbox.test-stable.shopee.sg"}).apiBaseUrl,"https://openplatform.sandbox.test-stable.shopee.sg");
  for(const patch of [{SHOPEE_PARTNER_ID:"abc"},{SHOPEE_PARTNER_KEY:""},{SHOPEE_REDIRECT_URI:"http://app.vorix.test/v1/marketplaces/shopee/callback"},
   {SHOPEE_REDIRECT_URI:"https://app.vorix.test/v1/marketplaces/shopee/callback?x=1"},{SHOPEE_REDIRECT_URI:"https://app.vorix.test/callback"},
   {SHOPEE_API_BASE_URL:"https://evil.test"},{SHOPEE_API_BASE_URL:"http://partner.shopeemobile.com"},{SHOPEE_API_BASE_URL:"https://partner.shopeemobile.com/api"}])

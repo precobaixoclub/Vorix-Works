@@ -24,7 +24,7 @@ const operation=z.discriminatedUnion("kind",[
  z.object({kind:z.literal("UPDATE"),listingId:id,draft,...conflict}).strict(),
  z.object({kind:z.literal("SYNC"),listingId:id.optional(),...conflict}).strict(),
  z.object({kind:z.literal("RECONCILE"),listingId:id.optional(),publicationJobId:id.optional()}).strict(),
- z.object({kind:z.literal("STATUS"),listingId:id,status:z.enum(["paused","active","closed"]),confirm:z.boolean().optional()}).strict(),
+ z.object({kind:z.literal("STATUS"),listingId:id,status:z.enum(["paused","active","closed"]),confirm:z.union([z.boolean(),z.literal("DELETE")]).optional()}).strict(),
 ]);
 export async function registerMarketplaceRoutes(app:FastifyInstance,deps:{service?:MarketplaceService;repository?:MarketplaceRepositoryPort;workspaceRepository:WorkspaceRepositoryPort}){
  const context=async(request:FastifyRequest,manage=false)=>{
@@ -96,7 +96,8 @@ export async function registerMarketplaceRoutes(app:FastifyInstance,deps:{servic
   scope.post("/marketplaces/:provider/notifications",async(request,reply)=>{
    const {provider}=slug(request);
    if(deps.service&&typeof request.body==="string")await deps.service.providerNotification(provider,{headers:request.headers as Record<string,string|undefined>,rawBody:request.body,url:request.url}).catch(error=>request.log.warn({err:error},"marketplace notification failed"));
-   return reply.code(200).send({received:true});
+   // Shopee (guia 18, Push Retry Logic): só 2xx com corpo vazio encerra os reenvios.
+   return provider==="SHOPEE"?reply.code(204).send():reply.code(200).send({received:true});
   });
  });
  app.patch("/marketplaces/connections/:id/settings",{config:{readOnlyGuard:true}},async request=>guard(async()=>{
@@ -131,7 +132,7 @@ export async function registerMarketplaceRoutes(app:FastifyInstance,deps:{servic
    if(input.operation.decisions.some(d=>d.action==="CREATE"))requirePermission(request,"product:manage");
    if(input.operation.decisions.some(d=>d.useExternalInitialStock))requirePermission(request,"inventory:manage");
   }
-  if(kind==="STATUS"&&input.operation.status==="closed"&&input.operation.confirm!==true)throw new ValidationError("Confirme a finalização do anúncio.");
+  if(kind==="STATUS"&&input.operation.status==="closed"&&!input.operation.confirm)throw new ValidationError("Confirme a finalização do anúncio.");
   return successEnvelope(await ready().service.enqueue(a,input.connectionId,kind,payload,input.operationKey),request.id);
  }));
  app.get("/marketplaces/jobs/:id",async request=>guard(async()=>{

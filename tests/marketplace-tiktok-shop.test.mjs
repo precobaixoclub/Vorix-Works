@@ -27,7 +27,7 @@ const PRODUCT={id:"1729000000000000001",status:"ACTIVATE",title:"Camiseta",descr
    sales_attributes:[{id:"100000",name:"Tamanho",value_id:"201",value_name:"P"}],identifier_code:{type:"EAN",code:"7891234567895"}},
   {id:"1729100000000000002",seller_sku:"CAM-M",price:{currency:"BRL",sale_price:"64.90"},inventory:[{warehouse_id:"WH-SALES",quantity:4}],sales_attributes:[{id:"100000",name:"Tamanho",value_id:"202",value_name:"M"}]}]};
 const ORDER={id:"576000000000000001",status:"AWAITING_COLLECTION",create_time:1761500000,update_time:1761600000,paid_time:1761500100,user_id:"buyer-77",buyer_email:"x@scs.tiktokw.us",
- fulfillment_type:"FULFILLMENT_BY_SELLER",delivery_type:"HOME_DELIVERY",shipping_provider:"J&T Express",tracking_number:"BR123",packages:[{id:"1153000000000000001"}],
+ fulfillment_type:"FULFILLMENT_BY_SELLER",shipping_type:"TIKTOK",need_upload_invoice:"INVOICE_UPLOADED",cpf:"123.456.789-00",delivery_type:"HOME_DELIVERY",shipping_provider:"J&T Express",tracking_number:"BR123",packages:[{id:"1153000000000000001"}],
  recipient_address:{postal_code:"01001-000",phone_number:"(+55)11*****99",name:"Fulano",district_info:[{address_level_name:"State",address_name:"São Paulo"},{address_level_name:"City",address_name:"São Paulo"}]},
  payment:{currency:"BRL",original_total_product_price:"179.70",sub_total:"169.70",seller_discount:"10.00",platform_discount:"0",shipping_fee:"12.50",total_amount:"182.20"},
  line_items:[{id:"L1",product_id:"1729000000000000001",sku_id:"1729100000000000001",seller_sku:"CAM-P",product_name:"Camiseta",sku_name:"P",sale_price:"59.90"},
@@ -54,9 +54,10 @@ test("every signed call carries app_key/timestamp/sign, shop_cipher and the acce
  await assert.rejects(provider.setStatus({...AUTH,metadata:{}},"1","paused"),e=>e.code==="TIKTOK_SHOP_CIPHER_MISSING");
 });
 
-test("authorize URL, token exchange, shop cipher in metadata and refresh keeps metadata",async()=>{
+test("authorize URL, token exchange, shop cipher in metadata and refresh (token/refresh endpoint) keeps metadata",async()=>{
+ const token=c=>ok({access_token:"AT-"+c.url.searchParams.get("grant_type"),access_token_expire_in:1893456000,refresh_token:"RT-new",refresh_token_expire_in:1900000000,open_id:"open-9",seller_name:"Loja",seller_base_region:"BR",user_type:0,granted_scopes:["seller.order.info"]});
  const {calls,provider}=mock({
-  "GET https://auth.tiktok-shops.com/api/v2/token/get":c=>ok({access_token:"AT-"+c.url.searchParams.get("grant_type"),access_token_expire_in:1893456000,refresh_token:"RT-new",refresh_token_expire_in:1900000000,open_id:"open-9",seller_name:"Loja",seller_base_region:"BR"}),
+  "GET https://auth.tiktok-shops.com/api/v2/token/get":token,"GET https://auth.tiktok-shops.com/api/v2/token/refresh":token,
   "GET /authorization/202309/shops":{shops:[{id:"7495000000000000001",name:"Loja BR",region:"BR",cipher:"ROW_cipher_br",code:"BRLCX"},{id:"1",name:"US",region:"US",cipher:"US_c"}]}});
  const url=new URL(provider.authorizationUrl("state-1","unused"));
  assert.equal(url.origin+url.pathname,"https://services.tiktokshop.com/open/authorize");
@@ -66,7 +67,11 @@ test("authorize URL, token exchange, shop cipher in metadata and refresh keeps m
  assert.equal(calls[1].headers["x-tts-access-token"],"AT-authorized_code");assert.equal(calls[1].url.searchParams.has("shop_cipher"),false);
  assert.deepEqual({userId:tokens.userId,metadata:tokens.metadata,expiresAt:tokens.expiresAt},{userId:"7495000000000000001",metadata:{shopCipher:"ROW_cipher_br",openId:"open-9"},expiresAt:new Date(1893456000000).toISOString()});
  const refreshed=await provider.refreshConnection("RT-old",{accountId:"7495000000000000001",metadata:{shopCipher:"ROW_cipher_br",openId:"open-1"}});
- const refreshCall=calls.at(-1);assert.equal(refreshCall.url.searchParams.get("grant_type"),"refresh_token");assert.equal(refreshCall.url.searchParams.get("refresh_token"),"RT-old");
+ const refreshCall=calls.at(-1);assert.equal(refreshCall.url.pathname,"/api/v2/token/refresh");
+ assert.equal(refreshCall.url.searchParams.get("grant_type"),"refresh_token");assert.equal(refreshCall.url.searchParams.get("refresh_token"),"RT-old");
+ assert.equal(calls[0].url.pathname,"/api/v2/token/get");
+ const before=calls.length;
+ await assert.rejects(provider.connect({code:"null",params:{error:"auth_denied"}}),e=>e.code==="TIKTOK_AUTHORIZATION_DENIED");assert.equal(calls.length,before);
  assert.equal(refreshed.metadata.shopCipher,"ROW_cipher_br");assert.equal(refreshed.userId,"7495000000000000001");assert.equal(refreshed.refreshToken,"RT-new");
  const rejected=new TikTokShopProvider(CONFIG,async()=>new Response(JSON.stringify({code:36004004,message:"invalid refresh token RT-old super-secret-value"}),{status:200}));
  await assert.rejects(rejected.refreshConnection("RT-old",{accountId:"1",metadata:{}}),e=>e.code==="REAUTH_REQUIRED"&&!e.message.includes("RT-old"));
@@ -84,7 +89,7 @@ test("account is BR-only and returns the shop cipher",async()=>{
 
 test("product normalizes to ExternalListing with SKUs, sales attributes, stock and status",async()=>{
  const {provider}=mock({"GET /product/202309/products/1729000000000000001":PRODUCT,"GET /logistics/202309/warehouses":WAREHOUSES,
-  "POST /product/202309/products/search":c=>ok(c.url.searchParams.get("page_token")?{products:[],total_count:1}:{products:[{id:"1729000000000000001"}],next_page_token:"tok2",total_count:1})});
+  "POST /product/202502/products/search":c=>ok(c.url.searchParams.get("page_token")?{products:[],total_count:1}:{products:[{id:"1729000000000000001"}],next_page_token:"tok2",total_count:1})});
  const listing=await provider.getListing(AUTH,"1729000000000000001");
  assert.equal(listing.sellerId,AUTH.accountId);assert.equal(listing.categoryId,"601226");assert.equal(listing.status,"active");assert.equal(listing.model,"LEGACY");
  assert.equal(listing.quantity,7);assert.equal(listing.priceCents,5990);assert.equal(listing.currency,"BRL");assert.equal(listing.description,"Linha 1\nA & B");
@@ -93,7 +98,7 @@ test("product normalizes to ExternalListing with SKUs, sales attributes, stock a
  assert.deepEqual(listing.pictures,["https://p16-oec.tiktokcdn.com/img1.jpg"]);
  assert.equal(listing.stockWritable,true);assert.equal(listing.priceWritable,true);
  assert.deepEqual(await provider.listExternalProducts(AUTH),{ids:["1729000000000000001"],cursor:"tok2",total:1});
- for(const [status,expected] of [["SELLER_DEACTIVATED","paused"],["PLATFORM_DEACTIVATED","paused"],["FREEZE","closed"],["DELETED","closed"]]){
+ for(const [status,expected] of [["SELLER_DEACTIVATED","paused"],["PLATFORM_DEACTIVATED","paused"],["FREEZE","closed"],["DELETED","closed"],["PENDING","under_review"],["DRAFT","draft"]]){
   const p=mock({"GET /product/202309/products/1729000000000000001":{...PRODUCT,status},"GET /logistics/202309/warehouses":WAREHOUSES}).provider;
   assert.equal((await p.getListing(AUTH,"1729000000000000001")).status,expected);
  }
@@ -109,6 +114,7 @@ test("price and inventory payloads use SKU ids, BRL amounts and the single sales
  await provider.syncStock(AUTH,"1729000000000000001",0,[{id:"1729100000000000001",quantity:5},{id:"1729100000000000002",quantity:0}]);
  assert.deepEqual(calls.at(-1).body,{skus:[{id:"1729100000000000001",inventory:[{warehouse_id:"WH-SALES",quantity:5}]},{id:"1729100000000000002",inventory:[{warehouse_id:"WH-SALES",quantity:0}]}]});
  await assert.rejects(provider.syncStock(AUTH,"1729000000000000001",3),e=>e.code==="TIKTOK_VARIANTS_REQUIRED");
+ await assert.rejects(provider.syncStock(AUTH,"1729000000000000001",0,[{id:"1729100000000000001",quantity:100000}]),e=>e.code==="INVALID_EXTERNAL_QUANTITY");
  const ambiguous=mock({"GET /logistics/202309/warehouses":{warehouses:[{id:"A",type:"SALES_WAREHOUSE",effect_status:"ENABLED"},{id:"B",type:"SALES_WAREHOUSE",effect_status:"ENABLED"}]}}).provider;
  await assert.rejects(ambiguous.syncStock(AUTH,"1729000000000000001",1,[{id:"1729100000000000001",quantity:1}]),e=>e.code==="TIKTOK_STOCK_WAREHOUSE_AMBIGUOUS");
 });
@@ -132,8 +138,23 @@ test("create uploads images (multipart), sends package and SKUs, and rejects unk
  await assert.rejects(provider.createListing(AUTH,{draft:{...draft,pictures:["https://127.0.0.1/a.jpg"]},priceCents:1,quantity:1,currency:"BRL",userProducts:false,correlation:"c",package:{weightGrams:1}}),e=>e.code==="TIKTOK_IMAGE_INVALID_URL");
 });
 
+test("update uses Partial Edit Product (only changed top-level fields, never price/inventory) and refuses category changes",async()=>{
+ const {calls,provider}=mock({"GET /product/202309/products/1729000000000000001":PRODUCT,
+  "GET https://cdn.vorix.test/b.png":()=>new Response(new Uint8Array([137,80,78,71]),{status:200,headers:{"content-type":"image/png"}}),
+  "POST /product/202309/images/upload":{uri:"tos-new",url:"https://p16.tiktokcdn.com/y.png",use_case:"MAIN_IMAGE"},
+  "POST /product/202509/products/1729000000000000001/partial_edit":{product_id:"1729000000000000001",skus:[],audit:{status:"AUDITING"}}});
+ await provider.updateListing(AUTH,"1729000000000000001",{title:"Camiseta nova",pictures:["https://cdn.vorix.test/b.png"],settings:{}});
+ const edit=calls.at(-1);assert.equal(edit.method,"POST");
+ assert.deepEqual(edit.body,{title:"Camiseta nova",main_images:[{uri:"tos-new"}]});
+ const q=Object.fromEntries(edit.url.searchParams);assert.equal(q.sign,tiktokShopSign(CONFIG.appSecret,"/product/202509/products/1729000000000000001/partial_edit",q,edit.raw));
+ await provider.updateListing(AUTH,"1729000000000000001",{categoryId:"601226",description:"Nova"});
+ assert.deepEqual(calls.at(-1).body,{description:"<p>Nova</p>"});
+ await assert.rejects(provider.updateListing(AUTH,"1729000000000000001",{categoryId:"999999"}),e=>e.code==="TIKTOK_CATEGORY_CHANGE_UNSUPPORTED");
+ assert.ok(!calls.some(c=>c.method==="PUT"));
+});
+
 test("order normalization: status mapping, per-unit aggregation, cents and no contact data",async()=>{
- const {calls,provider}=mock({"GET /order/202309/orders":{orders:[ORDER]}});
+ const {calls,provider}=mock({"GET /order/202507/orders":{orders:[ORDER]}});
  const order=await provider.getOrder(AUTH,"576000000000000001");
  assert.equal(calls[0].url.searchParams.get("ids"),"576000000000000001");
  assert.equal(order.state,"READY_TO_SHIP");assert.equal(order.accountId,AUTH.accountId);
@@ -143,20 +164,27 @@ test("order normalization: status mapping, per-unit aggregation, cents and no co
  assert.ok(!JSON.stringify(order).includes("Fulano")&&!JSON.stringify(order).includes("scs.tiktokw")&&!JSON.stringify(order).includes("*****"));
  assert.equal(order.shipment.externalId,"1153000000000000001");assert.equal(order.shipment.labelAvailable,true);assert.equal(order.shipment.fulfilledByMarketplace,false);
  assert.equal(order.shipment.trackingNumber,"BR123");assert.equal(order.paidAt,new Date(1761500100000).toISOString());
+ assert.equal(order.data.shippingType,"TIKTOK");assert.equal(order.data.needUploadInvoice,"INVOICE_UPLOADED");assert.ok(!JSON.stringify(order).includes("123.456.789"));
+ // Etiqueta só com TikTok Shipping e, no BR, depois da NF-e enviada.
+ for(const patch of [{shipping_type:"SELLER"},{need_upload_invoice:"NEED_INVOICE"},{need_upload_invoice:"INVOICE_PROCESSING"}]){
+  const p=mock({"GET /order/202507/orders":{orders:[{...ORDER,...patch}]}}).provider;
+  assert.equal((await p.getOrder(AUTH,ORDER.id)).shipment.labelAvailable,false,JSON.stringify(patch));
+ }
  const expected={UNPAID:"PENDING_PAYMENT",ON_HOLD:"PENDING_PAYMENT",AWAITING_SHIPMENT:"PAID",PARTIALLY_SHIPPING:"SHIPPED",IN_TRANSIT:"SHIPPED",DELIVERED:"DELIVERED",COMPLETED:"DELIVERED",CANCELLED:"CANCELLED"};
  for(const [status,state] of Object.entries(expected)){
-  const p=mock({"GET /order/202309/orders":{orders:[{...ORDER,status,fulfillment_type:"FULFILLMENT_BY_TIKTOK"}]},"GET /fulfillment/202309/orders/576000000000000001/tracking":{tracking:[{description:"Saiu",update_time_millis:2},{description:"Coletado",update_time_millis:1}]}}).provider;
+  const p=mock({"GET /order/202507/orders":{orders:[{...ORDER,status,fulfillment_type:"FULFILLMENT_BY_TIKTOK"}]},"GET /fulfillment/202309/orders/576000000000000001/tracking":{tracking:[{description:"Saiu",update_time_millis:2},{description:"Coletado",update_time_millis:1}]}}).provider;
   const o=await p.getOrder(AUTH,"576000000000000001");assert.equal(o.state,state,status);assert.equal(o.shipment.fulfilledByMarketplace,true);assert.equal(o.shipment.labelAvailable,false);
   if(state==="SHIPPED")assert.equal(o.shipment.substatus,"Saiu");
  }
  assert.equal(tiktokCents("0.5"),50);assert.equal(tiktokCents("1234.56"),123456);assert.throws(()=>tiktokCents("1.234"));assert.throws(()=>tiktokCents("-1"));
- const listing=mock({"POST /order/202309/orders/search":c=>{assert.deepEqual(c.body,{update_time_ge:1761500000,update_time_lt:1761600000});return ok({orders:[{id:"9"}],next_page_token:"n"});}}).provider;
+ const listing=mock({"POST /order/202309/orders/search":c=>{assert.deepEqual(c.body,{update_time_ge:1761500000,update_time_lt:1761600000});assert.equal(c.url.searchParams.get("page_size"),"50");
+  return ok({orders:[{id:"9"}],next_page_token:"n",total_count:1});}}).provider;
  assert.deepEqual(await listing.listOrders(AUTH,{updatedFrom:new Date(1761500000000).toISOString(),updatedTo:new Date(1761600000000).toISOString()}),{ids:["9"],cursor:"n"});
 });
 
 test("shipping label is downloaded from the official doc_url only when awaiting collection",async()=>{
  const pdf=Buffer.from("%PDF-1.4 label");
- const {calls,provider}=mock({"GET /order/202309/orders":{orders:[ORDER]},
+ const {calls,provider}=mock({"GET /order/202507/orders":{orders:[ORDER]},
   "GET /fulfillment/202309/packages/1153000000000000001/shipping_documents":{doc_url:"https://open-fs-va.tiktokshop.com/label.pdf?sig=1",tracking_number:"BR123"},
   "GET https://open-fs-va.tiktokshop.com/label.pdf":()=>new Response(pdf,{status:200,headers:{"content-type":"application/pdf"}})});
  const order=await provider.getOrder(AUTH,ORDER.id);
@@ -169,27 +197,56 @@ test("shipping label is downloaded from the official doc_url only when awaiting 
  await assert.rejects(evil.shippingLabel(AUTH,order),e=>e.code==="TIKTOK_LABEL_NOT_AVAILABLE");
 });
 
-test("seller cancel only before shipment and with an official reason code",async()=>{
- const {calls,provider}=mock({"POST /return_refund/202309/cancellations":{cancel_id:"c1",cancel_status:"CANCELLATION_REQUEST_COMPLETE"}});
+test("seller cancel: reason must come from the official aftersale eligibility (SELLER/CANCEL) before Cancel Order 202602",async()=>{
+ assert.equal(new TikTokShopProvider(CONFIG,async()=>{throw new Error("x");}).capabilities.cancelOrder,"SUPPORTED");
+ const ELIGIBILITY="GET /return_refund/202602/orders/576000000000000001/aftersale_eligibility";
+ // BR, AWAITING_SHIPMENT (Cancel reasons > BR Market > Seller Initiates Cancel Reason).
+ const eligible={sku_eligibility:[{sku_id:"1729100000000000001",line_item_eligibility:[{request_type:"CANCEL",eligible:true,order_line_list:[{order_line_item_id:"L1"},{order_line_item_id:"L2"}],
+  available_reason_names:["seller_cancel_reason_out_of_stock","seller_cancel_paid_reason_address_not_deliver"]}]},
+  {sku_id:"1729100000000000002",line_item_eligibility:[{request_type:"CANCEL",eligible:true,order_line_list:[{order_line_item_id:"L3"}],available_reason_names:["seller_cancel_reason_out_of_stock"]}]}]};
+ const {calls,provider}=mock({[ELIGIBILITY]:eligible,"POST /return_refund/202602/cancellations":{cancel_id:"4035319218955782461",cancel_status:"CANCELLATION_REQUEST_SUCCESS"}});
  const base={id:"576000000000000001",externalStatus:"AWAITING_SHIPMENT"};
+ // Lista para a equipe = interseção das linhas, com rótulo em português; nada fixo no código.
+ assert.deepEqual(await provider.cancelReasons(AUTH,base),[{code:"seller_cancel_reason_out_of_stock",label:"Sem estoque"}]);
+ calls.length=0;
  await provider.cancelOrder(AUTH,base,"seller_cancel_reason_out_of_stock");
- assert.deepEqual(calls[0].body,{order_id:"576000000000000001",cancel_reason:"seller_cancel_reason_out_of_stock"});
- assert.equal(calls[0].url.searchParams.get("shop_cipher"),"ROW_cipher_br");
+ assert.equal(calls[0].url.searchParams.get("initiate_aftersale_user"),"SELLER");assert.equal(calls[0].url.searchParams.get("request_types"),"CANCEL");
+ const q=Object.fromEntries(calls[0].url.searchParams);assert.equal(q.sign,tiktokShopSign(CONFIG.appSecret,"/return_refund/202602/orders/576000000000000001/aftersale_eligibility",q,""));
+ assert.deepEqual(calls[1].body,{order_id:"576000000000000001",cancel_reason:"seller_cancel_reason_out_of_stock"});
+ assert.equal(calls[1].url.pathname,"/return_refund/202602/cancellations");assert.equal(calls[1].url.searchParams.get("shop_cipher"),"ROW_cipher_br");
+ // Motivo fora da lista atual de alguma linha (ex.: removido do canal) nunca é enviado.
+ const sent=calls.length;
+ await assert.rejects(provider.cancelOrder(AUTH,base,"seller_cancel_paid_reason_address_not_deliver"),e=>e.code==="TIKTOK_CANCEL_REASON_NOT_AVAILABLE");
+ assert.equal(calls.filter(c=>c.method==="POST").length,1);assert.equal(calls.length,sent+1);
  await assert.rejects(provider.cancelOrder(AUTH,{...base,externalStatus:"IN_TRANSIT"},"seller_cancel_reason_out_of_stock"),e=>e.code==="TIKTOK_ORDER_NOT_CANCELLABLE");
  await assert.rejects(provider.cancelOrder(AUTH,base,"cliente desistiu"),e=>e.code==="TIKTOK_CANCEL_REASON_CODE_REQUIRED");
+ const ineligible=mock({[ELIGIBILITY]:{sku_eligibility:[{sku_id:"1",line_item_eligibility:[{request_type:"CANCEL",eligible:false,ineligible_code:25001001,ineligible_reason:"invalid order status"}]}]}});
+ await assert.rejects(ineligible.provider.cancelOrder(AUTH,base,"seller_cancel_reason_out_of_stock"),e=>e.code==="TIKTOK_ORDER_NOT_CANCELLABLE");
+ assert.ok(!ineligible.calls.some(c=>c.method==="POST"));
+ assert.deepEqual(await ineligible.provider.cancelReasons(AUTH,base),[]);
+ assert.deepEqual(await provider.cancelReasons(AUTH,{...base,externalStatus:"IN_TRANSIT"}),[]);
+ assert.equal(provider.capabilities.closeListing,"BLOCKED_EXTERNAL_CAPABILITY");assert.equal(provider.capabilities.pauseListing,"SUPPORTED");
+ await assert.rejects(provider.setStatus(AUTH,"1729000000000000001","closed"),e=>e.code==="BLOCKED_EXTERNAL_CAPABILITY");
+ const empty=mock({[ELIGIBILITY]:{}}).provider;
+ await assert.rejects(empty.cancelOrder(AUTH,base,"seller_cancel_reason_out_of_stock"),e=>e.code==="TIKTOK_ORDER_NOT_CANCELLABLE");
 });
 
 test("returns map status, refund and aggregate return line items",async()=>{
- const {calls,provider}=mock({"POST /return_refund/202309/returns/search":{return_orders:[
+ const {calls,provider}=mock({"POST /return_refund/202602/returns/search":{return_orders:[
   {return_id:"R1",order_id:"576000000000000001",return_status:"BUYER_SHIPPED_ITEM",return_reason:"ecom_order_delivered_refund_and_return_reason_damaged",create_time:1761600000,update_time:1761700000,
-   refund_amount:{currency:"BRL",refund_total:"119.80"},return_line_items:[{sku_id:"1729100000000000001",product_id:"1729000000000000001"},{sku_id:"1729100000000000001",product_id:"1729000000000000001"}]},
-  {return_id:"R2",order_id:"576000000000000001",return_status:"RETURN_OR_REFUND_REQUEST_CANCEL",create_time:1761600000,return_line_items:[{sku_id:"1729100000000000002"}]}]},
-  "GET /order/202309/orders":{orders:[ORDER]}});
+   refund_amount:{currency:"BRL",refund_total:"119.80",refund_subtotal:"119.80",refund_shipping_fee:"0"},
+   return_line_items:[{return_line_item_id:"RL1",order_line_item_id:"L1",sku_id:"1729100000000000001",product_name:"Camiseta",seller_sku:"CAM-P"},{return_line_item_id:"RL2",order_line_item_id:"L2",sku_id:"1729100000000000001",product_name:"Camiseta"}]},
+  {return_id:"R2",order_id:"576000000000000001",return_status:"RETURN_OR_REFUND_REQUEST_CANCEL",create_time:1761600000,return_line_items:[{return_line_item_id:"RL3",order_line_item_id:"L3",sku_id:"1729100000000000002"}]},
+  {return_id:"R3",order_id:"576000000000000001",return_status:"EXCHANGE_REQUEST_PENDING",create_time:1761600000,return_line_items:[{order_line_item_id:"L3",sku_id:"1729100000000000002"}]},
+  {return_id:"R4",order_id:"576000000000000001",return_status:"REPLACEMENT_REQUEST_CANCEL",create_time:1761600000,return_line_items:[{order_line_item_id:"L3",sku_id:"1729100000000000002"}]}],next_page_token:""},
+  "GET /order/202507/orders":{orders:[ORDER]}});
  const returns=await provider.getReturns(AUTH,"576000000000000001");
  assert.deepEqual(calls[0].body,{order_ids:["576000000000000001"]});
  assert.equal(returns[0].state,"IN_TRANSIT");assert.equal(returns[0].refundCents,11980);
  assert.deepEqual(returns[0].items,[{externalItemId:"1729000000000000001",externalVariationId:"1729100000000000001",quantity:2}]);
  assert.equal(returns[1].state,"CANCELLED");assert.deepEqual(returns[1].items,[{externalItemId:"1729000000000000001",externalVariationId:"1729100000000000002",quantity:1}]);
+ assert.deepEqual([returns[2].state,returns[3].state],["REQUESTED","CANCELLED"]);
+ assert.equal(calls[0].url.searchParams.get("page_size"),"50");assert.equal(calls.filter(c=>c.url.pathname.endsWith("/returns/search")).length,1);
 });
 
 test("webhook: signature accept/reject and event mapping",()=>{
@@ -210,11 +267,42 @@ test("webhook: signature accept/reject and event mapping",()=>{
  assert.equal(parsedProduct.kind,"LISTING");assert.equal(parsedProduct.resource,"product:1729000000000000001");
  const other=JSON.stringify({type:6,tts_notification_id:"n6",shop_id:"7495000000000000001",timestamp:1,data:{}});
  assert.equal(provider.parseNotification({headers:{authorization:sign(other)},rawBody:other,url:"/"}),undefined);
+ // type 2 não tem página de tópico oficial: ignorado.
+ const reverse=JSON.stringify({type:2,tts_notification_id:"n2",shop_id:"7495000000000000001",timestamp:1,data:{order_id:"576000000000000001"}});
+ assert.equal(provider.parseNotification({headers:{authorization:sign(reverse)},rawBody:reverse,url:"/"}),undefined);
+ // Exemplo oficial do tópico 5: product_id numérico acima de 2^53 — os dígitos vêm do corpo bruto, sem perda.
+ const numeric='{"type":5,"tts_notification_id":"7327112393057371910","shop_id":"7494049642642441621","timestamp":1644412885,"data":{"product_id":576486316948490001,"status":"PRODUCT_FIRST_PASS_REVIEW","suspended_reason":"","update_time":1644412885}}';
+ assert.equal(provider.parseNotification({headers:{authorization:sign(numeric)},rawBody:numeric,url:"/"}).resource,"product:576486316948490001");
+ // Package update (4): pedidos em package_list[].order_id_list.
+ const pkg=JSON.stringify({type:4,tts_notification_id:"7327112393057371910",shop_id:"7494049642642441621",timestamp:1644412885,data:{sc_type:"COMBINE",role_type:"ROLE_USER",package_list:[{package_id:"123456",order_id_list:["152523","532123"]}],update_time:1644412885}});
+ assert.deepEqual(provider.parseNotification({headers:{authorization:sign(pkg)},rawBody:pkg,url:"/"}),
+  {accountId:"7494049642642441621",eventId:"7327112393057371910",topic:"PACKAGE_UPDATE",kind:"ORDER",resource:"order:152523",externalOrderId:"152523"});
+ const cancel=JSON.stringify({type:11,tts_notification_id:"n11",shop_id:"7494049642642441621",timestamp:1644412885,data:{order_id:"576486316948490001",cancellations_role:"BUYER",cancel_status:"CANCELLATION_REQUEST_PENDING",cancel_id:"4035318504086604100",create_time:1627587600}});
+ assert.equal(provider.parseNotification({headers:{authorization:sign(cancel)},rawBody:cancel,url:"/"}).topic,"CANCELLATION_STATUS_CHANGE");
+});
+
+test("webhook signature matches the official reproducible example (app_key abcdef, app_secret 123)",()=>{
+ const official=new TikTokShopProvider({...CONFIG,appKey:"abcdef",appSecret:"123"},async()=>{throw new Error("no network");});
+ const raw='{"type":1,"tts_notification_id":"7380066284010030890","shop_id":"7495540735365777507","timestamp":1718305585,"data":{"is_on_hold_order":true,"order_id":"576653688135258178","order_status":"UNPAID","update_time":1718305585}}';
+ assert.deepEqual(official.parseNotification({headers:{Authorization:"5dec0f11ec2f6783b8deee53c9ffbf8d024302f7c7e7fa55a35d17629031ac05"},rawBody:raw,url:"/"}),
+  {accountId:"7495540735365777507",eventId:"7380066284010030890",topic:"ORDER_STATUS_CHANGE",kind:"ORDER",resource:"order:576653688135258178",externalOrderId:"576653688135258178"});
+ assert.equal(official.parseNotification({headers:{Authorization:"Bearer 5dec0f11ec2f6783b8deee53c9ffbf8d024302f7c7e7fa55a35d17629031ac05"},rawBody:raw,url:"/"}),undefined);
+});
+
+test("signing matches the official Get Authorized Shops walkthrough",()=>{
+ // docv2/page/686da77d813b8f0491e0e29f: abc000def111/authorization/202309/shopsapp_key123456timestamp1234567890abc000def111
+ const expected=createHmac("sha256","abc000def111").update("abc000def111/authorization/202309/shopsapp_key123456timestamp1234567890abc000def111").digest("hex");
+ assert.equal(tiktokShopSign("abc000def111","/authorization/202309/shops",{app_key:"123456",timestamp:"1234567890"}),expected);
 });
 
 test("429 is retryable with retry-after, expired token is REAUTH_REQUIRED, errors never leak bodies or secrets",async()=>{
  const limited=new TikTokShopProvider(CONFIG,async()=>new Response(JSON.stringify({code:0,message:"ACCESS-TOKEN-SECRET"}),{status:429,headers:{"retry-after":"7"}}));
  await assert.rejects(limited.setStatus(AUTH,"1","paused"),e=>e.code==="TIKTOK_RATE_LIMIT"&&e.retryable===true&&e.retryAfterMs===7000);
+ // Business code 36009002 = rate limit mesmo com HTTP 200; Retry-After pode ser data HTTP.
+ const business=new TikTokShopProvider(CONFIG,async()=>new Response(JSON.stringify({code:36009002,message:"Too many requests"}),{status:200}));
+ await assert.rejects(business.setStatus(AUTH,"1","paused"),e=>e.code==="TIKTOK_RATE_LIMIT"&&e.retryable===true&&e.retryAfterMs===30000);
+ const dated=new TikTokShopProvider(CONFIG,async()=>new Response("{}",{status:429,headers:{"retry-after":new Date(Date.now()+120000).toUTCString()}}));
+ await assert.rejects(dated.setStatus(AUTH,"1","paused"),e=>e.code==="TIKTOK_RATE_LIMIT"&&e.retryAfterMs>100000&&e.retryAfterMs<=120000);
  const expired=new TikTokShopProvider(CONFIG,async()=>new Response(JSON.stringify({code:105002,message:"Access token is expired ACCESS-TOKEN-SECRET"}),{status:200}));
  await assert.rejects(expired.setStatus(AUTH,"1","paused"),e=>e.code==="REAUTH_REQUIRED"&&e.retryable===false);
  const unauthorized=new TikTokShopProvider(CONFIG,async()=>new Response("nope",{status:401}));

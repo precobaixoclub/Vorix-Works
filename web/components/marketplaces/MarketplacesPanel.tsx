@@ -105,13 +105,18 @@ export function MarketplacesPanel(){
     </section>}
     <section className={box} aria-label="Anúncios do catálogo"><h2 className="text-lg font-semibold">Anúncios</h2><p className="mt-1 text-sm text-muted-foreground">O produto e o estoque físico permanecem no catálogo central.</p>
      {!data?.listings.length&&<p className="mt-4 text-sm">Nenhum anúncio vinculado. Importe os existentes ou publique um produto.</p>}
-     <div className="mt-4 grid min-w-0 gap-3 lg:grid-cols-2">{data?.listings.map(l=><article key={l.id} className="min-w-0 rounded-lg border p-3">
+     <div className="mt-4 grid min-w-0 gap-3 lg:grid-cols-2">{data?.listings.map(l=>{
+      // Ações por canal: só o que a API oficial permite; "encerrar" na Shopee EXCLUI o anúncio (delete_item, irreversível).
+      const account=data.connections.find(c=>c.id===l.connectionId),channel=account?.provider??"MERCADO_LIVRE",channelName=providerName(channel),info=providers.find(p=>p.id===channel);
+      // Conta/canal desconhecido: nunca oferecer encerramento (poderia ser exclusão definitiva).
+      const canPause=!!account&&info?.capabilities?.pauseListing!=="BLOCKED_EXTERNAL_CAPABILITY",canClose=!!account&&!!info&&info.capabilities?.closeListing!=="BLOCKED_EXTERNAL_CAPABILITY",deletes=info?.closeListingEffect==="DELETE";
+      return <article key={l.id} className="min-w-0 rounded-lg border p-3">
       <h3 className="break-words font-medium">{l.productName??l.productId}</h3><p className="break-all text-xs text-muted-foreground">{l.externalListingId??"Aguardando publicação"}</p>
       <p className="mt-2 text-sm">{status(l.status)} · <strong>{status(l.syncStatus)}</strong></p>
       <div className="mt-2 flex flex-wrap gap-x-5 gap-y-1 text-sm"><span>Preço externo: {l.externalPrice===undefined?"—":formatCurrencyCents(l.externalPrice)}</span><span>Publicado: {l.externalQuantity??"—"} un.</span></div>
       {l.snapshot?.variants.map(v=><p key={v.id} className="mt-1 break-words text-xs">{Object.values(v.options).join(" / ")}: {v.quantity} un.</p>)}
       {l.lastError&&<p className="mt-2 break-words text-sm text-destructive">{marketplaceMessage(l.lastError)}</p>}
-      {l.externalUrl&&<a href={l.externalUrl} target="_blank" rel="noreferrer" className="mt-2 inline-block text-sm underline">Ver no Mercado Livre</a>}
+      {l.externalUrl&&<a href={l.externalUrl} target="_blank" rel="noreferrer" className="mt-2 inline-block text-sm underline">Ver no {channelName}</a>}
       {manage&&l.externalListingId&&<div className="mt-3 flex flex-wrap gap-2">
        <Button size="sm" variant="secondary" disabled={busy} onClick={()=>listingAction(l,"RECONCILE")}>Conferir</Button>
        <Button size="sm" variant="secondary" disabled={busy||l.status==="closed"} onClick={()=>{
@@ -120,10 +125,12 @@ export function MarketplacesPanel(){
         }else void listingAction(l,"SYNC");
        }}>Sincronizar</Button>
        <Button size="sm" variant="secondary" disabled={busy||l.status==="closed"} onClick={()=>{setConnectionId(l.connectionId);setEditing(l);setPublish(true);}}>Atualizar</Button>
-       <Button size="sm" variant="secondary" disabled={busy||l.status==="closed"} onClick={()=>listingAction(l,"STATUS",{status:l.status==="paused"?"active":"paused"})}>{l.status==="paused"?"Reativar":"Pausar"}</Button>
-       <Button size="sm" variant="danger" disabled={busy||l.status==="closed"} onClick={()=>{if(window.confirm("Finalizar este anúncio no Mercado Livre? Esta ação pode impedir sua reativação e exigir uma nova publicação."))void listingAction(l,"STATUS",{status:"closed",confirm:true});}}>Finalizar</Button>
+       {canPause&&<Button size="sm" variant="secondary" disabled={busy||l.status==="closed"} onClick={()=>listingAction(l,"STATUS",{status:l.status==="paused"?"active":"paused"})}>{l.status==="paused"?"Reativar":"Pausar"}</Button>}
+       {canClose&&(deletes
+        ?<Button size="sm" variant="danger" disabled={busy||l.status==="closed"} onClick={()=>{if(window.prompt(`EXCLUIR DEFINITIVAMENTE este anúncio da ${channelName}? A ${channelName} não permite desfazer: o anúncio some do Seller Center e não pode ser reativado (para suspender temporariamente use "Pausar"). Digite EXCLUIR para confirmar.`)?.trim().toUpperCase()==="EXCLUIR")void listingAction(l,"STATUS",{status:"closed",confirm:"DELETE"});}}>Excluir anúncio</Button>
+        :<Button size="sm" variant="danger" disabled={busy||l.status==="closed"} onClick={()=>{if(window.confirm(`Finalizar este anúncio no ${channelName}? Esta ação pode impedir sua reativação e exigir uma nova publicação.`))void listingAction(l,"STATUS",{status:"closed",confirm:true});}}>Finalizar</Button>)}
       </div>}
-     </article>)}</div>
+     </article>;})}</div>
     </section>
     {!!data?.jobs.length&&<section className={box} aria-label="Histórico de processamento"><h2 className="font-semibold">Processamentos recentes</h2><div className="mt-3 space-y-2">{data.jobs.slice(0,12).map(j=><button type="button" key={j.id} onClick={()=>setJobId(j.id)} className="flex w-full min-w-0 flex-wrap justify-between gap-2 rounded-lg border p-3 text-left text-sm"><span>{({PREVIEW:"Prévia de importação",IMPORT:"Importação",PUBLISH:"Publicação",UPDATE:"Atualização",SYNC:"Sincronização",RECONCILE:"Reconciliação",STATUS:"Alteração de status"} as Record<string,string>)[j.kind]??j.kind}</span><span>{status(j.status)} · {j.progress}/{j.total}</span></button>)}</div></section>}
    </>}

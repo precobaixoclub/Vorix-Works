@@ -25,6 +25,7 @@ export type CommerceOrderDetail={order:CommerceOrder;payments:CommercePayment[];
 export const getCommerceOrder=(workspaceId:string,id:string)=>apiClient.get<CommerceOrderDetail>(`/v1/commerce/orders/${q(id)}?workspaceId=${q(workspaceId)}`);
 export const advanceCommerceOrder=(workspaceId:string,id:string,to:OrderStatus,trackingCode?:string)=>apiClient.post<CommerceOrder>(`/v1/commerce/orders/${q(id)}/status?workspaceId=${q(workspaceId)}`,{to,...(trackingCode?{trackingCode}:{})});
 export const cancelCommerceOrder=(workspaceId:string,id:string,input:{reason?:string;restock?:boolean})=>apiClient.post<CommerceOrder>(`/v1/commerce/orders/${q(id)}/cancel?workspaceId=${q(workspaceId)}`,input);
+export const getCancelReasons=(workspaceId:string,id:string)=>apiClient.get<{reasons:{code:string;label:string}[]}>(`/v1/commerce/orders/${q(id)}/cancel-reasons?workspaceId=${q(workspaceId)}`);
 export const refreshCommerceOrder=(workspaceId:string,id:string)=>apiClient.post<unknown>(`/v1/commerce/orders/${q(id)}/refresh?workspaceId=${q(workspaceId)}`);
 export const getOrderLabel=(workspaceId:string,id:string)=>apiClient.get<{contentType:string;base64:string;filename:string}>(`/v1/commerce/orders/${q(id)}/label?workspaceId=${q(workspaceId)}`);
 export const createOrderReturn=(workspaceId:string,id:string,input:{requestKey:string;reason:string;items:{orderItemId:string;quantity:number}[]})=>apiClient.post<OrderReturn>(`/v1/commerce/orders/${q(id)}/returns?workspaceId=${q(workspaceId)}`,input);

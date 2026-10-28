@@ -20,7 +20,8 @@ export async function runMonitor(pool, { hostFailures = [], dryRun = false } = {
     for (const row of (await pool.query(sql)).rows) findings.push({ code, title, ...row });
   }
   if (hostFailures.length) {
-    for (const row of (await pool.query("select tenant_id,id workspace_id from workspaces")).rows) {
+    // Infrastructure belongs to platform operations, never to every customer's notification feed.
+    for (const row of (await pool.query("select distinct on (u.id) m.tenant_id,w.id workspace_id,u.id recipient_id from users u join tenant_members m on m.user_id=u.id and m.status='active' join workspaces w on w.tenant_id=m.tenant_id where u.is_platform_admin and u.status='active' order by u.id,w.created_at,w.id")).rows) {
       findings.push({ ...row, id: "host", code: "host_health", title: "Operação Vorix precisa de atenção", body: hostFailures.join("; ").slice(0, 800) });
     }
   }
@@ -33,13 +34,13 @@ export async function runMonitor(pool, { hostFailures = [], dryRun = false } = {
       await client.query("select pg_advisory_xact_lock(hashtext('vorix-operations-monitor'))");
       const repository = new PostgresNotificationRepository(client);
       for (const f of findings) {
-        const recipients = (await client.query("select m.user_id from tenant_members m join users u on u.id=m.user_id where m.tenant_id=$1 and m.role='owner' and m.status='active' and u.status='active'", [f.tenant_id])).rows;
+        const recipients = (await client.query("select m.user_id from tenant_members m join users u on u.id=m.user_id where m.tenant_id=$1 and m.status='active' and u.status='active' and (($2='host_health' and u.is_platform_admin and m.user_id=$3) or ($2<>'host_health' and m.role='owner'))", [f.tenant_id,f.code,f.recipient_id??null])).rows;
         for (const { user_id } of recipients) {
           const sourceId = `${f.code}:${f.id}`;
           const duplicate = await client.query("select id from notifications where tenant_id=$1 and workspace_id=$2 and user_id=$3 and source_type='operations_alert' and source_id=$4 and created_at>now()-interval '1 day' limit 1", [f.tenant_id, f.workspace_id, user_id, sourceId]);
           if (duplicate.rowCount) continue;
           await createNotification({ notificationRepository: repository }, { tenantId: f.tenant_id, workspaceId: f.workspace_id, userId: user_id, title: f.title, body: f.body ?? "Verifique o último erro e o histórico antes de reprocessar. Não repita publicação com resultado incerto.", sourceType: "operations_alert", sourceId,
-            sourceUrl: `/workspaces/${f.workspace_id}/${f.code.startsWith("marketplace") ? "settings/marketplaces" : "site/pedidos"}` });
+            sourceUrl: f.code==="host_health"?"/admin":`/workspaces/${f.workspace_id}/${f.code.startsWith("marketplace") ? "settings/marketplaces" : "site/pedidos"}` });
           created++;
         }
       }

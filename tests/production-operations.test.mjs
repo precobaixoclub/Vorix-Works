@@ -14,11 +14,12 @@ before(async () => { db = await startTestPostgres(); await applyMigrations(db.po
 after(async () => { await db?.stop(); });
 
 test("operations monitor delivers bounded alerts through the existing bell only to active tenant administrators", async () => {
-  const a = await productSiteContext(db.pool), b = await productSiteContext(db.pool);
-  for (const [context, role] of [[a, "owner"], [b, "editor"]]) {
+  const a = await productSiteContext(db.pool), b = await productSiteContext(db.pool), customer = await productSiteContext(db.pool);
+  for (const [context, role] of [[a, "owner"], [b, "editor"], [customer,"owner"]]) {
     await db.pool.query("insert into users(id,email,password_hash,name,status,created_at,updated_at) values($1,$2,'fixture','QA','active',now(),now())", [context.actor.userId, `${context.actor.userId}@qa.invalid`]);
     await db.pool.query("insert into tenant_members(id,user_id,tenant_id,role,created_at,updated_at) values($1,$2,$3,$4,now(),now())", [context.actor.userId, context.actor.userId, context.tenantId, role]);
   }
+  await db.pool.query("update users set is_platform_admin=true where id=$1",[a.actor.userId]);
   const first = await runMonitor(db.pool, { hostFailures: ["marketplaces worker unavailable"] });
   assert.equal(first.notificationsCreated, 1);
   const second = await runMonitor(db.pool, { hostFailures: ["marketplaces worker unavailable"] });

@@ -38,7 +38,7 @@ Referências oficiais verificadas nesta revisão: [Upload Invoice API](https://p
 
 `scripts/operations/monitor-host.sh` roda fora da API a cada cinco minutos. Verifica saúde dos seis containers Vorix, disco e erros recentes de webhook/worker; usa a mesma imagem do backend e a rede interna para consultar filas e publicar na central de notificações existente.
 
-Destinatários: Administradores (`owner`) ativos do tenant afetado. A mesma condição notifica no máximo uma vez por dia. Abrange reautenticação, fila atrasada, retries repetidos, job travado/incerto/fatal, divergência de anúncio, pedido pago sem estoque, reserva vencida e cancelamento sem estorno. Não há envio automático de mensagens aos compradores.
+Destinatários: Administradores (`owner`) ativos do tenant afetado para problemas comerciais; falhas de infraestrutura vão somente a administradores da plataforma, em um workspace por destinatário. A mesma condição notifica no máximo uma vez por dia. Abrange reautenticação, fila atrasada, retries repetidos, job travado/incerto/fatal, divergência de anúncio, pedido pago sem estoque, reserva vencida e cancelamento sem estorno. Não há envio automático de mensagens aos compradores.
 
 O sino exige que alguém consulte o Vorix. Não há canal externo configurado para pager/e-mail/SMS; indisponibilidade do banco/host inteiro impede a entrega pelo sino. O cron retorna falha e mantém log nesse caso. Não declarar vigilância externa 24×7.
 

@@ -27,7 +27,8 @@ try {
     for (const [name, path] of [["home", "/"], ["login", "/login"], ["site", `/s/${site.slug}`], ["product", `/s/${site.slug}/produto/${product.slug}`]]) {
       const response = await page.goto(origin + path, { waitUntil: "domcontentloaded" });
       assert.equal(response.status(), 200, `${name}:${width}`);
-      await page.locator("h1").first().waitFor();
+      // A site with the hero intentionally hidden can start directly at the catalog heading.
+      await page.locator(name==="site"?"h1,h2":"h1").first().waitFor();
       await page.evaluate(() => document.fonts.ready);
       const overflow = await page.evaluate(() => document.documentElement.scrollWidth - innerWidth);
       assert.ok(overflow <= 1, `${name}:${width} overflow=${overflow}`);

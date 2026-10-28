@@ -368,6 +368,10 @@ services:
     security_opt: [no-new-privileges:true]
     cap_drop: [ALL]
     networks: [zuno_network]
+    # Rotação de log: o gateway nunca enche o disco do host.
+    logging:
+      driver: json-file
+      options: {max-size: "10m", max-file: "3"}
     mem_limit: 1024m
     mem_reservation: 128m
     pids_limit: 192

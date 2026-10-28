@@ -7,9 +7,10 @@ export const ORDER_SOURCES=["SITE","MERCADO_LIVRE","SHOPEE","TIKTOK_SHOP","MANUA
 export type OrderSource=(typeof ORDER_SOURCES)[number];
 export const ORDER_STATUSES=["PENDING","AWAITING_PAYMENT","PAID","CONFIRMED","PROCESSING","SHIPPED","DELIVERED","CANCELLED"] as const;
 export type OrderStatus=(typeof ORDER_STATUSES)[number];
-export type PaymentStatus="PENDING"|"APPROVED"|"FAILED"|"CANCELLED"|"REFUNDED";
+export type PaymentStatus="PENDING"|"APPROVED"|"FAILED"|"CANCELLED"|"REFUNDED"|"PARTIALLY_REFUNDED";
 export type ShippingStatus="NOT_REQUIRED"|"PENDING"|"READY_FOR_PICKUP"|"SHIPPED"|"DELIVERED"|"CANCELLED";
-export type StockState="NONE"|"RESERVED"|"RELEASED"|"SOLD"|"RETURNED";
+/** CONFLICT: venda externa sem saldo central suficiente (registrada para resolver). EXTERNAL: estoque do próprio marketplace (Full/FBS). */
+export type StockState="NONE"|"RESERVED"|"RELEASED"|"SOLD"|"RETURNED"|"CONFLICT"|"EXTERNAL";
 export type PaymentMethod="PIX"|"CARD"|"SANDBOX";
 
 const TRANSITIONS:Record<OrderStatus,readonly OrderStatus[]>={
@@ -33,16 +34,20 @@ export type OrderCustomer={name:string;email:string;phone:string;document?:strin
 export type OrderAddress={postalCode:string;street:string;number:string;complement?:string;district:string;city:string;state:string};
 export type DeliveryKind="PICKUP"|"FREE"|"FIXED"|"TABLE"|"PROVIDER";
 export type OrderDelivery={optionId:string;kind:DeliveryKind;label:string;priceCents:number;days?:number;provider?:string;requiresAddress:boolean};
-export type OrderItem={id:string;position:number;productId:string;variantId?:string;sku?:string;name:string;variantLabel?:string;imageUrl?:string;quantity:number;unitPriceCents:number;totalCents:number;trackStock:boolean;specifications:{label:string;value:string}[]};
+/** `productId` vazio: item de anúncio externo ainda não vinculado a um produto do Vorix (sem baixa de estoque). */
+export type OrderItem={id:string;position:number;productId:string;externalItemId?:string;externalVariationId?:string;variantId?:string;sku?:string;name:string;variantLabel?:string;imageUrl?:string;quantity:number;unitPriceCents:number;totalCents:number;trackStock:boolean;specifications:{label:string;value:string}[]};
 export type Order={
  id:string;tenantId:string;workspaceId:string;siteId?:string;number:number;source:OrderSource;status:OrderStatus;paymentStatus:PaymentStatus;shippingStatus:ShippingStatus;stockState:StockState;
  contactId?:string;customer:OrderCustomer;shippingAddress?:OrderAddress;delivery:OrderDelivery;
  subtotalCents:number;discountCents:number;shippingCents:number;totalCents:number;currency:string;
  crmDealId?:string;salesIntentId?:string;cartId?:string;anonymousSessionId?:string;utm:Record<string,string>;
  reservationExpiresAt?:string;cancelReason?:string;createdAt:string;updatedAt:string;paidAt?:string;cancelledAt?:string;items:OrderItem[];
+ /** Pedido de marketplace: conta conectada, id e status do canal (o canal é a autoridade da logística). */
+ connectionId?:string;externalOrderId?:string;externalStatus?:string;externalUpdatedAt?:string;externalData?:Record<string,unknown>;
+ refundedCents:number;shippedAt?:string;deliveredAt?:string;
 };
 export type OrderEvent={id:string;orderId:string;type:string;fromStatus?:string;toStatus?:string;actorType:"system"|"user"|"customer"|"provider";actorId?:string;data:Record<string,unknown>;createdAt:string};
-export type Payment={id:string;orderId:string;provider:string;method:PaymentMethod;status:PaymentStatus;amountCents:number;currency:string;providerPaymentId?:string;instructions:PaymentInstructions;failureReason?:string;createdAt:string;approvedAt?:string;refundedAt?:string};
+export type Payment={id:string;orderId:string;provider:string;method:PaymentMethod;status:PaymentStatus;amountCents:number;refundedCents:number;currency:string;providerPaymentId?:string;instructions:PaymentInstructions;failureReason?:string;createdAt:string;approvedAt?:string;refundedAt?:string};
 export type PaymentInstructions={pixQrCode?:string;pixQrCodeBase64?:string;pixTicketUrl?:string;expiresAt?:string;sandbox?:boolean};
 
 export function orderTotals(items:readonly {unitPriceCents:number;quantity:number}[],shippingCents:number,discountCents=0){
@@ -69,4 +74,32 @@ export function validTaxDocument(value:string):boolean{
  if(digits.length===11){const w1=[10,9,8,7,6,5,4,3,2],w2=[11,10,9,8,7,6,5,4,3,2];const r1=(digits.slice(0,9).split("").reduce((a,d,i)=>a+Number(d)*w1[i],0)*10)%11%10,r2=(digits.slice(0,10).split("").reduce((a,d,i)=>a+Number(d)*w2[i],0)*10)%11%10;return r1===Number(digits[9])&&r2===Number(digits[10]);}
  if(digits.length===14){const w1=[5,4,3,2,9,8,7,6,5,4,3,2],w2=[6,...w1];return check(digits,w1)===Number(digits[12])&&check(digits,w2)===Number(digits[13]);}
  return false;
+}
+
+// ------------------------------------------------------------------ envios e devoluções (multicanal)
+export const SHIPMENT_STATUSES=["PENDING","READY_TO_SHIP","SHIPPED","DELIVERED","NOT_DELIVERED","CANCELLED"] as const;
+export type ShipmentStatus=(typeof SHIPMENT_STATUSES)[number];
+export type Shipment={id:string;orderId:string;provider:string;externalShipmentId?:string;status:ShipmentStatus;externalStatus?:string;substatus?:string;logisticType?:string;carrier?:string;
+ trackingNumber?:string;trackingUrl?:string;labelAvailable:boolean;fulfilledByMarketplace:boolean;shippedAt?:string;deliveredAt?:string;estimatedDeliveryAt?:string;events:{status:string;at:string}[];updatedAt:string};
+
+export const RETURN_STATUSES=["REQUESTED","APPROVED","IN_TRANSIT","RECEIVED","COMPLETED","REJECTED","CANCELLED"] as const;
+export type ReturnStatus=(typeof RETURN_STATUSES)[number];
+export type RefundStatus="NONE"|"PROCESSING"|"REFUNDED"|"FAILED"|"NOT_SUPPORTED"|"MARKETPLACE";
+export type ReturnItem={id:string;orderItemId:string;quantity:number;receivedQuantity:number;restockedQuantity:number;reason?:string};
+export type OrderReturn={id:string;tenantId:string;workspaceId:string;orderId:string;source:OrderSource;externalReturnId?:string;status:ReturnStatus;externalStatus?:string;reason?:string;
+ refundCents:number;refundStatus:RefundStatus;refundProviderId?:string;createdBy?:string;createdAt:string;updatedAt:string;approvedAt?:string;receivedAt?:string;completedAt?:string;refundedAt?:string;items:ReturnItem[]};
+const RETURN_TRANSITIONS:Record<ReturnStatus,readonly ReturnStatus[]>={
+ REQUESTED:["APPROVED","IN_TRANSIT","RECEIVED","REJECTED","CANCELLED"],
+ APPROVED:["IN_TRANSIT","RECEIVED","CANCELLED"],
+ IN_TRANSIT:["RECEIVED","CANCELLED"],
+ RECEIVED:["COMPLETED"],
+ COMPLETED:[],REJECTED:[],CANCELLED:[],
+};
+export const canTransitionReturn=(from:ReturnStatus,to:ReturnStatus)=>RETURN_TRANSITIONS[from].includes(to);
+/** Devoluções que ainda "seguram" quantidade do item (rejeitada/cancelada libera para nova devolução). */
+export const ACTIVE_RETURN_STATUSES:readonly ReturnStatus[]=["REQUESTED","APPROVED","IN_TRANSIT","RECEIVED","COMPLETED"];
+/** Quanto do item ainda pode ser devolvido: vendido − devoluções ativas anteriores. */
+export function returnableQuantity(item:{id:string;quantity:number},returns:readonly OrderReturn[]):number{
+ const used=returns.filter(r=>ACTIVE_RETURN_STATUSES.includes(r.status)).flatMap(r=>r.items).filter(i=>i.orderItemId===item.id).reduce((sum,i)=>sum+i.quantity,0);
+ return Math.max(0,item.quantity-used);
 }

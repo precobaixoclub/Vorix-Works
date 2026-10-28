@@ -1,6 +1,6 @@
 import { registerMarketplaceRoutes } from "./marketplaces.route.js";
 import { buildMarketplaceService } from "../../../../infrastructure/marketplaces/build-marketplace-service.js";
-import { mercadoLivreConfig } from "../../../../infrastructure/marketplaces/mercado-livre-provider.js";
+import { marketplaceProvidersFromEnv } from "../../../../infrastructure/marketplaces/marketplace-providers.js";
 import {PostgresSiteCommerceRepository} from "../../../../infrastructure/storage/postgres/postgres-site-commerce-repository.js";
 import {registerSiteCommerceRoutes} from "./site-commerce.route.js";
 import {registerConversationProductRoutes} from "./conversation-products.route.js";
@@ -595,9 +595,9 @@ export async function registerV1Routes(app: FastifyInstance): Promise<void> {
     let catalogBulkTimer:ReturnType<typeof setInterval>|undefined;
     app.addHook("onReady",async()=>{catalogBulkTimer=setInterval(()=>{void catalogBulk.tick();},500);catalogBulkTimer.unref();});
     app.addHook("preClose",async()=>{if(catalogBulkTimer)clearInterval(catalogBulkTimer);await catalogBulk.tick();});
-    const mlConfig = mercadoLivreConfig(process.env);
+    const marketplaceProviders = marketplaceProvidersFromEnv(process.env);
     await registerMarketplaceRoutes(app, {
-      ...(mlConfig ? buildMarketplaceService(identity.pool, mlConfig, app.zunoContainer.secretManager) : {}),
+      ...(marketplaceProviders.length ? buildMarketplaceService(identity.pool, marketplaceProviders, app.zunoContainer.secretManager) : {}),
       workspaceRepository: app.zunoContainer.workspaceRepository,
     });
     const proposalUseCaseDeps = {

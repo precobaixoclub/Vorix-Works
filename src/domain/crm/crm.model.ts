@@ -12,7 +12,8 @@ import type { BillingType } from "../sales/pricing.js";
  * sinal de confiança explícito (ver `mergeContacts`, Fase futura — não implementado nesta fase).
  */
 
-export const CONTACT_CHANNELS = ["whatsapp", "instagram", "facebook", "tiktok"] as const;
+/** Marketplaces: comprador identificado pelo canal (id namespaced pela conexão), só com opt-in da conta conectada. */
+export const CONTACT_CHANNELS = ["whatsapp", "instagram", "facebook", "tiktok", "mercado_livre", "shopee", "tiktok_shop"] as const;
 export type ContactChannel = (typeof CONTACT_CHANNELS)[number];
 
 export type Contact = {

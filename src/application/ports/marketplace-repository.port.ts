@@ -1,9 +1,9 @@
 import type { ProductUseCaseDeps } from "../crm/product-use-cases.js";
 import type { ProductEngineRepositoryPort } from "./product-engine-repository.port.js";
 import type { SalesCatalogRepositoryPort } from "./sales-engine-repository.port.js";
-import type { ChannelListing, MarketplaceActor, MarketplaceConnection, MarketplaceJob, MarketplaceScope } from "../../domain/marketplaces/marketplace.model.js";
-export type StoredConnection=MarketplaceConnection&{credentialsRef:string;tokenExpiresAt?:string;applicationId:string;refreshLeaseUntil?:string};
-export type OAuthState=MarketplaceActor&{verifierRef:string;browserHash:string};
+import type { ChannelListing, MarketplaceActor, MarketplaceConnection, MarketplaceJob, MarketplaceProviderId, MarketplaceScope } from "../../domain/marketplaces/marketplace.model.js";
+export type StoredConnection=MarketplaceConnection&{credentialsRef:string;tokenExpiresAt?:string;applicationId:string;refreshLeaseUntil?:string;metadata:Record<string,string>};
+export type OAuthState=MarketplaceActor&{verifierRef:string;browserHash:string;provider:MarketplaceProviderId};
 export type CatalogTransaction=ProductUseCaseDeps&{productEngineRepository:ProductEngineRepositoryPort;salesCatalogRepository:SalesCatalogRepositoryPort;marketplace:MarketplaceRepositoryPort};
 export interface MarketplaceRepositoryPort {
  transaction<T>(scope:MarketplaceScope,key:string,run:(tx:CatalogTransaction)=>Promise<T>):Promise<T>;
@@ -33,6 +33,10 @@ export interface MarketplaceRepositoryPort {
  auditLog(scope:MarketplaceScope):Promise<Record<string,unknown>[]>;
  mappings(scope:MarketplaceScope):Promise<Record<string,unknown>[]>;
  saveMapping(actor:MarketplaceActor,input:{connectionId:string;categoryId:string;externalCategoryId:string;attributes:unknown[]}):Promise<void>;
- notifications(input:{applicationId:string;sellerId:string;eventId:string;topic:string;resource:string}):Promise<boolean>;
+ /** Notificação durável (dedupe por evento) que vira job: listagem → RECONCILE; pedido/devolução → ORDER. */
+ notifications(input:{provider:MarketplaceProviderId;applicationId:string;sellerId:string;eventId:string;topic:string;resource:string;kind:"ORDER"|"LISTING"|"RETURN";externalOrderId?:string}):Promise<boolean>;
+ listingByExternal(scope:MarketplaceScope,connectionId:string,externalListingId:string):Promise<ChannelListing|undefined>;
+ markOrdersSynced(scope:MarketplaceScope,connectionId:string,at:string):Promise<void>;
+ saveSettings(scope:MarketplaceScope,connectionId:string,settings:MarketplaceConnection["settings"]):Promise<void>;
  scheduleDue():Promise<void>;
 }

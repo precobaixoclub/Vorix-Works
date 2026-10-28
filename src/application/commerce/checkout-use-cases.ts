@@ -82,6 +82,7 @@ async function checkoutLines(deps:CheckoutDeps,lookup:PublicLookup,token:string)
  const blocked=lines.find(line=>!line.available||!line.resolved);
  if(blocked)throw Error(`SITE_VALIDATION: ${blocked.name}${blocked.variantLabel?` (${blocked.variantLabel})`:""} não está disponível nessa quantidade. Ajuste o carrinho.`);
  const currencies=new Set(lines.map(line=>line.currency));if(currencies.size>1)throw Error("SITE_VALIDATION: o carrinho tem produtos em moedas diferentes.");
+ if(context.commerce.settings.checkout.payment.provider==="MERCADO_PAGO"&&lines[0].currency!=="BRL")throw Error("SITE_VALIDATION: o checkout do Mercado Pago Brasil aceita produtos em reais (BRL).");
  return {context,cart,lines,allLines:all};
 }
 async function parcelItems(deps:CheckoutDeps,lines:CheckoutLine[]):Promise<ShippingParcelItem[]>{

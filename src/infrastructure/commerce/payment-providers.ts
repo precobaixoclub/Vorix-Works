@@ -39,6 +39,7 @@ export class MercadoPagoPaymentProvider implements PaymentProviderPort{
    instructions:data?{pixQrCode:data.qr_code,pixQrCodeBase64:data.qr_code_base64,pixTicketUrl:data.ticket_url,expiresAt:body.date_of_expiration??undefined}:undefined};
  }
  async createPayment(context:PaymentProviderContext,input:CreateProviderPaymentInput){
+  if(input.currency!=="BRL")throw Error("PAYMENT_VALIDATION: o Mercado Pago Brasil aceita pagamentos em reais (BRL).");
   const [firstName,...rest]=input.customer.name.trim().split(/\s+/);
   const payer={email:input.customer.email,first_name:firstName,last_name:rest.join(" ")||undefined,...(input.customer.document?{identification:{type:input.customer.document.length===14?"CNPJ":"CPF",number:input.customer.document}}:{})};
   const base={transaction_amount:input.amountCents/100,description:input.description.slice(0,200),external_reference:input.orderId,notification_url:input.notificationUrl,payer};

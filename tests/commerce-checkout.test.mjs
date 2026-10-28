@@ -432,3 +432,17 @@ test("estorno parcial só quando o meio de pagamento suporta (capability)",async
  await assert.rejects(refundReturn(s.deps,s.scope,{returnId:ret.id}),/só permite estorno do valor total/);
  assert.equal((await getOrderDetail(s.deps,s.scope,id)).payments[0].refundedCents,0);
 });
+
+test("Mercado Pago Brasil rejects foreign currency before order/reservation/provider calls, never silently charges USD as BRL",async()=>{
+ let calls=0;
+ const s=await store({settings:{...READY,checkout:{...READY.checkout,payment:{provider:"MERCADO_PAGO",pix:true,card:false}}},mercadoPagoFetch:async()=>{calls++;throw Error("unexpected provider call");}});
+ await saveCommerceCredential(s.deps,s.site,"MERCADO_PAGO",{accessToken:"qa-only-access-token",webhookSecret:"qa-only-webhook-secret"});
+ await db.pool.query("update products set currency='USD' where id=$1",[s.a.id]);
+ const token=await s.cart([{productId:s.a.id,quantity:1}]);
+ await assert.rejects(()=>quoteCheckout(s.deps,{lookup:s.lookup,token}),/reais \(BRL\)/);
+ await assert.rejects(()=>placeOrder(s.deps,{lookup:s.lookup,token,requestKey:randomUUID(),customer:CUSTOMER,deliveryOptionId:"pickup",payment:{method:"PIX"}}),/reais \(BRL\)/);
+ assert.equal((await q("select count(*)::int n from commerce_orders where site_id=$1",[s.site.id]))[0].n,0);assert.equal(calls,0);
+ const provider=new MercadoPagoPaymentProvider({fetch:async()=>{calls++;throw Error("unexpected provider call");}});
+ await assert.rejects(()=>provider.createPayment({tenantId:s.tenantId,workspaceId:s.workspaceId,siteId:s.site.id,credentials:{accessToken:"qa-only"}},{orderId:"qa",orderNumber:1,amountCents:1000,currency:"USD",method:"PIX",description:"QA",customer:CUSTOMER,expiresAt:new Date(Date.now()+600000).toISOString(),idempotencyKey:randomUUID()}),/reais \(BRL\)/);
+ assert.equal(calls,0);
+});

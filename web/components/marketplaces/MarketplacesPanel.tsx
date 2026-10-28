@@ -6,7 +6,9 @@ import { Input,Label,Textarea } from "@/components/Field";
 import { SettingsShell } from "@/components/settings/SettingsShell";
 import { useCurrentWorkspace } from "@/contexts/workspace-context";
 import { useMyAccess } from "@/features/auth/access";
-import { marketplaceApi,marketplaceMessage,type Category,type Dashboard,type Decision,type Draft,type Identity,type Job,type Listing } from "@/features/marketplaces/api";
+import { Check,Lock } from "lucide-react";
+import { marketplaceApi,marketplaceMessage,type Category,type Dashboard,type Decision,type Draft,type Identity,type Job,type Listing,type Provider } from "@/features/marketplaces/api";
+import { CAPABILITY_LABELS,providerSlug,sourceLabel as providerName,splitCapabilities } from "@/features/commerce/multichannel";
 import { apiClient } from "@/lib/api-client";
 import { formatCurrencyCents } from "@/lib/format";
 const selectClass="h-10 w-full min-w-0 rounded-md border border-border bg-background px-2 text-sm";
@@ -23,6 +25,11 @@ export function MarketplacesPanel(){
  const [connectionId,setConnectionId]=useState(""),[busy,setBusy]=useState(false),[message,setMessage]=useState(""),[jobId,setJobId]=useState("");
  const [publish,setPublish]=useState(false),[editing,setEditing]=useState<Listing>(),[initialProduct,setInitialProduct]=useState("");
  const connection=data?.connections.find(c=>c.id===connectionId)??data?.connections[0];
+ // Backend antigo (sem `providers`): somente Mercado Livre, sem lista de capacidades.
+ const providers:Provider[]=data?.providers??(data?.configured?[{id:"MERCADO_LIVRE",capabilities:undefined}]:[]);
+ const connectionCapabilities=providers.find(p=>p.id===(connection?.provider??"MERCADO_LIVRE"))?.capabilities;
+ const allows=(key:string)=>!connectionCapabilities||connectionCapabilities[key]==="SUPPORTED";
+ const blockedTitle="Bloqueado pelo canal: faça esta operação no painel do "+providerName(connection?.provider??"MERCADO_LIVRE")+".";
  const {data:job,mutate:refreshJob}=useSWR(jobId?["marketplace-job",workspace.id,jobId]:null,()=>api.job(jobId),{refreshInterval:3000});
  useEffect(()=>{const productId=new URLSearchParams(window.location.search).get("productId");if(productId){setInitialProduct(productId);setPublish(true);}},[]);
  async function run(fn:()=>Promise<unknown>,success="Operação enviada para processamento."){
@@ -32,33 +39,56 @@ export function MarketplacesPanel(){
  function listingAction(l:Listing,kind:string,extra:Record<string,unknown>={}){
   return run(async()=>{const j=await api.enqueue(l.connectionId,{kind,listingId:l.id,...extra});setJobId(j.id);});
  }
- return <SettingsShell active="marketplaces" title="Marketplaces" description="Conecte o Mercado Livre e gerencie os anúncios do seu catálogo Vorix.">
+ return <SettingsShell active="marketplaces" title="Marketplaces" description="Conecte Mercado Livre, Shopee e TikTok Shop e gerencie anúncios e pedidos do seu catálogo Vorix.">
   <div className="min-w-0 space-y-5">
    {!read&&<p role="status">Você não tem permissão para visualizar marketplaces.</p>}
    {error&&<p role="alert" className="break-words text-sm text-destructive">{marketplaceMessage(error)}</p>}
    {message&&<p role="status" className="rounded-lg border p-3 text-sm">{message}</p>}
    {read&&<>
-    <section className={box} aria-label="Conexão Mercado Livre">
-     <div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="text-lg font-semibold">Mercado Livre</h2><p className="text-sm text-muted-foreground">Produtos, anúncios, preços e estoque disponível.</p></div>
-      <Button disabled={busy||!manage||!data?.configured} onClick={()=>run(async()=>{const {url}=await api.connect();window.location.assign(url);},"Abrindo autorização do Mercado Livre.")}>{connection?.status==="REAUTH_REQUIRED"?"Autorizar novamente":"Conectar conta"}</Button>
-     </div>
-     {data&&!data.configured&&<p className="mt-3 text-sm">A integração aguarda a configuração da aplicação Mercado Livre pelo administrador da plataforma.</p>}
+    <section className={box} aria-label="Canais de venda">
+     <h2 className="text-lg font-semibold">Canais de venda</h2>
+     <p className="text-sm text-muted-foreground">Cada canal libera operações diferentes pela API. O que estiver bloqueado precisa ser feito no painel do próprio canal.</p>
+     {data&&!data.configured&&<p className="mt-3 text-sm">A integração aguarda a configuração das aplicações dos marketplaces pelo administrador da plataforma.</p>}
+     {data?.configured&&<div className="mt-4 grid min-w-0 gap-3 md:grid-cols-2 xl:grid-cols-3">{providers.map(provider=>{
+      const name=providerName(provider.id),accounts=data.connections.filter(c=>(c.provider??"MERCADO_LIVRE")===provider.id),reauth=accounts.some(c=>c.status==="REAUTH_REQUIRED");
+      const {supported,blocked}=splitCapabilities(provider.capabilities);
+      return <article key={provider.id} className="min-w-0 rounded-lg border p-3" aria-labelledby={"provider-"+provider.id}>
+       <div className="flex flex-wrap items-start justify-between gap-2"><div className="min-w-0"><h3 id={"provider-"+provider.id} className="font-semibold">{name}</h3><p className="text-xs text-muted-foreground">{accounts.length?accounts.length+" conta(s) conectada(s)":"Nenhuma conta conectada"}</p></div>
+        <Button size="sm" disabled={busy||!manage} title={manage?undefined:"Sem permissão para gerenciar marketplaces."} onClick={()=>run(async()=>{const {url}=await api.connect(providerSlug(provider.id));window.location.assign(url);},"Abrindo autorização do "+name+".")}>{reauth?"Autorizar "+name+" novamente":"Conectar "+name}</Button></div>
+       {provider.capabilities&&<div className="mt-3 grid min-w-0 gap-2 text-sm sm:grid-cols-2 md:grid-cols-1">
+        <div className="min-w-0"><p className="text-xs font-medium text-muted-foreground">Disponível pela API</p><ul className="mt-1 space-y-0.5" aria-label={"Disponível no "+name}>{supported.map(key=><li key={key} className="flex items-start gap-1.5"><Check size={14} aria-hidden="true" className="mt-0.5 shrink-0 text-emerald-600 dark:text-emerald-400"/><span className="min-w-0 break-words">{CAPABILITY_LABELS[key]}</span></li>)}{!supported.length&&<li className="text-muted-foreground">—</li>}</ul></div>
+        <div className="min-w-0"><p className="text-xs font-medium text-muted-foreground">Bloqueado pelo canal</p><ul className="mt-1 space-y-0.5" aria-label={"Bloqueado no "+name}>{blocked.map(key=><li key={key} className="flex items-start gap-1.5 text-amber-700 dark:text-amber-300"><Lock size={14} aria-hidden="true" className="mt-0.5 shrink-0"/><span className="min-w-0 break-words">{CAPABILITY_LABELS[key]}<span className="sr-only"> (bloqueado: faça no painel do {name})</span></span></li>)}{!blocked.length&&<li className="text-muted-foreground">Nada bloqueado</li>}</ul></div>
+       </div>}
+      </article>;
+     })}</div>}
+    </section>
+    <section className={box} aria-label="Contas conectadas">
+     <h2 className="text-lg font-semibold">Contas conectadas</h2><p className="text-sm text-muted-foreground">Produtos, anúncios, preços, estoque disponível e pedidos de cada conta.</p>
      {!connection&&data?.configured&&<p className="mt-3 text-sm">Nenhuma conta conectada.</p>}
      {connection&&<div className="mt-4 grid min-w-0 gap-4 md:grid-cols-2">
-      <div className="min-w-0 space-y-2"><Label htmlFor="marketplace-account">Conta</Label><select id="marketplace-account" className={selectClass} value={connection.id} onChange={e=>setConnectionId(e.target.value)}>{data?.connections.map(c=><option key={c.id} value={c.id}>{c.externalAccountName} · {status(c.status)}</option>)}</select>
-       <p className="text-sm">{status(connection.status)} · {connection.userProducts?"User Products":"Modelo tradicional"}</p>
+      <div className="min-w-0 space-y-2"><Label htmlFor="marketplace-account">Conta</Label><select id="marketplace-account" className={selectClass} value={connection.id} onChange={e=>setConnectionId(e.target.value)}>{data?.connections.map(c=><option key={c.id} value={c.id}>{providerName(c.provider??"MERCADO_LIVRE")} · {c.externalAccountName} · {status(c.status)}</option>)}</select>
+       <p className="text-sm">{status(connection.status)}{(connection.provider??"MERCADO_LIVRE")==="MERCADO_LIVRE"?" · "+(connection.userProducts?"User Products":"Modelo tradicional"):""}</p>
        <p className="text-xs text-muted-foreground">Última reconciliação: {connection.lastSyncAt?new Date(connection.lastSyncAt).toLocaleString("pt-BR"):"ainda não realizada"}</p>
+       <p className="text-xs text-muted-foreground">Pedidos sincronizados até: {connection.ordersSyncedAt?new Date(connection.ordersSyncedAt).toLocaleString("pt-BR"):"ainda não sincronizados"}</p>
        {connection.lastError&&<p className="break-words text-sm text-destructive">{marketplaceMessage(connection.lastError)}</p>}
       </div>
       <div className="min-w-0"><Label htmlFor="marketplace-safety-stock">Reserva de segurança do canal</Label>
        <SafetyStock key={connection.id+":"+connection.safetyStock} value={connection.safetyStock} disabled={busy||!manage} onSave={n=>run(()=>api.safetyStock(connection.id,n),"Reserva de segurança atualizada.")}/>
        <p className="mt-1 text-xs text-muted-foreground">Quantidade enviada = saldo físico − reservas − segurança. O padrão é zero.</p>
       </div>
+      <div className="min-w-0 rounded-lg border p-3 md:col-span-2">
+       <label htmlFor="marketplace-create-contacts" className="flex cursor-pointer items-start gap-3">
+        <input id="marketplace-create-contacts" type="checkbox" role="switch" aria-checked={!!connection.settings?.createContacts} aria-describedby="marketplace-create-contacts-hint" className="mt-1 h-4 w-4 shrink-0" checked={!!connection.settings?.createContacts} disabled={busy||!manage} title={manage?undefined:"Sem permissão para gerenciar marketplaces."}
+         onChange={e=>{const createContacts=e.target.checked;void run(()=>api.settings(connection.id,{createContacts}),createContacts?"Compradores deste canal passarão a virar contatos.":"Compradores deste canal não criarão mais contatos.");}}/>
+        <span className="min-w-0"><span className="block text-sm font-medium">Criar contato do comprador</span>
+         <span id="marketplace-create-contacts-hint" className="block text-xs text-muted-foreground">Cria um contato no CRM para cada comprador deste canal. Pela LGPD, o Vorix guarda só o nome e o identificador do comprador no canal; o marketplace não compartilha e-mail nem telefone. Desligado por padrão.</span></span>
+       </label>
+      </div>
       {manage&&<div className="flex flex-wrap gap-2 md:col-span-2">
-       <Button variant="secondary" disabled={busy||connection.status!=="CONNECTED"} onClick={()=>queue({kind:"PREVIEW"})}>Importar anúncios</Button>
-       <Button variant="secondary" disabled={busy||connection.status!=="CONNECTED"} onClick={()=>{setEditing(undefined);setPublish(v=>!v);}}>Publicar produto</Button>
-       <Button variant="secondary" disabled={busy||connection.status!=="CONNECTED"} onClick={()=>queue({kind:"RECONCILE"})}>Verificar divergências</Button>
-       <Button variant="ghost" disabled={busy||connection.status==="DISCONNECTED"} onClick={()=>{if(window.confirm("Desconectar esta conta e interromper a sincronização? Os anúncios continuarão no Mercado Livre."))void run(()=>api.disconnect(connection.id),"Conta desconectada.");}}>Desconectar</Button>
+       <Button variant="secondary" disabled={busy||connection.status!=="CONNECTED"||!allows("listings")} title={allows("listings")?undefined:blockedTitle} onClick={()=>queue({kind:"PREVIEW"})}>Importar anúncios</Button>
+       <Button variant="secondary" disabled={busy||connection.status!=="CONNECTED"||!allows("publish")} title={allows("publish")?undefined:blockedTitle} onClick={()=>{setEditing(undefined);setPublish(v=>!v);}}>Publicar produto</Button>
+       <Button variant="secondary" disabled={busy||connection.status!=="CONNECTED"||!allows("listings")} title={allows("listings")?undefined:blockedTitle} onClick={()=>queue({kind:"RECONCILE"})}>Verificar divergências</Button>
+       <Button variant="ghost" disabled={busy||connection.status==="DISCONNECTED"} onClick={()=>{if(window.confirm("Desconectar esta conta e interromper a sincronização? Os anúncios continuarão no "+providerName(connection.provider??"MERCADO_LIVRE")+"."))void run(()=>api.disconnect(connection.id),"Conta desconectada.");}}>Desconectar</Button>
       </div>}
      </div>}
     </section>

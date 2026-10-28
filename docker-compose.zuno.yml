@@ -46,6 +46,17 @@ services:
       SOCIAL_GATEWAY_TOKEN: "${SOCIAL_GATEWAY_TOKEN:-}"
       AUTH_MODE: jwt
       JWT_SECRET: "${ZUNO_JWT_SECRET}"
+      # Marketplaces (credenciais do app em cada canal). Vazio = canal desligado.
+      ML_CLIENT_ID: "${ML_CLIENT_ID:-}"
+      ML_CLIENT_SECRET: "${ML_CLIENT_SECRET:-}"
+      ML_REDIRECT_URI: "${ML_REDIRECT_URI:-}"
+      SHOPEE_PARTNER_ID: "${SHOPEE_PARTNER_ID:-}"
+      SHOPEE_PARTNER_KEY: "${SHOPEE_PARTNER_KEY:-}"
+      SHOPEE_REDIRECT_URI: "${SHOPEE_REDIRECT_URI:-}"
+      SHOPEE_API_BASE_URL: "${SHOPEE_API_BASE_URL:-}"
+      TIKTOK_SHOP_APP_KEY: "${TIKTOK_SHOP_APP_KEY:-}"
+      TIKTOK_SHOP_APP_SECRET: "${TIKTOK_SHOP_APP_SECRET:-}"
+      TIKTOK_SHOP_SERVICE_ID: "${TIKTOK_SHOP_SERVICE_ID:-}"
       DATABASE_URL: "postgres://zuno:${ZUNO_POSTGRES_PASSWORD}@zuno-postgres:5432/zuno"
       PERSISTENCE_DRIVER: postgres
       # Seleção do motor criativo (legacy|gpt) — precisa estar explicitamente wired aqui, senão o
@@ -295,6 +306,45 @@ services:
     mem_limit: 256m
     mem_reservation: 128m
 
+  # Marketplaces: fila no PostgreSQL (jobs/outbox — sem RabbitMQ). Sobe em todo deploy da API; sem canal
+  # configurado fica ocioso e saudável. Liveness por heartbeat (event loop travado → restart).
+  marketplaces-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    command: node dist/interfaces/worker/marketplaces-worker.js
+    depends_on:
+      zuno-postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: "postgres://zuno:${ZUNO_POSTGRES_PASSWORD}@zuno-postgres:5432/zuno"
+      JWT_SECRET: "${ZUNO_JWT_SECRET}"
+      MARKETPLACE_WORKER_HEARTBEAT_FILE: /tmp/marketplaces-worker-heartbeat
+      ML_CLIENT_ID: "${ML_CLIENT_ID:-}"
+      ML_CLIENT_SECRET: "${ML_CLIENT_SECRET:-}"
+      ML_REDIRECT_URI: "${ML_REDIRECT_URI:-}"
+      SHOPEE_PARTNER_ID: "${SHOPEE_PARTNER_ID:-}"
+      SHOPEE_PARTNER_KEY: "${SHOPEE_PARTNER_KEY:-}"
+      SHOPEE_REDIRECT_URI: "${SHOPEE_REDIRECT_URI:-}"
+      SHOPEE_API_BASE_URL: "${SHOPEE_API_BASE_URL:-}"
+      TIKTOK_SHOP_APP_KEY: "${TIKTOK_SHOP_APP_KEY:-}"
+      TIKTOK_SHOP_APP_SECRET: "${TIKTOK_SHOP_APP_SECRET:-}"
+      TIKTOK_SHOP_SERVICE_ID: "${TIKTOK_SHOP_SERVICE_ID:-}"
+    networks: [zuno_network]
+    init: true
+    healthcheck:
+      test: ["CMD", "node", "-e", "const s=require('fs').statSync('/tmp/marketplaces-worker-heartbeat');process.exit(Date.now()-s.mtimeMs<180000?0:1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    logging:
+      driver: json-file
+      options: {max-size: "10m", max-file: "3"}
+    mem_limit: 192m
+    mem_reservation: 96m
+
   # Private organic publishing gateway: one replica owns its encrypted session volume and locks.
   # No host port, Traefik router, DB credentials, browser recordings or persistent browser profiles.
   social-provider-gateway:
@@ -318,6 +368,10 @@ services:
     security_opt: [no-new-privileges:true]
     cap_drop: [ALL]
     networks: [zuno_network]
+    # Rotação de log: o gateway nunca enche o disco do host.
+    logging:
+      driver: json-file
+      options: {max-size: "10m", max-file: "3"}
     mem_limit: 1024m
     mem_reservation: 128m
     pids_limit: 192

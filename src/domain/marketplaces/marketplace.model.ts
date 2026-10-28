@@ -1,11 +1,15 @@
 export type MarketplaceScope = { tenantId: string; workspaceId: string };
 export type MarketplaceActor = MarketplaceScope & { userId: string };
+export const MARKETPLACE_PROVIDERS = ["MERCADO_LIVRE", "SHOPEE", "TIKTOK_SHOP"] as const;
+export type MarketplaceProviderId = (typeof MARKETPLACE_PROVIDERS)[number];
+/** Contato do comprador só com opt-in da conta conectada (o canal mascara os dados pessoais). */
+export type ConnectionSettings = { createContacts?: boolean };
 export type ConnectionStatus = "CONNECTED" | "DISCONNECTED" | "REAUTH_REQUIRED" | "ERROR";
 export type SyncStatus = "SYNCED" | "PENDING" | "ERROR" | "DIVERGED" | "REAUTH_REQUIRED";
 export type MarketplaceConnection = MarketplaceScope & {
-  id: string; provider: "MERCADO_LIVRE"; externalAccountId: string; externalAccountName: string;
+  id: string; provider: MarketplaceProviderId; externalAccountId: string; externalAccountName: string; settings: ConnectionSettings;
   status: ConnectionStatus; siteId: string; userProducts: boolean; safetyStock: number;
-  connectedAt?: string; lastSyncAt?: string; lastError?: string;
+  connectedAt?: string; lastSyncAt?: string; lastError?: string; ordersSyncedAt?: string;
 };
 export type ExternalAttribute = { id: string; value_name?: string; value_id?: string };
 export type ExternalVariant = { id: string; sku?: string; ean?: string; priceCents: number; quantity: number; options: Record<string,string> };
@@ -48,7 +52,7 @@ export type ImportDecision = {
   variantLinks?: VariantLink[]; useExternalInitialStock: boolean;
 };
 export type MarketplaceJob = MarketplaceScope & {
-  id: string; connectionId: string; kind: "PREVIEW" | "IMPORT" | "PUBLISH" | "UPDATE" | "SYNC" | "RECONCILE" | "STATUS";
+  id: string; connectionId: string; kind: "PREVIEW" | "IMPORT" | "PUBLISH" | "UPDATE" | "SYNC" | "RECONCILE" | "STATUS" | "ORDERS" | "ORDER" | "CANCEL_ORDER";
   status: "PENDING" | "RUNNING" | "COMPLETED" | "COMPLETED_WITH_ERRORS" | "FAILED" | "UNKNOWN_RESULT";
   payload: Record<string,unknown>; progress: number; total: number; attempts: number; lastError?: string;
   leaseToken?: string; createdAt?: string;

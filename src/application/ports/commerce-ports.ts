@@ -1,4 +1,4 @@
-import type {Order,OrderEvent,OrderItem,OrderStatus,Payment,PaymentInstructions,PaymentMethod,PaymentStatus,ShippingStatus,StockState,OrderCustomer,OrderAddress,OrderDelivery} from "../../domain/commerce/order.model.js";
+import type {Order,OrderEvent,OrderItem,OrderReturn,OrderSource,OrderStatus,Payment,PaymentInstructions,PaymentMethod,PaymentStatus,RefundStatus,ReturnStatus,Shipment,ShipmentStatus,ShippingStatus,StockState,OrderCustomer,OrderAddress,OrderDelivery} from "../../domain/commerce/order.model.js";
 import type {ShippingOption,ShippingQuoteRequest,ShippingSettings} from "../../domain/commerce/shipping.js";
 
 // ------------------------------------------------------------------ PaymentProvider
@@ -9,10 +9,12 @@ export type ProviderPaymentState={providerPaymentId:string;status:PaymentStatus;
 export type PaymentProviderPort={
  readonly key:"SANDBOX"|"MERCADO_PAGO";
  readonly methods:readonly PaymentMethod[];
+ /** Estorno de parte do valor (devolução parcial). Provedor sem suporte só estorna o total. */
+ readonly partialRefund:boolean;
  createPayment(context:PaymentProviderContext,input:CreateProviderPaymentInput):Promise<ProviderPaymentState>;
  /** Fonte da verdade: o webhook só avisa; o status é sempre relido do provedor. */
  getPayment(context:PaymentProviderContext,providerPaymentId:string):Promise<ProviderPaymentState>;
- refund(context:PaymentProviderContext,providerPaymentId:string,amountCents:number):Promise<ProviderPaymentState>;
+ refund(context:PaymentProviderContext,providerPaymentId:string,amountCents:number,idempotencyKey?:string):Promise<ProviderPaymentState>;
  cancel(context:PaymentProviderContext,providerPaymentId:string):Promise<ProviderPaymentState>;
 };
 
@@ -27,9 +29,16 @@ export type ShippingProviderPort={
 export type CreateOrderInput={tenantId:string;workspaceId:string;siteId:string;publicTokenHash:string;requestKey:string;customer:OrderCustomer;shippingAddress?:OrderAddress;delivery:OrderDelivery;
  subtotalCents:number;discountCents:number;shippingCents:number;totalCents:number;currency:string;cartId?:string;anonymousSessionId?:string;utm:Record<string,string>;reservationExpiresAt:string;
  items:Omit<OrderItem,"id">[]};
-export type OrderPatch={status?:OrderStatus;paymentStatus?:PaymentStatus;shippingStatus?:ShippingStatus;stockState?:StockState;contactId?:string;crmDealId?:string;salesIntentId?:string;cancelReason?:string;paidAt?:string;cancelledAt?:string;reservationExpiresAt?:string|null};
+export type OrderPatch={status?:OrderStatus;paymentStatus?:PaymentStatus;shippingStatus?:ShippingStatus;stockState?:StockState;contactId?:string;crmDealId?:string;salesIntentId?:string;cancelReason?:string;paidAt?:string;cancelledAt?:string;reservationExpiresAt?:string|null;
+ externalStatus?:string;externalUpdatedAt?:string;externalData?:Record<string,unknown>;shippedAt?:string;deliveredAt?:string;shippingCents?:number;totalCents?:number};
+/** Pedido vindo de marketplace: o canal manda; o Vorix registra no mesmo pedido/estoque/central. */
+export type ExternalOrderInput={tenantId:string;workspaceId:string;source:Exclude<OrderSource,"SITE"|"MANUAL">;connectionId:string;externalOrderId:string;externalStatus:string;externalUpdatedAt?:string;externalData:Record<string,unknown>;
+ customer:OrderCustomer;shippingAddress?:OrderAddress;delivery:OrderDelivery;subtotalCents:number;discountCents:number;shippingCents:number;totalCents:number;currency:string;createdAt?:string;items:Omit<OrderItem,"id">[]};
+export type ShipmentInput={tenantId:string;workspaceId:string;orderId:string;provider:string;externalShipmentId?:string;status:ShipmentStatus;externalStatus?:string;substatus?:string;logisticType?:string;carrier?:string;trackingNumber?:string;trackingUrl?:string;labelAvailable:boolean;fulfilledByMarketplace:boolean;shippedAt?:string;deliveredAt?:string;estimatedDeliveryAt?:string};
+export type ReturnInput={tenantId:string;workspaceId:string;orderId:string;source:OrderSource;externalReturnId?:string;requestKey?:string;status:ReturnStatus;externalStatus?:string;reason?:string;refundCents:number;refundStatus:RefundStatus;createdBy?:string;items:{orderItemId:string;quantity:number;reason?:string}[]};
 export type OrderEventInput=Omit<OrderEvent,"id"|"createdAt"|"orderId">;
 export type OrderListFilter={tenantId:string;workspaceId:string;siteId?:string;status?:OrderStatus;paymentStatus?:PaymentStatus;shippingStatus?:ShippingStatus;source?:string;search?:string;from?:string;to?:string;limit:number;offset:number};
+export type ChannelSummary={source:OrderSource;orders:number;sales:number;revenueCents:number;refundsCents:number;averageTicketCents:number;cancellations:number;returns:number};
 export type CommerceOrderRepositoryPort={
  /** Idempotente por (siteId, requestKey): repetir o "Finalizar compra" devolve o mesmo pedido. */
  create(input:CreateOrderInput):Promise<{order:Order;created:boolean}>;
@@ -48,4 +57,17 @@ export type CommerceOrderRepositoryPort={
  /** true = evento novo; false = já processado (webhook duplicado). */
  claimWebhookEvent(input:{provider:string;eventKey:string;orderId?:string;paymentId?:string}):Promise<boolean>;
  findContactForCustomer(input:{tenantId:string;workspaceId:string;email:string;phone:string}):Promise<string|undefined>;
+ upsertExternalOrder(input:ExternalOrderInput):Promise<{order:Order;created:boolean}>;
+ getByExternal(connectionId:string,externalOrderId:string):Promise<Order|undefined>;
+ shipments(orderId:string):Promise<Shipment[]>;
+ upsertShipment(input:ShipmentInput):Promise<Shipment>;
+ returns(orderId:string):Promise<OrderReturn[]>;
+ getReturn(id:string):Promise<OrderReturn|undefined>;
+ /** Valida sob trava do pedido: nunca devolve mais do que vendido − devoluções ativas. */
+ createReturn(input:ReturnInput):Promise<{ret:OrderReturn;created:boolean}>;
+ updateReturn(id:string,patch:{status?:ReturnStatus;externalStatus?:string;refundStatus?:RefundStatus;refundCents?:number;refundProviderId?:string},expected:{statuses?:readonly ReturnStatus[];refundStatuses?:readonly RefundStatus[]},event?:OrderEventInput):Promise<OrderReturn|undefined>;
+ /** false = item já recebido antes (nunca repõe duas vezes). */
+ setReturnItemReceived(returnId:string,orderItemId:string,received:number,restocked:number):Promise<boolean>;
+ channelSummary(input:{tenantId:string;workspaceId:string;from:string;to:string;global:boolean;teamIds:readonly string[];ownerUserIds:readonly string[]}):Promise<ChannelSummary[]>;
+ recordRefund(paymentId:string,orderId:string,amountCents:number):Promise<Payment>;
 };

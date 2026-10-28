@@ -12,7 +12,8 @@ const scopeArgs=(s:MarketplaceScope)=>[s.tenantId,s.workspaceId];
 function connection(r:Row):StoredConnection{return {id:r.id,tenantId:r.tenant_id,workspaceId:r.workspace_id,provider:r.provider,externalAccountId:r.external_account_id,
  externalAccountName:r.external_account_name,status:r.status,siteId:r.site_id,userProducts:r.user_products,safetyStock:Number(r.safety_stock),
  connectedAt:iso(r.connected_at),lastSyncAt:iso(r.last_sync_at),lastError:r.last_error??undefined,credentialsRef:r.credentials_ref,
- tokenExpiresAt:iso(r.token_expires_at),applicationId:r.application_id,refreshLeaseUntil:iso(r.refresh_lease_until)};}
+ tokenExpiresAt:iso(r.token_expires_at),applicationId:r.application_id,refreshLeaseUntil:iso(r.refresh_lease_until),
+ settings:r.settings??{},metadata:r.metadata??{},ordersSyncedAt:iso(r.orders_synced_at)};}
 function listing(r:Row):ChannelListing{return {id:r.id,tenantId:r.tenant_id,workspaceId:r.workspace_id,connectionId:r.connection_id,productId:r.product_id,variantId:r.variant_id??undefined,
  externalListingId:r.external_listing_id??undefined,externalProductId:r.external_product_id??undefined,externalCategoryId:r.external_category_id,externalUrl:r.external_url??undefined,
  externalSku:r.external_sku??undefined,status:r.status,syncStatus:r.sync_status,externalPrice:num(r.external_price),externalQuantity:num(r.external_quantity),
@@ -44,14 +45,14 @@ export class PostgresMarketplaceRepository implements MarketplaceRepositoryPort 
  async connections(s:MarketplaceScope){return (await this.pool.query("select * from marketplace_connections where tenant_id=$1 and workspace_id=$2 order by connected_at desc",scopeArgs(s))).rows.map(connection);}
  async connection(s:MarketplaceScope,id:string){const r=await this.pool.query("select * from marketplace_connections where tenant_id=$1 and workspace_id=$2 and id=$3",[...scopeArgs(s),id]);return r.rows[0]?connection(r.rows[0]):undefined;}
  async saveConnection(c:StoredConnection){
-  await this.pool.query(`insert into marketplace_connections(id,tenant_id,workspace_id,provider,external_account_id,external_account_name,application_id,site_id,user_products,status,credentials_ref,safety_stock,token_expires_at,connected_at)
-   values($1,$2,$3,'MERCADO_LIVRE',$4,$5,$6,$7,$8,$9,$10,$11,$12,now())
-   on conflict(id) do update set external_account_name=excluded.external_account_name,user_products=excluded.user_products,status=excluded.status,
+  await this.pool.query(`insert into marketplace_connections(id,tenant_id,workspace_id,provider,external_account_id,external_account_name,application_id,site_id,user_products,status,credentials_ref,safety_stock,token_expires_at,connected_at,settings,metadata)
+   values($1,$2,$3,$13,$4,$5,$6,$7,$8,$9,$10,$11,$12,now(),$14::jsonb,$15::jsonb)
+   on conflict(id) do update set external_account_name=excluded.external_account_name,user_products=excluded.user_products,status=excluded.status,metadata=excluded.metadata,
    refresh_owner=case when excluded.token_expires_at is distinct from marketplace_connections.token_expires_at then null else marketplace_connections.refresh_owner end,
    refresh_lease_until=case when excluded.token_expires_at is distinct from marketplace_connections.token_expires_at then null else marketplace_connections.refresh_lease_until end,
    token_expires_at=excluded.token_expires_at,safety_stock=excluded.safety_stock,last_error=null,updated_at=now()
    where marketplace_connections.tenant_id=excluded.tenant_id and marketplace_connections.workspace_id=excluded.workspace_id`,
-   [c.id,c.tenantId,c.workspaceId,c.externalAccountId,c.externalAccountName,c.applicationId,c.siteId,c.userProducts,c.status,c.credentialsRef,c.safetyStock,c.tokenExpiresAt??null]);
+   [c.id,c.tenantId,c.workspaceId,c.externalAccountId,c.externalAccountName,c.applicationId,c.siteId,c.userProducts,c.status,c.credentialsRef,c.safetyStock,c.tokenExpiresAt??null,c.provider,JSON.stringify(c.settings??{}),JSON.stringify(c.metadata??{})]);
  }
  async connectionError(s:MarketplaceScope,id:string,status:StoredConnection["status"],code?:string){
   await this.pool.query("update marketplace_connections set status=$4,last_error=$5,updated_at=now() where tenant_id=$1 and workspace_id=$2 and id=$3",[...scopeArgs(s),id,status,code??null]);
@@ -66,9 +67,10 @@ export class PostgresMarketplaceRepository implements MarketplaceRepositoryPort 
   const r=await this.pool.query("update marketplace_connections set refresh_owner=null,refresh_lease_until=null,token_expires_at=coalesce($5::timestamptz,token_expires_at) where tenant_id=$1 and workspace_id=$2 and id=$3 and refresh_owner=$4 returning id",[...scopeArgs(s),id,owner,expiresAt??null]);
   if(!r.rowCount)throw new MarketplaceError("ML_REFRESH_LEASE_LOST");
  }
- async oauthSave(hash:string,s:OAuthState){await this.pool.query("insert into marketplace_oauth_states(state_hash,tenant_id,workspace_id,user_id,verifier_ref,browser_hash,expires_at) values($1,$2,$3,$4,$5,$6,now()+interval '10 minutes')",[hash,s.tenantId,s.workspaceId,s.userId,s.verifierRef,s.browserHash]);}
+ async oauthSave(hash:string,s:OAuthState){await this.pool.query("insert into marketplace_oauth_states(state_hash,tenant_id,workspace_id,user_id,verifier_ref,browser_hash,expires_at) values($1,$2,$3,$4,$5,$6,now()+interval '10 minutes')",[hash,s.tenantId,s.workspaceId,s.userId,s.verifierRef,s.browserHash]);
+  await this.pool.query("update marketplace_oauth_states set provider=$2 where state_hash=$1",[hash,s.provider]);}
  // Single use even when the browser does not match: a state opened in another browser is burned, never reusable.
- async oauthConsume(hash:string,browserHash:string){const r=await this.pool.query("delete from marketplace_oauth_states where state_hash=$1 and expires_at>now() returning *",[hash]);const v=r.rows[0];return v&&v.browser_hash&&v.browser_hash===browserHash?{tenantId:v.tenant_id,workspaceId:v.workspace_id,userId:v.user_id,verifierRef:v.verifier_ref,browserHash:v.browser_hash}:undefined;}
+ async oauthConsume(hash:string,browserHash:string){const r=await this.pool.query("delete from marketplace_oauth_states where state_hash=$1 and expires_at>now() returning *",[hash]);const v=r.rows[0];return v&&v.browser_hash&&v.browser_hash===browserHash?{tenantId:v.tenant_id,workspaceId:v.workspace_id,userId:v.user_id,verifierRef:v.verifier_ref,browserHash:v.browser_hash,provider:v.provider??"MERCADO_LIVRE"}:undefined;}
  async listings(s:MarketplaceScope,productId?:string){return (await this.pool.query("select l.*,p.name as product_name from channel_listings l join products p on p.id=l.product_id where l.tenant_id=$1 and l.workspace_id=$2 and ($3::text is null or l.product_id=$3) order by l.updated_at desc",[...scopeArgs(s),productId??null])).rows.map(listing);}
  async listing(s:MarketplaceScope,id:string){const r=await this.pool.query("select * from channel_listings where tenant_id=$1 and workspace_id=$2 and id=$3",[...scopeArgs(s),id]);return r.rows[0]?listing(r.rows[0]):undefined;}
  async externalListing(s:MarketplaceScope,connectionId:string,externalId:string){const r=await this.pool.query("select * from channel_listings where tenant_id=$1 and workspace_id=$2 and connection_id=$3 and external_listing_id=$4",[...scopeArgs(s),connectionId,externalId]);return r.rows[0]?listing(r.rows[0]):undefined;}
@@ -144,17 +146,25 @@ export class PostgresMarketplaceRepository implements MarketplaceRepositoryPort 
    on conflict(tenant_id,workspace_id,connection_id,category_id) do update set external_category_id=excluded.external_category_id,attributes=excluded.attributes`,
    [a.tenantId,a.workspaceId,input.connectionId,input.categoryId,input.externalCategoryId,JSON.stringify(input.attributes)]);
  }
- async notifications(n:{applicationId:string;sellerId:string;eventId:string;topic:string;resource:string}){
-  const r=await this.pool.query("select * from marketplace_connections where application_id=$1 and external_account_id=$2 and status='CONNECTED'",[n.applicationId,n.sellerId]);if(!r.rows[0])return false;
+ async notifications(n:{provider:StoredConnection["provider"];applicationId:string;sellerId:string;eventId:string;topic:string;resource:string;kind:"ORDER"|"LISTING"|"RETURN";externalOrderId?:string}){
+  const r=await this.pool.query("select * from marketplace_connections where provider=$3 and application_id=$1 and external_account_id=$2 and status='CONNECTED'",[n.applicationId,n.sellerId,n.provider]);if(!r.rows[0])return false;
   const c=connection(r.rows[0]);
   return this.transaction(c,"notification:"+n.eventId,async tx=>{
    const store=tx.marketplace as PostgresMarketplaceRepository;
    const inserted=await store.pool.query("insert into marketplace_notifications(connection_id,event_id,topic,resource) values($1,$2,$3,$4) on conflict do nothing returning event_id",[c.id,n.eventId,n.topic,n.resource]);if(!inserted.rowCount)return false;
    // A pending reconciliation of the same resource already covers this event (bursts or forged ids never pile up jobs).
-   const queued=await store.pool.query("select 1 from marketplace_jobs where connection_id=$1 and kind='RECONCILE' and status='PENDING' and payload->>'resource'=$2 limit 1",[c.id,n.resource]);if(queued.rowCount)return true;
-   await store.enqueue({...c,userId:"marketplace-notification"},c.id,"RECONCILE",{resource:n.resource},"notification:"+c.id+":"+n.eventId);return true;
+   // Pedido/envio/devolução: relê o pedido inteiro (a ordem das notificações não importa).
+   const kind=n.kind==="LISTING"?"RECONCILE":"ORDER",payload=n.kind==="LISTING"?{resource:n.resource}:n.externalOrderId?{externalOrderId:n.externalOrderId}:{resource:n.resource};
+   const target=n.kind!=="LISTING"&&n.externalOrderId?n.externalOrderId:n.resource;
+   const queued=await store.pool.query("select 1 from marketplace_jobs where connection_id=$1 and kind=$3 and status='PENDING' and coalesce(payload->>'externalOrderId',payload->>'resource')=$2 limit 1",[c.id,target,kind]);if(queued.rowCount)return true;
+   await store.enqueue({...c,userId:"marketplace-notification"},c.id,kind,payload,"notification:"+c.id+":"+n.eventId);return true;
   });
  }
+ async listingByExternal(s:MarketplaceScope,connectionId:string,externalListingId:string){
+  const r=await this.pool.query("select * from channel_listings where tenant_id=$1 and workspace_id=$2 and connection_id=$3 and external_listing_id=$4",[...scopeArgs(s),connectionId,externalListingId]);return r.rows[0]?listing(r.rows[0]):undefined;
+ }
+ async markOrdersSynced(s:MarketplaceScope,connectionId:string,at:string){await this.pool.query("update marketplace_connections set orders_synced_at=greatest(coalesce(orders_synced_at,$4::timestamptz),$4::timestamptz) where tenant_id=$1 and workspace_id=$2 and id=$3",[...scopeArgs(s),connectionId,at]);}
+ async saveSettings(s:MarketplaceScope,connectionId:string,settings:StoredConnection["settings"]){await this.pool.query("update marketplace_connections set settings=$4::jsonb,updated_at=now() where tenant_id=$1 and workspace_id=$2 and id=$3",[...scopeArgs(s),connectionId,JSON.stringify(settings)]);}
  async scheduleDue(){
   // Snapshot+delete revision prevents losing a new update committed while the job is running.
   const dirty=await this.pool.query("select * from marketplace_outbox order by updated_at limit 50");
@@ -171,5 +181,9 @@ export class PostgresMarketplaceRepository implements MarketplaceRepositoryPort 
    const c=connection(r);
    await this.enqueue({...c,userId:"marketplace-reconciliation"},c.id,"RECONCILE",{},"periodic:"+c.id+":"+Math.floor(Date.now()/900000));
   }
+  // Pedidos: varredura periódica cobre webhook perdido/atrasado (uma por vez por conta).
+  const due=await this.pool.query(`select * from marketplace_connections c where c.status='CONNECTED' and (c.orders_synced_at is null or c.orders_synced_at<now()-interval '10 minutes')
+   and not exists(select 1 from marketplace_jobs j where j.connection_id=c.id and j.kind='ORDERS' and j.status in ('PENDING','RUNNING')) limit 50`);
+  for(const r of due.rows){const c=connection(r);await this.enqueue({...c,userId:"marketplace-reconciliation"},c.id,"ORDERS",{},"orders:"+c.id+":"+Math.floor(Date.now()/600000));}
  }
 }

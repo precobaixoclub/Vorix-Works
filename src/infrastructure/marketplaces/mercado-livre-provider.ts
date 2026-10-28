@@ -1,4 +1,5 @@
-import type { CategoryRequirements, ListingWrite, MarketplaceProvider, MarketplaceTokens } from "../../application/ports/marketplace-provider.port.js";
+import type { CategoryRequirements, ExternalOrder, ExternalOrderState, ExternalReturn, ExternalReturnState, ExternalShipmentState, ListingWrite, MarketplaceProvider, MarketplaceTokens, ProviderAuth, ProviderCapabilities, ProviderNotification, ShippingLabel } from "../../application/ports/marketplace-provider.port.js";
+import { createHash } from "node:crypto";
 import { MarketplaceError, type ExternalAttribute, type ExternalListing, type PublishDraft } from "../../domain/marketplaces/marketplace.model.js";
 import { setTimeout as sleep } from "node:timers/promises";
 
@@ -17,16 +18,26 @@ const image=(value:unknown):string|undefined=>{
  if(typeof value!=="string")return;try{const u=new URL(value);if(u.protocol==="https:"&&!u.username&&!u.password)return u.href;}catch{}return;
 };
 
+const ML_SHIPMENT:Record<string,ExternalShipmentState>={pending:"PENDING",handling:"READY_TO_SHIP",ready_to_ship:"READY_TO_SHIP",shipped:"SHIPPED",delivered:"DELIVERED",not_delivered:"NOT_DELIVERED",cancelled:"CANCELLED"};
+// Devolução física (post-purchase v2): "delivered" = chegou ao vendedor — a reposição ainda é decisão manual no Vorix.
+const ML_RETURN:Record<string,ExternalReturnState>={pending:"APPROVED",label_generated:"APPROVED",shipped:"IN_TRANSIT",delivered:"RECEIVED",not_delivered:"CANCELLED",cancelled:"CANCELLED",failed:"CANCELLED",expired:"CANCELLED",closed:"COMPLETED"};
+const ML_TOPICS:Record<string,RegExp>={items:/^\/items\/MLB\d+$/,items_prices:/^\/items\/MLB\d+\/prices$/,user_products:/^\/user-products\/MLBU\d+$/,"stock-location":/^\/user-products\/MLBU\d+\/stock$/,
+ orders_v2:/^\/orders\/\d{1,20}$/,shipments:/^\/shipments\/\d{1,20}$/,claims:/^\/post-purchase\/v1\/claims\/\d{1,20}$/};
+
 /** All network calls are confined to the official API origin. Provider errors never include response bodies. */
 export class MercadoLivreProvider implements MarketplaceProvider {
  readonly id="MERCADO_LIVRE" as const;
+ readonly pkce=true;
+ // Venda cancelada pelo vendedor não existe na API pública do Mercado Livre (só o comprador/mediação cancela).
+ readonly capabilities:ProviderCapabilities={listings:"SUPPORTED",publish:"SUPPORTED",priceSync:"SUPPORTED",stockSync:"SUPPORTED",orders:"SUPPORTED",shipments:"SUPPORTED",labels:"SUPPORTED",cancelOrder:"BLOCKED_EXTERNAL_CAPABILITY",returns:"SUPPORTED",webhooks:"SUPPORTED"};
  private nextCallAt=0;
  constructor(private readonly config:MercadoLivreConfig,private readonly fetcher:typeof fetch=fetch){}
+ get applicationId(){return this.config.clientId;}
  authorizationUrl(state:string,challenge:string):string{
   const url=new URL("https://auth.mercadolivre.com.br/authorization");
   url.search=new URLSearchParams({response_type:"code",client_id:this.config.clientId,redirect_uri:this.config.redirectUri,state,code_challenge:challenge,code_challenge_method:"S256"}).toString();return url.href;
  }
- private async request(path:string,token?:string,method="GET",body?:unknown,headers:Record<string,string>={}):Promise<{data:Json;headers:Headers}>{
+ private async request(path:string,token?:string,method="GET",body?:unknown,headers:Record<string,string>={},binary=false):Promise<{data:Json;headers:Headers;bytes?:Uint8Array}>{
   if(!path.startsWith("/")||path.startsWith("//")||path.includes("\\")||path.includes("#"))throw new MarketplaceError("INVALID_EXTERNAL_RESOURCE");
   let response:Response;
   const start=Math.max(Date.now(),this.nextCallAt);this.nextCallAt=start+500;
@@ -53,6 +64,7 @@ export class MercadoLivreProvider implements MarketplaceProvider {
    throw error;
   }
   if(response.status===204)return {data:{},headers:response.headers};
+  if(binary)return {data:{},headers:response.headers,bytes:new Uint8Array(await response.arrayBuffer())};
   try{return {data:await response.json() as Json,headers:response.headers};}catch{throw new MarketplaceError("ML_INVALID_RESPONSE",true);}
  }
  private async token(fields:Record<string,string>):Promise<MarketplaceTokens>{
@@ -61,20 +73,22 @@ export class MercadoLivreProvider implements MarketplaceProvider {
   const scopes=String(data.scope??"").split(" ");if(!["read","write","offline_access"].every(s=>scopes.includes(s)))throw new MarketplaceError("ML_REQUIRED_SCOPES_MISSING");
   return {accessToken:String(data.access_token),refreshToken:String(data.refresh_token),expiresAt:new Date(Date.now()+Number(data.expires_in)*1000).toISOString(),userId:String(data.user_id)};
  }
- connect(code:string,verifier:string){return this.token({grant_type:"authorization_code",code,redirect_uri:this.config.redirectUri,code_verifier:verifier});}
+ connect(input:{code:string;verifier?:string}){return this.token({grant_type:"authorization_code",code:input.code,redirect_uri:this.config.redirectUri,code_verifier:input.verifier??""});}
  refreshConnection(refreshToken:string){return this.token({grant_type:"refresh_token",refresh_token:refreshToken});}
- async disconnect(token:string,userId:string){await this.request("/users/"+identifier(userId)+"/applications/"+identifier(this.config.clientId),token,"DELETE");}
- async account(token:string){
-  const {data}=await this.request("/users/me",token);
+ async disconnect(auth:ProviderAuth){await this.request("/users/"+identifier(auth.accountId)+"/applications/"+identifier(this.config.clientId),auth.accessToken,"DELETE");}
+ async account(auth:ProviderAuth){
+  const {data}=await this.request("/users/me",auth.accessToken);
   if(!data.id||data.site_id!=="MLB")throw new MarketplaceError("ML_ACCOUNT_SITE_UNSUPPORTED");
   return {id:String(data.id),name:String(data.nickname??data.id),siteId:String(data.site_id),userProducts:Array.isArray(data.tags)&&data.tags.includes("user_product_seller")};
  }
- async listExternalProducts(token:string,userId:string,cursor?:string){
+ async listExternalProducts(auth:ProviderAuth,cursor?:string){
+  const token=auth.accessToken,userId=auth.accountId;
   const q=new URLSearchParams({search_type:"scan",limit:"50",...(cursor?{scroll_id:cursor}:{})});
   const {data}=await this.request("/users/"+identifier(userId)+"/items/search?"+q,token);
   return {ids:(data.results??[]).map(String),cursor:data.results?.length?data.scroll_id as string|undefined:undefined,total:Number(data.paging?.total??0)};
  }
- async getListing(token:string,id:string):Promise<ExternalListing>{
+ async getListing(auth:ProviderAuth,id:string):Promise<ExternalListing>{
+  const token=auth.accessToken;
   const {data}=await this.request("/items/"+identifier(id,/^MLB\d+$/),token);
   const prices=await this.request("/items/"+identifier(id)+"/prices",token);
   const standard=(prices.data.prices as Json[]|undefined)?.filter(p=>p.type==="standard"&&(!p.conditions?.context_restrictions?.length||p.conditions.context_restrictions.includes("channel_marketplace")));
@@ -112,7 +126,8 @@ export class MercadoLivreProvider implements MarketplaceProvider {
   };
   return normalized;
  }
- async category(token:string,id:string):Promise<CategoryRequirements>{
+ async category(auth:ProviderAuth,id:string):Promise<CategoryRequirements>{
+  const token=auth.accessToken;
   const category=await this.request("/categories/"+identifier(id,/^MLB\d+$/),token);
   const attributes=await this.request("/categories/"+identifier(id)+"/attributes",token);
   const terms=await this.request("/categories/"+identifier(id)+"/sale_terms",token);
@@ -136,8 +151,8 @@ export class MercadoLivreProvider implements MarketplaceProvider {
     seller_custom_field:v.sku,attribute_combinations:v.attributes,picture_ids:draft.pictures,
     attributes:v.sku?[{id:"SELLER_SKU",value_name:v.sku}]:[]}))}:{})};
  }
- async validateListing(token:string,input:ListingWrite):Promise<string[]>{
-  const category=await this.category(token,input.draft.categoryId);const errors:string[]=[];
+ async validateListing(auth:ProviderAuth,input:ListingWrite):Promise<string[]>{
+  const token=auth.accessToken,category=await this.category(auth,input.draft.categoryId);const errors:string[]=[];
   if(!category.leaf||!category.allowed)errors.push("Categoria não permite publicação.");
   const all=[...input.draft.attributes,...(input.draft.variantAttributes??[])];
   for(const attribute of category.attributes.filter(a=>a.required)){
@@ -157,15 +172,16 @@ export class MercadoLivreProvider implements MarketplaceProvider {
    throw error;
   }return [];
  }
- async createListing(token:string,input:ListingWrite):Promise<ExternalListing>{
-  const {data}=await this.request("/items",token,"POST",this.payload(input));
+ async createListing(auth:ProviderAuth,input:ListingWrite):Promise<ExternalListing>{
+  const {data}=await this.request("/items",auth.accessToken,"POST",this.payload(input));
   // Persist the returned ID BEFORE optional description/read; caller performs those as recoverable updates.
   return {id:String(data.id),sellerId:String(data.seller_id),title:String(data.title??data.family_name??input.draft.title),
    categoryId:input.draft.categoryId,priceCents:input.priceCents,quantity:input.quantity,status:String(data.status),
    url:image(data.permalink),currency:input.currency,pictures:input.draft.pictures,attributes:input.draft.attributes,variants:[],
    userProductId:data.user_product_id??undefined,model:input.userProducts?"USER_PRODUCT":"LEGACY",stockWritable:true,priceWritable:true};
  }
- async updateListing(token:string,id:string,input:Partial<PublishDraft>,userProducts:boolean):Promise<void>{
+ async updateListing(auth:ProviderAuth,id:string,input:Partial<PublishDraft>,userProducts:boolean):Promise<void>{
+  const token=auth.accessToken;
   const body:Json={};
   if(input.title)body[userProducts?"family_name":"title"]=input.title;
   if(input.attributes)body.attributes=input.attributes;
@@ -181,10 +197,99 @@ export class MercadoLivreProvider implements MarketplaceProvider {
     await this.request(path+(exists?"?api_version=2":""),token,exists?"PUT":"POST",{plain_text:input.description});
   }
  }
- async setStatus(token:string,id:string,status:"paused"|"active"|"closed"){await this.request("/items/"+identifier(id),token,"PUT",{status});}
- async syncPrice(token:string,id:string,priceCents:number){await this.request("/items/"+identifier(id),token,"PUT",{price:priceCents/100});}
- async syncStock(token:string,id:string,quantity:number,variants?:{id:string;quantity:number}[]){
-  await this.request("/items/"+identifier(id),token,"PUT",variants?.length?{variations:variants.map(v=>({id:v.id,available_quantity:v.quantity}))}:{available_quantity:quantity});
+ async setStatus(auth:ProviderAuth,id:string,status:"paused"|"active"|"closed"){await this.request("/items/"+identifier(id),auth.accessToken,"PUT",{status});}
+ async syncPrice(auth:ProviderAuth,id:string,priceCents:number){await this.request("/items/"+identifier(id),auth.accessToken,"PUT",{price:priceCents/100});}
+ async syncStock(auth:ProviderAuth,id:string,quantity:number,variants?:{id:string;quantity:number}[]){
+  await this.request("/items/"+identifier(id),auth.accessToken,"PUT",variants?.length?{variations:variants.map(v=>({id:v.id,available_quantity:v.quantity}))}:{available_quantity:quantity});
+ }
+ // ---------------------------------------------------------------- pedidos, envios e devoluções (API oficial)
+ async listOrders(auth:ProviderAuth,input:{updatedFrom:string;updatedTo:string;cursor?:string}){
+  const offset=Number(input.cursor??0);
+  const q=new URLSearchParams({seller:identifier(auth.accountId),"order.date_last_updated.from":input.updatedFrom,"order.date_last_updated.to":input.updatedTo,sort:"date_asc",offset:String(offset),limit:"50"});
+  const {data}=await this.request("/orders/search?"+q,auth.accessToken);
+  const ids=(data.results??[]).map((o:Json)=>String(o.id));const total=Number(data.paging?.total??0);
+  return {ids,cursor:ids.length&&offset+ids.length<total?String(offset+ids.length):undefined};
+ }
+ private async shipment(token:string,id:string):Promise<Json>{
+  return (await this.request("/shipments/"+identifier(id,/^\d{1,20}$/),token,"GET",undefined,{"x-format-new":"true"})).data;
+ }
+ async getOrder(auth:ProviderAuth,id:string):Promise<ExternalOrder>{
+  const {data}=await this.request("/orders/"+identifier(id,/^\d{1,20}$/),auth.accessToken);
+  if(String(data.seller?.id)!==auth.accountId)throw new MarketplaceError("ML_ORDER_OWNER_MISMATCH");
+  const items=(data.order_items??[]).map((line:Json)=>({externalItemId:String(line.item?.id),externalVariationId:line.item?.variation_id?String(line.item.variation_id):undefined,
+   sku:line.item?.seller_sku??undefined,title:String(line.item?.title??"Item Mercado Livre").slice(0,300),
+   variantLabel:(line.item?.variation_attributes??[]).map((a:Json)=>`${a.name}: ${a.value_name}`).join(" · ")||undefined,
+   quantity:Number(line.quantity),unitPriceCents:cents(line.unit_price)}));
+  let shipmentData:Json|undefined;
+  if(data.shipping?.id)shipmentData=await this.shipment(auth.accessToken,String(data.shipping.id)).catch(error=>{if(error instanceof MarketplaceError&&error.code==="ML_LISTING_NOT_FOUND")return undefined;throw error;});
+  const shipmentState=shipmentData?ML_SHIPMENT[String(shipmentData.status)]??"PENDING":undefined;
+  const logisticType=shipmentData?String(shipmentData.logistic?.type??shipmentData.logistic_type??""):undefined;
+  const status=String(data.status);
+  let state:ExternalOrderState=status==="cancelled"?"CANCELLED":["paid","partially_refunded","pending_cancel"].includes(status)?"PAID":"PENDING_PAYMENT";
+  if(state==="PAID"&&shipmentState&&shipmentState!=="PENDING"&&shipmentState!=="CANCELLED")state=shipmentState==="NOT_DELIVERED"?"SHIPPED":shipmentState as ExternalOrderState;
+  const subtotalCents=items.reduce((sum:number,i:{unitPriceCents:number;quantity:number})=>sum+i.unitPriceCents*i.quantity,0);
+  const discountCents=Math.min(subtotalCents,data.coupon?.amount?cents(data.coupon.amount):0);
+  const shippingCents=shipmentData?cents(shipmentData.lead_time?.cost??shipmentData.shipping_option?.cost??0):0;
+  const address=shipmentData?.destination?.shipping_address??shipmentData?.receiver_address;
+  const paidAt=(data.payments??[]).filter((p:Json)=>p.status==="approved").map((p:Json)=>p.date_approved).filter(Boolean).sort()[0];
+  return {id:String(data.id),accountId:String(data.seller.id),state,externalStatus:status,createdAt:String(data.date_created),updatedAt:String(data.last_updated??data.date_closed??data.date_created),
+   paidAt:paidAt?String(paidAt):undefined,cancelledAt:state==="CANCELLED"?String(data.cancel_detail?.date??data.last_updated??data.date_closed):undefined,cancelReason:data.cancel_detail?.description?String(data.cancel_detail.description).slice(0,200):undefined,
+   currency:String(data.currency_id??"BRL"),items,subtotalCents,discountCents,shippingCents,totalCents:subtotalCents-discountCents+shippingCents,
+   buyer:{id:data.buyer?.id?String(data.buyer.id):undefined,nickname:data.buyer?.nickname??undefined,name:[data.buyer?.first_name,data.buyer?.last_name].filter(Boolean).join(" ")||undefined},
+   shippingAddress:address?{city:address.city?.name??undefined,state:address.state?.id??address.state?.name??undefined,postalCode:address.zip_code??undefined}:undefined,
+   shipment:shipmentData?{externalId:String(shipmentData.id),state:shipmentState!,externalStatus:String(shipmentData.status),substatus:shipmentData.substatus??undefined,logisticType:logisticType||undefined,
+    carrier:shipmentData.tracking_method??undefined,trackingNumber:shipmentData.tracking_number??undefined,
+    // Etiqueta só existe para envios Mercado Envios prontos para despachar (o ML gera o PDF).
+    labelAvailable:String(shipmentData.status)==="ready_to_ship"&&["ready_to_print","printed"].includes(String(shipmentData.substatus))&&logisticType!=="fulfillment",
+    fulfilledByMarketplace:logisticType==="fulfillment",shippedAt:shipmentData.status_history?.date_shipped??undefined,deliveredAt:shipmentData.status_history?.date_delivered??undefined,
+    estimatedDeliveryAt:shipmentData.lead_time?.estimated_delivery_time?.date??undefined}:undefined,
+   data:{packId:data.pack_id??undefined,paidAmountCents:data.paid_amount!==undefined?cents(data.paid_amount):undefined,tags:Array.isArray(data.tags)?data.tags.slice(0,20):[],shippingId:data.shipping?.id?String(data.shipping.id):undefined}};
+ }
+ /** Reclamações do pedido (post-purchase) e, quando houver, a devolução física de cada uma. */
+ async getReturns(auth:ProviderAuth,orderId:string):Promise<ExternalReturn[]>{
+  const q=new URLSearchParams({resource:"order",resource_id:identifier(orderId,/^\d{1,20}$/)});
+  const {data}=await this.request("/post-purchase/v1/claims/search?"+q,auth.accessToken);
+  const result:ExternalReturn[]=[];
+  for(const claim of (data.data??[]) as Json[]){
+   if(!claim.id)continue;
+   let ret:Json|undefined;
+   try{ret=(await this.request("/post-purchase/v2/claims/"+identifier(String(claim.id),/^\d{1,20}$/)+"/returns",auth.accessToken)).data;}
+   catch(error){if(!(error instanceof MarketplaceError&&error.code==="ML_LISTING_NOT_FOUND"))throw error;}
+   const claimClosed=String(claim.status)==="closed";
+   const state:ExternalReturnState=ret?ML_RETURN[String(ret.status)]??"APPROVED":claimClosed?"CANCELLED":"REQUESTED";
+   const lines=((ret?.orders??[]) as Json[]).filter(o=>String(o.order_id)===orderId&&o.item_id);
+   result.push({id:String(claim.id),orderId,state,externalStatus:ret?String(ret.status):String(claim.status),reason:claim.reason_id?String(claim.reason_id):undefined,
+    items:lines.map(o=>({externalItemId:String(o.item_id),externalVariationId:o.variation_id?String(o.variation_id):undefined,quantity:Number(o.return_quantity??o.total_quantity??1)})),
+    createdAt:String(claim.date_created),updatedAt:String(ret?.last_updated??claim.last_updated??claim.date_created)});
+  }
+  return result;
+ }
+ async shippingLabel(auth:ProviderAuth,order:ExternalOrder):Promise<ShippingLabel>{
+  if(!order.shipment?.externalId||!order.shipment.labelAvailable)throw new MarketplaceError("ML_LABEL_NOT_AVAILABLE");
+  const {bytes,headers}=await this.request("/shipment_labels?"+new URLSearchParams({shipment_ids:identifier(order.shipment.externalId,/^\d{1,20}$/),response_type:"pdf"}),auth.accessToken,"GET",undefined,{},true);
+  if(!bytes?.length)throw new MarketplaceError("ML_LABEL_NOT_AVAILABLE");
+  return {contentType:headers.get("content-type")?.includes("zip")?"application/zip":"application/pdf",base64:Buffer.from(bytes).toString("base64"),filename:`etiqueta-ml-${order.id}.pdf`};
+ }
+ async cancelOrder():Promise<void>{throw new MarketplaceError("BLOCKED_EXTERNAL_CAPABILITY");}
+ /** Envio/reclamação apontam para o pedido de origem. */
+ async resolveOrderId(auth:ProviderAuth,resource:string):Promise<string|undefined>{
+  const order=resource.match(/^\/orders\/(\d{1,20})$/);if(order)return order[1];
+  const shipment=resource.match(/^\/shipments\/(\d{1,20})$/);if(shipment){const data=await this.shipment(auth.accessToken,shipment[1]);return data.order_id?String(data.order_id):undefined;}
+  const claim=resource.match(/^\/post-purchase\/v1\/claims\/(\d{1,20})$/);
+  if(claim){const {data}=await this.request("/post-purchase/v1/claims/"+claim[1],auth.accessToken);return data.resource==="order"&&data.resource_id?String(data.resource_id):undefined;}
+  return undefined;
+ }
+ /** O Mercado Livre não assina notificações: só aceita o app certo, tópicos conhecidos e recursos no formato oficial. */
+ parseNotification(input:{rawBody:string}):ProviderNotification|undefined{
+  let body:Json;try{body=JSON.parse(input.rawBody);}catch{return undefined;}
+  if(String(body.application_id)!==this.config.clientId||!body.user_id)return undefined;
+  const topic=String(body.topic??""),resource=String(body.resource??"");
+  const pattern=ML_TOPICS[topic];if(!pattern||!pattern.test(resource))return undefined;
+  // Fallback estável exige o timestamp: o recurso sozinho não pode suprimir mudanças futuras.
+  const eventId=body._id??body.id??(body.sent?createHash("sha256").update([body.user_id,topic,resource,body.sent].join(":")).digest("hex"):undefined);
+  if(!eventId||String(eventId).length>200)return undefined;
+  const kind=topic==="orders_v2"||topic==="shipments"?"ORDER":topic==="claims"?"RETURN":"LISTING";
+  return {accountId:String(body.user_id),eventId:String(eventId),topic,kind,resource,externalOrderId:resource.match(/^\/orders\/(\d{1,20})$/)?.[1]};
  }
 }
 

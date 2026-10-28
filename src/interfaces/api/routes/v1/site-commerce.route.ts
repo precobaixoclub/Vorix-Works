@@ -9,8 +9,12 @@ import {checkoutPublicCartToWhatsapp,getPublicCart,getSiteCommerceSettings,listS
 import {utmSchema} from "../../../../domain/sites/site-commerce.js";
 import {analyticsEventContextSchema} from "../../../../domain/sites/site-analytics.js";
 import type {WorkspaceRepositoryPort} from "../../../../application/ports/workspace-repository.port.js";
-import type {Permission} from "../../../../domain/identity/identity.model.js";
-export type SiteCommerceRouteDeps=SiteCommerceDeps&{workspaceRepository:WorkspaceRepositoryPort};
+import {hasPermission,type Permission} from "../../../../domain/identity/identity.model.js";
+import {commerceVisibility} from "../../../../application/commerce/commerce-scope.js";
+import type {TeamMembershipRepositoryPort} from "../../../../application/ports/team-repository.port.js";
+export type SiteCommerceRouteDeps=SiteCommerceDeps&{workspaceRepository:WorkspaceRepositoryPort;
+ /** Escopo das intenções comerciais (sem isso só quem tem visão global de oportunidades as vê). */
+ access?:{teamMembershipRepository:TeamMembershipRepositoryPort}};
 const id=z.string().min(1).max(160);
 const slugParam=z.object({slug:z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/).max(80)});
 const visitor={sessionId:z.string().regex(/^[A-Za-z0-9_-]{8,64}$/).optional(),pageUrl:z.string().max(2000).optional(),utm:utmSchema.optional()};
@@ -65,6 +69,8 @@ export async function registerSiteCommerceRoutes(app:FastifyInstance,deps:SiteCo
  app.get("/sites/:id/sales-intents",async request=>guard(async()=>{
   const {site}=await owned(request,"commerce:read");
   const {limit}=z.object({limit:z.coerce.number().int().min(1).max(200).optional()}).parse({limit:(request.query as {limit?:string}).limit});
-  return successEnvelope(await listSiteSalesIntents(deps,{tenantId:site.tenantId,workspaceId:site.workspaceId,siteId:site.id,limit}),request.id);
+  const principal=requirePermission(request,"commerce:read");
+  const visibility=deps.access?await commerceVisibility(deps.access,{...principal,isAccountOwner:(principal as {isAccountOwner?:boolean}).isAccountOwner??false}):{global:hasPermission(principal,"deal:view_all"),teamIds:[],ownerUserIds:[principal.userId]};
+  return successEnvelope(await listSiteSalesIntents(deps,{tenantId:site.tenantId,workspaceId:site.workspaceId,siteId:site.id,limit,visibility}),request.id);
  }));
 }

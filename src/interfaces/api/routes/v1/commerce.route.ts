@@ -10,19 +10,41 @@ import {getSiteCommerceSettings} from "../../../../application/sites/site-commer
 import {ORDER_STATUSES} from "../../../../domain/commerce/order.model.js";
 import {utmSchema} from "../../../../domain/sites/site-commerce.js";
 import type {WorkspaceRepositoryPort} from "../../../../application/ports/workspace-repository.port.js";
-import type {Permission} from "../../../../domain/identity/identity.model.js";
-export type CommerceRouteDeps=CheckoutDeps&{workspaceRepository:WorkspaceRepositoryPort;expirationIntervalMs?:number};
+import {hasPermission,type Permission} from "../../../../domain/identity/identity.model.js";
+import {commerceVisibility,orderInScope} from "../../../../application/commerce/commerce-scope.js";
+import {receiveReturn,refundReturn,requestReturn,transitionReturn} from "../../../../application/commerce/returns-use-cases.js";
+import {MarketplaceError} from "../../../../domain/marketplaces/marketplace.model.js";
+import type {MarketplaceService} from "../../../../application/marketplaces/marketplace-service.js";
+import type {TeamMembershipRepositoryPort} from "../../../../application/ports/team-repository.port.js";
+import type {Order} from "../../../../domain/commerce/order.model.js";
+export type CommerceRouteDeps=CheckoutDeps&{workspaceRepository:WorkspaceRepositoryPort;expirationIntervalMs?:number;
+ /** Pedidos de marketplace: cancelar/etiqueta/atualizar no canal. Ausente = só pedidos do Site. */
+ marketplace?:MarketplaceService;
+ /** Escopo por equipe para ações sensíveis (cancelar/estornar) e Vendas por canal. */
+ access?:{teamMembershipRepository:TeamMembershipRepositoryPort};
+ deals?:{getById(id:string):Promise<{ownerUserId?:string;teamId?:string}|undefined>}};
 const id=z.string().min(1).max(160);
 const slugParam=z.object({slug:z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/).max(80)});
 const visitor={sessionId:z.string().regex(/^[A-Za-z0-9_-]{8,64}$/).optional(),pageUrl:z.string().max(2000).optional(),utm:utmSchema.optional()};
 const cartToken=z.string().regex(/^[A-Za-z0-9_-]{20,64}$/);
+const MARKETPLACE_MESSAGES:Record<string,string>={
+ BLOCKED_EXTERNAL_CAPABILITY:"O canal não permite esta operação pela API oficial — faça no painel do marketplace.",
+ MARKETPLACE_ORDER_ALREADY_SHIPPED:"O pedido já saiu para entrega no canal: use devolução.",
+ ML_LABEL_NOT_AVAILABLE:"A etiqueta ainda não está disponível no Mercado Livre (envio precisa estar pronto para despachar).",
+ SHOPEE_LABEL_NOT_AVAILABLE:"A etiqueta ainda não está disponível na Shopee.",TIKTOK_LABEL_NOT_AVAILABLE:"A etiqueta ainda não está disponível no TikTok Shop.",
+ REAUTH_REQUIRED:"A conta do marketplace precisa ser reconectada.",MARKETPLACE_DISCONNECTED:"A conta do marketplace está desconectada.",MARKETPLACE_PROVIDER_NOT_CONFIGURED:"Este canal não está configurado neste ambiente.",
+};
 /** Vorix Commerce, Fase 2 — checkout público, webhook de pagamento e central de pedidos. */
 export async function registerCommerceRoutes(app:FastifyInstance,deps:CommerceRouteDeps):Promise<void>{
  const guard=async<T>(run:()=>Promise<T>)=>{try{return await run();}catch(error){
   if(error instanceof z.ZodError)throw new ValidationError(error.issues.map(issue=>issue.message).join(" "));
+  if(error instanceof MarketplaceError){
+   if(error.code==="MARKETPLACE_ORDER_NOT_FOUND"||error.code==="MARKETPLACE_CONNECTION_NOT_FOUND")throw new NotFoundError();
+   throw new ValidationError(MARKETPLACE_MESSAGES[error.code]??"O canal recusou a operação agora. Tente novamente em instantes.");
+  }
   if(error instanceof Error){
    if(error.message.startsWith("SITE_NOT_FOUND"))throw new NotFoundError();
-   if(/^(SITE_VALIDATION|ORDER_TRANSITION_INVALID|PAYMENT_VALIDATION)/.test(error.message))throw new ValidationError(error.message.replace(/^[A-Z_]+:\s*/,""));
+   if(/^(SITE_VALIDATION|ORDER_TRANSITION_INVALID|PAYMENT_VALIDATION|ORDER_RETURN_VALIDATION)/.test(error.message))throw new ValidationError(error.message.replace(/^[A-Z_]+:\s*/,""));
    if(error.message.startsWith("SITE_ENTITLEMENT"))throw new ForbiddenError(error.message);
   }
   throw error;
@@ -64,14 +86,89 @@ export async function registerCommerceRoutes(app:FastifyInstance,deps:CommerceRo
   const {workspaceId:_workspaceId,...filter}=query;
   return successEnvelope(await listOrders(deps,scope,filter),request.id);
  }));
- app.get("/commerce/orders/:id",async request=>guard(async()=>{const scope=await scoped(request,"order:read");return successEnvelope(await getOrderDetail(deps,scope,(request.params as {id:string}).id),request.id);}));
+ const scopedOrder=async(_request:FastifyRequest,scope:{tenantId:string;workspaceId:string},orderId:string):Promise<Order>=>{
+  const order=await deps.orders.get(id.parse(orderId));if(!order||order.tenantId!==scope.tenantId||order.workspaceId!==scope.workspaceId)throw new NotFoundError();return order;
+ };
+ const visibility=async(request:FastifyRequest)=>{
+  const principal=requirePermission(request,"order:read");
+  return deps.access?commerceVisibility(deps.access,{...principal,isAccountOwner:(principal as {isAccountOwner?:boolean}).isAccountOwner??false}):{global:hasPermission(principal,"deal:view_all"),teamIds:[],ownerUserIds:[principal.userId]};
+ };
+ /** O que esta pessoa pode fazer neste pedido (a interface só mostra o permitido; as rotas conferem de novo). */
+ const orderActions=async(request:FastifyRequest,order:Order)=>{
+  const principal=requirePermission(request,"order:read"),can=(permission:Permission)=>hasPermission(principal,permission);
+  const inScope=await orderInScope(await visibility(request),order,{siteTeamId:async siteId=>(await deps.commerceRepository.getSettings(siteId))?.teamId,deal:async dealId=>deps.deals?.getById(dealId)});
+  const capabilities=order.source==="SITE"?undefined:deps.marketplace?.configuredProviders().find(p=>p.id===order.source)?.capabilities;
+  const paid=["APPROVED","PARTIALLY_REFUNDED"].includes(order.paymentStatus);
+  let cancelBlockedReason:string|undefined;
+  if(!can("order:cancel"))cancelBlockedReason="Cancelar pedidos exige a permissão “Cancelar pedidos”.";
+  else if(!inScope)cancelBlockedReason="Pedido fora das suas equipes.";
+  else if(order.source==="SITE"&&paid&&!can("payment:refund"))cancelBlockedReason="Este pedido está pago: cancelar estorna o cliente e exige a permissão “Estornar pagamentos”.";
+  else if(order.source==="SITE"&&!["PENDING","AWAITING_PAYMENT","PAID","CONFIRMED","PROCESSING"].includes(order.status))cancelBlockedReason="Pedido já enviado/encerrado: use devolução.";
+  else if(order.source!=="SITE"&&!capabilities)cancelBlockedReason="Canal não configurado neste ambiente.";
+  else if(order.source!=="SITE"&&capabilities?.cancelOrder!=="SUPPORTED")cancelBlockedReason="O canal não permite cancelar pela API oficial — cancele no painel do marketplace.";
+  else if(order.source!=="SITE"&&["SHIPPED","DELIVERED","CANCELLED"].includes(order.status))cancelBlockedReason="Pedido já enviado/encerrado no canal: use devolução.";
+  const payment=(await deps.orders.payments(order.id)).find(p=>p.status==="APPROVED"||p.status==="REFUNDED");
+  return {canCancel:!cancelBlockedReason,cancelBlockedReason,
+   canRefund:order.source==="SITE"&&can("payment:refund")&&inScope&&!!payment&&payment.refundedCents<payment.amountCents,
+   partialRefund:!!payment&&!!deps.paymentProviders[payment.provider as "SANDBOX"|"MERCADO_PAGO"]?.partialRefund,
+   canLabel:order.source!=="SITE"&&capabilities?.labels==="SUPPORTED"&&can("order:manage"),
+   canManageReturns:can("order:manage"),canRefresh:order.source!=="SITE"&&!!capabilities&&can("order:manage")};
+ };
+ app.get("/commerce/orders/:id",async request=>guard(async()=>{
+  const scope=await scoped(request,"order:read");const detail=await getOrderDetail(deps,scope,(request.params as {id:string}).id);
+  return successEnvelope({...detail,shipments:await deps.orders.shipments(detail.order.id),returns:await deps.orders.returns(detail.order.id),actions:await orderActions(request,detail.order as Order)},request.id);
+ }));
+ // Pedidos de marketplace: o canal é a autoridade de logística (etiqueta e status vêm dele).
+ const marketplaceOrder=async(request:FastifyRequest,permission:Permission)=>{
+  const scope=await scoped(request,permission);const order=await scopedOrder(request,scope,(request.params as {id:string}).id);
+  if(order.source==="SITE"||!deps.marketplace)throw new ValidationError("Disponível só para pedidos de marketplace com o canal configurado.");
+  return {order,actor:{tenantId:scope.tenantId,workspaceId:scope.workspaceId,userId:scope.actorUserId}};
+ };
+ app.get("/commerce/orders/:id/label",async request=>guard(async()=>{const {order,actor}=await marketplaceOrder(request,"order:manage");return successEnvelope(await deps.marketplace!.shippingLabel(actor,order.id),request.id);}));
+ app.post("/commerce/orders/:id/refresh",{config:{readOnlyGuard:true}},async request=>guard(async()=>{const {order,actor}=await marketplaceOrder(request,"order:manage");return successEnvelope(await deps.marketplace!.refreshExternalOrder(actor,order.id),request.id);}));
+ // Devoluções (parciais) ---------------------------------------------------------------------------
+ const returnItems=z.array(z.object({orderItemId:id,quantity:z.number().int().min(1).max(100000)}).strict()).min(1).max(200);
+ app.post("/commerce/orders/:id/returns",{config:{readOnlyGuard:true}},async request=>guard(async()=>{
+  const scope=await scoped(request,"order:manage");const body=z.object({requestKey:z.string().uuid(),reason:z.string().max(300).optional(),items:returnItems}).strict().parse(request.body);
+  return successEnvelope(await requestReturn(deps,scope,{orderId:(request.params as {id:string}).id,...body}),request.id);
+ }));
+ app.post("/commerce/returns/:id/status",{config:{readOnlyGuard:true}},async request=>guard(async()=>{
+  const scope=await scoped(request,"order:manage");const body=z.object({to:z.enum(["APPROVED","IN_TRANSIT","REJECTED","CANCELLED","COMPLETED"])}).strict().parse(request.body);
+  return successEnvelope(await transitionReturn(deps,scope,{returnId:id.parse((request.params as {id:string}).id),...body}),request.id);
+ }));
+ app.post("/commerce/returns/:id/receive",{config:{readOnlyGuard:true}},async request=>guard(async()=>{
+  const scope=await scoped(request,"order:manage");
+  const body=z.object({items:z.array(z.object({orderItemId:id,receivedQuantity:z.number().int().min(0).max(100000),restockQuantity:z.number().int().min(0).max(100000)}).strict()).min(1).max(200)}).strict().parse(request.body);
+  return successEnvelope(await receiveReturn(deps,scope,{returnId:id.parse((request.params as {id:string}).id),...body}),request.id);
+ }));
+ app.post("/commerce/returns/:id/refund",{config:{readOnlyGuard:true}},async request=>guard(async()=>{
+  const scope=await scoped(request,"payment:refund");const body=z.object({amountCents:z.number().int().min(1).optional()}).strict().parse(request.body??{});
+  const ret=await deps.orders.getReturn(id.parse((request.params as {id:string}).id));if(!ret||ret.tenantId!==scope.tenantId||ret.workspaceId!==scope.workspaceId)throw new NotFoundError();
+  const order=await scopedOrder(request,scope,ret.orderId);
+  if(!(await orderActions(request,order)).canRefund)throw new ForbiddenError("Sem permissão para estornar este pedido (permissão ou equipe).");
+  return successEnvelope(await refundReturn(deps,scope,{returnId:ret.id,...body}),request.id);
+ }));
+ // Vendas por canal (pedidos; a oportunidade ganha da mesma venda não conta de novo) --------------
+ app.get("/commerce/analytics/channels",async request=>guard(async()=>{
+  const scope=await scoped(request,"order:read");requirePermission(request,"analytics:read");
+  const q=z.object({from:z.iso.datetime(),to:z.iso.datetime()}).parse(request.query);
+  const vis=await visibility(request);
+  const channels=await deps.orders.channelSummary({tenantId:scope.tenantId,workspaceId:scope.workspaceId,from:q.from,to:q.to,global:vis.global,teamIds:vis.teamIds,ownerUserIds:vis.ownerUserIds});
+  const sum=(key:"orders"|"sales"|"revenueCents"|"refundsCents"|"cancellations"|"returns")=>channels.reduce((total,c)=>total+c[key],0);
+  const gross=channels.reduce((total,c)=>total+c.averageTicketCents*c.sales,0);
+  return successEnvelope({channels,totals:{orders:sum("orders"),sales:sum("sales"),revenueCents:sum("revenueCents"),refundsCents:sum("refundsCents"),averageTicketCents:sum("sales")?Math.round(gross/sum("sales")):0,cancellations:sum("cancellations"),returns:sum("returns")}},request.id);
+ }));
+
  app.post("/commerce/orders/:id/status",{config:{readOnlyGuard:true}},async request=>guard(async()=>{
   const scope=await scoped(request,"order:manage");const body=z.object({to:z.enum(ORDER_STATUSES),trackingCode:z.string().trim().max(80).optional()}).strict().parse(request.body);
   return successEnvelope(await advanceOrder(deps,scope,{id:(request.params as {id:string}).id,...body}),request.id);
  }));
  app.post("/commerce/orders/:id/cancel",{config:{readOnlyGuard:true}},async request=>guard(async()=>{
-  const scope=await scoped(request,"order:manage");const body=z.object({reason:z.string().max(200).optional(),restock:z.boolean().optional()}).strict().parse(request.body??{});
-  return successEnvelope(await cancelOrder(deps,scope,{id:(request.params as {id:string}).id,...body}),request.id);
+  const scope=await scoped(request,"order:cancel");const body=z.object({reason:z.string().max(200).optional(),restock:z.boolean().optional()}).strict().parse(request.body??{});
+  const order=await scopedOrder(request,scope,(request.params as {id:string}).id);
+  const actions=await orderActions(request,order);if(!actions.canCancel)throw new ForbiddenError(actions.cancelBlockedReason??"Sem permissão para cancelar este pedido.");
+  if(order.source!=="SITE")return successEnvelope(await deps.marketplace!.cancelExternalOrder({tenantId:scope.tenantId,workspaceId:scope.workspaceId,userId:scope.actorUserId},order.id,body.reason?.trim()||"cancelled_by_store"),request.id);
+  return successEnvelope(await cancelOrder(deps,scope,{id:order.id,...body}),request.id);
  }));
  app.post("/commerce/orders/:id/sandbox-payment",{config:{readOnlyGuard:true}},async request=>guard(async()=>{
   const scope=await scoped(request,"order:manage");const body=z.object({outcome:z.enum(["APPROVED","FAILED"])}).strict().parse(request.body);

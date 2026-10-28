@@ -1,6 +1,6 @@
 import { registerMarketplaceRoutes } from "./marketplaces.route.js";
 import { buildMarketplaceService } from "../../../../infrastructure/marketplaces/build-marketplace-service.js";
-import { mercadoLivreConfig } from "../../../../infrastructure/marketplaces/mercado-livre-provider.js";
+import { marketplaceProvidersFromEnv } from "../../../../infrastructure/marketplaces/marketplace-providers.js";
 import {PostgresSiteCommerceRepository} from "../../../../infrastructure/storage/postgres/postgres-site-commerce-repository.js";
 import {registerSiteCommerceRoutes} from "./site-commerce.route.js";
 import {registerConversationProductRoutes} from "./conversation-products.route.js";
@@ -386,6 +386,9 @@ export async function registerV1Routes(app: FastifyInstance): Promise<void> {
   // só quando `identity` existe (driver postgres), nunca em modo memória (dev/teste sem banco).
   if (app.zunoContainer.identity) {
     const identity = app.zunoContainer.identity;
+    // Marketplaces: um serviço para todos os canais configurados (pedidos externos entram na mesma Central/estoque).
+    const marketplaceProviders = marketplaceProvidersFromEnv(process.env);
+    const marketplaceBundle = marketplaceProviders.length ? buildMarketplaceService(identity.pool, marketplaceProviders, app.zunoContainer.secretManager) : undefined;
     const crmAccess = { teamRepository: identity.teamRepository, inboxConversationRepository: app.zunoContainer.inboxConversationRepository, workspaceRepository: app.zunoContainer.workspaceRepository, dealRepository: identity.dealRepository, contactRepository: identity.contactRepository, taskRepository: identity.taskRepository, proposalRepository: identity.proposalRepository, teamMembershipRepository: identity.teamMembershipRepository, membershipRepository: identity.membershipRepository };
     registerCrmAccessGuards(app, crmAccess);
     registerCommercialResponseVisibility(app, { salesConfigRepository: identity.salesConfigRepository });
@@ -510,6 +513,7 @@ export async function registerV1Routes(app: FastifyInstance): Promise<void> {
         workspaceRepository: app.zunoContainer.workspaceRepository,
         teamBelongsToWorkspace: async ({ tenantId, workspaceId, teamId }) => { const team = await identity.teamRepository.getById(teamId); return !!team && team.tenantId === tenantId && team.workspaceId === workspaceId; },
         log: siteLead.log,
+        access: { teamMembershipRepository: identity.teamMembershipRepository },
       });
       await registerCommerceRoutes(app, {
         ...siteEngine,
@@ -524,6 +528,9 @@ export async function registerV1Routes(app: FastifyInstance): Promise<void> {
         teamMembershipRepository: identity.teamMembershipRepository,
         log: siteLead.log,
         expirationIntervalMs: 60_000,
+        marketplace: marketplaceBundle?.service,
+        access: { teamMembershipRepository: identity.teamMembershipRepository },
+        deals: { getById: async (dealId: string) => { const deal = await identity.dealRepository.getById(dealId); return deal ? { ownerUserId: deal.ownerUserId ?? undefined, teamId: deal.teamId ?? undefined } : undefined; } },
       });
     }
     // Produto dentro do Vorix Conversas (buscar, enviar card do catálogo, levar para a oportunidade).
@@ -595,9 +602,8 @@ export async function registerV1Routes(app: FastifyInstance): Promise<void> {
     let catalogBulkTimer:ReturnType<typeof setInterval>|undefined;
     app.addHook("onReady",async()=>{catalogBulkTimer=setInterval(()=>{void catalogBulk.tick();},500);catalogBulkTimer.unref();});
     app.addHook("preClose",async()=>{if(catalogBulkTimer)clearInterval(catalogBulkTimer);await catalogBulk.tick();});
-    const mlConfig = mercadoLivreConfig(process.env);
     await registerMarketplaceRoutes(app, {
-      ...(mlConfig ? buildMarketplaceService(identity.pool, mlConfig, app.zunoContainer.secretManager) : {}),
+      ...(marketplaceBundle ?? {}),
       workspaceRepository: app.zunoContainer.workspaceRepository,
     });
     const proposalUseCaseDeps = {

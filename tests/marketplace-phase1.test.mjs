@@ -92,8 +92,8 @@ test("OAuth completes only in the browser that started it (authorize link sent t
 test("refresh rotates single-use credentials, then reuses the renewed token",async()=>{
  const f=await fixture(),c=await repo.connection(f.scope,f.connectionId),t=f.tokens();
  await secrets.put(c.credentialsRef,{value:{...t,expiresAt:new Date(Date.now()-1000).toISOString()}});
- const token=await f.service.accessToken(f.scope,c.id);assert.match(token,/rotated/);
- assert.equal(await f.service.accessToken(f.scope,c.id),token);assert.equal(f.calls.filter(c=>c[0]==="refresh").length,1);
+ const token=(await f.service.accessToken(f.scope,c.id)).accessToken;assert.match(token,/rotated/);
+ assert.equal((await f.service.accessToken(f.scope,c.id)).accessToken,token);assert.equal(f.calls.filter(c=>c[0]==="refresh").length,1);
  assert.match((await secrets.get(c.credentialsRef)).value.refreshToken,/rotated/);
 });
 test("an uncertain refresh requires reauthorization and never reuses the old refresh token",async()=>{
@@ -257,9 +257,9 @@ test("provider uses official PKCE/token request and redacts rejected provider bo
   request={url,options};return new Response(JSON.stringify({access_token:"access",refresh_token:"refresh",expires_in:21600,user_id:123,scope:"read write offline_access"}),{status:200});
  });
  const url=new URL(provider.authorizationUrl("state","challenge"));assert.equal(url.origin,"https://auth.mercadolivre.com.br");assert.equal(url.searchParams.get("code_challenge_method"),"S256");
- await provider.connect("code","verifier");assert.equal(request.url,"https://api.mercadolibre.com/oauth/token");assert.equal(new URLSearchParams(request.options.body).get("code_verifier"),"verifier");assert.equal(request.options.redirect,"error");
+ await provider.connect({code:"code",verifier:"verifier",params:{}});assert.equal(request.url,"https://api.mercadolibre.com/oauth/token");assert.equal(new URLSearchParams(request.options.body).get("code_verifier"),"verifier");assert.equal(request.options.redirect,"error");
  const rejected=new MercadoLivreProvider({clientId:"123",clientSecret:"private",redirectUri:"https://qa.test"},async()=>new Response("access_token=private",{status:403}));
- await assert.rejects(()=>rejected.account("secret"),error=>!error.message.includes("private")&&error.message==="ML_REQUEST_REJECTED_403");
+ await assert.rejects(()=>rejected.account({accessToken:"secret",accountId:"1",metadata:{}}),error=>!error.message.includes("private")&&error.message==="ML_REQUEST_REJECTED_403");
 });
 test("provider uses current prices endpoint and protects automated/Full listings",async()=>{
  const paths=[],provider=new MercadoLivreProvider({clientId:"123",clientSecret:"private",redirectUri:"https://qa.test"},async(url)=>{

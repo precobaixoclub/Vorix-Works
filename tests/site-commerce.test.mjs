@@ -333,3 +333,15 @@ test("produto na conversa: busca no catálogo, envia card sem copiar nada e leva
  const other=await commerce();
  await assert.rejects(sendProductToConversation(deps,{...c.scope,conversationId:conversation.id,userId:c.actor.userId,productId:other.productA.id,withImage:false}),/CONVERSATION_PRODUCT_NOT_FOUND/);
 });
+
+test("intenções comerciais: só global vê tudo; anônima segue a equipe de roteamento do site; outra equipe não vê",async()=>{
+ const c=await commerce();
+ await startProductWhatsapp(c.siteDeps,{lookup:c.lookup,productId:c.productA.id,requestKey:randomUUID()});
+ const list=visibility=>c.commerceRepository.listIntents({tenantId:c.tenantId,workspaceId:c.workspaceId,siteId:c.site.id,limit:50,visibility});
+ assert.equal((await list({global:true,teamIds:[],ownerUserIds:[]})).length,1);
+ assert.equal((await list({global:false,teamIds:["team-routing"],ownerUserIds:["user-x"]})).length,0,"sem equipe de roteamento configurada ninguém de equipe vê");
+ await saveSiteCommerceSettings(c.siteDeps,{site:c.site,settings:{mode:"WHATSAPP"},actorUserId:c.actor.userId});
+ await db.pool.query("update site_commerce_settings set settings=jsonb_set(settings,'{teamId}','\"team-routing\"') where site_id=$1",[c.site.id]);
+ assert.equal((await list({global:false,teamIds:["team-routing"],ownerUserIds:[]})).length,1,"anônima: equipe de roteamento do site");
+ assert.equal((await list({global:false,teamIds:["outra-equipe"],ownerUserIds:["user-x"]})).length,0,"outra equipe não vê");
+});

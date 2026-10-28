@@ -58,5 +58,5 @@ test("conexão, divergência, importação, mapeamento e publicação em todas a
 });
 test("somente leitura não pode importar, publicar ou finalizar anúncios",async({page})=>{
  await fixture(page,false);await page.goto("/workspaces/"+WORKSPACE_ID+"/settings/marketplaces");await expect(page.getByRole("heading",{name:"Marketplaces",exact:true})).toBeVisible();
- await expect(page.getByRole("button",{name:"Conectar conta"})).toBeDisabled();await expect(page.getByRole("button",{name:"Importar anúncios",exact:true})).toHaveCount(0);await expect(page.getByRole("button",{name:"Finalizar",exact:true})).toHaveCount(0);await noOverflow(page);
+ await expect(page.getByRole("button",{name:"Conectar Mercado Livre"})).toBeDisabled();await expect(page.getByRole("button",{name:"Importar anúncios",exact:true})).toHaveCount(0);await expect(page.getByRole("button",{name:"Finalizar",exact:true})).toHaveCount(0);await noOverflow(page);
 });

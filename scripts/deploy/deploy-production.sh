@@ -34,12 +34,12 @@ echo "DEPLOY $SHA target=$TARGET stamp=$STAMP"
 cd "$ROOT"
 
 case "$TARGET" in
-  api) SERVICES="zuno-api vorix-worker" ;;
+  api) SERVICES="zuno-api vorix-worker marketplaces-worker" ;;
   web) SERVICES="zuno-web" ;;
-  all) SERVICES="zuno-api vorix-worker social-provider-gateway zuno-web" ;;
+  all) SERVICES="zuno-api vorix-worker marketplaces-worker social-provider-gateway zuno-web" ;;
   *) echo "alvo inválido: $TARGET"; echo DEPLOY_FAILED; exit 2 ;;
 esac
-image_of() { case "$1" in zuno-api) echo zuno-zuno-api ;; vorix-worker) echo zuno-vorix-worker ;; zuno-web) echo zuno-zuno-web ;; social-provider-gateway) echo zuno-social-provider-gateway ;; esac; }
+image_of() { case "$1" in zuno-api) echo zuno-zuno-api ;; vorix-worker) echo zuno-vorix-worker ;; marketplaces-worker) echo zuno-marketplaces-worker ;; zuno-web) echo zuno-zuno-web ;; social-provider-gateway) echo zuno-social-provider-gateway ;; esac; }
 
 # 1. preflight
 [ -f "$TARBALL" ] || { echo "tarball ausente"; echo DEPLOY_FAILED; exit 1; }
@@ -84,6 +84,10 @@ rollback() {
   if ! docker image inspect "zuno-social-provider-gateway:rollback-$STAMP" >/dev/null 2>&1; then
     $COMPOSE stop social-provider-gateway >/dev/null 2>&1 || true
   fi
+  # Same for the first marketplaces worker rollout: nothing older to restore, so it is stopped.
+  if ! docker image inspect "zuno-marketplaces-worker:rollback-$STAMP" >/dev/null 2>&1; then
+    $COMPOSE stop marketplaces-worker >/dev/null 2>&1 || true
+  fi
   # Extract and validate the complete source backup before replacing ANY current source path.
   # A full disk used to leave the host tree half-restored and abort before restoring image tags.
   RESTORE_DIR="$ROOT/deploy_backups/restore-$STAMP"
@@ -104,8 +108,9 @@ rollback() {
     docker image inspect "$image:rollback-$STAMP" >/dev/null 2>&1 && docker tag "$image:rollback-$STAMP" "$image:latest"
   done
   RESTORE_SERVICES="zuno-api vorix-worker zuno-web"
+  if docker image inspect "zuno-marketplaces-worker:rollback-$STAMP" >/dev/null 2>&1; then RESTORE_SERVICES="$RESTORE_SERVICES marketplaces-worker"; fi
   if docker image inspect "zuno-social-provider-gateway:rollback-$STAMP" >/dev/null 2>&1; then RESTORE_SERVICES="$RESTORE_SERVICES social-provider-gateway"; fi
-  case "$TARGET" in api) RESTORE_SERVICES="zuno-api vorix-worker" ;; web) RESTORE_SERVICES="zuno-web" ;; esac
+  case "$TARGET" in api) RESTORE_SERVICES="zuno-api vorix-worker$(docker image inspect zuno-marketplaces-worker:rollback-$STAMP >/dev/null 2>&1 && echo ' marketplaces-worker')" ;; web) RESTORE_SERVICES="zuno-web" ;; esac
   $COMPOSE up -d --no-build $RESTORE_SERVICES
   echo "ROLLED_BACK (banco não é revertido: migrations são aditivas; dump em deploy_backups/db-pre-$SHA-$STAMP.sql.gz)"
   echo DEPLOY_FAILED

@@ -180,7 +180,7 @@ export async function saveSiteCommerceSettings(deps:SiteCommerceDeps,input:{site
  if(settings.teamId&&deps.teamBelongsToWorkspace&&!await deps.teamBelongsToWorkspace({tenantId:input.site.tenantId,workspaceId:input.site.workspaceId,teamId:settings.teamId}))throw Error("SITE_VALIDATION: equipe não encontrada neste workspace.");
  return deps.commerceRepository.saveSettings({siteId:input.site.id,tenantId:input.site.tenantId,workspaceId:input.site.workspaceId,settings,actorUserId:input.actorUserId});
 }
-export async function listSiteSalesIntents(deps:SiteCommerceDeps,input:{tenantId:string;workspaceId:string;siteId?:string;limit?:number}){
+export async function listSiteSalesIntents(deps:SiteCommerceDeps,input:{tenantId:string;workspaceId:string;siteId?:string;limit?:number;visibility?:{global:boolean;teamIds:readonly string[];ownerUserIds:readonly string[]}}){
  return (await deps.commerceRepository.listIntents({...input,limit:Math.min(200,Math.max(1,input.limit??50))})).map(intent=>({...intent,anonymousSessionId:undefined,snapshot:{...intent.snapshot,items:intent.snapshot.items.map(presentIntentItem)}}));
 }
 export type {PublicSiteProduct,SalesIntentType};

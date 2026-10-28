@@ -164,6 +164,7 @@ test("cancelar pedido pago antes do envio: estorna e devolve ao estoque; enviado
  assert.equal(shipped.shippingCents,1500);assert.equal(shipped.totalCents,4500);
  await simulateSandboxPayment(s.deps,s.scope,{id:sid,outcome:"APPROVED"});await advanceOrder(s.deps,s.scope,{id:sid,to:"PROCESSING"});
  await advanceOrder(s.deps,s.scope,{id:sid,to:"SHIPPED",trackingCode:"BR123"});
+ const [shipment]=await s.orders.shipments(sid);assert.equal(shipment.trackingNumber,"BR123");assert.equal(shipment.status,"SHIPPED");assert.equal(shipment.provider,"SITE");
  await assert.rejects(cancelOrder(s.deps,s.scope,{id:sid}),/não pode ser cancelado/);
 });
 
@@ -387,4 +388,45 @@ test("ajuste manual de estoque não pode apagar unidades reservadas por pedidos"
  const fresh=await s.d.productRepository.getById(tracked.id);assert.equal(fresh.reservedQuantity,2);
  await assert.rejects(setStockQuantity({productRepository:s.d.productRepository,membershipRepository:{listByTenant:async()=>[]}},fresh,1,s.actor.userId),/reservada/);
  assert.equal((await setStockQuantity({productRepository:s.d.productRepository,membershipRepository:{listByTenant:async()=>[]}},fresh,7,s.actor.userId)).stockQuantity,7);
+});
+
+// ------------------------------------------------------------------ devolução parcial e estorno parcial (Site)
+test("devolução parcial: pedir não repõe; recebe e repõe só o devolvido; estorno parcial uma vez; cancelamento depois estorna só o saldo",async()=>{
+ const {requestReturn,receiveReturn,refundReturn,transitionReturn}=await import("../dist/application/commerce/returns-use-cases.js");
+ const s=await store();
+ const placed=await order(s,await s.cart([{productId:s.b.id,variantId:s.m.id,quantity:3}]));const id=await byNumber(s,placed.number);
+ await simulateSandboxPayment(s.deps,s.scope,{id,outcome:"APPROVED"});
+ assert.deepEqual(await s.stock(s.m),{s:2,r:0});
+ const item=(await getOrderDetail(s.deps,s.scope,id)).order.items[0];
+ const key=randomUUID();
+ const ret=await requestReturn(s.deps,s.scope,{orderId:id,requestKey:key,reason:"tamanho",items:[{orderItemId:item.id,quantity:2}]});
+ assert.equal((await requestReturn(s.deps,s.scope,{orderId:id,requestKey:key,items:[{orderItemId:item.id,quantity:2}]})).id,ret.id,"duplo clique não cria outra");
+ await assert.rejects(requestReturn(s.deps,s.scope,{orderId:id,requestKey:randomUUID(),items:[{orderItemId:item.id,quantity:2}]}),/ORDER_RETURN_VALIDATION/,"vendido 3, já devolvendo 2");
+ assert.deepEqual(await s.stock(s.m),{s:2,r:0},"pedido de devolução não mexe no estoque");
+ await transitionReturn(s.deps,s.scope,{returnId:ret.id,to:"APPROVED"});
+ // Chegaram 2, só 1 volta a ser vendável.
+ await receiveReturn(s.deps,s.scope,{returnId:ret.id,items:[{orderItemId:item.id,receivedQuantity:2,restockQuantity:1}]});
+ await receiveReturn(s.deps,s.scope,{returnId:ret.id,items:[{orderItemId:item.id,receivedQuantity:2,restockQuantity:1}]});
+ assert.deepEqual(await s.stock(s.m),{s:3,r:0});
+ const refunded=await refundReturn(s.deps,s.scope,{returnId:ret.id});
+ assert.equal(refunded.refundStatus,"REFUNDED");assert.equal(refunded.refundCents,10000);
+ assert.equal((await refundReturn(s.deps,s.scope,{returnId:ret.id})).refundCents,10000,"segundo estorno da mesma devolução não acontece");
+ let detail=await getOrderDetail(s.deps,s.scope,id);
+ assert.equal(detail.order.paymentStatus,"PARTIALLY_REFUNDED");assert.equal(detail.payments[0].refundedCents,10000);
+ // Cancelar depois: estorna só o saldo (nunca o valor cheio de novo) e devolve o estoque do que ainda estava vendido.
+ await cancelOrder(s.deps,s.scope,{id,reason:"cliente desistiu do resto"});
+ detail=await getOrderDetail(s.deps,s.scope,id);
+ assert.equal(detail.payments[0].refundedCents,detail.payments[0].amountCents);assert.equal(detail.order.paymentStatus,"REFUNDED");
+});
+
+test("estorno parcial só quando o meio de pagamento suporta (capability)",async()=>{
+ const {requestReturn,refundReturn}=await import("../dist/application/commerce/returns-use-cases.js");
+ const s=await store();s.deps.paymentProviders.SANDBOX={...s.deps.paymentProviders.SANDBOX,key:"SANDBOX",methods:["SANDBOX","PIX"],partialRefund:false,
+  createPayment:(...a)=>new SandboxPaymentProvider().createPayment(...a),getPayment:(...a)=>new SandboxPaymentProvider().getPayment(...a),refund:(...a)=>new SandboxPaymentProvider().refund(...a),cancel:(...a)=>new SandboxPaymentProvider().cancel(...a)};
+ const placed=await order(s,await s.cart([{productId:s.b.id,variantId:s.m.id,quantity:2}]));const id=await byNumber(s,placed.number);
+ await simulateSandboxPayment(s.deps,s.scope,{id,outcome:"APPROVED"});
+ const item=(await getOrderDetail(s.deps,s.scope,id)).order.items[0];
+ const ret=await requestReturn(s.deps,s.scope,{orderId:id,requestKey:randomUUID(),items:[{orderItemId:item.id,quantity:1}]});
+ await assert.rejects(refundReturn(s.deps,s.scope,{returnId:ret.id}),/só permite estorno do valor total/);
+ assert.equal((await getOrderDetail(s.deps,s.scope,id)).payments[0].refundedCents,0);
 });

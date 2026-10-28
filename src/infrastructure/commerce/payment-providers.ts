@@ -8,7 +8,7 @@ import type {PaymentStatus} from "../../domain/commerce/order.model.js";
  * passa pelo MESMO caminho de atualização de um webhook real.
  */
 export class SandboxPaymentProvider implements PaymentProviderPort{
- readonly key="SANDBOX" as const;readonly methods=["SANDBOX","PIX"] as const;
+ readonly key="SANDBOX" as const;readonly methods=["SANDBOX","PIX"] as const;readonly partialRefund=true;
  async createPayment(_context:PaymentProviderContext,input:CreateProviderPaymentInput):Promise<ProviderPaymentState>{
   const id=`sandbox-${randomUUID()}`;
   return {providerPaymentId:id,status:"PENDING",instructions:{sandbox:true,expiresAt:input.expiresAt,pixQrCode:`SANDBOX-VORIX-PEDIDO-${input.orderNumber}-NAO-PAGAR`}};
@@ -23,6 +23,8 @@ const MP_STATUS:Record<string,PaymentStatus>={approved:"APPROVED",authorized:"PE
 /** Mercado Pago com a conta do LOJISTA (access token do próprio cliente do Vorix, guardado no cofre). */
 export class MercadoPagoPaymentProvider implements PaymentProviderPort{
  readonly key="MERCADO_PAGO" as const;readonly methods=["PIX","CARD"] as const;
+ /** POST /v1/payments/{id}/refunds aceita `amount` menor que o total (estorno parcial). */
+ readonly partialRefund=true;
  constructor(private readonly options:{fetch?:FetchLike;baseUrl?:string}={}){}
  private async call(context:PaymentProviderContext,path:string,init:RequestInit&{idempotencyKey?:string}={}){
   const token=context.credentials?.accessToken;if(!token)throw Error("PAYMENT_PROVIDER_NOT_CONFIGURED: conecte a conta do Mercado Pago.");
@@ -47,8 +49,9 @@ export class MercadoPagoPaymentProvider implements PaymentProviderPort{
   return this.state(await this.call(context,"/v1/payments",{method:"POST",body:JSON.stringify(body),idempotencyKey:input.idempotencyKey}));
  }
  async getPayment(context:PaymentProviderContext,providerPaymentId:string){return this.state(await this.call(context,`/v1/payments/${encodeURIComponent(providerPaymentId)}`));}
- async refund(context:PaymentProviderContext,providerPaymentId:string,amountCents:number){
-  await this.call(context,`/v1/payments/${encodeURIComponent(providerPaymentId)}/refunds`,{method:"POST",body:JSON.stringify({amount:amountCents/100}),idempotencyKey:`refund-${providerPaymentId}`});
+ async refund(context:PaymentProviderContext,providerPaymentId:string,amountCents:number,idempotencyKey?:string){
+  // Chave por estorno: dois estornos parciais diferentes nunca são confundidos com repetição.
+  await this.call(context,`/v1/payments/${encodeURIComponent(providerPaymentId)}/refunds`,{method:"POST",body:JSON.stringify({amount:amountCents/100}),idempotencyKey:idempotencyKey??`refund-${providerPaymentId}`});
   return this.getPayment(context,providerPaymentId);
  }
  async cancel(context:PaymentProviderContext,providerPaymentId:string){return this.state(await this.call(context,`/v1/payments/${encodeURIComponent(providerPaymentId)}`,{method:"PUT",body:JSON.stringify({status:"cancelled"})}));}

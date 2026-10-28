@@ -1,5 +1,7 @@
 import { createHash,randomBytes,randomUUID } from "node:crypto";
-import type { MarketplaceProvider,ListingWrite,MarketplaceTokens } from "../ports/marketplace-provider.port.js";
+import type { MarketplaceProvider,ListingWrite,MarketplaceTokens,ProviderAuth } from "../ports/marketplace-provider.port.js";
+import type { CommerceOrderRepositoryPort } from "../ports/commerce-ports.js";
+import { ingestExternalOrder,type MarketplaceOrderDeps } from "./marketplace-orders.js";
 import type { MarketplaceRepositoryPort,StoredConnection } from "../ports/marketplace-repository.port.js";
 import type { SecretManagerPort } from "../ports/secret-manager.port.js";
 import type { ProductUseCaseDeps } from "../crm/product-use-cases.js";
@@ -9,42 +11,58 @@ import { defaultProductDetails } from "../../domain/products/product-details.js"
 import type { Product } from "../../domain/crm/crm.model.js";
 import type { ProductVariant } from "../../domain/sales/sales.model.js";
 import type { Permission } from "../../domain/identity/identity.model.js";
-import { MarketplaceError,matchIdentity,publishedQuantity,safeMarketplaceError,type CatalogIdentity,type ChannelListing,type ExternalListing,type ImportDecision,type MarketplaceActor,type MarketplaceJob,type MarketplaceScope,type PublishDraft } from "../../domain/marketplaces/marketplace.model.js";
+import { MarketplaceError,matchIdentity,publishedQuantity,safeMarketplaceError,type CatalogIdentity,type ChannelListing,type ConnectionSettings,type ExternalListing,type ImportDecision,type MarketplaceActor,type MarketplaceJob,type MarketplaceProviderId,type MarketplaceScope,type PublishDraft } from "../../domain/marketplaces/marketplace.model.js";
 
 export type MarketplaceServiceDeps = {
- repository:MarketplaceRepositoryPort; provider:MarketplaceProvider; secrets:SecretManagerPort; catalog:ProductUseCaseDeps;
- applicationId:string; canManageActor:(actor:MarketplaceActor,permissions?:readonly Permission[])=>Promise<boolean>;
+ repository:MarketplaceRepositoryPort; secrets:SecretManagerPort; catalog:ProductUseCaseDeps;
+ /** Canais configurados neste ambiente (credenciais do app). `provider`/`applicationId`: forma antiga, só Mercado Livre. */
+ providers?:Partial<Record<MarketplaceProviderId,MarketplaceProvider>>; provider?:MarketplaceProvider; applicationId?:string;
+ canManageActor:(actor:MarketplaceActor,permissions?:readonly Permission[])=>Promise<boolean>;
+ /** Pedidos externos entram no MESMO pedido/estoque do Site. Sem isso, jobs de pedido são recusados. */
+ orders?:CommerceOrderRepositoryPort; orderDeps?:Omit<MarketplaceOrderDeps,"orders"|"repository"|"productEngineRepository"|"productRepository">;
 };
+// Códigos equivalentes entre canais (cada provider usa o próprio prefixo).
+const RATE_LIMIT=/^(ML|SHOPEE|TIKTOK)_RATE_LIMIT$/,REJECTED=/^(ML|SHOPEE|TIKTOK)_REQUEST_REJECTED/,LISTING_GONE=new Set(["ML_LISTING_NOT_FOUND","SHOPEE_LISTING_NOT_FOUND","TIKTOK_NOT_FOUND"]);
 const hash=(v:string)=>createHash("sha256").update(v).digest("hex");
 const gtin=(p:Product):string|undefined=>{
  const metadata=p.taxMetadata as {catalog?:{ean?:unknown}}|undefined;
  return typeof metadata?.catalog?.ean==="string"?metadata.catalog.ean:undefined;
 };
 export class MarketplaceService {
- constructor(private readonly d:MarketplaceServiceDeps){}
+ private readonly providers:Partial<Record<MarketplaceProviderId,MarketplaceProvider>>;
+ constructor(private readonly d:MarketplaceServiceDeps){this.providers=d.providers??(d.provider?{[d.provider.id]:d.provider}:{});}
+ /** Canais com credenciais de app configuradas (a interface só oferece conectar esses). */
+ configuredProviders(){return Object.values(this.providers).filter(Boolean).map(p=>({id:p!.id,capabilities:p!.capabilities}));}
+ private provider(id:MarketplaceProviderId):MarketplaceProvider{const p=this.providers[id];if(!p)throw new MarketplaceError("MARKETPLACE_PROVIDER_NOT_CONFIGURED");return p;}
+ private p(c:{provider:MarketplaceProviderId}){return this.provider(c.provider);}
+ private appId(p:MarketplaceProvider){return p.applicationId??this.d.applicationId??"";}
  private ref(s:MarketplaceScope,id:string){return "marketplace/"+encodeURIComponent(s.tenantId)+"/"+encodeURIComponent(s.workspaceId)+"/"+id;}
- async startOAuth(actor:MarketplaceActor){
+ async startOAuth(actor:MarketplaceActor,providerId:MarketplaceProviderId="MERCADO_LIVRE"){
+  const provider=this.provider(providerId);
   const health=await this.d.secrets.health();if(!health.ok||health.provider!=="production")throw new MarketplaceError("ENCRYPTED_SECRET_MANAGER_REQUIRED");
   const state=randomBytes(32).toString("base64url"),verifier=randomBytes(48).toString("base64url");
   const verifierRef=this.ref(actor,"oauth-"+hash(state));
   await this.d.secrets.put(verifierRef,{value:{verifier},expiresAt:new Date(Date.now()+600000).toISOString()});
   // The nonce goes to the starting browser as an HttpOnly cookie: the callback only completes in that same browser (no login CSRF).
   const browserNonce=randomBytes(32).toString("base64url");
-  await this.d.repository.oauthSave(hash(state),{...actor,verifierRef,browserHash:hash(browserNonce)});
-  await this.d.repository.audit(actor,"OAUTH_STARTED","MERCADO_LIVRE");
-  return {url:this.d.provider.authorizationUrl(state,createHash("sha256").update(verifier).digest("base64url")),browserNonce};
+  await this.d.repository.oauthSave(hash(state),{...actor,verifierRef,browserHash:hash(browserNonce),provider:providerId});
+  await this.d.repository.audit(actor,"OAUTH_STARTED",providerId);
+  return {url:provider.authorizationUrl(state,createHash("sha256").update(verifier).digest("base64url")),browserNonce};
  }
- async callback(state:string,code:string|undefined,browserNonce:string|undefined){
+ /** `params`: o resto do retorno do OAuth (ex.: shop_id da Shopee). `expectedProvider`: a rota de callback do canal. */
+ async callback(state:string,code:string|undefined,browserNonce:string|undefined,params:Record<string,string>={},expectedProvider?:MarketplaceProviderId){
   const actor=browserNonce?await this.d.repository.oauthConsume(hash(state),hash(browserNonce)):undefined;if(!actor)throw new MarketplaceError("OAUTH_STATE_INVALID_OR_EXPIRED");
+  if(expectedProvider&&actor.provider!==expectedProvider)throw new MarketplaceError("OAUTH_STATE_INVALID_OR_EXPIRED");
+  const provider=this.provider(actor.provider);
   try{
    if(!code)throw new MarketplaceError("OAUTH_AUTHORIZATION_DENIED");
    if(!await this.d.canManageActor(actor))throw new MarketplaceError("MARKETPLACE_PERMISSION_REVOKED");
    const verifier=await this.d.secrets.get(actor.verifierRef);if(!verifier?.value.verifier)throw new MarketplaceError("OAUTH_STATE_INVALID_OR_EXPIRED");
-   const tokens=await this.d.provider.connect(code,verifier.value.verifier);
-   const account=await this.d.provider.account(tokens.accessToken);if(account.id!==tokens.userId)throw new MarketplaceError("ML_ACCOUNT_ID_MISMATCH");
+   const tokens=await provider.connect({code,verifier:provider.pkce?verifier.value.verifier:undefined,params});
+   const account=await provider.account({accessToken:tokens.accessToken,accountId:tokens.userId,metadata:tokens.metadata??{}});if(account.id!==tokens.userId)throw new MarketplaceError("ML_ACCOUNT_ID_MISMATCH");
    const existing=(await this.d.repository.connections(actor)).find(c=>c.externalAccountId===account.id);
    const id=existing?.id??"mpconn-"+randomUUID(),credentialsRef=existing?.credentialsRef??this.ref(actor,id);
-   const c:StoredConnection={...actor,id,credentialsRef,applicationId:this.d.applicationId,provider:"MERCADO_LIVRE",
+   const c:StoredConnection={...actor,id,credentialsRef,applicationId:this.appId(provider),provider:provider.id,settings:existing?.settings??{},metadata:{...(tokens.metadata??{}),...(account.metadata??{})},
     externalAccountId:account.id,externalAccountName:account.name,siteId:account.siteId,userProducts:account.userProducts,
     safetyStock:existing?.safetyStock??0,status:"CONNECTED",tokenExpiresAt:tokens.expiresAt,connectedAt:new Date().toISOString()};
    // Global app/seller uniqueness prevents the same seller's stock being managed by two tenants.
@@ -60,28 +78,29 @@ export class MarketplaceService {
  async connection(s:MarketplaceScope,id:string):Promise<StoredConnection>{
   const c=await this.d.repository.connection(s,id);if(!c)throw new MarketplaceError("MARKETPLACE_CONNECTION_NOT_FOUND");return c;
  }
- async accessToken(s:MarketplaceScope,id:string):Promise<string>{
+ async accessToken(s:MarketplaceScope,id:string):Promise<ProviderAuth>{
+  const auth=(accessToken:string):ProviderAuth=>({accessToken,accountId:c.externalAccountId,metadata:c.metadata??{}});
   let c=await this.connection(s,id);if(c.status!=="CONNECTED")throw new MarketplaceError(c.status==="REAUTH_REQUIRED"?"REAUTH_REQUIRED":"MARKETPLACE_DISCONNECTED");
   if(c.credentialsRef!==this.ref(c,c.id))throw new MarketplaceError("MARKETPLACE_CREDENTIAL_SCOPE_INVALID");
   let secret=await this.d.secrets.get(c.credentialsRef);
   if(!secret?.value.accessToken||!secret.value.refreshToken)throw new MarketplaceError("REAUTH_REQUIRED");
   if(secret.value.userId!==c.externalAccountId)throw new MarketplaceError("MARKETPLACE_CREDENTIAL_SCOPE_INVALID");
-  if(Date.parse(secret.value.expiresAt)>Date.now()+60000)return secret.value.accessToken;
+  if(Date.parse(secret.value.expiresAt)>Date.now()+60000)return auth(secret.value.accessToken);
   const owner=randomUUID(),claim=await this.d.repository.refreshClaim(c,c.id,owner);
   if(claim==="EXPIRED")throw new MarketplaceError("REAUTH_REQUIRED");
   if(claim==="BUSY")throw new MarketplaceError("ML_REFRESH_IN_PROGRESS",true,1500);
   try{
    secret=await this.d.secrets.get(c.credentialsRef);
    if(!secret?.value.refreshToken)throw new MarketplaceError("REAUTH_REQUIRED");
-   if(Date.parse(secret.value.expiresAt)>Date.now()+60000){await this.d.repository.refreshComplete(c,c.id,owner,secret.value.expiresAt);return secret.value.accessToken;}
-   const refreshed=await this.d.provider.refreshConnection(secret.value.refreshToken);
+   if(Date.parse(secret.value.expiresAt)>Date.now()+60000){await this.d.repository.refreshComplete(c,c.id,owner,secret.value.expiresAt);return auth(secret.value.accessToken);}
+   const refreshed=await this.p(c).refreshConnection(secret.value.refreshToken,{accountId:c.externalAccountId,metadata:c.metadata});
    if(refreshed.userId!==c.externalAccountId)throw new MarketplaceError("ML_ACCOUNT_ID_MISMATCH");
    // Rotate credentials durably before releasing lease; never retry an uncertain single-use refresh.
    await this.storeTokens(c,refreshed);await this.d.repository.refreshComplete(c,c.id,owner,refreshed.expiresAt);
    await this.d.repository.audit({...c,userId:"marketplace-worker"},"TOKEN_REFRESHED",c.id);
-   return refreshed.accessToken;
+   return auth(refreshed.accessToken);
   }catch(error){
-   if(error instanceof MarketplaceError&&error.code==="ML_RATE_LIMIT"){await this.d.repository.refreshComplete(c,c.id,owner);throw error;}
+   if(error instanceof MarketplaceError&&RATE_LIMIT.test(error.code)){await this.d.repository.refreshComplete(c,c.id,owner);throw error;}
    await this.d.repository.connectionError(c,c.id,"REAUTH_REQUIRED","ML_REFRESH_REAUTH_REQUIRED");
    try{await this.d.repository.refreshComplete(c,c.id,owner);}catch{}
    throw new MarketplaceError("REAUTH_REQUIRED");
@@ -89,7 +108,7 @@ export class MarketplaceService {
  }
  async disconnect(actor:MarketplaceActor,id:string){
   const c=await this.connection(actor,id);
-  if(c.status==="CONNECTED"){const token=await this.accessToken(actor,id);await this.d.provider.disconnect(token,c.externalAccountId);}
+  if(c.status==="CONNECTED"){const token=await this.accessToken(actor,id);await this.p(c).disconnect(token);}
   await this.d.repository.connectionError(actor,id,"DISCONNECTED");
   await this.d.secrets.delete(c.credentialsRef);await this.d.repository.audit(actor,"ACCOUNT_DISCONNECTED",id);
  }
@@ -116,7 +135,7 @@ export class MarketplaceService {
    }
   }return result;
  }
- async category(s:MarketplaceScope,connectionId:string,id:string){return this.d.provider.category(await this.accessToken(s,connectionId),id);}
+ async category(s:MarketplaceScope,connectionId:string,id:string){return this.p(await this.connection(s,connectionId)).category(await this.accessToken(s,connectionId),id);}
  async saveMapping(actor:MarketplaceActor,input:{connectionId:string;categoryId:string;externalCategoryId:string;attributes:unknown[]}){
   const category=await this.category(actor,input.connectionId,input.externalCategoryId);
   if(!category.leaf||!category.allowed)throw new MarketplaceError("ML_CATEGORY_NOT_LISTABLE");
@@ -176,7 +195,7 @@ export class MarketplaceService {
    if(!l||l.connectionId!==c.id||l.productId!==p.productId||l.variantId!==(p.variantId||undefined))throw new MarketplaceError("MARKETPLACE_LISTING_NOT_FOUND");
    write=await this.existingListingWrite(s,c,l,p.draft);
   }else write=await this.localListingWrite(s,c,p,"validation");
-  return {errors:await this.d.provider.validateListing(await this.accessToken(s,connectionId),write)};
+  return {errors:await this.p(c).validateListing(await this.accessToken(s,connectionId),write)};
  }
  private async existingListingWrite(s:MarketplaceScope,c:StoredConnection,l:ChannelListing,draft:PublishDraft):Promise<ListingWrite>{
   if(draft.categoryId!==l.externalCategoryId)throw new MarketplaceError("ML_CATEGORY_CHANGE_UNSUPPORTED");
@@ -205,6 +224,8 @@ export class MarketplaceService {
    if(j.kind==="PREVIEW")await this.previewJob(j,c,token);
    else if(j.kind==="IMPORT")await this.importJob(j,c,token,actor);
    else if(j.kind==="PUBLISH")await this.publishJob(j,c,token,actor);
+   else if(j.kind==="ORDERS")await this.ordersJob(j,c,token);
+   else if(j.kind==="ORDER")await this.orderJob(j,c,token);
    else await this.listingJob(j,c,token,actor);
    const items=await this.d.repository.jobItems(j,j.id);
    await this.d.repository.finishJob(j,items.some(i=>i.status==="ERROR")?"COMPLETED_WITH_ERRORS":"COMPLETED");
@@ -220,14 +241,14 @@ export class MarketplaceService {
   }return true;
  }
  private assertSeller(c:StoredConnection,e:ExternalListing){if(e.sellerId!==c.externalAccountId)throw new MarketplaceError("ML_LISTING_OWNER_MISMATCH");}
- private async previewJob(j:MarketplaceJob,c:StoredConnection,token:string){
+ private async previewJob(j:MarketplaceJob,c:StoredConnection,token:ProviderAuth){
   const identities=await this.identities(j);let cursor=j.payload.cursor as string|undefined,progress=j.progress,total=j.total;
   do{
-   const page=await this.d.provider.listExternalProducts(token,c.externalAccountId,cursor);total=page.total;
+   const page=await this.p(c).listExternalProducts(token,cursor);total=page.total;
    for(const id of page.ids){
     if(await this.d.repository.item(j,id))continue;
     try{
-     const external=await this.d.provider.getListing(token,id);this.assertSeller(c,external);
+     const external=await this.p(c).getListing(token,id);this.assertSeller(c,external);
      await this.d.repository.saveItem(j,id,"PREVIEW",{external,match:matchIdentity(external,identities),
       variantMatches:external.variants.map(v=>({externalVariantId:v.id,match:matchIdentity(v,identities)}))});
     }catch(error){
@@ -240,7 +261,7 @@ export class MarketplaceService {
    cursor=page.cursor;await this.d.repository.checkpoint(j,progress,total,{...j.payload,cursor});
   }while(cursor);
  }
- private async importJob(j:MarketplaceJob,c:StoredConnection,token:string,actor:MarketplaceActor){
+ private async importJob(j:MarketplaceJob,c:StoredConnection,token:ProviderAuth,actor:MarketplaceActor){
   const decisions=j.payload.decisions as ImportDecision[],preview=await this.d.repository.jobItems(j,String(j.payload.previewJobId));
   let progress=0;
   for(const decision of decisions){
@@ -249,7 +270,7 @@ export class MarketplaceService {
    if(decision.action==="IGNORE"){await this.d.repository.saveItem(j,decision.externalId,"IGNORED",{});progress++;continue;}
    // One item removed on ML (or now owned by someone else) is an item error, never the end of the whole import.
    try{
-    const external=await this.d.provider.getListing(token,decision.externalId);this.assertSeller(c,external);
+    const external=await this.p(c).getListing(token,decision.externalId);this.assertSeller(c,external);
     await this.d.repository.transaction(j,"catalog-import",async tx=>{
      const exists=await tx.marketplace.externalListing(j,c.id,external.id);
      if(exists){await tx.marketplace.saveItem(j,external.id,"IMPORTED",{listingId:exists.id,replay:true});return;}
@@ -317,13 +338,13 @@ export class MarketplaceService {
    progress++;await this.d.repository.checkpoint(j,progress,decisions.length);
   }
  }
- private async publishJob(j:MarketplaceJob,c:StoredConnection,token:string,actor:MarketplaceActor){
+ private async publishJob(j:MarketplaceJob,c:StoredConnection,token:ProviderAuth,actor:MarketplaceActor){
   const p=j.payload as {productId:string;variantId?:string;draft:PublishDraft};
   const listingId="listing-publish-"+j.id;
   const known=await this.d.repository.listing(j,listingId);
-  if(known?.externalListingId){await this.d.provider.updateListing(token,known.externalListingId,{description:p.draft.description},c.userProducts);return;}
+  if(known?.externalListingId){await this.p(c).updateListing(token,known.externalListingId,{description:p.draft.description},c.userProducts);return;}
   if(known?.status==="PUBLISHING")throw new MarketplaceError("ML_PUBLICATION_OUTCOME_UNCERTAIN");
-  const write=await this.localListingWrite(j,c,p,j.id),errors=await this.d.provider.validateListing(token,write);
+  const write=await this.localListingWrite(j,c,p,j.id),errors=await this.p(c).validateListing(token,write);
   if(errors.length)throw new MarketplaceError("ML_VALIDATION: "+errors.join(" ").slice(0,450));
   const pending:ChannelListing={...j,id:listingId,connectionId:c.id,productId:p.productId,variantId:p.variantId,externalCategoryId:p.draft.categoryId,
    status:"PUBLISHING",syncStatus:"PENDING",variantLinks:[],draft:p.draft};
@@ -333,20 +354,20 @@ export class MarketplaceService {
    await tx.marketplace.saveListing(pending);
   });
   let external:ExternalListing;
-  try{external=await this.d.provider.createListing(token,write);}
+  try{external=await this.p(c).createListing(token,write);}
   catch(error){
    // A 429 is a definite refusal, so retry is safe. Network/5xx outcomes remain uncertain.
-   if(error instanceof MarketplaceError&&(error.code==="ML_RATE_LIMIT"||error.code.startsWith("ML_REQUEST_REJECTED_")))
-    await this.d.repository.saveListing({...pending,status:error.code==="ML_RATE_LIMIT"?"RETRYABLE":"REJECTED",syncStatus:"ERROR",lastError:error.code});
+   if(error instanceof MarketplaceError&&(RATE_LIMIT.test(error.code)||REJECTED.test(error.code)))
+    await this.d.repository.saveListing({...pending,status:RATE_LIMIT.test(error.code)?"RETRYABLE":"REJECTED",syncStatus:"ERROR",lastError:error.code});
    throw error;
   }
   this.assertSeller(c,external);
-  if(!/^MLB\d+$/.test(external.id))throw new MarketplaceError("ML_INVALID_RESPONSE",true);
+  if(!(c.provider==="MERCADO_LIVRE"?/^MLB\d+$/:/^[A-Za-z0-9_-]{1,64}$/).test(external.id))throw new MarketplaceError("ML_INVALID_RESPONSE",true);
   await this.d.repository.saveListing({...pending,externalListingId:external.id,externalProductId:external.userProductId,externalUrl:external.url,status:external.status,
    syncStatus:"SYNCED",externalPrice:write.priceCents,externalQuantity:write.quantity,lastSyncedPrice:write.priceCents,lastSyncedQuantity:write.quantity,snapshot:external,lastSyncAt:new Date().toISOString()});
   await this.d.repository.saveItem(j,"publication","PUBLISHED",{externalListingId:external.id});
   await this.d.repository.audit(actor,"LISTING_PUBLISHED",listingId);
-  await this.d.provider.updateListing(token,external.id,{description:p.draft.description},c.userProducts);
+  await this.p(c).updateListing(token,external.id,{description:p.draft.description},c.userProducts);
  }
  private async localState(j:MarketplaceScope,c:StoredConnection,l:ChannelListing){
   // Anúncio já existente: produto/variante desativado ou sem controle de estoque publica 0 (o ML pausa) em vez de falhar e seguir vendendo.
@@ -364,7 +385,7 @@ export class MarketplaceService {
   return {priceCents:price(variant??variants[0]),quantity:variants.length?variants.reduce((n,v)=>n+quantity(v),0):quantity(variant),
    variants:variants.map(v=>({id:l.variantLinks.find(link=>link.variantId===v.id)!.externalVariantId,quantity:quantity(v)}))};
  }
- private async listingJob(j:MarketplaceJob,c:StoredConnection,token:string,actor:MarketplaceActor){
+ private async listingJob(j:MarketplaceJob,c:StoredConnection,token:ProviderAuth,actor:MarketplaceActor){
   if(j.payload.publicationJobId){await this.recoverPublication(j,c,token,actor);return;}
   let listings=await this.d.repository.listings(j,j.payload.productId as string|undefined);
   listings=listings.filter(l=>l.connectionId===c.id&&(!j.payload.listingId||l.id===j.payload.listingId));
@@ -375,7 +396,7 @@ export class MarketplaceService {
   for(const l of listings){
    if(!l.externalListingId)continue;
    try{
-    let e=await this.d.provider.getListing(token,l.externalListingId);this.assertSeller(c,e);
+    let e=await this.p(c).getListing(token,l.externalListingId);this.assertSeller(c,e);
     if(e.variants.length!==l.variantLinks.length||e.variants.some(v=>!l.variantLinks.some(link=>link.externalVariantId===v.id)))throw new MarketplaceError("ML_VARIANT_MAPPING_CHANGED");
     const local=await this.localState(j,c,l);
     let diverged=e.priceCents!==local.priceCents||e.quantity!==local.quantity||e.variants.some(v=>local.variants.find(lv=>lv.id===v.id)?.quantity!==v.quantity)||
@@ -391,16 +412,16 @@ export class MarketplaceService {
      if(!["paused","active","closed"].includes(status))throw new MarketplaceError("INVALID_LISTING_STATUS");
      if(status==="closed"&&j.payload.confirm!==true)throw new MarketplaceError("CLOSE_CONFIRMATION_REQUIRED");
      if(e.status==="closed"&&status!=="closed")throw new MarketplaceError("ML_CLOSED_LISTING_REQUIRES_NEW_PUBLICATION");
-     if(e.status!==status)await this.d.provider.setStatus(token,e.id,status);
+     if(e.status!==status)await this.p(c).setStatus(token,e.id,status);
      await this.d.repository.audit(actor,"LISTING_"+status.toUpperCase(),l.id);
-     e=await this.d.provider.getListing(token,e.id);this.assertSeller(c,e);
+     e=await this.p(c).getListing(token,e.id);this.assertSeller(c,e);
     }else if(j.kind==="UPDATE"){
      const draft=j.payload.draft as PublishDraft;
      if(l.snapshot?.updatedAt&&e.updatedAt!==l.snapshot.updatedAt&&!override)throw new MarketplaceError("ML_EXTERNAL_CONFLICT");
      const write=await this.existingListingWrite(j,c,l,draft);
-     const errors=await this.d.provider.validateListing(token,write);if(errors.length)throw new MarketplaceError("ML_VALIDATION: "+errors.join(" "));
-     await this.d.provider.updateListing(token,e.id,draft,e.model==="USER_PRODUCT");await this.d.repository.audit(actor,"LISTING_UPDATED",l.id);
-     e=await this.d.provider.getListing(token,e.id);this.assertSeller(c,e);
+     const errors=await this.p(c).validateListing(token,write);if(errors.length)throw new MarketplaceError("ML_VALIDATION: "+errors.join(" "));
+     await this.p(c).updateListing(token,e.id,draft,e.model==="USER_PRODUCT");await this.d.repository.audit(actor,"LISTING_UPDATED",l.id);
+     e=await this.p(c).getListing(token,e.id);this.assertSeller(c,e);
     }else if(j.kind==="SYNC"&&e.status!=="closed"){
      const needsWrite=e.priceCents!==local.priceCents||e.quantity!==local.quantity||e.variants.some(v=>local.variants.find(lv=>lv.id===v.id)?.quantity!==v.quantity);
      if(needsWrite&&externalChanged&&!override){
@@ -409,17 +430,17 @@ export class MarketplaceService {
      }
      if(e.priceCents!==local.priceCents){
       if(!e.priceWritable)throw new MarketplaceError("ML_PRICE_AUTOMATION_OR_PROMOTION_ACTIVE");
-      await this.d.provider.syncPrice(token,e.id,local.priceCents);
+      await this.p(c).syncPrice(token,e.id,local.priceCents);
       l.lastSyncedPrice=local.priceCents;await this.d.repository.saveListing({...l,syncStatus:"PENDING"});
       await this.d.repository.audit(actor,"PRICE_SYNCED",l.id);
      }
      if(e.quantity!==local.quantity||e.variants.some(v=>local.variants.find(lv=>lv.id===v.id)?.quantity!==v.quantity)){
       if(!e.stockWritable)throw new MarketplaceError("ML_STOCK_LOCATION_REQUIRES_CONFIGURATION");
-      await this.d.provider.syncStock(token,e.id,local.quantity,local.variants);
+      await this.p(c).syncStock(token,e.id,local.quantity,local.variants);
       l.lastSyncedQuantity=local.quantity;l.lastSyncedVariants=local.variants;
       await this.d.repository.saveListing({...l,syncStatus:"PENDING"});await this.d.repository.audit(actor,"INVENTORY_SYNCED",l.id);
      }
-     e=await this.d.provider.getListing(token,e.id);this.assertSeller(c,e);
+     e=await this.p(c).getListing(token,e.id);this.assertSeller(c,e);
     }
     diverged=e.priceCents!==local.priceCents||e.quantity!==local.quantity||e.variants.some(v=>local.variants.find(lv=>lv.id===v.id)?.quantity!==v.quantity)||
      ["paused","closed","under_review","inactive"].includes(e.status);
@@ -430,23 +451,23 @@ export class MarketplaceService {
     if(error instanceof MarketplaceError&&error.retryable)throw error;
     const code=safeMarketplaceError(error);
     if(code==="REAUTH_REQUIRED")throw error;
-    await this.d.repository.saveListing({...l,status:code==="ML_LISTING_NOT_FOUND"?"MISSING":l.status,syncStatus:code==="ML_EXTERNAL_CONFLICT"?"DIVERGED":"ERROR",lastError:code,lastSyncAt:new Date().toISOString()});
+    await this.d.repository.saveListing({...l,status:LISTING_GONE.has(code)?"MISSING":l.status,syncStatus:code==="ML_EXTERNAL_CONFLICT"?"DIVERGED":"ERROR",lastError:code,lastSyncAt:new Date().toISOString()});
     await this.d.repository.saveItem(j,l.id,"ERROR",{code});
     await this.d.repository.audit(actor,"LISTING_ERROR",l.id,code);
    }
    progress++;await this.d.repository.checkpoint(j,progress,listings.length);
   }
  }
- private async recoverPublication(j:MarketplaceJob,c:StoredConnection,token:string,actor:MarketplaceActor){
+ private async recoverPublication(j:MarketplaceJob,c:StoredConnection,token:ProviderAuth,actor:MarketplaceActor){
   const source=await this.d.repository.job(j,String(j.payload.publicationJobId));
   if(!source||source.connectionId!==c.id||source.kind!=="PUBLISH"||source.status!=="UNKNOWN_RESULT")throw new MarketplaceError("ML_PUBLICATION_NOT_RECOVERABLE");
   const correlation="vorix:"+hash(j.tenantId+":"+j.workspaceId+":"+source.id).slice(0,32);
   let cursor=j.payload.cursor as string|undefined,progress=j.progress;
   do{
-   const page=await this.d.provider.listExternalProducts(token,c.externalAccountId,cursor);
+   const page=await this.p(c).listExternalProducts(token,cursor);
    for(const id of page.ids){
     if(await this.d.repository.item(j,id))continue;
-    const external=await this.d.provider.getListing(token,id);this.assertSeller(c,external);
+    const external=await this.p(c).getListing(token,id);this.assertSeller(c,external);
     await this.d.repository.saveItem(j,id,"SCANNED",external.correlation===correlation?{external}:{});
     await this.d.repository.checkpoint(j,++progress,page.total);
    }
@@ -465,14 +486,91 @@ export class MarketplaceService {
    await tx.marketplace.audit(actor,"PUBLICATION_RECOVERED",l.id);
   });
  }
+ /** Mercado Livre: não assina notificações — aceita só o app certo, tópicos conhecidos e recursos no formato oficial. */
  async notification(body:{application_id:string|number;user_id:string|number;topic:string;resource:string;_id?:string;id?:string;sent?:string}){
-  if(String(body.application_id)!==this.d.applicationId)return {accepted:false};
-  if(!["items","items_prices","user_products","stock-location"].includes(body.topic))return {accepted:false};
-  const patterns:Record<string,RegExp>={items:/^\/items\/MLB\d+$/,items_prices:/^\/items\/MLB\d+\/prices$/,user_products:/^\/user-products\/MLBU\d+$/,"stock-location":/^\/user-products\/MLBU\d+\/stock$/};
-  if(!patterns[body.topic].test(body.resource))return {accepted:false};
+  const provider=this.providers.MERCADO_LIVRE;if(!provider)return {accepted:false};
+  const applicationId=this.appId(provider);
+  if(String(body.application_id)!==applicationId)return {accepted:false};
+  const patterns:Record<string,RegExp>={items:/^\/items\/MLB\d+$/,items_prices:/^\/items\/MLB\d+\/prices$/,user_products:/^\/user-products\/MLBU\d+$/,"stock-location":/^\/user-products\/MLBU\d+\/stock$/,
+   orders_v2:/^\/orders\/\d{1,20}$/,shipments:/^\/shipments\/\d{1,20}$/,claims:/^\/post-purchase\/v1\/claims\/\d{1,20}$/};
+  if(!patterns[body.topic]?.test(body.resource))return {accepted:false};
   // Stable event fallback requires timestamp; resource alone must not suppress future changes.
   const eventId=body._id??body.id??(body.sent?hash([body.user_id,body.topic,body.resource,body.sent].join(":")):undefined);
   if(!eventId||eventId.length>200)return {accepted:false};
-  return {accepted:await this.d.repository.notifications({applicationId:this.d.applicationId,sellerId:String(body.user_id),eventId,topic:body.topic,resource:body.resource})};
+  const kind=body.topic==="orders_v2"||body.topic==="shipments"?"ORDER":body.topic==="claims"?"RETURN":"LISTING";
+  return {accepted:await this.d.repository.notifications({provider:"MERCADO_LIVRE",applicationId,sellerId:String(body.user_id),eventId,topic:body.topic,resource:body.resource,kind,externalOrderId:body.resource.match(/^\/orders\/(\d{1,20})$/)?.[1]})};
+ }
+ /** Shopee/TikTok Shop: o provider confere a assinatura do canal antes de qualquer gravação. */
+ async providerNotification(providerId:MarketplaceProviderId,input:{headers:Record<string,string|undefined>;rawBody:string;url:string}){
+  const provider=this.providers[providerId];if(!provider)return {accepted:false};
+  const n=provider.parseNotification(input);if(!n)return {accepted:false};
+  return {accepted:await this.d.repository.notifications({provider:providerId,applicationId:this.appId(provider),sellerId:n.accountId,eventId:n.eventId,topic:n.topic,resource:n.resource,kind:n.kind,externalOrderId:n.externalOrderId})};
+ }
+ async saveSettings(actor:MarketplaceActor,id:string,settings:ConnectionSettings){
+  await this.connection(actor,id);
+  await this.d.repository.saveSettings(actor,id,{createContacts:settings.createContacts===true});
+  await this.d.repository.audit(actor,"CONNECTION_SETTINGS_CHANGED",id);
+ }
+ // ---------------------------------------------------------------- pedidos externos
+ private orderDeps():MarketplaceOrderDeps{
+  if(!this.d.orders||!this.d.catalog.productEngineRepository)throw new MarketplaceError("MARKETPLACE_ORDERS_NOT_CONFIGURED");
+  return {...this.d.orderDeps,orders:this.d.orders,repository:this.d.repository,productEngineRepository:this.d.catalog.productEngineRepository,productRepository:this.d.catalog.productRepository};
+ }
+ /** Reconciliação: janela desde a última varredura (com sobreposição) — webhook perdido não perde pedido. */
+ private async ordersJob(j:MarketplaceJob,c:StoredConnection,token:ProviderAuth){
+  const provider=this.p(c);if(provider.capabilities.orders!=="SUPPORTED"){await this.d.repository.markOrdersSynced(j,c.id,new Date().toISOString());return;}
+  const to=String(j.payload.to??new Date().toISOString());
+  const from=String(j.payload.from??new Date(Math.max(Date.parse(c.ordersSyncedAt??"")||0,Date.now()-3*86400000)-10*60000).toISOString());
+  let cursor=j.payload.cursor as string|undefined,progress=j.progress;
+  do{
+   const page=await provider.listOrders(token,{updatedFrom:from,updatedTo:to,cursor});
+   for(const id of page.ids){
+    if(await this.d.repository.item(j,id))continue;
+    try{await this.syncOrder(c,token,id);await this.d.repository.saveItem(j,id,"SYNCED",{});}
+    catch(error){if(error instanceof MarketplaceError&&error.retryable)throw error;if(safeMarketplaceError(error)==="REAUTH_REQUIRED")throw error;await this.d.repository.saveItem(j,id,"ERROR",{code:safeMarketplaceError(error)});}
+    await this.d.repository.checkpoint(j,++progress,progress);
+   }
+   cursor=page.cursor;await this.d.repository.checkpoint(j,progress,progress,{...j.payload,from,to,cursor});
+  }while(cursor);
+  await this.d.repository.markOrdersSynced(j,c.id,to);
+ }
+ private async orderJob(j:MarketplaceJob,c:StoredConnection,token:ProviderAuth){
+  const provider=this.p(c);if(provider.capabilities.orders!=="SUPPORTED")return;
+  let id=j.payload.externalOrderId as string|undefined;
+  if(!id&&j.payload.resource)id=await provider.resolveOrderId?.(token,String(j.payload.resource));
+  if(!id)return;
+  await this.syncOrder(c,token,id);await this.d.repository.saveItem(j,id,"SYNCED",{});
+ }
+ /** Sempre relê o pedido no canal (fonte da verdade): notificação fora de ordem nunca regride o pedido. */
+ private async syncOrder(c:StoredConnection,token:ProviderAuth,externalOrderId:string){
+  const provider=this.p(c),external=await provider.getOrder(token,externalOrderId);
+  if(external.accountId!==c.externalAccountId)throw new MarketplaceError("MARKETPLACE_ORDER_OWNER_MISMATCH");
+  const returns=provider.capabilities.returns==="SUPPORTED"&&external.state!=="PENDING_PAYMENT"?await provider.getReturns(token,externalOrderId):[];
+  return ingestExternalOrder(this.orderDeps(),c,external,returns);
+ }
+ /** Pedido do canal já no Vorix (escopo verificado pela rota). */
+ private async externalOrder(actor:MarketplaceActor,orderId:string){
+  const order=await this.d.orders?.get(orderId);
+  if(!order||order.tenantId!==actor.tenantId||order.workspaceId!==actor.workspaceId||!order.connectionId||!order.externalOrderId)throw new MarketplaceError("MARKETPLACE_ORDER_NOT_FOUND");
+  const c=await this.connection(actor,order.connectionId);return {order,c,provider:this.p(c),token:await this.accessToken(actor,c.id)};
+ }
+ async refreshExternalOrder(actor:MarketplaceActor,orderId:string){const {order,c,token}=await this.externalOrder(actor,orderId);return this.syncOrder(c,token,order.externalOrderId!);}
+ async shippingLabel(actor:MarketplaceActor,orderId:string){
+  const {order,provider,token}=await this.externalOrder(actor,orderId);
+  if(provider.capabilities.labels!=="SUPPORTED")throw new MarketplaceError("BLOCKED_EXTERNAL_CAPABILITY");
+  const label=await provider.shippingLabel(token,await provider.getOrder(token,order.externalOrderId!));
+  await this.d.repository.audit(actor,"SHIPPING_LABEL_DOWNLOADED",order.id);return label;
+ }
+ /** Cancelamento no canal (quando a API permite); o estoque volta pelo mesmo caminho da sincronização. */
+ async cancelExternalOrder(actor:MarketplaceActor,orderId:string,reason:string){
+  const {order,c,provider,token}=await this.externalOrder(actor,orderId);
+  if(provider.capabilities.cancelOrder!=="SUPPORTED")throw new MarketplaceError("BLOCKED_EXTERNAL_CAPABILITY");
+  const external=await provider.getOrder(token,order.externalOrderId!);
+  if(external.state!=="CANCELLED"){
+   if(["SHIPPED","DELIVERED"].includes(external.state))throw new MarketplaceError("MARKETPLACE_ORDER_ALREADY_SHIPPED");
+   await provider.cancelOrder(token,external,reason);
+  }
+  await this.d.repository.audit(actor,"ORDER_CANCEL_REQUESTED",order.id);
+  return this.syncOrder(c,token,order.externalOrderId!);
  }
 }

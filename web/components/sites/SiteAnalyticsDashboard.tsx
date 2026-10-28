@@ -14,6 +14,7 @@ import {PageHeader} from "@/components/PageHeader";
 import {Button} from "@/components/Button";
 import {Input} from "@/components/Field";
 import {ErrorState} from "@/components/ErrorState";
+import {ChannelSalesBlock} from "@/components/commerce/ChannelSalesBlock";
 import {formatCurrencyCents} from "@/lib/format";
 import {Dialog,DialogContent,DialogTitle,DialogDescription} from "@/components/ui/dialog";
 
@@ -66,6 +67,7 @@ export default function SiteAnalyticsDashboard(){
    <p className="text-xs text-muted-foreground">{data.range.from.split("-").reverse().join("/")} a {data.range.to.split("-").reverse().join("/")} · {data.range.timezone} · {data.scope==="workspace"?"Todos os dados permitidos do workspace":"Somente jornadas das suas oportunidades / atendimentos e equipes permitidas"}</p>
    {data.empty?<section className="rounded-xl border border-dashed bg-card px-4 py-12 text-center"><BarChart3 className="mx-auto mb-3 text-muted-foreground"/><h2 className="font-semibold">Ainda não há dados suficientes.</h2><p className="mx-auto mt-2 max-w-lg text-sm text-muted-foreground">Publique o site, compartilhe seus produtos e acompanhe as interações. Confira também o período e os filtros escolhidos.</p></section>:null}
    <section className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4" aria-label="Métricas principais">{cards.map(card=><article key={card.label} className="min-w-0 rounded-xl border bg-card p-4"><div className="flex items-center justify-between gap-2"><p className="text-xs font-medium text-muted-foreground">{card.label}</p><card.icon size={16} className="shrink-0 text-muted-foreground"/></div><p className="mt-3 break-words text-2xl font-semibold tabular-nums">{card.value}</p><p className="mt-1 text-[11px] text-muted-foreground">{card.hint}</p></article>)}</section>
+   {access.can("order:read")?<ChannelSalesBlock workspaceId={workspace.id} from={data.range.start} to={data.range.end} cacheKey={viewerKey}/>:null}
    {!data.empty?<>
     <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.5fr)]">
      <section className="min-w-0 rounded-xl border bg-card p-4"><h2 className="font-semibold">Funil comercial</h2><p className="mt-1 text-xs text-muted-foreground">Visitantes distintos em cada etapa no período. Formulários e outros caminhos podem pular etapas.</p><ol className="mt-4 space-y-3">{data.funnel.map(stage=><li key={stage.key} className="space-y-1"><div className="flex justify-between gap-2 text-sm"><span>{stage.label}</span><strong className="tabular-nums">{stage.visitors}</strong></div><div className="h-2 overflow-hidden rounded-full bg-muted"><div className="h-full rounded-full bg-primary" style={{width:`${Math.min(100,stage.visitors/Math.max(1,...data.funnel.map(s=>s.visitors))*100)}%`}}/></div></li>)}</ol></section>

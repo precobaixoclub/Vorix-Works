@@ -43,8 +43,8 @@ export async function registerMarketplaceRoutes(app:FastifyInstance,deps:{servic
  }};
  app.get("/marketplaces",async request=>guard(async()=>{
   const s=await context(request),productId=z.object({productId:id.optional()}).parse(request.query).productId;
-  if(!deps.service)return successEnvelope({configured:false,connections:[],listings:[],jobs:[],mappings:[]},request.id);
-  return successEnvelope({configured:true,...await deps.service.dashboard(s,productId)},request.id);
+  if(!deps.service)return successEnvelope({configured:false,providers:[],connections:[],listings:[],jobs:[],mappings:[]},request.id);
+  return successEnvelope({configured:true,providers:deps.service.configuredProviders(),...await deps.service.dashboard(s,productId)},request.id);
  }));
  const OAUTH_COOKIE="vorix_ml_oauth",OAUTH_COOKIE_PATH="/v1/marketplaces/mercado-livre/callback";
  app.post("/marketplaces/mercado-livre/connect",{config:{readOnlyGuard:true}},async(request,reply)=>guard(async()=>{
@@ -68,6 +68,41 @@ export async function registerMarketplaceRoutes(app:FastifyInstance,deps:{servic
   if(body.success&&deps.service)await deps.service.notification(body.data);
   return reply.code(200).send({received:true});
  });
+ // Shopee e TikTok Shop: mesmo fluxo (estado de uso único preso ao navegador), callback e notificações assinadas por canal.
+ const SLUGS={shopee:"SHOPEE","tiktok-shop":"TIKTOK_SHOP"} as const;
+ const slug=(request:FastifyRequest)=>{const value=(request.params as {provider:string}).provider;if(!(value in SLUGS))throw new NotFoundError();return {slug:value as keyof typeof SLUGS,provider:SLUGS[value as keyof typeof SLUGS]};};
+ const cookieName=(value:string)=>"vorix_mp_oauth_"+value.replace(/-/g,"_");
+ app.post("/marketplaces/:provider/connect",{config:{readOnlyGuard:true}},async(request,reply)=>guard(async()=>{
+  const {slug:value,provider}=slug(request);
+  const {url,browserNonce}=await ready().service.startOAuth(await context(request,true),provider);
+  reply.setCookie(cookieName(value),browserNonce,{httpOnly:true,secure:request.protocol==="https"||process.env.NODE_ENV==="production",sameSite:"lax",path:`/v1/marketplaces/${value}/callback`,maxAge:600});
+  return successEnvelope({url},request.id);
+ }));
+ app.get("/marketplaces/:provider/callback",async(request,reply)=>{
+  try{
+   const {slug:value,provider}=slug(request);
+   const q=z.record(z.string(),z.string().max(2000)).parse(request.query);
+   const state=z.string().min(20).max(200).parse(q.state);
+   const nonce=(request.cookies as Record<string,string|undefined>|undefined)?.[cookieName(value)];
+   reply.clearCookie(cookieName(value),{path:`/v1/marketplaces/${value}/callback`});
+   const {state:_state,code,error,...params}=q;
+   await ready().service.callback(state,error?undefined:code,nonce,params,provider);
+   return reply.header("Cache-Control","no-store").header("Referrer-Policy","no-referrer").type("text/html; charset=utf-8").send("<!doctype html><html lang='pt-BR'><meta name='viewport' content='width=device-width'><title>Marketplace</title><p>Conta conectada. Volte ao Vorix e atualize a tela de Marketplaces.</p></html>");
+  }catch{return reply.code(400).header("Cache-Control","no-store").type("text/plain; charset=utf-8").send("Não foi possível conectar. Volte ao Vorix e inicie uma nova autorização.");}
+ });
+ // Corpo cru só aqui (assinatura HMAC do canal é calculada sobre os bytes recebidos).
+ await app.register(async scope=>{
+  scope.addContentTypeParser("application/json",{parseAs:"string",bodyLimit:65536},(_request,body,done)=>done(null,body));
+  scope.post("/marketplaces/:provider/notifications",async(request,reply)=>{
+   const {provider}=slug(request);
+   if(deps.service&&typeof request.body==="string")await deps.service.providerNotification(provider,{headers:request.headers as Record<string,string|undefined>,rawBody:request.body,url:request.url}).catch(error=>request.log.warn({err:error},"marketplace notification failed"));
+   return reply.code(200).send({received:true});
+  });
+ });
+ app.patch("/marketplaces/connections/:id/settings",{config:{readOnlyGuard:true}},async request=>guard(async()=>{
+  const actor=await context(request,true);const body=z.object({createContacts:z.boolean()}).strict().parse(request.body);
+  await ready().service.saveSettings(actor,id.parse((request.params as {id:string}).id),body);return successEnvelope({saved:true},request.id);
+ }));
  app.post("/marketplaces/connections/:id/disconnect",{config:{readOnlyGuard:true}},async request=>guard(async()=>{
   const actor=await context(request,true);z.object({confirm:z.literal(true)}).parse(request.body);
   await ready().service.disconnect(actor,id.parse((request.params as {id:string}).id));return successEnvelope({disconnected:true},request.id);

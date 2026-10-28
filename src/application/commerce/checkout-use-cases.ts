@@ -144,8 +144,8 @@ async function reserveStock(deps:CheckoutDeps,order:Order){
   throw Object.assign(Error(`SITE_VALIDATION: ${failed?`${failed.name}${failed.variantLabel?` (${failed.variantLabel})`:""}`:"Um produto"} acabou de esgotar. Ajuste o carrinho e tente de novo.`),{cause:error});
  }
 }
-function providerContext(order:Pick<Order,"tenantId"|"workspaceId"|"siteId">,credentials?:Record<string,string>):PaymentProviderContext{return {tenantId:order.tenantId,workspaceId:order.workspaceId,siteId:order.siteId??"",credentials};}
-async function paymentProviderFor(deps:CheckoutDeps,site:Pick<Site,"tenantId"|"id">,key:string){
+export function providerContext(order:Pick<Order,"tenantId"|"workspaceId"|"siteId">,credentials?:Record<string,string>):PaymentProviderContext{return {tenantId:order.tenantId,workspaceId:order.workspaceId,siteId:order.siteId??"",credentials};}
+export async function paymentProviderFor(deps:CheckoutDeps,site:Pick<Site,"tenantId"|"id">,key:string){
  const provider=deps.paymentProviders[key as "SANDBOX"|"MERCADO_PAGO"];if(!provider)throw Error("SITE_VALIDATION: forma de pagamento indisponível.");
  return {provider,credentials:key==="MERCADO_PAGO"?await readCommerceCredential(deps,site,"MERCADO_PAGO"):undefined};
 }
@@ -312,11 +312,13 @@ async function afterPaid(deps:CheckoutDeps,order:Order){
 }
 async function refundPayment(deps:CheckoutDeps,order:Order,payment:Payment,reason:string){
  if(!payment.providerPaymentId)return;
- if((await deps.orders.payments(order.id)).find(item=>item.id===payment.id)?.status==="REFUNDED")return;
+ const current=(await deps.orders.payments(order.id)).find(item=>item.id===payment.id);
+ if(current?.status==="REFUNDED")return;
+ // Só o saldo: devoluções parciais já estornadas não são devolvidas de novo.
+ const remaining=payment.amountCents-(current?.refundedCents??0);if(remaining<=0)return;
  const {provider,credentials}=await paymentProviderFor(deps,{tenantId:order.tenantId,id:order.siteId??""},payment.provider);
- const state=await provider.refund(providerContext(order,credentials),payment.providerPaymentId,payment.amountCents);
- await deps.orders.updatePayment(payment.id,{status:state.status==="REFUNDED"?"REFUNDED":"APPROVED"},["APPROVED"]);
- if(state.status==="REFUNDED")await deps.orders.update(order.id,{paymentStatus:"REFUNDED"},{type:"payment_refunded",actorType:"system",data:{paymentId:payment.id,reason}});
+ const state=await provider.refund(providerContext(order,credentials),payment.providerPaymentId,remaining,`refund-${payment.id}-${reason}`.slice(0,64));
+ if(state.status==="REFUNDED"){await deps.orders.recordRefund(payment.id,order.id,remaining);await deps.orders.addEvent(order.id,{type:"payment_refunded",actorType:"system",data:{paymentId:payment.id,reason,amountCents:remaining}});}
  else await deps.orders.addEvent(order.id,{type:"refund_pending",actorType:"system",data:{paymentId:payment.id,reason}});
 }
 /** Webhook: nunca confia no corpo; relê o pagamento no provedor com a credencial do lojista. */

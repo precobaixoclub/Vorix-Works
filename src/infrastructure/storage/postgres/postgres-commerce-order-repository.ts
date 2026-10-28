@@ -211,8 +211,28 @@ export class PostgresCommerceOrderRepository implements CommerceOrderRepositoryP
   }catch(error){await client.query("rollback");throw error;}finally{client.release();}
   return this.getReturn(id);
  }
+ /** Reivindica o recebimento do item uma única vez (repetição/duplo clique não repõe estoque de novo). */
  async setReturnItemReceived(returnId:string,orderItemId:string,received:number,restocked:number){
-  await this.pool.query("update commerce_return_items set received_quantity=$3,restocked_quantity=$4 where return_id=$1 and order_item_id=$2",[returnId,orderItemId,received,restocked]);
+  const r=await this.pool.query("update commerce_return_items set received_quantity=$3,restocked_quantity=$4 where return_id=$1 and order_item_id=$2 and received_quantity=0 and restocked_quantity=0 returning id",[returnId,orderItemId,received,restocked]);
+  return (r.rowCount??0)>0;
+ }
+ /** Vendas por canal (pedidos, não oportunidades: venda do Site com oportunidade ganha conta uma vez). */
+ async channelSummary(input:{tenantId:string;workspaceId:string;from:string;to:string;global:boolean;teamIds:readonly string[];ownerUserIds:readonly string[]}){
+  const {rows}=await this.pool.query(`select o.source,count(*)::int orders,
+    count(*) filter(where o.paid_at is not null and o.status<>'CANCELLED')::int sales,
+    coalesce(sum(o.total_cents) filter(where o.paid_at is not null and o.status<>'CANCELLED'),0)::bigint gross_cents,
+    coalesce(sum(o.refunded_cents+coalesce(mr.refund_cents,0)) filter(where o.paid_at is not null and o.status<>'CANCELLED'),0)::bigint refunds_cents,
+    count(*) filter(where o.status='CANCELLED')::int cancellations,coalesce(sum(r.returns),0)::int returns
+   from commerce_orders o
+   left join lateral(select count(*)::int returns from commerce_returns x where x.order_id=o.id and x.status not in ('REJECTED','CANCELLED'))r on true
+   left join lateral(select sum(x.refund_cents) refund_cents from commerce_returns x where x.order_id=o.id and x.refund_status='MARKETPLACE' and x.status not in ('REJECTED','CANCELLED'))mr on true
+   left join site_commerce_settings s on s.site_id=o.site_id
+   left join deals d on d.id=o.crm_deal_id and d.tenant_id=o.tenant_id
+   where o.tenant_id=$1 and o.workspace_id=$2 and o.created_at>=$3 and o.created_at<$4
+    and ($5::boolean or s.settings->>'teamId'=any($6::text[]) or d.owner_user_id=any($7::text[]) or d.team_id=any($6::text[]))
+   group by o.source order by o.source`,[input.tenantId,input.workspaceId,input.from,input.to,input.global,[...input.teamIds],[...input.ownerUserIds]]);
+  return rows.map(row=>{const revenueCents=Number(row.gross_cents)-Number(row.refunds_cents);
+   return {source:row.source,orders:row.orders,sales:row.sales,revenueCents,refundsCents:Number(row.refunds_cents),averageTicketCents:row.sales?Math.round(Number(row.gross_cents)/row.sales):0,cancellations:row.cancellations,returns:row.returns};});
  }
  /** Soma o estorno ao pagamento e ao pedido (nunca passa do valor pago). */
  async recordRefund(paymentId:string,orderId:string,amountCents:number){

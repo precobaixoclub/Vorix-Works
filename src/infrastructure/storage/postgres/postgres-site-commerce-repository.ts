@@ -41,8 +41,15 @@ export class PostgresSiteCommerceRepository implements SiteCommerceRepositoryPor
   return rows[0]?intent(rows[0]):undefined;
  }
  async releaseIntent(id:string,error:string){await this.pool.query("update sales_intents set status='OPEN',claimed_at=null,conversion_error=$2 where id=$1 and status='CONVERTING'",[id,error.slice(0,500)]);}
- async listIntents(input:{tenantId:string;workspaceId:string;siteId?:string;limit:number}){
-  const {rows}=await this.pool.query("select * from sales_intents where tenant_id=$1 and workspace_id=$2 and ($3::text is null or site_id=$3) order by created_at desc limit $4",[input.tenantId,input.workspaceId,input.siteId??null,input.limit]);return rows.map(intent);
+ async listIntents(input:{tenantId:string;workspaceId:string;siteId?:string;limit:number;visibility?:{global:boolean;teamIds:readonly string[];ownerUserIds:readonly string[]}}){
+  const v=input.visibility??{global:true,teamIds:[],ownerUserIds:[]};
+  // Fora do escopo global: oportunidade/conversa da pessoa ou das equipes; intenção ainda anônima segue a equipe de roteamento do site.
+  const {rows}=await this.pool.query(`select s.* from sales_intents s where s.tenant_id=$1 and s.workspace_id=$2 and ($3::text is null or s.site_id=$3)
+   and ($5::boolean
+    or exists(select 1 from deals d where d.id=s.deal_id and d.tenant_id=s.tenant_id and (d.owner_user_id=any($7::text[]) or d.team_id=any($6::text[])))
+    or exists(select 1 from inbox_conversations c where c.id=s.conversation_id and c.tenant_id=s.tenant_id and (c.assigned_user_id=any($7::text[]) or c.current_team_id=any($6::text[])))
+    or (s.deal_id is null and s.conversation_id is null and exists(select 1 from site_commerce_settings x where x.site_id=s.site_id and x.settings->>'teamId'=any($6::text[]))))
+   order by s.created_at desc limit $4`,[input.tenantId,input.workspaceId,input.siteId??null,input.limit,v.global,[...v.teamIds],[...v.ownerUserIds]]);return rows.map(intent);
  }
  async getCart(input:{siteId:string;tokenHash:string}){const {rows}=await this.pool.query("select * from site_carts where site_id=$1 and token_hash=$2",[input.siteId,input.tokenHash]);return rows[0]?cart(rows[0]):undefined;}
  async createCart(input:{tenantId:string;workspaceId:string;siteId:string;tokenHash:string;anonymousSessionId?:string;expiresAt:string}){

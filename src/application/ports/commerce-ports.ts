@@ -38,6 +38,7 @@ export type ShipmentInput={tenantId:string;workspaceId:string;orderId:string;pro
 export type ReturnInput={tenantId:string;workspaceId:string;orderId:string;source:OrderSource;externalReturnId?:string;requestKey?:string;status:ReturnStatus;externalStatus?:string;reason?:string;refundCents:number;refundStatus:RefundStatus;createdBy?:string;items:{orderItemId:string;quantity:number;reason?:string}[]};
 export type OrderEventInput=Omit<OrderEvent,"id"|"createdAt"|"orderId">;
 export type OrderListFilter={tenantId:string;workspaceId:string;siteId?:string;status?:OrderStatus;paymentStatus?:PaymentStatus;shippingStatus?:ShippingStatus;source?:string;search?:string;from?:string;to?:string;limit:number;offset:number};
+export type ChannelSummary={source:OrderSource;orders:number;sales:number;revenueCents:number;refundsCents:number;averageTicketCents:number;cancellations:number;returns:number};
 export type CommerceOrderRepositoryPort={
  /** Idempotente por (siteId, requestKey): repetir o "Finalizar compra" devolve o mesmo pedido. */
  create(input:CreateOrderInput):Promise<{order:Order;created:boolean}>;
@@ -65,6 +66,8 @@ export type CommerceOrderRepositoryPort={
  /** Valida sob trava do pedido: nunca devolve mais do que vendido − devoluções ativas. */
  createReturn(input:ReturnInput):Promise<{ret:OrderReturn;created:boolean}>;
  updateReturn(id:string,patch:{status?:ReturnStatus;externalStatus?:string;refundStatus?:RefundStatus;refundCents?:number;refundProviderId?:string},expected:{statuses?:readonly ReturnStatus[];refundStatuses?:readonly RefundStatus[]},event?:OrderEventInput):Promise<OrderReturn|undefined>;
- setReturnItemReceived(returnId:string,orderItemId:string,received:number,restocked:number):Promise<void>;
+ /** false = item já recebido antes (nunca repõe duas vezes). */
+ setReturnItemReceived(returnId:string,orderItemId:string,received:number,restocked:number):Promise<boolean>;
+ channelSummary(input:{tenantId:string;workspaceId:string;from:string;to:string;global:boolean;teamIds:readonly string[];ownerUserIds:readonly string[]}):Promise<ChannelSummary[]>;
  recordRefund(paymentId:string,orderId:string,amountCents:number):Promise<Payment>;
 };

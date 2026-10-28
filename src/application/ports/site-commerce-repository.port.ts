@@ -20,7 +20,7 @@ export type SiteCommerceRepositoryPort={
  updateIntentLinks(id:string,links:SalesIntentLinks):Promise<void>;
  completeIntent(id:string,links:SalesIntentLinks):Promise<SalesIntent|undefined>;
  releaseIntent(id:string,error:string):Promise<void>;
- listIntents(input:{tenantId:string;workspaceId:string;siteId?:string;limit:number}):Promise<SalesIntent[]>;
+ listIntents(input:{tenantId:string;workspaceId:string;siteId?:string;limit:number;visibility?:{global:boolean;teamIds:readonly string[];ownerUserIds:readonly string[]}}):Promise<SalesIntent[]>;
  getCart(input:{siteId:string;tokenHash:string}):Promise<SiteCart|undefined>;
  createCart(input:{tenantId:string;workspaceId:string;siteId:string;tokenHash:string;anonymousSessionId?:string;expiresAt:string}):Promise<SiteCart>;
  listCartItems(cartId:string):Promise<SiteCartItem[]>;

@@ -5,7 +5,11 @@ import { setTimeout as sleep } from "node:timers/promises";
 import { MarketplaceError, type ExternalAttribute, type ExternalListing, type ExternalVariant, type PublishDraft } from "../../domain/marketplaces/marketplace.model.js";
 
 /**
- * TikTok Shop (Partner API, versão 202309 — https://partner.tiktokshop.com/docv2).
+ * TikTok Shop (Partner API — https://partner.tiktokshop.com/docv2). Versão por endpoint, conforme a página de referência
+ * (versão é atribuída por API; a anterior fica disponível ≥2 meses após a nova — docv2/page/64f1991064ed2e0295f3cd32):
+ * 202309 (shops, categorias, produto, preço, estoque, ativar/desativar, imagens, armazéns, busca de pedidos, rastreio, etiqueta),
+ * 202502 (busca de produtos), 202507 (detalhe de pedido), 202509 (edição parcial de produto),
+ * 202602 (cancelamento, elegibilidade de pós-venda, busca de devoluções).
  * Rede confinada a open-api.tiktokglobalshop.com / auth.tiktok-shops.com (+ download de etiqueta em domínio TikTok).
  * Erros nunca carregam corpo de resposta, token, app_secret ou URL assinada.
  */
@@ -14,10 +18,19 @@ type Json = Record<string,any>;
 const API_ORIGIN="https://open-api.tiktokglobalshop.com";
 const AUTH_ORIGIN="https://auth.tiktok-shops.com";
 const AUTHORIZE_URL="https://services.tiktokshop.com/open/authorize";
-/** Domínios oficiais aceitos para o doc_url da etiqueta (download sem redirect). */
+/**
+ * Domínios aceitos para o doc_url da etiqueta (download sem redirect). A doc só diz que o doc_url vale 24 h e não publica o host
+ * (o exemplo usa um host fictício): allowlist NÃO confirmada — revisar na homologação real se o download for recusado.
+ */
 const LABEL_HOSTS=["tiktokshop.com","tiktokglobalshop.com","tiktok-shops.com","tiktokcdn.com","tiktokcdn-us.com"];
-// Códigos do envelope: token inválido/expirado → reconectar.
-const REAUTH_CODES=new Set([105001,105002]);
+// Códigos do envelope (Common errors, docv2/page/678e3a45786253031531b942): 105002 = token expirado → reconectar;
+// 36009002 = limite de requisições (mesmo tratamento do HTTP 429, docv2/page/64f1991d64ed2e0295f3d2c0).
+const REAUTH_CODES=new Set([105002]);
+const RATE_LIMIT_CODE=36009002;
+// Estoque por armazém: faixa documentada em Update Inventory (docv2/page/6503068fc20ad60284b38858).
+const MAX_STOCK=99999;
+// Status em que o vendedor pode cancelar (Cancel reasons, docv2/page/67e61eee427345048595487d).
+const CANCELLABLE=new Set(["UNPAID","ON_HOLD","AWAITING_SHIPMENT"]);
 const ID=/^\d{1,30}$/;
 
 const identifier=(value:string,pattern=ID):string=>{if(!pattern.test(value))throw new MarketplaceError("INVALID_EXTERNAL_IDENTIFIER");return encodeURIComponent(value);};
@@ -48,17 +61,19 @@ const ORDER_STATE:Record<string,ExternalOrderState>={UNPAID:"PENDING_PAYMENT",ON
  PARTIALLY_SHIPPING:"SHIPPED",IN_TRANSIT:"SHIPPED",DELIVERED:"DELIVERED",COMPLETED:"DELIVERED",CANCELLED:"CANCELLED"};
 const SHIPMENT_STATE:Record<string,ExternalShipmentState>={UNPAID:"PENDING",ON_HOLD:"PENDING",AWAITING_SHIPMENT:"PENDING",AWAITING_COLLECTION:"READY_TO_SHIP",
  PARTIALLY_SHIPPING:"SHIPPED",IN_TRANSIT:"SHIPPED",DELIVERED:"DELIVERED",COMPLETED:"DELIVERED",CANCELLED:"CANCELLED"};
-// return_status (Return Refund 202309). Sem estado "recebido" próprio: o canal passa direto ao reembolso.
-const RETURN_STATE:Record<string,ExternalReturnState>={RETURN_OR_REFUND_REQUEST_PENDING:"REQUESTED",AWAITING_BUYER_RESPONSE:"REQUESTED",REPLACEMENT_REQUEST_PENDING:"REQUESTED",
+// return_status (Search Returns 202602, docv2/page/69c3070c441217049711fdea). Sem estado "recebido" próprio: o canal passa direto ao reembolso.
+const RETURN_STATE:Record<string,ExternalReturnState>={RETURN_OR_REFUND_REQUEST_PENDING:"REQUESTED",AWAITING_BUYER_RESPONSE:"REQUESTED",REPLACEMENT_REQUEST_PENDING:"REQUESTED",EXCHANGE_REQUEST_PENDING:"REQUESTED",
  REFUND_OR_RETURN_REQUEST_REJECT:"REJECTED",REPLACEMENT_REQUEST_REJECT:"REJECTED",REJECT_RECEIVE_PACKAGE:"REJECTED",
  AWAITING_BUYER_SHIP:"APPROVED",BUYER_SHIPPED_ITEM:"IN_TRANSIT",
  RETURN_OR_REFUND_REQUEST_SUCCESS:"COMPLETED",RETURN_OR_REFUND_REQUEST_COMPLETE:"COMPLETED",REPLACEMENT_REQUEST_REFUND_SUCCESS:"COMPLETED",REPLACEMENT_REQUEST_COMPLETE:"COMPLETED",
- RETURN_OR_REFUND_REQUEST_CANCEL:"CANCELLED"};
-const LISTING_STATE:Record<string,string>={ACTIVATE:"active",LIVE:"active",SELLER_DEACTIVATED:"paused",PLATFORM_DEACTIVATED:"paused",FREEZE:"closed",DELETED:"closed"};
-// Webhook types (Partner API): 1 pedido, 3 endereço, 4 pacote, 11 cancelamento → pedido; 2/12 pós-venda → devolução; 5 produto.
+ EXCHANGE_REQUEST_REFUND_SUCCESS:"COMPLETED",EXCHANGE_REQUEST_COMPLETE:"COMPLETED",
+ RETURN_OR_REFUND_REQUEST_CANCEL:"CANCELLED",REPLACEMENT_REQUEST_CANCEL:"CANCELLED",EXCHANGE_REQUEST_CANCEL:"CANCELLED"};
+// Product status (Get Product 202309): DRAFT, PENDING, FAILED, ACTIVATE, SELLER_DEACTIVATED, PLATFORM_DEACTIVATED, FREEZE, DELETED, SCHEDULED.
+const LISTING_STATE:Record<string,string>={ACTIVATE:"active",PENDING:"under_review",SELLER_DEACTIVATED:"paused",PLATFORM_DEACTIVATED:"paused",FREEZE:"closed",DELETED:"closed"};
+// Webhook `type` com página de tópico oficial (Webhooks > Order/Logistics/Return and Refund/Product): 1 pedido, 3 endereço, 4 pacote,
+// 11 cancelamento → pedido; 12 devolução; 5 produto. O overview pede não confiar só no número: o payload de cada tópico também é validado.
 const WEBHOOK:Record<number,{topic:string;kind:ProviderNotification["kind"]}>={1:{topic:"ORDER_STATUS_CHANGE",kind:"ORDER"},3:{topic:"RECIPIENT_ADDRESS_UPDATE",kind:"ORDER"},
- 4:{topic:"PACKAGE_UPDATE",kind:"ORDER"},11:{topic:"CANCELLATION_STATUS_CHANGE",kind:"ORDER"},2:{topic:"REVERSE_ORDER_STATUS_CHANGE",kind:"RETURN"},
- 12:{topic:"RETURN_STATUS_CHANGE",kind:"RETURN"},5:{topic:"PRODUCT_STATUS_CHANGE",kind:"LISTING"}};
+ 4:{topic:"PACKAGE_UPDATE",kind:"ORDER"},11:{topic:"CANCELLATION_STATUS_CHANGE",kind:"ORDER"},12:{topic:"RETURN_STATUS_CHANGE",kind:"RETURN"},5:{topic:"PRODUCT_STATUS_CHANGE",kind:"LISTING"}};
 const SETTINGS=new Set(["brand_id","is_cod_allowed"]);
 
 type RequestOptions={query?:Record<string,string>;body?:unknown;form?:FormData;auth?:ProviderAuth;shop?:boolean};
@@ -66,10 +81,9 @@ type RequestOptions={query?:Record<string,string>;body?:unknown;form?:FormData;a
 export class TikTokShopProvider implements MarketplaceProvider {
  readonly id="TIKTOK_SHOP" as const;
  readonly pkce=false;
- // Cancelamento existe na API, mas exige códigos oficiais de motivo (seller_cancel_*) que não confirmamos para o TikTok Shop BR:
- // bloqueado até a homologação real (nunca enviamos um motivo inventado em nome do lojista).
+ // Cancelamento: o motivo vem da API oficial de elegibilidade (available_reason_names), nunca de lista fixa — ver cancelOrder.
  readonly capabilities:ProviderCapabilities={listings:"SUPPORTED",publish:"SUPPORTED",priceSync:"SUPPORTED",stockSync:"SUPPORTED",orders:"SUPPORTED",shipments:"SUPPORTED",
-  labels:"SUPPORTED",cancelOrder:"BLOCKED_EXTERNAL_CAPABILITY",returns:"SUPPORTED",webhooks:"SUPPORTED"};
+  labels:"SUPPORTED",cancelOrder:"SUPPORTED",returns:"SUPPORTED",webhooks:"SUPPORTED"};
  private nextCallAt=0;
  constructor(private readonly config:TikTokShopConfig,private readonly fetcher:typeof fetch=fetch){}
  get applicationId(){return this.config.appKey;}
@@ -79,15 +93,22 @@ export class TikTokShopProvider implements MarketplaceProvider {
  private async throttle(){const start=Math.max(Date.now(),this.nextCallAt);this.nextCallAt=start+200;if(start>Date.now())await sleep(start-Date.now());}
  private failure(response:Response):never{
   if(response.status===401)throw new MarketplaceError("REAUTH_REQUIRED");
-  if(response.status===429){const seconds=Number(response.headers.get("retry-after"));throw new MarketplaceError("TIKTOK_RATE_LIMIT",true,Math.min(3600000,Math.max(1000,Number.isFinite(seconds)&&seconds>0?seconds*1000:30000)));}
+  if(response.status===429)this.rateLimited(response.headers.get("retry-after"));
   if(response.status===404)throw new MarketplaceError("TIKTOK_NOT_FOUND");
   if(response.status>=500)throw new MarketplaceError("TIKTOK_UNAVAILABLE",true);
   throw new MarketplaceError("TIKTOK_REQUEST_REJECTED_"+response.status);
  }
+ /** Retry-After pode vir em segundos ou como data HTTP (Rate limits §5.6); sem ele, 30 s. */
+ private rateLimited(retryAfter:string|null):never{
+  const raw=(retryAfter??"").trim(),seconds=Number(raw),date=raw&&!Number.isFinite(seconds)?Date.parse(raw)-Date.now():NaN;
+  const ms=Number.isFinite(seconds)&&seconds>0?seconds*1000:Number.isFinite(date)&&date>0?date:30000;
+  throw new MarketplaceError("TIKTOK_RATE_LIMIT",true,Math.min(3600000,Math.max(1000,ms)));
+ }
  /** Envelope {code,message,data}: só o código numérico sai no erro. */
- private envelope(body:Json):Json{
+ private envelope(body:Json,retryAfter:string|null=null):Json{
   const code=Number(body?.code);
   if(code===0)return body.data??{};
+  if(code===RATE_LIMIT_CODE)this.rateLimited(retryAfter);
   if(REAUTH_CODES.has(code))throw new MarketplaceError("REAUTH_REQUIRED");
   throw new MarketplaceError("TIKTOK_API_ERROR_"+(Number.isSafeInteger(code)?code:"UNKNOWN"));
  }
@@ -105,7 +126,7 @@ export class TikTokShopProvider implements MarketplaceProvider {
   }catch{throw new MarketplaceError("TIKTOK_NETWORK_UNCERTAIN",true);}
   if(!response.ok)this.failure(response);
   let json:Json;try{json=await response.json() as Json;}catch{throw new MarketplaceError("TIKTOK_INVALID_RESPONSE",true);}
-  return this.envelope(json);
+  return this.envelope(json,response.headers.get("retry-after"));
  }
  /** Download binário só por https, sem redirect, com limite de tamanho. */
  private async download(url:string,limit:number,accept:RegExp,code:string):Promise<{bytes:Uint8Array;contentType:string}>{
@@ -120,8 +141,9 @@ export class TikTokShopProvider implements MarketplaceProvider {
   return {bytes,contentType};
  }
  // ---------------------------------------------------------------- conexão
+ /** Get Access Token = /api/v2/token/get (grant_type=authorized_code); Get Refresh Token = /api/v2/token/refresh (docv2/page/678e3a3292b0f40314a92d75). */
  private async token(params:Record<string,string>,refresh:boolean):Promise<Json>{
-  const url=AUTH_ORIGIN+"/api/v2/token/get?"+new URLSearchParams({app_key:this.config.appKey,app_secret:this.config.appSecret,...params});
+  const url=AUTH_ORIGIN+"/api/v2/token/"+(refresh?"refresh":"get")+"?"+new URLSearchParams({app_key:this.config.appKey,app_secret:this.config.appSecret,...params});
   await this.throttle();
   let response:Response;
   try{response=await this.fetcher(url,{method:"GET",redirect:"error",signal:AbortSignal.timeout(20000)});}catch{throw new MarketplaceError("TIKTOK_NETWORK_UNCERTAIN",true);}
@@ -137,6 +159,8 @@ export class TikTokShopProvider implements MarketplaceProvider {
   return Array.isArray(data.shops)?data.shops:[];
  }
  async connect(input:{code:string;params:Record<string,string>}):Promise<MarketplaceTokens>{
+  // Recusa do vendedor volta ao redirect como code=null&error=auth_denied.
+  if(input.params?.error||input.code==="null")throw new MarketplaceError("TIKTOK_AUTHORIZATION_DENIED");
   if(!input.code||input.code.length>1000)throw new MarketplaceError("TIKTOK_TOKEN_REJECTED");
   const data=await this.token({auth_code:input.code,grant_type:"authorized_code"},false);
   const accessToken=String(data.access_token);
@@ -164,7 +188,7 @@ export class TikTokShopProvider implements MarketplaceProvider {
  }
  // ---------------------------------------------------------------- produtos
  async listExternalProducts(auth:ProviderAuth,cursor?:string){
-  const data=await this.request("POST","/product/202309/products/search",{auth,shop:true,query:{page_size:"50",...(cursor?{page_token:cursor}:{})},body:{}});
+  const data=await this.request("POST","/product/202502/products/search",{auth,shop:true,query:{page_size:"50",...(cursor?{page_token:cursor}:{})},body:{}});
   const products:Json[]=Array.isArray(data.products)?data.products:[];
   return {ids:products.filter(p=>p.id).map(p=>String(p.id)),cursor:products.length&&data.next_page_token?String(data.next_page_token):undefined,total:Number(data.total_count??0)};
  }
@@ -276,25 +300,23 @@ export class TikTokShopProvider implements MarketplaceProvider {
    attributes:input.draft.attributes,variants:(input.variants??[]).map((v,i)=>({id:createdId(i,v.sku),sku:v.sku,priceCents:v.priceCents,quantity:v.quantity,
     options:Object.fromEntries(v.attributes.map(a=>[a.id,String(a.value_name??a.value_id??"")]))})),model:"LEGACY",stockWritable:true,priceWritable:true};
  }
- /** PUT é edição completa: relê o produto e reenvia tudo, trocando só o que mudou. */
+ /**
+  * Partial Edit Product (POST /product/202509/products/{id}/partial_edit, docv2/page/68f597ee1e45470499ff10f0): só as propriedades de topo
+  * enviadas mudam — o PUT de edição completa sobrescreve com vazio tudo que não for reenviado (certificações, size chart, vídeo, códigos de SKU…)
+  * e reenviaria preço/estoque lidos antes (corrida com syncStock). A edição parcial não aceita category_id: troca de categoria é recusada.
+  */
  async updateListing(auth:ProviderAuth,id:string,input:Partial<PublishDraft>):Promise<void>{
   const settings=this.settings(input);
   if(!input.title&&!input.attributes&&!input.pictures&&input.description===undefined&&!input.categoryId&&!Object.keys(settings).length)return;
-  const current=await this.product(auth,id);
-  const category=(current.category_chains??[]).find((c:Json)=>c.is_leaf)??(current.category_chains??[]).at(-1);
-  const main_images=input.pictures?await Promise.all(input.pictures.slice(0,9).map(p=>this.uploadImage(auth,p))).then(uris=>uris.map(uri=>({uri})))
-   :(current.main_images??[]).filter((i:Json)=>i.uri).map((i:Json)=>({uri:String(i.uri)}));
-  const body:Json={...settings,title:input.title??current.title,description:input.description!==undefined?html(input.description):current.description,
-   category_id:input.categoryId??String(category?.id??""),main_images,
-   product_attributes:input.attributes?TikTokShopProvider.productAttributes(input.attributes)
-    :(current.product_attributes??[]).map((a:Json)=>({id:String(a.id),values:(a.values??[]).map((v:Json)=>v.id?{id:String(v.id)}:{name:String(v.name)})})),
-   ...(current.brand?.id&&!settings.brand_id?{brand_id:String(current.brand.id)}:{}),
-   ...(current.package_weight?{package_weight:current.package_weight}:{}),...(current.package_dimensions?{package_dimensions:current.package_dimensions}:{}),
-   skus:(current.skus??[]).map((s:Json)=>({id:String(s.id),...(s.seller_sku?{seller_sku:s.seller_sku}:{}),
-    sales_attributes:(s.sales_attributes??[]).map((a:Json)=>({id:String(a.id),...(a.value_id?{value_id:String(a.value_id)}:{value_name:String(a.value_name??"")})})),
-    price:{amount:amount(TikTokShopProvider.price(s)),currency:String(s.price?.currency??"BRL")},
-    inventory:(s.inventory??[]).map((i:Json)=>({warehouse_id:String(i.warehouse_id),quantity:Number(i.quantity)||0}))}))};
-  await this.request("PUT","/product/202309/products/"+identifier(id),{auth,shop:true,body});
+  if(input.categoryId){
+   const current=await this.product(auth,id),category=(current.category_chains??[]).find((c:Json)=>c.is_leaf)??(current.category_chains??[]).at(-1);
+   if(String(category?.id??"")!==input.categoryId)throw new MarketplaceError("TIKTOK_CATEGORY_CHANGE_UNSUPPORTED");
+  }
+  const body:Json={...settings,...(input.title?{title:input.title}:{}),...(input.description!==undefined?{description:html(input.description)}:{}),
+   ...(input.attributes?{product_attributes:TikTokShopProvider.productAttributes(input.attributes)}:{})};
+  if(input.pictures){const uris:string[]=[];for(const p of input.pictures.slice(0,9))uris.push(await this.uploadImage(auth,p));body.main_images=uris.map(uri=>({uri}));}
+  if(!Object.keys(body).length)return;
+  await this.request("POST","/product/202509/products/"+identifier(id)+"/partial_edit",{auth,shop:true,body});
  }
  /** "closed" desativa (reversível): excluir no TikTok é irreversível e não é necessário para parar a venda. */
  async setStatus(auth:ProviderAuth,id:string,status:"paused"|"active"|"closed"){
@@ -311,7 +333,7 @@ export class TikTokShopProvider implements MarketplaceProvider {
   const warehouse=await this.salesWarehouse(auth);if(!warehouse)throw new MarketplaceError("TIKTOK_STOCK_WAREHOUSE_AMBIGUOUS");
   let targets=variants;
   if(!targets?.length){const ids=await this.skuIds(auth,id);if(ids.length!==1)throw new MarketplaceError("TIKTOK_VARIANTS_REQUIRED");targets=[{id:ids[0]!,quantity}];}
-  if(targets.some(t=>!Number.isSafeInteger(t.quantity)||t.quantity<0))throw new MarketplaceError("INVALID_EXTERNAL_QUANTITY");
+  if(targets.some(t=>!Number.isSafeInteger(t.quantity)||t.quantity<0||t.quantity>MAX_STOCK))throw new MarketplaceError("INVALID_EXTERNAL_QUANTITY");
   await this.request("POST","/product/202309/products/"+identifier(id)+"/inventory/update",{auth,shop:true,
    body:{skus:targets.map(t=>({id:identifier(t.id),inventory:[{warehouse_id:warehouse,quantity:t.quantity}]}))}});
  }
@@ -324,7 +346,7 @@ export class TikTokShopProvider implements MarketplaceProvider {
   return {ids:orders.filter(o=>o.id).map(o=>String(o.id)),cursor:orders.length&&data.next_page_token?String(data.next_page_token):undefined};
  }
  private async rawOrder(auth:ProviderAuth,id:string):Promise<Json>{
-  const data=await this.request("GET","/order/202309/orders",{auth,shop:true,query:{ids:identifier(id)}});
+  const data=await this.request("GET","/order/202507/orders",{auth,shop:true,query:{ids:identifier(id)}});
   const order=(Array.isArray(data.orders)?data.orders:[]).find((o:Json)=>String(o.id)===id);
   if(!order)throw new MarketplaceError("TIKTOK_NOT_FOUND");
   return order;
@@ -350,6 +372,9 @@ export class TikTokShopProvider implements MarketplaceProvider {
   const totalCents=payment.total_amount!==undefined?tiktokCents(payment.total_amount):Math.max(0,subtotalCents-discountCents+shippingCents);
   const packages:string[]=(Array.isArray(data.packages)?data.packages:[]).filter((p:Json)=>p.id).map((p:Json)=>String(p.id));
   const byTikTok=data.fulfillment_type==="FULFILLMENT_BY_TIKTOK";
+  // Etiqueta só existe para TikTok Shipping (shipping_type=TIKTOK); no BR a NF-e precisa estar enviada antes de despachar (need_upload_invoice).
+  const invoicePending=["NEED_INVOICE","INVOICE_PROCESSING"].includes(String(data.need_upload_invoice??""));
+  const tiktokShipping=data.shipping_type==="TIKTOK";
   const shipmentState=SHIPMENT_STATE[status]??"PENDING";
   let substatus:string|undefined;
   if(shipmentState==="SHIPPED"||shipmentState==="DELIVERED")substatus=await this.lastTrackingEvent(auth,id);
@@ -363,9 +388,10 @@ export class TikTokShopProvider implements MarketplaceProvider {
    buyer:{id:data.user_id?String(data.user_id):undefined},shippingAddress:address&&(address.city||address.state||address.postalCode)?address:undefined,
    shipment:{externalId:packages[0],state:shipmentState,externalStatus:status,substatus,logisticType:data.delivery_type?String(data.delivery_type):undefined,
     carrier:data.shipping_provider?String(data.shipping_provider):undefined,trackingNumber:data.tracking_number?String(data.tracking_number):undefined,
-    labelAvailable:status==="AWAITING_COLLECTION"&&!!packages.length&&!byTikTok,fulfilledByMarketplace:byTikTok,
-    shippedAt:iso(data.collection_time)??iso(data.shipping_time),deliveredAt:iso(data.delivery_time)},
-   data:{packageIds:packages.slice(0,20),fulfillmentType:data.fulfillment_type??undefined,deliveryType:data.delivery_type??undefined,isCod:data.is_cod===true}};
+    labelAvailable:status==="AWAITING_COLLECTION"&&!!packages.length&&!byTikTok&&tiktokShipping&&!invoicePending,fulfilledByMarketplace:byTikTok,
+    shippedAt:iso(data.collection_time)??iso(data.rts_time),deliveredAt:iso(data.delivery_time)},
+   data:{packageIds:packages.slice(0,20),fulfillmentType:data.fulfillment_type??undefined,deliveryType:data.delivery_type??undefined,shippingType:data.shipping_type??undefined,
+    needUploadInvoice:data.need_upload_invoice??undefined,isCod:data.is_cod===true}};
  }
  /** Último evento de rastreio (texto curto do canal); ausência de rastreio não bloqueia o pedido. */
  private async lastTrackingEvent(auth:ProviderAuth,orderId:string):Promise<string|undefined>{
@@ -381,7 +407,7 @@ export class TikTokShopProvider implements MarketplaceProvider {
   identifier(orderId);
   const records:Json[]=[];let token:string|undefined;
   for(let page=0;page<10;page++){
-   const data=await this.request("POST","/return_refund/202309/returns/search",{auth,shop:true,query:{page_size:"50",...(token?{page_token:token}:{})},body:{order_ids:[orderId]}});
+   const data=await this.request("POST","/return_refund/202602/returns/search",{auth,shop:true,query:{page_size:"50",...(token?{page_token:token}:{})},body:{order_ids:[orderId]}});
    const list:Json[]=Array.isArray(data.return_orders)?data.return_orders:[];records.push(...list);
    token=list.length&&data.next_page_token?String(data.next_page_token):undefined;if(!token)break;
   }
@@ -417,16 +443,28 @@ export class TikTokShopProvider implements MarketplaceProvider {
   return {contentType:pdf?"application/pdf":"image/png",base64:Buffer.from(bytes).toString("base64"),filename:`etiqueta-tiktok-${order.id}.${pdf?"pdf":"png"}`};
  }
  /**
-  * Cancelamento pelo vendedor antes do envio. `cancel_reason` precisa ser um código oficial do canal
-  * (ex.: seller_cancel_reason_out_of_stock); texto livre não é enviado.
+  * Cancelamento total pelo vendedor antes do envio (Cancel Order 202602, docv2/page/69c30707909b3e049e3d774e).
+  * `cancel_reason` precisa ser um "reason name" oficial: a doc manda obtê-lo de Get Aftersale Eligibility
+  * (initiate_aftersale_user=SELLER, request_types=CANCEL → available_reason_names) porque a lista varia por mercado/status e muda
+  * (ex.: dois motivos removidos em 31/10/2026). Texto livre ou motivo fora da lista atual nunca é enviado.
   */
  async cancelOrder(auth:ProviderAuth,order:ExternalOrder,reason:string):Promise<void>{
-  if(!["UNPAID","ON_HOLD","AWAITING_SHIPMENT"].includes(order.externalStatus))throw new MarketplaceError("TIKTOK_ORDER_NOT_CANCELLABLE");
-  const code=reason.trim();if(!/^seller_cancel_[a-z0-9_]{1,80}$/.test(code))throw new MarketplaceError("TIKTOK_CANCEL_REASON_CODE_REQUIRED");
-  await this.request("POST","/return_refund/202309/cancellations",{auth,shop:true,body:{order_id:identifier(order.id),cancel_reason:code}});
+  if(!CANCELLABLE.has(order.externalStatus))throw new MarketplaceError("TIKTOK_ORDER_NOT_CANCELLABLE");
+  const code=reason.trim();if(!/^[a-z0-9_]{1,120}$/.test(code))throw new MarketplaceError("TIKTOK_CANCEL_REASON_CODE_REQUIRED");
+  const orderId=identifier(order.id);
+  const data=await this.request("GET","/return_refund/202602/orders/"+orderId+"/aftersale_eligibility",{auth,shop:true,query:{initiate_aftersale_user:"SELLER",request_types:"CANCEL"}});
+  const entries:Json[]=(Array.isArray(data.sku_eligibility)?data.sku_eligibility:[]).flatMap((s:Json)=>Array.isArray(s.line_item_eligibility)?s.line_item_eligibility:[])
+   .filter((e:Json)=>e.request_type==="CANCEL");
+  // Cancelamento parcial por item só existe em US/UK: qualquer linha inelegível bloqueia o cancelamento total.
+  if(!entries.length||entries.some(e=>e.eligible!==true))throw new MarketplaceError("TIKTOK_ORDER_NOT_CANCELLABLE");
+  if(!entries.every(e=>Array.isArray(e.available_reason_names)&&e.available_reason_names.map(String).includes(code)))throw new MarketplaceError("TIKTOK_CANCEL_REASON_NOT_AVAILABLE");
+  await this.request("POST","/return_refund/202602/cancellations",{auth,shop:true,body:{order_id:orderId,cancel_reason:code}});
  }
  async resolveOrderId(_auth:ProviderAuth,resource:string):Promise<string|undefined>{return resource.match(/^order:(\d{1,30})$/)?.[1];}
- /** Assinatura: header Authorization = HMAC-SHA256(app_secret, app_key + corpo bruto), hex. Sem assinatura válida → ignorado. */
+ /**
+  * Assinatura (Webhooks overview, docv2/page/64f1997e93f5dc028e357341): header Authorization = HMAC-SHA256(app_secret, app_key + corpo bruto),
+  * hex minúsculo, sem "Bearer". Sem assinatura válida → ignorado.
+  */
  parseNotification(input:{headers:Record<string,string|undefined>;rawBody:string}):ProviderNotification|undefined{
   const header=Object.entries(input.headers).find(([k])=>k.toLowerCase()==="authorization")?.[1]?.trim().toLowerCase();
   if(!header||!/^[0-9a-f]{64}$/.test(header))return undefined;
@@ -436,8 +474,12 @@ export class TikTokShopProvider implements MarketplaceProvider {
   const type=Number(body?.type),event=WEBHOOK[type],shop=String(body?.shop_id??"");
   if(!event||!ID.test(shop))return undefined;
   const data:Json=body.data&&typeof body.data==="object"?body.data:{};
-  const orderId=data.order_id!==undefined&&ID.test(String(data.order_id))?String(data.order_id):undefined;
-  const productId=data.product_id!==undefined&&ID.test(String(data.product_id))?String(data.product_id):undefined;
+  // Package update (4) não traz order_id: os pedidos vêm em package_list[].order_id_list; usa o primeiro (a reconciliação cobre os demais).
+  const rawOrder=type===4?(Array.isArray(data.package_list)?data.package_list:[]).flatMap((p:Json)=>Array.isArray(p?.order_id_list)?p.order_id_list:[])[0]:data.order_id;
+  const orderId=typeof rawOrder==="string"&&ID.test(rawOrder)?rawOrder:undefined;
+  // O exemplo oficial do tópico 5 traz product_id numérico (perde precisão no JSON.parse): lê os dígitos do corpo bruto.
+  const rawProduct=typeof data.product_id==="number"?input.rawBody.match(/"product_id"\s*:\s*(\d{1,30})\s*[,}]/)?.[1]:data.product_id;
+  const productId=rawProduct!==undefined&&ID.test(String(rawProduct))?String(rawProduct):undefined;
   if(event.kind!=="LISTING"&&!orderId)return undefined;
   if(event.kind==="LISTING"&&!productId)return undefined;
   const notificationId=typeof body.tts_notification_id==="string"&&/^[A-Za-z0-9_.:-]{1,200}$/.test(body.tts_notification_id)?body.tts_notification_id:undefined;

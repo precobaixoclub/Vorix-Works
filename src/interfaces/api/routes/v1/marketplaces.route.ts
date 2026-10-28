@@ -96,7 +96,8 @@ export async function registerMarketplaceRoutes(app:FastifyInstance,deps:{servic
   scope.post("/marketplaces/:provider/notifications",async(request,reply)=>{
    const {provider}=slug(request);
    if(deps.service&&typeof request.body==="string")await deps.service.providerNotification(provider,{headers:request.headers as Record<string,string|undefined>,rawBody:request.body,url:request.url}).catch(error=>request.log.warn({err:error},"marketplace notification failed"));
-   return reply.code(200).send({received:true});
+   // Shopee (guia 18, Push Retry Logic): só 2xx com corpo vazio encerra os reenvios.
+   return provider==="SHOPEE"?reply.code(204).send():reply.code(200).send({received:true});
   });
  });
  app.patch("/marketplaces/connections/:id/settings",{config:{readOnlyGuard:true}},async request=>guard(async()=>{

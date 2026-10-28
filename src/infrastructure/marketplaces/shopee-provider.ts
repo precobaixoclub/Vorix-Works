@@ -4,17 +4,23 @@ import { MarketplaceError, type ExternalAttribute, type ExternalListing, type Ex
 import { setTimeout as sleep } from "node:timers/promises";
 
 /**
- * Shopee Open Platform API v2 (https://open.shopee.com/documents).
+ * Shopee Open Platform API v2 (https://open.shopee.com/documents, conferido em 2026-10-28 contra a referência oficial
+ * — /opservice/api/v1/doc/api — e os guias 16 "API calls", 18 "Push", 20 "Authorization", 31 "Data Definition", 221/223 e 568 "FBS BR").
  * Rede confinada ao host oficial configurado; o único download externo é a imagem https do rascunho
  * (exigido pela Shopee: a imagem precisa ser enviada ao media_space antes do add_item), com bloqueio de
  * hosts privados, sem redirecionamento e com limite de tamanho. Erros nunca carregam corpo de resposta nem token.
  */
 export type ShopeeConfig = { partnerId:string; partnerKey:string; redirectUri:string; apiBaseUrl:string };
-export type ShopeeOptions = { minIntervalMs?:number; labelPollMs?:number; now?:()=>number };
+export type ShopeeOptions = { minIntervalMs?:number; labelPollMs?:number; tierDelayMs?:number; now?:()=>number };
 type Json = Record<string,any>;
 
-const API_HOSTS=new Set(["partner.shopeemobile.com","openplatform.shopee.com.br","partner.test-stable.shopeemobile.com"]);
+// Guia 16: produção partner.shopeemobile.com (SG) e openplatform.shopee.com.br (US); sandbox openplatform.sandbox.test-stable.shopee.sg.
+// partner.test-stable.shopeemobile.com é o "test_url" que a referência de cada API ainda publica.
+const API_HOSTS=new Set(["partner.shopeemobile.com","openplatform.shopee.com.br","openplatform.sandbox.test-stable.shopee.sg","partner.test-stable.shopeemobile.com"]);
 const DEFAULT_BASE="https://partner.shopeemobile.com";
+/** Guia 20: link de autorização fixo por região (Brasil) que devolve `state` intacto no redirect_uri. */
+const BR_AUTH_URL="https://open.shopee.com.br/auth";
+const sandboxHost=(base:string)=>new URL(base).hostname.includes("test-stable");
 const DAY=86400,ORDER_WINDOW=15*DAY,RETURN_LOOKBACK=60*DAY,MAX_IMAGE_BYTES=10*1024*1024;
 const ALLOWED_SETTINGS=new Set(["logistic_info","brand","pre_order"]);
 
@@ -41,34 +47,47 @@ const privateHost=(host:string):boolean=>{
  return /^\d{1,3}(\.\d{1,3}){3}$/.test(h)||/^\d+$/.test(h)||/^0x/i.test(h);
 };
 const sumStock=(stock:Json|undefined):number=>((stock?.seller_stock??[]) as Json[]).reduce((sum,s)=>sum+Math.max(0,Number(s.stock??0)||0),0);
-/** Estoque gravável: um único local do vendedor e nada armazenado pela Shopee (FBS). */
-const stockLocked=(stock:Json|undefined):boolean=>((stock?.seller_stock??[]) as Json[]).length>1||((stock?.shopee_stock??[]) as Json[]).some(s=>Number(s.stock??0)>0);
+/**
+ * Estoque gravável: um único local do vendedor e nada da Shopee. update_stock só grava seller_stock; shopee_stock (FBS/Full)
+ * é só leitura (guias 223 e 568) e o item/modelo marcado is_fulfillment_by_shopee tem estoque controlado pela Shopee.
+ */
+const stockLocked=(row:Json):boolean=>row.is_fulfillment_by_shopee===true||((row.stock_info_v2?.seller_stock??[]) as Json[]).length>1||((row.stock_info_v2?.shopee_stock??[]) as Json[]).some(s=>Number(s.stock??0)>0);
 const priceOf=(priceInfo:unknown):Json|undefined=>Array.isArray(priceInfo)?priceInfo[0]:undefined;
+/** has_promotion (2025-11) substituiu promotion_id no item (removido em 2026-04); o modelo ainda traz os dois. */
 const promoted=(row:Json):boolean=>{
  const p=priceOf(row.price_info);
- return Number(row.promotion_id??0)>0||(p!==undefined&&p.current_price!==undefined&&p.original_price!==undefined&&Number(p.current_price)!==Number(p.original_price));
+ return row.has_promotion===true||Number(row.promotion_id??0)>0||(p!==undefined&&p.current_price!==undefined&&p.original_price!==undefined&&Number(p.current_price)!==Number(p.original_price));
 };
 
-const ITEM_STATUS:Record<string,string>={NORMAL:"active",UNLIST:"paused",REVIEWING:"under_review",BANNED:"closed",DELETED:"closed",SELLER_DELETE:"closed",SHOPEE_DELETE:"closed"};
+const ITEM_STATUS:Record<string,string>={NORMAL:"active",UNLIST:"paused",REVIEWING:"under_review",BANNED:"closed",SELLER_DELETE:"closed",SHOPEE_DELETE:"closed"};
 const SHIPMENT:Record<ExternalOrderState,ExternalShipmentState>={PENDING_PAYMENT:"PENDING",PAID:"PENDING",READY_TO_SHIP:"READY_TO_SHIP",SHIPPED:"SHIPPED",DELIVERED:"DELIVERED",CANCELLED:"CANCELLED"};
-// Pedido: a Shopee é a autoridade. IN_CANCEL = cancelamento pedido e ainda pendente (segue pago).
+// Pedido (Data Definition OrderStatus): a Shopee é a autoridade. IN_CANCEL = cancelamento em processamento (segue pago);
+// TO_CONFIRM_RECEIVE = "recebido pelo comprador"; INVOICE_PENDING é o filtro BR de get_order_list (aguarda NF-e).
 const ORDER_STATUS:Record<string,ExternalOrderState>={UNPAID:"PENDING_PAYMENT",READY_TO_SHIP:"PAID",INVOICE_PENDING:"PAID",IN_CANCEL:"PAID",PROCESSED:"READY_TO_SHIP",RETRY_SHIP:"READY_TO_SHIP",
- SHIPPED:"SHIPPED",TO_CONFIRM_RECEIVE:"SHIPPED",COMPLETED:"DELIVERED",TO_RETURN:"DELIVERED",CANCELLED:"CANCELLED"};
+ SHIPPED:"SHIPPED",TO_CONFIRM_RECEIVE:"DELIVERED",COMPLETED:"DELIVERED",TO_RETURN:"DELIVERED",CANCELLED:"CANCELLED"};
 const RETURN_STATUS:Record<string,ExternalReturnState>={REQUESTED:"REQUESTED",JUDGING:"REQUESTED",SELLER_DISPUTE:"REQUESTED",ACCEPTED:"APPROVED",PROCESSING:"APPROVED",CLOSED:"COMPLETED",CANCELLED:"CANCELLED"};
-const CANCEL_REASONS=["OUT_OF_STOCK","CUSTOMER_REQUEST","UNDELIVERABLE_AREA","COD_NOT_SUPPORTED"] as const;
+// v2.order.cancel_order: UNDELIVERABLE_AREA vale só para TW/MY, fora daqui.
+const CANCEL_REASONS=["OUT_OF_STOCK","CUSTOMER_REQUEST","COD_NOT_SUPPORTED"] as const;
 const PUSH_CODES:Record<number,string>={3:"order_status_push",4:"order_trackingno_push"};
 const LABEL_STATUSES=new Set(["READY_TO_SHIP","PROCESSED","RETRY_SHIP"]);
+// get_tracking_info: status de rastreio (TrackingLogisticsStatus) ou de pacote (LogisticsStatus); FAILED_* nunca conta.
+const PICKED=new Set(["PICKED_UP","LOGISTICS_PICKUP_DONE"]),DELIVERED=new Set(["DELIVERED","LOGISTICS_DELIVERY_DONE"]);
+// Logística reversa (Data Definition "Reverse Logistics Status"): devolução normal usa LOGISTICS_*, in-transit/on-the-spot usa rótulos.
+const RETURN_PICKED=new Set(["LOGISTICS_PICKUP_DONE","Pickup Done"]),RETURN_RECEIVED=new Set(["LOGISTICS_DELIVERY_DONE","Delivered"]);
+/** error_limit = cota diária do app, zera às 00:00 UTC+8 (16:00 UTC). */
+const untilShopeeMidnight=(now:number)=>{const next=new Date(now);next.setUTCHours(16,0,0,0);if(next.getTime()<=now)next.setUTCDate(next.getUTCDate()+1);return next.getTime()-now;};
 
 export class ShopeeProvider implements MarketplaceProvider {
  readonly id="SHOPEE" as const;
  readonly pkce=false;
  readonly capabilities:ProviderCapabilities={listings:"SUPPORTED",publish:"SUPPORTED",priceSync:"SUPPORTED",stockSync:"SUPPORTED",orders:"SUPPORTED",shipments:"SUPPORTED",labels:"SUPPORTED",cancelOrder:"SUPPORTED",returns:"SUPPORTED",webhooks:"SUPPORTED"};
  private nextCallAt=0;
- private readonly minInterval:number;private readonly labelPoll:number;private readonly now:()=>number;
+ private readonly minInterval:number;private readonly labelPoll:number;private readonly tierDelay:number;private readonly now:()=>number;
  private readonly categoryCache=new Map<string,{at:number;list:Promise<Json[]>}>();
  private readonly returnCache=new Map<string,{at:number;list:Promise<Json[]>}>();
  constructor(private readonly config:ShopeeConfig,private readonly fetcher:typeof fetch=fetch,options:ShopeeOptions={}){
-  this.minInterval=options.minIntervalMs??200;this.labelPoll=options.labelPollMs??1500;this.now=options.now??Date.now;
+  // init_tier_variation: "aguarde ao menos 5 segundos após criar o item antes de criar variações".
+  this.minInterval=options.minIntervalMs??200;this.labelPoll=options.labelPollMs??1500;this.tierDelay=options.tierDelayMs??5000;this.now=options.now??Date.now;
  }
  get applicationId(){return this.config.partnerId;}
  private sign(base:string){return createHmac("sha256",this.config.partnerKey).update(base).digest("hex");}
@@ -78,20 +97,34 @@ export class ShopeeProvider implements MarketplaceProvider {
   return String(id64(shop));
  }
  authorizationUrl(state:string):string{
-  // A Shopee não devolve `state`: ele viaja dentro do redirect e volta junto com code e shop_id.
+  if(!sandboxHost(this.config.apiBaseUrl)){
+   // Guia 20 (link atual): auth_type=seller, response_type=code; `state` volta intacto junto com code e shop_id
+   // (ou main_account_id). O vínculo com o navegador é o cookie HttpOnly do serviço + o hash do state.
+   const url=new URL(BR_AUTH_URL);
+   url.search=new URLSearchParams({partner_id:this.config.partnerId,auth_type:"seller",redirect_uri:this.config.redirectUri,response_type:"code",state}).toString();
+   return url.href;
+  }
+  // Sandbox: o host do link novo diverge dentro do próprio guia; usa o link legado assinado (demos oficiais) com `state` dentro do redirect.
   const path="/api/v2/shop/auth_partner",timestamp=Math.floor(this.now()/1000),redirect=new URL(this.config.redirectUri);
   redirect.searchParams.set("state",state);
   const url=new URL(this.config.apiBaseUrl+path);
   url.search=new URLSearchParams({partner_id:this.config.partnerId,timestamp:String(timestamp),sign:this.sign(this.config.partnerId+path+timestamp),redirect:redirect.href}).toString();
   return url.href;
  }
- private reject(errorCode:unknown,status:number):MarketplaceError{
-  const code=safeCode(errorCode)??"";
-  if(/invalid_acc?e+ss?_token|error_auth|invalid_token|token_expired|access_token_expired/i.test(code))return new MarketplaceError("REAUTH_REQUIRED");
+ /** Códigos da lista comum de erros da referência v2; `message` só classifica (nunca é guardada nem devolvida). */
+ private reject(errorCode:unknown,status:number,message?:unknown):MarketplaceError{
+  const code=safeCode(errorCode)??"",msg=typeof message==="string"?message.slice(0,300):"";
+  if(code==="error_limit")return new MarketplaceError("SHOPEE_DAILY_LIMIT",true,untilShopeeMidnight(this.now()));
   if(/too_many|rate_?limit|frequen/i.test(code))return new MarketplaceError("SHOPEE_RATE_LIMIT",true,60000);
-  if(/error_server|inner|system|busy|timeout|unavailable/i.test(code))return new MarketplaceError("SHOPEE_UNAVAILABLE",true);
+  if(/^(error_partner_key_expired|invalid_partner_id)$/.test(code)||(code==="error_auth"&&/partner_id is invalid|app is deleted/i.test(msg)))return new MarketplaceError("SHOPEE_PARTNER_CREDENTIALS_INVALID");
+  if(code==="source_ip_undeclared")return new MarketplaceError("SHOPEE_SOURCE_IP_UNDECLARED");
+  if(code==="shop_banned")return new MarketplaceError("SHOPEE_SHOP_BANNED");
+  if(code==="error_auth"&&/permission|restricted/i.test(msg))return new MarketplaceError("SHOPEE_PERMISSION_DENIED");
+  if(code==="error_auth"&&/system error/i.test(msg))return new MarketplaceError("SHOPEE_UNAVAILABLE",true);
+  if(/invalid_acc?e+ss?_token|error_auth|invalid_token|token_expired|access_token_expired|shop_no_linked|partner_shop_no_link/i.test(code))return new MarketplaceError("REAUTH_REQUIRED");
+  if(/error_server|error_network|inner|system|busy|timeout|unavailable/i.test(code))return new MarketplaceError("SHOPEE_UNAVAILABLE",true);
   if(/sign/i.test(code))return new MarketplaceError("SHOPEE_SIGNATURE_REJECTED");
-  if(/permission|forbidden/i.test(code))return new MarketplaceError("SHOPEE_PERMISSION_DENIED");
+  if(/permission|forbidden|restricted/i.test(code))return new MarketplaceError("SHOPEE_PERMISSION_DENIED");
   if(/not_?found|not_?exist/i.test(code)||status===404)return new MarketplaceError("SHOPEE_NOT_FOUND");
   const error=new MarketplaceError("SHOPEE_REQUEST_REJECTED");
   if(code)error.issues=["Regra Shopee: "+code];
@@ -120,14 +153,16 @@ export class ShopeeProvider implements MarketplaceProvider {
   if(o.binary&&response.ok&&!type.includes("json"))return {data:{},headers:response.headers,bytes:new Uint8Array(await response.arrayBuffer())};
   let data:Json;
   try{data=await response.json() as Json;}catch{throw response.ok?new MarketplaceError("SHOPEE_INVALID_RESPONSE",true):this.reject(undefined,response.status);}
-  if(!response.ok||(typeof data.error==="string"&&data.error))throw this.reject(data?.error,response.status);
+  if(!response.ok||(typeof data.error==="string"&&data.error))throw this.reject(data?.error,response.status,data?.message);
   return {data,headers:response.headers};
  }
  private async token(path:string,body:Json,shopId:string):Promise<MarketplaceTokens>{
   const {data}=await this.call(path,{body:{...body,shop_id:id64(shopId),partner_id:id64(this.config.partnerId)}});
+  // Resposta plana (sem `response`): access_token (4h), refresh_token (30 dias, uso único), expire_in em segundos.
   const d=data.response??data;
   if(typeof d.access_token!=="string"||!d.access_token||typeof d.refresh_token!=="string"||!d.refresh_token||!(Number(d.expire_in)>0))throw new MarketplaceError("SHOPEE_INVALID_TOKEN_RESPONSE");
   if(d.shop_id!==undefined&&String(d.shop_id)!==shopId)throw new MarketplaceError("SHOPEE_SHOP_MISMATCH");
+  if(Array.isArray(d.shop_id_list)&&d.shop_id_list.length&&!d.shop_id_list.some((s:unknown)=>String(s)===shopId))throw new MarketplaceError("SHOPEE_SHOP_MISMATCH");
   return {accessToken:d.access_token,refreshToken:d.refresh_token,expiresAt:new Date(this.now()+Number(d.expire_in)*1000).toISOString(),userId:shopId,metadata:{shopId}};
  }
  async connect(input:{code:string;params:Record<string,string>}){
@@ -175,12 +210,12 @@ export class ShopeeProvider implements MarketplaceProvider {
  }
  async getListing(auth:ProviderAuth,id:string):Promise<ExternalListing>{
   const item=await this.baseInfo(auth,id),shop=this.shopId(auth);
-  let variants:ExternalVariant[]=[],priceWritable=!promoted(item),stockWritable=!stockLocked(item.stock_info_v2);
+  let variants:ExternalVariant[]=[],priceWritable=!promoted(item),stockWritable=!stockLocked(item);
   let priceCents:number,quantity:number;
   if(item.has_model){
    const {tiers,models}=await this.models(auth,id);
    variants=models.map(m=>{
-    const p=priceOf(m.price_info);if(promoted(m))priceWritable=false;if(stockLocked(m.stock_info_v2))stockWritable=false;
+    const p=priceOf(m.price_info);if(promoted(m))priceWritable=false;if(stockLocked(m))stockWritable=false;
     const options:Record<string,string>={};
     (Array.isArray(m.tier_index)?m.tier_index:[]).forEach((index:number,tier:number)=>{const t=tiers[tier];const option=t?.option_list?.[index]?.option;if(t?.name&&option!==undefined)options[String(t.name)]=String(option);});
     return {id:String(id64(m.model_id)),sku:text(m.model_sku,120),priceCents:cents(p?.original_price??p?.current_price),quantity:sumStock(m.stock_info_v2),options};
@@ -208,7 +243,8 @@ export class ShopeeProvider implements MarketplaceProvider {
  async category(auth:ProviderAuth,id:string):Promise<CategoryRequirements>{
   const categoryId=id64(id),category=(await this.categories(auth)).find(c=>Number(c.category_id)===categoryId);
   if(!category)throw new MarketplaceError("SHOPEE_CATEGORY_NOT_FOUND");
-  const {data}=await this.call("/api/v2/product/get_attribute_tree",{auth,query:{category_id_list:String(categoryId),language:"pt-br"}});
+  // get_category aceita "pt-br"; get_attribute_tree lista "pt-BR" para BR.
+  const {data}=await this.call("/api/v2/product/get_attribute_tree",{auth,query:{category_id_list:String(categoryId),language:"pt-BR"}});
   const tree=((data.response?.list??[]) as Json[]).find(l=>Number(l.category_id)===categoryId)?.attribute_tree??[];
   const name=(row:Json)=>String(row.name??row.display_attribute_name??row.display_value_name??row.original_attribute_name??row.original_value_name??"");
   return {id:String(categoryId),name:String(category.display_category_name??category.original_category_name??categoryId),leaf:!category.has_children,allowed:true,
@@ -228,8 +264,9 @@ export class ShopeeProvider implements MarketplaceProvider {
    });
   }
   if(settings.brand!==undefined){
-   const b=settings.brand as Json;if(!b||typeof b!=="object")throw new MarketplaceError("SHOPEE_INVALID_BRAND");
-   out.brand={brand_id:id64(b.brand_id,"SHOPEE_INVALID_BRAND",true),...(text(b.original_brand_name,120)?{original_brand_name:text(b.original_brand_name,120)}:{})};
+   // add_item: brand_id e original_brand_name obrigatórios (sem marca: brand_id 0 + "No Brand").
+   const b=settings.brand as Json;if(!b||typeof b!=="object"||!text(b.original_brand_name,120))throw new MarketplaceError("SHOPEE_INVALID_BRAND");
+   out.brand={brand_id:id64(b.brand_id,"SHOPEE_INVALID_BRAND",true),original_brand_name:text(b.original_brand_name,120)};
   }
   if(settings.pre_order!==undefined){
    const p=settings.pre_order as Json;if(!p||typeof p!=="object"||typeof p.is_pre_order!=="boolean")throw new MarketplaceError("SHOPEE_INVALID_PRE_ORDER");
@@ -264,12 +301,15 @@ export class ShopeeProvider implements MarketplaceProvider {
    if(!options[t].includes(value))options[t].push(value);return options[t].indexOf(value);
   }));
   if(new Set(indexes.map(i=>i.join(":"))).size!==indexes.length)throw new MarketplaceError("SHOPEE_VARIANT_COMBINATION_DUPLICATED");
-  return {tier_variation:names.map((name,t)=>({name,option_list:options[t].map(option=>({option}))})),indexes};
+  // tier_variation foi descontinuado (2025-09-12): variação própria = standardise_tier_variation com ids 0 e nomes livres.
+  return {standardise_tier_variation:names.map((name,t)=>({variation_id:0,variation_group_id:0,variation_name:name,
+   variation_option_list:options[t].map(option=>({variation_option_id:0,variation_option_name:option}))})),indexes};
  }
  async validateListing(auth:ProviderAuth,input:ListingWrite):Promise<string[]>{
   const errors:string[]=[];
   try{this.settings(input.draft.settings);}catch(error){if(error instanceof MarketplaceError)errors.push("Configuração Shopee inválida: "+error.code+".");else throw error;}
   if(input.currency!=="BRL")errors.push("A Shopee Brasil aceita apenas BRL.");
+  if(input.draft.condition!=="new"&&input.draft.condition!=="used")errors.push("A Shopee Brasil exige a condição (novo ou usado).");
   if(!input.draft.title.trim())errors.push("Falta título.");
   if(!input.draft.description.trim())errors.push("Falta descrição.");
   if(!input.draft.pictures.length||input.draft.pictures.length>9)errors.push("Envie de 1 a 9 imagens.");
@@ -330,6 +370,7 @@ export class ShopeeProvider implements MarketplaceProvider {
   const settings=this.settings(input.draft.settings),pkg=input.package;
   if(!pkg?.weightGrams||pkg.weightGrams<=0)throw new MarketplaceError("SHOPEE_PACKAGE_WEIGHT_REQUIRED");
   if(input.currency!=="BRL")throw new MarketplaceError("SHOPEE_CURRENCY_UNSUPPORTED");
+  if(input.draft.condition!=="new"&&input.draft.condition!=="used")throw new MarketplaceError("SHOPEE_CONDITION_REQUIRED");
   const tiers=input.variants?.length?this.tiers(input.variants):undefined;
   const logistic_info=await this.logistics(auth,settings.logistic_info);if(!logistic_info.length)throw new MarketplaceError("SHOPEE_LOGISTICS_NOT_CONFIGURED");
   const image_id_list=await this.uploadImages(input.draft.pictures);
@@ -337,14 +378,15 @@ export class ShopeeProvider implements MarketplaceProvider {
   const body:Json={item_name:input.draft.title,description:input.draft.description,category_id:id64(input.draft.categoryId),original_price:input.priceCents/100,
    seller_stock:[{stock:input.quantity}],weight:pkg.weightGrams/1000,image:{image_id_list},attribute_list:this.attributeList(input.draft.attributes),logistic_info,
    ...(pkg.heightCm&&pkg.widthCm&&pkg.lengthCm?{dimension:{package_height:Math.ceil(pkg.heightCm),package_width:Math.ceil(pkg.widthCm),package_length:Math.ceil(pkg.lengthCm)}}:{}),
-   ...(input.draft.condition==="new"?{condition:"NEW"}:input.draft.condition==="used"?{condition:"USED"}:{}),
+   condition:input.draft.condition==="new"?"NEW":"USED",
    ...(input.sku?{item_sku:input.sku}:{}),...(gtin?{gtin_code:gtin}:{}),...(settings.brand?{brand:settings.brand}:{}),...(settings.pre_order?{pre_order:settings.pre_order}:{}),item_status:"NORMAL"};
   const {data}=await this.call("/api/v2/product/add_item",{auth,body});
   const itemId=String(id64(data.response?.item_id,"SHOPEE_INVALID_RESPONSE"));
   const variants:ExternalVariant[]=[];
   if(tiers&&input.variants){
    // O item já existe: falha aqui deixa o anúncio sem variações e é reportada (o serviço trata como resultado incerto).
-   const {data:created}=await this.call("/api/v2/product/init_tier_variation",{auth,body:{item_id:Number(itemId),tier_variation:tiers.tier_variation,
+   if(this.tierDelay)await sleep(this.tierDelay);
+   const {data:created}=await this.call("/api/v2/product/init_tier_variation",{auth,body:{item_id:Number(itemId),standardise_tier_variation:tiers.standardise_tier_variation,
     model:input.variants.map((v,i)=>({tier_index:tiers.indexes[i],original_price:v.priceCents/100,seller_stock:[{stock:v.quantity}],...(v.sku?{model_sku:v.sku}:{})}))}});
    for(const m of (created.response?.model??[]) as Json[]){
     const i=tiers.indexes.findIndex(x=>JSON.stringify(x)===JSON.stringify(m.tier_index));const v=input.variants[i];if(!v||!m.model_id)continue;
@@ -361,11 +403,18 @@ export class ShopeeProvider implements MarketplaceProvider {
   if(input.description!==undefined&&input.description.trim())body.description=input.description;
   if(input.attributes){body.attribute_list=this.attributeList(input.attributes);const gtin=input.attributes.find(a=>a.id==="GTIN")?.value_name;if(gtin)body.gtin_code=gtin;}
   if(input.condition==="new"||input.condition==="used")body.condition=input.condition.toUpperCase();
-  if(input.settings)Object.assign(body,this.settings(input.settings));
+  if(input.settings){
+   // update_item não aceita logistic_info (só add_item); canais de um anúncio existente ficam no Seller Center.
+   const settings=this.settings(input.settings);if(settings.logistic_info)throw new MarketplaceError("SHOPEE_LOGISTICS_UPDATE_UNSUPPORTED");
+   Object.assign(body,settings);
+  }
   if(input.pictures){if(!input.pictures.length||input.pictures.length>9)throw new MarketplaceError("SHOPEE_INVALID_PICTURES");body.image={image_id_list:await this.uploadImages(input.pictures)};}
   if(Object.keys(body).length)await this.call("/api/v2/product/update_item",{auth,body:{item_id:id64(id),...body}});
  }
- /** paused/active = unlist_item; closed = delete_item (definitivo, como "closed" no Mercado Livre — o serviço exige confirmação). */
+ /**
+  * paused/active = unlist_item (unlist true/false: reversível). closed = delete_item (guia 221: irreversível — o item vira
+  * SELLER_DELETE, não pode mais ser editado nem aparece no Seller Center; dados somem após 90 dias). O serviço exige confirmação.
+  */
  async setStatus(auth:ProviderAuth,id:string,status:"paused"|"active"|"closed"){
   if(status==="closed"){await this.call("/api/v2/product/delete_item",{auth,body:{item_id:id64(id)}});return;}
   if(status!=="paused"&&status!=="active")throw new MarketplaceError("INVALID_LISTING_STATUS");
@@ -402,7 +451,7 @@ export class ShopeeProvider implements MarketplaceProvider {
    start=parsed.s;inner=parsed.c;
   }
   const end=Math.min(to,start+ORDER_WINDOW);
-  const {data}=await this.call("/api/v2/order/get_order_list",{auth,query:{time_range_field:"update_time",time_from:start,time_to:end,page_size:100,cursor:inner,response_optional_fields:"order_status"}});
+  const {data}=await this.call("/api/v2/order/get_order_list",{auth,query:{time_range_field:"update_time",time_from:start,time_to:end,page_size:100,...(inner?{cursor:inner}:{}),response_optional_fields:"order_status"}});
   const d=data.response??{};const ids=((d.order_list??[]) as Json[]).map(o=>orderSn(o.order_sn));
   const encode=(s:number,c:string)=>Buffer.from(JSON.stringify({s,c})).toString("base64url");
   const next=typeof d.next_cursor==="string"?d.next_cursor:"";
@@ -414,7 +463,7 @@ export class ShopeeProvider implements MarketplaceProvider {
  async getOrder(auth:ProviderAuth,id:string):Promise<ExternalOrder>{
   const sn=orderSn(id);
   const {data}=await this.call("/api/v2/order/get_order_detail",{auth,query:{order_sn_list:sn,response_optional_fields:
-   "buyer_user_id,buyer_username,estimated_shipping_fee,recipient_address,actual_shipping_fee,item_list,pay_time,cancel_by,cancel_reason,buyer_cancel_reason,fulfillment_flag,package_list,shipping_carrier,total_amount"}});
+   "buyer_user_id,buyer_username,estimated_shipping_fee,recipient_address,actual_shipping_fee,item_list,pay_time,cancel_by,cancel_reason,buyer_cancel_reason,fulfillment_flag,pickup_done_time,package_list,shipping_carrier,total_amount"}});
   const o=((data.response?.order_list??[]) as Json[]).find(x=>x.order_sn===sn);if(!o)throw new MarketplaceError("SHOPEE_ORDER_NOT_FOUND");
   const status=String(o.order_status),packages=(o.package_list??[]) as Json[];
   let state:ExternalOrderState=ORDER_STATUS[status]??"PENDING_PAYMENT";
@@ -439,10 +488,11 @@ export class ShopeeProvider implements MarketplaceProvider {
    if(state!=="READY_TO_SHIP"){
     const info=await this.optional(this.call("/api/v2/logistics/get_tracking_info",{auth,query:{order_sn:sn,...pkg}}));
     const events=((info?.data.response?.tracking_info??[]) as Json[]).filter(e=>Number(e.update_time)>0).sort((a,b)=>Number(a.update_time)-Number(b.update_time));
-    shippedAt=iso(events.find(e=>/PICKUP_DONE|PICKED_UP|SHIPPED/i.test(String(e.logistics_status)))?.update_time);
-    deliveredAt=iso(events.find(e=>/DELIVERY_DONE|DELIVERED/i.test(String(e.logistics_status)))?.update_time);
+    shippedAt=iso(events.find(e=>PICKED.has(String(e.logistics_status)))?.update_time);
+    deliveredAt=iso(events.find(e=>DELIVERED.has(String(e.logistics_status)))?.update_time);
    }
   }
+  shippedAt??=iso(o.pickup_done_time);
   const lost=packages.some(p=>["LOGISTICS_DELIVERY_FAILED","LOGISTICS_LOST","LOGISTICS_INVALID"].includes(String(p.logistics_status)));
   const address=o.recipient_address as Json|undefined;
   const createdAt=iso(o.create_time);if(!createdAt)throw new MarketplaceError("SHOPEE_INVALID_RESPONSE");
@@ -471,7 +521,7 @@ export class ShopeeProvider implements MarketplaceProvider {
      const {data}=await this.call("/api/v2/returns/get_return_list",{auth,query:{page_no:page,page_size:100,create_time_from:start,create_time_to:end}});
      const d=data.response??{};
      // Só campos operacionais: o bloco `user` (dados do comprador) não é guardado.
-     for(const r of (d.return??[]) as Json[])rows.push({return_sn:r.return_sn,order_sn:r.order_sn,status:r.status,reason:r.reason,refund_amount:r.refund_amount,logistics_status:r.logistics_status,
+     for(const r of (d.return??[]) as Json[])rows.push({return_sn:r.return_sn,order_sn:r.order_sn,status:r.status,reason:r.reason,refund_amount:r.refund_amount,
       create_time:r.create_time,update_time:r.update_time,item:((r.item??[]) as Json[]).map(i=>({item_id:i.item_id,model_id:i.model_id,amount:i.amount}))});
      if(!d.more)break;
     }
@@ -481,16 +531,22 @@ export class ShopeeProvider implements MarketplaceProvider {
   this.returnCache.set(key,{at:this.now(),list});list.catch(()=>this.returnCache.delete(key));return list;
  }
  async getReturns(auth:ProviderAuth,orderId:string):Promise<ExternalReturn[]>{
-  const sn=orderSn(orderId);
-  return (await this.returnList(auth)).filter(r=>r.order_sn===sn&&r.return_sn).map(r=>{
-   const status=String(r.status),logistics=String(r.logistics_status??"");
+  const sn=orderSn(orderId),out:ExternalReturn[]=[];
+  for(const r of (await this.returnList(auth)).filter(r=>r.order_sn===sn&&typeof r.return_sn==="string"&&/^[A-Za-z0-9_-]{1,60}$/.test(r.return_sn))){
+   const status=String(r.status);
    let state:ExternalReturnState=RETURN_STATUS[status]??"REQUESTED";
-   if(state==="APPROVED"&&/PICKUP_DONE/.test(logistics))state="IN_TRANSIT";
-   if(state==="APPROVED"&&/DELIVERY_DONE/.test(logistics))state="RECEIVED";
-   return {id:String(r.return_sn).slice(0,60),orderId:sn,state,externalStatus:status,reason:safeCode(r.reason),refundCents:optionalCents(r.refund_amount),
+   if(state==="APPROVED"){
+    // get_return_list não traz logística reversa: só get_return_detail (reverse_logistics_status; logistics_status é legado).
+    const detail=(await this.optional(this.call("/api/v2/returns/get_return_detail",{auth,query:{return_sn:r.return_sn}})))?.data.response;
+    const logistics=String(detail?.reverse_logistics_status??detail?.logistics_status??"");
+    if(RETURN_PICKED.has(logistics))state="IN_TRANSIT";
+    if(RETURN_RECEIVED.has(logistics))state="RECEIVED";
+   }
+   out.push({id:String(r.return_sn).slice(0,60),orderId:sn,state,externalStatus:status,reason:safeCode(r.reason),refundCents:optionalCents(r.refund_amount),
     items:(r.item as Json[]).filter(i=>Number(i.item_id)>0).map(i=>({externalItemId:String(id64(i.item_id)),...(Number(i.model_id)>0?{externalVariationId:String(id64(i.model_id))}:{}),quantity:Math.max(1,Number(i.amount)||1)})),
-    createdAt:iso(r.create_time)??new Date(this.now()).toISOString(),updatedAt:iso(r.update_time)??iso(r.create_time)??new Date(this.now()).toISOString()};
-  });
+    createdAt:iso(r.create_time)??new Date(this.now()).toISOString(),updatedAt:iso(r.update_time)??iso(r.create_time)??new Date(this.now()).toISOString()});
+  }
+  return out;
  }
  /** Etiqueta (AWB) só para pedido pronto para envio com tracking: create → result (poll) → download. */
  async shippingLabel(auth:ProviderAuth,order:ExternalOrder):Promise<ShippingLabel>{
@@ -498,6 +554,7 @@ export class ShopeeProvider implements MarketplaceProvider {
   if(!order.shipment?.labelAvailable||!tracking||!LABEL_STATUSES.has(order.externalStatus)||order.shipment.fulfilledByMarketplace)throw new MarketplaceError("SHOPEE_LABEL_NOT_AVAILABLE");
   const sn=orderSn(order.id),pkg=order.shipment.externalId?{package_number:order.shipment.externalId}:{};
   const param=await this.call("/api/v2/logistics/get_shipping_document_parameter",{auth,body:{order_list:[{order_sn:sn,...pkg}]}});
+  if(param.data.response?.result_list?.[0]?.fail_error)throw new MarketplaceError("SHOPEE_LABEL_NOT_AVAILABLE");
   const suggested=param.data.response?.result_list?.[0]?.suggest_shipping_document_type;
   const type=typeof suggested==="string"&&/^[A-Z_]{1,60}$/.test(suggested)?suggested:"NORMAL_AIR_WAYBILL";
   const created=await this.call("/api/v2/logistics/create_shipping_document",{auth,body:{order_list:[{order_sn:sn,...pkg,tracking_number:tracking,shipping_document_type:type}]}});
@@ -520,7 +577,7 @@ export class ShopeeProvider implements MarketplaceProvider {
   if(["SHIPPED","DELIVERED","CANCELLED"].includes(order.state)||order.shipment?.fulfilledByMarketplace||!["UNPAID","READY_TO_SHIP","INVOICE_PENDING","PROCESSED","RETRY_SHIP"].includes(order.externalStatus))
    throw new MarketplaceError("SHOPEE_ORDER_NOT_CANCELLABLE");
   const raw=reason.trim(),upper=raw.toUpperCase();
-  const cancel_reason=(CANCEL_REASONS as readonly string[]).includes(upper)?upper:/estoque|stock|falta/i.test(raw)?"OUT_OF_STOCK":/cliente|comprador|customer|buyer/i.test(raw)?"CUSTOMER_REQUEST":/área|area|entrega|deliver/i.test(raw)?"UNDELIVERABLE_AREA":undefined;
+  const cancel_reason=(CANCEL_REASONS as readonly string[]).includes(upper)?upper:/estoque|stock|falta/i.test(raw)?"OUT_OF_STOCK":/cliente|comprador|customer|buyer/i.test(raw)?"CUSTOMER_REQUEST":undefined;
   if(!cancel_reason)throw new MarketplaceError("SHOPEE_CANCEL_REASON_UNSUPPORTED");
   const body:Json={order_sn:orderSn(order.id),cancel_reason};
   if(cancel_reason==="OUT_OF_STOCK"){
@@ -530,8 +587,9 @@ export class ShopeeProvider implements MarketplaceProvider {
   await this.call("/api/v2/order/cancel_order",{auth,body});
  }
  /**
-  * Push assinado: Authorization = HMAC-SHA256(partner_key, url_de_push + "|" + corpo_bruto).
-  * A URL esperada vem da configuração (nunca da requisição). Só pedidos (códigos 3 e 4) viram job;
+  * Push assinado (guia 18): Authorization = hex(HMAC-SHA256(partner_key, url_de_callback + "|" + corpo_bruto)); a rota
+  * responde 2xx com corpo vazio. A URL esperada vem da configuração (nunca da requisição) e precisa ser exatamente a
+  * cadastrada no Console. Só pedidos (3 = order_status_push, 4 = order_trackingno_push; data.ordersn) viram job;
   * devoluções são relidas na sincronização do pedido.
   */
  parseNotification(input:{headers:Record<string,string|undefined>;rawBody:string;url:string}):ProviderNotification|undefined{

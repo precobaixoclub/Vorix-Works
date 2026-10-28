@@ -1,6 +1,7 @@
 import { PGlite } from "@electric-sql/pglite";
 import { PGLiteSocketServer } from "@electric-sql/pglite-socket";
 import pg from "pg";
+import { serializePgliteProtocol } from "./pglite-protocol-queue.mjs";
 
 const { Pool } = pg;
 
@@ -13,7 +14,10 @@ const { Pool } = pg;
 export async function startTestPostgres(_options = {}) {
   const db = new PGlite();
   // The OS assigns a free port, avoiding other test workers and local databases.
-  const server = new PGLiteSocketServer({ db, port: 0, host: "127.0.0.1", maxConnections: _options.maxConnections ?? 10 });
+  // The fixture pool and API pools are independent (each pg.Pool defaults to ten clients).
+  // Ten sockets globally let one pool starve another and caused intermittent startup disconnects.
+  const server = new PGLiteSocketServer({ db, port: 0, host: "127.0.0.1", maxConnections: _options.maxConnections ?? 32 });
+  serializePgliteProtocol(server);
   await server.start();
   const port = Number(server.getServerConn().split(":").at(-1));
 
@@ -23,6 +27,7 @@ export async function startTestPostgres(_options = {}) {
     user: "postgres",
     database: "postgres",
     password: "postgres",
+    connectionTimeoutMillis: 15_000,
   });
 
   return {

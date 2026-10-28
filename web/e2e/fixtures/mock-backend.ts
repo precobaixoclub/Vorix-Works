@@ -85,8 +85,8 @@ async function fulfillJson(route: Route, data: unknown, status = 200) {
   await route.fulfill({ status, contentType: "application/json", body: JSON.stringify(json(data)) });
 }
 
-export async function loginCookie(context: BrowserContext) {
-  await context.addCookies([{ name: "zuno_refresh_token", value: "qa-fixture-token", url: "http://localhost:3001" }]);
+export async function loginCookie(context: BrowserContext, baseURL = "http://localhost:3001") {
+  await context.addCookies([{ name: "zuno_refresh_token", value: "qa-fixture-token", url: baseURL }]);
 }
 
 export async function mockConversasBackend(page: Page) {

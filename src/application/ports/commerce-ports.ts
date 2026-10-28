@@ -37,7 +37,7 @@ export type ExternalOrderInput={tenantId:string;workspaceId:string;source:Exclud
 export type ShipmentInput={tenantId:string;workspaceId:string;orderId:string;provider:string;externalShipmentId?:string;status:ShipmentStatus;externalStatus?:string;substatus?:string;logisticType?:string;carrier?:string;trackingNumber?:string;trackingUrl?:string;labelAvailable:boolean;fulfilledByMarketplace:boolean;shippedAt?:string;deliveredAt?:string;estimatedDeliveryAt?:string};
 export type ReturnInput={tenantId:string;workspaceId:string;orderId:string;source:OrderSource;externalReturnId?:string;requestKey?:string;status:ReturnStatus;externalStatus?:string;reason?:string;refundCents:number;refundStatus:RefundStatus;createdBy?:string;items:{orderItemId:string;quantity:number;reason?:string}[]};
 export type OrderEventInput=Omit<OrderEvent,"id"|"createdAt"|"orderId">;
-export type OrderListFilter={tenantId:string;workspaceId:string;siteId?:string;status?:OrderStatus;paymentStatus?:PaymentStatus;shippingStatus?:ShippingStatus;source?:string;search?:string;from?:string;to?:string;limit:number;offset:number};
+export type OrderListFilter={tenantId:string;workspaceId:string;siteId?:string;status?:OrderStatus;paymentStatus?:PaymentStatus;shippingStatus?:ShippingStatus;source?:string;search?:string;from?:string;to?:string;limit:number;offset:number;visibility?:{global:boolean;teamIds:readonly string[];ownerUserIds:readonly string[]}};
 export type ChannelSummary={source:OrderSource;orders:number;sales:number;revenueCents:number;refundsCents:number;averageTicketCents:number;cancellations:number;returns:number};
 export type CommerceOrderRepositoryPort={
  /** Idempotente por (siteId, requestKey): repetir o "Finalizar compra" devolve o mesmo pedido. */

@@ -1,4 +1,5 @@
 import { createHash,randomBytes,randomUUID } from "node:crypto";
+import { marketplaceRelease, type MarketplaceReleasePolicy } from "../../domain/marketplaces/marketplace-availability.js";
 import type { MarketplaceProvider,ListingWrite,MarketplaceTokens,ProviderAuth } from "../ports/marketplace-provider.port.js";
 import type { CommerceOrderRepositoryPort } from "../ports/commerce-ports.js";
 import { ingestExternalOrder,type MarketplaceOrderDeps } from "./marketplace-orders.js";
@@ -14,6 +15,7 @@ import type { Permission } from "../../domain/identity/identity.model.js";
 import { MarketplaceError,matchIdentity,publishedQuantity,safeMarketplaceError,type CatalogIdentity,type ChannelListing,type ConnectionSettings,type ExternalListing,type ImportDecision,type MarketplaceActor,type MarketplaceJob,type MarketplaceProviderId,type MarketplaceScope,type PublishDraft } from "../../domain/marketplaces/marketplace.model.js";
 
 export type MarketplaceServiceDeps = {
+ releasePolicy?:MarketplaceReleasePolicy;
  repository:MarketplaceRepositoryPort; secrets:SecretManagerPort; catalog:ProductUseCaseDeps;
  /** Canais configurados neste ambiente (credenciais do app). `provider`/`applicationId`: forma antiga, só Mercado Livre. */
  providers?:Partial<Record<MarketplaceProviderId,MarketplaceProvider>>; provider?:MarketplaceProvider; applicationId?:string;
@@ -32,12 +34,14 @@ export class MarketplaceService {
  private readonly providers:Partial<Record<MarketplaceProviderId,MarketplaceProvider>>;
  constructor(private readonly d:MarketplaceServiceDeps){this.providers=d.providers??(d.provider?{[d.provider.id]:d.provider}:{});}
  /** Canais com credenciais de app configuradas (a interface só oferece conectar esses). */
- configuredProviders(){return Object.values(this.providers).filter(Boolean).map(p=>({id:p!.id,capabilities:p!.capabilities,closeListingEffect:p!.closeListingEffect}));}
+ configuredProviders(scope?:MarketplaceScope){return Object.values(this.providers).filter(Boolean).filter(p=>!scope||marketplaceRelease(this.d.releasePolicy??{},p!.id,scope.tenantId).enabled).map(p=>({id:p!.id,capabilities:p!.capabilities,closeListingEffect:p!.closeListingEffect,availability:marketplaceRelease(this.d.releasePolicy??{},p!.id,scope?.tenantId??"").availability}));}
+ private assertAvailable(scope:MarketplaceScope,provider:MarketplaceProviderId){if(!marketplaceRelease(this.d.releasePolicy??{},provider,scope.tenantId).enabled)throw new MarketplaceError("MARKETPLACE_PROVIDER_NOT_ENABLED");}
  private provider(id:MarketplaceProviderId):MarketplaceProvider{const p=this.providers[id];if(!p)throw new MarketplaceError("MARKETPLACE_PROVIDER_NOT_CONFIGURED");return p;}
  private p(c:{provider:MarketplaceProviderId}){return this.provider(c.provider);}
  private appId(p:MarketplaceProvider){return p.applicationId??this.d.applicationId??"";}
  private ref(s:MarketplaceScope,id:string){return "marketplace/"+encodeURIComponent(s.tenantId)+"/"+encodeURIComponent(s.workspaceId)+"/"+id;}
  async startOAuth(actor:MarketplaceActor,providerId:MarketplaceProviderId="MERCADO_LIVRE"){
+  this.assertAvailable(actor,providerId);
   const provider=this.provider(providerId);
   const health=await this.d.secrets.health();if(!health.ok||health.provider!=="production")throw new MarketplaceError("ENCRYPTED_SECRET_MANAGER_REQUIRED");
   const state=randomBytes(32).toString("base64url"),verifier=randomBytes(48).toString("base64url");
@@ -55,12 +59,13 @@ export class MarketplaceService {
   if(expectedProvider&&actor.provider!==expectedProvider)throw new MarketplaceError("OAUTH_STATE_INVALID_OR_EXPIRED");
   const provider=this.provider(actor.provider);
   try{
+   this.assertAvailable(actor,actor.provider);
    if(!code)throw new MarketplaceError("OAUTH_AUTHORIZATION_DENIED");
    if(!await this.d.canManageActor(actor))throw new MarketplaceError("MARKETPLACE_PERMISSION_REVOKED");
    const verifier=await this.d.secrets.get(actor.verifierRef);if(!verifier?.value.verifier)throw new MarketplaceError("OAUTH_STATE_INVALID_OR_EXPIRED");
    const tokens=await provider.connect({code,verifier:provider.pkce?verifier.value.verifier:undefined,params});
    const account=await provider.account({accessToken:tokens.accessToken,accountId:tokens.userId,metadata:tokens.metadata??{}});if(account.id!==tokens.userId)throw new MarketplaceError("ML_ACCOUNT_ID_MISMATCH");
-   const existing=(await this.d.repository.connections(actor)).find(c=>c.externalAccountId===account.id);
+   const existing=(await this.d.repository.connections(actor)).find(c=>c.provider===provider.id&&c.applicationId===this.appId(provider)&&c.externalAccountId===account.id);
    const id=existing?.id??"mpconn-"+randomUUID(),credentialsRef=existing?.credentialsRef??this.ref(actor,id);
    const c:StoredConnection={...actor,id,credentialsRef,applicationId:this.appId(provider),provider:provider.id,settings:existing?.settings??{},metadata:{...(tokens.metadata??{}),...(account.metadata??{})},
     externalAccountId:account.id,externalAccountName:account.name,siteId:account.siteId,userProducts:account.userProducts,
@@ -80,7 +85,7 @@ export class MarketplaceService {
  }
  async accessToken(s:MarketplaceScope,id:string):Promise<ProviderAuth>{
   const auth=(accessToken:string):ProviderAuth=>({accessToken,accountId:c.externalAccountId,metadata:c.metadata??{}});
-  let c=await this.connection(s,id);if(c.status!=="CONNECTED")throw new MarketplaceError(c.status==="REAUTH_REQUIRED"?"REAUTH_REQUIRED":"MARKETPLACE_DISCONNECTED");
+  let c=await this.connection(s,id);this.assertAvailable(s,c.provider);if(c.status!=="CONNECTED")throw new MarketplaceError(c.status==="REAUTH_REQUIRED"?"REAUTH_REQUIRED":"MARKETPLACE_DISCONNECTED");
   if(c.credentialsRef!==this.ref(c,c.id))throw new MarketplaceError("MARKETPLACE_CREDENTIAL_SCOPE_INVALID");
   let secret=await this.d.secrets.get(c.credentialsRef);
   if(!secret?.value.accessToken||!secret.value.refreshToken)throw new MarketplaceError("REAUTH_REQUIRED");
@@ -145,6 +150,7 @@ export class MarketplaceService {
  }
  async enqueue(actor:MarketplaceActor,connectionId:string,kind:MarketplaceJob["kind"],payload:Record<string,unknown>,key:string){
   const c=await this.connection(actor,connectionId);
+  this.assertAvailable(actor,c.provider);
   if(c.status!=="CONNECTED")throw new MarketplaceError("MARKETPLACE_DISCONNECTED");
   if(kind==="IMPORT"){
    const decisions=payload.decisions as ImportDecision[];
@@ -172,6 +178,15 @@ export class MarketplaceService {
   if(kind==="PUBLISH")await this.localListingWrite(actor,c,payload as {productId:string;variantId?:string;draft:PublishDraft},key);
   const result=await this.d.repository.enqueue(actor,connectionId,kind,payload,key);
   await this.d.repository.audit(actor,"JOB_"+kind,result.id);return result;
+ }
+ async retryJob(actor:MarketplaceActor,id:string,operationKey:string){
+  const job=await this.d.repository.job(actor,id);if(!job)throw new MarketplaceError("MARKETPLACE_JOB_NOT_FOUND");
+  // Publishing, changing status and cancellation need their own explicit review/confirmation.
+  if(!["FAILED","COMPLETED_WITH_ERRORS"].includes(job.status)||!["PREVIEW","SYNC","RECONCILE","ORDERS","ORDER"].includes(job.kind))throw new MarketplaceError("MARKETPLACE_JOB_RETRY_REQUIRES_REVIEW");
+  if(!await this.d.canManageActor(actor))throw new MarketplaceError("MARKETPLACE_PERMISSION_REVOKED");
+  const {actorId:_actor,retryOf:_retry,...payload}=job.payload;
+  const retried=await this.enqueue(actor,job.connectionId,job.kind,{...payload,retryOf:job.id},"retry:"+id+":"+operationKey);
+  await this.d.repository.audit(actor,"JOB_RETRIED",retried.id,job.id);return retried;
  }
  private async product(s:MarketplaceScope,id:string,variantId?:string,allowInactive=false){
   const product=await mustProductBelongToTenantAndWorkspace(this.d.catalog,id,s.tenantId,s.workspaceId);

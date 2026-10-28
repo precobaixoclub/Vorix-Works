@@ -13,11 +13,13 @@ const {service}=buildMarketplaceService(pool,providers,new PostgresSecretManager
 console.log(JSON.stringify({event:"marketplace_worker_started",providers:providers.map(p=>p.id)}));
 const heartbeat=process.env.MARKETPLACE_WORKER_HEARTBEAT_FILE;
 const beat=async()=>{if(heartbeat)await writeFile(heartbeat,new Date().toISOString()).catch(()=>undefined);};
-let stop=false;process.on("SIGTERM",()=>{stop=true;});process.on("SIGINT",()=>{stop=true;});
+const shutdown=new AbortController();
+let stop=false;const requestStop=()=>{stop=true;shutdown.abort();};process.on("SIGTERM",requestStop);process.on("SIGINT",requestStop);
+const pause=async(ms:number)=>{try{await sleep(ms,undefined,{signal:shutdown.signal});}catch(error){if(!stop)throw error;}};
 try{
  while(!stop){
   await beat();
-  if(!providers.length){await sleep(60000);continue;}
-  try{const active=await service.runOnce();await sleep(active?500:3000);}catch{console.error("marketplace_worker_iteration_failed");await sleep(5000);}
+  if(!providers.length){await pause(60000);continue;}
+  try{const active=await service.runOnce();await pause(active?500:3000);}catch{console.error("marketplace_worker_iteration_failed");await pause(5000);}
  }
 }finally{await pool.end();}

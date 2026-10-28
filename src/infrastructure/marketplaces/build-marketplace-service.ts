@@ -3,6 +3,7 @@ import type { SecretManagerPort } from "../../application/ports/secret-manager.p
 import type { MarketplaceProvider } from "../../application/ports/marketplace-provider.port.js";
 import type { ContactChannel } from "../../domain/crm/crm.model.js";
 import { MarketplaceService } from "../../application/marketplaces/marketplace-service.js";
+import { marketplaceReleasePolicyFromEnv } from "../../domain/marketplaces/marketplace-availability.js";
 import { effectivePermissions } from "../../domain/identity/identity.model.js";
 import { PostgresTenantMembershipRepository } from "../storage/postgres/postgres-tenant-membership-repository.js";
 import { PostgresWorkspaceRepository } from "../storage/postgres/postgres-workspace-repository.js";
@@ -18,7 +19,7 @@ import { PostgresMarketplaceRepository } from "./postgres-marketplace-repository
 export function buildMarketplaceService(pool:Pool,providers:readonly MarketplaceProvider[],secrets:SecretManagerPort){
  const repository=new PostgresMarketplaceRepository(pool),memberships=new PostgresTenantMembershipRepository(pool),workspaces=new PostgresWorkspaceRepository(pool);
  const contactRepository=new PostgresContactRepository(pool),identities=new PostgresContactIdentityRepository(pool);
- const service=new MarketplaceService({repository,secrets,providers:Object.fromEntries(providers.map(p=>[p.id,p])),
+ const service=new MarketplaceService({repository,secrets,releasePolicy:marketplaceReleasePolicyFromEnv(process.env),providers:Object.fromEntries(providers.map(p=>[p.id,p])),
   catalog:{productRepository:new PostgresProductRepository(pool),productEngineRepository:new PostgresProductEngineRepository(pool),salesCatalogRepository:new PostgresSalesCatalogRepository(pool)},
   orders:new PostgresCommerceOrderRepository(pool),
   orderDeps:{

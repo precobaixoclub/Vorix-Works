@@ -1,0 +1,11 @@
+✔ TEST_INFRA: fixture and API pools can keep more than ten simultaneous clients without socket rejection (4188.3901ms)
+✔ TEST_INFRA: fragmented extended-query messages cannot share another connection's unnamed statement (4136.5038ms)
+✔ TEST_INFRA: another connection waits for transaction completion and errors do not strand protocol ownership (3620.2211ms)
+ℹ tests 3
+ℹ suites 0
+ℹ pass 3
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 12372.3506

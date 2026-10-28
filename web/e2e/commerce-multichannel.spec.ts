@@ -59,6 +59,7 @@ async function fixture(page:Page){
     {id:"conn-shopee",provider:"SHOPEE",externalAccountName:"Loja Vorix Shopee",externalAccountId:"777",status:"CONNECTED",safetyStock:0,settings:{},userProducts:false,lastSyncAt:at(10),ordersSyncedAt:at(5)}],
    listings:[{id:"lst-ml",connectionId:"conn-ml",productId:"p1",productName:"Camiseta ML",externalListingId:"MLB1",status:"active",syncStatus:"SYNCED"},{id:"lst-shopee",connectionId:"conn-shopee",productId:"p2",productName:"Camiseta Shopee",externalListingId:"3001",status:"active",syncStatus:"SYNCED"}],jobs:[],mappings:[]};
   else if(path==="/v1/marketplaces/jobs"&&method==="POST")data={id:"job-1",connectionId:body.connectionId,kind:"STATUS",status:"PENDING",progress:0,total:1,items:[]};
+  else if(path==="/v1/marketplaces/jobs/job-1"&&method==="GET")data={id:"job-1",connectionId:"conn-shopee",kind:"STATUS",status:"COMPLETED",progress:1,total:1,items:[]};
   else if(path==="/v1/marketplaces/catalog")data=[];
   else if(path==="/v1/marketplaces/shopee/connect")data={url:"/workspaces/"+WORKSPACE_ID+"/settings/marketplaces?connected=shopee"};
   else if(path==="/v1/marketplaces/connections/conn-ml/settings"){createContacts=!!body.createContacts;data={ok:true};}
@@ -69,7 +70,7 @@ async function fixture(page:Page){
 }
 async function noOverflow(page:Page){expect(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth+1)).toBe(true);}
 const shot=(page:Page,name:string,project:string)=>page.screenshot({path:join(output,`${name}-${project}.png`),fullPage:true});
-test.beforeEach(async({context})=>{await loginCookie(context);});
+test.beforeEach(async({context,baseURL})=>{await loginCookie(context,baseURL);});
 
 test("filtro por canal, pedido do marketplace com envio, etiqueta, atualização e cancelamento bloqueado",async({page},info)=>{
  const calls=await fixture(page);
@@ -158,7 +159,7 @@ test("vendas por canal no analytics do site",async({page},info)=>{
  const block=page.getByRole("region",{name:"Vendas por canal"});await expect(block).toBeVisible();
  const revenue=block.getByRole("list",{name:"Receita por canal"});await expect(revenue.getByRole("listitem")).toHaveCount(4);
  await expect(revenue.getByText("R$ 960,00")).toBeVisible();
- if(info.project.name==="390")await expect(block.getByRole("list",{name:"Detalhes por canal"}).getByText("Total")).toBeVisible();
+ if((page.viewportSize()?.width??1440)<768)await expect(block.getByRole("list",{name:"Detalhes por canal"}).getByText("Total")).toBeVisible();
  else await expect(block.getByRole("row",{name:/Total/})).toContainText("23");
  const request=calls.find(c=>c.path==="/v1/commerce/analytics/channels");
  expect(request?.query.get("from")).toBe("2026-09-28T03:00:00.000Z");expect(request?.query.get("to")).toBe("2026-10-28T02:59:59.999Z");

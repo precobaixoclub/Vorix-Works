@@ -31,6 +31,7 @@
 # foi feito por este mecanismo. Corrigido para nomes configuráveis via env (default = nomes reais
 # de produção) e pra `overall_status` refletir "zero dumps bem-sucedidos" como falha, não sucesso.
 set -uo pipefail
+umask 077
 
 BACKUP_DIR="${BACKUP_DIR:-/opt/backups/postgres}"
 RETENTION_DAYS="${RETENTION_DAYS:-14}"
@@ -42,6 +43,7 @@ LOG_FILE="$BACKUP_DIR/backup.log"
 MANIFEST_FILE="$BACKUP_DIR/backup-manifest.jsonl"
 
 mkdir -p "$BACKUP_DIR"
+chmod 700 "$BACKUP_DIR"
 
 log() {
   echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] $1" | tee -a "$LOG_FILE"
@@ -55,10 +57,12 @@ dump_container() {
   if ! docker inspect "$container" >/dev/null 2>&1; then
     log "SKIP db=$db container=$container motivo=container_nao_encontrado"
     echo "{\"timestamp\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"db\":\"$db\",\"status\":\"skipped\",\"reason\":\"container_not_found\"}" >> "$MANIFEST_FILE"
+    if [ "$container" = "$ZUNO_POSTGRES_CONTAINER" ]; then overall_status=1; fi
     return 0
   fi
   local out="$BACKUP_DIR/${db}-${STAMP}.sql.gz"
-  if docker exec "$container" pg_dump -U "$user" -d "$db" | gzip > "$out"; then
+  if docker exec "$container" pg_dump -U "$user" -d "$db" --no-owner | gzip > "$out.partial" && gzip -t "$out.partial"; then
+    mv "$out.partial" "$out"
     local size_bytes
     size_bytes="$(stat -c%s "$out" 2>/dev/null || stat -f%z "$out" 2>/dev/null || echo 0)"
     log "OK db=$db container=$container arquivo=$out tamanho_bytes=$size_bytes"
@@ -67,7 +71,7 @@ dump_container() {
   else
     log "FAIL db=$db container=$container — pg_dump/gzip falhou, ver saída acima."
     echo "{\"timestamp\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"db\":\"$db\",\"status\":\"failed\"}" >> "$MANIFEST_FILE"
-    rm -f "$out"
+    rm -f "$out.partial"
     overall_status=1
   fi
 }
@@ -98,7 +102,9 @@ else
 fi
 
 log "Removendo backups locais com mais de ${RETENTION_DAYS} dias em $BACKUP_DIR"
-find "$BACKUP_DIR" -name "*.sql.gz" -mtime "+${RETENTION_DAYS}" -delete
+if [ "$overall_status" -eq 0 ]; then
+  find "$BACKUP_DIR" -maxdepth 1 -name "*.sql.gz" -mtime "+${RETENTION_DAYS}" -delete
+fi
 
 log "Backup concluído (status=$([ $overall_status -eq 0 ] && echo ok || echo com_falhas)): $(ls -1 "$BACKUP_DIR"/*.sql.gz 2>/dev/null | wc -l) arquivo(s) em $BACKUP_DIR"
 exit $overall_status

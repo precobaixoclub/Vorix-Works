@@ -1,0 +1,35 @@
+✔ domínio: transições válidas, totais, documento e frete próprio sem valor inventado (6343.5764ms)
+✔ modo híbrido real: camiseta compra online, veículo conversa, override vitrine, loja sem pagamento não vende (306.2628ms)
+✔ checkout visitante com variação + retirada: total no servidor, reserva, contato, carrinho vira pedido; repetir não duplica (386.7405ms)
+✔ pagamento aprovado vira venda uma vez só; webhook duplicado não baixa de novo; recusado libera a reserva (424.1195ms)
+✔ reserva expira, devolve estoque; pagamento após expirar é estornado automaticamente (322.885ms)
+✔ cancelar pedido pago antes do envio: estorna e devolve ao estoque; enviado não cancela; fluxo de status com retirada (994.174ms)
+✔ frete e segurança: opção fora da região, endereço obrigatório, frete grátis por valor, documento inválido (574.2867ms)
+✔ estoque insuficiente e checkout simultâneo nunca vendem a mesma unidade (604.7295ms)
+✔ CRM opcional: pedido pago vira oportunidade ganha sem baixar estoque de novo; padrão é só contato (937.5923ms)
+✔ Mercado Pago (API simulada): PIX com QR, webhook relido no provedor, duplicado ignorado, credencial do lojista no cofre (409.9878ms)
+✔ rotas: payload adulterado é recusado; RBAC de pedidos e credenciais; isolamento entre empresas (825.0055ms)
+✔ catálogo público paginado no banco: 24 primeiros, total, próxima página, busca, produto da URL e sitemap (642.5718ms)
+✔ contrato com Analytics: eventos do pedido, receita por produto, cancelamento e venda única com a oportunidade ganha (1112.3363ms)
+✔ corrida pagamento × expiração e pagamento × cancelamento: estoque mexe uma vez só e dinheiro nunca fica preso (1242.2032ms)
+✔ estorno/chargeback feito no provedor cancela o pedido, devolve estoque, sai do Analytics e perde a oportunidade (420.6539ms)
+✔ cartão recusado na hora: erro claro, nada cobrado, reserva liberada e o carrinho continua para tentar de novo (401.9455ms)
+✔ pagamento aprovado cuja confirmação falhou no meio é concluído pela varredura (não expira nem estorna venda válida) (507.1008ms)
+✔ produto sem controle de estoque após a venda: cancelamento ainda estorna e registra a falha de estoque (250.0139ms)
+✔ ajuste manual de estoque não pode apagar unidades reservadas por pedidos (184.0224ms)
+✔ devolução parcial: pedir não repõe; recebe e repõe só o devolvido; estorno parcial uma vez; cancelamento depois estorna só o saldo (1052.3707ms)
+✔ estorno parcial só quando o meio de pagamento suporta (capability) (535.0091ms)
+✔ payment webhook HMAC accepts seconds/milliseconds and rejects forged IDs, wrong merchants, missing signatures and stale replay (3.1953ms)
+✔ payment webhook ingress authenticates before calling the provider; transient errors remain retryable (195.0784ms)
+✔ checkout stays closed without the merchant webhook secret, and status never reveals that secret (4.7365ms)
+✔ operations monitor delivers bounded alerts through the existing bell only to active tenant administrators (6408.7463ms)
+✔ payment processing failure returns 503 so the provider can retry instead of losing the webhook (271.117ms)
+✔ marketplace notification persistence failure returns 503 for both signed providers (14.862ms)
+ℹ tests 27
+ℹ suites 0
+ℹ pass 27
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 19266.644

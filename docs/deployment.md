@@ -1,5 +1,8 @@
 # Deployment — Plataforma Zuno (RC 1.0)
 
+Operação vigente, disponibilidade dos canais e disaster recovery: [runbook de produção](operations/production-readiness.md).
+Para release, usar `scripts/deploy/deploy-production.sh` com pacote de `git archive`; o procedimento automatizado faz backup, build sequencial, migrations, health e rollback. Não usar build conjunto em produção.
+
 ## Commit e Deploy Vorix Atual
 
 Use este fluxo para atualizar Git e o servidor `vorixworks.com` a partir do workspace local.

@@ -170,7 +170,7 @@ export class PostgresMarketplaceRepository implements MarketplaceRepositoryPort 
   const dirty=await this.pool.query("select * from marketplace_outbox order by updated_at limit 50");
   for(const d of dirty.rows)await this.transaction({tenantId:d.tenant_id,workspaceId:d.workspace_id},"outbox:"+d.product_id,async tx=>{
    const store=tx.marketplace as PostgresMarketplaceRepository;
-   const rows=await store.pool.query("select distinct connection_id from channel_listings where tenant_id=$1 and workspace_id=$2 and product_id=$3",[d.tenant_id,d.workspace_id,d.product_id]);
+   const rows=await store.pool.query("select distinct l.connection_id from channel_listings l join marketplace_connections c on c.id=l.connection_id and c.tenant_id=l.tenant_id and c.workspace_id=l.workspace_id where l.tenant_id=$1 and l.workspace_id=$2 and l.product_id=$3 and c.status='CONNECTED'",[d.tenant_id,d.workspace_id,d.product_id]);
    for(const r of rows.rows)await store.enqueue({tenantId:d.tenant_id,workspaceId:d.workspace_id,userId:"marketplace-outbox"},r.connection_id,"SYNC",{productId:d.product_id},"outbox:"+d.product_id+":"+d.revision+":"+r.connection_id);
    await store.pool.query("delete from marketplace_outbox where tenant_id=$1 and workspace_id=$2 and product_id=$3 and revision=$4",[d.tenant_id,d.workspace_id,d.product_id,d.revision]);
   });

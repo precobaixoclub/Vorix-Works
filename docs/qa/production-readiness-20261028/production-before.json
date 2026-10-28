@@ -1,0 +1,141 @@
+{
+  "at": "2026-10-28T12:56:39.876Z",
+  "readOnly": true,
+  "checks": {
+    "negative_stock": 0,
+    "over_reserved": 0,
+    "products_without_workspace": 0,
+    "duplicate_orders": 0,
+    "duplicate_payments": 0,
+    "duplicate_external_orders": 0,
+    "duplicate_intents": 0,
+    "duplicate_contact_identities": 0,
+    "orphan_listings": 0,
+    "orphan_shipments": 0,
+    "invalid_returns": 0,
+    "excessive_refunds": 0,
+    "wrong_order_totals": 0,
+    "wrong_item_totals": 0,
+    "paid_without_inventory": 1,
+    "cancelled_without_refund": 0,
+    "expired_reservations": 0,
+    "stuck_marketplace_jobs": 0,
+    "failed_marketplace_jobs": 34,
+    "reauth_required": 0,
+    "old_unpaid_orders": 0
+  },
+  "errors": {},
+  "tables": {
+    "schema_migrations": 187,
+    "tenant_sites": 2,
+    "products": 6,
+    "product_variants": 2,
+    "contacts": 66,
+    "sales_intents": 3,
+    "commerce_orders": 14,
+    "commerce_payments": 11,
+    "marketplace_connections": 4,
+    "marketplace_jobs": 55,
+    "site_events": 98,
+    "site_analytics_buckets": 97,
+    "site_carts": 15,
+    "user_sessions": 131
+  },
+  "credentials": {
+    "commerce": [],
+    "marketplaces": [
+      {
+        "provider": "MERCADO_LIVRE",
+        "status": "DISCONNECTED",
+        "n": 4
+      }
+    ]
+  },
+  "performance": {
+    "databaseBytes": "56728599",
+    "tableSizes": [
+      {
+        "relname": "execution_artifacts",
+        "bytes": "11788288",
+        "n_live_tup": "0",
+        "n_dead_tup": "0"
+      },
+      {
+        "relname": "refresh_tokens",
+        "bytes": "2277376",
+        "n_live_tup": "183",
+        "n_dead_tup": "16"
+      },
+      {
+        "relname": "inbox_messages",
+        "bytes": "2039808",
+        "n_live_tup": "3",
+        "n_dead_tup": "0"
+      },
+      {
+        "relname": "auth_audit_log",
+        "bytes": "1417216",
+        "n_live_tup": "183",
+        "n_dead_tup": "0"
+      },
+      {
+        "relname": "creative_engine_runs",
+        "bytes": "1138688",
+        "n_live_tup": "0",
+        "n_dead_tup": "0"
+      },
+      {
+        "relname": "briefing_field_values",
+        "bytes": "933888",
+        "n_live_tup": "0",
+        "n_dead_tup": "0"
+      },
+      {
+        "relname": "operational_rate_limit_buckets",
+        "bytes": "638976",
+        "n_live_tup": "1522",
+        "n_dead_tup": "229"
+      },
+      {
+        "relname": "execution_tasks",
+        "bytes": "606208",
+        "n_live_tup": "0",
+        "n_dead_tup": "0"
+      },
+      {
+        "relname": "execution_events",
+        "bytes": "540672",
+        "n_live_tup": "0",
+        "n_dead_tup": "0"
+      },
+      {
+        "relname": "prepared_commands",
+        "bytes": "491520",
+        "n_live_tup": "0",
+        "n_dead_tup": "0"
+      },
+      {
+        "relname": "icaro_ai_calls",
+        "bytes": "434176",
+        "n_live_tup": "0",
+        "n_dead_tup": "0"
+      },
+      {
+        "relname": "planning_edges",
+        "bytes": "401408",
+        "n_live_tup": "0",
+        "n_dead_tup": "0"
+      }
+    ],
+    "sequentialScans": [
+      {
+        "relname": "operational_rate_limit_buckets",
+        "seq_scan": "11",
+        "seq_tup_read": "16677",
+        "idx_scan": "202696",
+        "n_live_tup": "1522"
+      }
+    ]
+  },
+  "schemaFingerprint": "8c23070e360ea1cbee07ed258367ce38c550209b3891da6a4ca8123e604f696b"
+}

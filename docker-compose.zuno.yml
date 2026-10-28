@@ -1,5 +1,17 @@
 name: zuno
 
+x-bounded-logging: &bounded-logging
+  driver: json-file
+  options: {max-size: "10m", max-file: "3"}
+
+x-marketplace-release-env: &marketplace-release-env
+  MARKETPLACE_MERCADO_LIVRE_AVAILABILITY: "${MARKETPLACE_MERCADO_LIVRE_AVAILABILITY:-BETA}"
+  MARKETPLACE_MERCADO_LIVRE_TENANT_IDS: "${MARKETPLACE_MERCADO_LIVRE_TENANT_IDS:-}"
+  MARKETPLACE_SHOPEE_AVAILABILITY: "${MARKETPLACE_SHOPEE_AVAILABILITY:-BETA}"
+  MARKETPLACE_SHOPEE_TENANT_IDS: "${MARKETPLACE_SHOPEE_TENANT_IDS:-}"
+  MARKETPLACE_TIKTOK_SHOP_AVAILABILITY: "${MARKETPLACE_TIKTOK_SHOP_AVAILABILITY:-BETA}"
+  MARKETPLACE_TIKTOK_SHOP_TENANT_IDS: "${MARKETPLACE_TIKTOK_SHOP_TENANT_IDS:-}"
+
 # Stack isolada do Zuno (API + Web + Postgres próprio) — rede e volumes dedicados, nunca toca em
 # nenhum container/rede/volume já existente no host (cmdesk-*, rumoaoaltar-*, saas_*). Roteado via
 # Traefik (labels, auto-discovery — mesmo padrão do rumoaoaltar-app) na rede externa
@@ -8,6 +20,7 @@ name: zuno
 
 services:
   zuno-postgres:
+    logging: *bounded-logging
     image: postgres:16-alpine
     restart: unless-stopped
     environment:
@@ -26,6 +39,7 @@ services:
       retries: 5
 
   zuno-api:
+    logging: *bounded-logging
     build:
       context: .
       dockerfile: Dockerfile
@@ -41,6 +55,7 @@ services:
         condition: service_healthy
     environment:
       API_PORT: "3000"
+      <<: *marketplace-release-env
       API_HOST: "0.0.0.0"
       SOCIAL_GATEWAY_URL: "http://social-provider-gateway:3210"
       SOCIAL_GATEWAY_TOKEN: "${SOCIAL_GATEWAY_TOKEN:-}"
@@ -196,6 +211,13 @@ services:
       - traefik.http.services.zuno-api.loadbalancer.server.port=3000
 
   zuno-web:
+    logging: *bounded-logging
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3001/login').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
     build:
       context: ./web
       dockerfile: Dockerfile
@@ -242,6 +264,7 @@ services:
   # aqui nunca derruba requisições da API, e vice-versa (ver plano técnico, "Critério principal").
   # Faz parte do MESMO deploy do Vorix (não do gateway) — reconstrói junto de zuno-api/zuno-web.
   vorix-worker:
+    logging: *bounded-logging
     build:
       context: .
       dockerfile: Dockerfile
@@ -309,6 +332,7 @@ services:
   # Marketplaces: fila no PostgreSQL (jobs/outbox — sem RabbitMQ). Sobe em todo deploy da API; sem canal
   # configurado fica ocioso e saudável. Liveness por heartbeat (event loop travado → restart).
   marketplaces-worker:
+    stop_grace_period: 45s
     build:
       context: .
       dockerfile: Dockerfile
@@ -321,6 +345,7 @@ services:
       DATABASE_URL: "postgres://zuno:${ZUNO_POSTGRES_PASSWORD}@zuno-postgres:5432/zuno"
       JWT_SECRET: "${ZUNO_JWT_SECRET}"
       MARKETPLACE_WORKER_HEARTBEAT_FILE: /tmp/marketplaces-worker-heartbeat
+      <<: *marketplace-release-env
       ML_CLIENT_ID: "${ML_CLIENT_ID:-}"
       ML_CLIENT_SECRET: "${ML_CLIENT_SECRET:-}"
       ML_REDIRECT_URI: "${ML_REDIRECT_URI:-}"

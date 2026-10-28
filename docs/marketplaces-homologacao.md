@@ -11,7 +11,7 @@ Domínio da API em produção: `https://api.vorixworks.com`.
 
 ## Variáveis de ambiente (API e `marketplaces-worker`)
 
-Sem as variáveis de um canal, ele não aparece e o worker fica ocioso.
+Sem as variáveis de um canal, ele não aparece e o worker fica ocioso. Mesmo com credenciais, todos começam em BETA e só tenants explicitamente habilitados podem conectar. Estados/variáveis e recuperação: [runbook vigente](operations/production-readiness.md).
 
 | Canal | Variáveis | Valor |
 |---|---|---|

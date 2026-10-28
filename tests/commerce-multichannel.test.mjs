@@ -52,7 +52,7 @@ async function world(){
  await c.d.productEngineRepository.move({...c.scope,productId:product.id,kind:"IN",quantity:10,operationKey:randomUUID(),userId:c.actor.userId});
  const ml=channel("MERCADO_LIVRE","ml-app"),sp=channel("SHOPEE","sp-app"),tt=channel("TIKTOK_SHOP","tt-app");
  const orders=new PostgresCommerceOrderRepository(db.pool);
- const service=new MarketplaceService({repository:repo,secrets,providers:{MERCADO_LIVRE:ml,SHOPEE:sp,TIKTOK_SHOP:tt},catalog:c.d,canManageActor:async()=>true,orders,orderDeps:{contacts:{
+ const service=new MarketplaceService({repository:repo,secrets,releasePolicy:Object.fromEntries([ml,sp,tt].map(p=>[p.id,{availability:"BETA",tenantIds:[c.scope.tenantId]}])),providers:{MERCADO_LIVRE:ml,SHOPEE:sp,TIKTOK_SHOP:tt},catalog:c.d,canManageActor:async()=>true,orders,orderDeps:{contacts:{
   findByIdentity:async({channel,externalId})=>(await new PostgresContactIdentityRepository(db.pool).findByChannelAndExternalId(channel,externalId))?.contactId,
   create:async input=>{const contact=await new PostgresContactRepository(db.pool).create({tenantId:input.tenantId,workspaceId:input.workspaceId,name:input.name,origin:input.origin});await new PostgresContactIdentityRepository(db.pool).create({contactId:contact.id,tenantId:input.tenantId,workspaceId:input.workspaceId,channel:input.channel,externalId:input.externalId});return contact.id;}}}});
  const conns={};
@@ -175,21 +175,34 @@ test("RBAC: cancelar/estornar exige permissão sensível; Atendente/Gerente sem 
  w.ml.orders.set("400400",extOrder("400400",w.conns.MERCADO_LIVRE.account,w.conns.MERCADO_LIVRE.listing,1));await w.notify("MERCADO_LIVRE","400400");await w.drain();
  const order=await w.byExternal("MERCADO_LIVRE","400400");
  const app=Fastify();app.decorateRequest("zunoContext",null);
- app.addHook("onRequest",async request=>{const [role,grants=""]=String(request.headers.authorization??"").split(":");const tenantId=request.headers["x-tenant"]??w.tenantId;
+ app.addHook("onRequest",async request=>{const [role,...grantParts]=String(request.headers.authorization??"").split(":");const grants=grantParts.join(":");const tenantId=request.headers["x-tenant"]??w.tenantId;
   request.zunoContext={principal:role?{tenantId,role,userId:"user-"+role,permissions:effectivePermissions(role,grants?grants.split(","):[])}:undefined};});
  await registerCommerceRoutes(app,{...w.siteDeps,commerceRepository:new PostgresSiteCommerceRepository(db.pool),orders:w.orders,paymentProviders:{SANDBOX:new SandboxPaymentProvider()},shippingProviders:{},workspaceRepository:w.workspaceRepository,
-  marketplace:w.service,access:{teamMembershipRepository:w.d.teamMembershipRepository}});
+  marketplace:w.service,access:{teamMembershipRepository:w.d.teamMembershipRepository},deals:w.d.dealRepository});
  const ws=`?workspaceId=${w.workspaceId}`,cancel=headers=>app.inject({method:"POST",url:`/commerce/orders/${order.id}/cancel${ws}`,headers,payload:{reason:"teste"}});
  const detail=await app.inject({method:"GET",url:`/commerce/orders/${order.id}${ws}`,headers:{authorization:"editor"}});
- assert.equal(detail.statusCode,200,detail.body);assert.equal(detail.json().data.actions.canCancel,false);assert.match(detail.json().data.actions.cancelBlockedReason,/Cancelar pedidos/);
- assert.equal(detail.json().data.shipments.length,1);
+ assert.equal(detail.statusCode,404,"Atendente não pode ler pedido sem vínculo com suas equipes");
+ const ownerDetail=await app.inject({method:"GET",url:`/commerce/orders/${order.id}${ws}`,headers:{authorization:"owner"}});
+ assert.equal(ownerDetail.statusCode,200,ownerDetail.body);assert.equal(ownerDetail.json().data.shipments.length,1);
+ for(const role of ["editor","admin"]){
+  const list=await app.inject({method:"GET",url:`/commerce/orders${ws}`,headers:{authorization:role}});
+  assert.equal(list.json().data.total,0,"listagem e contagem não expõem pedidos fora do escopo");
+  assert.equal((await app.inject({method:"POST",url:`/commerce/orders/${order.id}/status${ws}`,headers:{authorization:role},payload:{to:"PROCESSING"}})).statusCode,404);
+  assert.equal((await app.inject({method:"POST",url:`/commerce/orders/${order.id}/returns${ws}`,headers:{authorization:role},payload:{requestKey:randomUUID(),items:[{orderItemId:order.items[0].id,quantity:1}]}})).statusCode,404);
+ }
  assert.equal((await cancel({authorization:"editor"})).statusCode,403,"Atendente nunca cancela por padrão");
  assert.equal((await cancel({authorization:"admin"})).statusCode,403,"Gerente sem concessão");
- assert.equal((await cancel({authorization:"admin:order:cancel"})).statusCode,403,"Gerente com concessão, mas pedido fora das equipes");
+ assert.equal((await cancel({authorization:"admin:order:cancel"})).statusCode,404,"Gerente com concessão não acessa pedido fora das equipes");
  assert.equal((await app.inject({method:"POST",url:`/commerce/orders/${order.id}/cancel?workspaceId=${other.workspaceId}`,headers:{authorization:"owner","x-tenant":other.tenantId},payload:{}})).statusCode,404,"outra empresa não enxerga o pedido");
+ const deal=await w.deal();await db.pool.query("update deals set owner_user_id='user-admin' where id=$1",[deal.id]);
+ await w.orders.update(order.id,{crmDealId:deal.id},{type:"qa_scope_linked",actorType:"system",data:{}});
+ const ownDetail=await app.inject({method:"GET",url:`/commerce/orders/${order.id}${ws}`,headers:{authorization:"admin"}});assert.equal(ownDetail.statusCode,200,ownDetail.body);
+ const ownList=await app.inject({method:"GET",url:`/commerce/orders${ws}`,headers:{authorization:"admin"}});assert.equal(ownList.json().data.total,1);
+ assert.equal((await app.inject({method:"GET",url:`/commerce/orders/${order.id}${ws}`,headers:{authorization:"editor"}})).statusCode,404);
  const ok=await cancel({authorization:"owner"});assert.equal(ok.statusCode,200,ok.body);
  assert.equal((await w.orders.get(order.id)).status,"CANCELLED");assert.deepEqual(await w.stock(),{s:10,r:0});
- const label=await app.inject({method:"GET",url:`/commerce/orders/${order.id}/label${ws}`,headers:{authorization:"editor"}});assert.equal(label.statusCode,200,label.body);assert.equal(label.json().data.contentType,"application/pdf");
+ const label=await app.inject({method:"GET",url:`/commerce/orders/${order.id}/label${ws}`,headers:{authorization:"editor"}});assert.equal(label.statusCode,404);
+ const ownerLabel=await app.inject({method:"GET",url:`/commerce/orders/${order.id}/label${ws}`,headers:{authorization:"owner"}});assert.equal(ownerLabel.statusCode,200,ownerLabel.body);assert.equal(ownerLabel.json().data.contentType,"application/pdf");
  const channels=await app.inject({method:"GET",url:`/commerce/analytics/channels${ws}&from=${new Date(Date.now()-86400000).toISOString()}&to=${new Date(Date.now()+86400000).toISOString()}`,headers:{authorization:"owner"}});
  assert.equal(channels.statusCode,200,channels.body);assert.equal(channels.json().data.totals.cancellations,1);
  // Notificação de outro app/conta não cria nada em lugar nenhum.
@@ -204,4 +217,18 @@ test("canal sem cancelamento pela API: bloqueio explícito (BLOCKED_EXTERNAL_CAP
  const order=await w.byExternal("MERCADO_LIVRE","500500");
  await assert.rejects(w.service.cancelExternalOrder(w.actor,order.id,"x"),/BLOCKED_EXTERNAL_CAPABILITY/);
  assert.equal((await w.orders.get(order.id)).status,"PAID");
+});
+
+test("identical seller IDs in different providers never overwrite another connection or its encrypted tokens",async()=>{
+ const w=await world(),ml=await repo.connection(w.scope,w.conns.MERCADO_LIVRE.id),before=await secrets.get(ml.credentialsRef);
+ const accountId=ml.externalAccountId;
+ w.sp.authorizationUrl=state=>"https://example.test/authorize?state="+state;
+ w.sp.connect=async()=>({accessToken:"shopee-only-token",refreshToken:"shopee-refresh",expiresAt:new Date(Date.now()+3600000).toISOString(),userId:accountId});
+ w.sp.account=async()=>({id:accountId,name:"QA Shopee",siteId:"BR",userProducts:false});
+ const start=await w.service.startOAuth(w.actor,"SHOPEE"),state=new URL(start.url).searchParams.get("state");
+ const result=await w.service.callback(state,"qa-code",start.browserNonce,{},"SHOPEE");
+ assert.notEqual(result.connectionId,ml.id);
+ assert.equal((await repo.connection(w.scope,result.connectionId)).provider,"SHOPEE");
+ assert.equal((await repo.connection(w.scope,ml.id)).provider,"MERCADO_LIVRE");
+ assert.deepEqual(await secrets.get(ml.credentialsRef),before,"the original provider token is unchanged");
 });

@@ -18,7 +18,14 @@ case "$TARGET" in
   all) SERVICES="zuno-api vorix-worker zuno-web" ;;
   *) echo "alvo inválido"; exit 2 ;;
 esac
-image_of() { case "$1" in zuno-api) echo zuno-zuno-api ;; vorix-worker) echo zuno-vorix-worker ;; zuno-web) echo zuno-zuno-web ;; social-provider-gateway) echo zuno-social-provider-gateway ;; esac; }
+image_of() { case "$1" in zuno-api) echo zuno-zuno-api ;; vorix-worker) echo zuno-vorix-worker ;; marketplaces-worker) echo zuno-marketplaces-worker ;; zuno-web) echo zuno-zuno-web ;; social-provider-gateway) echo zuno-social-provider-gateway ;; esac; }
+if [ "$TARGET" != web ]; then
+  if docker image inspect "zuno-marketplaces-worker:rollback-$STAMP" >/dev/null 2>&1; then
+    SERVICES="$SERVICES marketplaces-worker"
+  else
+    $COMPOSE stop marketplaces-worker >/dev/null 2>&1 || true
+  fi
+fi
 if [ "$TARGET" = all ]; then
   if docker image inspect "zuno-social-provider-gateway:rollback-$STAMP" >/dev/null 2>&1; then
     SERVICES="$SERVICES social-provider-gateway"
@@ -57,5 +64,7 @@ for _ in $(seq 1 50); do
   sleep 6
   curl -s https://api.vorixworks.com/readyz | grep -q '"ready":true' && break
 done
-echo "READYZ $(curl -s https://api.vorixworks.com/readyz | grep -o '"ready":[a-z]*')"
+READY=$(curl -fsS --max-time 15 https://api.vorixworks.com/readyz | grep -o '"ready":[a-z]*')
+echo "READYZ $READY"
+[ "$READY" = '"ready":true' ] || { echo ROLLBACK_HEALTH_FAILED; exit 1; }
 echo ROLLBACK_DONE

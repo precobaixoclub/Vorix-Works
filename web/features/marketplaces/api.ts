@@ -1,12 +1,12 @@
 import { apiClient } from "@/lib/api-client";
 export type Connection={id:string;provider?:string;externalAccountName:string;externalAccountId:string;status:string;safetyStock:number;settings?:{createContacts?:boolean};lastSyncAt?:string;ordersSyncedAt?:string;lastError?:string;userProducts?:boolean};
-export type Provider={id:string;capabilities?:Partial<Record<string,"SUPPORTED"|"BLOCKED_EXTERNAL_CAPABILITY">>;closeListingEffect?:"END"|"DELETE"};
+export type Provider={id:string;availability?:"DISABLED"|"BETA"|"REAL_VALIDATED"|"GENERALLY_AVAILABLE";capabilities?:Partial<Record<string,"SUPPORTED"|"BLOCKED_EXTERNAL_CAPABILITY">>;closeListingEffect?:"END"|"DELETE"};
 export type ExternalVariant={id:string;sku?:string;ean?:string;quantity:number;options:Record<string,string>};
 export type External={id:string;title:string;sku?:string;ean?:string;categoryId:string;priceCents:number;quantity:number;status:string;pictures:string[];variants:ExternalVariant[];stockWritable?:boolean};
 export type Identity={productId:string;variantId?:string;name:string;sku?:string;ean?:string};
 export type Match={kind:string;candidates:Identity[]};
 export type Listing={id:string;connectionId:string;productId:string;productName?:string;variantId?:string;externalListingId?:string;externalUrl?:string;status:string;syncStatus:string;externalPrice?:number;externalQuantity?:number;lastError?:string;lastSyncAt?:string;snapshot?:External;draft?:Draft};
-export type Job={id:string;connectionId:string;kind:string;status:string;progress:number;total:number;lastError?:string;items?:{externalId:string;status:string;result:{external?:External;match?:Match;variantMatches?:{externalVariantId:string;match:Match}[];code?:string}}[]};
+export type Job={id:string;connectionId:string;kind:string;status:string;progress:number;total:number;attempts?:number;lastError?:string;items?:{externalId:string;status:string;result:{external?:External;match?:Match;variantMatches?:{externalVariantId:string;match:Match}[];code?:string}}[]};
 export type Category={id:string;name:string;leaf:boolean;allowed:boolean;attributes:{id:string;name:string;required:boolean;variation:boolean;values?:{id:string;name:string}[]}[];saleTerms?:{id:string;name:string;required:boolean;values?:{id:string;name:string}[]}[]};
 export type Draft={categoryId:string;title:string;description:string;condition:string;listingTypeId:string;buyingMode:"buy_it_now";attributes:{id:string;value_name?:string;value_id?:string}[];pictures:string[];settings:Record<string,unknown>};
 export type Dashboard={configured:boolean;providers?:Provider[];connections:Connection[];listings:Listing[];jobs:Job[];mappings:{connection_id:string;category_id:string;external_category_id:string;attributes:Draft["attributes"]}[]};
@@ -23,6 +23,7 @@ export function marketplaceApi(workspaceId:string){
   safetyStock:(id:string,safetyStock:number)=>apiClient.patch("/v1/marketplaces/connections/"+encodeURIComponent(id)+q,{safetyStock}),
   enqueue:(connectionId:string,operation:Record<string,unknown>,operationKey=crypto.randomUUID())=>apiClient.post<Job>("/v1/marketplaces/jobs"+q,{connectionId,operation,operationKey}),
   job:(id:string)=>apiClient.get<Job>("/v1/marketplaces/jobs/"+encodeURIComponent(id)+q),
+  retry:(id:string,operationKey=crypto.randomUUID())=>apiClient.post<Job>("/v1/marketplaces/jobs/"+encodeURIComponent(id)+"/retry"+q,{operationKey}),
   category:(connectionId:string,id:string)=>apiClient.get<Category>("/v1/marketplaces/categories/"+encodeURIComponent(id)+q+"&connectionId="+encodeURIComponent(connectionId)),
   metadata:()=>apiClient.get<{categories:{id:string;name:string}[]}>("/v1/product-metadata"+q),
   mapping:(body:Record<string,unknown>)=>apiClient.post("/v1/marketplaces/mappings"+q,body),
@@ -31,6 +32,7 @@ export function marketplaceApi(workspaceId:string){
 }
 const messages:Record<string,string>={
  ML_APPLICATION_NOT_CONFIGURED:"A aplicação Mercado Livre ainda precisa ser configurada no servidor.",
+ MARKETPLACE_PROVIDER_NOT_ENABLED:"Canal em homologação. Esta empresa ainda não está habilitada para conectá-lo.",
  ENCRYPTED_SECRET_MANAGER_REQUIRED:"Configure o armazenamento cifrado de credenciais antes de conectar.",
  REAUTH_REQUIRED:"Autorize novamente a conta Mercado Livre.",
  ML_EXTERNAL_CONFLICT:"O anúncio mudou no Mercado Livre. Confira os valores antes de sincronizar.",

@@ -29,7 +29,7 @@ async function fixture(page:Page,manage=true){
  return operations;
 }
 async function noOverflow(page:Page){expect(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth+1)).toBe(true);}
-test.beforeEach(async({context})=>{await loginCookie(context);});
+test.beforeEach(async({context,baseURL})=>{await loginCookie(context,baseURL);});
 test("conexão, divergência, importação, mapeamento e publicação em todas as larguras",async({page},info)=>{
  const operations=await fixture(page);
  await page.goto("/workspaces/"+WORKSPACE_ID+"/settings/marketplaces");

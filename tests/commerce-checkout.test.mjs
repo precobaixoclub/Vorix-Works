@@ -14,6 +14,7 @@ import {saveSiteCommerceSettings,setPublicCartItem} from "../dist/application/si
 import {quoteCheckout,placeOrder,getPublicOrder,simulateSandboxPayment,expireAwaitingOrders,cancelOrder,advanceOrder,getOrderDetail,handlePaymentWebhook,siteCheckoutStatus,saveCommerceCredential} from "../dist/application/commerce/checkout-use-cases.js";
 import {setStockQuantity} from "../dist/application/sales/stock-use-cases.js";
 import {registerCommerceRoutes} from "../dist/interfaces/api/routes/v1/commerce.route.js";
+import {effectivePermissions} from "../dist/domain/identity/identity.model.js";
 import {PostgresSiteCommerceRepository} from "../dist/infrastructure/storage/postgres/postgres-site-commerce-repository.js";
 import {PostgresCommerceOrderRepository} from "../dist/infrastructure/storage/postgres/postgres-commerce-order-repository.js";
 import {PostgresContactIdentityRepository} from "../dist/infrastructure/storage/postgres/postgres-contact-identity-repository.js";
@@ -214,7 +215,7 @@ test("Mercado Pago (API simulada): PIX com QR, webhook relido no provedor, dupli
   return new Response(JSON.stringify({id:987654321,status,date_of_expiration:"2030-01-01T00:00:00.000-03:00",point_of_interaction:{transaction_data:{qr_code:"00020126PIXCOPIAECOLA",qr_code_base64:"iVBORw0KGgo=",ticket_url:"https://mp.test/ticket"}}}),{status:200});};
  const s=await store({settings:{...READY,checkout:{...READY.checkout,payment:{provider:"MERCADO_PAGO",pix:true,card:false}}},mercadoPagoFetch:fetch});
  assert.equal((await siteCheckoutStatus(s.deps,s.site,(await s.deps.commerceRepository.getSettings(s.site.id)))).ready,false,"sem credencial não vende");
- await saveCommerceCredential(s.deps,s.site,"MERCADO_PAGO",{accessToken:"APP_USR-lojista-token",publicKey:"APP_USR-public"});
+ await saveCommerceCredential(s.deps,s.site,"MERCADO_PAGO",{accessToken:"APP_USR-lojista-token",publicKey:"APP_USR-public",webhookSecret:"qa-only-webhook-secret"});
  const placed=await order(s,await s.cart([{productId:s.a.id,quantity:1}]),{payment:{method:"PIX"},customer:{...CUSTOMER,document:"52998224725"}});
  assert.equal(placed.payment.instructions.pixQrCode,"00020126PIXCOPIAECOLA");assert.ok(placed.payment.instructions.pixQrCodeBase64);
  const create=calls.find(c=>c.method==="POST");
@@ -229,7 +230,8 @@ test("Mercado Pago (API simulada): PIX com QR, webhook relido no provedor, dupli
 test("rotas: payload adulterado é recusado; RBAC de pedidos e credenciais; isolamento entre empresas",async()=>{
  const s=await store();const other=await store();
  const app=Fastify();app.decorateRequest("zunoContext",null);
- app.addHook("onRequest",async request=>{const header=request.headers.authorization;request.zunoContext={principal:header?{tenantId:s.tenantId,role:header,userId:s.actor.userId}:undefined};});
+ // This suite tests route permissions; these fixture users explicitly have company-wide visibility.
+ app.addHook("onRequest",async request=>{const header=request.headers.authorization;request.zunoContext={principal:header?{tenantId:s.tenantId,role:header,userId:s.actor.userId,permissions:effectivePermissions(header,["deal:view_all"])}:undefined};});
  await registerCommerceRoutes(app,{...s.deps,workspaceRepository:s.workspaceRepository});
  const token=await s.cart([{productId:s.a.id,quantity:1}]);
  const base={token,requestKey:randomUUID(),customer:CUSTOMER,deliveryOptionId:"pickup",payment:{method:"SANDBOX"}};
@@ -313,7 +315,7 @@ test("contrato com Analytics: eventos do pedido, receita por produto, cancelamen
 const mpStore=async(state)=>{
  const fetch=async(url,init={})=>new Response(JSON.stringify({id:Number(state.id),status:url.includes("/refunds")?"approved":state.status,status_detail:state.detail,date_of_expiration:"2030-01-01T00:00:00.000-03:00",point_of_interaction:{transaction_data:{qr_code:"PIX",qr_code_base64:"iVBORw0KGgo="}}}),{status:200});
  const s=await store({settings:{...READY,checkout:{...READY.checkout,orderCrm:"CONTACT_AND_WON_OPPORTUNITY",payment:{provider:"MERCADO_PAGO",pix:true,card:true}}},mercadoPagoFetch:fetch});
- await saveCommerceCredential(s.deps,s.site,"MERCADO_PAGO",{accessToken:"APP_USR-lojista",publicKey:"APP_USR-public"});
+ await saveCommerceCredential(s.deps,s.site,"MERCADO_PAGO",{accessToken:"APP_USR-lojista",publicKey:"APP_USR-public",webhookSecret:"qa-only-webhook-secret"});
  return s;
 };
 const DOC={customer:{...CUSTOMER,document:"52998224725"}};

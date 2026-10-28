@@ -97,6 +97,8 @@ export function MarketplacesPanel(){
     {job&&<section className={box} aria-label="Progresso da importação"><h2 className="font-semibold">Processamento: {status(job.status)}</h2><p className="mt-1 text-sm">{job.progress} de {job.total||"—"}</p>
      <progress className="mt-2 w-full" max={Math.max(1,job.total)} value={job.progress} aria-label="Progresso"/>
      {job.lastError&&<p className="mt-2 break-words text-sm text-destructive">{marketplaceMessage(job.lastError)}</p>}
+     {job.attempts!==undefined&&<p className="mt-2 text-sm text-muted-foreground">Tentativas: {job.attempts}</p>}
+     {manage&&["FAILED","COMPLETED_WITH_ERRORS"].includes(job.status)&&["PREVIEW","SYNC","RECONCILE","ORDERS","ORDER"].includes(job.kind)&&<Button className="mt-3" variant="secondary" disabled={busy} onClick={()=>run(async()=>{const retry=await api.retry(job.id);setJobId(retry.id);},"Nova tentativa agendada.")}>Tentar novamente</Button>}
      {job.kind==="PUBLISH"&&job.status==="UNKNOWN_RESULT"&&manage&&<Button className="mt-3" variant="secondary" disabled={busy} onClick={()=>run(async()=>{
       const recovery=await api.enqueue(job.connectionId,{kind:"RECONCILE",publicationJobId:job.id});setJobId(recovery.id);
      },"Buscando o anúncio existente na conta Mercado Livre.")}>Localizar publicação no Mercado Livre</Button>}

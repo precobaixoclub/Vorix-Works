@@ -1,0 +1,63 @@
+✔ TEST_INFRA: fixture and API pools can keep more than ten simultaneous clients without socket rejection (3695.9778ms)
+✔ TEST_INFRA: fragmented extended-query messages cannot share another connection's unnamed statement (3752.2458ms)
+✔ TEST_INFRA: another connection waits for transaction completion and errors do not strand protocol ownership (2429.5368ms)
+✔ operations monitor delivers bounded alerts through the existing bell only to active tenant administrators (8582.8749ms)
+✔ payment processing failure returns 503 so the provider can retry instead of losing the webhook (226.4086ms)
+✔ marketplace notification persistence failure returns 503 for both signed providers (21.0843ms)
+✔ GET /v1/runtime: vazio antes de qualquer confirmação; populado automaticamente depois que o Planning fica ready (10230.4767ms)
+✔ GET /v1/runtime: sem autenticação responde 401 (992.5405ms)
+✔ GET /v1/runtime/:id: devolve runtimePlan + sourceContext + validationReport + tasks + artifacts + context, nenhum campo de execução (1885.8632ms)
+✔ GET /v1/runtime/:id: cross-tenant responde 404 (nunca 403) (2564.378ms)
+✔ GET /v1/runtime/:id/bindings: devolve bindings + inputs + outputs (1738.1341ms)
+✔ GET /v1/runtime/:id/bindings: runtime inexistente responde 404 (1379.7611ms)
+✔ Não existe NENHUM endpoint de escrita em /v1/runtime — POST/PUT/DELETE/PATCH respondem 404 (1294.6869ms)
+ℹ tests 13
+ℹ suites 0
+ℹ pass 13
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 24407.3625
+✔ TEST_INFRA: fixture and API pools can keep more than ten simultaneous clients without socket rejection (3597.8406ms)
+✔ TEST_INFRA: fragmented extended-query messages cannot share another connection's unnamed statement (3284.7258ms)
+✔ TEST_INFRA: another connection waits for transaction completion and errors do not strand protocol ownership (1865.8518ms)
+✔ operations monitor delivers bounded alerts through the existing bell only to active tenant administrators (7400.9481ms)
+✔ payment processing failure returns 503 so the provider can retry instead of losing the webhook (155.1567ms)
+✔ marketplace notification persistence failure returns 503 for both signed providers (27.978ms)
+✔ GET /v1/runtime: vazio antes de qualquer confirmação; populado automaticamente depois que o Planning fica ready (8464.1046ms)
+✔ GET /v1/runtime: sem autenticação responde 401 (1810.8704ms)
+✔ GET /v1/runtime/:id: devolve runtimePlan + sourceContext + validationReport + tasks + artifacts + context, nenhum campo de execução (2484.0133ms)
+✔ GET /v1/runtime/:id: cross-tenant responde 404 (nunca 403) (3612.0286ms)
+✔ GET /v1/runtime/:id/bindings: devolve bindings + inputs + outputs (1309.6559ms)
+✔ GET /v1/runtime/:id/bindings: runtime inexistente responde 404 (997.2209ms)
+✔ Não existe NENHUM endpoint de escrita em /v1/runtime — POST/PUT/DELETE/PATCH respondem 404 (891.2789ms)
+ℹ tests 13
+ℹ suites 0
+ℹ pass 13
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 23731.3796
+✔ TEST_INFRA: fixture and API pools can keep more than ten simultaneous clients without socket rejection (2722.2776ms)
+✔ TEST_INFRA: fragmented extended-query messages cannot share another connection's unnamed statement (2865.2057ms)
+✔ TEST_INFRA: another connection waits for transaction completion and errors do not strand protocol ownership (1942.1283ms)
+✔ operations monitor delivers bounded alerts through the existing bell only to active tenant administrators (5842.8619ms)
+✔ payment processing failure returns 503 so the provider can retry instead of losing the webhook (185.8665ms)
+✔ marketplace notification persistence failure returns 503 for both signed providers (36.529ms)
+✔ GET /v1/runtime: vazio antes de qualquer confirmação; populado automaticamente depois que o Planning fica ready (8663.9113ms)
+✔ GET /v1/runtime: sem autenticação responde 401 (668.1857ms)
+✔ GET /v1/runtime/:id: devolve runtimePlan + sourceContext + validationReport + tasks + artifacts + context, nenhum campo de execução (2542.2474ms)
+✔ GET /v1/runtime/:id: cross-tenant responde 404 (nunca 403) (2490.1247ms)
+✔ GET /v1/runtime/:id/bindings: devolve bindings + inputs + outputs (1550.4365ms)
+✔ GET /v1/runtime/:id/bindings: runtime inexistente responde 404 (956.2394ms)
+✔ Não existe NENHUM endpoint de escrita em /v1/runtime — POST/PUT/DELETE/PATCH respondem 404 (936.5198ms)
+ℹ tests 13
+ℹ suites 0
+ℹ pass 13
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 20767.7531

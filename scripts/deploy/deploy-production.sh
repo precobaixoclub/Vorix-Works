@@ -44,6 +44,7 @@ image_of() { case "$1" in zuno-api) echo zuno-zuno-api ;; vorix-worker) echo zun
 # 1. preflight
 [ -f "$TARBALL" ] || { echo "tarball ausente"; echo DEPLOY_FAILED; exit 1; }
 [ -f .env.zuno ] || { echo ".env.zuno ausente"; echo DEPLOY_FAILED; exit 1; }
+$COMPOSE config -q || { echo COMPOSE_INVALID; echo DEPLOY_FAILED; exit 1; }
 FREE_MB=$(df -Pm / | awk 'NR==2{print $4}')
 # The API/gateway/web build can consume more than 4 GiB before exporting its images. Reserve
 # enough space for the builds AND a fully extracted source backup if rollback is needed.
@@ -189,5 +190,8 @@ for service in $SERVICES; do
   image=$(image_of "$service")
   docker images --format '{{.Tag}}' "$image" | grep '^rollback-' | sort -r | tail -n +$((KEEP_ROLLBACK_IMAGES + 1)) | while read -r tag; do docker rmi "$image:$tag" >/dev/null 2>&1 || true; done
 done
+# Preserve the exact deployed source alongside the database/config recovery chain.
+cp "$TARBALL" "deploy_backups/release-$SHA.tgz"
+chmod 600 "deploy_backups/release-$SHA.tgz"
 echo "DEPLOYED $SHA"
 echo DEPLOY_DONE

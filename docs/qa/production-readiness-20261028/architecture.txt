@@ -1,0 +1,136 @@
+
+> zuno@1.0.0 architecture:check
+> npm run build && node scripts/verify-skills-discovery.mjs && node scripts/check-legacy-chat-imports.mjs && node scripts/check-contract-drift.mjs && node scripts/check-ai-stack-isolation.mjs && node scripts/check-inbox-conversation-isolation.mjs && node scripts/check-crm-isolation.mjs && node scripts/check-planning-isolation.mjs && node scripts/check-runtime-isolation.mjs && node scripts/check-execution-isolation.mjs && node scripts/check-publication-isolation.mjs && node scripts/sync-site-template-registry.mjs --check
+
+
+> zuno@1.0.0 build
+> npm run build:clean && tsc -p tsconfig.json && npm run build:copy-skill-manifests && npm run build:copy-remotion-assets && npm run build:copy-rendering-assets
+
+
+> zuno@1.0.0 build:clean
+> node -e "require('fs').rmSync('dist',{recursive:true,force:true})"
+
+
+> zuno@1.0.0 build:copy-skill-manifests
+> node scripts/copy-skill-manifests.mjs
+
+[copy-skill-manifests] 14 manifesto(s) copiado(s) para dist/skills.
+  - dist\skills\ana-social-publishing\skill.manifest.json
+  - dist\skills\bianca-social-media-design\skill.manifest.json
+  - dist\skills\bruno-video-script\skill.manifest.json
+  - dist\skills\diego-video-editing\skill.manifest.json
+  - dist\skills\eduardo-editorial-planning\skill.manifest.json
+  - dist\skills\joao-marketing-strategy\skill.manifest.json
+  - dist\skills\lucas-quality-review\skill.manifest.json
+  - dist\skills\maria-copywriting\skill.manifest.json
+  - dist\skills\motion-design-engine\skill.manifest.json
+  - dist\skills\nora-video-narration\skill.manifest.json
+  - dist\skills\pedro-image-generation\skill.manifest.json
+  - dist\skills\rafa-video-rendering\skill.manifest.json
+  - dist\skills\sofia-art-direction\skill.manifest.json
+  - dist\skills\vanessa-video-direction\skill.manifest.json
+
+> zuno@1.0.0 build:copy-remotion-assets
+> node scripts/copy-remotion-assets.mjs
+
+[copy-remotion-assets] 2 arquivo(s) .jsx copiado(s) para dist/infrastructure/motion-rendering/remotion.
+  - dist\infrastructure\motion-rendering\remotion\MotionSceneRenderer.jsx
+  - dist\infrastructure\motion-rendering\remotion\Root.jsx
+
+> zuno@1.0.0 build:copy-rendering-assets
+> node scripts/copy-rendering-assets.mjs
+
+[copy-rendering-assets] 2 fonte(s) .ttf copiada(s) para dist/infrastructure/rendering/assets.
+  - dist\infrastructure\rendering\assets\dm-serif-display-regular.ttf
+  - dist\infrastructure\rendering\assets\geist-regular.ttf
+[verify-skills-discovery] 14 Skill(s) descoberta(s) em dist/skills.
+  - ana-social-publishing: estado=READY, capabilities=social_publishing
+  - bianca-social-media-design: estado=READY, capabilities=social_media_design
+  - bruno-video-script: estado=READY, capabilities=video_script
+  - diego-video-editing: estado=READY, capabilities=video_editing
+  - eduardo-editorial-planning: estado=READY, capabilities=editorial_planning
+  - joao-marketing-strategy: estado=READY, capabilities=marketing_strategy, strategy
+  - lucas-quality-review: estado=READY, capabilities=quality_review
+  - maria-copywriting: estado=READY, capabilities=copywriting
+  - motion-design-engine: estado=DISABLED, capabilities=motion_design
+  - nora-video-narration: estado=READY, capabilities=video_narration
+  - pedro-image-generation: estado=READY, capabilities=image_generation
+  - rafa-video-rendering: estado=READY, capabilities=video_rendering
+  - sofia-art-direction: estado=READY, capabilities=art_direction
+  - vanessa-video-direction: estado=READY, capabilities=video_direction
+[verify-skills-discovery] capability "editorial_planning" -> eduardo-editorial-planning (OK)
+[verify-skills-discovery] capability "copywriting" -> maria-copywriting (OK)
+[verify-skills-discovery] capability "strategy" -> joao-marketing-strategy (OK)
+[verify-skills-discovery] capability "marketing_strategy" -> joao-marketing-strategy (OK)
+[verify-skills-discovery] capability "art_direction" -> sofia-art-direction (OK)
+[verify-skills-discovery] capability "social_media_design" -> bianca-social-media-design (OK)
+[verify-skills-discovery] capability "image_generation" -> pedro-image-generation (OK)
+[verify-skills-discovery] capability "quality_review" -> lucas-quality-review (OK)
+[verify-skills-discovery] capability "social_publishing" -> ana-social-publishing (OK)
+[verify-skills-discovery] capability "video_script" -> bruno-video-script (OK)
+[verify-skills-discovery] capability "video_direction" -> vanessa-video-direction (OK)
+[verify-skills-discovery] capability "video_editing" -> diego-video-editing (OK)
+[verify-skills-discovery] capability "video_narration" -> nora-video-narration (OK)
+[verify-skills-discovery] capability "video_rendering" -> rafa-video-rendering (OK)
+
+[verify-skills-discovery] Descoberta real de Skills validada com sucesso.
+[check-legacy-chat-imports] OK — nenhum consumidor novo do Chat legado (1304 arquivos verificados).
+[check-contract-drift] OK — BriefingType (6 valor(es))
+[check-contract-drift] OK — BriefingStatus (6 valor(es))
+[check-contract-drift] OK — BriefingSource (7 valor(es))
+[check-contract-drift] OK — BriefingAnswerType (5 valor(es))
+[check-contract-drift] OK — PreparedCommandStatus (2 valor(es))
+[check-contract-drift] OK — ConversationState (7 valor(es))
+[check-contract-drift] OK — BriefingReadiness (10 campo(s))
+[check-contract-drift] OK — BriefingQuestionDto (6 campo(s))
+[check-contract-drift] OK — BriefingSummaryDto (8 campo(s))
+[check-contract-drift] OK — PreparedCommandSummaryDto (6 campo(s))
+[check-contract-drift] OK — PlanningStatus (4 valor(es))
+[check-contract-drift] OK — GraphType (1 valor(es))
+[check-contract-drift] OK — ValidationIssueSeverity (2 valor(es))
+[check-contract-drift] OK — ExecutionCapability (7 valor(es))
+[check-contract-drift] OK — TaskType (8 valor(es))
+[check-contract-drift] OK — TaskStatus (1 valor(es))
+[check-contract-drift] OK — PlanningEdgeKind (1 valor(es))
+[check-contract-drift] OK — PlanningArtifactType (5 valor(es))
+[check-contract-drift] OK — PlanningArtifactStatus (1 valor(es))
+[check-contract-drift] OK — ValidationReport (3 campo(s))
+[check-contract-drift] OK — Planning (17 campo(s))
+[check-contract-drift] OK — ExecutionTask (12 campo(s))
+[check-contract-drift] OK — TaskOutputPort (3 campo(s))
+[check-contract-drift] OK — TaskOutputContract (2 campo(s))
+[check-contract-drift] OK — TaskInputPort (4 campo(s))
+[check-contract-drift] OK — TaskInputContract (2 campo(s))
+[check-contract-drift] OK — PlanningNode (5 campo(s))
+[check-contract-drift] OK — PlanningEdge (6 campo(s))
+[check-contract-drift] OK — ExecutionGraph (5 campo(s))
+[check-contract-drift] OK — ArtifactContract (3 campo(s))
+[check-contract-drift] OK — PlanningArtifact (6 campo(s))
+[check-contract-drift] OK — PlanningDecision (6 campo(s))
+[check-contract-drift] OK — RuntimeState (5 valor(es))
+[check-contract-drift] OK — RuntimeValidationIssueSeverity (2 valor(es))
+[check-contract-drift] OK — RuntimeTaskStatus (1 valor(es))
+[check-contract-drift] OK — RuntimeArtifactStatus (1 valor(es))
+[check-contract-drift] OK — RuntimeSourceContext (6 campo(s))
+[check-contract-drift] OK — RuntimeValidationIssue (4 campo(s))
+[check-contract-drift] OK — RuntimeValidationReport (3 campo(s))
+[check-contract-drift] OK — RuntimePlan (13 campo(s))
+[check-contract-drift] OK — RuntimeTask (7 campo(s))
+[check-contract-drift] OK — RuntimeTaskOutputPort (7 campo(s))
+[check-contract-drift] OK — RuntimeTaskInputPort (8 campo(s))
+[check-contract-drift] OK — RuntimeBinding (7 campo(s))
+[check-contract-drift] OK — ArtifactSchema (3 campo(s))
+[check-contract-drift] OK — RuntimeArtifact (6 campo(s))
+[check-contract-drift] OK — RuntimeContext (4 campo(s))
+[check-contract-drift] OK — RuntimeDetail (6 campo(s))
+[check-contract-drift] OK — RuntimeBindingsView (3 campo(s))
+
+[check-contract-drift] 49 contrato(s) verificados — backend e frontend consistentes.
+[check-ai-stack-isolation] OK — Ícaro e AI Gateway permanecem arquiteturalmente separados (1304 arquivos verificados).
+[check-inbox-conversation-isolation] OK — inbox e conversation/chat permanecem arquiteturalmente separados (1304 arquivos verificados).
+[check-crm-isolation] OK — crm permanece arquiteturalmente separado de inbox/instagram-dm (1304 arquivos verificados).
+[check-planning-isolation] OK — Planning e o pipeline legado (Arthur/Helena/Caio/Skills) permanecem totalmente separados (1304 arquivos verificados).
+[check-runtime-isolation] OK — Runtime e o pipeline legado (Arthur/Helena/Caio/Skills) permanecem totalmente separados (1304 arquivos verificados).
+[check-execution-isolation] OK — Execution permanece isolado de Caio/Helena/Skills/AI/rede/publicação fora dos adaptadores de infrastructure.
+[check-publication-isolation] OK — Publication isolado de Execution/Helena/Skills/AI/providers reais.
+SITE_TEMPLATE_REGISTRY_SYNCED

@@ -160,6 +160,23 @@ test("admin: como vender + compra pelo site prontos, em perguntas simples",async
  }
 });
 
+test("segurança: assinatura do webhook do Mercado Pago fica no cofre e o formulário limpa os segredos",async({page})=>{
+ await login(page);
+ for(const width of [360,1440]){
+  await page.setViewportSize({width,height:1000});await page.goto(`/workspaces/${scope.workspaceId}/site?section=loja`);
+  await page.getByRole("radio",{name:/Mercado Pago/}).check();
+  await page.getByLabel("Access Token",{exact:true}).fill("QA-NOT-A-REAL-ACCESS-TOKEN");
+  await page.getByLabel("Assinatura secreta do webhook",{exact:true}).fill("QA-NOT-A-REAL-WEBHOOK-SECRET");
+  const saved=page.waitForResponse(r=>r.url().includes("/commerce/credentials/MERCADO_PAGO")&&r.request().method()==="PUT");
+  await page.getByRole("button",{name:/^(Conectar|Substituir credenciais)$/}).click();
+  const response=await saved;expect(response.status()).toBe(200);expect(await response.text()).not.toContain("QA-NOT-A-REAL");
+  await expect(page.getByLabel("Access Token",{exact:true})).toHaveValue("");
+  await expect(page.getByLabel("Assinatura secreta do webhook",{exact:true})).toHaveValue("");
+  await noHorizontalScroll(page);
+  await page.screenshot({path:path.join(evidence,`mercado-pago-secret-${width}.png`),fullPage:true});
+ }
+});
+
 test("Conversas → Produtos: busca, variação, foto e preço, envio ao cliente com link e oportunidade",async({page,request})=>{
  await request.post(api+"/fixture-only/whatsapp-inbound",{data:{body:"Oi, vocês têm camiseta preta?",phone:"+5511977770000"}});
  await login(page);

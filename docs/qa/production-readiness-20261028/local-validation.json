@@ -1,0 +1,71 @@
+{
+  "date": "2026-10-28",
+  "productionBefore": "576d781",
+  "suites": {
+    "backend": {
+      "completed": true,
+      "tests": 4393,
+      "passed": 4391,
+      "failed": 0,
+      "skipped": 2,
+      "durationMs": 427782.3384
+    },
+    "web": {
+      "completed": true,
+      "tests": 217,
+      "passed": 217,
+      "failed": 0,
+      "skipped": 0
+    },
+    "paymentSecurity": {
+      "completed": true,
+      "tests": 27,
+      "passed": 27,
+      "failed": 0,
+      "skipped": 0
+    }
+  },
+  "browser": {
+    "passed": 61,
+    "main": 52,
+    "correctedViewportChecks": 2,
+    "analytics": 6,
+    "widths": [
+      360,
+      390,
+      430,
+      768,
+      1024,
+      1440
+    ],
+    "externalProviders": "NOT_VALIDATED",
+    "paymentSecretSettings": 1
+  },
+  "stress": {
+    "rounds": 3,
+    "testsPerRound": 13,
+    "failed": 0
+  },
+  "realPostgresql": {
+    "overselling": "PASS",
+    "idempotency": "PASS",
+    "repeatedApproval": "PASS",
+    "refundRestock": "PASS"
+  },
+  "mediaBackup": {
+    "bytes": 1572524938,
+    "sha256": "37bae3043bf7258906f88c6ad1de3cad433f9d6422d48db2f7097db7cdfc9618",
+    "offHostCopy": "VERIFIED"
+  },
+  "migrationCount": 187,
+  "newMigrations": 0,
+  "typecheck": {
+    "backend": "PASS",
+    "web": "PASS"
+  },
+  "build": {
+    "backend": "PASS",
+    "web": "PASS"
+  },
+  "architecture": "PASS"
+}

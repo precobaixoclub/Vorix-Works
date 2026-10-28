@@ -44,7 +44,7 @@ export async function registerMarketplaceRoutes(app:FastifyInstance,deps:{servic
  app.get("/marketplaces",async request=>guard(async()=>{
   const s=await context(request),productId=z.object({productId:id.optional()}).parse(request.query).productId;
   if(!deps.service)return successEnvelope({configured:false,providers:[],connections:[],listings:[],jobs:[],mappings:[]},request.id);
-  return successEnvelope({configured:true,providers:deps.service.configuredProviders(),...await deps.service.dashboard(s,productId)},request.id);
+  return successEnvelope({configured:true,providers:deps.service.configuredProviders(s),...await deps.service.dashboard(s,productId)},request.id);
  }));
  const OAUTH_COOKIE="vorix_ml_oauth",OAUTH_COOKIE_PATH="/v1/marketplaces/mercado-livre/callback";
  app.post("/marketplaces/mercado-livre/connect",{config:{readOnlyGuard:true}},async(request,reply)=>guard(async()=>{
@@ -95,7 +95,10 @@ export async function registerMarketplaceRoutes(app:FastifyInstance,deps:{servic
   scope.addContentTypeParser("application/json",{parseAs:"string",bodyLimit:65536},(_request,body,done)=>done(null,body));
   scope.post("/marketplaces/:provider/notifications",async(request,reply)=>{
    const {provider}=slug(request);
-   if(deps.service&&typeof request.body==="string")await deps.service.providerNotification(provider,{headers:request.headers as Record<string,string|undefined>,rawBody:request.body,url:request.url}).catch(error=>request.log.warn({err:error},"marketplace notification failed"));
+   if(deps.service&&typeof request.body==="string"){
+    try{await deps.service.providerNotification(provider,{headers:request.headers as Record<string,string|undefined>,rawBody:request.body,url:request.url});}
+    catch(error){request.log.warn({err:error},"marketplace notification failed");return reply.code(503).send();}
+   }
    // Shopee (guia 18, Push Retry Logic): só 2xx com corpo vazio encerra os reenvios.
    return provider==="SHOPEE"?reply.code(204).send():reply.code(200).send({received:true});
   });
@@ -134,6 +137,10 @@ export async function registerMarketplaceRoutes(app:FastifyInstance,deps:{servic
   }
   if(kind==="STATUS"&&input.operation.status==="closed"&&!input.operation.confirm)throw new ValidationError("Confirme a finalização do anúncio.");
   return successEnvelope(await ready().service.enqueue(a,input.connectionId,kind,payload,input.operationKey),request.id);
+ }));
+ app.post("/marketplaces/jobs/:id/retry",{config:{readOnlyGuard:true}},async request=>guard(async()=>{
+  const actor=await context(request,true),body=z.object({operationKey:z.string().uuid()}).strict().parse(request.body);
+  return successEnvelope(await ready().service.retryJob(actor,id.parse((request.params as {id:string}).id),body.operationKey),request.id);
  }));
  app.get("/marketplaces/jobs/:id",async request=>guard(async()=>{
   const s=await context(request),jobId=id.parse((request.params as {id:string}).id),r=ready().repository;

@@ -58,6 +58,10 @@ export class PostgresCommerceOrderRepository implements CommerceOrderRepositoryP
   if(filter.siteId)add("site_id=?",filter.siteId);if(filter.status)add("status=?",filter.status);if(filter.paymentStatus)add("payment_status=?",filter.paymentStatus);
   if(filter.shippingStatus)add("shipping_status=?",filter.shippingStatus);if(filter.source)add("source=?",filter.source);
   if(filter.from)add("created_at>=?",filter.from);if(filter.to)add("created_at<?",filter.to);
+  if(filter.visibility&&!filter.visibility.global){
+   params.push([...filter.visibility.teamIds],[...filter.visibility.ownerUserIds]);const teams=`$${params.length-1}::text[]`,owners=`$${params.length}::text[]`;
+   where.push(`(exists(select 1 from site_commerce_settings s where s.site_id=commerce_orders.site_id and s.tenant_id=commerce_orders.tenant_id and s.workspace_id=commerce_orders.workspace_id and s.settings->>'teamId'=any(${teams})) or exists(select 1 from deals d where d.id=commerce_orders.crm_deal_id and d.tenant_id=commerce_orders.tenant_id and d.workspace_id=commerce_orders.workspace_id and (d.team_id=any(${teams}) or d.owner_user_id=any(${owners}))))`);
+  }
   if(filter.search){const term=filter.search.trim();params.push(term);const p=`$${params.length}`;where.push(/^\d+$/.test(term)?`(number::text=${p} or customer->>'phone' like '%'||${p}||'%')`:`(customer->>'name' ilike '%'||${p}||'%' or customer->>'email' ilike '%'||${p}||'%')`);}
   const clause=where.join(" and ");
   const total=Number((await this.pool.query(`select count(*) n from commerce_orders where ${clause}`,params)).rows[0].n);

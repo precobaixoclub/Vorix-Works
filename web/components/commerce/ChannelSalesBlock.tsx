@@ -13,7 +13,7 @@ export function ChannelSalesBlock({workspaceId,from,to,cacheKey}:{workspaceId:st
  const {data,error,isLoading,mutate}=useSWR(["commerce-channel-analytics",cacheKey,workspaceId,from,to],()=>getChannelAnalytics(workspaceId,from,to),{revalidateOnFocus:false});
  const rows=data?.channels??[];
  return <section className="min-w-0 space-y-3 rounded-xl border bg-card p-4" aria-labelledby="channel-sales-title">
-  <div><h2 id="channel-sales-title" className="font-semibold">Vendas por canal</h2><p className="mt-1 text-xs text-muted-foreground">Pedidos do site e dos marketplaces no mesmo período. A receita é bruta; reembolsos aparecem em coluna própria.</p></div>
+  <div><h2 id="channel-sales-title" className="font-semibold">Vendas por canal</h2><p className="mt-1 text-xs text-muted-foreground">Pedidos do site e dos marketplaces no mesmo período. A receita considera os reembolsos, também apresentados em coluna própria.</p></div>
   {isLoading&&!data?<p role="status" className="text-sm text-muted-foreground">Carregando vendas por canal…</p>:null}
   {error?<div className="space-y-2 text-sm"><p>Não foi possível carregar as vendas por canal.</p><Button size="sm" variant="secondary" onClick={()=>void mutate()}>Tentar novamente</Button></div>:null}
   {data&&!rows.length?<p className="text-sm text-muted-foreground">Nenhum pedido no período.</p>:null}

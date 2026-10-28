@@ -40,11 +40,12 @@ async function fixture(){
   syncPrice:async(_token,id,priceCents)=>{calls.push(["price",id,priceCents]);externalItems.get(id).priceCents=priceCents;},
   syncStock:async(_token,id,quantity,variants)=>{calls.push(["stock",id,quantity,variants]);const item=externalItems.get(id);item.quantity=quantity;if(variants?.length)for(const v of item.variants)v.quantity=variants.find(x=>x.id===v.id).quantity;},
  };
- const actor={...c.scope,userId:c.actor.userId},service=new MarketplaceService({repository:repo,secrets,provider,catalog:c.d,applicationId:"123456",canManageActor:async()=>allowed});
+ const releasePolicy={MERCADO_LIVRE:{availability:"BETA",tenantIds:[c.scope.tenantId]}};
+ const actor={...c.scope,userId:c.actor.userId},service=new MarketplaceService({repository:repo,secrets,provider,releasePolicy,catalog:c.d,applicationId:"123456",canManageActor:async()=>allowed});
  const start=await service.startOAuth(actor),state=new URL(start.url).searchParams.get("state");
  const connection=await service.callback(state,"fixture-code",start.browserNonce);
  await db.pool.query("update marketplace_connections set last_sync_at=now() where id=$1",[connection.connectionId]);
- return {...c,actor,service,provider,calls,externalItems,connectionId:connection.connectionId,sellerId,tokens,setAllowed:v=>{allowed=v;},setFailCreate:v=>{failCreate=v;},add:(patch={})=>{const e=external({sellerId,...patch});externalItems.set(e.id,e);return e;}};
+ return {...c,actor,service,provider,releasePolicy,calls,externalItems,connectionId:connection.connectionId,sellerId,tokens,setAllowed:v=>{allowed=v;},setFailCreate:v=>{failCreate=v;},add:(patch={})=>{const e=external({sellerId,...patch});externalItems.set(e.id,e);return e;}};
 }
 async function drive(f,id){
  for(let i=0;i<80;i++){const j=await repo.job(f.scope,id);if(!["PENDING","RUNNING"].includes(j.status))return j;await f.service.runOnce();}
@@ -546,4 +547,28 @@ test("dashboard and job detail never expose the worker lease token",async()=>{
  const f=await fixture();await f.service.enqueue(f.actor,f.connectionId,"RECONCILE",{},randomUUID());
  await db.pool.query("update marketplace_jobs set lease_token='secret-lease' where connection_id=$1",[f.connectionId]);
  assert.ok(!JSON.stringify(await f.service.dashboard(f.scope)).includes("secret-lease"));
+});
+
+test("revoking beta enrollment blocks an in-flight OAuth callback, credentials and queued writes",async()=>{
+ const f=await fixture(),start=await f.service.startOAuth(f.actor);
+ f.releasePolicy.MERCADO_LIVRE.tenantIds=[];
+ await assert.rejects(()=>f.service.callback(new URL(start.url).searchParams.get("state"),"code",start.browserNonce),/PROVIDER_NOT_ENABLED/);
+ await assert.rejects(()=>f.service.accessToken(f.scope,f.connectionId),/PROVIDER_NOT_ENABLED/);
+ await assert.rejects(()=>f.service.enqueue(f.actor,f.connectionId,"SYNC",{},randomUUID()),/PROVIDER_NOT_ENABLED/);
+ assert.deepEqual(f.service.configuredProviders(f.scope),[]);
+});
+
+test("manual retry is scoped, audited and idempotent; uncertain publication is never replayed",async()=>{
+ const f=await fixture(),other=await fixture(),failed=await repo.enqueue(f.actor,f.connectionId,"SYNC",{},randomUUID());
+ await db.pool.query("update marketplace_jobs set status='FAILED',attempts=6,last_error='ML_RATE_LIMIT' where id=$1",[failed.id]);
+ const key=randomUUID(),retry=await f.service.retryJob(f.actor,failed.id,key);
+ assert.equal((await f.service.retryJob(f.actor,failed.id,key)).id,retry.id);
+ assert.equal(retry.payload.retryOf,failed.id);
+ assert.ok((await repo.auditLog(f.scope)).some(a=>a.action==="JOB_RETRIED"&&a.target_id===retry.id));
+ await assert.rejects(()=>other.service.retryJob(other.actor,failed.id,randomUUID()),/JOB_NOT_FOUND/);
+ const publication=await repo.enqueue(f.actor,f.connectionId,"PUBLISH",{},randomUUID());
+ await db.pool.query("update marketplace_jobs set status='UNKNOWN_RESULT' where id=$1",[publication.id]);
+ await assert.rejects(()=>f.service.retryJob(f.actor,publication.id,randomUUID()),/RETRY_REQUIRES_REVIEW/);
+ assert.equal(f.calls.filter(c=>c[0]==="create").length,0);
+ f.setAllowed(false);await assert.rejects(()=>f.service.retryJob(f.actor,failed.id,randomUUID()),/PERMISSION_REVOKED/);
 });

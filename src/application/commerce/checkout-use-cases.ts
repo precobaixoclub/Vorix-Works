@@ -9,6 +9,7 @@
  *   simulação autenticada do lojista no modo de teste).
  */
 import {createHash} from "node:crypto";
+import {verifyMercadoPagoWebhook} from "../../domain/commerce/payment-webhook.js";
 import type {Site} from "../../domain/sites/site.model.js";
 import {checkoutReadiness,type SiteCommerceSettings} from "../../domain/sites/site-commerce.js";
 import {assertOrderTransition,CANCELLABLE_STATUSES,ORDER_STATUS_LABELS,orderAddressSchema,orderCustomerSchema,orderTotals,validTaxDocument,type Order,type OrderAddress,type OrderCustomer,type OrderStatus,type Payment,type PaymentMethod,type PaymentStatus} from "../../domain/commerce/order.model.js";
@@ -48,20 +49,24 @@ export async function readCommerceCredential(deps:Pick<CheckoutDeps,"secrets">,s
  const value=stored?.value as Record<string,unknown>|undefined;
  return value&&typeof value.accessToken==="string"?Object.fromEntries(Object.entries(value).filter(([,item])=>typeof item==="string")) as Record<string,string>:undefined;
 }
-export async function saveCommerceCredential(deps:Pick<CheckoutDeps,"secrets">,site:Site,provider:CommerceCredentialProvider,input:{accessToken?:string;publicKey?:string}){
+export async function saveCommerceCredential(deps:Pick<CheckoutDeps,"secrets">,site:Site,provider:CommerceCredentialProvider,input:{accessToken?:string;publicKey?:string;webhookSecret?:string}){
  if(!deps.secrets)throw Error("SITE_VALIDATION: cofre de credenciais indisponível neste ambiente.");
  if(!input.accessToken){await deps.secrets.delete(credentialRef(site,provider));return {connected:false};}
- await deps.secrets.put(credentialRef(site,provider),{value:{accessToken:input.accessToken.trim(),...(input.publicKey?{publicKey:input.publicKey.trim()}:{})}});
+ const previous=provider==="MERCADO_PAGO"?await readCommerceCredential(deps,site,provider):undefined;
+ const webhookSecret=input.webhookSecret?.trim()||previous?.webhookSecret;
+ await deps.secrets.put(credentialRef(site,provider),{value:{accessToken:input.accessToken.trim(),...(input.publicKey?{publicKey:input.publicKey.trim()}:{}),...(provider==="MERCADO_PAGO"&&webhookSecret?{webhookSecret}:{})}});
  return {connected:true};
 }
 export async function commerceCredentialStatus(deps:Pick<CheckoutDeps,"secrets">,site:Site){
  const [mp,me]=await Promise.all([readCommerceCredential(deps,site,"MERCADO_PAGO"),readCommerceCredential(deps,site,"MELHOR_ENVIO")]);
- return {MERCADO_PAGO:{connected:!!mp,publicKey:mp?.publicKey},MELHOR_ENVIO:{connected:!!me}};
+ return {MERCADO_PAGO:{connected:!!mp,publicKey:mp?.publicKey,webhookConfigured:!!mp?.webhookSecret},MELHOR_ENVIO:{connected:!!me}};
 }
 /** Usado pelo site para decidir se mostra "Comprar agora". */
 export async function siteCheckoutStatus(deps:Pick<CheckoutDeps,"secrets"|"sandboxAllowed">,site:Site,settings:SiteCommerceSettings){
- const paymentCredentialReady=settings.checkout.payment.provider==="MERCADO_PAGO"?!!(await readCommerceCredential(deps,site,"MERCADO_PAGO")):true;
+ const credential=settings.checkout.payment.provider==="MERCADO_PAGO"?await readCommerceCredential(deps,site,"MERCADO_PAGO"):undefined;
+ const paymentCredentialReady=settings.checkout.payment.provider==="MERCADO_PAGO"?!!credential?.accessToken:true;
  const missing=checkoutReadiness(settings,{paymentCredentialReady,sandboxAllowed:sandboxAllowedFor(deps,site.tenantId)});
+ if(credential&&!credential.webhookSecret)missing.push("Configure a assinatura secreta do webhook do Mercado Pago.");
  return {ready:missing.length===0,missing};
 }
 
@@ -322,11 +327,15 @@ async function refundPayment(deps:CheckoutDeps,order:Order,payment:Payment,reaso
  else await deps.orders.addEvent(order.id,{type:"refund_pending",actorType:"system",data:{paymentId:payment.id,reason}});
 }
 /** Webhook: nunca confia no corpo; relê o pagamento no provedor com a credencial do lojista. */
-export async function handlePaymentWebhook(deps:CheckoutDeps,input:{provider:"MERCADO_PAGO";siteId:string;providerPaymentId:string}){
+export async function handlePaymentWebhook(deps:CheckoutDeps,input:{provider:"MERCADO_PAGO";siteId:string;providerPaymentId:string;verification?:{signature?:string;requestId?:string;dataId?:string}}){
  const payment=await deps.orders.paymentByProviderId(input.provider,input.providerPaymentId);
  if(!payment)return {status:"unknown" as const};
  const order=await deps.orders.get(payment.orderId);if(!order||order.siteId!==input.siteId)return {status:"unknown" as const};
  const {provider,credentials}=await paymentProviderFor(deps,{tenantId:order.tenantId,id:input.siteId},input.provider);
+ if(input.verification){
+  if(!credentials?.webhookSecret)throw Error("PAYMENT_WEBHOOK_SECRET_NOT_CONFIGURED");
+  if(input.verification.dataId!==input.providerPaymentId||!verifyMercadoPagoWebhook({secret:credentials.webhookSecret,...input.verification}))throw Error("PAYMENT_WEBHOOK_SIGNATURE_INVALID");
+ }
  const state=await provider.getPayment(providerContext(order,credentials),input.providerPaymentId);
  return applyPaymentState(deps,payment,state,{eventKey:`webhook:${input.providerPaymentId}:${state.status}`,actor:"provider"});
 }
@@ -386,6 +395,7 @@ export async function getOrderDetail(deps:CheckoutDeps,scope:OrderAdminScope,id:
 }
 export async function advanceOrder(deps:CheckoutDeps,scope:OrderAdminScope,input:{id:string;to:OrderStatus;trackingCode?:string}){
  const order=await mustOrder(deps,scope,input.id);
+ if(order.source!=="SITE")throw Error("SITE_VALIDATION: atualize o status pelo marketplace de origem.");
  if(input.to==="CANCELLED")throw Error("SITE_VALIDATION: use a ação de cancelar pedido.");
  if(input.to==="PAID")throw Error("SITE_VALIDATION: o pagamento é confirmado pelo provedor.");
  assertOrderTransition(order.status,input.to);

@@ -71,7 +71,13 @@ export async function registerCommerceRoutes(app:FastifyInstance,deps:CommerceRo
   const {siteId}=z.object({siteId:id}).parse(request.params);
   const body=(request.body??{}) as {type?:string;action?:string;data?:{id?:string|number}};const query=request.query as {"data.id"?:string;type?:string;topic?:string;id?:string};
   const paymentId=String(body.data?.id??query["data.id"]??(query.topic==="payment"?query.id:"")??"");
-  if((body.type??query.type??query.topic)==="payment"&&/^\d{1,30}$/.test(paymentId))await handlePaymentWebhook(deps,{provider:"MERCADO_PAGO",siteId,providerPaymentId:paymentId}).catch(error=>request.log.error({err:error,siteId},"ConversionError: webhook de pagamento"));
+  if((body.type??query.type??query.topic)==="payment"&&/^\d{1,30}$/.test(paymentId)){
+   try{await handlePaymentWebhook(deps,{provider:"MERCADO_PAGO",siteId,providerPaymentId:paymentId,verification:{signature:typeof request.headers["x-signature"]==="string"?request.headers["x-signature"]:undefined,requestId:typeof request.headers["x-request-id"]==="string"?request.headers["x-request-id"]:undefined,dataId:query["data.id"]}});}
+   catch(error){
+    if(error instanceof Error&&error.message==="PAYMENT_WEBHOOK_SIGNATURE_INVALID"){request.log.warn({siteId},"Assinatura inválida: webhook de pagamento");return reply.code(401).send({ok:false});}
+    request.log.error({err:error,siteId},"ConversionError: webhook de pagamento");return reply.code(503).send({ok:false});
+   }
+  }
   reply.code(200);return {ok:true};
  }));
  // Administração --------------------------------------------------------------------------------
@@ -86,14 +92,20 @@ export async function registerCommerceRoutes(app:FastifyInstance,deps:CommerceRo
   const scope=await scoped(request,"order:read");
   const query=z.object({status:z.enum(ORDER_STATUSES).optional(),paymentStatus:z.enum(["PENDING","APPROVED","FAILED","CANCELLED","REFUNDED"]).optional(),shippingStatus:z.enum(["NOT_REQUIRED","PENDING","READY_FOR_PICKUP","SHIPPED","DELIVERED","CANCELLED"]).optional(),source:z.enum(["SITE","MERCADO_LIVRE","SHOPEE","TIKTOK_SHOP","MANUAL"]).optional(),search:z.string().max(120).optional(),from:z.iso.datetime().optional(),to:z.iso.datetime().optional(),limit:z.coerce.number().int().min(1).max(200).default(25),offset:z.coerce.number().int().min(0).default(0),workspaceId:z.string()}).parse(request.query);
   const {workspaceId:_workspaceId,...filter}=query;
-  return successEnvelope(await listOrders(deps,scope,filter),request.id);
+  return successEnvelope(await listOrders(deps,scope,{...filter,visibility:await visibility(request)}),request.id);
  }));
- const scopedOrder=async(_request:FastifyRequest,scope:{tenantId:string;workspaceId:string},orderId:string):Promise<Order>=>{
-  const order=await deps.orders.get(id.parse(orderId));if(!order||order.tenantId!==scope.tenantId||order.workspaceId!==scope.workspaceId)throw new NotFoundError();return order;
+ const scopedOrder=async(request:FastifyRequest,scope:{tenantId:string;workspaceId:string},orderId:string):Promise<Order>=>{
+  const order=await deps.orders.get(id.parse(orderId));if(!order||order.tenantId!==scope.tenantId||order.workspaceId!==scope.workspaceId)throw new NotFoundError();
+  if(!await orderInScope(await visibility(request),order,{siteTeamId:async siteId=>(await deps.commerceRepository.getSettings(siteId))?.teamId,deal:async dealId=>deps.deals?.getById(dealId)}))throw new NotFoundError();
+  return order;
  };
  const visibility=async(request:FastifyRequest)=>{
   const principal=requirePermission(request,"order:read");
   return deps.access?commerceVisibility(deps.access,{...principal,isAccountOwner:(principal as {isAccountOwner?:boolean}).isAccountOwner??false}):{global:hasPermission(principal,"deal:view_all"),teamIds:[],ownerUserIds:[principal.userId]};
+ };
+ const scopedReturn=async(request:FastifyRequest,scope:{tenantId:string;workspaceId:string},returnId:string)=>{
+  const ret=await deps.orders.getReturn(id.parse(returnId));if(!ret||ret.tenantId!==scope.tenantId||ret.workspaceId!==scope.workspaceId)throw new NotFoundError();
+  await scopedOrder(request,scope,ret.orderId);return ret;
  };
  /** O que esta pessoa pode fazer neste pedido (a interface só mostra o permitido; as rotas conferem de novo). */
  const orderActions=async(request:FastifyRequest,order:Order)=>{
@@ -117,7 +129,7 @@ export async function registerCommerceRoutes(app:FastifyInstance,deps:CommerceRo
    canManageReturns:can("order:manage"),canRefresh:order.source!=="SITE"&&!!capabilities&&can("order:manage")};
  };
  app.get("/commerce/orders/:id",async request=>guard(async()=>{
-  const scope=await scoped(request,"order:read");const detail=await getOrderDetail(deps,scope,(request.params as {id:string}).id);
+  const scope=await scoped(request,"order:read");const order=await scopedOrder(request,scope,(request.params as {id:string}).id);const detail=await getOrderDetail(deps,scope,order.id);
   return successEnvelope({...detail,shipments:await deps.orders.shipments(detail.order.id),returns:await deps.orders.returns(detail.order.id),actions:await orderActions(request,detail.order as Order)},request.id);
  }));
  // Pedidos de marketplace: o canal é a autoridade de logística (etiqueta e status vêm dele).
@@ -134,14 +146,17 @@ export async function registerCommerceRoutes(app:FastifyInstance,deps:CommerceRo
  const returnItems=z.array(z.object({orderItemId:id,quantity:z.number().int().min(1).max(100000)}).strict()).min(1).max(200);
  app.post("/commerce/orders/:id/returns",{config:{readOnlyGuard:true}},async request=>guard(async()=>{
   const scope=await scoped(request,"order:manage");const body=z.object({requestKey:z.string().uuid(),reason:z.string().max(300).optional(),items:returnItems}).strict().parse(request.body);
+  await scopedOrder(request,scope,(request.params as {id:string}).id);
   return successEnvelope(await requestReturn(deps,scope,{orderId:(request.params as {id:string}).id,...body}),request.id);
  }));
  app.post("/commerce/returns/:id/status",{config:{readOnlyGuard:true}},async request=>guard(async()=>{
   const scope=await scoped(request,"order:manage");const body=z.object({to:z.enum(["APPROVED","IN_TRANSIT","REJECTED","CANCELLED","COMPLETED"])}).strict().parse(request.body);
+  await scopedReturn(request,scope,(request.params as {id:string}).id);
   return successEnvelope(await transitionReturn(deps,scope,{returnId:id.parse((request.params as {id:string}).id),...body}),request.id);
  }));
  app.post("/commerce/returns/:id/receive",{config:{readOnlyGuard:true}},async request=>guard(async()=>{
   const scope=await scoped(request,"order:manage");
+  await scopedReturn(request,scope,(request.params as {id:string}).id);
   const body=z.object({items:z.array(z.object({orderItemId:id,receivedQuantity:z.number().int().min(0).max(100000),restockQuantity:z.number().int().min(0).max(100000)}).strict()).min(1).max(200)}).strict().parse(request.body);
   return successEnvelope(await receiveReturn(deps,scope,{returnId:id.parse((request.params as {id:string}).id),...body}),request.id);
  }));
@@ -165,6 +180,7 @@ export async function registerCommerceRoutes(app:FastifyInstance,deps:CommerceRo
 
  app.post("/commerce/orders/:id/status",{config:{readOnlyGuard:true}},async request=>guard(async()=>{
   const scope=await scoped(request,"order:manage");const body=z.object({to:z.enum(ORDER_STATUSES),trackingCode:z.string().trim().max(80).optional()}).strict().parse(request.body);
+  await scopedOrder(request,scope,(request.params as {id:string}).id);
   return successEnvelope(await advanceOrder(deps,scope,{id:(request.params as {id:string}).id,...body}),request.id);
  }));
  app.post("/commerce/orders/:id/cancel",{config:{readOnlyGuard:true}},async request=>guard(async()=>{
@@ -176,6 +192,7 @@ export async function registerCommerceRoutes(app:FastifyInstance,deps:CommerceRo
  }));
  app.post("/commerce/orders/:id/sandbox-payment",{config:{readOnlyGuard:true}},async request=>guard(async()=>{
   const scope=await scoped(request,"order:manage");const body=z.object({outcome:z.enum(["APPROVED","FAILED"])}).strict().parse(request.body);
+  await scopedOrder(request,scope,(request.params as {id:string}).id);
   return successEnvelope(await simulateSandboxPayment(deps,scope,{id:(request.params as {id:string}).id,...body}),request.id);
  }));
  const ownedSite=async(request:FastifyRequest,permission:Permission)=>{const scope=await scoped(request,permission);return {scope,site:await mustSite(deps,{id:(request.params as {id:string}).id,tenantId:scope.tenantId,workspaceId:scope.workspaceId})};};
@@ -185,7 +202,7 @@ export async function registerCommerceRoutes(app:FastifyInstance,deps:CommerceRo
  }));
  app.put("/sites/:id/commerce/credentials/:provider",{config:{readOnlyGuard:true}},async request=>guard(async()=>{
   const {site}=await ownedSite(request,"commerce:manage");const {provider}=z.object({provider:z.enum(COMMERCE_CREDENTIAL_PROVIDERS)}).parse({provider:(request.params as {provider:string}).provider});
-  const body=z.object({accessToken:z.string().trim().min(10).max(500).optional(),publicKey:z.string().trim().min(10).max(200).optional()}).strict().parse(request.body??{});
+  const body=z.object({accessToken:z.string().trim().min(10).max(500).optional(),publicKey:z.string().trim().min(10).max(200).optional(),webhookSecret:z.string().trim().min(10).max(500).optional()}).strict().parse(request.body??{});
   return successEnvelope(await saveCommerceCredential(deps,site,provider,body),request.id);
  }));
  // Reservas vencidas voltam ao estoque mesmo sem ninguém abrir o pedido.

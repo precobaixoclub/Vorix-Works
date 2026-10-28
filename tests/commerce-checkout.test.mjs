@@ -164,6 +164,7 @@ test("cancelar pedido pago antes do envio: estorna e devolve ao estoque; enviado
  assert.equal(shipped.shippingCents,1500);assert.equal(shipped.totalCents,4500);
  await simulateSandboxPayment(s.deps,s.scope,{id:sid,outcome:"APPROVED"});await advanceOrder(s.deps,s.scope,{id:sid,to:"PROCESSING"});
  await advanceOrder(s.deps,s.scope,{id:sid,to:"SHIPPED",trackingCode:"BR123"});
+ const [shipment]=await s.orders.shipments(sid);assert.equal(shipment.trackingNumber,"BR123");assert.equal(shipment.status,"SHIPPED");assert.equal(shipment.provider,"SITE");
  await assert.rejects(cancelOrder(s.deps,s.scope,{id:sid}),/não pode ser cancelado/);
 });
 

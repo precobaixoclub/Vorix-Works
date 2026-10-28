@@ -394,6 +394,9 @@ export async function advanceOrder(deps:CheckoutDeps,scope:OrderAdminScope,input
  const shippingStatus=input.to==="PROCESSING"&&pickup?"READY_FOR_PICKUP":input.to==="SHIPPED"?"SHIPPED":input.to==="DELIVERED"?"DELIVERED":undefined;
  const updated=await deps.orders.update(order.id,{status:input.to,...(shippingStatus?{shippingStatus}:{})},{type:"status_changed",fromStatus:order.status,toStatus:input.to,actorType:"user",actorId:scope.actorUserId,data:{...(input.trackingCode?{trackingCode:input.trackingCode.slice(0,80)}:{})}},{statuses:[order.status]});
  if(!updated)throw Error("SITE_VALIDATION: o pedido mudou enquanto você editava. Atualize a tela.");
+ // Mesmo registro de envio/rastreio dos marketplaces: a Central mostra tudo igual.
+ if((input.to==="SHIPPED"||input.to==="DELIVERED")&&!pickup)await deps.orders.upsertShipment({tenantId:order.tenantId,workspaceId:order.workspaceId,orderId:order.id,provider:"SITE",status:input.to,
+  trackingNumber:input.trackingCode?.slice(0,80),carrier:order.delivery.provider,labelAvailable:false,fulfilledByMarketplace:false,...(input.to==="SHIPPED"?{shippedAt:new Date().toISOString()}:{deliveredAt:new Date().toISOString()})});
  if(input.to==="DELIVERED")emit(deps,{...orderEvent(order),type:"ORDER_COMPLETED"});
  return updated;
 }

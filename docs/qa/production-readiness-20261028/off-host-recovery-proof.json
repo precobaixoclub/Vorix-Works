@@ -1,0 +1,39 @@
+{
+  "commit": "df3b965e264152bc489cd864d2be1ec12ce7ad2c",
+  "verifiedAt": "2026-10-28T14:48:05.067Z",
+  "files": [
+    {
+      "name": "database-final.sql.gz",
+      "bytes": 1840132,
+      "sha256": "073623bdd6ac024240f985aae01cd646cb5284ef52a7f735949858b7c99b9d7a"
+    },
+    {
+      "name": "media-20261028132252.tgz",
+      "bytes": 1572524938,
+      "sha256": "37bae3043bf7258906f88c6ad1de3cad433f9d6422d48db2f7097db7cdfc9618"
+    },
+    {
+      "name": "production.env",
+      "bytes": 4389,
+      "sha256": "REDACTED_CONFIGURATION_VERIFIED"
+    },
+    {
+      "name": "release-df3b965e264152bc489cd864d2be1ec12ce7ad2c.tgz",
+      "bytes": 285819473,
+      "sha256": "9c017f90b7150b54a45683ea3fca5e0f4619023adf1547ac56da72f84de51616"
+    },
+    {
+      "name": "wuzapi-20261028141743.sql.gz",
+      "bytes": 9869220,
+      "sha256": "906eb2bc29999c9902ead7cf0aeaa29116beda54d58c42bc9abf5de8167e423f"
+    },
+    {
+      "name": "vorix-logrotate.conf",
+      "bytes": 256,
+      "sha256": "9589842bdfcfcd718a8c904403ab91d6fd371ec341bcbc51cb540d1b508ddaf8"
+    }
+  ],
+  "acl": "CURRENT_USER_AND_SYSTEM_ONLY",
+  "continuousOffsiteReplication": false,
+  "hostLogrotate": "DAILY_AND_MAXSIZE_10M_APPLIED_SEPARATELY"
+}

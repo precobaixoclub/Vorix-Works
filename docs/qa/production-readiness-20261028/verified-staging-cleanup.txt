@@ -1,0 +1,6 @@
+REMOVED_VERIFIED_DEPLOY_STAGING vorix-readiness-49b2a065.tgz retained=release-49b2a0654f81052ba8fcfe242e250c0a10c534b0.tgz
+REMOVED_VERIFIED_DEPLOY_STAGING vorix-readiness-fda3a4eaa7fb3a4bfaded30db2c715f4f6de2a69.tgz retained=release-fda3a4eaa7fb3a4bfaded30db2c715f4f6de2a69.tgz
+REMOVED_VERIFIED_DEPLOY_STAGING vorix-readiness-df3b965e264152bc489cd864d2be1ec12ce7ad2c.tgz retained=release-df3b965e264152bc489cd864d2be1ec12ce7ad2c.tgz
+Filesystem      Size  Used Avail Use% Mounted on
+/dev/vda1        67G   54G   14G  80% /
+{"checks":9,"findings":[{"code":"commerce_stock","id":"order-87392122-ec8b-4a7f-a091-121362d016da"}],"notificationsCreated":0,"dryRun":false}

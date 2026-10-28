@@ -1,0 +1,163 @@
+{
+  "at": "2026-10-28T14:30:54.449Z",
+  "api": {
+    "readiness": "degraded",
+    "/v1/commerce/orders": 401,
+    "/v1/marketplaces": 401,
+    "invalidOrder": 404,
+    "site": {
+      "status": 200,
+      "productCount": 4,
+      "checkoutAvailable": true,
+      "sandbox": true
+    }
+  },
+  "viewports": [
+    {
+      "width": 360,
+      "page": "home",
+      "status": 200,
+      "overflow": 0
+    },
+    {
+      "width": 360,
+      "page": "login",
+      "status": 200,
+      "overflow": 0
+    },
+    {
+      "width": 360,
+      "page": "site",
+      "status": 200,
+      "overflow": 0
+    },
+    {
+      "width": 360,
+      "page": "product",
+      "status": 200,
+      "overflow": 0
+    },
+    {
+      "width": 390,
+      "page": "home",
+      "status": 200,
+      "overflow": 0
+    },
+    {
+      "width": 390,
+      "page": "login",
+      "status": 200,
+      "overflow": 0
+    },
+    {
+      "width": 390,
+      "page": "site",
+      "status": 200,
+      "overflow": 0
+    },
+    {
+      "width": 390,
+      "page": "product",
+      "status": 200,
+      "overflow": 0
+    },
+    {
+      "width": 430,
+      "page": "home",
+      "status": 200,
+      "overflow": 0
+    },
+    {
+      "width": 430,
+      "page": "login",
+      "status": 200,
+      "overflow": 0
+    },
+    {
+      "width": 430,
+      "page": "site",
+      "status": 200,
+      "overflow": 0
+    },
+    {
+      "width": 430,
+      "page": "product",
+      "status": 200,
+      "overflow": 0
+    },
+    {
+      "width": 768,
+      "page": "home",
+      "status": 200,
+      "overflow": 0
+    },
+    {
+      "width": 768,
+      "page": "login",
+      "status": 200,
+      "overflow": 0
+    },
+    {
+      "width": 768,
+      "page": "site",
+      "status": 200,
+      "overflow": 0
+    },
+    {
+      "width": 768,
+      "page": "product",
+      "status": 200,
+      "overflow": 0
+    },
+    {
+      "width": 1024,
+      "page": "home",
+      "status": 200,
+      "overflow": 0
+    },
+    {
+      "width": 1024,
+      "page": "login",
+      "status": 200,
+      "overflow": 0
+    },
+    {
+      "width": 1024,
+      "page": "site",
+      "status": 200,
+      "overflow": 0
+    },
+    {
+      "width": 1024,
+      "page": "product",
+      "status": 200,
+      "overflow": 0
+    },
+    {
+      "width": 1440,
+      "page": "home",
+      "status": 200,
+      "overflow": 0
+    },
+    {
+      "width": 1440,
+      "page": "login",
+      "status": 200,
+      "overflow": 0
+    },
+    {
+      "width": 1440,
+      "page": "site",
+      "status": 200,
+      "overflow": 0
+    },
+    {
+      "width": 1440,
+      "page": "product",
+      "status": 200,
+      "overflow": 0
+    }
+  ],
+  "pageErrors": [],
+  "providerValidation": "NOT_PERFORMED_NO_CREDENTIALS"
+}

@@ -1,0 +1,20 @@
+OPERATIONS_INSTALLED previous_crontab=/root/vorix-crontab-before-20261028143047
+Flag --keep-storage has been deprecated, keep-storage flag has been changed to reserved-space
+ID						RECLAIMABLE	SIZE		LAST ACCESSED
+ik90fuv0uh4wki0x643ictl5g*              	true 		948.6MB   	11 hours ago
+Total:	948.6MB
+ARCHIVE_SUPERSEDED_QA_INFRA_ALERTS
+UPDATE 11
+{"checks":9,"findings":[{"code":"commerce_stock","id":"order-87392122-ec8b-4a7f-a091-121362d016da"},{"code":"host_health","id":"host"}],"notificationsCreated":0,"dryRun":false}
+GRACEFUL_IDLE_MARKETPLACE_RESTART
+marketplace_restart_seconds=0
+FINAL_CONTAINERS
+/zuno-zuno-api-1 restart=0 health=healthy logging={"Type":"json-file","Config":{"max-file":"3","max-size":"10m"}}
+/zuno-vorix-worker-1 restart=0 health=healthy logging={"Type":"json-file","Config":{"max-file":"3","max-size":"10m"}}
+/zuno-marketplaces-worker-1 restart=0 health=healthy logging={"Type":"json-file","Config":{"max-file":"3","max-size":"10m"}}
+/zuno-social-provider-gateway-1 restart=0 health=healthy logging={"Type":"json-file","Config":{"max-file":"3","max-size":"10m"}}
+/zuno-zuno-web-1 restart=0 health=healthy logging={"Type":"json-file","Config":{"max-file":"3","max-size":"10m"}}
+/zuno-zuno-postgres-1 restart=0 health=healthy logging={"Type":"json-file","Config":{"max-file":"3","max-size":"10m"}}
+Filesystem      Size  Used Avail Use% Mounted on
+/dev/vda1        67G   54G   13G  81% /
+FINAL_OPERATIONS_PASS

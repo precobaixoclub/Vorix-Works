@@ -1,0 +1,8 @@
+RESTORE_TEST=PASS seconds=13 isolation=internal-network output=/opt/zuno/deploy_backups/restore-proof-20261028143105
+migrations=187
+products=6
+orders=14
+contacts=66
+[migrate] 187 aplicada(s), 0 pendente(s).
+publicRouteStatus=200
+restoredSecretDecryption=PASS

@@ -14,10 +14,10 @@ test at tmp\readiness-unpatched-protocol.test.mjs:32:1
 ✖ TEST_INFRA: fragmented extended-query messages cannot share another connection's unnamed statement (1855.6202ms)
   AssertionError [ERR_ASSERTION]: TEST_INFRA_FAILURE: bind message supplies 1 parameters, but prepared statement "" requires 3
   + actual - expected
-  
+
   + 'rejected'
   - 'fulfilled'
-  
+
       at TestContext.<anonymous> (file:///C:/Users/Cleverton-Si9/OneDrive/Desktop/Vorix/tmp/readiness-unpatched-protocol.test.mjs:51:36)
       at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
       at async Test.run (node:internal/test_runner/test:1332:7)

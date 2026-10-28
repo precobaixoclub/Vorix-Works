@@ -1,0 +1,1 @@
+{"runtimeImage":"PRODUCTION_API","currencyGuard":"PASS","externalCalls":0,"marketplaceEnrollment":"PASS_DENY_UNLISTED","webhookHmac":"PASS","realProviderValidation":"NOT_PERFORMED"}

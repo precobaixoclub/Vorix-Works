@@ -80,17 +80,17 @@ Recuperação de desastre em host novo:
 3. Subir **só** PostgreSQL; restaurar para banco novo e validar primeiro em QA. Repor volumes de uploads e mídia privada a partir de backup próprio, se disponíveis.
 4. Conferir checksums/migrations, aplicar apenas pendentes aditivas; subir API, workers, gateway e web, nessa ordem.
 5. `/readyz`, health dos containers, login, site público, produto, pedido QA e reconciliação controlada. Não liberar tráfego de escrita sem conferir credenciais e flags.
-6. Reinstalar cron/logrotate com `scripts/operations/install-host-operations.sh` e verificar backup diário e notificações.
+6. Repor `scripts/operations/vorix-logrotate.conf` com a cópia privada homônima antes de reinstalar cron/logrotate com `scripts/operations/install-host-operations.sh`; verificar backup diário e notificações. A correção final de `maxsize 10M` foi aplicada ao host separadamente da release `df3b965`.
 
 Rollback de código: `sh scripts/deploy/rollback-production.sh <stamp> all`. Inclui marketplace worker; não retrocede schema/banco. Restore de produção em desastre exige janela e autorização explícita, pois substitui dados reais.
 
 O ensaio mede restore de banco e subida da API, não reconstrução de VPS ou DNS/TLS. O backup de mídia deve ser extraído somente para volumes QA e conferido antes de uso. Sem cópia fora da VPS, perda total do host continua sem recuperação completa. Não prometer RTO corporativo; usar tempo do ensaio como limite inferior e reservar tempo para rebuild/rede/secrets.
 
-Ensaio desta revisão: banco/API em aproximadamente 15 segundos e mídia em 48 segundos, com imagens e Docker já disponíveis. Não inclui download externo, instalação do host ou DNS. Snapshot externo desta execução fica em `artifacts/readiness-recovery-20261028/` na estação de trabalho, fora do Git, com ACL restrita ao usuário/SYSTEM e SHA-256 conferido. Não há replicação externa diária configurada; copiar os próximos backups para destino aprovado continua sendo responsabilidade operacional.
+Ensaio final desta revisão: banco/API em aproximadamente 13 segundos e mídia em 48 segundos, com imagens e Docker já disponíveis. Não inclui download externo, instalação do host ou DNS. Snapshot externo desta execução fica em `artifacts/readiness-recovery-20261028/` na estação de trabalho, fora do Git, com ACL restrita ao usuário/SYSTEM e SHA-256 conferido. Não há replicação externa diária configurada; copiar os próximos backups para destino aprovado continua sendo responsabilidade operacional.
 
 ## Disco e logs
 
-Todos os seis serviços Vorix: JSON Docker, 10 MB × 3 arquivos por serviço. Logs operacionais do host: logrotate diário/10 MB, 14 arquivos comprimidos. Não altera stacks de outros sistemas.
+Todos os seis serviços Vorix: JSON Docker, 10 MB × 3 arquivos por serviço. Logs operacionais do host: logrotate diário com `maxsize 10M` (sem substituir a periodicidade diária), 14 arquivos comprimidos. A configuração efetiva `/etc/logrotate.d/vorix` também acompanha a cópia privada de recuperação. Não altera stacks de outros sistemas.
 
 Limpeza semanal: apenas cache de build antigo, preservando 4 GB. Sem `docker system prune --volumes`, sem remoção de banco ou volumes e sem expurgo amplo de imagens. Backups de deploy e artefatos em `/tmp` devem ser revisados com identificação do artefato; nenhum backup recente é removido pela manutenção.
 

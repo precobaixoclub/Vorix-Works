@@ -4,11 +4,11 @@
   "suites": {
     "backend": {
       "completed": true,
-      "tests": 4393,
-      "passed": 4391,
+      "tests": 4394,
+      "passed": 4392,
       "failed": 0,
       "skipped": 2,
-      "durationMs": 427782.3384
+      "durationMs": 398244.3654
     },
     "web": {
       "completed": true,
@@ -23,6 +23,16 @@
       "passed": 27,
       "failed": 0,
       "skipped": 0
+    },
+    "finalCheckoutSecurityRegression": {
+      "tests": 28,
+      "passed": 28,
+      "failed": 0
+    },
+    "finalAlertRecipientScope": {
+      "tests": 3,
+      "passed": 3,
+      "failed": 0
     }
   },
   "browser": {
@@ -67,5 +77,35 @@
     "backend": "PASS",
     "web": "PASS"
   },
-  "architecture": "PASS"
+  "architecture": "PASS",
+  "productionAfter": "df3b965e264152bc489cd864d2be1ec12ce7ad2c",
+  "productionSmoke": {
+    "pages": 24,
+    "widths": [
+      360,
+      390,
+      430,
+      768,
+      1024,
+      1440
+    ],
+    "pageErrors": 0
+  },
+  "productionComponents": {
+    "apiAndWorkers": "df3b965e264152bc489cd864d2be1ec12ce7ad2c",
+    "webAndSocialGateway": "49b2a0654f81052ba8fcfe242e250c0a10c534b0"
+  },
+  "restore": {
+    "databaseApiAndSecretDecryption": "PASS",
+    "databaseSeconds": 13,
+    "media": "PASS",
+    "mediaSeconds": 48,
+    "isolatedQa": true
+  },
+  "disk": {
+    "availableMiB": 13961,
+    "totalMiB": 68366,
+    "roundedUsagePercent": 80
+  },
+  "realProviders": "BLOCKED_CREDENTIALS"
 }

@@ -1,0 +1,51 @@
+{
+  "baseCommit": "49b2a0654f81052ba8fcfe242e250c0a10c534b0",
+  "candidateCommit": "df3b965e264152bc489cd864d2be1ec12ce7ad2c",
+  "baseArchiveSha256": "241f05b5e44adccafa3b6310077c6668c07746e65ec6de21084c92a6b684feb0",
+  "files": {
+    "docs/operations/production-readiness.md": {
+      "sha256": "3d9403640cc736a82e2a83775ab3a13c6b92ecd49af6e030449652f4b57e5823",
+      "mode": "100644"
+    },
+    "scripts/backup-postgres.sh": {
+      "sha256": "68085b98f0a006489b4bdf08560d262e322a53dee476e332fafb5d9e8d1e41de",
+      "mode": "100755"
+    },
+    "scripts/operations/backup-volumes.sh": {
+      "sha256": "d9bbe542cedd188a770e93f91a4cc88ee094034f8c813181f91a9ec1ce01718c",
+      "mode": "100755"
+    },
+    "scripts/operations/host-maintenance.sh": {
+      "sha256": "aea3b67089cc2a8bcb9a61f91871321fe08331da3d8a6804ad3cfba690027561",
+      "mode": "100755"
+    },
+    "scripts/operations/monitor-host.sh": {
+      "sha256": "86150c1f37f0086480f4b0941ea19249535fff65a5df9df9d06cc88d8ab646d7",
+      "mode": "100755"
+    },
+    "scripts/operations/monitor.mjs": {
+      "sha256": "789763a8a003951c77f50c6d80ccdda8f3b4edb1f4caa9c809e9e8fe9461eb93",
+      "mode": "100644"
+    },
+    "scripts/operations/production-smoke.mjs": {
+      "sha256": "e5ebe2cdff93046834fd03acde677c0a4c549c9134276bc5402ce102fe3f1ef9",
+      "mode": "100644"
+    },
+    "src/application/commerce/checkout-use-cases.ts": {
+      "sha256": "1a1bfc96d8d407d4f3a8bca3708442729685ded968593b186a0f84c1af91d16a",
+      "mode": "100644"
+    },
+    "src/infrastructure/commerce/payment-providers.ts": {
+      "sha256": "1287ceac413074beeced0e46d18a49ebef965154b0b5123a253f0a568012eb02",
+      "mode": "100644"
+    },
+    "tests/commerce-checkout.test.mjs": {
+      "sha256": "9f5194248043a89d503a0528d333b16651b8ba3d54d6457759c3eeb734375629",
+      "mode": "100644"
+    },
+    "tests/production-operations.test.mjs": {
+      "sha256": "64b0da80a3d1b00514e24d6638340b39c32ce7a63f1d1eb91c68b948809aec18",
+      "mode": "100644"
+    }
+  }
+}

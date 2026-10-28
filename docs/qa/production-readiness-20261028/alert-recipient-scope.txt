@@ -1,0 +1,11 @@
+✔ operations monitor delivers bounded alerts through the existing bell only to active tenant administrators (3748.7968ms)
+✔ payment processing failure returns 503 so the provider can retry instead of losing the webhook (112.5005ms)
+✔ marketplace notification persistence failure returns 503 for both signed providers (19.2421ms)
+ℹ tests 3
+ℹ suites 0
+ℹ pass 3
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 4355.4118

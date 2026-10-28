@@ -17,7 +17,7 @@ import type {CommerceOrderRepositoryPort,PaymentProviderContext,PaymentProviderP
 import type {SecretManagerPort} from "../ports/secret-manager.port.js";
 import {resolvePublishedSite} from "../sites/site-use-cases.js";
 import {activeCart,cleanUtm,emit,hashToken,itemSnapshot,presentCart,publicContext,safePageUrl,type PublicLookup,type SiteCommerceDeps,type VisitorContext} from "../sites/site-commerce-use-cases.js";
-import {createWonOpportunityForOrder,ensureOrderContact,type OrderCrmDeps} from "../commercial-bridge/order-crm-use-cases.js";
+import {createWonOpportunityForOrder,ensureOrderContact,loseOpportunityForCancelledOrder,type OrderCrmDeps} from "../commercial-bridge/order-crm-use-cases.js";
 import {notifyBestEffort,type NotificationUseCaseDeps} from "../notification/notification-use-cases.js";
 import type {TeamMembershipRepositoryPort} from "../ports/team-repository.port.js";
 import {signOwnedUrl,OBJECT_URL_TTL} from "../../shared/utils/object-url-signing.js";
@@ -123,6 +123,13 @@ async function moveStock(deps:CheckoutDeps,order:Order,kind:"RESERVATION"|"RELEA
  for(const item of order.items.filter(item=>item.trackStock))
   await deps.productEngineRepository.move({tenantId:order.tenantId,workspaceId:order.workspaceId,productId:item.productId,variantId:item.variantId,kind,quantity:item.quantity,operationKey:`order:${order.id}:${suffix}:${item.id}`,userId:SYSTEM,...(consumeReservation?{consumeReservation:true}:{})});
 }
+/** Movimento pós-pagamento/cancelamento: produto excluído ou sem controle de estoque não pode travar dinheiro nem o pedido. */
+async function safeMoveStock(deps:CheckoutDeps,order:Order,kind:"RELEASE"|"SALE"|"RETURN",suffix:string,consumeReservation=false){
+ await moveStock(deps,order,kind,suffix,consumeReservation).catch(async error=>{
+  deps.log?.("order_stock_move_failed",{orderId:order.id,kind,error:errorText(error)});
+  await deps.orders.addEvent(order.id,{type:"stock_move_failed",actorType:"system",data:{kind,error:errorText(error).slice(0,200)}}).catch(()=>undefined);
+ });
+}
 /** Reserva todos os itens ou nenhum: se um faltar, devolve o que já tinha reservado. */
 async function reserveStock(deps:CheckoutDeps,order:Order){
  const reserved:typeof order.items=[];
@@ -193,7 +200,9 @@ export async function placeOrder(deps:CheckoutDeps,input:PlaceOrderInput){
   order=(await deps.orders.update(order.id,{status:"AWAITING_PAYMENT"},{type:"payment_started",fromStatus:"PENDING",toStatus:"AWAITING_PAYMENT",actorType:"customer",data:{provider:provider.key,method:input.payment.method}},{statuses:["PENDING"]}))??order;
   emit(deps,{...base,type:"PAYMENT_STARTED"});
   // Cartão pode voltar aprovado/recusado na hora: mesmo caminho de um webhook.
-  if(state.status!=="PENDING")await applyPaymentState(deps,payment,state,{eventKey:`create:${payment.id}:${state.status}`,actor:"provider"});
+  // Recusa na hora: o pedido já foi cancelado; o carrinho continua para o comprador tentar outro cartão.
+  if(state.status!=="PENDING"&&(await applyPaymentState(deps,payment,state,{eventKey:`create:${payment.id}:${state.status}`,actor:"provider"})).status==="cancelled")
+   throw Error("PAYMENT_VALIDATION: pagamento recusado. Nenhum valor foi cobrado; confira os dados ou tente outra forma de pagamento.");
  }catch(error){
   await cancelOrderInternal(deps,order,{reason:"payment_error",actorType:"system"}).catch(()=>undefined);
   deps.log?.("ConversionError",{orderId:order.id,stage:"payment",error:errorText(error)});
@@ -245,17 +254,24 @@ export async function applyPaymentState(deps:CheckoutDeps,payment:Payment,state:
  if(state.status==="APPROVED"){
   // CANCELLED incluso: o PIX pode ser pago no instante em que o pedido expira — a confirmação do provedor vale (e é estornada abaixo).
   const updatedPayment=await deps.orders.updatePayment(payment.id,{status:"APPROVED"},["PENDING","FAILED","CANCELLED"]);
-  if(!updatedPayment&&payment.status!=="PENDING")return {status:"ignored" as const};
+  // Já APPROVED com pedido ainda aguardando: confirmação anterior falhou no meio — conclui agora (o pedido é condicional).
+  if(!updatedPayment&&payment.status!=="PENDING"&&!(payment.status==="APPROVED"&&order.status==="AWAITING_PAYMENT"))return {status:"ignored" as const};
   if(order.status==="CANCELLED"){
    // Pagou depois de expirar: devolve o dinheiro automaticamente (o estoque já foi liberado).
    await refundPayment(deps,order,payment,"paid_after_cancellation");
    return {status:"refunded_after_cancellation" as const};
   }
   if(order.status!=="AWAITING_PAYMENT")return {status:"ignored" as const};
-  // Reserva vira venda na mesma transação de estoque (chave idempotente por item).
-  if(order.stockState==="RESERVED")await moveStock(deps,order,"SALE","sale",true);
-  const paid=await deps.orders.update(order.id,{status:"PAID",paymentStatus:"APPROVED",stockState:order.stockState==="RESERVED"?"SOLD":order.stockState,paidAt:at,reservationExpiresAt:null},{type:"payment_approved",fromStatus:"AWAITING_PAYMENT",toStatus:"PAID",actorType:input.actor,actorId:input.actorId,data:{paymentId:payment.id,provider:payment.provider}},{statuses:["AWAITING_PAYMENT"]});
-  if(!paid)return {status:"ignored" as const};
+  // O pedido é reivindicado como pago ANTES de baixar o estoque: se um cancelamento/expiração ganhou a corrida,
+  // a reserva é liberada por ele (uma vez só) e aqui o dinheiro volta.
+  const paid=await deps.orders.update(order.id,{status:"PAID",paymentStatus:"APPROVED",stockState:order.stockState==="RESERVED"?"SOLD":order.stockState,paidAt:at,reservationExpiresAt:null},{type:"payment_approved",fromStatus:"AWAITING_PAYMENT",toStatus:"PAID",actorType:input.actor,actorId:input.actorId,data:{paymentId:payment.id,provider:payment.provider}},{statuses:["AWAITING_PAYMENT"],stockStates:[order.stockState]});
+  if(!paid){
+   const fresh=await deps.orders.get(order.id);
+   if(fresh?.status==="CANCELLED"){await refundPayment(deps,fresh,payment,"paid_after_cancellation");return {status:"refunded_after_cancellation" as const};}
+   return {status:"ignored" as const};
+  }
+  // Reserva vira venda (chave idempotente por item). Falha aqui não desfaz um pagamento confirmado.
+  if(order.stockState==="RESERVED")await safeMoveStock(deps,order,"SALE","sale",true);
   emit(deps,{...orderEvent(paid),type:"PAYMENT_APPROVED"});
   await afterPaid(deps,paid).catch(error=>deps.log?.("order_after_paid_failed",{orderId:paid.id,error:errorText(error)}));
   // ORDER_PAID depois do CRM: leva a oportunidade ganha (se criada) para o Analytics não contar a venda duas vezes.
@@ -268,7 +284,14 @@ export async function applyPaymentState(deps:CheckoutDeps,payment:Payment,state:
   if(order.status==="AWAITING_PAYMENT")await cancelOrderInternal(deps,order,{reason:state.status==="FAILED"?"payment_failed":"payment_cancelled",actorType:"provider"});
   return {status:"cancelled" as const};
  }
- if(state.status==="REFUNDED"){await deps.orders.updatePayment(payment.id,{status:"REFUNDED"},["APPROVED","PENDING"]);await deps.orders.addEvent(order.id,{type:"payment_refunded",actorType:input.actor,data:{paymentId:payment.id}});}
+ if(state.status==="REFUNDED"){
+  // Estorno/chargeback feito no provedor: o pedido deixa de contar como pago e, se ainda não saiu, é cancelado (estoque volta).
+  if(!await deps.orders.updatePayment(payment.id,{status:"REFUNDED"},["APPROVED","PENDING"]))return {status:"ignored" as const};
+  await deps.orders.update(order.id,{paymentStatus:"REFUNDED"},{type:"payment_refunded",actorType:input.actor,data:{paymentId:payment.id}});
+  if(CANCELLABLE_STATUSES.includes(order.status))await cancelOrderInternal(deps,{...order,paymentStatus:"REFUNDED"},{reason:"payment_refunded",actorType:"provider"});
+  else emit(deps,{...orderEvent(order),type:"ORDER_CANCELLED"});
+  return {status:"refunded" as const};
+ }
  return {status:"ignored" as const};
 }
 /** Evento analítico do pedido: valor total pago (com frete), moeda e a oportunidade ganha da mesma venda (deduplicação). */
@@ -289,6 +312,7 @@ async function afterPaid(deps:CheckoutDeps,order:Order){
 }
 async function refundPayment(deps:CheckoutDeps,order:Order,payment:Payment,reason:string){
  if(!payment.providerPaymentId)return;
+ if((await deps.orders.payments(order.id)).find(item=>item.id===payment.id)?.status==="REFUNDED")return;
  const {provider,credentials}=await paymentProviderFor(deps,{tenantId:order.tenantId,id:order.siteId??""},payment.provider);
  const state=await provider.refund(providerContext(order,credentials),payment.providerPaymentId,payment.amountCents);
  await deps.orders.updatePayment(payment.id,{status:state.status==="REFUNDED"?"REFUNDED":"APPROVED"},["APPROVED"]);
@@ -306,14 +330,16 @@ export async function handlePaymentWebhook(deps:CheckoutDeps,input:{provider:"ME
 }
 
 // ------------------------------------------------------------------ expiração e cancelamento
-async function cancelOrderInternal(deps:CheckoutDeps,order:Order,input:{reason:string;actorType:"system"|"user"|"provider"|"customer";actorId?:string;restock?:boolean}){
+async function cancelOrderInternal(deps:CheckoutDeps,order:Order,input:{reason:string;actorType:"system"|"user"|"provider"|"customer";actorId?:string;restock?:boolean;fromStatuses?:readonly OrderStatus[]}){
  const at=now(deps).toISOString();
+ // Condicional ao status lido: um pagamento confirmado no meio do caminho não é cancelado por engano.
  const updated=await deps.orders.update(order.id,{status:"CANCELLED",cancelReason:input.reason,cancelledAt:at,reservationExpiresAt:null,shippingStatus:order.shippingStatus==="NOT_REQUIRED"?"NOT_REQUIRED":"CANCELLED",...(order.paymentStatus==="PENDING"?{paymentStatus:"CANCELLED" as PaymentStatus}:{})},
-  {type:"order_cancelled",fromStatus:order.status,toStatus:"CANCELLED",actorType:input.actorType,actorId:input.actorId,data:{reason:input.reason}},{statuses:CANCELLABLE_STATUSES});
+  {type:"order_cancelled",fromStatus:order.status,toStatus:"CANCELLED",actorType:input.actorType,actorId:input.actorId,data:{reason:input.reason}},{statuses:input.fromStatuses??[order.status]});
  if(!updated)return undefined;
- // Estoque: reserva volta; venda ainda não enviada volta ao saldo (opcional, padrão sim).
- if(order.stockState==="RESERVED"){await moveStock(deps,order,"RELEASE","release");await deps.orders.update(order.id,{stockState:"RELEASED"},{type:"stock_released",actorType:"system",data:{}});}
- else if(order.stockState==="SOLD"&&input.restock!==false){await moveStock(deps,order,"RETURN","return");await deps.orders.update(order.id,{stockState:"RETURNED"},{type:"stock_returned",actorType:"system",data:{}});}
+ // Estoque: reserva volta; venda ainda não enviada volta ao saldo (opcional, padrão sim). O estado do estoque é
+ // reivindicado antes do movimento (nunca devolve duas vezes) e falha de estoque não impede o estorno abaixo.
+ if(updated.stockState==="RESERVED"&&await deps.orders.update(order.id,{stockState:"RELEASED"},{type:"stock_released",actorType:"system",data:{}},{stockStates:["RESERVED"]}))await safeMoveStock(deps,updated,"RELEASE","release");
+ else if(updated.stockState==="SOLD"&&input.restock!==false&&await deps.orders.update(order.id,{stockState:"RETURNED"},{type:"stock_returned",actorType:"system",data:{}},{stockStates:["SOLD"]}))await safeMoveStock(deps,updated,"RETURN","return");
  for(const payment of await deps.orders.payments(order.id)){
   if(payment.status==="PENDING"){
    if(payment.providerPaymentId&&payment.provider!=="SANDBOX"){const {provider,credentials}=await paymentProviderFor(deps,{tenantId:order.tenantId,id:order.siteId??""},payment.provider);await provider.cancel(providerContext(order,credentials),payment.providerPaymentId).catch(()=>undefined);}
@@ -321,22 +347,28 @@ async function cancelOrderInternal(deps:CheckoutDeps,order:Order,input:{reason:s
   }else if(payment.status==="APPROVED")await refundPayment(deps,order,payment,input.reason);
  }
  const cancelled=await deps.orders.get(order.id);
+ if(deps.crm&&updated.crmDealId)await loseOpportunityForCancelledOrder(deps.crm,updated,input.reason).catch(error=>deps.log?.("order_crm_cancel_failed",{orderId:order.id,error:errorText(error)}));
  emit(deps,{...orderEvent(cancelled??updated),type:"ORDER_CANCELLED"});
  return cancelled;
 }
-async function expireOrder(deps:CheckoutDeps,order:Order){return cancelOrderInternal(deps,order,{reason:"payment_expired",actorType:"system"});}
+async function expireOrder(deps:CheckoutDeps,order:Order){return cancelOrderInternal(deps,order,{reason:"payment_expired",actorType:"system",fromStatuses:["AWAITING_PAYMENT"]});}
 /** Varredura periódica: pedidos aguardando pagamento além do prazo devolvem o estoque. */
 export async function expireAwaitingOrders(deps:CheckoutDeps,limit=50){
  let expired=0;
  for(const order of await deps.orders.listExpiring({now:now(deps).toISOString(),limit})){
-  // Antes de expirar, confere no provedor real: se pagou no último minuto, conta como pago.
-  const payment=(await deps.orders.payments(order.id)).at(-1);
-  if(payment?.provider==="MERCADO_PAGO"&&payment.providerPaymentId&&payment.status==="PENDING"){
-   const {provider,credentials}=await paymentProviderFor(deps,{tenantId:order.tenantId,id:order.siteId??""},payment.provider).catch(()=>({provider:undefined,credentials:undefined}));
-   const state=provider?await provider.getPayment(providerContext(order,credentials),payment.providerPaymentId).catch(()=>undefined):undefined;
-   if(state?.status==="APPROVED"){await applyPaymentState(deps,payment,state,{eventKey:`sweep:${payment.id}:APPROVED`,actor:"provider"});continue;}
-  }
-  if(await expireOrder(deps,order))expired++;
+  // Um pedido com problema nunca trava a varredura dos demais.
+  try{
+   const payment=(await deps.orders.payments(order.id)).at(-1);
+   // Pagamento já aprovado cuja confirmação falhou no meio (o webhook repetido vira duplicado): conclui como pago.
+   if(payment?.status==="APPROVED"){await applyPaymentState(deps,payment,{providerPaymentId:payment.providerPaymentId??payment.id,status:"APPROVED"},{eventKey:`sweep-recover:${payment.id}`,actor:"provider"});continue;}
+   // Antes de expirar, confere no provedor real: se pagou no último minuto, conta como pago.
+   if(payment?.provider==="MERCADO_PAGO"&&payment.providerPaymentId&&payment.status==="PENDING"){
+    const {provider,credentials}=await paymentProviderFor(deps,{tenantId:order.tenantId,id:order.siteId??""},payment.provider).catch(()=>({provider:undefined,credentials:undefined}));
+    const state=provider?await provider.getPayment(providerContext(order,credentials),payment.providerPaymentId).catch(()=>undefined):undefined;
+    if(state?.status==="APPROVED"){await applyPaymentState(deps,payment,state,{eventKey:`sweep:${payment.id}:APPROVED`,actor:"provider"});continue;}
+   }
+   if(await expireOrder(deps,order))expired++;
+  }catch(error){deps.log?.("order_expiry_failed",{orderId:order.id,error:errorText(error)});}
  }
  return {expired};
 }

@@ -49,6 +49,8 @@ async function revertStock(deps: StockDeps, deal: Deal, actorUserId?: string): P
 export async function setStockQuantity(deps: AlertDeps, product: Product, quantity: number, actorUserId: string): Promise<Product> {
   const delta = quantity - product.stockQuantity;
   if (delta === 0) return product;
+  // Unidades reservadas (pedidos aguardando pagamento) não podem sumir num ajuste manual.
+  if (quantity < (product.reservedQuantity ?? 0)) throw new Error(`PRODUCT_VALIDATION: há ${product.reservedQuantity} unidade(s) reservada(s) em pedidos; o saldo não pode ficar abaixo disso.`);
   const after = await deps.productRepository.adjustStock({ productId: product.id, delta, reason: "manual", userId: actorUserId });
   if (!after) return product;
   if (isLowStock(after) && !isLowStock(product)) await notifyLowStock(deps, after);

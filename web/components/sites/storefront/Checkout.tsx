@@ -18,7 +18,7 @@ export function CheckoutPage({site,basePath}:{site:PublicTenantSite;basePath:str
  const [quote,setQuote]=useState<CheckoutQuote>(),[loadError,setLoadError]=useState<string>(),[quoting,setQuoting]=useState(false);
  const [form,setForm]=useState<Record<string,Field>>({name:{value:""},email:{value:""},phone:{value:""},document:{value:""},postalCode:{value:""},street:{value:""},number:{value:""},complement:{value:""},district:{value:""},city:{value:""},state:{value:""}});
  const [optionId,setOptionId]=useState<string>(),[method,setMethod]=useState<"PIX"|"CARD"|"SANDBOX">(),[submitting,setSubmitting]=useState(false),[error,setError]=useState<string>();
- const [requestKey]=useState(()=>crypto.randomUUID());const errorRef=useRef<HTMLParagraphElement>(null);
+ const [requestKey,setRequestKey]=useState(()=>crypto.randomUUID());const errorRef=useRef<HTMLParagraphElement>(null);
  const load=useCallback(async(postal?:string)=>{
   setQuoting(true);
   try{const next=await quoteCheckout(site.slug,postal);setQuote(next);setLoadError(undefined);setMethod(current=>current&&next.paymentMethods.some(item=>item.method===current)?current:next.paymentMethods[0]?.method);setOptionId(current=>next.shippingOptions.some(item=>item.id===current)?current:next.shippingOptions[0]?.id);}
@@ -57,7 +57,10 @@ export function CheckoutPage({site,basePath}:{site:PublicTenantSite;basePath:str
     ...(needsAddress?{address:{postalCode:form.postalCode.value,street:form.street.value,number:form.number.value,complement:form.complement.value||undefined,district:form.district.value,city:form.city.value,state:form.state.value}}:{}),
     payment:{method,...(card?{cardToken:card.token,cardPaymentMethodId:card.paymentMethodId,installments:card.installments}:{})}});
    if(order.publicToken)window.location.assign(`${basePath}/pedido/${encodeURIComponent(order.publicToken)}`);
-  }catch(caught){setError(caught instanceof Error?caught.message:"Não foi possível finalizar a compra.");setSubmitting(false);requestAnimationFrame(()=>errorRef.current?.focus());}
+  }catch(caught){
+   // Recusado pela loja (ex.: cartão recusado): o pedido foi cancelado, a próxima tentativa é um pedido novo. Erro de rede mantém a chave (evita pedido duplicado).
+   const status=(caught as {status?:number}).status;if(status&&status<500)setRequestKey(crypto.randomUUID());
+   setError(caught instanceof Error?caught.message:"Não foi possível finalizar a compra.");setSubmitting(false);requestAnimationFrame(()=>errorRef.current?.focus());}
  }
  if(loadError&&!quote)return <section className="ts-section"><div className="ts-container ck-narrow"><h1>Finalizar compra</h1><p role="alert" className="ck-error">{loadError}</p><a className="ts-button" href={basePath||"/"}>Voltar à loja</a></div></section>;
  if(!quote)return <section className="ts-section"><div className="ts-container ck-narrow" aria-busy="true"><h1>Finalizar compra</h1><p>Carregando seu carrinho...</p></div></section>;

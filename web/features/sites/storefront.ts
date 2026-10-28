@@ -29,7 +29,8 @@ async function call<T>(slug:string,action:string,body:Record<string,unknown>):Pr
  const response=await fetch(`/api/tenant-site/commerce/${action}`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({slug,...body}),cache:"no-store"});
  if(response.status===204)return undefined as T;
  const data=await response.json().catch(()=>({}));
- if(!response.ok)throw Error(data?.error?.message||"Não foi possível concluir agora. Tente novamente.");
+ // `status` deixa a tela distinguir recusa da loja (4xx) de falha de rede/servidor.
+ if(!response.ok)throw Object.assign(Error(data?.error?.message||"Não foi possível concluir agora. Tente novamente."),{status:response.status});
  return data.data as T;
 }
 export type WhatsappIntent={reference:string;redirectPath:string;whatsappUrl:string};

@@ -85,7 +85,7 @@ export async function updateVariant(deps: CatalogDeps, input: { tenantId: string
 export async function deleteVariant(deps: CatalogDeps, input: { tenantId: string; workspaceId: string; productId: string; variantId: string }): Promise<void> {
   const product = await mustProductInWorkspace(deps, input.productId, input.tenantId, input.workspaceId);
   const variant = await mustVariantOfProduct(deps, input.variantId, product);
-  try{await deps.salesCatalogRepository.deleteVariant(variant.id);}catch(error){if((error as {code?:string}).code==="23503")throw Error("PRODUCT_VALIDATION: esta combinação possui histórico. Desative-a para preservar os registros.");throw error;}
+  try{await deps.salesCatalogRepository.deleteVariant(variant.id);}catch(error){if(["23503","23001"].includes(String((error as {code?:string}).code)))throw Error("PRODUCT_VALIDATION: esta combinação possui histórico ou anúncio em marketplace. Desative-a para preservar os registros.");throw error;}
 }
 
 export async function listPriceBooks(deps: CatalogDeps, input: { tenantId: string; workspaceId: string }): Promise<PriceBook[]> {

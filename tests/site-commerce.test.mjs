@@ -271,6 +271,10 @@ test("formulário do Site: regras configuráveis, idempotente; sem configuraçã
  assert.equal(await count("select count(*) n from site_events where site_id=$1 and type='CONTACT_FORM_SUBMITTED'",[c.site.id]),2);
  const items=await c.d.dealItemRepository.listByDeal(first.dealId);assert.equal(items[0].productId,c.productA.id);
  assert.equal((await c.d.dealRepository.getById(first.dealId)).origin,"site");
+ // Double submit racing past the request-key lookup: only the request that created the intent goes on.
+ const burst=randomUUID(),results=await Promise.allSettled([submit(burst,"+5511955554444"),submit(burst,"+5511955554444")]);
+ assert.ok(results.some(r=>r.status==="fulfilled"));
+ assert.equal(await dealsOf(c),2,"one opportunity for the simultaneous pair");
 });
 
 test("multi-site: configuração, intenções e carrinhos sempre amarrados ao siteId",async()=>{

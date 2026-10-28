@@ -12,6 +12,7 @@ import {publishSite,publicSite,publicCatalogPage} from "../dist/application/site
 import {generateVariantGrid} from "../dist/application/sales/catalog-use-cases.js";
 import {saveSiteCommerceSettings,setPublicCartItem} from "../dist/application/sites/site-commerce-use-cases.js";
 import {quoteCheckout,placeOrder,getPublicOrder,simulateSandboxPayment,expireAwaitingOrders,cancelOrder,advanceOrder,getOrderDetail,handlePaymentWebhook,siteCheckoutStatus,saveCommerceCredential} from "../dist/application/commerce/checkout-use-cases.js";
+import {setStockQuantity} from "../dist/application/sales/stock-use-cases.js";
 import {registerCommerceRoutes} from "../dist/interfaces/api/routes/v1/commerce.route.js";
 import {PostgresSiteCommerceRepository} from "../dist/infrastructure/storage/postgres/postgres-site-commerce-repository.js";
 import {PostgresCommerceOrderRepository} from "../dist/infrastructure/storage/postgres/postgres-commerce-order-repository.js";
@@ -305,4 +306,85 @@ test("contrato com Analytics: eventos do pedido, receita por produto, cancelamen
  if(deal.owner_user_id||deal.team_id)assert.deepEqual((await analytics.report({...query,scope:{...query.scope,global:false,ownerUserIds:[deal.owner_user_id??"-"],teamIds:deal.team_id?[deal.team_id]:[]}})).revenue,{BRL:paid.totalCents});
  // Outro tenant não enxerga nada desta loja.
  const other=await store();assert.deepEqual((await analytics.report({...query,scope:{...query.scope,tenantId:other.tenantId,workspaceId:other.workspaceId}})).revenue,{});
+});
+
+// ------------------------------------------------------------------ auditoria multicanal (regressões)
+const mpStore=async(state)=>{
+ const fetch=async(url,init={})=>new Response(JSON.stringify({id:Number(state.id),status:url.includes("/refunds")?"approved":state.status,status_detail:state.detail,date_of_expiration:"2030-01-01T00:00:00.000-03:00",point_of_interaction:{transaction_data:{qr_code:"PIX",qr_code_base64:"iVBORw0KGgo="}}}),{status:200});
+ const s=await store({settings:{...READY,checkout:{...READY.checkout,orderCrm:"CONTACT_AND_WON_OPPORTUNITY",payment:{provider:"MERCADO_PAGO",pix:true,card:true}}},mercadoPagoFetch:fetch});
+ await saveCommerceCredential(s.deps,s.site,"MERCADO_PAGO",{accessToken:"APP_USR-lojista",publicKey:"APP_USR-public"});
+ return s;
+};
+const DOC={customer:{...CUSTOMER,document:"52998224725"}};
+
+test("corrida pagamento × expiração e pagamento × cancelamento: estoque mexe uma vez só e dinheiro nunca fica preso",async()=>{
+ for(let round=0;round<4;round++){
+  const s=await store();
+  const placed=await order(s,await s.cart([{productId:s.b.id,variantId:s.m.id,quantity:1}]));const id=await byNumber(s,placed.number);
+  const later={...s.deps,now:()=>new Date(Date.now()+31*60_000)};
+  await Promise.allSettled([simulateSandboxPayment(s.deps,s.scope,{id,outcome:"APPROVED"}),round%2?cancelOrder(s.deps,s.scope,{id}):expireAwaitingOrders(later)]);
+  const detail=await getOrderDetail(s.deps,s.scope,id),stock=await s.stock(s.m);
+  if(detail.order.status==="PAID")assert.deepEqual(stock,{s:4,r:0});
+  else{assert.equal(detail.order.status,"CANCELLED");assert.deepEqual(stock,{s:5,r:0},"reserva/venda devolvida uma vez");assert.equal(detail.payments[0].status==="APPROVED",false,"aprovado nunca fica sem estorno");}
+  assert.ok(detail.events.filter(e=>e.type==="stock_released"||e.type==="stock_returned").length<=1);
+ }
+});
+
+test("estorno/chargeback feito no provedor cancela o pedido, devolve estoque, sai do Analytics e perde a oportunidade",async()=>{
+ const state={id:"555000111",status:"pending"};const s=await mpStore(state);
+ const placed=await order(s,await s.cart([{productId:s.b.id,variantId:s.m.id,quantity:1}]),{payment:{method:"PIX"},...DOC});const id=await byNumber(s,placed.number);
+ state.status="approved";assert.equal((await handlePaymentWebhook(s.deps,{provider:"MERCADO_PAGO",siteId:s.site.id,providerPaymentId:state.id})).status,"paid");
+ assert.deepEqual(await s.stock(s.m),{s:4,r:0});
+ const dealId=(await getOrderDetail(s.deps,s.scope,id)).order.crmDealId;assert.ok(dealId);
+ state.status="charged_back";
+ assert.equal((await handlePaymentWebhook(s.deps,{provider:"MERCADO_PAGO",siteId:s.site.id,providerPaymentId:state.id})).status,"refunded");
+ assert.equal((await handlePaymentWebhook(s.deps,{provider:"MERCADO_PAGO",siteId:s.site.id,providerPaymentId:state.id})).status,"duplicate");
+ const detail=await getOrderDetail(s.deps,s.scope,id);
+ assert.equal(detail.order.status,"CANCELLED");assert.equal(detail.order.paymentStatus,"REFUNDED");assert.equal(detail.order.stockState,"RETURNED");
+ assert.deepEqual(await s.stock(s.m),{s:5,r:0});
+ assert.equal((await q("select count(*)::int n from site_events where order_id=$1 and type='ORDER_CANCELLED'",[id]))[0].n,1);
+ assert.equal((await s.d.dealRepository.getById(dealId)).status,"lost",JSON.stringify(s.logs.filter(l=>/crm/.test(l.event))));
+});
+
+test("cartão recusado na hora: erro claro, nada cobrado, reserva liberada e o carrinho continua para tentar de novo",async()=>{
+ const state={id:"777000222",status:"rejected",detail:"cc_rejected_other_reason"};const s=await mpStore(state);
+ const token=await s.cart([{productId:s.b.id,variantId:s.m.id,quantity:1}]);
+ const card={method:"CARD",cardToken:"tok-1",cardPaymentMethodId:"visa",installments:1};
+ await assert.rejects(order(s,token,{payment:card,...DOC}),/recusado/);
+ assert.deepEqual(await s.stock(s.m),{s:5,r:0});
+ state.status="approved";state.id="777000333";
+ const retry=await order(s,token,{payment:{...card,cardToken:"tok-2"},...DOC});
+ assert.equal(retry.status,"PAID","o mesmo carrinho compra na nova tentativa");assert.deepEqual(await s.stock(s.m),{s:4,r:0});
+});
+
+test("pagamento aprovado cuja confirmação falhou no meio é concluído pela varredura (não expira nem estorna venda válida)",async()=>{
+ const s=await store();
+ const placed=await order(s,await s.cart([{productId:s.b.id,variantId:s.m.id,quantity:1}]));const id=await byNumber(s,placed.number);
+ await q("update commerce_payments set status='APPROVED' where order_id=$1",[id]);
+ await expireAwaitingOrders({...s.deps,now:()=>new Date(Date.now()+31*60_000)});
+ const detail=await getOrderDetail(s.deps,s.scope,id);assert.equal(detail.order.status,"PAID");assert.equal(detail.order.stockState,"SOLD");
+ assert.deepEqual(await s.stock(s.m),{s:4,r:0});
+});
+
+test("produto sem controle de estoque após a venda: cancelamento ainda estorna e registra a falha de estoque",async()=>{
+ const s=await store();
+ const tracked=await s.product({name:"Livro",priceCents:4000,trackStock:true,details:visible({slug:"livro"})});
+ await s.d.productEngineRepository.move({tenantId:s.tenantId,workspaceId:s.workspaceId,productId:tracked.id,kind:"IN",quantity:3,operationKey:randomUUID(),userId:s.actor.userId});
+ const placed=await order(s,await s.cart([{productId:tracked.id,quantity:1}]));const id=await byNumber(s,placed.number);
+ await simulateSandboxPayment(s.deps,s.scope,{id,outcome:"APPROVED"});
+ await q("update products set track_stock=false where id=$1",[tracked.id]);
+ const cancelled=await cancelOrder(s.deps,s.scope,{id});
+ assert.equal(cancelled.status,"CANCELLED");
+ const detail=await getOrderDetail(s.deps,s.scope,id);assert.equal(detail.order.paymentStatus,"REFUNDED");
+ assert.ok(detail.events.some(e=>e.type==="stock_move_failed"));
+});
+
+test("ajuste manual de estoque não pode apagar unidades reservadas por pedidos",async()=>{
+ const s=await store();
+ const tracked=await s.product({name:"Vela",priceCents:2000,trackStock:true,details:visible({slug:"vela"})});
+ await s.d.productEngineRepository.move({tenantId:s.tenantId,workspaceId:s.workspaceId,productId:tracked.id,kind:"IN",quantity:5,operationKey:randomUUID(),userId:s.actor.userId});
+ await order(s,await s.cart([{productId:tracked.id,quantity:2}]));
+ const fresh=await s.d.productRepository.getById(tracked.id);assert.equal(fresh.reservedQuantity,2);
+ await assert.rejects(setStockQuantity({productRepository:s.d.productRepository,membershipRepository:{listByTenant:async()=>[]}},fresh,1,s.actor.userId),/reservada/);
+ assert.equal((await setStockQuantity({productRepository:s.d.productRepository,membershipRepository:{listByTenant:async()=>[]}},fresh,7,s.actor.userId)).stockQuantity,7);
 });

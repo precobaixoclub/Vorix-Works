@@ -20,5 +20,6 @@ export async function POST(request:NextRequest,{params}:{params:Promise<{action:
   const response=await fetch(`${getApiBaseUrl()}${route.path(encodeURIComponent(slug))}`,{method:route.method,headers:{"Content-Type":"application/json"},body:JSON.stringify(input),cache:"no-store",signal:AbortSignal.timeout(15000)});
   if(response.status===204)return new NextResponse(null,{status:204,headers:{"Cache-Control":"no-store"}});
   return NextResponse.json(await response.json(),{status:response.status,headers:{"Cache-Control":"no-store"}});
- }catch{return NextResponse.json({ok:false,error:{message:"Não foi possível concluir agora. Tente novamente."}},{status:400});}
+ // Falha de rede/timeout com a API é 502: o checkout mantém a mesma chave e uma nova tentativa não duplica o pedido.
+ }catch{return NextResponse.json({ok:false,error:{message:"Não foi possível concluir agora. Tente novamente."}},{status:502});}
 }

@@ -26,7 +26,8 @@ function activityQuery(input:SiteAnalyticsQuery){
  ), raw_activity as (
  select b.site_id,b.bucket as at,b.type,b.actor,b.product_key,b.dimensions,b.count as n,''::text entity,true primary_row,null::numeric amount,''::text currency,null::numeric product_amount
  from site_analytics_buckets b where b.tenant_id=$1 and b.workspace_id=$2 and b.bucket >=$3::timestamptz and b.bucket<$4::timestamptz and ($5::text is null or b.site_id=$5)
- and ($6::boolean or (exists(select 1 from visible_intents s where s.site_id=b.site_id and 'a:'||s.anonymous_session_id=b.actor) and not exists(select 1 from site_analytics_identities m where m.site_id=b.site_id and 'a:'||m.anonymous_session_id=b.actor and m.ambiguous)))
+ -- Uncorrelated IN becomes one hashed lookup; a correlated EXISTS under OR rescanned visible_intents for every bucket row.
+ and ($6::boolean or ((b.site_id,b.actor) in (select s.site_id,'a:'||s.anonymous_session_id from visible_intents s where s.anonymous_session_id is not null) and not exists(select 1 from site_analytics_identities m where m.site_id=b.site_id and 'a:'||m.anonymous_session_id=b.actor and m.ambiguous)))
  union all
  select i.site_id,stage.at,stage.type,case when i.actor='' then '' else substring(i.actor from length(i.site_id)+2) end,i.product_key,i.dimensions,1,stage.entity,i.primary_row,null::numeric,'',null::numeric from intent_items i
  cross join lateral (values

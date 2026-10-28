@@ -108,7 +108,8 @@ export function ProductFormModal({ workspaceId, product, canViewCost, isManager,
       ...(canViewCost ? { costCents: costCents ?? null } : {}),
       ...(isManager ? { minimumPriceCents: minimum.trim() ? centsFromCurrencyInput(minimum) : null } : {}),
       trackStock:details.type==="REAL_ESTATE"?false:trackStock,
-      ...(trackStock && details.type!=="REAL_ESTATE" ? { ...(details.options.length?{}:{stockQuantity:quantityFromInput(stock)??0}),stockAlertThreshold:quantityFromInput(alertAt)??null } : {}),
+      // Saldo só vai quando o usuário mudou o número: reenviar o valor lido ao abrir desfaria vendas feitas enquanto o modal estava aberto.
+      ...(trackStock && details.type!=="REAL_ESTATE" ? { ...(details.options.length||(product?.trackStock&&stock===formatQuantityInput(product.stockQuantity??0))?{}:{stockQuantity:quantityFromInput(stock)??0}),stockAlertThreshold:quantityFromInput(alertAt)??null } : {}),
       imageUrls: photos,
     };
     try {

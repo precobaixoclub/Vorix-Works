@@ -7,8 +7,9 @@ import type {CommerceOrderRepositoryPort} from "../ports/commerce-ports.js";
 import {createContact,type ContactUseCaseDeps} from "../crm/contact-use-cases.js";
 import {createDeal,type DealUseCaseDeps} from "../crm/deal-use-cases.js";
 import {ensureDefaultPipeline,type PipelineUseCaseDeps} from "../crm/pipeline-use-cases.js";
-import {addDealItem,winDeal} from "../sales/deal-commercial-use-cases.js";
+import {addDealItem,loseDeal,reopenDeal,winDeal} from "../sales/deal-commercial-use-cases.js";
 import type {SalesEngineDeps} from "../sales/sales-context.js";
+import {listCloseReasons} from "../sales/sales-config-use-cases.js";
 import type {Order} from "../../domain/commerce/order.model.js";
 
 export const ORDER_CONTACT_ORIGIN="site";
@@ -43,4 +44,16 @@ export async function createWonOpportunityForOrder(deps:OrderCrmDeps,order:Order
  if(order.shippingCents>0)await addDealItem(deps.sales,actor,{workspaceId:order.workspaceId,dealId:deal.id,name:`Frete — ${order.delivery.label}`,listPriceCents:order.shippingCents,quantity:1});
  await winDeal(deps.sales,actor,{workspaceId:order.workspaceId,dealId:deal.id,finalValueCents:order.totalCents,wonReason:"Compra na loja online",source:"automation",settledSale:true});
  return deal.id;
+}
+
+/** Pedido cancelado/estornado depois de pago: a oportunidade ganha vira perdida (a receita sai do CRM e das metas). */
+export async function loseOpportunityForCancelledOrder(deps:OrderCrmDeps,order:Order,reason:string):Promise<void>{
+ if(!order.crmDealId||!deps.sales)return;
+ // Perda exige um motivo ativo das regras comerciais: usa um de cancelamento se houver; sem nenhum, não mexe na oportunidade.
+ const reasons=await listCloseReasons(deps.sales,{tenantId:order.tenantId,workspaceId:order.workspaceId,kind:"lost"});
+ const lossReason=(reasons.find(item=>/cancel|desist|estorn|devol/i.test(item.label))??reasons[0])?.label;
+ if(!lossReason)throw Error(`ORDER_CRM: nenhum motivo de perda ativo para marcar a oportunidade do pedido #${order.number}.`);
+ const actor=systemActor(order.tenantId);
+ await reopenDeal(deps.sales,actor,{workspaceId:order.workspaceId,dealId:order.crmDealId,source:"automation"});
+ await loseDeal(deps.sales,actor,{workspaceId:order.workspaceId,dealId:order.crmDealId,lossReason,comment:`Pedido #${order.number} cancelado (${reason}).`,source:"automation"});
 }

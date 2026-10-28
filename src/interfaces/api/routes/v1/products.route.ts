@@ -208,6 +208,7 @@ export async function registerProductsRoutes(app: FastifyInstance, deps: Product
       // Saldo de estoque muda só via movimento (auditável e com alerta), nunca por sobrescrita direta.
       const { stockQuantity, ...rest } = patch as { stockQuantity?: number } & Record<string, unknown>;
       if(stockQuantity!==undefined&&((patch.details as {options?:unknown[]}|undefined)?.options??existing.details?.options)?.length)throw new ValidationError("Ajuste o estoque de cada variante.");
+      if(stockQuantity!==undefined&&stockQuantity<(existing.reservedQuantity??0))throw new ValidationError(`Há ${existing.reservedQuantity} unidade(s) reservada(s) em pedidos; o saldo não pode ficar abaixo disso.`);
       let product = await updateProduct(deps, { productId: id, tenantId: principal.tenantId, workspaceId, patch: rest as never });
       if (stockQuantity !== undefined && product.trackStock) {
         product = await setStockQuantity(

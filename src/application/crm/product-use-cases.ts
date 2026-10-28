@@ -38,5 +38,11 @@ export async function updateProduct(deps: ProductUseCaseDeps, input: { productId
 
 export async function deleteProduct(deps: ProductUseCaseDeps, input: { productId: string; tenantId: string; workspaceId: string }): Promise<void> {
   await mustProductBelongToTenantAndWorkspace(deps, input.productId, input.tenantId, input.workspaceId);
-  await deps.productRepository.delete(input.productId);
+  try {
+    await deps.productRepository.delete(input.productId);
+  } catch (error) {
+    // ON DELETE RESTRICT (anúncio de marketplace vinculado) é 23001; FK comum é 23503 — nunca vaza erro cru do Postgres.
+    if (["23503", "23001"].includes(String((error as { code?: string }).code))) throw new Error("PRODUCT_VALIDATION: este produto está vinculado a anúncios de marketplace ou a registros. Desative-o para preservar o histórico.");
+    throw error;
+  }
 }

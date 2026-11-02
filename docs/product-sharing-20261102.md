@@ -13,3 +13,7 @@ O envio utiliza a foto da variação selecionada, com fallback para a capa do pr
 Validação local: 15 testes de Commerce/compartilhamento, 86 regressões de mídia/catálogo/uploads/readiness, 217 testes da interface e seis cenários de browser em desktop/celular. Incluem produto sem Site, foto exclusiva da variação, legenda longa, texto sem foto, token adulterado/tenant incorreto, inativação e exclusão de campos internos. TypeScript, build da interface, isolamento CRM e 49 contratos aprovados.
 
 Os testes de envio usam fila/provider de fixture e não enviam mensagens para destinatários reais.
+
+Release `7a50eab` implantada em produção em 02/11/2026 pelo fluxo oficial com backup. Readiness aprovado, web HTTP 200 e zero erros fatais nos logs.
+
+A conferência autenticada por capability, sem envio de mensagens, abriu a ficha do produto real `Lampada` no workspace Preço Baixo Club. A API e o browser sem login preservaram os 449 caracteres cadastrados, com HTTP 200 em 1440 e 390 px e sem overflow. A resposta não continha campos internos, e a capability com tenant incorreto retornou 404. Não há fotos cadastradas nos produtos ativos deste workspace nesta conferência; o caminho de imagem/variação foi validado com arquivos reais de fixture (conversão WebP→JPEG e proporção 40×80 preservada).

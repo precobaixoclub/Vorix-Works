@@ -1,0 +1,105 @@
+{
+  "at": "2026-11-02T20:58:46.489Z",
+  "timezone": "America/Sao_Paulo",
+  "release": "008fd47d716ef7c216d4261874d53ac01cc068a5",
+  "githubPushed": true,
+  "productionDeployed": true,
+  "host": "143.198.47.74",
+  "archiveSha256": "94b14a072eef0dd5447921059e77871c1173d33162a63b7393a47af0ac49882e",
+  "deploymentLog": "/var/log/vorix-deploy-008fd47-20261102204149.log",
+  "backup": {
+    "code": "/opt/zuno/deploy_backups/pre-008fd47-20261102204149.tgz",
+    "database": "/opt/zuno/deploy_backups/db-pre-008fd47-20261102204149.sql.gz",
+    "configuration": "/root/.env.zuno.pre-008fd47-20261102204149",
+    "release": "/opt/zuno/deploy_backups/release-008fd47.tgz"
+  },
+  "environmentPreserved": true,
+  "health": {
+    "ready": true,
+    "webStatus": 200,
+    "fatalLogErrors": 0,
+    "services": [
+      "zuno-api",
+      "vorix-worker",
+      "marketplaces-worker",
+      "social-provider-gateway",
+      "zuno-web"
+    ]
+  },
+  "migration": {
+    "id": "0187_proposal_operational_billing",
+    "applied": true,
+    "pending": 0
+  },
+  "preserved": {
+    "workspaceStatuses": true,
+    "dealStatuses": true,
+    "productStock": true,
+    "contactCount": true
+  },
+  "legacyProposalClassification": {
+    "invoiced": 2,
+    "operationallyCancelled": 1,
+    "historicalWonDealsPreserved": true
+  },
+  "sourceChecks": [
+    {
+      "file": "src/application/workspace/workspace-use-cases.ts",
+      "sha256": "46f34862a166c1d643d0bd894e24b5c8014ee80c1aae29518ef6940a44d9a113"
+    },
+    {
+      "file": "src/infrastructure/billing/resource-counter-adapter.ts",
+      "sha256": "b6044ca5706e7eb89cb8da7bb0a25d9d0d59fea30d82a6b93e5bba20900a533d"
+    },
+    {
+      "file": "src/application/sales/proposal-sales-use-cases.ts",
+      "sha256": "e88420199f434c9692e233c508ded668b19b9cee89cc533fa77786385b92d0cb"
+    },
+    {
+      "file": "web/components/sites/SiteBuilder.tsx",
+      "sha256": "595a107bae16a577ecc7c835b739df1cbed7444a73b46cb4d9570dddaabd1e70"
+    },
+    {
+      "file": "web/features/billing/components/BillingSettingsPage.tsx",
+      "sha256": "2fd4c67483ec1f56176990d9016f1f837811da18c404917421a9550ad2343261"
+    },
+    {
+      "file": "db/migrations/0187_proposal_operational_billing.sql",
+      "sha256": "3bc31845ba15a7803af997335e3ca3cb3ec77839da47c402d3cbc1c44d4ded79"
+    }
+  ],
+  "browser": {
+    "at": "2026-11-02T20:57:55.661Z",
+    "release": "008fd47",
+    "api": {
+      "ready": true,
+      "/v1/workspaces": "authenticated_only",
+      "/v1/billing/capacity": "authenticated_only",
+      "capacity": true,
+      "siteAccess": true
+    },
+    "viewports": [
+      {
+        "width": 1440,
+        "workspaceControls": true,
+        "activationCancelled": true,
+        "editCancelled": true,
+        "accountBilling": true,
+        "site": "existing_template_opens_editor_without_saving"
+      },
+      {
+        "width": 390,
+        "workspaceControls": true,
+        "activationCancelled": true,
+        "editCancelled": true,
+        "accountBilling": true,
+        "site": "existing_template_opens_editor_without_saving"
+      }
+    ],
+    "unexpectedWrites": [],
+    "pageErrors": [],
+    "result": "PASS"
+  },
+  "realCharges": false,
+  "customerMessagesSent": false
+}

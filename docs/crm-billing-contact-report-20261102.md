@@ -2,6 +2,8 @@
 
 Implementação local. **Nenhum deploy, migration ou ajuste de dados foi executado em produção nesta entrega.**
 
+Atualização posterior: após autorização do usuário, estas alterações foram publicadas na release `008fd47`, com a migration 0187 aplicada. Veja o [registro da publicação e conferência do legado](production-deploy-20261102.md). Este relatório mantém o registro da fase local anterior à publicação.
+
 ## Fluxo e estados finais
 
 | Proposta | Oportunidade | Venda/estoque |

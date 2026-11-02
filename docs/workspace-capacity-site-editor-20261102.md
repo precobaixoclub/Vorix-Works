@@ -2,6 +2,8 @@
 
 Implementação local, sem publicação em produção e sem cobranças reais. Mantida a orientação de apresentar as validações antes de publicar. As alterações de faturamento de propostas e apresentação de contatos que já estavam na árvore de trabalho foram preservadas.
 
+Atualização posterior: a release `008fd47` foi publicada em produção após autorização do usuário. Veja o [registro da publicação e verificações](production-deploy-20261102.md). Os resultados abaixo documentam a validação local anterior à publicação.
+
 ## Comportamento entregue
 
 - A lista de espaços oferece **Ativar** e **Inativar**, com confirmação e respeito às permissões. A opção continua disponível no modal de edição.

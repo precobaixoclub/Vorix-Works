@@ -1,10 +1,13 @@
 "use client";
 
 import { useState } from "react";
+import { useSWRConfig } from "swr";
 import { Button } from "@/components/Button";
 import { Input, Label } from "@/components/Field";
 import { Modal } from "@/components/Modal";
-import { updateWorkspace } from "../api";
+import { StatusBadge } from "@/components/StatusBadge";
+import { useMyAccess } from "@/features/auth/access";
+import { activateWorkspace, deactivateWorkspace, updateWorkspace } from "../api";
 import type { Workspace } from "../types";
 
 export function EditWorkspaceModal({
@@ -18,10 +21,25 @@ export function EditWorkspaceModal({
 }) {
   const [name, setName] = useState(workspace.name);
   const [logoUrl, setLogoUrl] = useState(workspace.settings.logoUrl ?? "");
+  const [savedWorkspace, setSavedWorkspace] = useState(workspace);
+  const [status, setStatus] = useState(workspace.status);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | undefined>();
+  const { mutate } = useSWRConfig();
+  const { can } = useMyAccess();
+  const canEdit = can("workspace:update");
+  const canTransition = can("workspace:transition");
   const trimmedName = name.trim();
-  const unchanged = trimmedName === workspace.name && logoUrl === (workspace.settings.logoUrl ?? "");
+  const detailsChanged = trimmedName !== savedWorkspace.name || logoUrl !== (savedWorkspace.settings.logoUrl ?? "");
+  const statusChanged = status !== savedWorkspace.status;
+  const unchanged = !detailsChanged && !statusChanged;
+
+  async function rememberWorkspace(updated: Workspace) {
+    setSavedWorkspace(updated);
+    await mutate(["workspace", updated.id], updated, { revalidate: false });
+    // Inclui as listas filtradas utilizadas pelo seletor de espaços.
+    await mutate((key) => Array.isArray(key) && key[0] === "workspaces", (current: Workspace[] | undefined) => current?.map(item => item.id === updated.id ? updated : item), { revalidate: true, throwOnError: false });
+  }
 
   function handleLogoChange(file: File | undefined) {
     if (!file) return;
@@ -45,6 +63,7 @@ export function EditWorkspaceModal({
 
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
+    if (submitting) return;
     if (!trimmedName) {
       setError("Nome é obrigatório.");
       return;
@@ -57,7 +76,17 @@ export function EditWorkspaceModal({
     setSubmitting(true);
     setError(undefined);
     try {
-      const updated = await updateWorkspace(workspace.id, { name: trimmedName, settings: { ...workspace.settings, logoUrl } });
+      let updated = savedWorkspace;
+      if (detailsChanged) {
+        if (!canEdit) throw new Error("Você não tem permissão para editar este espaço.");
+        updated = await updateWorkspace(workspace.id, { name: trimmedName, settings: { ...savedWorkspace.settings, logoUrl } });
+        await rememberWorkspace(updated);
+      }
+      if (statusChanged) {
+        if (!canTransition) throw new Error("Você não tem permissão para alterar a situação deste espaço.");
+        updated = status === "active" ? await activateWorkspace(workspace.id) : await deactivateWorkspace(workspace.id);
+        await rememberWorkspace(updated);
+      }
       onUpdated(updated);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Não foi possível editar o espaço de trabalho.");
@@ -67,7 +96,7 @@ export function EditWorkspaceModal({
   }
 
   return (
-    <Modal title="Editar Espaço de Trabalho" onClose={onClose} maxWidthClass="sm:max-w-2xl">
+    <Modal title="Editar Espaço de Trabalho" onClose={() => { if (!submitting) onClose(); }} maxWidthClass="sm:max-w-2xl">
       <form onSubmit={handleSubmit} className="flex flex-col gap-4">
         <div>
           <Label htmlFor="edit-workspace-name">Nome</Label>
@@ -77,6 +106,7 @@ export function EditWorkspaceModal({
             onChange={(event) => setName(event.target.value)}
             placeholder="Nome do espaço"
             autoFocus
+            disabled={submitting || !canEdit}
           />
         </div>
         <div className="rounded-xl border border-border bg-surface p-4">
@@ -101,11 +131,12 @@ export function EditWorkspaceModal({
                     type="file"
                     accept="image/png,image/jpeg,image/webp,image/svg+xml"
                     className="sr-only"
+                    disabled={submitting || !canEdit}
                     onChange={(event) => handleLogoChange(event.target.files?.[0])}
                   />
                 </label>
                 {logoUrl ? (
-                  <Button type="button" variant="ghost" className="min-h-9 px-3 py-2" onClick={() => setLogoUrl("")}>
+                  <Button type="button" variant="ghost" className="min-h-9 px-3 py-2" disabled={submitting || !canEdit} onClick={() => setLogoUrl("")}>
                     Remover logo
                   </Button>
                 ) : null}
@@ -113,13 +144,31 @@ export function EditWorkspaceModal({
             </div>
           </div>
         </div>
-        {error ? <p className="text-sm text-red-600">{error}</p> : null}
+        <div className="rounded-xl border border-border bg-surface p-4">
+          <Label htmlFor="edit-workspace-status">Situação do espaço</Label>
+          {savedWorkspace.status === "archived" ? <StatusBadge status="archived" /> : (
+            <select
+              id="edit-workspace-status"
+              value={status}
+              onChange={(event) => setStatus(event.target.value as "active" | "inactive")}
+              disabled={submitting || !canTransition}
+              className="min-h-10 w-full rounded-lg border border-border bg-surface-sunken px-3 py-2 text-sm text-ink outline-none focus:border-primary disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              <option value="active">Ativo</option>
+              <option value="inactive">Inativo</option>
+            </select>
+          )}
+          <p className="mt-2 text-xs leading-relaxed text-ink-muted">
+            {savedWorkspace.status === "archived" ? "Este espaço está arquivado." : !canTransition ? "Você não tem permissão para ativar ou inativar este espaço." : "Você pode inativar o espaço e reativá-lo quando precisar. Encontre cada situação nos filtros da lista de espaços."}
+          </p>
+        </div>
+        {error ? <p role="alert" className="text-sm text-red-600">{error}</p> : null}
         <div className="flex flex-col-reverse gap-2 pt-1 sm:flex-row sm:justify-end">
-          <Button type="button" variant="secondary" className="w-full sm:w-auto" onClick={onClose}>
+          <Button type="button" variant="secondary" className="w-full sm:w-auto" disabled={submitting} onClick={onClose}>
             Cancelar
           </Button>
           <Button type="submit" className="w-full sm:w-auto" disabled={submitting || !trimmedName || unchanged}>
-            {submitting ? "Salvando..." : "Salvar nome"}
+            {submitting ? "Salvando..." : "Salvar alterações"}
           </Button>
         </div>
       </form>

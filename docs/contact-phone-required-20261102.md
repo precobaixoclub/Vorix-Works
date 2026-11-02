@@ -6,6 +6,8 @@ A validação usa `libphonenumber-js/max` com metadados de numeração, aceita t
 
 Nas conversas, o backend resolve o telefone diretamente no Inbox do mesmo tenant/workspace e respeita a visibilidade do usuário; não aceita um telefone fornecido pelo navegador para substituir um LID. A ponte automática persiste o telefone real desde a criação. Marketplaces sem telefone do comprador continuam registrando o pedido sem criar um contato incompleto no CRM.
 
+O formulário público do Site também exige telefone: a rota valida e normaliza o número, e o repositório transacional aplica a mesma regra antes da gravação direta. E-mail permanece opcional. Os builds Docker recebem heap de 2 GiB, após o limite automático de aproximadamente 1 GiB interromper o compilador TypeScript na VPS de 2 GiB com swap; o primeiro deploy foi revertido automaticamente antes da troca dos serviços.
+
 ## Limpeza autorizada
 
 `scripts/cleanup-invalid-contacts.mjs` funciona em prévia por padrão e exige tenant, workspace e arquivo privado de relatório. Na execução, exige também a contagem esperada de exclusões. Uma transação com bloqueio das tabelas impede que uma resolução de telefone concorra com a exclusão. Falha ao gravar o relatório ou divergência de contagem cancela a operação.

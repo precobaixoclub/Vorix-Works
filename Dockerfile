@@ -17,7 +17,7 @@ COPY package.json package-lock.json tsconfig.json ./
 COPY src ./src
 COPY scripts ./scripts
 COPY db ./db
-RUN npm run build
+RUN NODE_OPTIONS=--max-old-space-size=2048 npm run build
 
 FROM node:20-slim AS runtime
 ENV NODE_ENV=production

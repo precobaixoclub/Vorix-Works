@@ -2,6 +2,7 @@ import type {Pool} from "pg";
 import {randomUUID} from "node:crypto";
 import type {SiteRepositoryPort} from "../../../application/ports/site-repository.port.js";
 import type {Site,SiteDomain} from "../../../domain/sites/site.model.js";
+import { requireContactPhone } from "../../../domain/crm/contact-phone.js";
 type Row=Record<string,any>;
 const site=(row:Row):Site=>({id:row.id,tenantId:row.tenant_id,workspaceId:row.workspace_id,slug:row.slug,draft:row.draft,published:row.published??undefined,previousPublished:row.previous_published??undefined,updatedByUserId:row.updated_by_user_id??undefined,publishedByUserId:row.published_by_user_id??undefined,revision:row.revision,publishedAt:row.published_at?.toISOString(),updatedAt:row.updated_at.toISOString()});
 const domain=(row:Row):SiteDomain=>({id:row.id,siteId:row.site_id,tenantId:row.tenant_id,hostname:row.hostname,challenge:row.challenge,verifiedAt:row.verified_at?.toISOString(),expiresAt:row.expires_at.toISOString()});
@@ -33,6 +34,7 @@ export class PostgresSiteRepository implements SiteRepositoryPort{
  async verifyDomain(input:Parameters<SiteRepositoryPort["verifyDomain"]>[0]){const {rows}=await this.pool.query("update site_domains set verified_at=now(),expires_at=now()+interval '30 days' where id=$1 and site_id=$2 and tenant_id=$3 and challenge=$4 and expires_at>now() returning *",[input.id,input.siteId,input.tenantId,input.challenge]);return rows[0]?domain(rows[0]):undefined;}
  async removeDomain(input:Parameters<SiteRepositoryPort["removeDomain"]>[0]){await this.pool.query("delete from site_domains where id=$1 and site_id=$2 and tenant_id=$3",[input.id,input.siteId,input.tenantId]);}
  async addInquiry(input:Parameters<SiteRepositoryPort["addInquiry"]>[0]){
+  input={...input,phone:requireContactPhone(input.phone)};
   const client=await this.pool.connect();try{await client.query("begin");
    await client.query("select pg_advisory_xact_lock(hashtext($1))",[input.site.id+":"+input.requestKey]);
    const previous=await client.query("select id,contact_id from site_inquiries where site_id=$1 and request_key=$2",[input.site.id,input.requestKey]);

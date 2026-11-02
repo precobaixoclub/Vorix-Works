@@ -45,6 +45,7 @@ export function ProductPickerModal({ workspaceId, conversationId, canAddToOpport
   useEffect(() => { setVariantId(undefined); setQuantity("1"); setChooseDeal(undefined); }, [selected?.id]);
 
   const variant = selected?.variants.find((item) => item.id === variantId);
+  const selectedImage = variant?.imageUrl ?? selected?.imageUrl;
   const needsVariant = !!selected?.requiresVariant && !variant;
   const amount = Number(quantity.replace(",", "."));
   const validQuantity = Number.isFinite(amount) && amount > 0;
@@ -54,7 +55,7 @@ export function ProductPickerModal({ workspaceId, conversationId, canAddToOpport
     if (!selected || needsVariant) return;
     setBusy("send");
     try {
-      await sendConversationProduct(workspaceId, conversationId, { productId: selected.id, variantId, withImage: withImage && !!selected.imageUrl });
+      await sendConversationProduct(workspaceId, conversationId, { productId: selected.id, variantId, withImage: withImage && !!selectedImage });
       toast.success("Produto enviado ao cliente.");
       onSent();
       onClose();
@@ -114,12 +115,12 @@ export function ProductPickerModal({ workspaceId, conversationId, canAddToOpport
       ) : (
         <div className="space-y-4">
           <div className="flex gap-3">
-            <span className="grid h-20 w-20 shrink-0 place-items-center overflow-hidden rounded-lg bg-muted">{selected.imageUrl ? <img src={selected.imageUrl} alt="" className="h-full w-full object-cover" /> : <Package className="h-6 w-6 text-muted-foreground" />}</span>
+            <span className="grid h-20 w-20 shrink-0 place-items-center overflow-hidden rounded-lg bg-muted">{selectedImage ? <img src={selectedImage} alt="" className="h-full w-full object-contain" /> : <Package className="h-6 w-6 text-muted-foreground" />}</span>
             <div className="min-w-0 space-y-1">
               <p className="font-medium">{selected.name}</p>
               <p className="text-sm tabular-nums">{formatCurrencyCents(variant?.priceCents ?? selected.priceCents, selected.currency)}</p>
-              {selected.description ? <p className="text-xs text-muted-foreground">{selected.description}</p> : null}
-              <p className="text-xs text-muted-foreground">{selected.siteUrl ? "O link do produto no site vai junto." : "Produto fora do site publicado: vai sem link."}</p>
+              {selected.description ? <p className="max-h-40 overflow-y-auto whitespace-pre-wrap break-words text-xs text-muted-foreground">{selected.description}</p> : null}
+              <p className="text-xs text-muted-foreground">{selected.siteUrl || selected.hasDetailsLink ? "O link com os detalhes completos e as fotos vai junto." : "Envio com a descrição completa do produto."}</p>
             </div>
           </div>
           {selected.requiresVariant ? (
@@ -134,7 +135,7 @@ export function ProductPickerModal({ workspaceId, conversationId, canAddToOpport
               </div>
             </fieldset>
           ) : null}
-          <label className="flex items-center gap-2 text-sm"><input type="checkbox" className="h-4 w-4" checked={withImage && !!selected.imageUrl} disabled={!selected.imageUrl} onChange={(event) => setWithImage(event.target.checked)} /> Enviar com a foto</label>
+          <label className="flex items-center gap-2 text-sm"><input type="checkbox" className="h-4 w-4" checked={withImage && !!selectedImage} disabled={!selectedImage} onChange={(event) => setWithImage(event.target.checked)} /> Enviar com a foto</label>
           {chooseDeal ? (
             <div className="space-y-2 rounded-lg border border-border/60 p-3">
               <p className="text-sm font-medium">Em qual oportunidade?</p>

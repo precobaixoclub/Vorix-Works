@@ -47,6 +47,7 @@ export function proxy(request: NextRequest) {
   // Páginas públicas exigidas por plataformas externas (Meta/TikTok/YouTube) e por visitantes.
   if (
     pathname.startsWith("/p/") ||
+    pathname.startsWith("/produto/") ||
     pathname.startsWith("/s/") ||
     // Vorix Commerce: redirecionamento da intenção de venda para o WhatsApp (a referência é o acesso).
     pathname.startsWith("/i/") ||

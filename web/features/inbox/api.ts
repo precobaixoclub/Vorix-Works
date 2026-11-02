@@ -380,7 +380,7 @@ export function updateInboxServiceSettings(workspaceId: string, changes: Partial
 }
 
 // Vorix Commerce, Fase 1 — produto dentro da conversa (o card é montado pelo backend a partir do catálogo).
-export type ConversationProduct = { id: string; name: string; sku?: string; description: string; priceCents: number; currency: string; imageUrl?: string; availableQuantity?: number; siteUrl?: string; requiresVariant: boolean; variants: { id: string; label: string; sku?: string; priceCents: number; availableQuantity?: number }[] };
+export type ConversationProduct = { id: string; name: string; sku?: string; description: string; priceCents: number; currency: string; imageUrl?: string; availableQuantity?: number; siteUrl?: string; hasDetailsLink?: boolean; requiresVariant: boolean; variants: { id: string; label: string; sku?: string; imageUrl?: string; priceCents: number; availableQuantity?: number }[] };
 export type AddProductToOpportunityResult = { status: "added"; dealId: string; dealTitle: string; created: boolean } | { status: "choose"; deals: { id: string; title: string }[] } | { status: "no_deal" } | { status: "no_contact" };
 export function listConversationProducts(workspaceId: string, conversationId: string, search: string): Promise<ConversationProduct[]> {
   return apiClient.get<ConversationProduct[]>(`/v1/inbox/conversations/${encodeURIComponent(conversationId)}/products?workspaceId=${encodeURIComponent(workspaceId)}${search ? `&search=${encodeURIComponent(search)}` : ""}`);

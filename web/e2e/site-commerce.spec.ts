@@ -192,14 +192,14 @@ test("Conversas → Produtos: busca, variação, foto e preço, envio ao cliente
   await dialog.getByRole("button",{name:/Camiseta de fixture/}).click();
   await expect(dialog.locator("img").first()).toBeVisible();
   await expect(dialog.getByText("R$ 100,00")).toBeVisible();
-  await expect(dialog.getByText("O link do produto no site vai junto.")).toBeVisible();
+  await expect(dialog.getByText("O link com os detalhes completos e as fotos vai junto.")).toBeVisible();
   await dialog.getByRole("button",{name:"M / Preto",exact:true}).click();
   await noHorizontalScroll(page);
   await page.screenshot({path:path.join(evidence,`conversa-produtos-selecao-${viewport.name}.png`)});await a11y(page,"[role=dialog]");
   if(viewport.width===1440){
    await dialog.getByRole("button",{name:"Enviar ao cliente"}).click();
    await expect(page.getByText("Produto enviado ao cliente.")).toBeVisible();
-   await expect(page.getByText(/Veja mais: .*\/produto\/camiseta-fixture/).first()).toBeVisible();
+   await expect(page.getByText(/Veja mais: .*\/produto\/[A-Za-z0-9_-]+/).first()).toBeVisible();
    await page.screenshot({path:path.join(evidence,`conversa-produto-enviado-${viewport.name}.png`)});
    await page.getByRole("button",{name:"Produtos",exact:true}).click();
    await dialog.getByRole("button",{name:/Pulverizador de fixture/}).click();

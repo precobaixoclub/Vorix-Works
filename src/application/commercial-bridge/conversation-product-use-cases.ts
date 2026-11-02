@@ -13,23 +13,26 @@ import type {Site} from "../../domain/sites/site.model.js";
 import {sendInboxMediaMessage,sendInboxMessage,type InboxUseCaseDeps} from "../inbox/inbox-use-cases.js";
 import {mustConversationInWorkspace} from "./conversation-guard.js";
 import {isPublicCatalogProduct} from "../sites/site-use-cases.js";
-import {signOwnedUrl,OBJECT_URL_TTL,parseOwnedObjectUrl} from "../../shared/utils/object-url-signing.js";
+import {parseOwnedObjectUrl} from "../../shared/utils/object-url-signing.js";
+import sharp from "sharp";
 import {ensureCrmContactForInboxContact,type InboxCrmBridgeDeps} from "./inbox-crm-bridge-use-cases.js";
 import {addDealItem} from "../sales/deal-commercial-use-cases.js";
 import {resolveDealScope,type SalesActor,type SalesEngineDeps} from "../sales/sales-context.js";
 import {createDeal,type DealUseCaseDeps} from "../crm/deal-use-cases.js";
 import {ensureDefaultPipeline,type PipelineUseCaseDeps} from "../crm/pipeline-use-cases.js";
 import {hasPermission} from "../../domain/identity/identity.model.js";
+import type {ProductShareCodec} from "../../shared/utils/product-share-token.js";
+import {productImageUrl} from "./public-product-use-cases.js";
 
 export type ConversationProductDeps={
  inbox:InboxUseCaseDeps;
  productRepository:ProductRepositoryPort;salesCatalogRepository:SalesCatalogRepositoryPort;productEngineRepository:ProductEngineRepositoryPort;
  siteRepository?:SiteRepositoryPort;objectStorage?:ObjectStoragePort;publicBaseDomain?:string;appBaseUrl?:string;
+ shareLinks?:ProductShareCodec;
  crmBridge?:InboxCrmBridgeDeps;sales?:SalesEngineDeps;crm?:PipelineUseCaseDeps&DealUseCaseDeps;
 };
 const MAX_IMAGE_BYTES=5_000_000;
 const money=(cents:number,currency:string)=>new Intl.NumberFormat("pt-BR",{style:"currency",currency}).format(cents/100);
-const shortText=(text:string|undefined,max=180)=>{const clean=(text??"").replace(/\s+/g," ").trim();return clean.length>max?`${clean.slice(0,max-1).trimEnd()}…`:clean;};
 
 /** Endereço público do Site: domínio próprio verificado → subdomínio da plataforma → caminho /s/slug. Nunca um host fixo. */
 export async function publicSiteBaseUrl(deps:Pick<ConversationProductDeps,"siteRepository"|"publicBaseDomain"|"appBaseUrl">,site:Site):Promise<string|undefined>{
@@ -44,11 +47,12 @@ async function productView(deps:ConversationProductDeps,product:Product,site:Sit
  const variants=(await deps.salesCatalogRepository.listVariants(product.id)).filter(variant=>variant.active);
  const options=product.details?.options??[];
  const onSite=!!site&&!!metadata&&isPublicCatalogProduct(product,metadata);
- return {id:product.id,name:product.name,sku:product.code,description:shortText(product.description),priceCents:product.priceCents,currency:product.currency,
-  imageUrl:product.imageUrls[0]?signOwnedUrl(product.imageUrls[0],OBJECT_URL_TTL.preview):undefined,
+ return {id:product.id,name:product.name,sku:product.code,description:product.description?.trim()??"",priceCents:product.priceCents,currency:product.currency,
+  imageUrl:product.imageUrls.map(url=>productImageUrl(product,url,deps.objectStorage)).find(Boolean),
+  hasDetailsLink:!!(onSite&&siteBase||deps.appBaseUrl&&deps.shareLinks),
   availableQuantity:product.trackStock?Math.max(0,product.stockQuantity-(product.reservedQuantity??0)):undefined,
   siteUrl:onSite&&siteBase?`${siteBase}/produto/${encodeURIComponent(product.details?.slug??product.id)}`:undefined,
-  variants:variants.map(variant=>({id:variant.id,label:options.length?options.map(option=>variant.optionValues?.[option.key]).filter(Boolean).join(" / "):variant.name,sku:variant.code,priceCents:variant.priceOverride===false?product.priceCents:variant.listPriceCents,availableQuantity:product.trackStock?Math.max(0,(variant.stockQuantity??0)-(variant.reservedQuantity??0)):undefined})),
+  variants:variants.map(variant=>({id:variant.id,label:options.length?options.map(option=>variant.optionValues?.[option.key]).filter(Boolean).join(" / "):variant.name,sku:variant.code,imageUrl:productImageUrl(product,variant.imageUrl,deps.objectStorage),priceCents:variant.priceOverride===false?product.priceCents:variant.listPriceCents,availableQuantity:product.trackStock?Math.max(0,(variant.stockQuantity??0)-(variant.reservedQuantity??0)):undefined})),
   requiresVariant:options.length>0};
 }
 export type ConversationProductView=Awaited<ReturnType<typeof productView>>;
@@ -78,20 +82,32 @@ export async function sendProductToConversation(deps:ConversationProductDeps,inp
  const [siteBase,metadata]=site?await Promise.all([publicSiteBaseUrl(deps,site),deps.productEngineRepository.metadata(site)]):[undefined,undefined];
  const view=await productView(deps,product,site,siteBase,metadata);
  if(input.variantId&&!view.variants.some(item=>item.id===input.variantId))throw Error("CONVERSATION_PRODUCT_NOT_FOUND: opção do produto não encontrada.");
+ if(deps.appBaseUrl&&deps.shareLinks)view.siteUrl=`${deps.appBaseUrl.replace(/\/$/,"")}/produto/${deps.shareLinks.create({tenantId:input.tenantId,workspaceId:input.workspaceId,productId:product.id,...(input.variantId?{variantId:input.variantId}:{})})}`;
  const text=productShareText(view,input.variantId);
- const image=input.withImage?await readProductImage(deps,product):undefined;
+ const variant=input.variantId?view.variants.find(item=>item.id===input.variantId):undefined;
+ const image=input.withImage?await readProductImage(deps,product,variant?.imageUrl??view.imageUrl):undefined;
  // Sem storage de mídia no servidor, o card segue em texto (nome, preço, descrição e link) — nunca falha o envio.
- if(image)try{return await sendInboxMediaMessage(deps.inbox,{tenantId:input.tenantId,workspaceId:input.workspaceId,conversationId:conversation.id,sentByUserId:input.userId,type:"image",body:image.body,mimeType:image.mimeType,fileName:image.fileName,caption:text});}
+ if(image)try{
+  // Legendas longas são limitadas pelo canal: envia o texto integral em uma mensagem própria.
+  const caption=text.length<=1024?text:`*${view.name}*\n${money(variant?.priceCents??view.priceCents,view.currency)}`;
+  const photo=await sendInboxMediaMessage(deps.inbox,{tenantId:input.tenantId,workspaceId:input.workspaceId,conversationId:conversation.id,sentByUserId:input.userId,type:"image",body:image.body,mimeType:image.mimeType,fileName:image.fileName,caption});
+  if(text.length<=1024)return photo;
+  return await sendInboxMessage(deps.inbox,{tenantId:input.tenantId,workspaceId:input.workspaceId,conversationId:conversation.id,sentByUserId:input.userId,body:text,linkPreview:!!view.siteUrl});
+ }
  catch(error){if(!(error instanceof Error&&error.message.startsWith("INBOX_MEDIA_STORAGE_NOT_CONFIGURED")))throw error;}
  return sendInboxMessage(deps.inbox,{tenantId:input.tenantId,workspaceId:input.workspaceId,conversationId:conversation.id,sentByUserId:input.userId,body:text,linkPreview:!!view.siteUrl});
 }
-async function readProductImage(deps:ConversationProductDeps,product:Product){
- const url=product.imageUrls[0];if(!url||!deps.objectStorage?.read)return undefined;
- const key=parseOwnedObjectUrl(url)?.key;if(!key)return undefined;
+async function readProductImage(deps:ConversationProductDeps,product:Product,url:string|undefined){
+ if(!url||!deps.objectStorage?.read||!productImageUrl(product,url,deps.objectStorage))return undefined;
+ const key=parseOwnedObjectUrl(url,deps.objectStorage.resolvePublicUrl(""))?.key;if(!key)return undefined;
  const extension=key.split(".").pop()?.toLowerCase();
  const mimeType=extension==="png"?"image/png":extension==="webp"?"image/webp":extension==="jpg"||extension==="jpeg"?"image/jpeg":undefined;
  if(!mimeType)return undefined;
- try{return {body:await deps.objectStorage.read(key,{maxBytes:MAX_IMAGE_BYTES}),mimeType,fileName:`produto.${extension}`};}catch{return undefined;}
+ try{
+  const source=await deps.objectStorage.read(key,{maxBytes:MAX_IMAGE_BYTES});
+  const body=await sharp(source,{limitInputPixels:32_000_000}).rotate().resize({width:1920,height:1920,fit:"inside",withoutEnlargement:true}).flatten({background:"#ffffff"}).jpeg({quality:88}).toBuffer();
+  return {body,mimeType:"image/jpeg",fileName:"produto.jpg"};
+ }catch{return undefined;}
 }
 
 export type AddProductToOpportunityResult={status:"added";dealId:string;dealTitle:string;created:boolean}|{status:"choose";deals:{id:string;title:string}[]}|{status:"no_deal"}|{status:"no_contact"};

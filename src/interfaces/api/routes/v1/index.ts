@@ -4,6 +4,8 @@ import { marketplaceProvidersFromEnv } from "../../../../infrastructure/marketpl
 import {PostgresSiteCommerceRepository} from "../../../../infrastructure/storage/postgres/postgres-site-commerce-repository.js";
 import {registerSiteCommerceRoutes} from "./site-commerce.route.js";
 import {registerConversationProductRoutes} from "./conversation-products.route.js";
+import {registerPublicProductsRoutes} from "./public-products.route.js";
+import {createProductShareCodec} from "../../../../shared/utils/product-share-token.js";
 import {registerCommerceRoutes} from "./commerce.route.js";
 import {siteCheckoutStatus} from "../../../../application/commerce/checkout-use-cases.js";
 import {PostgresCommerceOrderRepository} from "../../../../infrastructure/storage/postgres/postgres-commerce-order-repository.js";
@@ -536,7 +538,16 @@ export async function registerV1Routes(app: FastifyInstance): Promise<void> {
     }
     // Produto dentro do Vorix Conversas (buscar, enviar card do catálogo, levar para a oportunidade).
     if (sharedInboxDeps) {
+      const shareLinks = app.zunoConfig.jwtSecret ? createProductShareCodec(app.zunoConfig.jwtSecret) : undefined;
+      await registerPublicProductsRoutes(app, {
+        shareLinks,
+        productRepository: identity.productRepository,
+        salesCatalogRepository: identity.salesCatalogRepository,
+        workspaceRepository: app.zunoContainer.workspaceRepository,
+        objectStorage: app.zunoContainer.objectStorage,
+      });
       await registerConversationProductRoutes(app, {
+        shareLinks,
         inbox: sharedInboxDeps,
         routes: sharedInboxDeps,
         productRepository: identity.productRepository,

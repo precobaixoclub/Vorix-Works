@@ -14,6 +14,11 @@ import {resolveProductCommerce,defaultSiteCommerceSettings,siteCommerceSettingsS
 import {startProductWhatsapp,resolveSalesIntentRedirect,setPublicCartItem,getPublicCart,checkoutPublicCartToWhatsapp,saveSiteCommerceSettings,recordPublicSiteEvent} from "../dist/application/sites/site-commerce-use-cases.js";
 import {convertSalesIntentFromInbound,attachAttendanceToConvertedIntent,processSiteFormLead} from "../dist/application/commercial-bridge/site-lead-use-cases.js";
 import {searchConversationProducts,sendProductToConversation,addProductToConversationOpportunity} from "../dist/application/commercial-bridge/conversation-product-use-cases.js";
+import {getSharedProduct} from "../dist/application/commercial-bridge/public-product-use-cases.js";
+import {createProductShareCodec} from "../dist/shared/utils/product-share-token.js";
+import {registerPublicProductsRoutes} from "../dist/interfaces/api/routes/v1/public-products.route.js";
+import {registerErrorHandler} from "../dist/interfaces/api/http/error-handler.js";
+import sharp from "sharp";
 import {registerInboundMessage,applyInboundServiceRules} from "../dist/application/inbox/inbox-use-cases.js";
 import {createTeam} from "../dist/application/identity/team-use-cases.js";
 import {registerSiteCommerceRoutes} from "../dist/interfaces/api/routes/v1/site-commerce.route.js";
@@ -332,6 +337,50 @@ test("produto na conversa: busca no catálogo, envia card sem copiar nada e leva
  assert.equal((await c.d.dealItemRepository.listByDeal(created.dealId)).length,2);
  const other=await commerce();
  await assert.rejects(sendProductToConversation(deps,{...c.scope,conversationId:conversation.id,userId:c.actor.userId,productId:other.productA.id,withImage:false}),/CONVERSATION_PRODUCT_NOT_FOUND/);
+});
+
+test("compartilhar produto sem Site: texto integral, link opaco, preço/foto da variação e página sem dados internos",async()=>{
+ const c=await commerce(),{conversation}=await c.inbound("Quero detalhes",{phone:"+5511966665555"});
+ const description="INFORMAÇÕES TÉCNICAS\n"+"Potência 4 W. Vidro âmbar. Dimensões completas.\n".repeat(45)+"FIM DA DESCRIÇÃO SEM CORTE";
+ await c.d.productRepository.update(c.productB.id,{description,details:{...c.productB.details,siteVisible:false}});
+ const key=`assets/${c.tenantId}/${c.workspaceId}/products/foto-variante.webp`;
+ const original=await sharp({create:{width:40,height:80,channels:3,background:{r:180,g:30,b:10}}}).webp().toBuffer();
+ const imageUrl=`https://storage.fixture/uploads/${key}`;
+ await c.d.salesCatalogRepository.updateVariant(c.variantM.id,{imageUrl,priceOverride:true,listPriceCents:17990,costCents:5000});
+ const photos=[];
+ const objectStorage={resolvePublicUrl:key=>`https://storage.fixture/uploads/${key}`,read:async requested=>{assert.equal(requested,key);return original;}};
+ const shareLinks=createProductShareCodec("product-sharing-fixture-secret-32-chars");
+ const deps={inbox:{...c.inbox,inboxMediaStorage:{put:async input=>photos.push(input)}},productRepository:c.d.productRepository,salesCatalogRepository:c.d.salesCatalogRepository,productEngineRepository:c.d.productEngineRepository,objectStorage,appBaseUrl:"https://vorix.fixture",shareLinks};
+ const found=await searchConversationProducts(deps,{...c.scope,search:"calça"});
+ assert.equal(found[0].description,description);assert.equal(found[0].hasDetailsLink,true);assert.equal(found[0].siteUrl,undefined);
+ const message=await sendProductToConversation(deps,{...c.scope,conversationId:conversation.id,userId:c.actor.userId,productId:c.productB.id,variantId:c.variantM.id,withImage:true});
+ assert.equal(message.type,"text");assert.ok(message.body.includes(description));assert.match(message.body,/R\$\s?179,90/);
+ const url=message.body.match(/Veja mais: (\S+)/)[1],token=new URL(url).pathname.split("/").pop();
+ assert.ok(url.startsWith("https://vorix.fixture/produto/"));assert.ok(!token.includes(c.productB.id));
+ assert.equal(photos.length,1);assert.equal(photos[0].contentType,"image/jpeg");
+ const dimensions=await sharp(photos[0].body).metadata();assert.equal(dimensions.width,40);assert.equal(dimensions.height,80,"a foto não é cortada");
+ const outbound=(await c.inbox.messageRepository.listByConversation({...c.scope,conversationId:conversation.id,limit:20})).filter(m=>m.direction==="outbound");
+ assert.equal(outbound.length,2);assert.ok(outbound.find(m=>m.type==="image").body.length<=1024);
+ const publicDeps={...deps,workspaceRepository:c.workspaceRepository};
+ const publicProduct=await getSharedProduct(publicDeps,token);
+ assert.equal(publicProduct.description,description);assert.equal(publicProduct.priceCents,17990);assert.equal(publicProduct.selectedVariant,c.variantM.name);assert.equal(publicProduct.images[0],imageUrl);
+ for(const privateField of ["id","tenantId","workspaceId","costCents","minimumPriceCents","stockQuantity","taxMetadata"])assert.equal(privateField in publicProduct,false);
+ assert.equal(JSON.stringify(publicProduct).includes("costCents"),false);
+ const app=Fastify();registerErrorHandler(app);await registerPublicProductsRoutes(app,publicDeps);
+ try{const response=await app.inject(`/public/products?token=${token}`);assert.equal(response.statusCode,200);assert.equal(response.headers["cache-control"],"private, no-store");assert.equal((await app.inject(`/public/products?token=${token.slice(0,-3)}bad`)).statusCode,404);}finally{await app.close();}
+ const wrongScope=shareLinks.create({...c.scope,tenantId:"tenant-other",productId:c.productB.id});await assert.rejects(getSharedProduct(publicDeps,wrongScope),/PUBLIC_PRODUCT_NOT_FOUND/);
+ const textOnly=await sendProductToConversation(deps,{...c.scope,conversationId:conversation.id,userId:c.actor.userId,productId:c.productB.id,variantId:c.variantM.id,withImage:false});
+ assert.equal(textOnly.type,"text");assert.ok(textOnly.body.includes(description));assert.match(textOnly.body,/Veja mais: https:\/\/vorix.fixture\/produto\//);assert.equal(photos.length,1);
+ await c.d.productRepository.update(c.productB.id,{active:false});await assert.rejects(getSharedProduct(publicDeps,token),/PUBLIC_PRODUCT_NOT_FOUND/);
+});
+
+test("link de produto: autenticação do token, persistência entre instâncias e rejeição de adulteração",()=>{
+ const secret="secret-product-link-test-more-than-32";
+ const a=createProductShareCodec(secret),b=createProductShareCodec(secret),other=createProductShareCodec("different-product-link-secret-32-chars");
+ const identity={tenantId:"tenant-a",workspaceId:"ws-a",productId:"p-a",variantId:"v-a"},token=a.create(identity);
+ assert.deepEqual(b.read(token),identity);assert.equal(other.read(token),undefined);
+ assert.equal(a.read(token.slice(0,-8)+"AAAAAAAA"),undefined);assert.equal(a.read("invalid"),undefined);assert.equal(a.read("a".repeat(2100)),undefined);
+ assert.notEqual(a.create(identity),token);
 });
 
 test("intenções comerciais: só global vê tudo; anônima segue a equipe de roteamento do site; outra equipe não vê",async()=>{

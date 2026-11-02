@@ -52,3 +52,20 @@ O script `scripts/operations/delete-test-tenants.mjs` usa simulação com rollba
 - 2 cenários adicionais de navegador para a apresentação de créditos ilimitados na cobrança (desktop e celular).
 
 As mudanças financeiras foram validadas por testes e simulações, sem efetuar cobranças reais. O tenant preservado não tem assinatura de pagamento vinculada.
+
+## Publicação e conferência em produção
+
+Publicação concluída em 02/11/2026: interface no commit `fbb0b27`, API e workers no commit `765a4e0`. A conferência final ocorreu às 20h37 (Brasília), com resultado PASS, sem gravações de negócio ou cobranças durante a navegação de validação.
+
+- API pronta, site HTTP 200 e todos os containers Vorix saudáveis; nenhum erro fatal no procedimento de deploy.
+- 189 migrações aplicadas, nenhuma pendente e nenhum checksum divergente; ambiente privado preservado.
+- Conta e ranking mostram somente Vorix. Os dois espaços reais e o proprietário permanecem presentes.
+- Contrato, controles, histórico e saldos de IA conferidos por chamadas reais à API. Saldo do workspace, recarga e resumo administrativo coincidem.
+- Navegação real conferida em 1440 px e 390 px, sem erro de página, transbordamento horizontal ou mutações de negócio.
+- Os 3.833 arquivos da release final foram verificados contra os objetos do commit Git, mantendo os bytes canônicos das migrações.
+
+Log final: `/var/log/vorix-deploy-765a4e0-20261102232453.log`.
+
+SHA-256 da release final: `543909b450483a1f4d07679ed812821502d842677cb6b6a30e218be23c0e7f55`.
+
+Evidência estruturada: `admin-tenants-20261102.validation.json`.

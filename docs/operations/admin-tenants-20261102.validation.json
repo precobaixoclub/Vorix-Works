@@ -1,0 +1,96 @@
+{
+  "validatedAt": "2026-11-02T23:38:02.640Z",
+  "result": "PASS",
+  "cleanup": {
+    "removedTenantIdentifiers": 35,
+    "remainingCustomerTenants": [
+      "tenant-vorix"
+    ],
+    "explicitlyDeletedRows": 2177,
+    "protectedSnapshotsUnchanged": 258,
+    "backupReference": "/opt/zuno/deploy_backups/pre-test-tenant-cleanup-20261102T224915Z.sql.gz",
+    "technicalGlobalRecordsPreserved": true
+  },
+  "tests": {
+    "backendRegression": 135,
+    "creditAndContractSuite": 45,
+    "meetingsAndAccessSuite": 38,
+    "frontend": 234,
+    "browserAdminScenarios": 6,
+    "browserUnlimitedCreditsScenarios": 2
+  },
+  "productionBrowser": {
+    "at": "2026-11-02T23:37:15.560Z",
+    "releaseApi": "765a4e0",
+    "releaseWeb": "fbb0b27",
+    "api": {
+      "ready": true,
+      "authenticationRequired": true,
+      "onlyVorix": true,
+      "dashboard": true,
+      "contract": {
+        "plan": "FREE",
+        "virtual": true,
+        "administrativeVersion": 1,
+        "seedAuditEntries": 1
+      },
+      "realWorkspacesAndOwnerPreserved": true,
+      "creditBalancesConsistent": true,
+      "realCommercialRoutes": true,
+      "productCount": 4
+    },
+    "viewports": [
+      {
+        "width": 1440,
+        "overview": true,
+        "listOnlyVorix": true,
+        "contract": true,
+        "accessControls": true,
+        "history": true,
+        "horizontalOverflow": false
+      },
+      {
+        "width": 390,
+        "overview": true,
+        "listOnlyVorix": true,
+        "contract": true,
+        "accessControls": true,
+        "history": true,
+        "horizontalOverflow": false
+      }
+    ],
+    "unexpectedWrites": [],
+    "pageErrors": [],
+    "failures": [],
+    "result": "PASS"
+  },
+  "deployment": {
+    "at": "2026-11-02T23:37:34.641Z",
+    "api": "765a4e0",
+    "web": "fbb0b27",
+    "deploymentLog": "/var/log/vorix-deploy-765a4e0-20261102232453.log",
+    "ready": true,
+    "webHttpStatus": 200,
+    "fatalLogErrors": 0,
+    "environmentPreserved": true,
+    "migrations": [
+      "MIGRATIONS_BEFORE [migrate] 189 aplicada(s), 0 pendente(s).",
+      "MIGRATIONS_AFTER [migrate] 189 aplicada(s), 0 pendente(s)."
+    ],
+    "services": [
+      "zuno-zuno-api-1:Up 9 minutes (healthy)",
+      "zuno-vorix-worker-1:Up 9 minutes (healthy)",
+      "zuno-marketplaces-worker-1:Up 9 minutes (healthy)",
+      "zuno-zuno-web-1:Up 13 minutes (healthy)",
+      "zuno-social-provider-gateway-1:Up 14 minutes (healthy)",
+      "zuno-zuno-postgres-1:Up 21 hours (healthy)"
+    ],
+    "backup": "BACKUP code=deploy_backups/pre-765a4e0-20261102232453.tgz db=deploy_backups/db-pre-765a4e0-20261102232453.sql.gz env=/root/.env.zuno.pre-765a4e0-20261102232453",
+    "source": {
+      "sha": "765a4e00b84592acb7010c9231ecb6ed4641b1f7",
+      "archive": "/tmp/vorix-release-765a4e0.tgz",
+      "sha256": "543909b450483a1f4d07679ed812821502d842677cb6b6a30e218be23c0e7f55",
+      "verifiedTrackedFiles": 3833
+    }
+  }
+}

@@ -21,6 +21,7 @@ import { SocialProviderResolver, SocialProviderRegistry } from '../dist/applicat
 import { changeTenantPlan } from '../dist/application/platform-admin/platform-admin.usecases.js';
 import { getTenantCredits } from '../dist/application/workspace/workspace-use-cases.js';
 import { getAiCreditsOverview } from '../dist/application/billing/ai-credits-use-cases.js';
+import { syncMeetingsEntitlementFromSubscription } from '../dist/application/billing/meetings-offer.js';
 let db; let deps;
 before(async () => {
   db = await startTestPostgres(); await applyMigrations(db.pool, join(process.cwd(), 'db/migrations'));
@@ -84,6 +85,17 @@ test('AI blocks manual account/auto-reply restrictions and honors unlimited mont
 test('background social resolver pauses publishing when administrative entitlement is denied', async () => {
   const resolver = new SocialProviderResolver(new SocialProviderRegistry(), { getPolicy: async () => ({ publishingEnabled: true, tenantId: 't', network: 'instagram' }) }, undefined, async () => false);
   assert.equal((await resolver.policyFor('t', 'instagram')).publishingEnabled, false);
+});
+test('subscription renewal does not undo an administrator Meetings block or negotiated recording limits', async () => {
+  for (const current of [
+    { solutionKey: 'meetings', enabled: false, source: 'manual', limits: { maxConcurrentRecordings: 1 } },
+    { solutionKey: 'meetings', enabled: true, source: 'manual', limits: { maxConcurrentRecordings: 1, monthlyRecordingMinutes: 1200 } },
+    { solutionKey: 'meetings', enabled: true, source: 'internal', limits: { maxConcurrentRecordings: 5 } },
+  ]) {
+    let writes = 0;
+    const result = await syncMeetingsEntitlementFromSubscription({ subscriptionRepository: { getActiveByTenant: async () => ({ id: 'paid', status: 'active' }) }, subscriptionItemRepository: { listBySubscription: async () => [{ addonCode: 'meetings_base', quantity: 3 }] }, addonDefinitionRepository: { getByCode: async () => ({ resource: 'meetings_concurrent_recordings', increment: 1 }) }, solutionEntitlementRepository: { listByTenant: async () => [current], set: async () => { writes++; } } }, 'tenant-managed');
+    assert.equal(result.concurrentRecordings, 3); assert.equal(writes, 0);
+  }
 });
 test('manual AI quota agrees across legacy balance views and unlimited mode without rewriting the contracted quota', async () => {
   const tenantId = 'tenant-controls-credit-views'; await account(tenantId);

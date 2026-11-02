@@ -10,6 +10,8 @@ Liberações administrativas são independentes do preço contratado. Permitem s
 
 Cada alteração desses controles exige motivo e registra ator, antes/depois e horário. O controle de versão rejeita sobrescritas concorrentes. A gravação compartilha o bloqueio de capacidade por tenant com alocações e alterações comerciais. Produtos Conversas, Marketing, Meetings e Site mantêm seus controles próprios e a auditoria existente; religar Meetings preserva os limites negociados. Os limites de gravações, minutos, retenção e armazenamento do Meetings podem ser editados.
 
+Renovações e alterações comerciais do Meetings preservam concessões e bloqueios de origem manual ou interna. A sincronização automática altera somente o acesso derivado da assinatura; não desfaz uma decisão administrativa.
+
 Os controles são aplicados na resolução de entitlements, nos guardas da API, nas inclusões de contatos/automações/conexões por repositório, no uso de créditos de IA, nas respostas automáticas do worker e na resolução de publicação social. Bloqueios globais e RBAC continuam prioritários. Admin, autenticação e cobrança continuam acessíveis para recuperação. Os caches administrativos e de produtos expiram em até um segundo; operações já em execução podem concluir.
 
 O saldo de créditos exibido no resumo da conta, na barra do workspace e na recarga também considera a concessão administrativa. A cota contratada permanece intacta no banco; remover a concessão restaura essa cota. O modo ilimitado aparece como ilimitado nas telas, sem expor a sentinela numérica usada pelos consumidores legados.
@@ -44,6 +46,7 @@ O script `scripts/operations/delete-test-tenants.mjs` usa simulação com rollba
 - Build e tipos do backend; build de produção e tipos do frontend.
 - 135 testes de regressão do backend: controles, proteção da limpeza, contratos, billing, capacidade, soluções, créditos e workspaces.
 - Revisão do saldo exibido: 45 testes de créditos, contratos e concessões administrativas.
+- Preservação das decisões administrativas nas renovações: 38 testes de controles, Meetings, soluções e ciclo da assinatura.
 - 234 testes do frontend.
 - 6 cenários de navegador (desktop e celular): concessões com motivo e persistência, histórico, preservação dos limites do Meetings, prévia/confirmar cobrança no tenant selecionado e manutenção do rascunho em conflito.
 - 2 cenários adicionais de navegador para a apresentação de créditos ilimitados na cobrança (desktop e celular).

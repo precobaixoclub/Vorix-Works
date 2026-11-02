@@ -69,6 +69,9 @@ export async function syncMeetingsEntitlementFromSubscription(deps: MeetingsEnti
     }
   }
   const current = (await deps.solutionEntitlementRepository.listByTenant(tenantId)).find((entitlement) => entitlement.solutionKey === "meetings");
+  // An explicit operator grant/block outranks renewals and purchased quantities. Billing still
+  // reports the contracted capacity; the negotiated administrative access remains independent.
+  if (current && current.source !== "subscription") return { concurrentRecordings };
   if (concurrentRecordings > 0) {
     const unchanged = current?.enabled && current.source === "subscription" && current.limits?.maxConcurrentRecordings === concurrentRecordings;
     if (!unchanged) {

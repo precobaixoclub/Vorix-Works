@@ -9,3 +9,5 @@ Cada gravação bem-sucedida atualiza o detalhe e revalida as listas de espaços
 O escopo é expor o ciclo ativo/inativo que já existia no backend. As regras operacionais de canais e integrações seguem o comportamento existente do status; esta mudança não implementa suspensão de integrações ou de acesso.
 
 Validação: TypeScript e build da interface; 217 testes unitários; 35 testes da API/casos de uso de Workspace; dez cenários de browser em 1440 e 390 px cobrindo inativação, reativação, persistência, filtros, cancelamento, falha/repetição e permissões.
+
+Release `51e1d06` publicada na produção em 02/11/2026, com backup pelo fluxo oficial de deploy. Readiness aprovado, web HTTP 200 e zero erros fatais nos logs. O browser autenticado confirmou o campo publicado em 1440 e 390 px, opções Ativo/Inativo disponíveis ao dono, botão de salvar habilitado após alterar a seleção, cancelamento funcionando e zero erros JavaScript/overflow. A conferência de produção não gravou nenhuma mudança de situação nos workspaces existentes.

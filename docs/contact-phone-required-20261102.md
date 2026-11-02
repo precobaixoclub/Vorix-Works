@@ -33,3 +33,15 @@ node scripts/cleanup-invalid-contacts.mjs --tenant-id tenant-vorix --workspace-i
 - Isolamento CRM e 49 contratos backend/frontend aprovados.
 
 O DNS atual da API aponta para `143.198.47.74`, autenticado por chave já registrada no `known_hosts` local. O IP `209.97.152.212` da configuração antiga não foi usado: sua chave não correspondia ao registro conhecido.
+
+## Resultado em produção
+
+Release `caf4105` implantada em 02/11/2026. Readiness aprovado, web HTTP 200 e zero erros fatais nos logs da implantação.
+
+A limpeza foi concluída às 11:42 (America/Sao_Paulo), no workspace Preço Baixo Club: 60 contatos antes, cinco excluídos e 55 preservados. Os 55 telefones reais foram recuperados para o campo canônico. A prévia após a execução retornou zero candidatos à exclusão; a conferência direta confirmou zero contatos restantes com telefone inválido ou ausente.
+
+O smoke autenticado da API retornou HTTP 400 nas quatro tentativas de cadastro sem telefone/com telefone inválido e HTTP 400 ao tentar cadastrar um contato real do Inbox que só possuía LID. A listagem autenticada retornou HTTP 200 com os 55 contatos.
+
+Contagens preservadas antes/depois: 95 identidades do Inbox, duas conversas, 40 mensagens, um negócio, uma tarefa e duas propostas. Os seis contatos de outros workspaces também permaneceram. As identidades técnicas do Inbox continuam disponíveis para roteamento e futura resolução de telefone, sem gerar contatos incompletos no CRM.
+
+Backup integral do banco verificado e relatórios privados de prévia, aplicação e conferência em `/opt/zuno/deploy_backups/contact-phone-5aee7e1-20261102144238/` (arquivos com permissão 0600). Nenhum dado pessoal desses relatórios foi incorporado ao Git. A revisão final do formulário público passou em 49 testes de Site/CRM, além dos checks anteriores.

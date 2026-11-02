@@ -7,11 +7,11 @@
 #
 # Uso: scripts/deploy-conversas-gateway.sh
 # Variáveis (mesmo padrão de .env.zuno.example, mas para este stack):
-#   DEPLOY_SSH_TARGET   (default: root@209.97.152.212, mesmo host do Vorix — VPS única por ora)
+#   DEPLOY_SSH_TARGET   (default: root@143.198.47.74, mesmo host do Vorix — VPS única por ora)
 #   DEPLOY_REMOTE_DIR   (default: /opt/conversas-gateway — DIFERENTE de /opt/zuno, propositalmente)
 set -euo pipefail
 
-DEPLOY_SSH_TARGET="${DEPLOY_SSH_TARGET:-root@209.97.152.212}"
+DEPLOY_SSH_TARGET="${DEPLOY_SSH_TARGET:-root@143.198.47.74}"
 DEPLOY_REMOTE_DIR="${DEPLOY_REMOTE_DIR:-/opt/conversas-gateway}"
 COMPOSE_FILE="docker-compose.conversas-gateway.yml"
 
@@ -21,6 +21,9 @@ ssh "$DEPLOY_SSH_TARGET" "docker network inspect conversas_internal >/dev/null 2
 echo "==> Enviando $COMPOSE_FILE para $DEPLOY_SSH_TARGET:$DEPLOY_REMOTE_DIR"
 ssh "$DEPLOY_SSH_TARGET" "mkdir -p $DEPLOY_REMOTE_DIR"
 scp "$COMPOSE_FILE" "$DEPLOY_SSH_TARGET:$DEPLOY_REMOTE_DIR/$COMPOSE_FILE"
+printf -v REMOTE_HEALTH_DIR '%q' "$DEPLOY_REMOTE_DIR/scripts/operations"
+ssh "$DEPLOY_SSH_TARGET" "mkdir -p $REMOTE_HEALTH_DIR"
+scp scripts/operations/rabbitmq-healthcheck.sh "$DEPLOY_SSH_TARGET:$DEPLOY_REMOTE_DIR/scripts/operations/rabbitmq-healthcheck.sh"
 
 echo "==> ATENÇÃO: .env.conversas nunca é sincronizado por este script (segredo real só existe no"
 echo "    servidor). Na primeira vez, copie manualmente a partir de .env.conversas.example e"

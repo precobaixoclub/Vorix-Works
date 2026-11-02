@@ -91,7 +91,8 @@ async function fixture(t, options = {}) {
   const store = new EncryptedGatewayStore(root, randomBytes(32).toString("base64"));
   let submits = 0; let concurrent = 0; let maxConcurrent = 0;
   const cookies = [{ name: "sessionid", value: "private-session", domain: ".instagram.com", path: "/", expires: -1, httpOnly: true, secure: true, sameSite: "Lax" }];
-  const context = { newPage: async () => ({ screenshot: async () => Buffer.from("image"), locator: () => ({}) }), cookies: async () => cookies };
+  const page = { screenshot: async config => options.screenshot ? options.screenshot(config) : Buffer.from("image"), locator: selector => ({ selector }), keyboard: { press: async key => options.input?.(key) } };
+  const context = { newPage: async () => page, cookies: async () => cookies };
   const driver = { guardNetwork: async () => {}, login: async () => {}, home: async () => {}, securityState: async () => options.security,
     identity: async () => { if (options.security) throw new GatewayError(options.security); return { externalAccountId: options.mismatch ? "wrong" : "123", username: "owner" }; },
     health: async () => ({ healthy: true, externalAccountId: "123", disabledFormats: ["story_image"], disabledFeatures: ["nativeMusic"] }),
@@ -104,6 +105,21 @@ async function fixture(t, options = {}) {
   const user = { ...scope, userId: "user-a" }; const flow = await service.connect(user);
   return { service, store, user, flow, options, submits: () => submits, maxConcurrent: () => maxConcurrent };
 }
+
+test("captura lenta não bloqueia a digitação, é compartilhada e nunca vaza para outro usuário", async t => {
+  let release, markStarted, captures = 0, typed = [], config;
+  const gate = new Promise(resolve => { release = resolve; }), started = new Promise(resolve => { markStarted = resolve; });
+  const f = await fixture(t, { screenshot: async options => { captures++; config = options; markStarted(); await gate; return Buffer.from("safe-image"); }, input: key => typed.push(key) });
+  const one = f.service.frame(f.user, f.flow.flowId); await started;
+  const two = f.service.frame(f.user, f.flow.flowId);
+  try {
+    await assert.rejects(() => f.service.frame({ ...f.user, userId: "other" }, f.flow.flowId), /NOT_FOUND/);
+    const delivered = await Promise.race([f.service.interact(f.user, f.flow.flowId, { kind: "key", key: "Tab" }).then(() => true), new Promise(resolve => setTimeout(() => resolve(false), 1000))]);
+    assert.equal(delivered, true, "teclado não espera terminar a captura");
+    assert.deepEqual(typed, ["Tab"]); assert.equal(captures, 1);
+    assert.ok(config.mask[0].selector.includes('input[autocomplete="current-password"]'));
+  } finally { release(); await Promise.all([one, two]); }
+});
 
 test("interactive flow belongs to tenant, workspace, network AND initiating user; no account until verified", async t => {
   const f = await fixture(t);

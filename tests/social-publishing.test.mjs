@@ -138,7 +138,7 @@ function harness(options = {}) {
   });
   const registry = createDefaultPublicationProviderRegistry([social.router]);
   const dispatcher = new PublicationDispatchService({ repository: publicationRepository, providerRegistry: registry, secretResolver: new FakePublicationSecretResolver(), idGenerator: nextId, maxBatch: 1, now });
-  const orchestratorDeps = { repository: publicationRepository, providers: [], idGenerator: nextId, queue: new InMemoryPublicationQueue(), concurrency: { maxWorkers: 1, maxConcurrentPublications: 10, maxPerProvider: 1, maxPerTenant: 1, lockTtlMs: 60_000 } };
+  const orchestratorDeps = { repository: publicationRepository, providers: [], idGenerator: nextId, now, queue: new InMemoryPublicationQueue(), concurrency: { maxWorkers: 1, maxConcurrentPublications: 10, maxPerProvider: 1, maxPerTenant: 1, lockTtlMs: 60_000 } };
   const owner = { userId: "owner-a", role: "owner" };
 
   /** Liberação explícita: kill switch + homologação (plataforma) + política do tenant. */

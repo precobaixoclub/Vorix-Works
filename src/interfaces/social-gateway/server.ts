@@ -28,7 +28,7 @@ export function createSocialGatewayServer(service: SocialGatewayService, token: 
     const code = error instanceof GatewayError ? error.code : error instanceof z.ZodError ? "INVALID_REQUEST" : "TEMPORARY_PLATFORM_ERROR";
     void reply.code(code === "NOT_FOUND" ? 404 : code === "INVALID_REQUEST" ? 400 : 409).send({ code });
   });
-  app.get("/healthz", async () => ({ ok: true, service: "social-provider-gateway" }));
+  app.get("/healthz", async () => ({ ok: true, service: "social-provider-gateway", resources: service.resources() }));
   app.post("/rpc/connect", async request => { const body = user.extend({ returnPath: z.string().optional() }).parse(request.body); return service.connect(body); });
   app.post("/rpc/frame", async request => { const body = flow.parse(request.body); return service.frame(body, body.flowId); });
   app.post("/rpc/interact", async request => { const body = flow.extend({ action: interactionSchema }).parse(request.body); return service.interact(body, body.flowId, body.action); });

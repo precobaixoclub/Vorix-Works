@@ -9,7 +9,7 @@ import { GatewayError, type GatewayCredential, type GatewayFrame, type GatewayIn
 
 type StoredSession = GatewayCredential & { cookies: Awaited<ReturnType<BrowserContext["cookies"]>>; updatedAt: string };
 type Receipt = { externalAccountId: string; result: SocialPublishResult; createdAt: string };
-type Flow = { scope: GatewayUserScope; page: Page; driver: BrowserSocialDriver; context: BrowserContext; close: () => Promise<void>; expiresAt: number };
+type Flow = { scope: GatewayUserScope; page: Page; driver: BrowserSocialDriver; context: BrowserContext; close: () => Promise<void>; expiresAt: number; framePromise?: Promise<GatewayFrame> };
 type AccountInput = GatewayScope & { credentialReferenceId: string; externalAccountId?: string };
 
 /** Single gateway replica owns the private volume and account locks (no distributed browser sessions). */
@@ -17,6 +17,7 @@ export class SocialGatewayService {
   private readonly flows = new Map<string, Flow>();
   private readonly mutex = new GatewayMutex();
   private readonly timer: NodeJS.Timeout;
+  resources() { return { ...this.pool.stats?.(), interactiveFlows: this.flows.size }; }
   constructor(private readonly store: EncryptedGatewayStore, private readonly pool: SocialBrowserPool, private readonly options: { mediaOrigins: readonly string[]; flowTtlMs?: number; operationTimeoutMs?: number; driverFactory?: (network: GatewayScope["network"], page: Page, context: BrowserContext) => BrowserSocialDriver }) {
     this.timer = setInterval(() => { for (const [id, flow] of this.flows) if (flow.expiresAt <= Date.now()) { this.flows.delete(id); void flow.close(); } }, 10_000);
     this.timer.unref();
@@ -44,13 +45,18 @@ export class SocialGatewayService {
     });
   }
   async frame(scope: GatewayUserScope, flowId: string): Promise<GatewayFrame> {
-    return this.mutex.run(`flow:${flowId}`, async () => {
-      const flow = this.flow(scope, flowId);
+    // Capturas não bloqueiam o teclado. Requisições simultâneas compartilham uma captura,
+    // depois da verificação de escopo, sem guardar imagens em cache ou em disco.
+    const flow = this.flow(scope, flowId);
+    if (flow.framePromise) return flow.framePromise;
+    const capture = (async (): Promise<GatewayFrame> => {
       const state = await flow.driver.securityState();
       // Passwords and security codes are never returned in the image or saved to disk.
-      const bytes = await flow.page.screenshot({ type: "jpeg", quality: 65, mask: [flow.page.locator('input[type="password"], input[autocomplete="one-time-code"], input[name*="code" i], input[name*="otp" i]')], timeout: 10_000 });
+      const bytes = await flow.page.screenshot({ type: "jpeg", quality: 55, mask: [flow.page.locator('input[type="password"], input[autocomplete="current-password"], input[autocomplete="new-password"], input[name*="pass" i], input[autocomplete="one-time-code"], input[name*="code" i], input[name*="otp" i]')], timeout: 10_000 });
       return { image: bytes.toString("base64"), width: 1280, height: 800, status: state === "CHECKPOINT_REQUIRED" ? "CHECKPOINT_REQUIRED" : "CONNECTING", expiresAt: new Date(flow.expiresAt).toISOString() };
-    });
+    })().finally(() => { flow.framePromise = undefined; });
+    flow.framePromise = capture;
+    return capture;
   }
   async interact(scope: GatewayUserScope, flowId: string, action: GatewayInteraction): Promise<{ accepted: true }> {
     return this.mutex.run(`flow:${flowId}`, async () => {

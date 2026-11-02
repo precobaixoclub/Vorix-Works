@@ -3,6 +3,23 @@ import assert from "node:assert/strict";
 import { BrowserSocialDriver, publicationResponseProof } from "../dist/infrastructure/social/gateway/browser-driver.js";
 import { SocialBrowserPool } from "../dist/infrastructure/social/gateway/browser-pool.js";
 
+test("browser pool: libera Chromium ocioso, preserva contextos ativos e relança sem compartilhar cookies", async () => {
+  const pool = new SocialBrowserPool({ maxContexts: 1, idleTimeoutMs: 30 });
+  try {
+    const first = await pool.open();
+    await first.context.addCookies([{ name: "private", value: "not-shared", domain: "example.test", path: "/" }]);
+    await new Promise(resolve => setTimeout(resolve, 60));
+    assert.equal(pool.stats().browserRunning, true, "nunca encerra um login ativo");
+    await first.close();
+    for (let i = 0; i < 100 && pool.stats().browserRunning; i++) await new Promise(resolve => setTimeout(resolve, 10));
+    assert.equal(pool.stats().browserRunning, false);
+    const second = await pool.open();
+    assert.equal(pool.stats().browserRunning, true);
+    assert.equal((await second.context.cookies()).length, 0);
+    await second.close();
+  } finally { await pool.shutdown(); }
+});
+
 // Real Chromium with local deterministic DOM fixtures. These are browser integration tests,
 // deliberately NOT live Instagram/Facebook/TikTok validation.
 test("positive creation receipts are distinct from upload/container/request IDs", () => {

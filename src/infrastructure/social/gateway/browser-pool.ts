@@ -5,12 +5,16 @@ import { GatewayError } from "./protocol.js";
 export class SocialBrowserPool {
   private browser?: Browser;
   private launching?: Promise<Browser>;
+  private closing?: Promise<void>;
+  private idleTimer?: NodeJS.Timeout;
   private active = 0;
   private closed = false;
   private readonly waiters: { resolve: () => void; reject: (error: Error) => void; timer: NodeJS.Timeout }[] = [];
-  constructor(private readonly options: { maxContexts?: number; executablePath?: string; queueTimeoutMs?: number } = {}) {}
+  constructor(private readonly options: { maxContexts?: number; executablePath?: string; queueTimeoutMs?: number; idleTimeoutMs?: number } = {}) {}
+  stats() { return { activeContexts: this.active, queuedContexts: this.waiters.length, browserRunning: this.browser?.isConnected() ?? false }; }
   private async acquire(): Promise<void> {
     if (this.closed) throw new GatewayError("BUSY");
+    clearTimeout(this.idleTimer);
     if (this.active < (this.options.maxContexts ?? 2)) { this.active++; return; }
     if (this.waiters.length >= 16) throw new GatewayError("BUSY");
     await new Promise<void>((resolve, reject) => {
@@ -18,10 +22,23 @@ export class SocialBrowserPool {
       this.waiters.push(waiter);
     });
   }
-  private release(): void { const next = this.waiters.shift(); if (next) { clearTimeout(next.timer); next.resolve(); } else this.active--; }
+  private release(): void {
+    const next = this.waiters.shift();
+    if (next) { clearTimeout(next.timer); next.resolve(); return; }
+    this.active--;
+    if (this.active || this.closed) return;
+    this.idleTimer = setTimeout(() => {
+      if (this.active || this.closed || !this.browser) return;
+      const browser = this.browser; this.browser = undefined;
+      this.closing = browser.close().catch(() => undefined).finally(() => { this.closing = undefined; });
+    }, this.options.idleTimeoutMs ?? 30_000);
+    this.idleTimer.unref();
+  }
   private async getBrowser(): Promise<Browser> {
+    await this.closing;
+    if (this.closed) throw new GatewayError("BUSY");
     if (this.browser?.isConnected()) return this.browser;
-    if (!this.launching) this.launching = chromium.launch({ headless: true, executablePath: this.options.executablePath, args: ["--disable-dev-shm-usage", "--disable-breakpad", "--disable-crash-reporter"], chromiumSandbox: process.env.SOCIAL_GATEWAY_CHROMIUM_SANDBOX !== "false" }).then(browser => { this.browser = browser; return browser; }).finally(() => { this.launching = undefined; });
+    if (!this.launching) this.launching = chromium.launch({ headless: true, executablePath: this.options.executablePath, args: ["--disable-dev-shm-usage", "--disable-breakpad", "--disable-crash-reporter"], chromiumSandbox: process.env.SOCIAL_GATEWAY_CHROMIUM_SANDBOX !== "false" }).then(async browser => { if (this.closed) { await browser.close(); throw new GatewayError("BUSY"); } this.browser = browser; return browser; }).finally(() => { this.launching = undefined; });
     return this.launching;
   }
   async open(cookies?: Parameters<BrowserContext["addCookies"]>[0]): Promise<{ context: BrowserContext; close: () => Promise<void> }> {
@@ -39,8 +56,11 @@ export class SocialBrowserPool {
   }
   async shutdown(): Promise<void> {
     this.closed = true;
+    clearTimeout(this.idleTimer);
     for (const waiter of this.waiters.splice(0)) { clearTimeout(waiter.timer); waiter.reject(new GatewayError("BUSY")); }
     await this.browser?.close();
+    await this.closing;
+    await this.launching?.catch(() => undefined);
   }
   async checkReadiness(): Promise<void> { const lease = await this.open(); try { await lease.context.newPage(); } finally { await lease.close(); } }
 }

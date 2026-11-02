@@ -87,6 +87,13 @@ ambiente e volume cifrado (quando já existir). Rollback da primeira instalaçã
 novo e preserva seu volume. Não reverte migrations nem apaga sessões. O health check de inicialização
 do gateway abre um contexto Chromium antes de disponibilizar a porta interna.
 
+O Chromium é encerrado após 30 segundos sem contextos ativos e relançado sob demanda; cookies
+autenticados continuam no volume cifrado. `/healthz` informa apenas contadores de contextos/fila,
+estado do processo do browser e quantidade de fluxos, sem identidades nem credenciais. Capturas
+simultâneas de um mesmo fluxo são agrupadas e não seguram a fila de teclado. A interface agrupa
+texto por até 60 ms, preserva a ordem de cliques/teclas, pausa capturas na aba escondida e descarta
+entradas pendentes ao sair da tela. Campos de senha e códigos continuam mascarados nas imagens.
+
 O admin mantém os switches e a policy por tenant, com modos UNOFFICIAL, OFFICIAL ou AUTO. Os modos
 que incluem o oficial exigem sua autorização prévia e conexão. Falhas de autenticação nunca disparam
 fallback. As métricas administrativas incluem contas conectadas/saudáveis, reconexão e contagens de

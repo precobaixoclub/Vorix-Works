@@ -49,16 +49,19 @@ services:
       RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD}
     volumes:
       - rabbitmq_data:/var/lib/rabbitmq
+      - ./scripts/operations/rabbitmq-healthcheck.sh:/usr/local/bin/vorix-rabbitmq-healthcheck.sh:ro
     networks: [conversas_internal]
     # UI de gestão (porta 15672) só acessível de dentro da rede interna — para inspecionar em
     # produção, usar túnel SSH (`ssh -L 15672:rabbitmq:15672 ...`), nunca publicar no host.
     mem_limit: 320m
     mem_reservation: 160m
     healthcheck:
-      test: ["CMD", "rabbitmq-diagnostics", "ping"]
-      interval: 15s
+      # HTTP local verifica os vhosts e o listener AMQP, sem iniciar outra VM Erlang.
+      test: ["CMD", "sh", "/usr/local/bin/vorix-rabbitmq-healthcheck.sh"]
+      interval: 30s
       timeout: 10s
-      retries: 5
+      retries: 3
+      start_period: 30s
 
   wuzapi:
     image: ${WUZAPI_IMAGE:-asternic/wuzapi:latest}

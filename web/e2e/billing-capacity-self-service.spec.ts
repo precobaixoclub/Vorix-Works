@@ -44,6 +44,16 @@ async function billingFixture(page: Page, options: { canChangeNow?: boolean; unl
 
 test.beforeEach(async ({ context, page }) => { await loginCookie(context); await mockConversasBackend(page); });
 
+test("créditos ilimitados concedidos pelo administrador aparecem sem sentinelas numéricas", async ({ page }) => {
+  await billingFixture(page);
+  await page.route("**/v1/billing/credits", route => route.fulfill({ json: { ok: true, data: { remainingCredits: Number.MAX_SAFE_INTEGER, monthlyQuota: 0, monthlyUnlimited: true, consumedThisMonth: 60, extraCredits: 0, subscriptionStatus: "active", pricing: { unitPriceCents: 10, currency: "BRL", minPurchase: 100, maxPurchase: 100000, presets: [100, 1000] }, chargesSavedCard: false, canPurchase: true, purchases: [] } } }));
+  await page.goto("/conta/plano#creditos");
+  await expect(page.getByText("Ilimitado", { exact: true })).toBeVisible();
+  await expect(page.getByText("Ilimitada", { exact: true })).toBeVisible();
+  await expect(page.getByText("Saldo baixo", { exact: true })).toHaveCount(0);
+  await expect(page.getByText(Number.MAX_SAFE_INTEGER.toLocaleString("pt-BR"), { exact: true })).toHaveCount(0);
+});
+
 test("uso do plano: simula os três recursos, salva somente ao confirmar e mantém quantidades após recarregar", async ({ page }) => {
   const fixture = await billingFixture(page);
   await page.goto(`/workspaces/${WORKSPACE_ID}/settings/plano`);

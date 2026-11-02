@@ -582,8 +582,9 @@ function AiCreditsCard({ canManage, returnPath }: { canManage: boolean; returnPa
   const valid = Number.isInteger(credits) && credits >= pricing.minPurchase && credits <= pricing.maxPurchase;
   const amountCents = valid ? credits * pricing.unitPriceCents : 0;
   const quotaLeft = Math.max(0, data.monthlyQuota - data.consumedThisMonth);
+  const unlimited = data.monthlyUnlimited === true;
   const isTrial = data.subscriptionStatus === "trial";
-  const low = data.remainingCredits <= Math.max(20, data.monthlyQuota * 0.1);
+  const low = !unlimited && data.remainingCredits <= Math.max(20, data.monthlyQuota * 0.1);
 
   async function handleBuy() {
     if (!valid) return;
@@ -618,10 +619,10 @@ function AiCreditsCard({ canManage, returnPath }: { canManage: boolean; returnPa
         <div className="space-y-3">
           <div>
             <p className="text-xs text-muted-foreground">Saldo disponível</p>
-            <p className="vorix-display text-3xl font-semibold tabular-nums text-foreground">{data.remainingCredits.toLocaleString("pt-BR")}</p>
+            <p className="vorix-display text-3xl font-semibold tabular-nums text-foreground">{unlimited ? "Ilimitado" : data.remainingCredits.toLocaleString("pt-BR")}</p>
           </div>
           <dl className="space-y-1.5 text-sm">
-            <div className="flex justify-between gap-3"><dt className="text-muted-foreground">{isTrial ? "Créditos do teste" : "Cota do plano neste mês"}</dt><dd className="tabular-nums text-foreground">{quotaLeft.toLocaleString("pt-BR")} de {data.monthlyQuota.toLocaleString("pt-BR")}</dd></div>
+            <div className="flex justify-between gap-3"><dt className="text-muted-foreground">{isTrial ? "Créditos do teste" : "Cota disponível neste mês"}</dt><dd className="tabular-nums text-foreground">{unlimited ? "Ilimitada" : `${quotaLeft.toLocaleString("pt-BR")} de ${data.monthlyQuota.toLocaleString("pt-BR")}`}</dd></div>
             <div className="flex justify-between gap-3"><dt className="text-muted-foreground">Créditos comprados (não expiram)</dt><dd className="tabular-nums text-foreground">{data.extraCredits.toLocaleString("pt-BR")}</dd></div>
           </dl>
           {isTrial ? <p className="rounded-lg border border-ai/25 bg-ai/[0.07] px-3 py-2 text-xs text-foreground">Você recebeu créditos para testar a IA durante o período gratuito. Depois que acabarem, é só recarregar.</p> : null}

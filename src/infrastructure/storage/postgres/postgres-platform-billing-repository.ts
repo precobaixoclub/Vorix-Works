@@ -77,7 +77,14 @@ export class PostgresPlatformBillingRepository implements PlatformBillingReposit
 
   async getTenantBilling(tenantId: string): Promise<TenantBilling | undefined> {
     const result = await this.pool.query<BillingRow>("select * from tenant_billing where tenant_id = $1", [tenantId]);
-    return result.rows[0] ? toBillingDomain(result.rows[0]) : undefined;
+    return result.rows[0] ? this.withAdministrativeCreditQuota(toBillingDomain(result.rows[0])) : undefined;
+  }
+
+  /** Legacy balance views must agree with the AI gate without overwriting the contracted quota. */
+  private async withAdministrativeCreditQuota(billing: TenantBilling): Promise<TenantBilling> {
+    const controls = await this.getTenantControls(billing.tenantId);
+    if (!Object.hasOwn(controls.limits, "ai_credits")) return billing;
+    return { ...billing, monthlyCreditsQuota: controls.limits.ai_credits === null ? Number.MAX_SAFE_INTEGER : controls.limits.ai_credits! };
   }
 
   async listAllTenantBilling(filters: {
@@ -102,7 +109,7 @@ export class PostgresPlatformBillingRepository implements PlatformBillingReposit
     params.push(limit, offset);
     const sql = `select * from tenant_billing ${where} order by created_at desc limit $${params.length - 1} offset $${params.length}`;
     const result = await this.pool.query<BillingRow>(sql, params);
-    return result.rows.map(toBillingDomain);
+    return Promise.all(result.rows.map(row => this.withAdministrativeCreditQuota(toBillingDomain(row))));
   }
 
   async countAllTenantBilling(filters: {

@@ -30,6 +30,7 @@ export const AI_CREDIT_PRESETS = [500, 1_000, 2_500, 5_000];
 const periodOf = (date: Date) => `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}`;
 
 export type AiCreditsOverview = {
+  monthlyUnlimited?: boolean;
   remainingCredits: number;
   monthlyQuota: number;
   consumedThisMonth: number;
@@ -65,6 +66,7 @@ export async function getAiCreditsOverview(deps: AiCreditsDeps, tenantId: string
   return {
     remainingCredits: Math.max(0, monthlyQuota - consumedThisMonth) + extraCredits,
     monthlyQuota: monthlyQuota >= Number.MAX_SAFE_INTEGER ? 0 : monthlyQuota,
+    monthlyUnlimited: monthlyQuota >= Number.MAX_SAFE_INTEGER,
     consumedThisMonth,
     extraCredits,
     subscriptionStatus: status,

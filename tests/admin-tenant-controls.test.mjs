@@ -19,6 +19,8 @@ import { CreditAccountingService } from '../dist/application/ai-providers/credit
 import { SolutionAccessService } from '../dist/application/solutions/solution-access.service.js';
 import { SocialProviderResolver, SocialProviderRegistry } from '../dist/application/social/social-provider-resolver.js';
 import { changeTenantPlan } from '../dist/application/platform-admin/platform-admin.usecases.js';
+import { getTenantCredits } from '../dist/application/workspace/workspace-use-cases.js';
+import { getAiCreditsOverview } from '../dist/application/billing/ai-credits-use-cases.js';
 let db; let deps;
 before(async () => {
   db = await startTestPostgres(); await applyMigrations(db.pool, join(process.cwd(), 'db/migrations'));
@@ -82,6 +84,21 @@ test('AI blocks manual account/auto-reply restrictions and honors unlimited mont
 test('background social resolver pauses publishing when administrative entitlement is denied', async () => {
   const resolver = new SocialProviderResolver(new SocialProviderRegistry(), { getPolicy: async () => ({ publishingEnabled: true, tenantId: 't', network: 'instagram' }) }, undefined, async () => false);
   assert.equal((await resolver.policyFor('t', 'instagram')).publishingEnabled, false);
+});
+test('manual AI quota agrees across legacy balance views and unlimited mode without rewriting the contracted quota', async () => {
+  const tenantId = 'tenant-controls-credit-views'; await account(tenantId);
+  const original = (await deps.platformBillingRepository.getTenantBilling(tenantId)).monthlyCreditsQuota;
+  await save(tenantId, { limits: { ai_credits: 250 } });
+  assert.equal((await getTenantCredits(deps, { tenantId })).remainingCredits, 250);
+  assert.equal((await deps.platformBillingRepository.listAllTenantBilling()).find(row => row.tenantId === tenantId).monthlyCreditsQuota, 250);
+  assert.equal(Number((await db.pool.query('select monthly_credits_quota from tenant_billing where tenant_id=$1', [tenantId])).rows[0].monthly_credits_quota), original);
+  const overviewDeps = { ...deps, billingProvider: { supportsOffSessionCharge: false }, aiCreditPurchaseRepository: { listByTenant: async () => [] }, pricing: { unitPriceCents: 10, minPurchase: 100, maxPurchase: 100000, currency: 'BRL' } };
+  assert.equal((await getAiCreditsOverview(overviewDeps, tenantId)).monthlyQuota, 250);
+  await save(tenantId, { limits: { ai_credits: null } });
+  assert.equal((await getAiCreditsOverview(overviewDeps, tenantId)).monthlyUnlimited, true);
+  assert.equal((await getTenantCredits(deps, { tenantId })).monthlyCreditsQuota, Number.MAX_SAFE_INTEGER);
+  await save(tenantId, { limits: {} });
+  assert.equal((await getTenantCredits(deps, { tenantId })).monthlyCreditsQuota, original);
 });
 test('admin plan endpoint routes a real contract through billing provider, never silently changes the mirror', async () => {
   let providerCalled = false; let mirrorCalled = false;

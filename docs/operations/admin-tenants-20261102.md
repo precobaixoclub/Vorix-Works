@@ -12,6 +12,8 @@ Cada alteração desses controles exige motivo e registra ator, antes/depois e h
 
 Os controles são aplicados na resolução de entitlements, nos guardas da API, nas inclusões de contatos/automações/conexões por repositório, no uso de créditos de IA, nas respostas automáticas do worker e na resolução de publicação social. Bloqueios globais e RBAC continuam prioritários. Admin, autenticação e cobrança continuam acessíveis para recuperação. Os caches administrativos e de produtos expiram em até um segundo; operações já em execução podem concluir.
 
+O saldo de créditos exibido no resumo da conta, na barra do workspace e na recarga também considera a concessão administrativa. A cota contratada permanece intacta no banco; remover a concessão restaura essa cota. O modo ilimitado aparece como ilimitado nas telas, sem expor a sentinela numérica usada pelos consumidores legados.
+
 O limite genérico de armazenamento do catálogo continua visível no contrato retornado pela API, mas não é oferecido como controle manual: o contador legado não mede todos os caminhos de upload. Armazenamento do Meetings usa seus limites reais. Não há promessa de bloqueio de armazenamento global sem medição correspondente.
 
 A migração 0188 preserva os recursos comerciais já usados pela conta interna `tenant-vorix` como concessões explícitas, com histórico. Nenhum plano pago ou cobrança foi criado para isso.
@@ -41,7 +43,9 @@ O script `scripts/operations/delete-test-tenants.mjs` usa simulação com rollba
 
 - Build e tipos do backend; build de produção e tipos do frontend.
 - 135 testes de regressão do backend: controles, proteção da limpeza, contratos, billing, capacidade, soluções, créditos e workspaces.
+- Revisão do saldo exibido: 45 testes de créditos, contratos e concessões administrativas.
 - 234 testes do frontend.
 - 6 cenários de navegador (desktop e celular): concessões com motivo e persistência, histórico, preservação dos limites do Meetings, prévia/confirmar cobrança no tenant selecionado e manutenção do rascunho em conflito.
+- 2 cenários adicionais de navegador para a apresentação de créditos ilimitados na cobrança (desktop e celular).
 
 As mudanças financeiras foram validadas por testes e simulações, sem efetuar cobranças reais. O tenant preservado não tem assinatura de pagamento vinculada.

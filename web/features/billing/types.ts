@@ -97,6 +97,7 @@ export type CapacityState = {
 export type AiCreditPurchase = { id: string; credits: number; amountCents: number; currency: string; status: "pending" | "paid" | "failed" | "cancelled"; method: "saved_card" | "checkout"; failureReason?: string; createdAt: string; paidAt?: string };
 
 export type AiCreditsOverview = {
+  monthlyUnlimited?: boolean;
   remainingCredits: number;
   monthlyQuota: number;
   consumedThisMonth: number;

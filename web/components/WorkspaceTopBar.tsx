@@ -75,7 +75,7 @@ export function WorkspaceTopBar({ workspaceId, name, status, hideBreadcrumb }: {
               title={`Cota mensal: ${credits.monthlyCreditsQuota} · Usado este mês: ${credits.creditsConsumedThisMonth} · Comprados: ${credits.creditsExtra} — clique para comprar mais`}
             >
               <VorixAiIcon className="h-3 w-3" />
-              {credits.remainingCredits.toLocaleString("pt-BR")} créditos
+              {credits.monthlyCreditsQuota >= Number.MAX_SAFE_INTEGER ? "IA ilimitada" : `${credits.remainingCredits.toLocaleString("pt-BR")} créditos`}
               <span className="flex h-5 items-center gap-0.5 rounded-full bg-ai/15 px-1.5 text-[10px] font-semibold text-ai group-hover:bg-ai/25" aria-hidden="true">
                 <Plus className="h-2.5 w-2.5" />Comprar
               </span>
@@ -102,7 +102,7 @@ export function WorkspaceTopBar({ workspaceId, name, status, hideBreadcrumb }: {
               <div className="space-y-1 p-2">
                 {credits ? (
                   <Link href={`${base}/settings/plano#creditos`} onClick={() => setMenuOpen(false)} className="flex items-center justify-between gap-1.5 rounded-md px-2 py-1.5 text-xs text-text-secondary hover:bg-surface-2 md:hidden">
-                    <span className="flex items-center gap-1.5"><VorixAiIcon className="h-3 w-3" />{credits.remainingCredits.toLocaleString("pt-BR")} créditos de IA</span>
+                    <span className="flex items-center gap-1.5"><VorixAiIcon className="h-3 w-3" />{credits.monthlyCreditsQuota >= Number.MAX_SAFE_INTEGER ? "IA ilimitada" : `${credits.remainingCredits.toLocaleString("pt-BR")} créditos de IA`}</span>
                     <span className="font-semibold text-ai">Comprar</span>
                   </Link>
                 ) : null}

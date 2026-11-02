@@ -50,7 +50,7 @@ async function openSummaryFixture() {
   const tenantId = nextId("summary-tenant");
   const workspace = await makeWorkspace(tenantId);
   const { pipeline, stages } = await ensureDefaultPipeline(pipelineDeps(), tenantId, workspace.id);
-  const contact = await new PostgresContactRepository(db.pool).create({ tenantId, workspaceId: workspace.id, name: "Cliente com oportunidades" });
+  const contact = await new PostgresContactRepository(db.pool).create({ customFields: { phone: "+5511987654321" }, tenantId, workspaceId: workspace.id, name: "Cliente com oportunidades" });
   const team = await new PostgresTeamRepository(db.pool).create({ tenantId, workspaceId: workspace.id, name: "Equipe de vendas" });
   const repository = dealDeps().dealRepository;
   const base = { tenantId, workspaceId: workspace.id, pipelineId: pipeline.id, stageId: stages[0].id, contactId: contact.id, title: "Oportunidade", ownerUserId: "seller-a" };

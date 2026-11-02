@@ -70,11 +70,11 @@ test("API cria exemplos já desativados; não age até a ativação explícita",
     assert.equal(response.statusCode, 201, response.body);
     const rule = response.json().data;
     assert.equal(rule.active, false);
-    const first = await createContact(contactDeps(deps), { tenantId, workspaceId: workspace.id, name: "Contato antes da ativação" });
+    const first = await createContact(contactDeps(deps), { customFields: { phone: "+5511987654321" }, tenantId, workspaceId: workspace.id, name: "Contato antes da ativação" });
     assert.equal((await db.pool.query("select count(*)::int as n from tasks where contact_id=$1", [first.id])).rows[0].n, 0);
     assert.deepEqual(await listAutomationRunLogs(deps, { ruleId: rule.id, tenantId, workspaceId: workspace.id }), []);
     await updateAutomationRule(deps, { ruleId: rule.id, tenantId, workspaceId: workspace.id, patch: { active: true } });
-    const second = await createContact(contactDeps(deps), { tenantId, workspaceId: workspace.id, name: "Contato após ativar" });
+    const second = await createContact(contactDeps(deps), { customFields: { phone: "+5511987654321" }, tenantId, workspaceId: workspace.id, name: "Contato após ativar" });
     assert.equal((await db.pool.query("select count(*)::int as n from tasks where contact_id=$1", [second.id])).rows[0].n, 1);
   } finally { await app.close(); }
 });
@@ -167,10 +167,10 @@ test("contact_created: regra com condição de origem só dispara quando a orige
     conditions: [{ field: "origin", equals: "whatsapp" }], action: "add_tag", actionConfig: { tag: "whatsapp-lead" },
   });
 
-  const fromInstagram = await createContact(contactDeps(deps), { tenantId, workspaceId: workspace.id, name: "Cliente Instagram", origin: "instagram" });
+  const fromInstagram = await createContact(contactDeps(deps), { customFields: { phone: "+5511987654321" }, tenantId, workspaceId: workspace.id, name: "Cliente Instagram", origin: "instagram" });
   assert.deepEqual(fromInstagram.tags, []);
 
-  const fromWhatsapp = await createContact(contactDeps(deps), { tenantId, workspaceId: workspace.id, name: "Cliente WhatsApp", origin: "whatsapp" });
+  const fromWhatsapp = await createContact(contactDeps(deps), { customFields: { phone: "+5511987654321" }, tenantId, workspaceId: workspace.id, name: "Cliente WhatsApp", origin: "whatsapp" });
   const reloaded = await deps.contactRepository.getById(fromWhatsapp.id);
   assert.deepEqual(reloaded.tags, ["whatsapp-lead"]);
 
@@ -186,7 +186,7 @@ test("contact_created: assign_owner atribui um responsável fixo", async () => {
   const deps = automationDeps();
   await createAutomationRule(deps, { tenantId, workspaceId: workspace.id, name: "Dono fixo", trigger: "contact_created", conditions: [], action: "assign_owner", actionConfig: { ownerUserId: "user-fixo" } });
 
-  const contact = await createContact(contactDeps(deps), { tenantId, workspaceId: workspace.id, name: "Cliente" });
+  const contact = await createContact(contactDeps(deps), { customFields: { phone: "+5511987654321" }, tenantId, workspaceId: workspace.id, name: "Cliente" });
   const reloaded = await deps.contactRepository.getById(contact.id);
   assert.equal(reloaded.ownerUserId, "user-fixo");
 });
@@ -201,11 +201,11 @@ test("contact_created: assign_owner_least_loaded_in_team distribui pro membro co
   await addTeamMember(teamDeps, { teamId: team.id, tenantId, workspaceId: workspace.id, userId: "user-b", role: "editor" });
 
   // user-a já tem 1 contato deste time; user-b não tem nenhum — o próximo deveria ir pro user-b.
-  await deps.contactRepository.create({ tenantId, workspaceId: workspace.id, name: "Existente", ownerUserId: "user-a", teamId: team.id });
+  await deps.contactRepository.create({ customFields: { phone: "+5511987654321" }, tenantId, workspaceId: workspace.id, name: "Existente", ownerUserId: "user-a", teamId: team.id });
 
   await createAutomationRule(deps, { tenantId, workspaceId: workspace.id, name: "Distribuir", trigger: "contact_created", conditions: [], action: "assign_owner_least_loaded_in_team", actionConfig: { teamId: team.id } });
 
-  const newContact = await createContact(contactDeps(deps), { tenantId, workspaceId: workspace.id, name: "Novo Lead" });
+  const newContact = await createContact(contactDeps(deps), { customFields: { phone: "+5511987654321" }, tenantId, workspaceId: workspace.id, name: "Novo Lead" });
   const reloaded = await deps.contactRepository.getById(newContact.id);
   assert.equal(reloaded.ownerUserId, "user-b");
 });
@@ -296,7 +296,7 @@ test("Falha de uma ação (config inválida) nunca derruba a ação de negócio 
   // validação de schema da rota, simulando um estado de dados inconsistente).
   const rule = await deps.automationRuleRepository.create({ tenantId, workspaceId: workspace.id, name: "Regra quebrada", trigger: "contact_created", conditions: [], action: "add_tag", actionConfig: {} });
 
-  const contact = await createContact(contactDeps(deps), { tenantId, workspaceId: workspace.id, name: "Cliente Resiliente" });
+  const contact = await createContact(contactDeps(deps), { customFields: { phone: "+5511987654321" }, tenantId, workspaceId: workspace.id, name: "Cliente Resiliente" });
   assert.ok(contact.id, "createContact deveria ter sucesso mesmo com uma automação quebrada");
 
   const logs = await listAutomationRunLogs(deps, { ruleId: rule.id, tenantId, workspaceId: workspace.id });

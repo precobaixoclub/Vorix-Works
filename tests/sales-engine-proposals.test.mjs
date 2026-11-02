@@ -109,7 +109,7 @@ async function setup({ autoWin } = {}) {
   const { pipeline, stages } = await ensureDefaultPipeline(d, tenantId, workspaceId);
   const seller = { tenantId, userId: nextId("seller"), role: "editor" };
   const manager = { tenantId, userId: nextId("manager"), role: "admin" };
-  const contact = await base.contactRepository.create({ tenantId, workspaceId, name: "Ana Souza", company: "Empresa ABC" });
+  const contact = await base.contactRepository.create({ customFields: { phone: "+5511987654321" }, tenantId, workspaceId, name: "Ana Souza", company: "Empresa ABC" });
   const deal = await createDeal(d, { tenantId, workspaceId, pipelineId: pipeline.id, stageId: stages[1].id, contactId: contact.id, title: "Plano Pro", ownerUserId: seller.userId });
   const product = await base.productRepository.create({ tenantId, workspaceId, name: "Plano Pro", priceCents: 100000, costCents: 40000, minimumPriceCents: 80000 });
   if (autoWin !== undefined) await updateCommercialSettings(d, { tenantId, workspaceId, patch: { proposalAcceptAutoWin: autoWin } });

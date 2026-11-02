@@ -70,3 +70,41 @@ test("falha na consulta dos valores não aparece como oportunidade zerada", asyn
   await expect(ana.getByText("Indisponível", { exact: true })).toBeVisible();
   await expect(ana).not.toContainText(/R\$\s*0,00/);
 });
+
+test("novo contato exige telefone e envia o número no mesmo cadastro", async ({ page }) => {
+  const fixture = await contactsFixture(page);
+  const payloads: Record<string, unknown>[] = [];
+  await page.route("**/v1/contacts", async route => {
+    if (route.request().method() !== "POST") return route.fallback();
+    const payload = route.request().postDataJSON();
+    payloads.push(payload);
+    await route.fulfill({ status: 201, json: { ok: true, data: { id: "new-phone-contact", ...payload } } });
+  });
+  await page.goto(`/workspaces/${WORKSPACE_ID}/contacts`);
+  await page.getByRole("button", { name: "Novo contato", exact: true }).click();
+  const dialog = page.getByRole("dialog");
+  await dialog.getByLabel("Nome", { exact: true }).fill("Cliente com telefone");
+  await expect(dialog.getByRole("button", { name: "Criar", exact: true })).toBeDisabled();
+  await dialog.getByLabel("Telefone (obrigatório)").fill("+5511987654321");
+  await dialog.getByRole("button", { name: "Criar", exact: true }).click();
+  await expect(dialog).toBeHidden();
+  expect(payloads).toHaveLength(1);
+  expect(payloads[0]).toMatchObject({ name: "Cliente com telefone", customFields: { phone: "+5511987654321" } });
+  expect(fixture.mutations).toEqual([]);
+});
+
+test("telefone rejeitado pelo backend mantém o formulário aberto e mostra o erro", async ({ page }) => {
+  await contactsFixture(page);
+  await page.route("**/v1/contacts", async route => {
+    if (route.request().method() !== "POST") return route.fallback();
+    await route.fulfill({ status: 400, json: { ok: false, error: { code: "VALIDATION_ERROR", message: "Informe um telefone válido com DDD." } } });
+  });
+  await page.goto(`/workspaces/${WORKSPACE_ID}/contacts`);
+  await page.getByRole("button", { name: "Novo contato", exact: true }).click();
+  const dialog = page.getByRole("dialog");
+  await dialog.getByLabel("Nome", { exact: true }).fill("Contato inválido");
+  await dialog.getByLabel("Telefone (obrigatório)").fill("+210656032780390");
+  await dialog.getByRole("button", { name: "Criar", exact: true }).click();
+  await expect(page.getByText("Informe um telefone válido com DDD.", { exact: true })).toBeVisible();
+  await expect(dialog).toBeVisible();
+});

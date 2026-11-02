@@ -5,6 +5,7 @@ import type { Pool } from "pg";
 import type { ContactRepositoryPort, CreateContactInput, UpdateContactInput } from "../../../application/ports/contact-repository.port.js";
 import type { Contact } from "../../../domain/crm/crm.model.js";
 import { CONTACT_DIRECTORY_PROTECTED_SQL } from "./contact-directory-sql.js";
+import { requireContactPhone } from "../../../domain/crm/contact-phone.js";
 
 const idGenerator = () => `contact-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 
@@ -30,6 +31,7 @@ export class PostgresContactRepository implements ContactRepositoryPort {
   constructor(private readonly pool: Pool) {}
 
   async create(input: CreateContactInput): Promise<Contact> {
+    const phone = requireContactPhone(input.customFields?.phone);
     const result = await this.pool.query<ContactRow>(
       `insert into contacts (id, tenant_id, workspace_id, name, company, document, origin, owner_user_id, team_id, tags, custom_fields, notes)
        values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
@@ -38,7 +40,7 @@ export class PostgresContactRepository implements ContactRepositoryPort {
         idGenerator(), input.tenantId, input.workspaceId, input.name,
         input.company ?? null, input.document ?? null, input.origin ?? null,
         input.ownerUserId ?? null, input.teamId ?? null,
-        JSON.stringify(input.tags ?? []), JSON.stringify(input.customFields ?? {}), input.notes ?? null,
+        JSON.stringify(input.tags ?? []), JSON.stringify({ ...input.customFields, phone }), input.notes ?? null,
       ],
     );
     return this.toDomain(result.rows[0]);
@@ -93,6 +95,11 @@ export class PostgresContactRepository implements ContactRepositoryPort {
   async update(id: string, input: UpdateContactInput): Promise<Contact> {
     const existing = await this.getById(id);
     if (!existing) throw new Error(`CONTACT_NOT_FOUND: contato "${id}" não existe.`);
+    if (input.customFields) {
+      const fields = input.customFields;
+      const phone = requireContactPhone(Object.hasOwn(fields, "phone") ? fields.phone : existing.customFields.phone);
+      input = { ...input, customFields: { ...fields, phone } };
+    }
     const result = await this.pool.query<ContactRow>(
       `update contacts set
          name = $2, company = $3, document = $4, origin = $5, owner_user_id = $6, team_id = $7,

@@ -44,7 +44,7 @@ const listing=(id,sellerId,quantity=0)=>({id,sellerId,title:"Caneca",categoryId:
 let seq=0;
 const extOrder=(id,accountId,listingId,quantity,state="PAID",extra={})=>({id,accountId,state,externalStatus:state.toLowerCase(),createdAt:new Date().toISOString(),updatedAt:new Date(Date.now()+(++seq)*10).toISOString(),paidAt:state==="PENDING_PAYMENT"?undefined:new Date().toISOString(),
  currency:"BRL",items:[{externalItemId:listingId,title:"Caneca",quantity,unitPriceCents:2000}],subtotalCents:2000*quantity,discountCents:0,shippingCents:990,totalCents:2000*quantity+990,
- buyer:{id:"buyer-"+id,nickname:"COMPRADOR"+id},shipment:{externalId:"ship-"+id,state:"PENDING",externalStatus:"pending",labelAvailable:true,fulfilledByMarketplace:false},data:{},...extra});
+ buyer:{id:"buyer-"+id,nickname:"COMPRADOR"+id,phone:"+5511987654321"},shipment:{externalId:"ship-"+id,state:"PENDING",externalStatus:"pending",labelAvailable:true,fulfilledByMarketplace:false},data:{},...extra});
 
 async function world(){
  const c=await productSiteContext(db.pool);
@@ -54,7 +54,7 @@ async function world(){
  const orders=new PostgresCommerceOrderRepository(db.pool);
  const service=new MarketplaceService({repository:repo,secrets,releasePolicy:Object.fromEntries([ml,sp,tt].map(p=>[p.id,{availability:"BETA",tenantIds:[c.scope.tenantId]}])),providers:{MERCADO_LIVRE:ml,SHOPEE:sp,TIKTOK_SHOP:tt},catalog:c.d,canManageActor:async()=>true,orders,orderDeps:{contacts:{
   findByIdentity:async({channel,externalId})=>(await new PostgresContactIdentityRepository(db.pool).findByChannelAndExternalId(channel,externalId))?.contactId,
-  create:async input=>{const contact=await new PostgresContactRepository(db.pool).create({tenantId:input.tenantId,workspaceId:input.workspaceId,name:input.name,origin:input.origin});await new PostgresContactIdentityRepository(db.pool).create({contactId:contact.id,tenantId:input.tenantId,workspaceId:input.workspaceId,channel:input.channel,externalId:input.externalId});return contact.id;}}}});
+  create:async input=>{const contact=await new PostgresContactRepository(db.pool).create({customFields:{phone:input.phone},tenantId:input.tenantId,workspaceId:input.workspaceId,name:input.name,origin:input.origin});await new PostgresContactIdentityRepository(db.pool).create({contactId:contact.id,tenantId:input.tenantId,workspaceId:input.workspaceId,channel:input.channel,externalId:input.externalId});return contact.id;}}}});
  const conns={};
  for(const [p,account] of [[ml,"ML-"+randomUUID().slice(0,8)],[sp,"SP-"+randomUUID().slice(0,8)],[tt,"TT-"+randomUUID().slice(0,8)]]){
   const id="mpconn-"+randomUUID(),credentialsRef="marketplace/"+encodeURIComponent(c.tenantId)+"/"+encodeURIComponent(c.workspaceId)+"/"+id;
@@ -231,4 +231,16 @@ test("identical seller IDs in different providers never overwrite another connec
  assert.equal((await repo.connection(w.scope,result.connectionId)).provider,"SHOPEE");
  assert.equal((await repo.connection(w.scope,ml.id)).provider,"MERCADO_LIVRE");
  assert.deepEqual(await secrets.get(ml.credentialsRef),before,"the original provider token is unchanged");
+});
+
+test("marketplace sem telefone real registra o pedido sem criar contato no CRM",async()=>{
+ const w=await world();
+ for(const [id,phone] of [["700001",undefined],["700002","+210656032780390"]]){
+  const external=extOrder(id,w.conns.MERCADO_LIVRE.account,w.conns.MERCADO_LIVRE.listing,1);
+  external.buyer.phone=phone;
+  w.ml.orders.set(id,external);await w.notify("MERCADO_LIVRE",id);await w.drain();
+  const order=await w.byExternal("MERCADO_LIVRE",id);
+  assert.equal(order.status,"PAID");assert.equal(order.contactId,undefined);
+ }
+ assert.equal((await q("select count(*)::int n from contacts where tenant_id=$1 and workspace_id=$2",[w.tenantId,w.workspaceId]))[0].n,0);
 });

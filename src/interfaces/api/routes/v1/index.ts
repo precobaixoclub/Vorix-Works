@@ -423,6 +423,7 @@ export async function registerV1Routes(app: FastifyInstance): Promise<void> {
     await registerContactPhonesRoutes(app, { contactPhoneRepository: new PostgresContactPhoneRepository(identity.pool) });
     await registerContactsRoutes(app, {
       access: crmAccess,
+      inboxContactRepository: app.zunoContainer.inboxContactRepository,
       contactRepository: identity.contactRepository,
       contactIdentityRepository: identity.contactIdentityRepository,
       timelineEventRepository: identity.timelineEventRepository,

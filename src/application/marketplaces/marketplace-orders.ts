@@ -16,12 +16,13 @@ import type {ProductEngineRepositoryPort} from "../ports/product-engine-reposito
 import type {ProductRepositoryPort} from "../ports/product-repository.port.js";
 import type {ExternalOrder,ExternalOrderState,ExternalReturn} from "../ports/marketplace-provider.port.js";
 import {canTransitionReturn,type Order,type OrderItem,type OrderStatus,type PaymentStatus,type ShippingStatus} from "../../domain/commerce/order.model.js";
+import { normalizeContactPhone } from "../../domain/crm/contact-phone.js";
 
 const SYSTEM="marketplace-orders";
 export type MarketplaceOrderDeps={
  orders:CommerceOrderRepositoryPort;repository:MarketplaceRepositoryPort;productEngineRepository:ProductEngineRepositoryPort;productRepository:ProductRepositoryPort;
  /** Contato do comprador (só com `settings.createContacts`). Identidade namespaced pela conexão. */
- contacts?:{findByIdentity(input:{channel:string;externalId:string}):Promise<string|undefined>;create(input:{tenantId:string;workspaceId:string;name:string;channel:string;externalId:string;origin:string}):Promise<string>};
+ contacts?:{findByIdentity(input:{channel:string;externalId:string}):Promise<string|undefined>;create(input:{tenantId:string;workspaceId:string;name:string;phone:string;channel:string;externalId:string;origin:string}):Promise<string>};
  /** Aviso à equipe (ex.: venda externa sem saldo central). Best effort. */
  notify?(order:Order,title:string,body:string):Promise<void>;
  log?(event:string,data:Record<string,unknown>):void;
@@ -51,7 +52,11 @@ async function mapItems(deps:MarketplaceOrderDeps,c:StoredConnection,external:Ex
 async function buyerContact(deps:MarketplaceOrderDeps,c:StoredConnection,external:ExternalOrder):Promise<string|undefined>{
  if(!c.settings?.createContacts||!deps.contacts||!external.buyer.id)return undefined;
  const identity={channel:CHANNEL[c.provider],externalId:`${c.id}:${external.buyer.id}`};
- return await deps.contacts.findByIdentity(identity)??deps.contacts.create({tenantId:c.tenantId,workspaceId:c.workspaceId,name:(external.buyer.name??external.buyer.nickname??`Comprador ${LABEL[c.provider]}`).slice(0,160),origin:CHANNEL[c.provider],...identity});
+ const existing=await deps.contacts.findByIdentity(identity);
+ if(existing)return existing;
+ const phone=normalizeContactPhone(external.buyer.phone);
+ if(!phone)return undefined;
+ return deps.contacts.create({tenantId:c.tenantId,workspaceId:c.workspaceId,name:(external.buyer.name??external.buyer.nickname??`Comprador ${LABEL[c.provider]}`).slice(0,160),phone,origin:CHANNEL[c.provider],...identity});
 }
 
 export async function ingestExternalOrder(deps:MarketplaceOrderDeps,c:StoredConnection,external:ExternalOrder,returns:readonly ExternalReturn[]=[]):Promise<Order>{

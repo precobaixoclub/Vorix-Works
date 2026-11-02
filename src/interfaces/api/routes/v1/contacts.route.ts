@@ -11,6 +11,8 @@ import { CONTACT_CHANNELS } from "../../../../domain/crm/crm.model.js";
 import { NotFoundError, ValidationError } from "../../http/app-error.js";
 import { requirePermission } from "../../http/require-principal.js";
 import { successEnvelope } from "../../http/response-envelope.js";
+import type { InboxContactRepositoryPort } from "../../../../application/ports/inbox-contact-repository.port.js";
+import { classifyContactPhone } from "../../../../domain/crm/contact-phone.js";
 
 const WORKSPACE_QUERY_SCHEMA = {
   type: "object",
@@ -39,6 +41,7 @@ const CREATE_BODY_SCHEMA = {
     teamId: { type: "string" },
     tags: { type: "array", items: { type: "string", maxLength: 60 }, maxItems: 20 },
     customFields: { type: "object" },
+    inboxContactId: { type: "string", minLength: 1 },
     notes: { type: "string", maxLength: 4000 },
   },
 } as const;
@@ -57,10 +60,11 @@ const LINK_IDENTITY_BODY_SCHEMA = {
 
 function translateContactError(error: unknown): never {
   if (error instanceof Error && error.message.startsWith("CONTACT_NOT_FOUND")) throw new NotFoundError(error.message);
+  if (error instanceof Error && error.message.startsWith("CONTACT_PHONE_REQUIRED")) throw new ValidationError(error.message);
   throw error;
 }
 
-export async function registerContactsRoutes(app: FastifyInstance, deps: ContactUseCaseDeps & LeadScoringUseCaseDeps & ContactActivityUseCaseDeps & { access?: CrmAccessDeps }): Promise<void> {
+export async function registerContactsRoutes(app: FastifyInstance, deps: ContactUseCaseDeps & LeadScoringUseCaseDeps & ContactActivityUseCaseDeps & { access?: CrmAccessDeps; inboxContactRepository?: InboxContactRepositoryPort }): Promise<void> {
   app.get("/contacts", { schema: { querystring: WORKSPACE_QUERY_SCHEMA } }, async (request) => {
     const principal = requirePermission(request, "contact:read");
     const { workspaceId, search, ownerUserId, teamId, cursor, limit } = request.query as { workspaceId: string; search?: string; ownerUserId?: string; teamId?: string; cursor?: string; limit?: number };
@@ -72,7 +76,16 @@ export async function registerContactsRoutes(app: FastifyInstance, deps: Contact
   app.post("/contacts", { schema: { body: CREATE_BODY_SCHEMA }, config: { readOnlyGuard: true } }, async (request, reply) => {
     const principal = requirePermission(request, "contact:manage");
     const body = request.body as Record<string, unknown> & { workspaceId: string; name: string };
-    const contact = await createContact(deps, { tenantId: principal.tenantId, ...body, ownerUserId: body.ownerUserId ?? principal.userId } as never);
+    if (typeof body.inboxContactId === "string") {
+      const source = await deps.inboxContactRepository?.getById(body.inboxContactId);
+      if (!source || source.tenantId !== principal.tenantId || source.workspaceId !== body.workspaceId || source.mergeStatus === "merged") throw new NotFoundError("Contato da conversa não encontrado.");
+      const visibility = deps.access ? await resolveConversationVisibility(deps.access, principal) : undefined;
+      if (visibility && !(await deps.inbox?.conversationRepository.listByWorkspace({ tenantId: principal.tenantId, workspaceId: body.workspaceId, inboxContactId: source.id, visibility }))?.length) throw new NotFoundError("Contato da conversa não encontrado.");
+      const phone = classifyContactPhone([{ phoneNormalized: source.phoneNormalized, whatsappPn: source.whatsappPn, whatsappLid: source.whatsappLid }]);
+      if (phone.kind !== "phone") throw new ValidationError("O WhatsApp ainda não informou o telefone deste contato. Informe um telefone real antes de cadastrar no CRM.");
+      body.customFields = { ...(body.customFields as Record<string, unknown> | undefined), phone: phone.phone };
+    }
+    const contact = await createContact(deps, { tenantId: principal.tenantId, ...body, ownerUserId: body.ownerUserId ?? principal.userId } as never).catch(translateContactError);
     reply.code(201);
     return successEnvelope(contact, request.id);
   });

@@ -34,7 +34,7 @@ try{
   const session=`fixture-visitor-${String(n).padStart(3,"0")}`,utm=n%2?{source:"instagram",medium:"social",campaign:"colecao",content:"video",term:"camiseta"}:{source:"google",medium:"cpc",campaign:"busca"};
   for(const type of ["SITE_VIEW","PRODUCT_VIEW",...(n<8?["PRODUCT_WHATSAPP_CLICK"]:[]),...(n<5?["ADD_TO_CART"]:[])])await repo.recordEvent({...c.scope,siteId:site.id,type,anonymousSessionId:session,productId:type==="SITE_VIEW"?undefined:p.id,utm,eventKey:randomUUID()});
   if(n<4){
-   const contact=await c.d.contactRepository.create({...c.scope,name:`Cliente fictício ${n}`}),deal=await c.deal();
+   const contact=await c.d.contactRepository.create({ customFields: { phone: "+5511987654321" },...c.scope,name:`Cliente fictício ${n}`}),deal=await c.deal();
    if(n<2)await db.pool.query("update deals set status='won',closed_at=now(),final_value_cents=10000,final_snapshot=$2 where id=$1",[deal.id,JSON.stringify({items:[{productId:p.id,subtotalCents:10000}]})]);
    const {intent}=await repo.createIntent({...c.scope,siteId:site.id,reference:newSalesIntentReference(),type:"PRODUCT_WHATSAPP",status:"CONVERTED",productId:p.id,anonymousSessionId:session,contactId:contact.id,dealId:deal.id,utm,snapshot:{items:[{productId:p.id,name:p.name,quantity:1,unitPriceCents:10000,currency:"BRL"}],subtotalCents:10000,currency:"BRL"},expiresAt:new Date(Date.now()+86400000).toISOString()});
    await repo.recordEvent({...c.scope,siteId:site.id,type:"SALES_INTENT_CREATED",anonymousSessionId:session,salesIntentId:intent.id,utm});

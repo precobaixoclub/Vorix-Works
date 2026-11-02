@@ -80,7 +80,7 @@ async function makeConversationForContact(tenantId, workspaceId, crmContactId) {
 test("Fase 5 — Timeline 360 agrega contato, negócio, tarefa, proposta e conversa numa lista só, mais recente primeiro", async () => {
   const tenantId = "tenant-fase5-e2e-accept";
   const ws = await makeWorkspace(tenantId);
-  const contact = await createContact(crmDeps(), { tenantId, workspaceId: ws.id, name: "Cliente Aceite" });
+  const contact = await createContact(crmDeps(), { customFields: { phone: "+5511987654321" }, tenantId, workspaceId: ws.id, name: "Cliente Aceite" });
   const conversation = await makeConversationForContact(tenantId, ws.id, contact.id);
   const inboxDeps = { conversationRepository: new PostgresInboxConversationRepository(db.pool), conversationEventRepository: new PostgresInboxConversationEventRepository(db.pool) };
 
@@ -137,7 +137,7 @@ test("Fase 5 — Timeline 360 agrega contato, negócio, tarefa, proposta e conve
 test("Fase 5 — recusa de proposta mantém negócio aberto e é registrada como ação do cliente", async () => {
   const tenantId = "tenant-fase5-e2e-reject";
   const ws = await makeWorkspace(tenantId);
-  const contact = await createContact(crmDeps(), { tenantId, workspaceId: ws.id, name: "Cliente Recusa" });
+  const contact = await createContact(crmDeps(), { customFields: { phone: "+5511987654321" }, tenantId, workspaceId: ws.id, name: "Cliente Recusa" });
   const { pipeline, stages } = await ensureDefaultPipeline({ pipelineRepository: new PostgresPipelineRepository(db.pool), pipelineStageRepository: new PostgresPipelineStageRepository(db.pool) }, tenantId, ws.id);
   const openStage = stages.find((stage) => !stage.isWon && !stage.isLost);
   const deal = await createDeal(dealDeps(), { tenantId, workspaceId: ws.id, pipelineId: pipeline.id, stageId: openStage.id, contactId: contact.id, title: "Negócio Recusado" });
@@ -160,7 +160,7 @@ test("Fase 5 — recusa de proposta mantém negócio aberto e é registrada como
 test("Fase 5 — contato sem negócio nenhum ainda mostra tarefa e conversa na Timeline", async () => {
   const tenantId = "tenant-fase5-sem-deal";
   const ws = await makeWorkspace(tenantId);
-  const contact = await createContact(crmDeps(), { tenantId, workspaceId: ws.id, name: "Cliente Sem Negócio" });
+  const contact = await createContact(crmDeps(), { customFields: { phone: "+5511987654321" }, tenantId, workspaceId: ws.id, name: "Cliente Sem Negócio" });
   const conversation = await makeConversationForContact(tenantId, ws.id, contact.id);
   const inboxDeps = { conversationRepository: new PostgresInboxConversationRepository(db.pool), conversationEventRepository: new PostgresInboxConversationEventRepository(db.pool) };
   await takeOverConversation(inboxDeps, { conversationId: conversation.id, tenantId, workspaceId: ws.id, userId: "user-2" });
@@ -178,7 +178,7 @@ test("Fase 5 — contato sem negócio nenhum ainda mostra tarefa e conversa na T
 test("Fase 5 — funciona sem o módulo Conversas (inbox desligado) usando só eventos CRM", async () => {
   const tenantId = "tenant-fase5-no-inbox";
   const ws = await makeWorkspace(tenantId);
-  const contact = await createContact(crmDeps(), { tenantId, workspaceId: ws.id, name: "Cliente Sem Inbox" });
+  const contact = await createContact(crmDeps(), { customFields: { phone: "+5511987654321" }, tenantId, workspaceId: ws.id, name: "Cliente Sem Inbox" });
   await createTask(taskDeps(), { tenantId, workspaceId: ws.id, contactId: contact.id, type: "follow_up", title: "Tarefa isolada" });
 
   const activity = await getContactActivity(activityDeps(false), { contactId: contact.id, tenantId, workspaceId: ws.id });
@@ -191,7 +191,7 @@ test("Fase 5 — isolamento multi-tenant: contato de um tenant nunca aparece pra
   const tenantB = "tenant-fase5-multi-b";
   const wsA = await makeWorkspace(tenantA);
   const wsB = await makeWorkspace(tenantB);
-  const contactA = await createContact(crmDeps(), { tenantId: tenantA, workspaceId: wsA.id, name: "Contato A" });
+  const contactA = await createContact(crmDeps(), { customFields: { phone: "+5511987654321" }, tenantId: tenantA, workspaceId: wsA.id, name: "Contato A" });
 
   await assert.rejects(() => getContactActivity(activityDeps(), { contactId: contactA.id, tenantId: tenantB, workspaceId: wsB.id }), /CONTACT_NOT_FOUND/);
   await assert.rejects(() => getContactActivity(activityDeps(), { contactId: contactA.id, tenantId: tenantA, workspaceId: wsB.id }), /CONTACT_NOT_FOUND/);
@@ -200,7 +200,7 @@ test("Fase 5 — isolamento multi-tenant: contato de um tenant nunca aparece pra
 test("Fase 5 — reagendar tarefa gera task_rescheduled; negócio reaberto após Ganho vira deal_reopened", async () => {
   const tenantId = "tenant-fase5-reschedule-reopen";
   const ws = await makeWorkspace(tenantId);
-  const contact = await createContact(crmDeps(), { tenantId, workspaceId: ws.id, name: "Cliente Reagenda" });
+  const contact = await createContact(crmDeps(), { customFields: { phone: "+5511987654321" }, tenantId, workspaceId: ws.id, name: "Cliente Reagenda" });
   const task = await createTask(taskDeps(), { tenantId, workspaceId: ws.id, contactId: contact.id, type: "follow_up", title: "Reagendável", dueAt: "2026-01-01T10:00:00.000Z" });
   await updateTask(taskDeps(), { taskId: task.id, tenantId, workspaceId: ws.id, patch: { dueAt: "2026-01-05T10:00:00.000Z" } });
 
@@ -220,7 +220,7 @@ test("Fase 5 — reagendar tarefa gera task_rescheduled; negócio reaberto após
 test("Fase 5 — eventos operacionais de baixo nível (assigned, IA) não viram ruído na Timeline salvo os listados", async () => {
   const tenantId = "tenant-fase5-noise";
   const ws = await makeWorkspace(tenantId);
-  const contact = await createContact(crmDeps(), { tenantId, workspaceId: ws.id, name: "Cliente Ruído" });
+  const contact = await createContact(crmDeps(), { customFields: { phone: "+5511987654321" }, tenantId, workspaceId: ws.id, name: "Cliente Ruído" });
   const conversation = await makeConversationForContact(tenantId, ws.id, contact.id);
   const inboxDeps = { conversationRepository: new PostgresInboxConversationRepository(db.pool), conversationEventRepository: new PostgresInboxConversationEventRepository(db.pool) };
   await setAiConversationEnabled(inboxDeps, { conversationId: conversation.id, tenantId, workspaceId: ws.id, aiEnabled: true, performedBy: "user-3" });

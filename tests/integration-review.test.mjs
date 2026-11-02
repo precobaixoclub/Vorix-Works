@@ -63,7 +63,7 @@ before(async () => {
   entities = {};
   for (const [key, team] of [["a", teamA], ["b", teamB]]) {
     const ownership = { ownerUserId: shared.id, teamId: team.id };
-    const contact = await deps.contactRepository.create({ ...ctx, ...ownership, name: key });
+    const contact = await deps.contactRepository.create({ customFields: { phone: "+5511987654321" }, ...ctx, ...ownership, name: key });
     const deal = await deps.dealRepository.create({ ...ctx, ...ownership, pipelineId: pipeline.id, stageId: stage.id, contactId: contact.id, title: key });
     const task = await deps.taskRepository.create({ ...ctx, ...ownership, contactId: contact.id, dealId: deal.id, type: "follow_up", title: key });
     const proposal = await deps.proposalRepository.create({ ...ctx, dealId: deal.id, contactId: contact.id, title: key, items: [], totalCents: 100, publicTokenHash: `review-${key}`, createdByUserId: shared.id });
@@ -180,7 +180,7 @@ test("routing never assigns disabled or removed tenant members", async () => {
 });
 
 test("an unowned contact created by WhatsApp remains accessible through the authorized conversation", async () => {
-  const contact = await deps.contactRepository.create({ ...ctx, name: "Inbound contact" });
+  const contact = await deps.contactRepository.create({ customFields: { phone: "+5511987654321" }, ...ctx, name: "Inbound contact" });
   const inboxContactRepo = new PostgresInboxContactRepository(db.pool);
   const inboxContact = await inboxContactRepo.upsertByPhone({ ...ctx, phoneNormalized: "+5511900011111", name: "Inbound" });
   await inboxContactRepo.linkCrmContact(inboxContact.id, contact.id);

@@ -26,7 +26,7 @@ import { Badge } from "@/components/ui/badge";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useCurrentWorkspace } from "@/contexts/workspace-context";
-import { completeTask, createContact, getContactPhones, linkContactIdentity, moveDealStage, updateContact, type ContactPhoneSummary } from "@/features/crm/api";
+import { completeTask, createContact, getContactPhones, moveDealStage, updateContact, type ContactPhoneSummary } from "@/features/crm/api";
 import { groupDealsByStatus } from "@/features/crm/deal-resolution";
 import { useContactActivity, useContactOpenDealsSummary, useContacts, useDeal, useDeals, useLeadScore, usePipelineStages, usePipelines, useProposals, useStagesByPipeline, useTasks } from "@/features/crm/hooks";
 import { activityActorLabel, isTaskOverdue, nextPendingTask, PROPOSAL_STATUS_LABEL, TASK_TYPE_LABEL } from "@/features/crm/presentation";
@@ -156,18 +156,12 @@ function ContactsView() {
       const contact = await createContact({
         workspaceId: workspace.id,
         name: name.trim(),
+        customFields: { phone: phone.trim() },
         company: company.trim() || undefined,
         origin: origin.trim() || undefined,
         ownerUserId: createOwnerUserId || undefined,
         teamId: createTeamId || undefined,
       });
-      if (phone.trim()) {
-        try {
-          await linkContactIdentity(contact.id, workspace.id, "whatsapp", phone.trim());
-        } catch (cause) {
-          toast.error("Contato criado, mas o WhatsApp não foi vinculado", { description: cause instanceof Error ? cause.message : "Revise o número depois." });
-        }
-      }
       setCreateOpen(false);
       resetCreateForm();
       await mutate();
@@ -250,7 +244,7 @@ function ContactsView() {
             <ContactCard
               key={contact.id}
               contact={contact}
-              phone={phones?.[contact.id]}
+              phone={phones?.[contact.id] ?? (typeof contact.customFields.phone === "string" ? { kind: "phone", phone: contact.customFields.phone } : undefined)}
               openDealsSummary={openDealsSummary?.filter(summary => summary.contactId === contact.id)}
               summaryError={Boolean(summaryError)}
               tasks={tasksList.filter((task) => task.contactId === contact.id)}
@@ -276,8 +270,8 @@ function ContactsView() {
               <Input id="contact-company" value={company} onChange={(event) => setCompany(event.target.value)} placeholder="Empresa ou marca" />
             </div>
             <div>
-              <Label htmlFor="contact-phone">WhatsApp</Label>
-              <Input id="contact-phone" value={phone} onChange={(event) => setPhone(event.target.value)} placeholder="+55 11 99999-9999" inputMode="tel" />
+              <Label htmlFor="contact-phone">Telefone (obrigatório)</Label>
+              <Input id="contact-phone" required value={phone} onChange={(event) => setPhone(event.target.value)} placeholder="+55 11 99999-9999" inputMode="tel" />
             </div>
             <div>
               <Label htmlFor="contact-origin">Origem</Label>
@@ -294,7 +288,7 @@ function ContactsView() {
           </div>
           <div className="mt-4 flex justify-end gap-2">
             <Button variant="secondary" onClick={() => { setCreateOpen(false); resetCreateForm(); }} disabled={busy}>Cancelar</Button>
-            <Button onClick={handleCreate} loading={busy} disabled={!name.trim() || busy}>Criar</Button>
+            <Button onClick={handleCreate} loading={busy} disabled={!name.trim() || !phone.trim() || busy}>Criar</Button>
           </div>
         </Modal>
       ) : null}

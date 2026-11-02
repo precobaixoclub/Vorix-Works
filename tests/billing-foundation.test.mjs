@@ -149,7 +149,7 @@ test("Limite: assertWithinLimit lança USAGE_LIMIT_REACHED quando o uso real ati
   };
 
   // Contatos são ilimitados em todos os planos (migration 0163) — nunca bloqueia.
-  await createContact(contactDeps, { tenantId, workspaceId: workspace.id, name: "Contato 1" });
+  await createContact(contactDeps, { customFields: { phone: "+5511987654321" }, tenantId, workspaceId: workspace.id, name: "Contato 1" });
   const { used, max } = await getLimit(deps, { tenantId, resource: "contacts" });
   assert.equal(used, 1);
   assert.equal(max, null);

@@ -35,6 +35,13 @@ before(async () => {
 });
 after(async () => { await db.stop(); });
 
+// Dados anteriores à obrigatoriedade: a API e o repositório agora rejeitam estes cadastros.
+async function legacyContact(input) {
+  const id = nextId("legacy-contact");
+  await db.pool.query("insert into contacts (id,tenant_id,workspace_id,name) values ($1,$2,$3,$4)", [id,input.tenantId,input.workspaceId,input.name]);
+  return new PostgresContactRepository(db.pool).getById(id);
+}
+
 test("MANUTENÇÃO AUTOMÁTICA: oculta só registros técnicos e recupera o mesmo contato quando o número chega", async () => {
   const tenantId = nextId("tenant");
   const workspace = await new PostgresWorkspaceRepository(db.pool).create({ tenantId, name: "Automático" });
@@ -43,12 +50,12 @@ test("MANUTENÇÃO AUTOMÁTICA: oculta só registros técnicos e recupera o mesm
   const identities = new PostgresContactIdentityRepository(db.pool);
   const inbox = new PostgresInboxContactRepository(db.pool);
   const repository = new PostgresContactPhoneRepository(db.pool);
-  const pending = await contacts.create({ ...scope, name: LID });
+  const pending = await legacyContact({ ...scope, name: LID });
   const conversationContact = await inbox.upsertByPhone({ ...scope, phoneNormalized: LID, whatsappLid: LID });
   await identities.create({ ...scope, contactId: pending.id, channel: "whatsapp", externalId: conversationContact.id });
   await inbox.linkCrmContact(conversationContact.id, pending.id);
-  const manual = await contacts.create({ ...scope, name: "Lead cadastrado sem telefone" });
-  const withTask = await contacts.create({ ...scope, name: "Cliente com retorno" });
+  const manual = await legacyContact({ ...scope, name: "Lead cadastrado sem telefone" });
+  const withTask = await legacyContact({ ...scope, name: "Cliente com retorno" });
   await identities.create({ ...scope, contactId: withTask.id, channel: "whatsapp", externalId: "987654321098764@lid" });
   await new PostgresTaskRepository(db.pool).create({ ...scope, contactId: withTask.id, type: "follow_up", title: "Retornar ao cliente" });
 
@@ -85,7 +92,7 @@ test("MANUTENÇÃO AUTOMÁTICA: alterações de perfil e atividade impedem ocult
   const scope = { tenantId, workspaceId: workspace.id };
   const contacts = new PostgresContactRepository(db.pool);
   const repository = new PostgresContactPhoneRepository(db.pool);
-  const contact = await contacts.create({ ...scope, name: LID });
+  const contact = await legacyContact({ ...scope, name: LID });
   await new PostgresContactIdentityRepository(db.pool).create({ ...scope, contactId: contact.id, channel: "whatsapp", externalId: `${LID}@lid` });
   await reconcileContactDirectory(repository, scope);
   assert.ok(!(await contacts.listByWorkspace(scope)).some(item => item.id === contact.id));
@@ -115,22 +122,22 @@ test("LIMPEZA: remove só contatos LID sem venda/proposta; celular e quem tem op
   const identities = new PostgresContactIdentityRepository(db.pool);
   const inbox = new PostgresInboxContactRepository(db.pool);
 
-  const withPhone = await contacts.create({ tenantId, workspaceId, name: "Ana" });
+  const withPhone = await legacyContact({ tenantId, workspaceId, name: "Ana" });
   const phoneInbox = await inbox.upsertByPhone({ tenantId, workspaceId, phoneNormalized: "+5511987654321", name: "Ana" });
   await inbox.linkCrmContact(phoneInbox.id, withPhone.id);
 
-  const lidOnly = await contacts.create({ tenantId, workspaceId, name: "102938475610293" });
+  const lidOnly = await legacyContact({ tenantId, workspaceId, name: "102938475610293" });
   const lidInbox = await inbox.upsertByPhone({ tenantId, workspaceId, phoneNormalized: LID, whatsappLid: LID });
   await identities.create({ contactId: lidOnly.id, tenantId, workspaceId, channel: "whatsapp", externalId: lidInbox.id });
   await inbox.linkCrmContact(lidInbox.id, lidOnly.id);
 
-  const lidWithDeal = await contacts.create({ tenantId, workspaceId, name: "Cliente LID com venda" });
+  const lidWithDeal = await legacyContact({ tenantId, workspaceId, name: "Cliente LID com venda" });
   await identities.create({ contactId: lidWithDeal.id, tenantId, workspaceId, channel: "whatsapp", externalId: "987654321098765@lid" });
   const d = { pipelineRepository: new PostgresPipelineRepository(db.pool), pipelineStageRepository: new PostgresPipelineStageRepository(db.pool) };
   const { pipeline, stages } = await ensureDefaultPipeline(d, tenantId, workspaceId);
   await new PostgresDealRepository(db.pool).create({ tenantId, workspaceId, pipelineId: pipeline.id, stageId: stages[0].id, contactId: lidWithDeal.id, title: "Venda", valueCents: 1000, currency: "BRL" });
 
-  const manualNoPhone = await contacts.create({ tenantId, workspaceId, name: "Lead sem telefone" });
+  const manualNoPhone = await legacyContact({ tenantId, workspaceId, name: "Lead sem telefone" });
 
   const deps = { contactPhoneRepository: new PostgresContactPhoneRepository(db.pool) };
   const phones = await getContactPhones(deps, { tenantId, workspaceId, contactIds: [withPhone.id, lidOnly.id, manualNoPhone.id] });

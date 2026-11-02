@@ -57,7 +57,7 @@ export function CreateOpportunityButton({
     }
     setLinking(true);
     try {
-      const contact = await createContact({ workspaceId, name: contactName, origin: "whatsapp" });
+      const contact = await createContact({ workspaceId, name: contactName, origin: "whatsapp", inboxContactId: conversation.contactId });
       await linkContactIdentity(contact.id, workspaceId, "whatsapp", conversation.contactId!);
       await onConversationChanged();
       setContactId(contact.id);

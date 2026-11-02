@@ -1,4 +1,5 @@
 import { canonicalizeBrazilianPhone } from "../inbox/brazilian-phone-identity.js";
+import { parsePhoneNumberFromString } from "libphonenumber-js/max";
 
 /**
  * Telefone do contato do CRM — o celular é o pivô de tudo (conversa, oportunidade, proposta).
@@ -20,24 +21,32 @@ const digitsOf = (value: string) => value.replace(/\D/g, "");
 export function looksLikeLid(value: string): boolean {
   if (/@lid\b/i.test(value) || value.startsWith("LID_")) return true;
   if (canonicalizeBrazilianPhone(value)?.isValidBrazilian) return false;
-  return digitsOf(value).length >= 14;
+  return digitsOf(value).length >= 14 && !normalizeContactPhone(value);
 }
 
-function asPhone(value: string | undefined): string | undefined {
-  if (!value) return undefined;
-  if (/@(g\.us|newsletter|lid)\b/i.test(value) || value.startsWith("LID_")) return undefined;
-  const digits = digitsOf(value);
-  // Código de país explícito diferente do Brasil (+1, +351...): telefone internacional como veio.
-  if (value.trim().startsWith("+") && !digits.startsWith("55")) return digits.length >= 10 && digits.length <= 13 ? `+${digits}` : undefined;
-  const brazilian = canonicalizeBrazilianPhone(value);
-  if (brazilian?.isValidBrazilian) return brazilian.e164;
-  return digits.length >= 10 && digits.length <= 13 ? `+${digits}` : undefined;
+export function normalizeContactPhone(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const raw = value.trim().replace(/@s\.whatsapp\.net$/i, "");
+  // Não extrair dígitos de nomes, UUIDs, LIDs ou outros identificadores técnicos.
+  if (!/^\+?[\d\s().-]+$/.test(raw)) return undefined;
+  const digits = digitsOf(raw);
+  const explicitInternational = raw.startsWith("+") && !digits.startsWith("55");
+  const brazilian = explicitInternational ? undefined : canonicalizeBrazilianPhone(raw);
+  const candidate = brazilian?.isValidBrazilian ? brazilian.e164 : raw.startsWith("+") ? raw : digits.startsWith("55") ? `+${digits}` : raw;
+  const parsed = parsePhoneNumberFromString(candidate, { defaultCountry: "BR", extract: false });
+  return parsed?.isValid() ? parsed.number : undefined;
+}
+
+export function requireContactPhone(value: unknown): string {
+  const phone = normalizeContactPhone(value);
+  if (!phone) throw new Error("CONTACT_PHONE_REQUIRED: informe um telefone válido com DDD e código do país. Identificadores do WhatsApp não são telefones.");
+  return phone;
 }
 
 export function classifyContactPhone(sources: readonly ContactPhoneSource[]): ContactPhoneSummary {
   let sawLid = false;
   for (const source of sources) {
-    const pn = asPhone(source.whatsappPn);
+    const pn = source.whatsappLid && source.whatsappPn && digitsOf(source.whatsappLid) === digitsOf(source.whatsappPn) ? undefined : normalizeContactPhone(source.whatsappPn);
     if (pn) return { kind: "phone", phone: pn };
   }
   for (const source of sources) {
@@ -46,7 +55,7 @@ export function classifyContactPhone(sources: readonly ContactPhoneSource[]): Co
       const isTheLid = Boolean(source.whatsappLid && digitsOf(source.whatsappLid) === digitsOf(normalized));
       if (isTheLid || looksLikeLid(normalized)) sawLid = true;
       else {
-        const phone = asPhone(normalized);
+        const phone = normalizeContactPhone(normalized);
         if (phone) return { kind: "phone", phone };
       }
     }
@@ -54,7 +63,7 @@ export function classifyContactPhone(sources: readonly ContactPhoneSource[]): Co
     if (source.manualExternalId) {
       if (looksLikeLid(source.manualExternalId)) sawLid = true;
       else {
-        const phone = asPhone(source.manualExternalId);
+        const phone = normalizeContactPhone(source.manualExternalId);
         if (phone) return { kind: "phone", phone };
       }
     }

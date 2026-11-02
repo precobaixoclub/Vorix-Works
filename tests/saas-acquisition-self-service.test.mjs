@@ -170,7 +170,7 @@ test("POST /v1/contacts: tenant com trial_expired é bloqueado com 402, dado nen
     method: "POST",
     url: "/v1/contacts",
     headers: auth,
-    payload: { workspaceId: workspace.id, name: "Novo Contato" },
+    payload: { workspaceId: workspace.id, name: "Novo Contato", customFields: { phone: "+5511987654321" } },
   });
   assert.equal(response.statusCode, 402);
   assert.equal(response.json().error.code, "ENTITLEMENT_ACCOUNT_READ_ONLY");
@@ -189,7 +189,7 @@ test("POST /v1/contacts: tenant com Subscription active continua criando normalm
     method: "POST",
     url: "/v1/contacts",
     headers: auth,
-    payload: { workspaceId: workspace.id, name: "Novo Contato" },
+    payload: { workspaceId: workspace.id, name: "Novo Contato", customFields: { phone: "+5511987654321" } },
   });
   assert.equal(response.statusCode, 201);
   await app.close();

@@ -197,7 +197,7 @@ test("Contato: criar registra evento na timeline", async () => {
   const workspace = await makeWorkspace(tenantId);
   const deps = contactDeps();
 
-  const contact = await createContact(deps, { tenantId, workspaceId: workspace.id, name: "João Martins", origin: "instagram" });
+  const contact = await createContact(deps, { customFields: { phone: "+5511987654321" }, tenantId, workspaceId: workspace.id, name: "João Martins", origin: "instagram" });
   const timeline = await getContactTimeline(deps, { contactId: contact.id, tenantId, workspaceId: workspace.id });
   assert.equal(timeline.length, 1);
   assert.equal(timeline[0].eventType, "contact_created");
@@ -208,7 +208,7 @@ test("ContactIdentity: ligar é idempotente por (channel, externalId) — segund
   const tenantId = "tenant-contact-2";
   const workspace = await makeWorkspace(tenantId);
   const deps = contactDeps();
-  const contact = await createContact(deps, { tenantId, workspaceId: workspace.id, name: "Maria" });
+  const contact = await createContact(deps, { customFields: { phone: "+5511987654321" }, tenantId, workspaceId: workspace.id, name: "Maria" });
 
   const first = await linkContactIdentity(deps, { contactId: contact.id, tenantId, workspaceId: workspace.id, channel: "instagram", externalId: "ig-123" });
   assert.equal(first.wasCreated, true);
@@ -226,8 +226,8 @@ test("ContactIdentity: nunca funde automaticamente — identidade já ligada a O
   const tenantId = "tenant-contact-3";
   const workspace = await makeWorkspace(tenantId);
   const deps = contactDeps();
-  const contactA = await createContact(deps, { tenantId, workspaceId: workspace.id, name: "Contato A" });
-  const contactB = await createContact(deps, { tenantId, workspaceId: workspace.id, name: "Contato B" });
+  const contactA = await createContact(deps, { customFields: { phone: "+5511987654321" }, tenantId, workspaceId: workspace.id, name: "Contato A" });
+  const contactB = await createContact(deps, { customFields: { phone: "+5511987654321" }, tenantId, workspaceId: workspace.id, name: "Contato B" });
 
   await linkContactIdentity(deps, { contactId: contactA.id, tenantId, workspaceId: workspace.id, channel: "whatsapp", externalId: "wa-shared" });
   const conflict = await linkContactIdentity(deps, { contactId: contactB.id, tenantId, workspaceId: workspace.id, channel: "whatsapp", externalId: "wa-shared" });
@@ -243,7 +243,7 @@ test("Contato: isolamento cross-tenant — contato de outro tenant nunca é enco
   const workspaceA = await makeWorkspace(tenantA);
   const workspaceB = await makeWorkspace(tenantB);
   const deps = contactDeps();
-  const contact = await createContact(deps, { tenantId: tenantA, workspaceId: workspaceA.id, name: "Só do Tenant A" });
+  const contact = await createContact(deps, { customFields: { phone: "+5511987654321" }, tenantId: tenantA, workspaceId: workspaceA.id, name: "Só do Tenant A" });
 
   await assert.rejects(
     () => mustContactBelongToTenantAndWorkspace(deps, contact.id, tenantB, workspaceB.id),
@@ -255,7 +255,7 @@ test("Contato: atualizar campos preserva os não informados", async () => {
   const tenantId = "tenant-contact-4";
   const workspace = await makeWorkspace(tenantId);
   const deps = contactDeps();
-  const contact = await createContact(deps, { tenantId, workspaceId: workspace.id, name: "Original", company: "Empresa X" });
+  const contact = await createContact(deps, { customFields: { phone: "+5511987654321" }, tenantId, workspaceId: workspace.id, name: "Original", company: "Empresa X" });
 
   const updated = await updateContact(deps, { contactId: contact.id, tenantId, workspaceId: workspace.id, patch: { name: "Atualizado" } });
   assert.equal(updated.name, "Atualizado");

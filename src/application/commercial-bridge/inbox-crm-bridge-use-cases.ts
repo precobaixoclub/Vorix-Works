@@ -77,14 +77,15 @@ export async function ensureCrmContactForInboxContact(
   input: { tenantId: string; workspaceId: string; inboxContactId: string; contactName?: string; contactPhone?: string; origin?: string },
 ): Promise<EnsureCrmContactResult | undefined> {
   const inboxContact = await deps.inboxContactRepository.getById(input.inboxContactId);
-  if (!inboxContact) return undefined;
+  if (!inboxContact || inboxContact.tenantId !== input.tenantId || inboxContact.workspaceId !== input.workspaceId) return undefined;
   // Tombstone (migration 0118) — nunca vincula um InboxContact que já foi fundido em outro; quem
   // chama deveria estar operando sobre o vencedor da fusão, não o perdedor.
   if (inboxContact.mergeStatus === "merged") return undefined;
   if (inboxContact.crmContactId) return { contactId: inboxContact.crmContactId, created: false };
   // O celular é o pivô do CRM: enquanto o WhatsApp só informou o LID (sem número real), não cria
   // contato — ele nasce quando o número chegar (próxima mensagem com o alias de telefone).
-  if (classifyContactPhone([{ phoneNormalized: inboxContact.phoneNormalized, whatsappPn: inboxContact.whatsappPn, whatsappLid: inboxContact.whatsappLid }]).kind !== "phone") return undefined;
+  const phone = classifyContactPhone([{ phoneNormalized: inboxContact.phoneNormalized, whatsappPn: inboxContact.whatsappPn, whatsappLid: inboxContact.whatsappLid }]);
+  if (phone.kind !== "phone") return undefined;
 
   const existingIdentity = await deps.contact.contactIdentityRepository.findByChannelAndExternalId("whatsapp", input.inboxContactId);
   if (existingIdentity) {
@@ -98,6 +99,7 @@ export async function ensureCrmContactForInboxContact(
     workspaceId: input.workspaceId,
     name: displayName,
     origin: input.origin ?? AUTO_CONTACT_ORIGIN,
+    customFields: { phone: phone.phone },
   });
 
   const { identity, conflictsWithAnotherContact } = await linkContactIdentity(deps.contact, {

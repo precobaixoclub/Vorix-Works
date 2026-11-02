@@ -78,7 +78,7 @@ async function setup({ messages = [], generator } = {}) {
     insightsGenerator: generator ? { generate: async (input) => { captured.push(input); return generator(input); } } : undefined,
   };
   const { pipeline, stages } = await ensureDefaultPipeline(d, tenantId, workspaceId);
-  const contact = await d.contactRepository.create({ tenantId, workspaceId, name: "Bruno" });
+  const contact = await d.contactRepository.create({ customFields: { phone: "+5511987654321" }, tenantId, workspaceId, name: "Bruno" });
   const deal = await createDeal(d, { tenantId, workspaceId, pipelineId: pipeline.id, stageId: stages[1].id, contactId: contact.id, title: "Plano Enterprise", ownerUserId: seller.userId, expectedCloseDate: "2020-01-10" });
   const product = await d.productRepository.create({ tenantId, workspaceId, name: "Enterprise", priceCents: 1_000_000, costCents: 400_000, minimumPriceCents: 800_000 });
   await addDealItem(d, seller, { workspaceId, dealId: deal.id, productId: product.id, quantity: 1, proposedUnitPriceCents: 950_000 });

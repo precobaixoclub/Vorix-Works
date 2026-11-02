@@ -79,7 +79,7 @@ test("Vincular um inbox_contact (WhatsApp) a um Contact do CRM aparece em InboxC
   assert.equal(listBefore.find((c) => c.id === conversation.id).crmContactId, undefined);
 
   // Vínculo explícito (nunca automático) — mesmo fluxo que o painel do Conversas dispara.
-  const crmContact = await createContact(contactDeps(), { tenantId, workspaceId: workspace.id, name: "Cliente Integrado", origin: "whatsapp" });
+  const crmContact = await createContact(contactDeps(), { customFields: { phone: "+5511987654321" }, tenantId, workspaceId: workspace.id, name: "Cliente Integrado", origin: "whatsapp" });
   const linkResult = await linkContactIdentity(contactDeps(), { contactId: crmContact.id, tenantId, workspaceId: workspace.id, channel: "whatsapp", externalId: inboxContact.id });
   assert.equal(linkResult.wasCreated, true);
   assert.equal(linkResult.conflictsWithAnotherContact, false);
@@ -96,8 +96,8 @@ test("Negócios filtrados por contactId retornam só os negócios daquele contat
   const pipelineDeps = { pipelineRepository: new PostgresPipelineRepository(db.pool), pipelineStageRepository: new PostgresPipelineStageRepository(db.pool) };
   const dealDeps = { dealRepository: new PostgresDealRepository(db.pool), pipelineStageRepository: pipelineDeps.pipelineStageRepository, timelineEventRepository: new PostgresTimelineEventRepository(db.pool) };
 
-  const contactA = await createContact(contactDeps(), { tenantId, workspaceId: workspace.id, name: "Contato A" });
-  const contactB = await createContact(contactDeps(), { tenantId, workspaceId: workspace.id, name: "Contato B" });
+  const contactA = await createContact(contactDeps(), { customFields: { phone: "+5511987654321" }, tenantId, workspaceId: workspace.id, name: "Contato A" });
+  const contactB = await createContact(contactDeps(), { customFields: { phone: "+5511987654321" }, tenantId, workspaceId: workspace.id, name: "Contato B" });
   const pipeline = await createPipeline(pipelineDeps, { tenantId, workspaceId: workspace.id, name: "Vendas" });
   const stage = await createStage(pipelineDeps, { pipelineId: pipeline.id, tenantId, workspaceId: workspace.id, name: "Novo", position: 0 });
 

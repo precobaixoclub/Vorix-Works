@@ -142,7 +142,7 @@ test("computeLeadScore: sem interação há mais de 30 dias e tarefa atrasada es
 test("getLeadScore: calcula a partir dos dados reais do contato (negócio + tarefa) e nunca de outro tenant", async () => {
   const tenantId = "tenant-score-1";
   const workspace = await makeWorkspace(tenantId);
-  const contact = await createContact(contactDeps(), { tenantId, workspaceId: workspace.id, name: "Cliente Score" });
+  const contact = await createContact(contactDeps(), { customFields: { phone: "+5511987654321" }, tenantId, workspaceId: workspace.id, name: "Cliente Score" });
   const pipeline = await createPipeline(pipelineDeps(), { tenantId, workspaceId: workspace.id, name: "Vendas" });
   const stage = await createStage(pipelineDeps(), { pipelineId: pipeline.id, tenantId, workspaceId: workspace.id, name: "Novo", position: 0 });
   await createDeal(dealDeps(), { tenantId, workspaceId: workspace.id, pipelineId: pipeline.id, stageId: stage.id, contactId: contact.id, title: "Negócio", valueCents: 200_000 });
@@ -175,7 +175,7 @@ test("Validação semântica anti-alucinação: descarta sugestão cuja evidênc
 test("Copiloto Comercial: gera sugestões via generator (fake), aceitar follow_up_task cria a Tarefa de verdade", async () => {
   const tenantId = "tenant-copilot-1";
   const workspace = await makeWorkspace(tenantId);
-  const contact = await createContact(contactDeps(), { tenantId, workspaceId: workspace.id, name: "Cliente Copiloto" });
+  const contact = await createContact(contactDeps(), { customFields: { phone: "+5511987654321" }, tenantId, workspaceId: workspace.id, name: "Cliente Copiloto" });
 
   const generator = fakeGenerator([
     { title: "Ligar para reengajar", rationale: "Sem contato recente", evidence: "evidência real", confidence: 0.6, suggestedAction: "follow_up_task" },
@@ -201,7 +201,7 @@ test("Copiloto Comercial: gera sugestões via generator (fake), aceitar follow_u
 test("Copiloto Comercial: dispensar marca 'dismissed' e nunca cria nada; falha do gateway propaga erro claro", async () => {
   const tenantId = "tenant-copilot-2";
   const workspace = await makeWorkspace(tenantId);
-  const contact = await createContact(contactDeps(), { tenantId, workspaceId: workspace.id, name: "Cliente Dispensa" });
+  const contact = await createContact(contactDeps(), { customFields: { phone: "+5511987654321" }, tenantId, workspaceId: workspace.id, name: "Cliente Dispensa" });
 
   const generator = fakeGenerator([{ title: "Sugestão qualquer", rationale: "r", evidence: "evidência real", confidence: 0.5, suggestedAction: "none" }]);
   const deps = copilotDeps(generator);
@@ -224,7 +224,7 @@ test("Copiloto Comercial: isolamento cross-tenant nunca vaza existência (404)",
   const tenantB = "tenant-copilot-b";
   const workspaceA = await makeWorkspace(tenantA);
   const workspaceB = await makeWorkspace(tenantB);
-  const contact = await createContact(contactDeps(), { tenantId: tenantA, workspaceId: workspaceA.id, name: "Só do Tenant A" });
+  const contact = await createContact(contactDeps(), { customFields: { phone: "+5511987654321" }, tenantId: tenantA, workspaceId: workspaceA.id, name: "Só do Tenant A" });
   const deps = copilotDeps(fakeGenerator([{ title: "T", rationale: "r", evidence: "evidência real", confidence: 0.5, suggestedAction: "none" }]));
   const created = await generateCommercialSuggestions(deps, { contactId: contact.id, tenantId: tenantA, workspaceId: workspaceA.id });
 

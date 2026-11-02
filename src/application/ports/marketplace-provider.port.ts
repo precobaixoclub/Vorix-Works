@@ -42,7 +42,7 @@ export type ExternalOrder = {
   id: string; accountId: string; state: ExternalOrderState; externalStatus: string; createdAt: string; updatedAt: string; paidAt?: string; cancelledAt?: string; cancelReason?: string;
   currency: string; items: ExternalOrderItem[]; subtotalCents: number; discountCents: number; shippingCents: number; totalCents: number;
   /** Só o que o canal libera (o marketplace mascara contato). Nunca e-mail/telefone inventados. */
-  buyer: { id?: string; name?: string; nickname?: string };
+  buyer: { id?: string; name?: string; nickname?: string; phone?: string };
   shippingAddress?: { city?: string; state?: string; postalCode?: string };
   shipment?: ExternalShipment;
   /** Snapshot pequeno e seguro (ids/estados) para auditoria — sem dados pessoais. */

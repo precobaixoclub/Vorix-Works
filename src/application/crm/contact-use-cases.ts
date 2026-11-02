@@ -3,6 +3,7 @@ import type { ContactRepositoryPort, CreateContactInput, UpdateContactInput } fr
 import type { TimelineEventRepositoryPort } from "../ports/timeline-event-repository.port.js";
 import { evaluateAutomationTrigger, type AutomationUseCaseDeps } from "./automation-use-cases.js";
 import type { Contact, ContactChannel, ContactIdentity, TimelineEvent } from "../../domain/crm/crm.model.js";
+import { requireContactPhone } from "../../domain/crm/contact-phone.js";
 
 export type ContactUseCaseDeps = {
   contactRepository: ContactRepositoryPort;
@@ -22,7 +23,8 @@ export async function mustContactBelongToTenantAndWorkspace(deps: ContactUseCase
 }
 
 export async function createContact(deps: ContactUseCaseDeps, input: CreateContactInput): Promise<Contact> {
-  const contact = await deps.contactRepository.create(input);
+  const phone = requireContactPhone(input.customFields?.phone);
+  const contact = await deps.contactRepository.create({ ...input, customFields: { ...input.customFields, phone } });
   await deps.timelineEventRepository.record({
     tenantId: contact.tenantId,
     workspaceId: contact.workspaceId,
@@ -47,7 +49,13 @@ export async function getContact(deps: ContactUseCaseDeps, input: { contactId: s
 }
 
 export async function updateContact(deps: ContactUseCaseDeps, input: { contactId: string; tenantId: string; workspaceId: string; patch: UpdateContactInput }): Promise<Contact> {
-  await mustContactBelongToTenantAndWorkspace(deps, input.contactId, input.tenantId, input.workspaceId);
+  const existing = await mustContactBelongToTenantAndWorkspace(deps, input.contactId, input.tenantId, input.workspaceId);
+  if (input.patch.customFields) {
+    // Campos personalizados são substituídos: não permitir remover o telefone ao editar outro campo.
+    const fields = input.patch.customFields;
+    const phone = requireContactPhone(Object.hasOwn(fields, "phone") ? fields.phone : existing.customFields.phone);
+    input = { ...input, patch: { ...input.patch, customFields: { ...fields, phone } } };
+  }
   return deps.contactRepository.update(input.contactId, input.patch);
 }
 

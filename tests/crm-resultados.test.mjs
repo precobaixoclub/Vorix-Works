@@ -93,8 +93,8 @@ test("Métricas comerciais: negócios criados, aberto, ganho/perdido, conversão
   const tenantId = "tenant-metrics-1";
   const workspace = await makeWorkspace(tenantId);
   const { pipeline, novo, ganho, perdido } = await makePipelineWithStages(tenantId, workspace.id);
-  const contactWhatsapp = await createContact(contactDeps(), { tenantId, workspaceId: workspace.id, name: "Cliente WhatsApp", origin: "whatsapp" });
-  const contactIndicacao = await createContact(contactDeps(), { tenantId, workspaceId: workspace.id, name: "Cliente Indicação", origin: "indicação" });
+  const contactWhatsapp = await createContact(contactDeps(), { customFields: { phone: "+5511987654321" }, tenantId, workspaceId: workspace.id, name: "Cliente WhatsApp", origin: "whatsapp" });
+  const contactIndicacao = await createContact(contactDeps(), { customFields: { phone: "+5511987654321" }, tenantId, workspaceId: workspace.id, name: "Cliente Indicação", origin: "indicação" });
 
   const dealWon = await createDeal(dealDeps(), { tenantId, workspaceId: workspace.id, pipelineId: pipeline.id, stageId: novo.id, contactId: contactWhatsapp.id, title: "Ganho 1", valueCents: 10_000 });
   await moveDealStage(dealDeps(), { dealId: dealWon.id, tenantId, workspaceId: workspace.id, targetStageId: ganho.id });
@@ -122,8 +122,8 @@ test("Métricas comerciais: aging por etapa, filtro por origem restringe o relat
   const tenantId = "tenant-metrics-2";
   const workspace = await makeWorkspace(tenantId);
   const { pipeline, novo, negociacao } = await makePipelineWithStages(tenantId, workspace.id);
-  const contactA = await createContact(contactDeps(), { tenantId, workspaceId: workspace.id, name: "A", origin: "whatsapp" });
-  const contactB = await createContact(contactDeps(), { tenantId, workspaceId: workspace.id, name: "B", origin: "instagram" });
+  const contactA = await createContact(contactDeps(), { customFields: { phone: "+5511987654321" }, tenantId, workspaceId: workspace.id, name: "A", origin: "whatsapp" });
+  const contactB = await createContact(contactDeps(), { customFields: { phone: "+5511987654321" }, tenantId, workspaceId: workspace.id, name: "B", origin: "instagram" });
 
   await createDeal(dealDeps(), { tenantId, workspaceId: workspace.id, pipelineId: pipeline.id, stageId: novo.id, contactId: contactA.id, title: "Deal A" });
   await createDeal(dealDeps(), { tenantId, workspaceId: workspace.id, pipelineId: pipeline.id, stageId: negociacao.id, contactId: contactB.id, title: "Deal B" });

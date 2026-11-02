@@ -26,7 +26,7 @@ export function buildMarketplaceService(pool:Pool,providers:readonly Marketplace
    contacts:{
     findByIdentity:async({channel,externalId})=>(await identities.findByChannelAndExternalId(channel as ContactChannel,externalId))?.contactId,
     create:async input=>{
-     const contact=await contactRepository.create({tenantId:input.tenantId,workspaceId:input.workspaceId,name:input.name,origin:input.origin});
+     const contact=await contactRepository.create({tenantId:input.tenantId,workspaceId:input.workspaceId,name:input.name,origin:input.origin,customFields:{phone:input.phone}});
      await identities.create({contactId:contact.id,tenantId:input.tenantId,workspaceId:input.workspaceId,channel:input.channel as ContactChannel,externalId:input.externalId});
      return contact.id;
     },

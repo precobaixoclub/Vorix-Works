@@ -34,6 +34,8 @@ import type {
 export type CreateContactInput = {
   workspaceId: string;
   name: string;
+  customFields?: Record<string, unknown>;
+  inboxContactId?: string;
   company?: string;
   document?: string;
   origin?: string;

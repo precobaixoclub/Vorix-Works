@@ -119,7 +119,7 @@ test("Fase 4 modelos tem CRUD, duplicacao e isolamento multi-tenant", async () =
 test("Fase 4 reserva idempotente impede envio duplicado, inclusive em falha de publish", async () => {
   const tenantId = "tenant-phase4-delivery";
   const ws = await workspace(tenantId);
-  const contact = await new PostgresContactRepository(db.pool).create({ tenantId, workspaceId: ws.id, name: "Contato" });
+  const contact = await new PostgresContactRepository(db.pool).create({ customFields: { phone: "+5511987654321" }, tenantId, workspaceId: ws.id, name: "Contato" });
   const inboxContactRepository = new PostgresInboxContactRepository(db.pool);
   const inboxContact = await inboxContactRepository.upsertByPhone({ tenantId, workspaceId: ws.id, phoneNormalized: "+5511999999999", name: "Contato" });
   await inboxContactRepository.linkCrmContact(inboxContact.id, contact.id);

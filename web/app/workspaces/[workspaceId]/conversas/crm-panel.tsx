@@ -73,7 +73,7 @@ export function CrmContextSection({
     setLinking(true);
     setLinkError(undefined);
     try {
-      const contact = await createContact({ workspaceId, name: conversation.contactName ?? conversation.contactPhone ?? "Contato do WhatsApp", origin: "whatsapp" });
+      const contact = await createContact({ workspaceId, name: conversation.contactName ?? conversation.contactPhone ?? "Contato do WhatsApp", origin: "whatsapp", inboxContactId: conversation.contactId });
       await linkContactIdentity(contact.id, workspaceId, "whatsapp", conversation.contactId);
       onLinked();
     } catch (error) {

@@ -1,4 +1,5 @@
 import { createHmac } from "node:crypto";
+import { resolveEffectiveEntitlements } from "../../application/billing/entitlement-use-cases.js";
 import { existsSync } from "node:fs";
 import { hostname } from "node:os";
 import { join, resolve } from "node:path";
@@ -117,7 +118,7 @@ async function main(): Promise<void> {
       executionRepository: platform.aiExecutionRepository,
       platformAiSettingsRepository: identity.platformAiSettingsRepository,
     });
-    const creditAccounting = new CreditAccountingService({ platformBillingRepository: identity.platformBillingRepository, aiProvidersRepository: identity.aiProvidersRepository, idGenerator });
+    const creditAccounting = new CreditAccountingService({ platformBillingRepository: identity.platformBillingRepository, aiProvidersRepository: identity.aiProvidersRepository, idGenerator, resolveEntitlements: tenantId => resolveEffectiveEntitlements(identity, tenantId) });
     analyzer = new AiGatewayMeetingAnalyzer(new CreditGatedAiGateway({ inner: aiGateway, creditAccounting, now: () => new Date() }));
   }
 

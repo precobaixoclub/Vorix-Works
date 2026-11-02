@@ -18,7 +18,7 @@ import { PostgresMarketplaceRepository } from "./postgres-marketplace-repository
 /** Um serviço para todos os canais configurados; pedidos externos entram no mesmo pedido/estoque do Site. */
 export function buildMarketplaceService(pool:Pool,providers:readonly MarketplaceProvider[],secrets:SecretManagerPort){
  const repository=new PostgresMarketplaceRepository(pool),memberships=new PostgresTenantMembershipRepository(pool),workspaces=new PostgresWorkspaceRepository(pool);
- const contactRepository=new PostgresContactRepository(pool),identities=new PostgresContactIdentityRepository(pool);
+ const contactRepository=new PostgresContactRepository(pool,true),identities=new PostgresContactIdentityRepository(pool);
  const service=new MarketplaceService({repository,secrets,releasePolicy:marketplaceReleasePolicyFromEnv(process.env),providers:Object.fromEntries(providers.map(p=>[p.id,p])),
   catalog:{productRepository:new PostgresProductRepository(pool),productEngineRepository:new PostgresProductEngineRepository(pool),salesCatalogRepository:new PostgresSalesCatalogRepository(pool)},
   orders:new PostgresCommerceOrderRepository(pool),

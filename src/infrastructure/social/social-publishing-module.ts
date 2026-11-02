@@ -22,6 +22,7 @@ import { SocialGatewayClient } from "./gateway/client.js";
 import type { GatewayTransport } from "./gateway/protocol.js";
 
 export type SocialPublishingModuleDeps = {
+  tenantPublishingAllowed?: (tenantId: string) => Promise<boolean>;
   gateway?: GatewayTransport;
   repository: SocialRepositoryPort;
   publicationRepository: PublicationRepositoryPort;
@@ -77,7 +78,7 @@ export function createSocialPublishingModule(deps: SocialPublishingModuleDeps): 
   const idGenerator = deps.idGenerator ?? (() => `soc-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`);
   const gateway = deps.gateway ?? new SocialGatewayClient(undefined, undefined);
   const registry = new SocialProviderRegistry(deps.providers ?? [...createOfficialSocialProviders(deps), new InstagramUnofficialProvider(gateway), new FacebookUnofficialProvider(gateway), new TikTokUnofficialProvider(gateway)]);
-  const resolver = new SocialProviderResolver(registry, deps.repository, { ...DEFAULT_SOCIAL_PLATFORM_DEFAULTS, ...deps.platformDefaults });
+  const resolver = new SocialProviderResolver(registry, deps.repository, { ...DEFAULT_SOCIAL_PLATFORM_DEFAULTS, ...deps.platformDefaults }, deps.tenantPublishingAllowed);
   const vault = new SocialSessionVault(deps.credentials, async (account, providerType, reference) => {
     if (providerType !== `${account.network}_unofficial` || !reference.startsWith("socgw-")) return undefined;
     // Only an opaque reference reaches the core. The gateway verifies scope + identity on EVERY

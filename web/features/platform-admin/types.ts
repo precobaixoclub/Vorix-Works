@@ -6,6 +6,7 @@ export type PlatformPlanCode = (typeof PLATFORM_PLAN_CODES)[number];
 
 export const PLATFORM_SUBSCRIPTION_STATUSES = [
   "trial",
+  "trial_expired",
   "active",
   "past_due",
   "cancelled",
@@ -85,6 +86,7 @@ export type PlatformDashboardSummary = {
   totalCreditsConsumed: number;
   topTenantsByRevenue: Array<{
     tenantId: string;
+    displayName?: string;
     planCode: PlatformPlanCode;
     customerPriceUsd: number;
     providerCostUsd: number;

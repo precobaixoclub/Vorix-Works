@@ -20,6 +20,12 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
   );
 }
 
+const navigationGroups = [
+  { label: "Gestão", links: [["/admin", "Visão geral"], ["/admin/tenants", "Contas e contratos"], ["/admin/growth", "Aquisição e conversão"]] },
+  { label: "Produtos", links: [["/admin/site", "Sites e modelos"], ["/admin/meetings-bots", "Contas de gravação"], ["/admin/social-providers", "Integrações sociais"]] },
+  { label: "Plataforma", links: [["/admin/ai-providers", "Provedores de IA"], ["/admin/settings", "Gateway e extração de IA"], ["/admin/billing-provider", "Provedor de cobrança"]] },
+];
+
 function AdminShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
@@ -59,62 +65,14 @@ function AdminShell({ children }: { children: ReactNode }) {
           <div className="truncate font-medium text-ink">{user?.name ?? "—"}</div>
           <div className="truncate text-ink-muted">{user?.email}</div>
         </div>
-        <nav className="grid grid-cols-2 gap-2 text-xs">
-          <SidebarLink href="/admin" active={isActive("/admin") && pathname === "/admin"}>
-            Visão geral
-          </SidebarLink>
-          <SidebarLink href="/admin/tenants" active={isActive("/admin/tenants")}>
-            Contas
-          </SidebarLink>
-          <SidebarLink href="/admin/growth" active={isActive("/admin/growth")}>
-            Growth
-          </SidebarLink>
-          <SidebarLink href="/admin/ai-providers" active={isActive("/admin/ai-providers")}>
-            Chaves IA
-          </SidebarLink>
-          <SidebarLink href="/admin/settings" active={isActive("/admin/settings")}>
-            Configurações
-          </SidebarLink>
-          <SidebarLink href="/admin/meetings-bots" active={isActive("/admin/meetings-bots")}>
-            Contas de gravação
-          </SidebarLink>
-          <SidebarLink href="/admin/site" active={isActive("/admin/site")}>Vorix Site</SidebarLink>
-          <SidebarLink href="/admin/social-providers" active={isActive("/admin/social-providers")}>Social Providers</SidebarLink>
-          <SidebarLink href="/admin/billing-provider" active={isActive("/admin/billing-provider")}>
-            Mercado Pago
-          </SidebarLink>
-        </nav>
+        <nav className="space-y-3 text-xs">{navigationGroups.map(group => <div key={group.label}><div className="mb-1 text-[10px] uppercase tracking-wider text-ink-muted">{group.label}</div><div className="grid grid-cols-2 gap-1">{group.links.map(([href, label]) => <SidebarLink key={href} href={href} active={!!isActive(href)}>{label}</SidebarLink>)}</div></div>)}</nav>
       </div>
       <aside className="hidden w-60 shrink-0 border-r border-border bg-surface-raised p-4 md:block">
         <div className="mb-6">
           <div className="text-[11px] uppercase tracking-wider text-ink-muted">Painel</div>
           <div className="text-base font-semibold text-ink">Admin da Plataforma</div>
         </div>
-        <nav className="flex flex-col gap-1 text-sm">
-          <SidebarLink href="/admin" active={isActive("/admin") && pathname === "/admin"}>
-            Visão geral
-          </SidebarLink>
-          <SidebarLink href="/admin/tenants" active={isActive("/admin/tenants")}>
-            Contas de clientes
-          </SidebarLink>
-          <SidebarLink href="/admin/growth" active={isActive("/admin/growth")}>
-            Growth Dashboard
-          </SidebarLink>
-          <SidebarLink href="/admin/ai-providers" active={isActive("/admin/ai-providers")}>
-            Chaves OpenAI/Gemini
-          </SidebarLink>
-          <SidebarLink href="/admin/settings" active={isActive("/admin/settings")}>
-            Configurações (Anthropic)
-          </SidebarLink>
-          <SidebarLink href="/admin/meetings-bots" active={isActive("/admin/meetings-bots")}>
-            Contas de gravação
-          </SidebarLink>
-          <SidebarLink href="/admin/site" active={isActive("/admin/site")}>Vorix Site</SidebarLink>
-          <SidebarLink href="/admin/social-providers" active={isActive("/admin/social-providers")}>Social Providers</SidebarLink>
-          <SidebarLink href="/admin/billing-provider" active={isActive("/admin/billing-provider")}>
-            Mercado Pago (billing)
-          </SidebarLink>
-        </nav>
+        <nav className="space-y-5 text-sm">{navigationGroups.map(group => <div key={group.label}><div className="mb-2 px-2.5 text-[10px] uppercase tracking-wider text-ink-muted">{group.label}</div><div className="flex flex-col gap-1">{group.links.map(([href, label]) => <SidebarLink key={href} href={href} active={!!isActive(href)}>{label}</SidebarLink>)}</div></div>)}</nav>
         <div className="mt-8 border-t border-border pt-4 text-xs text-ink-muted">
           <div className="mb-3">
             Logado como

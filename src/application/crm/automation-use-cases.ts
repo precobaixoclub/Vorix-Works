@@ -10,6 +10,7 @@ import { createTask } from "./task-use-cases.js";
 import type { AutomationCondition, AutomationRule, AutomationTrigger, Contact, Deal } from "../../domain/crm/crm.model.js";
 
 export type AutomationUseCaseDeps = {
+  tenantAllowed?: (tenantId: string) => Promise<boolean>;
   /** Production uses the same commercial transition as the Kanban (snapshot/stock/events). */
   transitionDealStage?: (deal: Deal, targetStageId: string) => Promise<Deal>;
   automationRuleRepository: AutomationRuleRepositoryPort;
@@ -174,6 +175,7 @@ async function executeAction(deps: AutomationUseCaseDeps, rule: AutomationRule, 
 const automationExecution = new AsyncLocalStorage<ReadonlySet<string>>();
 
 export async function evaluateAutomationTrigger(deps: AutomationUseCaseDeps, context: AutomationTriggerContext): Promise<void> {
+  if (deps.tenantAllowed && !await deps.tenantAllowed(context.tenantId)) return;
   const rules = await deps.automationRuleRepository.listActiveByTrigger(context.tenantId, context.workspaceId, context.trigger);
   for (const rule of rules) {
     const active = automationExecution.getStore() ?? new Set<string>();

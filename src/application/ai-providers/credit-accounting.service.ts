@@ -2,8 +2,10 @@ import type { PlatformBillingRepositoryPort } from "../ports/platform-billing-re
 import type { AiProvidersRepositoryPort } from "../ports/ai-providers-repository.port.js";
 import { applyMarkup, periodOf } from "../../domain/platform-billing/tenant-billing.model.js";
 import type { AiOperationType, AiProviderCode } from "../../domain/ai-providers/index.js";
+import type { EffectiveEntitlements } from "../../domain/platform-billing/subscription.model.js";
 
 export type CreditAccountingDeps = {
+  resolveEntitlements?: (tenantId: string) => Promise<EffectiveEntitlements>;
   platformBillingRepository: PlatformBillingRepositoryPort;
   aiProvidersRepository: AiProvidersRepositoryPort;
   idGenerator: (prefix: string) => string;
@@ -35,13 +37,18 @@ export class CreditAccountingService {
     }
 
     const billing = await this.deps.platformBillingRepository.getTenantBilling(tenantId);
+    const controls = await this.deps.platformBillingRepository.getTenantControls?.(tenantId);
+    const access = await this.deps.resolveEntitlements?.(tenantId);
+    if (access?.readOnly || operationTypeCode === "inbox_auto_reply" && access && !access.capabilities.ai_auto_reply) return { ok: false, reason: "account_blocked", message: "Operação de IA indisponível para esta conta." };
+    if (controls?.accessMode === "blocked") return { ok: false, reason: "account_blocked", message: "Acesso bloqueado pelo administrador da plataforma." };
+    if (operationTypeCode === "inbox_auto_reply" && controls?.capabilities.ai_auto_reply === false) return { ok: false, reason: "account_blocked", message: "Respostas automáticas de IA bloqueadas pelo administrador." };
     if (!billing) {
       return { ok: false, reason: "not_configured", message: "Tenant sem configuração de billing — contate o suporte." };
     }
-    if (billing.subscriptionStatus === "trial_expired") {
+    if (controls?.accessMode !== "enabled" && billing.subscriptionStatus === "trial_expired") {
       return { ok: false, reason: "account_blocked", message: "Seu teste gratuito terminou. Cadastre uma forma de pagamento para continuar usando a IA." };
     }
-    if (["suspended", "cancelled", "expired"].includes(billing.subscriptionStatus)) {
+    if (controls?.accessMode !== "enabled" && ["past_due", "suspended", "cancelled", "expired"].includes(billing.subscriptionStatus)) {
       const label = billing.subscriptionStatus === "suspended" ? "suspensa" : billing.subscriptionStatus === "expired" ? "com assinatura expirada" : "cancelada";
       return { ok: false, reason: "account_blocked", message: `Conta ${label}. Regularize para continuar usando a IA.` };
     }
@@ -49,7 +56,8 @@ export class CreditAccountingService {
     const period = periodOf(now);
     const usage = await this.deps.platformBillingRepository.getAiUsage({ tenantId, period });
     const consumedThisMonth = usage?.creditsConsumed ?? 0;
-    const monthlyRemainingBefore = Math.max(0, billing.monthlyCreditsQuota - consumedThisMonth);
+    const quota = access ? access.limits.ai_credits : controls && "ai_credits" in controls.limits ? controls.limits.ai_credits : billing.monthlyCreditsQuota;
+    const monthlyRemainingBefore = quota === null ? Number.MAX_SAFE_INTEGER : Math.max(0, (quota ?? billing.monthlyCreditsQuota) - consumedThisMonth);
     const totalAvailable = monthlyRemainingBefore + billing.creditsExtra;
 
     if (totalAvailable < operationType.creditsCost) {

@@ -1,4 +1,5 @@
 import type { Pool } from "pg";
+import { withTenantResourceAllocation } from "./tenant-resource-allocation.js";
 import type {
   AutomationRuleRepositoryPort,
   CreateAutomationRuleInput,
@@ -39,9 +40,10 @@ function toDomain(row: Row): AutomationRule {
 }
 
 export class PostgresAutomationRuleRepository implements AutomationRuleRepositoryPort {
-  constructor(private readonly pool: Pool) {}
+  constructor(private readonly pool: Pool, private readonly enforceContract = false) {}
 
   async create(input: CreateAutomationRuleInput): Promise<AutomationRule> {
+    if (this.enforceContract) return withTenantResourceAllocation(this.pool, input.tenantId, "automations", connection => new PostgresAutomationRuleRepository(connection).create(input));
     const result = await this.pool.query<Row>(
       `insert into automation_rules (id, tenant_id, workspace_id, name, trigger, conditions, action, action_config, active)
        values ($1, $2, $3, $4, $5, $6, $7, $8, $9)

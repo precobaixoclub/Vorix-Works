@@ -1,4 +1,5 @@
 import type { Pool } from "pg";
+import { withTenantResourceAllocation } from "./tenant-resource-allocation.js";
 import type {
   CreateMessagingConnectionInput,
   MessagingConnectionRepositoryPort,
@@ -34,9 +35,10 @@ type Row = {
 };
 
 export class PostgresMessagingConnectionRepository implements MessagingConnectionRepositoryPort {
-  constructor(private readonly pool: Pool) {}
+  constructor(private readonly pool: Pool, private readonly enforceContract = false) {}
 
   async create(input: CreateMessagingConnectionInput): Promise<MessagingConnection> {
+    if (this.enforceContract) return withTenantResourceAllocation(this.pool, input.tenantId, "messaging_connections", connection => new PostgresMessagingConnectionRepository(connection).create(input));
     const id = idGenerator();
     const result = await this.pool.query<Row>(
       `insert into messaging_connections (id, tenant_id, workspace_id, provider, display_name)

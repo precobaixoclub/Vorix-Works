@@ -32,7 +32,7 @@ const LIST_QUERYSTRING_SCHEMA = {
     limit: { type: "integer", minimum: 1, maximum: 200 },
     offset: { type: "integer", minimum: 0 },
     planCode: { type: "string", enum: [...PLATFORM_PLAN_CODES] },
-    subscriptionStatus: { type: "string", enum: ["trial", "active", "past_due", "cancelled", "expired", "suspended"] },
+    subscriptionStatus: { type: "string", enum: ["trial", "trial_expired", "active", "past_due", "cancelled", "expired", "suspended"] },
   },
 } as const;
 
@@ -92,6 +92,7 @@ function translatePlatformError(error: unknown): never {
     if (error.message.startsWith("PLATFORM_ADMIN_TENANT_NOT_FOUND")) throw new NotFoundError(error.message);
     if (error.message.startsWith("PLATFORM_BILLING_TENANT_NOT_FOUND")) throw new NotFoundError(error.message);
     if (error.message.startsWith("PLATFORM_ADMIN_INVALID_DELTA")) throw new ValidationError(error.message);
+    if (error.message.startsWith("CHANGE_PLAN_") || error.message.startsWith("TENANT_CONTROLS_CONFLICT")) throw new ValidationError(error.message);
     if (error.message.startsWith("PLATFORM_ADMIN_INVALID_MULTIPLIER")) throw new ValidationError(error.message);
     if (error.message.startsWith("PLATFORM_BILLING_INVALID_MULTIPLIER")) throw new ValidationError(error.message);
     if (error.message.startsWith("PLATFORM_AI_SETTINGS_INVALID_KEY")) throw new ValidationError(error.message);

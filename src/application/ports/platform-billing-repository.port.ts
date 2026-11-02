@@ -5,6 +5,7 @@ import type {
   TenantCreditLedgerReason,
 } from "../../domain/platform-billing/index.js";
 import type { PlatformPlanCode, PlatformSubscriptionStatus } from "../../domain/platform-billing/index.js";
+import type { TenantControls, TenantControlChange } from "../../domain/platform-billing/tenant-controls.model.js";
 
 /**
  * Porta de persist\u00eancia do bounded context `platform-billing` \u2014 Sprint 25 (Fase 1). Adapters
@@ -12,6 +13,9 @@ import type { PlatformPlanCode, PlatformSubscriptionStatus } from "../../domain/
  * interface. Nenhuma regra de neg\u00f3cio aqui, s\u00f3 CRUD com sem\u00e2ntica clara.
  */
 export type PlatformBillingRepositoryPort = {
+  getTenantControls?(tenantId: string): Promise<TenantControls>;
+  saveTenantControls?(input: { controls: TenantControls; expectedVersion: number; actorUserId: string; reason: string }): Promise<TenantControls>;
+  listTenantControlChanges?(tenantId: string): Promise<TenantControlChange[]>;
   /** Cria ou retorna o billing existente do tenant. Idempotente. */
   ensureTenantBilling(input: { tenantId: string; now: string }): Promise<TenantBilling>;
 

@@ -418,7 +418,7 @@ export function buildPlatformRepositories(options: { driver: PersistenceDriver; 
     metaPixelRepository: new PostgresMetaPixelRepository(pool),
     metaCapiEventRepository: new PostgresMetaCapiEventRepository(pool),
     instagramDmAccountRouteRepository: new PostgresInstagramDmAccountRouteRepository(pool),
-    messagingConnectionRepository: new PostgresMessagingConnectionRepository(pool),
+    messagingConnectionRepository: new PostgresMessagingConnectionRepository(pool, true),
     inboxContactRepository: new PostgresInboxContactRepository(pool),
     inboxConversationRepository: new PostgresInboxConversationRepository(pool),
     inboxMessageRepository: new PostgresInboxMessageRepository(pool),

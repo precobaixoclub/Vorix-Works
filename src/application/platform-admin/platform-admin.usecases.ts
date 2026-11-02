@@ -22,8 +22,10 @@ import type { PlatformBillingRepositoryPort } from "../ports/platform-billing-re
 import type { TenantMembershipRepositoryPort } from "../ports/tenant-membership-repository.port.js";
 import type { UserRepositoryPort } from "../ports/user-repository.port.js";
 import type { WorkspaceRepositoryPort } from "../ports/workspace-repository.port.js";
+import { changePlan, type LifecycleUseCaseDeps } from "../billing/lifecycle-use-cases.js";
 
 export type PlatformAdminUseCaseDeps = {
+  contractDeps?: LifecycleUseCaseDeps;
   platformBillingRepository: PlatformBillingRepositoryPort;
   membershipRepository: TenantMembershipRepositoryPort;
   userRepository: UserRepositoryPort;
@@ -56,6 +58,7 @@ export type PlatformDashboardSummary = {
   totalCreditsConsumed: number;
   topTenantsByRevenue: Array<{
     tenantId: string;
+    displayName?: string;
     planCode: PlatformPlanCode;
     customerPriceUsd: number;
     providerCostUsd: number;
@@ -92,12 +95,12 @@ export async function listTenantsOverview(
       const quotaUsagePercent = billing.monthlyCreditsQuota > 0
         ? Math.min(100, (usage.creditsConsumed / billing.monthlyCreditsQuota) * 100)
         : 0;
-      const [workspaces, members] = await Promise.all([deps.workspaceRepository.listByTenant(billing.tenantId).catch(() => []), deps.membershipRepository.listByTenant(billing.tenantId).catch(() => [])]);
+      const [workspaces, members, controls] = await Promise.all([deps.workspaceRepository.listByTenant(billing.tenantId).catch(() => []), deps.membershipRepository.listByTenant(billing.tenantId).catch(() => []), deps.platformBillingRepository.getTenantControls?.(billing.tenantId)]);
       const owner = members.find((member) => member.role === "owner") ?? members[0];
       const ownerUser = owner ? await deps.userRepository.getById(owner.userId).catch(() => undefined) : undefined;
       return {
         tenantId: billing.tenantId,
-        ...(workspaces[0]?.name ? { displayName: workspaces[0].name } : {}),
+        displayName: controls?.displayName ?? workspaces[0]?.name ?? billing.tenantId,
         ...(ownerUser?.email ? { ownerEmail: ownerUser.email } : {}),
         billing,
         currentPeriod: period,
@@ -128,6 +131,7 @@ export async function getTenantDetail(
     deps.membershipRepository.listByTenant(input.tenantId),
     listUsageHistoryLastMonths(deps, input.tenantId, 6),
   ]);
+  const controls = await deps.platformBillingRepository.getTenantControls?.(input.tenantId);
 
   const currentUsage = usage ?? emptyMonthlyUsage(input.tenantId, period, deps.now().toISOString());
   const quotaUsagePercent = billing.monthlyCreditsQuota > 0
@@ -149,6 +153,7 @@ export async function getTenantDetail(
   return {
     overview: {
       tenantId: input.tenantId,
+      displayName: controls?.displayName ?? workspaces[0]?.name ?? input.tenantId,
       billing,
       currentPeriod: period,
       currentUsage,
@@ -187,12 +192,20 @@ export async function changeTenantPlan(
   deps: PlatformAdminUseCaseDeps,
   input: { tenantId: string; planCode: PlatformPlanCode; actor: PlatformAdminActor },
 ): Promise<TenantBilling> {
+  if (deps.contractDeps) {
+    const subscription = await deps.contractDeps.subscriptionRepository.getActiveByTenant(input.tenantId);
+    if (subscription) {
+      await changePlan(deps.contractDeps, { tenantId: input.tenantId, newPlanCode: input.planCode, billingInterval: subscription.billingInterval });
+      return (await deps.platformBillingRepository.getTenantBilling(input.tenantId))!;
+    }
+  }
   const plan = getPlatformPlan(input.planCode);
+  const version = await deps.contractDeps?.planVersionRepository.getActiveVersion(input.planCode);
   return deps.platformBillingRepository.updateTenantBilling({
     tenantId: input.tenantId,
     patch: {
       planCode: input.planCode,
-      monthlyCreditsQuota: plan.monthlyCreditsQuota,
+      monthlyCreditsQuota: version?.limits.ai_credits ?? plan.monthlyCreditsQuota,
       monthlyPublicationsQuota: plan.monthlyPublicationsQuota,
       subscriptionStatus: input.planCode === "FREE" ? "trial" : "active",
       activatedAt: input.planCode === "FREE" ? undefined : deps.now().toISOString(),
@@ -205,6 +218,7 @@ export async function suspendTenant(
   deps: PlatformAdminUseCaseDeps,
   input: { tenantId: string; actor: PlatformAdminActor },
 ): Promise<TenantBilling> {
+  await changeLegacyAccess(deps, input, "blocked");
   return deps.platformBillingRepository.updateTenantBilling({
     tenantId: input.tenantId,
     patch: { subscriptionStatus: "suspended", suspendedAt: deps.now().toISOString() },
@@ -216,11 +230,19 @@ export async function activateTenant(
   deps: PlatformAdminUseCaseDeps,
   input: { tenantId: string; actor: PlatformAdminActor },
 ): Promise<TenantBilling> {
+  await changeLegacyAccess(deps, input, "enabled");
   return deps.platformBillingRepository.updateTenantBilling({
     tenantId: input.tenantId,
     patch: { subscriptionStatus: "active", activatedAt: deps.now().toISOString(), suspendedAt: undefined },
     now: deps.now().toISOString(),
   });
+}
+
+async function changeLegacyAccess(deps: PlatformAdminUseCaseDeps, input: {tenantId: string; actor: PlatformAdminActor}, accessMode: "blocked" | "enabled") {
+  const repository = deps.platformBillingRepository;
+  if (!repository.getTenantControls || !repository.saveTenantControls) return;
+  const controls = await repository.getTenantControls(input.tenantId);
+  await repository.saveTenantControls({ controls: {...controls, accessMode}, expectedVersion: controls.version, actorUserId: input.actor.userId, reason: accessMode === "blocked" ? "Conta bloqueada pelo administrador" : "Acesso liberado pelo administrador" });
 }
 
 /** Ajusta o multiplier de pre\u00e7o de um tenant (para casos raros de negocia\u00e7\u00e3o). */
@@ -246,16 +268,24 @@ export async function getPlatformDashboard(deps: PlatformAdminUseCaseDeps): Prom
     deps.platformBillingRepository.listAllTenantBilling({ limit: 200 }),
     deps.platformBillingRepository.countAllTenantBilling({}),
   ]);
+  for (let offset = billings.length; offset < totalTenants;) {
+    const next = await deps.platformBillingRepository.listAllTenantBilling({ limit: 200, offset });
+    if (!next.length) break;
+    billings.push(...next); offset += next.length;
+  }
 
-  const active = billings.filter((b) => b.subscriptionStatus === "active" || b.subscriptionStatus === "trial").length;
-  const suspended = billings.filter((b) => b.subscriptionStatus === "suspended").length;
+  const controls = await Promise.all(billings.map(b => deps.platformBillingRepository.getTenantControls?.(b.tenantId)));
+
+  const active = billings.filter((b, i) => controls[i]?.accessMode === "enabled" || (controls[i]?.accessMode !== "blocked" && (b.subscriptionStatus === "active" || b.subscriptionStatus === "trial"))).length;
+  const suspended = billings.filter((b, i) => controls[i]?.accessMode === "blocked" || (controls[i]?.accessMode !== "enabled" && b.subscriptionStatus === "suspended")).length;
 
   const top = await Promise.all(
-    billings.slice(0, 10).map(async (b) => {
+    billings.map(async (b) => {
       const u = await deps.platformBillingRepository.getAiUsage({ tenantId: b.tenantId, period });
       const usage = u ?? emptyMonthlyUsage(b.tenantId, period, deps.now().toISOString());
       return {
         tenantId: b.tenantId,
+        displayName: (await deps.platformBillingRepository.getTenantControls?.(b.tenantId))?.displayName ?? b.tenantId,
         planCode: b.planCode,
         customerPriceUsd: usage.customerPriceUsd,
         providerCostUsd: usage.providerCostUsd,
@@ -272,7 +302,7 @@ export async function getPlatformDashboard(deps: PlatformAdminUseCaseDeps): Prom
     suspendedTenants: suspended,
     totalRevenueUsd: aggregate.totalCustomerPriceUsd,
     totalProviderCostUsd: aggregate.totalProviderCostUsd,
-    totalProfitUsd: Math.max(0, aggregate.totalCustomerPriceUsd - aggregate.totalProviderCostUsd),
+    totalProfitUsd: aggregate.totalCustomerPriceUsd - aggregate.totalProviderCostUsd,
     totalRequestsCount: aggregate.totalRequestsCount,
     totalCreditsConsumed: aggregate.totalCreditsConsumed,
     topTenantsByRevenue: top.slice(0, 10),

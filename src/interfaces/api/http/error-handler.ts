@@ -21,6 +21,10 @@ export function registerErrorHandler(app: FastifyInstance): void {
     }
 
     // Erros de validação de schema do próprio Fastify chegam aqui com `validation` preenchido.
+    if (/^(USAGE_LIMIT_REACHED|ENTITLEMENT_DENIED|ENTITLEMENT_ACCOUNT_READ_ONLY):/.test(error.message)) {
+      reply.status(403).send(errorEnvelope({ code: error.message.split(":")[0], message: error.message.slice(error.message.indexOf(":") + 1).trim(), recoverable: true }, requestId));
+      return;
+    }
     if ("validation" in error && error.validation) {
       reply.status(400).send(errorEnvelope({ code: "VALIDATION_ERROR", message: error.message, recoverable: true }, requestId));
       return;

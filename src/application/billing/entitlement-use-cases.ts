@@ -33,7 +33,7 @@ export type EntitlementUseCaseDeps = {
  * criado antes da Fase 2 (checkout) já funcione com `canUse`/`limit` sem nenhum backfill —
  * ver `docs/saas-commercialization-audit.md`, seção 2.4.
  */
-export async function resolveEffectiveEntitlements(deps: Pick<EntitlementUseCaseDeps,"subscriptionRepository"|"subscriptionItemRepository"|"planVersionRepository"|"addonDefinitionRepository"|"platformBillingRepository">, tenantId: string): Promise<EffectiveEntitlements> {
+export async function resolveContractEntitlements(deps: Pick<EntitlementUseCaseDeps,"subscriptionRepository"|"subscriptionItemRepository"|"planVersionRepository"|"addonDefinitionRepository"|"platformBillingRepository">, tenantId: string): Promise<EffectiveEntitlements> {
   const subscription = await deps.subscriptionRepository.getActiveByTenant(tenantId);
 
   if (subscription) {
@@ -65,9 +65,15 @@ export async function resolveEffectiveEntitlements(deps: Pick<EntitlementUseCase
   return { tenantId, planCode: activeVersion.planCode, planVersionId: activeVersion.id, capabilities: activeVersion.capabilities, limits: activeVersion.limits, virtual: true, readOnly };
 }
 
+export async function resolveEffectiveEntitlements(deps: Pick<EntitlementUseCaseDeps,"subscriptionRepository"|"subscriptionItemRepository"|"planVersionRepository"|"addonDefinitionRepository"|"platformBillingRepository">, tenantId: string): Promise<EffectiveEntitlements> {
+  const [contract, controls] = await Promise.all([resolveContractEntitlements(deps, tenantId), deps.platformBillingRepository.getTenantControls?.(tenantId)]);
+  if (!controls) return contract;
+  return { ...contract, capabilities: { ...contract.capabilities, ...controls.capabilities }, limits: { ...contract.limits, ...controls.limits }, readOnly: controls.accessMode === "blocked" || (controls.accessMode !== "enabled" && contract.readOnly) };
+}
+
 export async function canUse(deps: EntitlementUseCaseDeps, input: { tenantId: string; capability: PlanCapability }): Promise<boolean> {
   const entitlements = await resolveEffectiveEntitlements(deps, input.tenantId);
-  return entitlements.capabilities[input.capability] === true;
+  return !entitlements.readOnly && entitlements.capabilities[input.capability] === true;
 }
 
 /** Nunca lança — quem precisa de um bloqueio duro chama `assertCanUse`. Devolve `false` também

@@ -56,7 +56,7 @@ export async function registerSolutionRoutes(app: FastifyInstance, deps: Solutio
     const { tenantId } = request.params as { tenantId: string };
     const access = await deps.solutionAccess.listAccess(tenantId);
     return successEnvelope(
-      { solutions: access.map((solution) => ({ ...solution, commercialAvailability: isSolutionContractable(SOLUTIONS[solution.key]) ? "public" : "internal" })) },
+      { solutions: await Promise.all(access.map(async solution => ({ ...solution, entitlement: await deps.solutionAccess!.getEntitlement(tenantId, solution.key), commercialAvailability: isSolutionContractable(SOLUTIONS[solution.key]) ? "public" : "internal" }))) },
       request.id,
     );
   });

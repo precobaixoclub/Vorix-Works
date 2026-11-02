@@ -1552,6 +1552,13 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
   // Providers oficiais (Meta/TikTok) ficam registrados, mas desligados por kill switch, homologação e
   // política por tenant até liberação explícita.
   const social = config?.social.enabled === false ? undefined : createSocialPublishingModule({
+    tenantPublishingAllowed: identityRepositories ? async tenantId => {
+      if (config?.solutions?.killSwitches.includes("marketing")) return false;
+      const access = await resolveEffectiveEntitlements(identityRepositories, tenantId);
+      if (access.readOnly) return false;
+      const grants = await identityRepositories.solutionEntitlementRepository.listByTenant(tenantId);
+      return grants.some(grant => grant.solutionKey === "marketing" && grant.enabled);
+    } : undefined,
     gateway: new SocialGatewayClient(config?.social.gatewayUrl, config?.social.gatewayToken),
     repository: repositories.pool ? new PostgresSocialRepository(repositories.pool) : new InMemorySocialRepository(),
     publicationRepository: repositories.publicationRepository,
@@ -1679,6 +1686,7 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
     // só nesse modo temos os repositórios reais configurados; em "noop"/testes locais o Gateway
     // roda "cru" para não exigir setup extra.
     const creditAccounting = new CreditAccountingService({
+      resolveEntitlements: tenantId => resolveEffectiveEntitlements(identityRepositories, tenantId),
       platformBillingRepository: identityRepositories.platformBillingRepository,
       aiProvidersRepository: identityRepositories.aiProvidersRepository,
       idGenerator: (prefix) => `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
@@ -1691,6 +1699,8 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
     // Entitlement por solução (Core) — alimenta o guarda da API (`solution-access.middleware.ts`)
     // e `GET /v1/solutions`. Kill switches vêm do ambiente; a concessão por tenant, do banco.
     const solutionAccess = new SolutionAccessService({
+      cacheTtlMs: 1000,
+      administrativeAccess: async tenantId => (await identityRepositories.platformBillingRepository.getTenantControls?.(tenantId))?.accessMode !== "blocked",
       repository: new PostgresSolutionEntitlementRepository(identityRepositories.pool),
       includedCapabilities:async tenantId=>{const access=await resolveEffectiveEntitlements(identityRepositories,tenantId);return {site:!access.readOnly&&access.capabilities.site};},
       killSwitches: new Set<SolutionKey>((config.solutions?.killSwitches ?? []).map(key=>key==="commerce"?"site":key).filter(isSolutionKey)),

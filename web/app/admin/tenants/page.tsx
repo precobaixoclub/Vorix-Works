@@ -6,7 +6,6 @@ import { Card, CardBody } from "@/components/Card";
 import { ErrorState } from "@/components/ErrorState";
 import { ListCard } from "@/components/ListCard";
 import { PageHeader } from "@/components/PageHeader";
-import { ScreenGuide } from "@/components/ScreenGuide";
 import { Spinner } from "@/components/Spinner";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -52,19 +51,8 @@ export default function AdminTenantsPage() {
 
   return (
     <div className="mx-auto max-w-6xl px-3 py-5 sm:px-6 sm:py-8">
-      <PageHeader title="Contas de clientes" description="Cada linha é um tenant. Clique para ver o consumo, ajustar créditos e trocar de plano." />
+      <PageHeader title="Contas e contratos" description="Gerencie plano, adicionais, acessos, limites e créditos de cada cliente." />
 
-      <ScreenGuide
-        title="Como operar clientes"
-        description="Use esta lista para localizar uma conta e abrir os ajustes financeiros e de acesso."
-        items={[
-          "Filtre por plano ou status.",
-          "Clique na conta para ver detalhes.",
-          "Ajuste créditos após pagamento manual.",
-          "Suspenda ou reative somente quando necessário.",
-        ]}
-        aside={<p>Tenant significa a conta do cliente dentro da plataforma.</p>}
-      />
 
       <Card className="mb-4">
         <CardBody className="flex flex-wrap items-end gap-4">

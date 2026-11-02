@@ -9,6 +9,8 @@ import type {
   TenantCreditLedgerReason,
 } from "../../../domain/platform-billing/index.js";
 import { getPlatformPlan } from "../../../domain/platform-billing/platform-plan-catalog.js";
+import { randomUUID } from "node:crypto";
+import { defaultTenantControls, type TenantControls, type TenantControlChange } from "../../../domain/platform-billing/tenant-controls.model.js";
 
 /**
  * Adapter Postgres do `PlatformBillingRepositoryPort` \u2014 Sprint 25 (Fase 1). Trabalha diretamente
@@ -18,6 +20,48 @@ import { getPlatformPlan } from "../../../domain/platform-billing/platform-plan-
  */
 export class PostgresPlatformBillingRepository implements PlatformBillingRepositoryPort {
   constructor(private readonly pool: Pool) {}
+
+  private readonly controlsCache = new Map<string, { at: number; value: TenantControls }>();
+
+  async getTenantControls(tenantId: string): Promise<TenantControls> {
+    const cached = this.controlsCache.get(tenantId);
+    if (cached && Date.now() - cached.at < 1000) return structuredClone(cached.value);
+    const result = await this.pool.query("select * from tenant_administrative_controls where tenant_id=$1", [tenantId]);
+    const row = result.rows[0];
+    const value: TenantControls = row ? { tenantId, displayName: row.display_name ?? undefined, accessMode: row.access_mode, capabilities: row.capabilities, limits: row.limits, version: row.version, updatedAt: new Date(row.updated_at).toISOString() } : defaultTenantControls(tenantId);
+    if (this.controlsCache.size > 2000) this.controlsCache.clear();
+    this.controlsCache.set(tenantId, { at: Date.now(), value });
+    return structuredClone(value);
+  }
+
+  async saveTenantControls(input: { controls: TenantControls; expectedVersion: number; actorUserId: string; reason: string }): Promise<TenantControls> {
+    const client = await this.pool.connect();
+    try {
+      await client.query("begin");
+      await client.query("select pg_advisory_xact_lock(hashtext($1))", [`billing-capacity:${input.controls.tenantId}`]);
+      // Lock the account even before its first override exists: concurrent first saves must conflict.
+      const account = await client.query("select tenant_id from tenant_billing where tenant_id=$1 for update", [input.controls.tenantId]);
+      if (!account.rowCount) throw new Error("PLATFORM_ADMIN_TENANT_NOT_FOUND");
+      const previous = await client.query("select * from tenant_administrative_controls where tenant_id=$1", [input.controls.tenantId]);
+      const row = previous.rows[0];
+      const before: TenantControls = row ? { tenantId: row.tenant_id, displayName: row.display_name ?? undefined, accessMode: row.access_mode, capabilities: row.capabilities, limits: row.limits, version: row.version } : defaultTenantControls(input.controls.tenantId);
+      if (before.version !== input.expectedVersion) throw new Error("TENANT_CONTROLS_CONFLICT: a conta foi alterada. Recarregue antes de salvar.");
+      const saved = await client.query(`insert into tenant_administrative_controls(tenant_id,display_name,access_mode,capabilities,limits,version)
+        values($1,$2,$3,$4,$5,$6) on conflict(tenant_id) do update set display_name=excluded.display_name,access_mode=excluded.access_mode,capabilities=excluded.capabilities,limits=excluded.limits,version=excluded.version,updated_at=now() returning updated_at`,
+        [input.controls.tenantId, input.controls.displayName ?? null, input.controls.accessMode, JSON.stringify(input.controls.capabilities), JSON.stringify(input.controls.limits), before.version + 1]);
+      const after = { ...input.controls, version: before.version + 1, updatedAt: new Date(saved.rows[0].updated_at).toISOString() };
+      await client.query("insert into tenant_administrative_control_changes(id,tenant_id,actor_user_id,reason,before_controls,after_controls) values($1,$2,$3,$4,$5,$6)", [randomUUID(), after.tenantId, input.actorUserId, input.reason, JSON.stringify(before), JSON.stringify(after)]);
+      await client.query("commit");
+      this.controlsCache.delete(after.tenantId);
+      return after;
+    } catch (error) { await client.query("rollback"); throw error; }
+    finally { client.release(); }
+  }
+
+  async listTenantControlChanges(tenantId: string): Promise<TenantControlChange[]> {
+    const result = await this.pool.query("select * from tenant_administrative_control_changes where tenant_id=$1 order by occurred_at desc limit 100", [tenantId]);
+    return result.rows.map(row => ({ id: row.id, tenantId, actorUserId: row.actor_user_id ?? undefined, reason: row.reason, before: row.before_controls, after: row.after_controls, occurredAt: new Date(row.occurred_at).toISOString() }));
+  }
 
   async ensureTenantBilling(input: { tenantId: string; now: string }): Promise<TenantBilling> {
     const freePlan = getPlatformPlan("FREE");

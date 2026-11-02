@@ -4,7 +4,6 @@ import Link from "next/link";
 import { Card, CardBody, CardHeader } from "@/components/Card";
 import { ErrorState } from "@/components/ErrorState";
 import { PageHeader } from "@/components/PageHeader";
-import { ScreenGuide } from "@/components/ScreenGuide";
 import { Spinner } from "@/components/Spinner";
 import { StatsGrid } from "@/components/StatsGrid";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -26,20 +25,10 @@ export default function AdminDashboardPage() {
     <div className="mx-auto max-w-6xl px-3 py-5 sm:px-6 sm:py-8">
       <PageHeader
         title="Visão geral da plataforma"
-        description="Números do mês corrente — receita, custo dos provedores de IA e lucro consolidado."
+        description="Contas da plataforma e uso de inteligência artificial no mês corrente."
       />
 
-      <ScreenGuide
-        title="Para que serve"
-        description="Esta é a visão do dono da plataforma, não de uma marca específica."
-        items={[
-          "Veja contas ativas e suspensas.",
-          "Compare receita, custo e lucro do mês.",
-          "Abra uma conta para ajustar plano e créditos.",
-          "Use Chaves OpenAI/Gemini para liberar geração por IA.",
-        ]}
-        aside={<p>Os números são consolidados de todos os clientes e ajudam a acompanhar operação e margem.</p>}
-      />
+<div className="mb-6 flex flex-wrap gap-3"><Link href="/admin/tenants" className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground">Gerenciar contas e contratos</Link><Link href="/admin/billing-provider" className="rounded-lg border border-border px-4 py-2 text-sm">Configurar cobrança</Link></div>
 
       {isLoading ? (
         <div className="flex items-center gap-2 py-14 text-sm text-muted-foreground">
@@ -51,16 +40,16 @@ export default function AdminDashboardPage() {
         <div className="flex flex-col gap-6">
           <StatsGrid>
             <MetricCard label="Contas totais" value={data.totalTenants.toString()} hint={`${data.activeTenants} ativas · ${data.suspendedTenants} suspensas`} />
-            <MetricCard label="Receita do mês" value={formatUsd(data.totalRevenueUsd)} hint={`Período ${data.currentPeriod}`} />
+            <MetricCard label="Receita estimada de IA" value={formatUsd(data.totalRevenueUsd)} hint={`Período ${data.currentPeriod}`} />
             <MetricCard label="Custo dos provedores" value={formatUsd(data.totalProviderCostUsd)} hint={`${formatNumber(data.totalRequestsCount)} requisições`} />
-            <MetricCard label="Lucro consolidado" value={formatUsd(data.totalProfitUsd)} hint={`${formatNumber(data.totalCreditsConsumed)} créditos consumidos`} highlight />
+            <MetricCard label="Margem estimada de IA" value={formatUsd(data.totalProfitUsd)} hint={`${formatNumber(data.totalCreditsConsumed)} créditos consumidos`} highlight />
           </StatsGrid>
 
           <Card>
             <CardHeader>
               <div>
-                <div className="text-base font-semibold text-foreground">Top 10 contas por receita</div>
-                <div className="text-xs text-muted-foreground">Ranking do período {data.currentPeriod} — receita cobrada e lucro por conta.</div>
+                <div className="text-base font-semibold text-foreground">Contas com maior uso financeiro de IA</div>
+                <div className="text-xs text-muted-foreground">Ranking do período {data.currentPeriod} — estimativas de IA em USD; mensalidades e adicionais estão no contrato de cada conta.</div>
               </div>
             </CardHeader>
             <CardBody className="p-0">
@@ -84,7 +73,7 @@ export default function AdminDashboardPage() {
                     </TableRow>
                   ) : (
                     data.topTenantsByRevenue.map((row) => (
-                      <TableRow key={row.tenantId}>
+                      <TableRow key={row.displayName ?? row.tenantId}>
                         <TableCell>
                           <Link href={`/admin/tenants/${encodeURIComponent(row.tenantId)}`} className="text-primary hover:underline">
                             {row.tenantId}

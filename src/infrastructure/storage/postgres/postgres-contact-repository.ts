@@ -7,6 +7,7 @@ import type { ContactRepositoryPort, CreateContactInput, UpdateContactInput } fr
 import type { Contact } from "../../../domain/crm/crm.model.js";
 import { CONTACT_DIRECTORY_PROTECTED_SQL } from "./contact-directory-sql.js";
 import { requireContactPhone } from "../../../domain/crm/contact-phone.js";
+import { withTenantResourceAllocation } from "./tenant-resource-allocation.js";
 
 const idGenerator = () => `contact-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 
@@ -29,9 +30,10 @@ type ContactRow = {
 };
 
 export class PostgresContactRepository implements ContactRepositoryPort {
-  constructor(private readonly pool: Pool) {}
+  constructor(private readonly pool: Pool, private readonly enforceContract = false) {}
 
   async create(input: CreateContactInput): Promise<Contact> {
+    if (this.enforceContract) return withTenantResourceAllocation(this.pool, input.tenantId, "contacts", connection => new PostgresContactRepository(connection).create(input));
     const phone = requireContactPhone(input.customFields?.phone);
     const result = await this.pool.query<ContactRow>(
       `insert into contacts (id, tenant_id, workspace_id, name, company, document, origin, owner_user_id, team_id, tags, custom_fields, notes)

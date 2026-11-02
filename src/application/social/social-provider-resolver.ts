@@ -64,6 +64,7 @@ export class SocialProviderResolver {
     private readonly registry: SocialProviderRegistry,
     private readonly repository: Pick<SocialRepositoryPort, "getPolicy" | "getSwitch" | "listSwitches">,
     private readonly defaults: SocialPlatformDefaults = DEFAULT_SOCIAL_PLATFORM_DEFAULTS,
+    private readonly tenantPublishingAllowed?: (tenantId: string) => Promise<boolean>,
   ) {}
 
   get providers(): SocialProviderRegistry {
@@ -71,7 +72,8 @@ export class SocialProviderResolver {
   }
 
   async policyFor(tenantId: string, network: SocialNetwork): Promise<SocialProviderPolicy> {
-    return (await this.repository.getPolicy({ tenantId, network })) ?? defaultSocialProviderPolicy(tenantId, network);
+    const policy = (await this.repository.getPolicy({ tenantId, network })) ?? defaultSocialProviderPolicy(tenantId, network);
+    return this.tenantPublishingAllowed && !await this.tenantPublishingAllowed(tenantId) ? { ...policy, publishingEnabled: false } : policy;
   }
 
   async switchFor(providerType: SocialProviderType): Promise<SocialProviderSwitch> {

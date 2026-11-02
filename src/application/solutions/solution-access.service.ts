@@ -11,6 +11,7 @@ import {
 import type { SolutionEntitlementRepositoryPort } from "../ports/solution-entitlement-repository.port.js";
 
 export type SolutionAccessServiceDeps = {
+  administrativeAccess?: (tenantId: string) => Promise<boolean>;
   includedCapabilities?: (tenantId:string)=>Promise<Partial<Record<"site",boolean>>>;
   repository: SolutionEntitlementRepositoryPort;
   /** Kill switches de ambiente — soluções desligadas para TODOS, inclusive acesso interno. */
@@ -45,6 +46,7 @@ export class SolutionAccessService {
 
   /** Todas as soluções conhecidas, com o acesso efetivo deste tenant. */
   async listAccess(tenantId: string): Promise<SolutionAccess[]> {
+    const administrativeAccess = await this.deps.administrativeAccess?.(tenantId) ?? true;
     const entitlements = await this.entitlementsOf(tenantId);
     const now=this.deps.now?.()??Date.now(),cached=this.capabilitiesCache.get(tenantId),ttl=this.deps.cacheTtlMs??DEFAULT_CACHE_TTL_MS;
     const included=cached&&now-cached.at<ttl?cached.value:await this.deps.includedCapabilities?.(tenantId)??{};
@@ -53,7 +55,7 @@ export class SolutionAccessService {
       resolveSolutionAccess({
         solution: SOLUTIONS[key],
         entitlement: entitlements.find((entry) => entry.solutionKey === key) ?? (key==="site"&&included[key]?{enabled:true,source:"subscription"}:undefined),
-        killSwitchOn: this.deps.killSwitches?.has(key) ?? false,
+        killSwitchOn: !administrativeAccess || (this.deps.killSwitches?.has(key) ?? false),
       }),
     );
   }

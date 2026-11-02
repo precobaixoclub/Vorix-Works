@@ -1,4 +1,5 @@
 import type { Channel, ConsumeMessage } from "amqplib";
+import { postgresEntitlementResolver } from "../../infrastructure/storage/postgres/tenant-resource-allocation.js";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { join } from "node:path";
@@ -578,6 +579,7 @@ async function main(): Promise<void> {
     let gatedGateway = aiGateway;
     if (config.ai.billingEnabled && repositories.pool) {
       const creditAccounting = new CreditAccountingService({
+        resolveEntitlements: postgresEntitlementResolver(repositories.pool),
         platformBillingRepository: new PostgresPlatformBillingRepository(repositories.pool),
         aiProvidersRepository: new PostgresAiProvidersRepository(repositories.pool),
         idGenerator: (prefix) => `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
@@ -590,7 +592,13 @@ async function main(): Promise<void> {
       console.log("[inbox-worker] AI_INBOX_AUTO_REPLY_BILLING_ENABLED=false — IA da Inbox roda sem consumir crédito Vorix (decisão explícita).");
     }
 
-    aiResponder = new AiGatewayInboxResponder(gatedGateway);
+    const innerResponder = new AiGatewayInboxResponder(gatedGateway);
+    const resolveTenantAccess = repositories.pool ? postgresEntitlementResolver(repositories.pool) : undefined;
+    aiResponder = { generateReply: async input => {
+      const access = await resolveTenantAccess?.(input.tenantId);
+      if (access && (access.readOnly || !access.capabilities.ai_auto_reply)) return { ok: false, category: "not_configured", message: "Respostas automáticas de IA indisponíveis para esta conta." };
+      return innerResponder.generateReply(input);
+    } };
     console.log(`[inbox-worker] IA de atendimento habilitada (modelo "${config.ai.anthropicInboxAutoReplyModel}").`);
   } else {
     console.log("[inbox-worker] AI_INBOX_AUTO_REPLY_ENABLED=false — IA de atendimento desligada, Inbox funciona normalmente sem ela.");
@@ -626,6 +634,7 @@ async function main(): Promise<void> {
         executionRepository: repositories.aiExecutionRepository,
       });
       const radarCreditAccounting = new CreditAccountingService({
+        resolveEntitlements: postgresEntitlementResolver(repositories.pool),
         platformBillingRepository: new PostgresPlatformBillingRepository(repositories.pool),
         aiProvidersRepository: new PostgresAiProvidersRepository(repositories.pool),
         idGenerator: (prefix) => `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
@@ -718,7 +727,7 @@ async function main(): Promise<void> {
         inboxContactRepository: repositories.inboxContactRepository,
         inboxMessageRepository: repositories.inboxMessageRepository,
         contact: {
-          contactRepository: new PostgresContactRepository(repositories.pool),
+          contactRepository: new PostgresContactRepository(repositories.pool, true),
           contactIdentityRepository: new PostgresContactIdentityRepository(repositories.pool),
           timelineEventRepository: new PostgresTimelineEventRepository(repositories.pool),
           // `automation` deliberadamente omitido nesta fase — ver comentário em

@@ -22,6 +22,9 @@ import { requirePrincipal } from "../../http/require-principal.js";
 import { successEnvelope } from "../../http/response-envelope.js";
 import { registerAnalyticsRoutes } from "./analytics.route.js";
 import { registerAdminRoutes } from "./admin.route.js";
+import { registerAdminTenantContractRoutes } from "./admin-tenant-contract.route.js";
+import { registerTenantContractGuard } from "../../http/tenant-contract-guard.js";
+import { resolveEffectiveEntitlements } from "../../../../application/billing/entitlement-use-cases.js";
 import { registerAiProvidersRoutes } from "./ai-providers.route.js";
 import { registerAssetsRoutes } from "./assets.route.js";
 import { registerProductionSettingsRoutes } from "./production-settings.route.js";
@@ -160,6 +163,8 @@ export async function registerV1Routes(app: FastifyInstance): Promise<void> {
         automationRuleRepository: billingIdentity.automationRuleRepository,
       }),
   } : undefined;
+
+  if (entitlementDeps) registerTenantContractGuard(app, entitlementDeps);
 
   await registerHealthRoutes(app);
   // Soluções da plataforma (Core) — sempre registrada: é ela que diz ao frontend quais soluções
@@ -419,6 +424,7 @@ export async function registerV1Routes(app: FastifyInstance): Promise<void> {
     // (opcional em cada um: quando ausente, nenhuma automação dispara, comportamento idêntico às
     // fases anteriores).
     const automationDeps: AutomationUseCaseDeps = {
+      tenantAllowed: async tenantId => { const access = await resolveEffectiveEntitlements(entitlementDeps, tenantId); return !access.readOnly && access.capabilities.automation; },
       automationRuleRepository: identity.automationRuleRepository,
       automationRunLogRepository: identity.automationRunLogRepository,
       contactRepository: identity.contactRepository,
@@ -936,7 +942,11 @@ export async function registerV1Routes(app: FastifyInstance): Promise<void> {
   // dentro das rotas cuida do 403 quando o usuário logado não é superadmin.
   if (app.zunoContainer.identity) {
     const identity = app.zunoContainer.identity;
+    if (!entitlementDeps) throw new Error("Admin billing dependencies unavailable");
+    const contractDeps = { ...entitlementDeps, billingProvider: app.zunoContainer.billingProvider, billingEventRepository: identity.billingEventRepository, subscriptionPendingChangeRepository: identity.subscriptionPendingChangeRepository, capacityMutationRepository: identity.capacityMutationRepository, solutionEntitlementRepository: identity.solutionEntitlementRepository };
+    await registerAdminTenantContractRoutes(app, contractDeps);
     await registerAdminRoutes(app, {
+      contractDeps,
       platformBillingRepository: identity.platformBillingRepository,
       membershipRepository: identity.membershipRepository,
       userRepository: identity.userRepository,

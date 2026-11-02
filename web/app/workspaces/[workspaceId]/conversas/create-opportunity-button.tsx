@@ -1,4 +1,6 @@
 "use client";
+import {contactLabel,contactNameForInput} from "@/features/crm/contact-presentation";
+
 
 import { useState } from "react";
 import { BriefcaseBusiness, Send } from "lucide-react";
@@ -41,7 +43,7 @@ export function CreateOpportunityButton({
   const [sending, setSending] = useState(false);
 
   if (conversation.chatType === "group" || !conversation.contactId) return null;
-  const contactName = conversation.contactName ?? conversation.contactPhone ?? "Contato do WhatsApp";
+  const contactName = contactLabel(conversation);
 
   function reset() {
     setAskProposal(false);
@@ -57,7 +59,7 @@ export function CreateOpportunityButton({
     }
     setLinking(true);
     try {
-      const contact = await createContact({ workspaceId, name: contactName, origin: "whatsapp", inboxContactId: conversation.contactId });
+      const contact = await createContact({ workspaceId, name: contactNameForInput(conversation) || conversation.contactPhone || "Contato", origin: "whatsapp", inboxContactId: conversation.contactId });
       await linkContactIdentity(contact.id, workspaceId, "whatsapp", conversation.contactId!);
       await onConversationChanged();
       setContactId(contact.id);

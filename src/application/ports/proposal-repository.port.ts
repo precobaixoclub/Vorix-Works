@@ -27,7 +27,7 @@ export type CreateProposalInput = {
 
 export type UpdateProposalInput = Partial<Omit<CreateProposalInput, "tenantId" | "workspaceId" | "publicTokenHash" | "number" | "version" | "rootProposalId" | "supersedesProposalId" | "createdByUserId" | "status">>;
 
-export type ListProposalsFilter = { ownUserId?: string; ownerUserIdsIn?: readonly string[]; teamIdsIn?: readonly string[];
+export type ListProposalsFilter = { search?:string; ownUserId?: string; ownerUserIdsIn?: readonly string[]; teamIdsIn?: readonly string[];
   tenantId: string;
   workspaceId: string;
   dealId?: string;
@@ -43,7 +43,7 @@ export type ProposalRepositoryPort = {
   getByTokenHash(tokenHash: string): Promise<Proposal | undefined>;
   listByWorkspace(filter: ListProposalsFilter): Promise<Proposal[]>;
   update(id: string, input: UpdateProposalInput): Promise<Proposal>;
-  setStatus(id: string, input: { status: ProposalStatus; sentAt?: string | null; viewedAt?: string | null; respondedAt?: string | null }): Promise<Proposal>;
+  setStatus(id: string, input: { status: ProposalStatus; expectedStatus?:ProposalStatus; sentAt?: string | null; viewedAt?: string | null; respondedAt?: string | null }): Promise<Proposal>;
   rotatePublicToken(id: string, tokenHash: string): Promise<Proposal>;
   revokePublicToken(id: string, revokedAt: string): Promise<Proposal>;
   recordView(id: string, viewedAt: string, recipientId?: string): Promise<Proposal>;

@@ -4,6 +4,34 @@ import assert from "node:assert/strict";
 import { buildApp } from "../dist/interfaces/api/app.js";
 import { loadApiConfig } from "../dist/interfaces/api/config/api-config.js";
 import { InMemoryWorkspaceRepository } from "../dist/infrastructure/storage/in-memory-workspace-repository.js";
+import Fastify from "fastify";
+import { registerWorkspaceTenantGuard } from "../dist/interfaces/api/http/workspace-tenant-guard.js";
+import { registerWorkspaceRoutes } from "../dist/interfaces/api/routes/v1/workspaces.route.js";
+
+test("espaço inativo permite consulta e gestão do status, bloqueia alterações operacionais e preserva isolamento", async () => {
+  const workspaceRepository = new InMemoryWorkspaceRepository();
+  const workspace = await workspaceRepository.create({ tenantId: "tenant-inactive", name: "Empresa preservada" });
+  await workspaceRepository.deactivate(workspace.id);
+  const app = Fastify();
+  app.decorateRequest("zunoContext", null);
+  app.addHook("onRequest", async request => { request.zunoContext = { principal: { tenantId: request.headers["x-tenant"] ?? "tenant-inactive", userId: "test", role: "owner" } }; });
+  registerWorkspaceTenantGuard(app, workspaceRepository);
+  await registerWorkspaceRoutes(app, { workspaceRepository });
+  app.get("/operation", async () => ({ preserved: true }));
+  app.post("/operation", async () => ({ changed: true }));
+  try {
+    const scope = `?workspaceId=${workspace.id}`;
+    assert.equal((await app.inject({ method: "GET", url: "/operation" + scope })).statusCode, 200);
+    const blocked = await app.inject({ method: "POST", url: "/operation" + scope });
+    assert.equal(blocked.statusCode, 403);
+    assert.match(blocked.body, /WORKSPACE_INACTIVE/);
+    assert.equal((await app.inject({ method: "POST", url: "/operation" + scope, headers: { "x-tenant": "foreign" } })).statusCode, 404);
+    assert.equal((await app.inject({ method: "PATCH", url: `/workspaces/${workspace.id}`, payload: { name: "Nome atualizado" } })).statusCode, 200);
+    assert.equal((await app.inject({ method: "POST", url: `/workspaces/${workspace.id}/activate` })).statusCode, 200);
+    assert.equal((await app.inject({ method: "POST", url: "/operation" + scope })).statusCode, 200);
+    assert.equal((await workspaceRepository.getById(workspace.id)).name, "Nome atualizado");
+  } finally { await app.close(); }
+});
 
 /**
  * `TestTokenAuthPort` — mesma ideia de um Bearer token real, mas o "token" É `tenantId` (e,

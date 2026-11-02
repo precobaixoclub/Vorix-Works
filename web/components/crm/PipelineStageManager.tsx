@@ -48,15 +48,15 @@ export function PipelineStageManager({ workspaceId, pipelineId, stages, onClose,
           {stages.map((stage, index) => (
             <div key={stage.id} className="rounded-lg border border-border p-3">
               <div className="mb-2 flex items-center justify-between gap-2">
-                <span className="flex items-center gap-1.5 text-xs text-muted-foreground">{stage.isWon || stage.isLost ? <><LockKeyhole className="h-3.5 w-3.5" />Fase sistêmica · {stage.isWon ? "Ganha" : "Perdida"}</> : "Em andamento"}</span>
+                <span className="flex items-center gap-1.5 text-xs text-muted-foreground">{stage.isWon || stage.isLost || stage.isAwaitingBilling ? <><LockKeyhole className="h-3.5 w-3.5" />Fase sistêmica · {stage.isAwaitingBilling ? "Faturamento" : stage.isWon ? "Ganha" : "Perdida"}</> : "Em andamento"}</span>
                 <div className="flex gap-1">
-                  <Button variant="ghost" size="sm" aria-label={`Subir ${stage.name}`} disabled={busy || index === 0 || stage.isWon || stage.isLost} onClick={() => void reorder(index, -1)}><ArrowUp className="h-4 w-4" /></Button>
-                  <Button variant="ghost" size="sm" aria-label={`Descer ${stage.name}`} disabled={busy || index >= stages.length - 3 || stage.isWon || stage.isLost} onClick={() => void reorder(index, 1)}><ArrowDown className="h-4 w-4" /></Button>
-                  <Button variant="ghost" size="sm" disabled={busy || stage.isWon || stage.isLost || stages.filter(s => !s.isWon && !s.isLost).length <= 1} onClick={() => setRemoving(stage)}>Excluir</Button>
+                  <Button variant="ghost" size="sm" aria-label={`Subir ${stage.name}`} disabled={busy || index === 0 || stage.isWon || stage.isLost || stage.isAwaitingBilling} onClick={() => void reorder(index, -1)}><ArrowUp className="h-4 w-4" /></Button>
+                  <Button variant="ghost" size="sm" aria-label={`Descer ${stage.name}`} disabled={busy || index >= stages.length - 3 || stage.isWon || stage.isLost || stage.isAwaitingBilling} onClick={() => void reorder(index, 1)}><ArrowDown className="h-4 w-4" /></Button>
+                  <Button variant="ghost" size="sm" disabled={busy || stage.isWon || stage.isLost || stage.isAwaitingBilling || stages.filter(s => !s.isWon && !s.isLost && !s.isAwaitingBilling).length <= 1} onClick={() => setRemoving(stage)}>Excluir</Button>
                 </div>
               </div>
-              <StageName stage={stage} busy={busy} onSave={(nextName) => change(() => updatePipelineStage(pipelineId, workspaceId, stage.id, { name: nextName }))} />
-              {stage.isWon || stage.isLost ? <p className="mt-2 text-xs leading-relaxed text-muted-foreground">Fase sistêmica de encerramento. Não pode ser removida e permanece no final do funil.</p> : null}
+              <StageName stage={stage} busy={busy || stage.isAwaitingBilling === true} onSave={(nextName) => change(() => updatePipelineStage(pipelineId, workspaceId, stage.id, { name: nextName }))} />
+              {stage.isWon || stage.isLost || stage.isAwaitingBilling ? <p className="mt-2 text-xs leading-relaxed text-muted-foreground">Fase sistêmica de encerramento. Não pode ser removida e permanece no final do funil.</p> : null}
             </div>
           ))}
         </div>
@@ -64,7 +64,7 @@ export function PipelineStageManager({ workspaceId, pipelineId, stages, onClose,
           event.preventDefault();
           if (!name.trim() || busy) return;
           void change(async () => {
-            await createPipelineStage(pipelineId, workspaceId, { name: name.trim(), position: stages.filter(s => !s.isWon && !s.isLost).length });
+            await createPipelineStage(pipelineId, workspaceId, { name: name.trim(), position: stages.filter(s => !s.isWon && !s.isLost && !s.isAwaitingBilling).length });
             setName("");
           });
         }}>

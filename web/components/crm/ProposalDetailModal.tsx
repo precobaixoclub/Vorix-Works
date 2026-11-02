@@ -1,4 +1,10 @@
 "use client";
+import {proposalBadgeStatus} from "@/features/crm/presentation";
+import {contactLabel,humanContactName, commercialTitle} from "@/features/crm/contact-presentation";
+
+import {ProposalBillingDetails} from "@/components/sales/ProposalBillingDetails";
+import { InvoiceProposalButton } from "@/components/sales/InvoiceProposalButton";
+
 
 import { useState } from "react";
 import { toast } from "sonner";
@@ -57,8 +63,10 @@ export function ProposalDetailModal({ workspaceId, proposal, contactName, dealTi
   }
 
   return (
-    <Modal title={proposal.title} onClose={onClose} maxWidthClass="sm:max-w-2xl">
+    <Modal title={commercialTitle(proposal.title,"Proposta")} onClose={onClose} maxWidthClass="sm:max-w-2xl">
       <div className="space-y-5">
+        {proposal.status === "accepted" && proposal.dealId ? <InvoiceProposalButton workspaceId={workspaceId} dealId={proposal.dealId} proposalId={proposal.id} onChanged={onChanged}/> : null}
+        <ProposalBillingDetails workspaceId={workspaceId} proposal={proposal}/>
         {proposal.status === "rejected" ? <ProposalRejectionDetails proposal={proposal}>
           <div className="grid gap-2 sm:flex sm:flex-wrap">
             {onCreateNewProposal ? <Button className="h-auto min-h-[44px] whitespace-normal" onClick={onCreateNewProposal}><FilePlus2 className="h-4 w-4" />Criar nova proposta</Button> : null}
@@ -69,9 +77,9 @@ export function ProposalDetailModal({ workspaceId, proposal, contactName, dealTi
         <div className="flex flex-wrap items-center justify-between gap-2">
           <p className="flex flex-wrap items-center gap-1 text-sm text-muted-foreground">
             {proposal.contactId && onOpenContact ? (
-              <button type="button" onClick={() => onOpenContact(proposal.contactId!)} className="underline-offset-2 hover:text-foreground hover:underline">{contactName ?? "Sem contato"}</button>
+              <button type="button" onClick={() => onOpenContact(proposal.contactId!)} className="underline-offset-2 hover:text-foreground hover:underline">{proposal.contactDisplayName ?? contactLabel({name:contactName})}</button>
             ) : (
-              <span>{contactName ?? "Sem contato"}</span>
+              <span>{proposal.contactDisplayName ?? contactLabel({name:contactName})}</span>
             )}
             {dealTitle ? (
               <>
@@ -84,7 +92,7 @@ export function ProposalDetailModal({ workspaceId, proposal, contactName, dealTi
               </>
             ) : null}
           </p>
-          <StatusBadge status={proposal.status} />
+          <StatusBadge status={proposalBadgeStatus(proposal.status)} />
         </div>
         <div className="grid gap-2 sm:grid-cols-2">
           <Info label="Subtotal" value={formatCurrencyCents(subtotalCents, proposal.currency)} />

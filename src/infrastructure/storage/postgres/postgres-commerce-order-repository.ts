@@ -1,3 +1,5 @@
+import {canonicalContactSql} from "./postgres-canonical-contact.js";
+import {contactLabel} from "../../../domain/crm/contact-presentation.js";
 import type {Pool,PoolClient} from "pg";
 import {randomUUID} from "node:crypto";
 import type {CommerceOrderRepositoryPort,CreateOrderInput,ExternalOrderInput,OrderEventInput,OrderListFilter,OrderPatch,ReturnInput,ShipmentInput} from "../../../application/ports/commerce-ports.js";
@@ -7,7 +9,7 @@ const iso=(value:unknown)=>value instanceof Date?value.toISOString():value?Strin
 const num=(value:unknown)=>Number(value??0);
 function mapOrder(row:Row,items:Row[]):Order{
  return {id:row.id,tenantId:row.tenant_id,workspaceId:row.workspace_id,siteId:row.site_id??undefined,number:row.number,source:row.source,status:row.status,paymentStatus:row.payment_status,shippingStatus:row.shipping_status,stockState:row.stock_state,
-  contactId:row.contact_id??undefined,customer:row.customer,shippingAddress:row.shipping_address??undefined,delivery:row.delivery,
+  customerDisplayName:contactLabel(row.canonical_contact??row.customer),contactId:row.contact_id??undefined,customer:row.customer,shippingAddress:row.shipping_address??undefined,delivery:row.delivery,
   subtotalCents:num(row.subtotal_cents),discountCents:num(row.discount_cents),shippingCents:num(row.shipping_cents),totalCents:num(row.total_cents),currency:row.currency,
   crmDealId:row.crm_deal_id??undefined,salesIntentId:row.sales_intent_id??undefined,cartId:row.cart_id??undefined,anonymousSessionId:row.anonymous_session_id??undefined,utm:row.utm??{},
   reservationExpiresAt:iso(row.reservation_expires_at),cancelReason:row.cancel_reason??undefined,createdAt:iso(row.created_at)!,updatedAt:iso(row.updated_at)!,paidAt:iso(row.paid_at),cancelledAt:iso(row.cancelled_at),
@@ -23,7 +25,7 @@ async function insertEvent(client:Pool|PoolClient,orderId:string,event:OrderEven
 export class PostgresCommerceOrderRepository implements CommerceOrderRepositoryPort{
  constructor(private readonly pool:Pool){}
  private async load(where:string,params:unknown[]):Promise<Order|undefined>{
-  const {rows}=await this.pool.query(`select * from commerce_orders where ${where}`,params);if(!rows[0])return undefined;
+  const {rows}=await this.pool.query(`select commerce_orders.*, ${canonicalContactSql("commerce_orders")} from commerce_orders where ${where}`,params);if(!rows[0])return undefined;
   const items=(await this.pool.query("select * from commerce_order_items where order_id=$1",[rows[0].id])).rows;return mapOrder(rows[0],items);
  }
  async create(input:CreateOrderInput){
@@ -65,7 +67,7 @@ export class PostgresCommerceOrderRepository implements CommerceOrderRepositoryP
   if(filter.search){const term=filter.search.trim();params.push(term);const p=`$${params.length}`;where.push(/^\d+$/.test(term)?`(number::text=${p} or customer->>'phone' like '%'||${p}||'%')`:`(customer->>'name' ilike '%'||${p}||'%' or customer->>'email' ilike '%'||${p}||'%')`);}
   const clause=where.join(" and ");
   const total=Number((await this.pool.query(`select count(*) n from commerce_orders where ${clause}`,params)).rows[0].n);
-  const rows=(await this.pool.query(`select * from commerce_orders where ${clause} order by created_at desc limit ${Math.min(200,filter.limit)} offset ${Math.max(0,filter.offset)}`,params)).rows;
+  const rows=(await this.pool.query(`select commerce_orders.*, ${canonicalContactSql("commerce_orders")} from commerce_orders where ${clause} order by created_at desc limit ${Math.min(200,filter.limit)} offset ${Math.max(0,filter.offset)}`,params)).rows;
   const items=rows.length?(await this.pool.query("select * from commerce_order_items where order_id=any($1)",[rows.map(row=>row.id)])).rows:[];
   return {orders:rows.map(row=>mapOrder(row,items)),total};
  }

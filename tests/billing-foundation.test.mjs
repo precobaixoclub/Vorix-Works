@@ -214,6 +214,13 @@ test("ResourceCounterPort: conta usuários e workspaces reais do tenant (nunca u
 
   assert.equal(await counter.count({ tenantId, resource: "users" }), 2);
   assert.equal(await counter.count({ tenantId, resource: "workspaces" }), 2);
+  const workspaceRepo = new PostgresWorkspaceRepository(db.pool);
+  const stored = await workspaceRepo.listByTenant(tenantId);
+  await workspaceRepo.deactivate(stored[0].id);
+  assert.equal(await counter.count({ tenantId, resource: "workspaces" }), 1, "somente os ativos ocupam vagas");
+  await workspaceRepo.archive(stored[1].id);
+  assert.equal(await counter.count({ tenantId, resource: "workspaces" }), 0);
+  assert.equal((await workspaceRepo.listByTenant(tenantId)).length, 2, "registros preservados");
   assert.equal(await counter.count({ tenantId, resource: "ai_credits" }), undefined, "ai_credits não é contado por linhas");
 });
 

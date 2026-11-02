@@ -1,3 +1,5 @@
+import { canonicalContactSql } from "./postgres-canonical-contact.js";
+import { contactLabel, type ContactPresentationInput } from "../../../domain/crm/contact-presentation.js";
 import { ownedScopeSql } from "./postgres-owned-scope.js";
 import type { Pool } from "pg";
 import type {
@@ -15,6 +17,8 @@ import type { Deal, DealStageSummary } from "../../../domain/crm/crm.model.js";
 const dealId = () => `deal-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 
 type DealRow = {
+  canonical_contact?: ContactPresentationInput | null;
+  billing_proposal_id?: string | null;
   id: string;
   tenant_id: string;
   workspace_id: string;
@@ -78,6 +82,8 @@ export function mapDealRow(row: DealRow): Deal {
 function toDomain(row: DealRow): Deal {
   return {
     id: row.id,
+    contactDisplayName: row.canonical_contact ? contactLabel(row.canonical_contact) : undefined,
+    billingProposalId: row.billing_proposal_id ?? undefined,
     tenantId: row.tenant_id,
     workspaceId: row.workspace_id,
     pipelineId: row.pipeline_id,
@@ -199,7 +205,7 @@ export class PostgresDealRepository implements DealRepositoryPort {
   }
 
   async getById(id: string): Promise<Deal | undefined> {
-    const result = await this.pool.query<DealRow>("select * from deals where id = $1", [id]);
+    const result = await this.pool.query<DealRow>(`select deals.*, ${canonicalContactSql("deals")} from deals where id = $1`, [id]);
     return result.rows[0] ? toDomain(result.rows[0]) : undefined;
   }
 
@@ -213,7 +219,7 @@ export class PostgresDealRepository implements DealRepositoryPort {
     }
     params.push(limit);
     const result = await this.pool.query<DealRow>(
-      `select * from deals where ${conditions.join(" and ")} order by created_at desc limit $${params.length}`,
+      `select deals.*, ${canonicalContactSql("deals")} from deals where ${conditions.join(" and ")} order by created_at desc limit $${params.length}`,
       params,
     );
     return result.rows.map(toDomain);
@@ -285,6 +291,7 @@ export class PostgresDealRepository implements DealRepositoryPort {
          reopened_at = case when status <> 'open' and $2 = 'open' then now() else reopened_at end,
          reopened_by_user_id = case when status <> 'open' and $2 = 'open' then $24 else reopened_by_user_id end,
          reopen_count = reopen_count + case when status <> 'open' and $2 = 'open' then 1 else 0 end,
+         billing_proposal_id = case when $2 in ('lost','cancelled') or (status <> 'open' and $2='open') then null else billing_proposal_id end,
          closure_source = $22, loss_reason_id = $25,
          archived_at = case when status <> $2 then null else archived_at end,
          archive_manual_hold = case when status <> $2 then false else archive_manual_hold end

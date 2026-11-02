@@ -1,4 +1,10 @@
 "use client";
+import {proposalBadgeStatus} from "@/features/crm/presentation";
+import { contactLabel , commercialTitle} from "@/features/crm/contact-presentation";
+
+import {ProposalBillingDetails} from "@/components/sales/ProposalBillingDetails";
+import { InvoiceProposalButton } from "@/components/sales/InvoiceProposalButton";
+
 
 import { Suspense, useEffect, useMemo, useState, type ReactNode } from "react";
 import { CalendarPlus, Copy, ExternalLink, FilePlus2, FileText, History, Info, Link2, Link2Off, Search, Send, SlidersHorizontal, XCircle } from "lucide-react";
@@ -33,7 +39,7 @@ import { cn } from "@/lib/utils";
 type DraftItem = { productId?: string; name: string; quantity: number; unitPriceCents: number };
 type ProposalSection = "summary" | "items" | "history";
 
-const STATUS_OPTIONS: ProposalStatus[] = ["draft", "sent", "viewed", "accepted", "rejected", "expired"];
+const STATUS_OPTIONS: ProposalStatus[] = ["draft", "pending_approval", "approved", "sent", "viewed", "accepted", "invoiced", "rejected", "cancelled", "expired", "superseded"];
 
 export default function ProposalsPage() {
   return (
@@ -62,7 +68,7 @@ function ProposalsView() {
   const [dealFilter, setDealFilter] = useState("");
   const [view, setView] = useState<"proposals" | "templates">("proposals");
 
-  const { data: proposals, error, isLoading, mutate } = useProposals(workspace.id, { status: statusFilter === "all" ? undefined : statusFilter });
+  const { data: proposals, error, isLoading, mutate } = useProposals(workspace.id, { search, status: statusFilter === "all" ? undefined : statusFilter });
   const { data: products } = useProducts(workspace.id, { activeOnly: true });
   const { data: templates } = useProposalTemplates(workspace.id, true);
   const { data: contacts } = useContacts(workspace.id);
@@ -117,21 +123,14 @@ function ProposalsView() {
   useEffect(() => {
     const deal = dealsList.find((item) => item.id === dealId);
     if (deal?.contactId && !contactId) setContactId(deal.contactId);
-    if (deal && !title) setTitle(`Proposta · ${deal.title}`);
+    if (deal && !title) setTitle(`Proposta · ${commercialTitle(deal.title,"Oportunidade")}`);
   }, [contactId, dealId, dealsList, title]);
 
   const visibleProposals = useMemo(() => {
-    const q = search.trim().toLowerCase();
     return (proposals ?? [])
       .filter((proposal) => !contactFilter || proposal.contactId === contactFilter)
-      .filter((proposal) => !dealFilter || proposal.dealId === dealFilter)
-      .filter((proposal) => {
-        if (!q) return true;
-        const contact = contactsList.find((item) => item.id === proposal.contactId);
-        const deal = dealsList.find((item) => item.id === proposal.dealId);
-        return `${proposal.title} ${contact?.name ?? ""} ${deal?.title ?? ""}`.toLowerCase().includes(q);
-      });
-  }, [contactFilter, contactsList, dealFilter, dealsList, proposals, search]);
+      .filter((proposal) => !dealFilter || proposal.dealId === dealFilter);
+  }, [contactFilter, dealFilter, proposals]);
 
   function addProductItem(productId: string) {
     const product = productsList.find((item) => item.id === productId);
@@ -154,7 +153,7 @@ function ProposalsView() {
   const subtotalCents = items.reduce((sum, item) => sum + item.quantity * item.unitPriceCents, 0);
   const discountCents = centsFromCurrencyInput(discountReais);
   const totalCents = Math.max(0, subtotalCents - discountCents);
-  const contactOptions = contactsList.map((contact) => ({ id: contact.id, label: contact.company ? `${contact.name} · ${contact.company}` : contact.name }));
+  const contactOptions = contactsList.map((contact) => ({ id: contact.id, label: contactLabel(contact) }));
   const dealOptions = dealsList.map((deal) => ({ id: deal.id, label: deal.title }));
 
   async function handleCreate() {
@@ -204,7 +203,7 @@ function ProposalsView() {
       const conversation = conversations?.conversations.find((item) => item.crmContactId === proposal.contactId);
       if (!conversation) throw new Error("Este contato não possui conversa vinculada para envio.");
       const contact = contactsList.find((item) => item.id === proposal.contactId);
-      const message = `${contact?.name ? `Olá, ${contact.name}! ` : "Olá! "}Preparei sua proposta comercial.\n\nVocê pode visualizar aqui:\n{{proposalUrl}}`;
+      const message = `${contact?.name ? `Olá, ${contactLabel(contact)}! ` : "Olá! "}Preparei sua proposta comercial.\n\nVocê pode visualizar aqui:\n{{proposalUrl}}`;
       await sendProposal(proposal.id, { workspaceId: workspace.id, conversationId: conversation.id, message, idempotencyKey: crypto.randomUUID() });
       await mutate();
       toast.success(proposal.status === "draft" ? "Proposta enviada." : "Proposta reenviada.");
@@ -464,10 +463,10 @@ function ProposalCard({
       <button type="button" onClick={onOpen} className="block w-full text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <p className="truncate text-sm font-semibold text-foreground">{proposal.title}</p>
-            <p className="mt-0.5 truncate text-xs text-muted-foreground">{contact?.name ?? "Sem contato"}{deal ? ` · ${deal.title}` : ""}</p>
+            <p className="truncate text-sm font-semibold text-foreground">{commercialTitle(proposal.title,"Proposta")}</p>
+            <p className="mt-0.5 truncate text-xs text-muted-foreground">{(proposal.contactDisplayName ?? contactLabel(contact))}{deal ? ` · ${commercialTitle(deal.title,"Oportunidade")}` : ""}</p>
           </div>
-          <StatusBadge status={proposal.status} />
+          <StatusBadge status={proposalBadgeStatus(proposal.status)} />
         </div>
         <p className="mt-4 text-2xl font-semibold tabular-nums text-foreground">{formatCurrencyCents(proposal.totalCents, proposal.currency)}</p>
         <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
@@ -529,18 +528,18 @@ function ProposalDetailModal({
     <DetailModal
       open={open}
       onOpenChange={onOpenChange}
-      title={proposal.title}
+      title={commercialTitle(proposal.title,"Proposta")}
       description={
         // Jornada Comercial Fase 5, item 11 — nome do contato/negócio no header nunca deveria ser
         // texto morto quando dá pra abrir o Contact 360/o Deal direto.
         <span className="flex flex-wrap gap-2 text-sm text-muted-foreground">
-          {contact ? <Button variant="secondary" size="sm" className="h-auto min-h-9 max-w-full whitespace-normal border-border bg-muted/40 text-left" aria-label={`Abrir contato ${contact.name}`} onClick={() => router.push(`/workspaces/${workspaceId}/contacts?contactId=${contact.id}`)}>{contact.name}<ExternalLink className="h-3.5 w-3.5 shrink-0" /></Button> : <span>Sem contato</span>}
-          {deal ? <Button variant="secondary" size="sm" className="h-auto min-h-9 max-w-full whitespace-normal border-border bg-muted/40 text-left" aria-label={`Abrir oportunidade ${deal.title}`} onClick={() => router.push(`/workspaces/${workspaceId}/deals?dealId=${deal.id}`)}>{deal.title}<ExternalLink className="h-3.5 w-3.5 shrink-0" /></Button> : null}
+          {contact ? <Button variant="secondary" size="sm" className="h-auto min-h-9 max-w-full whitespace-normal border-border bg-muted/40 text-left" aria-label={`Abrir contato ${contactLabel(contact)}`} onClick={() => router.push(`/workspaces/${workspaceId}/contacts?contactId=${contact.id}`)}>{contactLabel(contact)}<ExternalLink className="h-3.5 w-3.5 shrink-0" /></Button> : <span>{proposal.contactDisplayName ?? "Contato não informado"}</span>}
+          {proposal.dealId ? <Button variant="secondary" size="sm" onClick={()=>router.push(`/workspaces/${workspaceId}/deals?dealId=${proposal.dealId}`)}>{deal?.title ?? "Abrir oportunidade"}<ExternalLink className="h-3.5 w-3.5 shrink-0"/></Button> : null}
         </span>
       }
       eyebrow="Proposta"
       avatar={<span className="flex h-12 w-12 items-center justify-center rounded-xl bg-ai-soft text-ai"><FileText className="h-5 w-5" /></span>}
-      headerExtra={<StatusBadge status={proposal.status} />}
+      headerExtra={<StatusBadge status={proposalBadgeStatus(proposal.status)} />}
       sections={[
         { value: "summary", label: "Resumo", icon: Info },
         { value: "items", label: "Itens", icon: FileText, badge: proposal.items.length || undefined },
@@ -554,6 +553,8 @@ function ProposalDetailModal({
     >
       {section === "summary" ? (
         <div className="space-y-7">
+          {proposal.status === "accepted" && proposal.dealId ? <InvoiceProposalButton workspaceId={workspaceId} dealId={proposal.dealId} proposalId={proposal.id} onChanged={onChanged}/> : null}
+          <ProposalBillingDetails workspaceId={workspaceId} proposal={proposal}/>
           {proposal.status === "rejected" ? <ProposalRejectionDetails proposal={proposal}>
             <p className="text-sm text-muted-foreground">A recusa se refere a esta proposta. Você pode continuar a negociação com o cliente.</p>
             <div className="grid gap-2 sm:flex sm:flex-wrap">
@@ -567,7 +568,7 @@ function ProposalDetailModal({
             action={["draft", "sent", "viewed"].includes(proposal.status) ? <Button size="sm" loading={sending} disabled={sending} onClick={() => { void onSend(proposal); }}>{proposal.status === "draft" ? "Enviar proposta" : "Reenviar proposta"}</Button> : undefined}
           >
             <div className="grid gap-3 sm:grid-cols-2">
-              <InfoCell label="Cliente" value={contact?.name ?? "Sem contato"} />
+              <InfoCell label="Cliente" value={proposal.contactDisplayName ?? contactLabel(contact)} />
               <InfoCell label="Oportunidade" value={deal?.title ?? "Sem oportunidade"} />
               <InfoCell label="Status" value={PROPOSAL_STATUS_LABEL[proposal.status]} />
               <InfoCell label="Total" value={formatCurrencyCents(proposal.totalCents, proposal.currency)} strong />

@@ -1,3 +1,4 @@
+import {contactLabel,type ContactPresentationInput} from "../../../domain/crm/contact-presentation.js";
 import type { Pool } from "pg";
 import type { CreateNotificationInput, NotificationRepositoryPort } from "../../../application/ports/notification-repository.port.js";
 import type { Notification } from "../../../domain/notification/notification.model.js";
@@ -5,6 +6,8 @@ import type { Notification } from "../../../domain/notification/notification.mod
 const idGenerator = () => `notif-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 
 type Row = {
+  canonical_contact?:ContactPresentationInput|null;
+  order_customer_name?:string|null;
   id: string;
   tenant_id: string;
   workspace_id: string;
@@ -34,7 +37,10 @@ export class PostgresNotificationRepository implements NotificationRepositoryPor
 
   async listActive(input: { tenantId: string; workspaceId: string; userId: string; limit: number }): Promise<Notification[]> {
     const result = await this.pool.query<Row>(
-      `select * from notifications
+      `select notifications.*, (select jsonb_build_object('name',ct.name,'phone',ct.custom_fields->>'phone') from contacts ct where ct.tenant_id=notifications.tenant_id and ct.workspace_id=notifications.workspace_id and ct.id=coalesce(
+ (select coalesce(p.contact_id,d.contact_id) from proposals p left join deals d on d.id=p.deal_id and d.tenant_id=p.tenant_id and d.workspace_id=p.workspace_id where p.id=notifications.source_id and p.tenant_id=notifications.tenant_id and p.workspace_id=notifications.workspace_id and notifications.source_type like 'proposal_%'),
+ (select o.contact_id from commerce_orders o where o.id=notifications.source_id and o.tenant_id=notifications.tenant_id and o.workspace_id=notifications.workspace_id and notifications.source_type='commerce_order_paid')
+ )) as canonical_contact, (select o.customer->>'name' from commerce_orders o where o.id=notifications.source_id and o.tenant_id=notifications.tenant_id and o.workspace_id=notifications.workspace_id and notifications.source_type='commerce_order_paid') as order_customer_name from notifications
        where tenant_id = $1 and workspace_id = $2 and user_id = $3 and dismissed_at is null
        order by created_at desc
        limit $4`,
@@ -45,7 +51,10 @@ export class PostgresNotificationRepository implements NotificationRepositoryPor
 
   async listHistory(input: { tenantId: string; workspaceId: string; userId: string; limit: number }): Promise<Notification[]> {
     const result = await this.pool.query<Row>(
-      `select * from notifications
+      `select notifications.*, (select jsonb_build_object('name',ct.name,'phone',ct.custom_fields->>'phone') from contacts ct where ct.tenant_id=notifications.tenant_id and ct.workspace_id=notifications.workspace_id and ct.id=coalesce(
+ (select coalesce(p.contact_id,d.contact_id) from proposals p left join deals d on d.id=p.deal_id and d.tenant_id=p.tenant_id and d.workspace_id=p.workspace_id where p.id=notifications.source_id and p.tenant_id=notifications.tenant_id and p.workspace_id=notifications.workspace_id and notifications.source_type like 'proposal_%'),
+ (select o.contact_id from commerce_orders o where o.id=notifications.source_id and o.tenant_id=notifications.tenant_id and o.workspace_id=notifications.workspace_id and notifications.source_type='commerce_order_paid')
+ )) as canonical_contact, (select o.customer->>'name' from commerce_orders o where o.id=notifications.source_id and o.tenant_id=notifications.tenant_id and o.workspace_id=notifications.workspace_id and notifications.source_type='commerce_order_paid') as order_customer_name from notifications
        where tenant_id = $1 and workspace_id = $2 and user_id = $3
        order by created_at desc
        limit $4`,
@@ -74,13 +83,17 @@ export class PostgresNotificationRepository implements NotificationRepositoryPor
   }
 
   private toDomain(row: Row): Notification {
+    const person=contactLabel(row.canonical_contact);
+    const titles:Record<string,string>={proposal_first_view:person+" abriu sua proposta",proposal_hot_view:person+" voltou a abrir a proposta",proposal_accepted:person+" aceitou a proposta",proposal_declined:person+" recusou a proposta"};
+    const safe=(value:string)=>value.replace(/\blead(?:[_-][\w-]+|\s*\d+)?\b/gi,person).replace(/\b(?:contact|intent|conversation|visitor)-[\w-]+/gi,person);
+    const body=row.canonical_contact && row.order_customer_name && row.body?.startsWith(row.order_customer_name) ? person+row.body.slice(row.order_customer_name.length) : row.body;
     return {
       id: row.id,
       tenantId: row.tenant_id,
       workspaceId: row.workspace_id,
       userId: row.user_id,
-      title: row.title,
-      body: row.body ?? undefined,
+      title: row.canonical_contact ? titles[row.source_type] ?? safe(row.title) : safe(row.title),
+      body: row.source_type === "proposal_accepted" ? "Proposta aceita. Aguardando faturamento." : body ? safe(body) : undefined,
       sourceType: row.source_type,
       sourceId: row.source_id ?? undefined,
       sourceUrl: row.source_url ?? undefined,

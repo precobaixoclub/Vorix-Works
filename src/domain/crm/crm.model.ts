@@ -17,6 +17,7 @@ export const CONTACT_CHANNELS = ["whatsapp", "instagram", "facebook", "tiktok", 
 export type ContactChannel = (typeof CONTACT_CHANNELS)[number];
 
 export type Contact = {
+  displayName?: string;
   id: string;
   tenantId: string;
   workspaceId: string;
@@ -93,6 +94,7 @@ export type Pipeline = {
 };
 
 export type PipelineStage = {
+  isAwaitingBilling?: boolean;
   id: string;
   pipelineId: string;
   name: string;
@@ -109,6 +111,8 @@ export type PipelineStage = {
 };
 
 export type Deal = {
+  contactDisplayName?: string;
+  billingProposalId?: string;
   id: string;
   tenantId: string;
   workspaceId: string;
@@ -198,6 +202,7 @@ export const TASK_STATUSES = ["pending", "done", "cancelled"] as const;
 export type TaskStatus = (typeof TASK_STATUSES)[number];
 
 export type Task = {
+  contactDisplayName?:string;
   id: string;
   tenantId: string;
   workspaceId: string;
@@ -410,10 +415,17 @@ export type ProposalTemplate = {
 
 /** `rejected` = recusada pelo CLIENTE (DECLINED); `pending_approval`/`approved` = aprovação comercial
  * interna antes do envio; `superseded` = substituída por versão mais nova efetivamente enviada. */
-export const PROPOSAL_STATUSES = ["draft", "pending_approval", "approved", "sent", "viewed", "accepted", "rejected", "expired", "cancelled", "superseded"] as const;
+export const PROPOSAL_STATUSES = ["draft", "pending_approval", "approved", "sent", "viewed", "accepted", "invoiced", "rejected", "expired", "cancelled", "superseded"] as const;
 export type ProposalStatus = (typeof PROPOSAL_STATUSES)[number];
 
 export type Proposal = {
+  contactDisplayName?: string;
+  billedAt?: string;
+  billedByUserId?: string;
+  billingSource?: string;
+  billingVoidedAt?: string;
+  billingVoidedByUserId?: string;
+  billingVoidReason?: string;
   id: string;
   tenantId: string;
   workspaceId: string;
@@ -463,7 +475,7 @@ export type Proposal = {
 
 export const PROPOSAL_EVENT_TYPES = [
   "created", "approval_requested", "approved", "rejected_internally", "sent", "delivered", "whatsapp_read", "whatsapp_failed",
-  "viewed", "downloaded", "accepted", "declined", "expired", "superseded", "cancelled", "reminder_sent", "follow_up_task_created",
+  "viewed", "downloaded", "accepted", "invoiced", "billing_voided", "declined", "expired", "superseded", "cancelled", "reminder_sent", "follow_up_task_created",
 ] as const;
 export type ProposalEventType = (typeof PROPOSAL_EVENT_TYPES)[number];
 

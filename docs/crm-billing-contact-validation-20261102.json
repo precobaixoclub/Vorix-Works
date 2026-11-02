@@ -1,0 +1,79 @@
+{
+  "date": "2026-11-02",
+  "environment": "Local Windows, PostgreSQL-compatible PGlite integration databases, Chromium desktop 1366 and mobile 390",
+  "productionDeployment": false,
+  "productionMigration": false,
+  "backend": {
+    "regression": {
+      "tests": 244,
+      "passed": 244,
+      "failed": 0
+    },
+    "finalReadSearchAndMigrationChecks": {
+      "tests": 36,
+      "passed": 36,
+      "failed": 0
+    },
+    "migrationCleanAndIncremental": {
+      "tests": 3,
+      "passed": 3,
+      "failed": 0
+    },
+    "command": "node --test --test-concurrency=2 tests/proposal-billing-contact.test.mjs tests/proposal-billing-migration.test.mjs tests/contact-presentation-guard.test.mjs tests/sales-engine.test.mjs tests/sales-engine-proposals.test.mjs tests/site-analytics.test.mjs tests/crm-pipelines-deals.test.mjs tests/crm-fundacao.test.mjs tests/crm-execucao-comercial.test.mjs tests/crm-propostas-fase4.test.mjs tests/crm-conversas-integration.test.mjs tests/crm-automacao.test.mjs tests/crm-resultados.test.mjs tests/crm-inteligencia.test.mjs tests/sales-engine-performance.test.mjs tests/sales-engine-insights.test.mjs tests/notifications.test.mjs tests/contact-phone-required.test.mjs tests/contact-phone-lid.test.mjs tests/whatsapp-identity.test.mjs tests/product-stock.test.mjs tests/commerce-checkout.test.mjs tests/commerce-multichannel.test.mjs tests/site-commerce.test.mjs tests/inbox-migrations-clean-run.test.mjs tests/inbox-ai-responder.test.mjs tests/product-analytics.test.mjs"
+  },
+  "webUnit": {
+    "command": "npm run test --prefix web",
+    "files": 31,
+    "passed": 229,
+    "failed": 0
+  },
+  "browser": {
+    "fullRun": {
+      "passed": 14,
+      "failed": 0,
+      "command": "npx playwright test e2e/proposal-billing-contact.spec.ts e2e/opportunity-lifecycle.spec.ts --config playwright.sales-qa.config.ts --workers=1 (cwd: web)"
+    },
+    "finalMetadataAndSearch": {
+      "passed": 6,
+      "failed": 0,
+      "command": "npx playwright test e2e/proposal-billing-contact.spec.ts --config playwright.sales-qa.config.ts --workers=1 (cwd: web)"
+    },
+    "viewports": [
+      "1366x768",
+      "390x844"
+    ]
+  },
+  "build": {
+    "api": {
+      "command": "npm run build",
+      "result": "passed"
+    },
+    "web": {
+      "command": "npm run build --prefix web",
+      "result": "passed"
+    }
+  },
+  "typecheck": {
+    "api": {
+      "command": "npm run typecheck",
+      "result": "passed"
+    },
+    "web": {
+      "command": "npm run typecheck --prefix web",
+      "result": "passed"
+    }
+  },
+  "architecture": {
+    "crmIsolation": "passed",
+    "inboxConversationIsolation": "passed",
+    "backendFrontendContracts": 49,
+    "contactPresentationMirror": "passed",
+    "gitDiffCheck": "passed"
+  },
+  "notExecuted": [
+    "Production preflight SQL",
+    "Production migration/deployment",
+    "Real customer messaging",
+    "Fiscal integrations"
+  ]
+}

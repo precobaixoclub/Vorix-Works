@@ -49,7 +49,7 @@ test("uso do plano: simula os três recursos, salva somente ao confirmar e mant�
   await page.goto(`/workspaces/${WORKSPACE_ID}/settings/plano`);
   await page.getByRole("button", { name: "Aumentar Usuários de atendimento", exact: true }).click();
   await page.getByRole("button", { name: "Aumentar Números de WhatsApp", exact: true }).click();
-  await page.getByRole("button", { name: "Aumentar Workspaces", exact: true }).click();
+  await page.getByRole("button", { name: "Aumentar Espaços de trabalho", exact: true }).click();
   await expect(page.getByText(/aumenta R\$\s147,00/)).toBeVisible();
   expect(fixture.saves).toBe(0);
   await page.getByRole("button", { name: "Salvar quantidades", exact: true }).click();
@@ -58,30 +58,30 @@ test("uso do plano: simula os três recursos, salva somente ao confirmar e mant�
   await page.reload();
   await expect(page.getByRole("textbox", { name: "Quantidade de Usuários de atendimento", exact: true })).toHaveValue("6");
   await expect(page.getByRole("textbox", { name: "Quantidade de Números de WhatsApp", exact: true })).toHaveValue("4");
-  await expect(page.getByRole("textbox", { name: "Quantidade de Workspaces", exact: true })).toHaveValue("4");
+  await expect(page.getByRole("textbox", { name: "Quantidade de Espaços de trabalho", exact: true })).toHaveValue("4");
   await expect(page.getByText("R$ 629,00", { exact: true }).first()).toBeVisible();
 });
 
 test("redução: mostra o preço futuro salvo e permite cancelar a redução de workspaces", async ({ page }) => {
   await billingFixture(page);
   await page.goto(`/workspaces/${WORKSPACE_ID}/settings/plano`);
-  await page.getByRole("textbox", { name: "Quantidade de Workspaces", exact: true }).fill("2");
+  await page.getByRole("textbox", { name: "Quantidade de Espaços de trabalho", exact: true }).fill("2");
   await expect(page.getByText(/diminui R\$\s29,00/)).toBeVisible();
   await page.getByRole("button", { name: "Salvar quantidades", exact: true }).click();
   await expect(page.getByRole("button", { name: "Salvar quantidades", exact: true })).toHaveCount(0);
   await page.reload();
-  await expect(page.getByRole("textbox", { name: "Quantidade de Workspaces", exact: true })).toHaveValue("2");
+  await expect(page.getByRole("textbox", { name: "Quantidade de Espaços de trabalho", exact: true })).toHaveValue("2");
   await expect(page.getByText("R$ 453,00", { exact: true }).first()).toBeVisible();
   await page.getByRole("button", { name: "Cancelar alteração", exact: true }).click();
-  await expect(page.getByRole("textbox", { name: "Quantidade de Workspaces", exact: true })).toHaveValue("3");
+  await expect(page.getByRole("textbox", { name: "Quantidade de Espaços de trabalho", exact: true })).toHaveValue("3");
   await expect(page.getByRole("button", { name: "Cancelar alteração", exact: true })).toHaveCount(0);
 });
 
 test("quantidades respeitam uso e workspaces ilimitados aparecem como incluídos", async ({ page }) => {
   await billingFixture(page, { unlimited: true });
   await page.goto(`/workspaces/${WORKSPACE_ID}/settings/plano`);
-  await expect(page.getByRole("textbox", { name: "Quantidade de Workspaces", exact: true })).toHaveValue("Ilimitado");
-  await expect(page.getByRole("button", { name: "Aumentar Workspaces", exact: true })).toBeDisabled();
+  await expect(page.getByRole("textbox", { name: "Quantidade de Espaços de trabalho", exact: true })).toHaveValue("Ilimitado");
+  await expect(page.getByRole("button", { name: "Aumentar Espaços de trabalho", exact: true })).toBeDisabled();
   const users = page.getByRole("textbox", { name: "Quantidade de Usuários de atendimento", exact: true });
   await users.fill("0");
   await users.blur();
@@ -97,7 +97,25 @@ test("sem cobrança ativa, encaminha ao checkout com as quantidades escolhidas",
     await route.fulfill({ contentType: "application/json", body: JSON.stringify({ ok: true, data: { checkoutUrl: `http://localhost:3001/workspaces/${WORKSPACE_ID}/settings/plano?checkout=sucesso` } }) });
   });
   await page.goto(`/workspaces/${WORKSPACE_ID}/settings/plano`);
-  await page.getByRole("textbox", { name: "Quantidade de Workspaces", exact: true }).fill("4");
+  await page.getByRole("textbox", { name: "Quantidade de Espaços de trabalho", exact: true }).fill("4");
   await page.getByRole("button", { name: "Cadastrar forma de pagamento", exact: true }).click();
   await expect.poll(() => capacity).toEqual({ users: 5, whatsappConnections: 3, workspaces: 4, concurrentRecordings: 0 });
+});
+
+test("plano da conta abre mesmo sem espaços ativos e atualiza a próxima mensalidade", async ({ page }, info) => {
+  const fixture = await billingFixture(page);
+  await page.route("**/v1/workspaces", route => route.fulfill({ json: { ok: true, data: [] } }));
+  await page.goto("/workspaces");
+  await page.getByRole("link", { name: "Plano e espaços", exact: true }).click();
+  await expect(page).toHaveURL(/\/conta\/plano/);
+  await page.getByRole("textbox", { name: "Quantidade de Espaços de trabalho", exact: true }).fill("4");
+  await expect(page.getByText(/aumenta R\$\s29,00/)).toBeVisible();
+  expect(fixture.saves).toBe(0);
+  await page.getByRole("button", { name: "Salvar quantidades", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Salvar quantidades", exact: true })).toHaveCount(0);
+  expect(fixture.saves).toBe(1);
+  await page.reload();
+  await expect(page.getByRole("textbox", { name: "Quantidade de Espaços de trabalho", exact: true })).toHaveValue("4");
+  await expect(page.getByText("R$ 511,00", { exact: true }).first()).toBeVisible();
+  await page.screenshot({ path: info.outputPath("plano-conta-espacos.png"), fullPage: true });
 });

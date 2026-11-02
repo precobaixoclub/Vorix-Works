@@ -5,7 +5,7 @@ import { StatusBadge } from "@/components/StatusBadge";
 import { formatDate } from "@/lib/format";
 import type { Workspace } from "../types";
 
-export function WorkspaceCard({ workspace, onEdit }: { workspace: Workspace; onEdit?: () => void }) {
+export function WorkspaceCard({ workspace, onEdit, onTransition }: { workspace: Workspace; onEdit?: () => void; onTransition?: () => void }) {
   const logoUrl = workspace.settings.logoUrl?.trim();
   const initial = workspace.name.slice(0, 1).toUpperCase();
 
@@ -39,9 +39,10 @@ export function WorkspaceCard({ workspace, onEdit }: { workspace: Workspace; onE
           </div>
           <p className="mt-auto text-xs text-ink-faint">Criado em {formatDate(workspace.createdAt)}</p>
           <span className="mt-1 inline-flex min-h-9 items-center justify-center rounded-lg bg-primary px-3 py-2 text-sm font-medium text-white hover:bg-accent-hover">
-            Acessar espaço
+            {workspace.status === "active" ? "Acessar espaço" : "Ver situação do espaço"}
           </span>
         </Link>
+        {onTransition && workspace.status !== "archived" ? <Button type="button" variant="secondary" onClick={onTransition}>{workspace.status === "active" ? "Inativar" : "Ativar"}</Button> : null}
       </CardBody>
     </Card>
   );

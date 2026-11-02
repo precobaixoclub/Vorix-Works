@@ -233,7 +233,7 @@ export type DealAiInsights = {
 
 export type ProposalEventType =
   | "created" | "approval_requested" | "approved" | "rejected_internally" | "sent" | "delivered" | "whatsapp_read" | "whatsapp_failed"
-  | "viewed" | "downloaded" | "accepted" | "declined" | "expired" | "superseded" | "cancelled" | "reminder_sent" | "follow_up_task_created";
+  | "viewed" | "downloaded" | "accepted" | "invoiced" | "billing_voided" | "declined" | "expired" | "superseded" | "cancelled" | "reminder_sent" | "follow_up_task_created";
 
 export type ProposalEvent = { id: string; proposalId: string; eventType: ProposalEventType; recipientId?: string; occurredAt: string; payload: Record<string, unknown> };
 

@@ -118,14 +118,14 @@ test("Excluir fase preserva oportunidades e mantém ao menos uma fase", async ()
   const pipeline = await createPipeline(deps, { tenantId, workspaceId: workspace.id, name: "Funil personalizado" });
   const input = { tenantId, workspaceId: workspace.id, pipelineId: pipeline.id };
   const initial = await deps.pipelineStageRepository.listByPipeline(pipeline.id);
-  for (const stage of initial.filter(s => !s.isWon && !s.isLost).slice(1)) await deleteStage(deps, { ...input, stageId: stage.id });
+  for (const stage of initial.filter(s => !s.isWon && !s.isLost && !s.isAwaitingBilling).slice(1)) await deleteStage(deps, { ...input, stageId: stage.id });
   const first = initial[0];
   await assert.rejects(() => deleteStage(deps, { ...input, stageId: first.id }), /PIPELINE_STAGE_INVALID/);
   const second = await createStage(deps, { ...input, name: "Retorno", position: 1 });
   await createDeal(dealDeps(), { ...input, stageId: first.id, title: "Preservar" });
   await assert.rejects(() => deleteStage(deps, { ...input, stageId: first.id }), (error) => ["23503", "23001"].includes(error.code));
   await deleteStage(deps, { ...input, stageId: second.id });
-  assert.equal((await deps.pipelineStageRepository.listByPipeline(pipeline.id)).length, 3);
+  assert.equal((await deps.pipelineStageRepository.listByPipeline(pipeline.id)).length, 4);
 });
 
 test("Fases sistêmicas: protegidas, únicas e sempre depois das fases configuráveis", async () => {
@@ -156,14 +156,14 @@ test("Migrations 0094-0095 aplicam sem erro; tabelas de pipeline/deal existem", 
   }
 });
 
-test("Pipeline padrão: criado sob demanda com 6 etapas, idempotente", async () => {
+test("Pipeline padrão: criado sob demanda com 7 etapas, idempotente", async () => {
   const tenantId = "tenant-pipeline-1";
   const workspace = await makeWorkspace(tenantId);
   const deps = pipelineDeps();
 
   const first = await ensureDefaultPipeline(deps, tenantId, workspace.id);
   assert.equal(first.pipeline.isDefault, true);
-  assert.equal(first.stages.length, 6);
+  assert.equal(first.stages.length, 7);
   assert.equal(first.stages.filter((s) => s.isWon).length, 1);
   assert.equal(first.stages.filter((s) => s.isLost).length, 1);
 

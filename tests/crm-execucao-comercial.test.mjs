@@ -177,7 +177,7 @@ test("Proposta: só edita em rascunho; enviar uma vez só", async () => {
   );
 });
 
-test("Proposta pública: visualizar marca 'viewed', aceitar marca 'accepted' e move o negócio ligado pra Ganho", async () => {
+test("Proposta pública: visualizar marca 'viewed', aceitar marca 'accepted' e move o negócio ligado para faturamento", async () => {
   const tenantId = "tenant-proposal-3";
   const workspace = await makeWorkspace(tenantId);
   const { pipeline, novo, ganho } = await makePipelineWithStages(tenantId, workspace.id);
@@ -197,8 +197,10 @@ test("Proposta pública: visualizar marca 'viewed', aceitar marca 'accepted' e m
 
   await applyProposalAcceptanceToDeal(dealLinkDeps(), accepted);
   const dealAfter = await dealLinkDeps().dealRepository.getById(deal.id);
-  assert.equal(dealAfter.stageId, ganho.id);
-  assert.ok(dealAfter.wonAt);
+  assert.notEqual(dealAfter.stageId, ganho.id);
+  assert.equal((await dealLinkDeps().pipelineStageRepository.getById(dealAfter.stageId)).isAwaitingBilling,true);
+  assert.equal(dealAfter.wonAt,undefined);
+  assert.equal(dealAfter.status,"open");
 });
 
 test("Proposta pública: recusar marca 'rejected'; token inválido nunca vaza existência (404)", async () => {

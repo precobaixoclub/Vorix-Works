@@ -37,6 +37,7 @@ export type OrderDelivery={optionId:string;kind:DeliveryKind;label:string;priceC
 /** `productId` vazio: item de anúncio externo ainda não vinculado a um produto do Vorix (sem baixa de estoque). */
 export type OrderItem={id:string;position:number;productId:string;externalItemId?:string;externalVariationId?:string;variantId?:string;sku?:string;name:string;variantLabel?:string;imageUrl?:string;quantity:number;unitPriceCents:number;totalCents:number;trackStock:boolean;specifications:{label:string;value:string}[]};
 export type Order={
+ customerDisplayName?:string;
  id:string;tenantId:string;workspaceId:string;siteId?:string;number:number;source:OrderSource;status:OrderStatus;paymentStatus:PaymentStatus;shippingStatus:ShippingStatus;stockState:StockState;
  contactId?:string;customer:OrderCustomer;shippingAddress?:OrderAddress;delivery:OrderDelivery;
  subtotalCents:number;discountCents:number;shippingCents:number;totalCents:number;currency:string;

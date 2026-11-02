@@ -143,6 +143,24 @@ export async function registerV1Routes(app: FastifyInstance): Promise<void> {
       }
     : undefined;
 
+  const billingIdentity = app.zunoContainer.identity;
+  const entitlementDeps = billingIdentity ? {
+      subscriptionPendingChangeRepository:billingIdentity.subscriptionPendingChangeRepository,
+      subscriptionRepository: billingIdentity.subscriptionRepository,
+      subscriptionItemRepository: billingIdentity.subscriptionItemRepository,
+      planVersionRepository: billingIdentity.planVersionRepository,
+      addonDefinitionRepository: billingIdentity.addonDefinitionRepository,
+      platformBillingRepository: billingIdentity.platformBillingRepository,
+      usageCounterRepository: billingIdentity.usageCounterRepository,
+      resourceCounter: new DefaultResourceCounterAdapter({
+        tenantMembershipRepository: billingIdentity.membershipRepository,
+        workspaceRepository: app.zunoContainer.workspaceRepository,
+        messagingConnectionRepository: app.zunoContainer.messagingConnectionRepository,
+        contactRepository: billingIdentity.contactRepository,
+        automationRuleRepository: billingIdentity.automationRuleRepository,
+      }),
+  } : undefined;
+
   await registerHealthRoutes(app);
   // Soluções da plataforma (Core) — sempre registrada: é ela que diz ao frontend quais soluções
   // este tenant enxerga.
@@ -173,6 +191,8 @@ export async function registerV1Routes(app: FastifyInstance): Promise<void> {
     jwtPort: app.zunoContainer.identity?.jwt,
   });
   await registerWorkspaceRoutes(app, {
+    entitlementDeps,
+    capacityMutationRepository: app.zunoContainer.identity?.capacityMutationRepository,
     workspaceRepository: app.zunoContainer.workspaceRepository,
     platformBillingRepository: app.zunoContainer.identity?.platformBillingRepository,
     creativeEngineEntitlementRepository: app.zunoContainer.creativeEngineEntitlementRepository,
@@ -388,6 +408,7 @@ export async function registerV1Routes(app: FastifyInstance): Promise<void> {
   // só quando `identity` existe (driver postgres), nunca em modo memória (dev/teste sem banco).
   if (app.zunoContainer.identity) {
     const identity = app.zunoContainer.identity;
+    if (!entitlementDeps) throw new Error("Billing dependencies unavailable");
     // Marketplaces: um serviço para todos os canais configurados (pedidos externos entram na mesma Central/estoque).
     const marketplaceProviders = marketplaceProvidersFromEnv(process.env);
     const marketplaceBundle = marketplaceProviders.length ? buildMarketplaceService(identity.pool, marketplaceProviders, app.zunoContainer.secretManager) : undefined;
@@ -450,6 +471,7 @@ export async function registerV1Routes(app: FastifyInstance): Promise<void> {
     // Sales Engine (Conversas) — oportunidade como negociação completa: itens com snapshot,
     // margem, política comercial/aprovações, fechamento com snapshot, catálogo estendido.
     const salesDeps = {
+      productAnalytics: productAnalyticsDeps,
       workspaceRepository: app.zunoContainer.workspaceRepository,
       dealRepository: identity.dealRepository,
       pipelineStageRepository: identity.pipelineStageRepository,
@@ -472,7 +494,7 @@ export async function registerV1Routes(app: FastifyInstance): Promise<void> {
     automationDeps.transitionDealStage = (deal, targetStageId) => moveDealStage({ ...salesDeps, sales: salesDeps }, { dealId: deal.id, tenantId: deal.tenantId, workspaceId: deal.workspaceId, targetStageId, source: "automation" });
     const salesPerformanceDeps = { ...salesDeps, goalRepository: identity.salesGoalRepository, analyticsRepository: identity.salesAnalyticsRepository };
     // Proposta como parte da negociação: gate de aprovação no envio, alertas ao vendedor e o
-    // efeito configurável do aceite (padrão: ganho automático; preserva preferências existentes).
+    // aceite como pendência de faturamento, sem fechamento automático.
     const proposalSalesHooks = {
       approvalGate: proposalApprovalGate(salesDeps),
       onBuyerEvent: proposalBuyerEventHandler(salesDeps),
@@ -695,22 +717,6 @@ export async function registerV1Routes(app: FastifyInstance): Promise<void> {
     // CRM/Comercial (Fase 7) — métricas agregadas de resultados comerciais.
     await registerCommercialMetricsRoutes(app, { commercialMetricsRepository: identity.commercialMetricsRepository, teamMembershipRepository: identity.teamMembershipRepository });
     // SaaS Commercialization (Fase 1) — Billing Foundation: canUse()/limit() centralizados.
-    const entitlementDeps = {
-      subscriptionPendingChangeRepository:identity.subscriptionPendingChangeRepository,
-      subscriptionRepository: identity.subscriptionRepository,
-      subscriptionItemRepository: identity.subscriptionItemRepository,
-      planVersionRepository: identity.planVersionRepository,
-      addonDefinitionRepository: identity.addonDefinitionRepository,
-      platformBillingRepository: identity.platformBillingRepository,
-      usageCounterRepository: identity.usageCounterRepository,
-      resourceCounter: new DefaultResourceCounterAdapter({
-        tenantMembershipRepository: identity.membershipRepository,
-        workspaceRepository: app.zunoContainer.workspaceRepository,
-        messagingConnectionRepository: app.zunoContainer.messagingConnectionRepository,
-        contactRepository: identity.contactRepository,
-        automationRuleRepository: identity.automationRuleRepository,
-      }),
-    };
     await registerBillingEntitlementsRoutes(app, entitlementDeps);
     // Aquisição self-service — bloqueia criação operacional (Contato/Negócio/Tarefa/Proposta/
     // Automação) quando o tenant está em modo somente-leitura (trial vencido/pagamento pendente/

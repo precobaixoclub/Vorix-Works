@@ -53,7 +53,7 @@ function WorkspaceShell({ children }: { children: React.ReactNode }) {
     document.documentElement.dataset.solution = activeSolution;
     return () => { delete document.documentElement.dataset.solution; };
   }, [activeSolution]);
-  const shouldLeaveHome = !solutionsLoading && pathname === homeBase && availableSolutions.length > 0 && !availableSolutions.includes("conversations");
+  const shouldLeaveHome = workspace?.status === "active" && !solutionsLoading && pathname === homeBase && availableSolutions.length > 0 && !availableSolutions.includes("conversations");
   useEffect(() => {
     if (shouldLeaveHome) router.replace(`${homeBase}${SOLUTION_HOME_PATH[availableSolutions[0]!]}`);
   }, [shouldLeaveHome, homeBase, availableSolutions, router]);
@@ -78,6 +78,9 @@ function WorkspaceShell({ children }: { children: React.ReactNode }) {
   }
 
   const base = `/workspaces/${workspace.id}`;
+  if (workspace.status !== "active") {
+    return <main className="mx-auto flex min-h-dvh max-w-xl flex-col justify-center gap-4 px-5"><h1 className="text-xl font-semibold">{workspace.status === "inactive" ? "Espaço de trabalho inativo" : "Espaço de trabalho arquivado"}</h1><p className="text-sm text-muted-foreground">Os dados de {workspace.name} estão preservados. {workspace.status === "inactive" ? "Você pode reativar este espaço na lista de espaços de trabalho quando houver uma vaga disponível no plano." : "Consulte a administração da conta para mais informações."}</p><Button onClick={() => router.push("/workspaces")}>Gerenciar espaços</Button><a className="text-sm text-primary underline" href="/conta/plano#quantidades-plano">Plano e espaços</a></main>;
+  }
   const isBackstagePath = isBackstageRoute(pathname, base);
   const canSeeBackstage = state.status === "authenticated" && canUseBackstage(state.role);
 

@@ -38,7 +38,7 @@ export class DefaultResourceCounterAdapter implements ResourceCounterPort {
       }
       case "workspaces": {
         const workspaces = await this.deps.workspaceRepository.listByTenant(input.tenantId);
-        return workspaces.filter((workspace) => workspace.status !== "archived").length;
+        return workspaces.filter((workspace) => workspace.status === "active").length;
       }
       case "messaging_connections": {
         const workspaces = await this.deps.workspaceRepository.listByTenant(input.tenantId);

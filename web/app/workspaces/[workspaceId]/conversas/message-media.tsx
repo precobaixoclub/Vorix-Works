@@ -1,4 +1,5 @@
 "use client";
+import {contactLabel} from "@/features/crm/contact-presentation";
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type React from "react";
@@ -113,7 +114,7 @@ function ContactCardMedia({ message }: { message: InboxMessage }) {
         <UserRound className="h-4 w-4" />
       </span>
       <span className="min-w-0">
-        <span className="block truncate text-sm font-medium">{name || phone}</span>
+        <span className="block truncate text-sm font-medium">{contactLabel({name:typeof name==="string"?name:undefined,phone:typeof phone==="string"?phone:undefined})}</span>
         {name && phone ? <span className="block truncate text-xs opacity-70">{phone}</span> : null}
       </span>
     </div>

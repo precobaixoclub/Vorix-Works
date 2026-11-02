@@ -1,4 +1,6 @@
 "use client";
+import {contactLabel,humanContactName} from "@/features/crm/contact-presentation";
+
 
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
@@ -92,7 +94,7 @@ export function QuickCreateProposalModal({ workspaceId, contactId, contactName, 
       <div className="space-y-4">
         <div className="grid gap-3 sm:grid-cols-2">
           <div><Label htmlFor="proposal-template">Modelo</Label><Select value={templateId} onValueChange={applyTemplate}><SelectTrigger id="proposal-template"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="none">Sem modelo</SelectItem>{(templates ?? []).map((template: ProposalTemplate) => <SelectItem key={template.id} value={template.id}>{template.name}</SelectItem>)}</SelectContent></Select></div>
-          <div><Label>Cliente</Label><Input value={contactName ?? "Contato selecionado"} readOnly /></div>
+          <div><Label>Cliente</Label><Input value={contactLabel({name:contactName})} readOnly /></div>
           {dealChoice.mode === "choose" ? <div className="sm:col-span-2"><Label htmlFor="proposal-deal">Oportunidade</Label><Select value={dealId} onValueChange={setDealId}><SelectTrigger id="proposal-deal"><SelectValue placeholder="Escolher oportunidade" /></SelectTrigger><SelectContent>{dealChoice.options.map((option) => <SelectItem key={option.id} value={option.id}>{option.title}</SelectItem>)}</SelectContent></Select></div> : null}
           <div className="sm:col-span-2"><Label htmlFor="proposal-title">Título</Label><Input id="proposal-title" value={title} onChange={(event) => setTitle(event.target.value)} /></div>
         </div>

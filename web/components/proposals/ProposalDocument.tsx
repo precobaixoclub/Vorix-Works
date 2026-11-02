@@ -1,3 +1,4 @@
+import {contactLabel,humanContactName} from "@/features/crm/contact-presentation";
 import type { ReactNode } from "react";
 import { CalendarDays, FileText } from "lucide-react";
 import type { PublicProposal } from "@/features/crm/public-proposal-api";
@@ -9,7 +10,7 @@ import styles from "./ProposalDocument.module.css";
 export function ProposalDocument({ proposal, actions, preview }: { proposal: PublicProposal; actions?: ReactNode; preview?: boolean }) {
   const issuer = proposal.issuerName || "Proposta comercial";
   const mark = issuer.split(/\s+/).filter(Boolean).slice(0, 2).map(word => word[0]).join("").toUpperCase();
-  const customerName = proposal.customerName && /\p{L}/u.test(proposal.customerName) && !proposal.customerName.includes("@") ? proposal.customerName.trim() : undefined;
+  const customerName = proposal.customerName ? contactLabel({name:proposal.customerName}) : undefined;
   const customer = [customerName, proposal.customerCompany?.trim()].filter(Boolean).join(" · ");
   return (
     <article className={styles.document}>

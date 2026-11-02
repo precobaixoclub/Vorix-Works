@@ -30,6 +30,8 @@ function translateWorkspaceError(error: unknown): never {
     if (error.message.startsWith("WORKSPACE_VALIDATION_ERROR")) throw new ValidationError(error.message);
     if (error.message.startsWith("WORKSPACE_INVALID_TRANSITION")) throw new ConflictError(error.message);
     if (error.message.startsWith("WORKSPACE_LIMIT_EXCEEDED")) throw new ForbiddenError(error.message);
+    if (error.message.startsWith("USAGE_LIMIT_REACHED")) throw new ForbiddenError(`WORKSPACE_LIMIT_EXCEEDED: limite de espaços ativos atingido. Ajuste a quantidade contratada em Plano e espaços. ${error.message}`);
+    if (error.message.startsWith("ENTITLEMENT_ACCOUNT_READ_ONLY")) throw new ForbiddenError(error.message);
   }
   throw error;
 }

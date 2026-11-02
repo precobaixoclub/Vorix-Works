@@ -1,4 +1,6 @@
 "use client";
+import { contactLabel } from "@/features/crm/contact-presentation";
+
 
 import { useState } from "react";
 import { Trash2 } from "lucide-react";
@@ -104,7 +106,7 @@ export function DealParticipantsBlock({ workspaceId, deal }: { workspaceId: stri
         ))}
       </div>
       <div className="mt-2 grid gap-2 sm:grid-cols-[1fr_160px_auto]">
-        <SearchableCombo items={(contacts ?? []).filter((contact) => contact.id !== deal.contactId).map((contact) => ({ id: contact.id, label: contact.company ? `${contact.name} · ${contact.company}` : contact.name }))} value={contactId} onValueChange={setContactId} placeholder="Adicionar contato" searchPlaceholder="Buscar contato..." />
+        <SearchableCombo items={(contacts ?? []).filter((contact) => contact.id !== deal.contactId).map((contact) => ({ id: contact.id, label: contactLabel(contact) }))} value={contactId} onValueChange={setContactId} placeholder="Adicionar contato" searchPlaceholder="Buscar contato..." />
         <Select value={role} onValueChange={(value) => setRole(value as ParticipantRole)}>
           <SelectTrigger><SelectValue /></SelectTrigger>
           <SelectContent>{(Object.keys(PARTICIPANT_ROLE_LABEL) as ParticipantRole[]).map((key) => <SelectItem key={key} value={key}>{PARTICIPANT_ROLE_LABEL[key]}</SelectItem>)}</SelectContent>

@@ -1,4 +1,5 @@
 import type { WorkspaceRepositoryPort } from "../ports/workspace-repository.port.js";
+import type {ProductAnalyticsUseCaseDeps} from "../product-analytics/product-analytics-use-cases.js";
 import type { Permission } from "../../domain/identity/identity.model.js";
 import type { DealRepositoryPort } from "../ports/deal-repository.port.js";
 import type { PipelineStageRepositoryPort } from "../ports/pipeline-repository.port.js";
@@ -22,6 +23,7 @@ import { matchesOwnedScope } from "../ports/owned-resource-scope.js";
  * Stage/Timeline/Task) e só acrescenta o que é novo (itens, catálogo estendido, configuração e
  * aprovações). Notificação/automação são opcionais: sem elas o fluxo funciona igual, só não avisa. */
 export type SalesEngineDeps = {
+  productAnalytics?:ProductAnalyticsUseCaseDeps;
   workspaceRepository?: WorkspaceRepositoryPort;
   dealRepository: DealRepositoryPort;
   pipelineStageRepository: PipelineStageRepositoryPort;
@@ -53,7 +55,7 @@ export function defaultCommercialSettings(tenantId: string, workspaceId: string)
     sellersCanViewCost: false,
     sellersCanViewMargin: true,
     dealVisibility: "own",
-    proposalAcceptAutoWin: true,
+    proposalAcceptAutoWin: false,
     closedDealArchiveDays: null,
     rankingEnabled: false,
     updatedAt: new Date(0).toISOString(),

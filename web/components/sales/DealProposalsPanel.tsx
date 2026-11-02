@@ -1,4 +1,9 @@
 "use client";
+import {proposalBadgeStatus} from "@/features/crm/presentation";
+import {commercialTitle} from "@/features/crm/contact-presentation";
+import {ProposalBillingDetails} from "@/components/sales/ProposalBillingDetails";
+import { InvoiceProposalButton } from "@/components/sales/InvoiceProposalButton";
+
 
 import { useState } from "react";
 import { Check, CheckCheck, Copy, Eye, FilePlus2, FileText, MessageCircle, RefreshCw, Send, XCircle } from "lucide-react";
@@ -107,8 +112,10 @@ function ProposalTrackingCard({ workspaceId, deal, proposal, onChanged, onSelect
   }
 
   return (
-    <DetailBlock label={`${proposalLabel(proposal)} · ${proposal.title}`} action={<StatusBadge status={proposal.status} />}>
+    <DetailBlock label={`${proposalLabel(proposal)} · ${commercialTitle(proposal.title,"Proposta")}`} action={<StatusBadge status={proposalBadgeStatus(proposal.status)} />}>
       <div className="space-y-4">
+        {proposal.status === "accepted" ? <InvoiceProposalButton workspaceId={workspaceId} dealId={deal.id} proposalId={proposal.id} onChanged={onChanged}/> : null}
+        <ProposalBillingDetails workspaceId={workspaceId} proposal={proposal}/>
         {proposal.status === "rejected" ? <ProposalRejectionDetails proposal={proposal}>
           <p className="text-sm text-muted-foreground">Você pode continuar a negociação pela conversa ou preparar uma nova versão.</p>
           <div className="grid gap-2 sm:flex sm:flex-wrap">
@@ -144,7 +151,7 @@ function ProposalTrackingCard({ workspaceId, deal, proposal, onChanged, onSelect
         ) : null}
 
         {proposal.status === "pending_approval" ? <p className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:bg-amber-500/10 dark:text-amber-200">Condição fora da política — o envio fica bloqueado até o gestor aprovar.</p> : null}
-        {proposal.status === "accepted" && deal.status === "open" ? <p className="rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-800 dark:bg-emerald-500/10 dark:text-emerald-200">Cliente aceitou. Finalize a oportunidade como ganha quando a venda estiver concluída.</p> : null}
+        {proposal.status === "accepted" && deal.status === "open" ? <p className="rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-800 dark:bg-emerald-500/10 dark:text-emerald-200">Cliente aceitou. Aguardando faturamento para registrar o ganho.</p> : null}
 
         <div className="flex flex-wrap gap-2">
           {sendable || proposal.status === "pending_approval" ? (
@@ -157,7 +164,7 @@ function ProposalTrackingCard({ workspaceId, deal, proposal, onChanged, onSelect
           ) : null}
           {inAnalysis ? <Button size="sm" variant="secondary" loading={busy === "remind"} onClick={() => { setBusy("remind"); void sendWhatsapp(true).catch((cause) => toast.error(errorMessage(cause))).finally(() => setBusy(undefined)); }}><RefreshCw className="mr-1.5 h-4 w-4" />Lembrete pelo WhatsApp</Button> : null}
           {inAnalysis || proposal.status === "expired" ? <Button size="sm" variant="secondary" loading={busy === "version"} onClick={() => run("version", async () => onSelect((await createProposalVersion(proposal.id, { workspaceId })).id), "Nova versão criada (em rascunho)")}>Nova versão</Button> : null}
-          {!["accepted", "cancelled", "superseded"].includes(proposal.status) ? <Button size="sm" variant="ghost" onClick={() => setConfirmCancel(true)}><XCircle className="mr-1.5 h-4 w-4" />Cancelar</Button> : null}
+          {!["accepted", "invoiced", "cancelled", "superseded"].includes(proposal.status) ? <Button size="sm" variant="ghost" onClick={() => setConfirmCancel(true)}><XCircle className="mr-1.5 h-4 w-4" />Cancelar</Button> : null}
         </div>
         <ConfirmDialog
           open={confirmCancel}

@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import type { WorkspaceRepositoryPort } from "../../../application/ports/workspace-repository.port.js";
-import { NotFoundError } from "./app-error.js";
+import { ForbiddenError, NotFoundError } from "./app-error.js";
 
 /** All authenticated business endpoints share the same tenant boundary, including writes that
  * otherwise only check a workspace foreign key. Public and platform-admin endpoints have their
@@ -14,6 +14,9 @@ export function registerWorkspaceTenantGuard(app: FastifyInstance, repository: W
     for (const id of ids) {
       const workspace = await repository.getById(id);
       if (!workspace || workspace.tenantId !== principal.tenantId) throw new NotFoundError("Workspace não encontrado.");
+      if (workspace.status !== "active" && !["GET", "HEAD", "OPTIONS"].includes(request.method)) {
+        throw new ForbiddenError("WORKSPACE_INACTIVE: ative o espaço de trabalho antes de fazer alterações. Os dados foram preservados.");
+      }
     }
   });
 }

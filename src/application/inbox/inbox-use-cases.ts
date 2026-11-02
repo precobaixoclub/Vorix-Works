@@ -1,3 +1,4 @@
+import {contactLabel} from "../../shared/utils/contact-presentation.js";
 import type { TenantMembershipRepositoryPort } from "../ports/tenant-membership-repository.port.js";
 import type { InboxContact, InboxConversation, InboxConversationEvent, InboxMessage, InboxQuickReply, InboxTag, InboxTagColor, MessagingConnection, MessagingConnectionStatus, MessagingProviderId } from "../../domain/inbox/inbox.model.js";
 import { INBOX_AI_ACTOR, INBOX_SYSTEM_ACTOR, MESSAGING_CONNECTION_TERMINAL_STATUSES, normalizePhoneNumber } from "../../domain/inbox/inbox.model.js";
@@ -2844,7 +2845,7 @@ async function drainAiResponses(deps: InboxUseCaseDeps, ctx: { tenantId: string;
       tenantId: ctx.tenantId,
       workspaceId: ctx.workspaceId,
       conversationId: ctx.conversationId,
-      contactName: contact?.name,
+      contactName: contact ? contactLabel({name:contact.name,phone:contact.phoneNormalized}) : undefined,
       contactPhone: contact?.phoneNormalized ?? "",
       recentMessages: chronological.map((message) => ({ direction: message.direction, body: message.body ?? "", sentByAi: message.sentByAi, createdAt: message.createdAt })),
       idempotencyKey,

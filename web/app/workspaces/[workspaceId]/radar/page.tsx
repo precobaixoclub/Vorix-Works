@@ -1,4 +1,6 @@
 "use client";
+import { contactLabel } from "@/features/crm/contact-presentation";
+
 
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
@@ -278,7 +280,7 @@ function RadarView() {
               paginatedItems.map((alert) => (
                 <TableRow key={alert.conversationId} className="cursor-pointer" onClick={() => setParam({ alert: alert.conversationId }, "push")}>
                   <TableCell className="max-w-[220px]">
-                    <p className="truncate font-medium text-foreground">{alert.contactName ?? alert.contactPhone ?? "Contato sem nome"}</p>
+                    <p className="truncate font-medium text-foreground">{contactLabel(alert)}</p>
                     {alert.contactName && alert.contactPhone ? <p className="truncate text-[11px] text-muted-foreground">{alert.contactPhone}</p> : null}
                   </TableCell>
                   <TableCell className="text-muted-foreground">{alert.teamName ?? "—"}</TableCell>
@@ -421,7 +423,7 @@ function RadarAlertModal({
       open={Boolean(conversationId)}
       onOpenChange={(open) => { if (!open) onClose(); }}
       eyebrow="Alerta do Radar"
-      title={alert ? alert.contactName ?? alert.contactPhone ?? "Contato sem nome" : "Alerta do Radar"}
+      title={alert ? contactLabel(alert) : "Alerta do Radar"}
       description={alert ? [alert.teamName, alert.agentName].filter(Boolean).join(" · ") || "Sem equipe ou agente atribuído" : undefined}
       headerExtra={alert ? <div className="flex items-center gap-2"><LevelBadge level={alert.level} /><AiBadge alert={alert} /></div> : undefined}
       sections={[

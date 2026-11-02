@@ -1,4 +1,5 @@
 import type { FastifyInstance, FastifyRequest } from "fastify";
+import { invoiceAcceptedProposal } from "../../../../application/sales/proposal-sales-use-cases.js";
 import {
   addDealItem,
   cancelCommercialApproval,
@@ -78,6 +79,7 @@ const CONFLICT = ["DEAL_CONFLICT", "SALES_REASON_IN_USE","APPROVAL_ALREADY_DECID
 const INVALID = ["DEAL_PROPOSAL_INVALID", "DEAL_CLOSE_DATE_INVALID", "DEAL_STAGE_REQUIREMENTS_MISSING", "DEAL_STAGE_PIPELINE_MISMATCH", "SALES_REASON_INVALID", "DEAL_CLOSED", "DEAL_ITEM_INVALID", "PRODUCT_INACTIVE", "PRODUCT_PRICING_INVALID", "DEAL_VALUE_CALCULATED", "APPROVAL_NOT_REQUIRED", "APPROVAL_REASON_REQUIRED", "DEAL_FINAL_VALUE_REQUIRED", "DEAL_LOSS_REASON_REQUIRED", "COMMERCIAL_SETTINGS_INVALID", "COMMERCIAL_POLICY_INVALID", "SALES_COMPETITOR_INVALID", "DEAL_CUSTOM_FIELD_INVALID"];
 
 function translate(error: unknown): never {
+  if(error instanceof Error && error.message.startsWith("PROPOSAL_BILLING_INVALID")) throw new ValidationError(error.message);
   if(error instanceof Error&&/^(PRODUCT_VALIDATION|PRODUCT_VARIANT_REQUIRED|INVENTORY_INSUFFICIENT|INVENTORY_VARIANT_UNAVAILABLE)/.test(error.message))throw new ValidationError(error.message);
   if((error as {code?:string})?.code==="23505")throw new ConflictError("Essa combinação ou código já existe.");
   if (error instanceof Error) {
@@ -227,6 +229,15 @@ export async function registerSalesEngineRoutes(app: FastifyInstance, deps: Sale
   });
 
   // ------------------------------------------------------------------ fechamento
+  app.post("/deals/:id/invoice", { schema: { params: ID_PARAMS, body: body([], { proposalId: WS }) } }, async request => {
+    const actor=actorFor(request,"deal:win");
+    const {id}=request.params as {id:string};
+    const input=request.body as {workspaceId:string;proposalId?:string};
+    return successEnvelope(await guard(async()=>{
+      await visibleDeal(actor,input.workspaceId,id);
+      return invoiceAcceptedProposal(deps,actor,{...input,dealId:id});
+    }),request.id);
+  });
   app.post("/deals/:id/win", { schema: { params: ID_PARAMS, body: body([], { wonReason: { type: "string", maxLength: 200 }, proposalId: { type: "string" }, comment: { type: "string", maxLength: 2000 }, finalValueCents: MONEY, closedAt: { type: "string", format: "date-time" } }) } }, async (request) => {
     const actor = actorFor(request, "deal:win");
     const { id } = request.params as { id: string };
@@ -247,13 +258,13 @@ export async function registerSalesEngineRoutes(app: FastifyInstance, deps: Sale
     }), request.id);
   });
 
-  app.post("/deals/:id/reopen", { schema: { params: ID_PARAMS, body: body([], {}) } }, async (request) => {
+  app.post("/deals/:id/reopen", { schema: { params: ID_PARAMS, body: body([], {targetStageId: WS}) } }, async (request) => {
     const actor = actorFor(request, "deal:reopen");
     const { id } = request.params as { id: string };
-    const { workspaceId } = request.body as { workspaceId: string };
+    const { workspaceId, targetStageId } = request.body as { workspaceId: string; targetStageId?:string };
     return successEnvelope(await guard(async () => {
       await visibleDeal(actor, workspaceId, id);
-      return reopenDeal(deps, actor, { workspaceId, dealId: id });
+      return reopenDeal(deps, actor, { workspaceId, dealId: id, targetStageId });
     }), request.id);
   });
 

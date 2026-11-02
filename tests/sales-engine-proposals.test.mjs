@@ -32,6 +32,7 @@ import {
 } from "../dist/application/crm/proposal-use-cases.js";
 import { addDealItem, updateDealItem, decideCommercialApproval } from "../dist/application/sales/deal-commercial-use-cases.js";
 import {
+  invoiceAcceptedProposal,
   createProposalFromDeal,
   proposalAcceptanceHandler,
   proposalApprovalGate,
@@ -185,7 +186,7 @@ test("Visualização só pelo link real; alerta na 1ª abertura e no sinal quent
   assert.equal(events.filter((type) => type === "viewed").length, 4);
 });
 
-test("Aceite idempotente e auditado; padrão fecha a oportunidade automaticamente", async () => {
+test("Aceite idempotente e auditado; padrão aguarda faturamento", async () => {
   const { d, workspaceId, tenantId, seller, deal, product } = await setup();
   await addDealItem(d, seller, { workspaceId, dealId: deal.id, productId: product.id, quantity: 1 });
   const { proposal, rawToken } = await createProposalFromDeal(d, seller, { workspaceId, dealId: deal.id });
@@ -201,10 +202,10 @@ test("Aceite idempotente e auditado; padrão fecha a oportunidade automaticament
   const raw = await db.pool.query("select accepted_ip_hash, accepted_user_agent from proposals where id = $1", [proposal.id]);
   assert.notEqual(raw.rows[0].accepted_ip_hash, "203.0.113.9", "IP nunca guardado em claro");
   await applyProposalAcceptanceToDeal({ ...d, acceptanceHandler: proposalAcceptanceHandler(d) }, accepted);
-  assert.equal((await d.dealRepository.getById(deal.id)).status, "won", "aceite fecha a venda por padrao");
+  assert.equal((await d.dealRepository.getById(deal.id)).status, "open", "aceite aguarda faturamento");
 });
 
-test("Com ganho automático configurado, o aceite fecha a venda com o valor da proposta", async () => {
+test("Preferência antiga de ganho automático não dispensa faturamento; preserva valor aceito", async () => {
   const { d, workspaceId, tenantId, seller, deal, product } = await setup({ autoWin: true });
   await addDealItem(d, seller, { workspaceId, dealId: deal.id, productId: product.id, quantity: 1, proposedUnitPriceCents: 90000 });
   const { proposal, rawToken } = await createProposalFromDeal(d, seller, { workspaceId, dealId: deal.id });
@@ -214,12 +215,13 @@ test("Com ganho automático configurado, o aceite fecha a venda com o valor da p
   assert.equal((await d.dealRepository.getById(deal.id)).valueCents, 100000);
   const accepted = await acceptPublicProposal(d.proposal, rawToken);
   await applyProposalAcceptanceToDeal({ ...d, acceptanceHandler: proposalAcceptanceHandler(d) }, accepted);
-  const won = await d.dealRepository.getById(deal.id);
+  assert.equal((await d.dealRepository.getById(deal.id)).status,"open");
+  const won = await invoiceAcceptedProposal(d,seller,{workspaceId,dealId:deal.id,proposalId:proposal.id});
   assert.equal(won.status, "won");
   assert.equal(won.wonProposalId, proposal.id);
   assert.equal(won.finalValueCents, 90000);
   assert.equal(won.creditedOwnerUserId, seller.userId);
-  assert.equal(won.closureSource, "proposal_acceptance");
+  assert.equal(won.closureSource, "proposal_billing");
 });
 
 test("Preferência explícita desativada mantém a oportunidade aberta após o aceite", async () => {

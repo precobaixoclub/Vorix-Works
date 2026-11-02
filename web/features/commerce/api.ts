@@ -4,7 +4,7 @@ import type {ChannelRow,RefundStatus,ReturnStatus,ReturnStatusTarget,ShipmentSta
 export type OrderStatus="PENDING"|"AWAITING_PAYMENT"|"PAID"|"CONFIRMED"|"PROCESSING"|"SHIPPED"|"DELIVERED"|"CANCELLED";
 export type OrderPaymentStatus="PENDING"|"APPROVED"|"FAILED"|"CANCELLED"|"REFUNDED"|"PARTIALLY_REFUNDED";
 export type OrderShippingStatus="NOT_REQUIRED"|"PENDING"|"READY_FOR_PICKUP"|"SHIPPED"|"DELIVERED"|"CANCELLED";
-export type CommerceOrder={id:string;number:number;source:string;status:OrderStatus;paymentStatus:OrderPaymentStatus;shippingStatus:OrderShippingStatus;stockState:string;refundedCents?:number;externalOrderId?:string;externalStatus?:string;connectionId?:string;contactId?:string;crmDealId?:string;
+export type CommerceOrder={customerDisplayName?:string;id:string;number:number;source:string;status:OrderStatus;paymentStatus:OrderPaymentStatus;shippingStatus:OrderShippingStatus;stockState:string;refundedCents?:number;externalOrderId?:string;externalStatus?:string;connectionId?:string;contactId?:string;crmDealId?:string;
  customer:{name:string;email:string;phone:string;document?:string};shippingAddress?:{postalCode:string;street:string;number:string;complement?:string;district:string;city:string;state:string};
  delivery?:{optionId:string;kind:string;label:string;priceCents:number;days?:number;requiresAddress:boolean};subtotalCents:number;discountCents:number;shippingCents:number;totalCents:number;currency:string;
  utm:Record<string,string>;reservationExpiresAt?:string;cancelReason?:string;createdAt:string;paidAt?:string;cancelledAt?:string;

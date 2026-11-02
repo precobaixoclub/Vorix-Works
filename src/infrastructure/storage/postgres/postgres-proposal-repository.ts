@@ -1,3 +1,5 @@
+import { canonicalContactSql } from "./postgres-canonical-contact.js";
+import { contactLabel, type ContactPresentationInput } from "../../../domain/crm/contact-presentation.js";
 import { proposalScopeSql } from "./postgres-proposal-scope.js";
 import type { Pool } from "pg";
 import type { CreateProposalInput, ListProposalsFilter, ProposalRepositoryPort, UpdateProposalInput } from "../../../application/ports/proposal-repository.port.js";
@@ -7,6 +9,13 @@ const proposalId = () => `proposal-${Date.now().toString(36)}-${Math.random().to
 const newId = (prefix: string) => `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 
 type ProposalRow = {
+  canonical_contact?: ContactPresentationInput | null;
+  billed_at?: Date | null;
+  billed_by_user_id?: string | null;
+  billing_source?: string | null;
+  billing_voided_at?: Date | null;
+  billing_voided_by_user_id?: string | null;
+  billing_void_reason?: string | null;
   id: string;
   tenant_id: string;
   workspace_id: string;
@@ -60,6 +69,13 @@ export function mapProposalRow(row: ProposalRow): Proposal {
 function toDomain(row: ProposalRow): Proposal {
   return {
     id: row.id,
+    contactDisplayName: row.canonical_contact ? contactLabel(row.canonical_contact) : undefined,
+    billedAt: row.billed_at?.toISOString(),
+    billedByUserId: row.billed_by_user_id ?? undefined,
+    billingSource: row.billing_source ?? undefined,
+    billingVoidedAt: row.billing_voided_at?.toISOString(),
+    billingVoidedByUserId: row.billing_voided_by_user_id ?? undefined,
+    billingVoidReason: row.billing_void_reason ?? undefined,
     tenantId: row.tenant_id,
     workspaceId: row.workspace_id,
     dealId: row.deal_id ?? undefined,
@@ -142,12 +158,12 @@ export class PostgresProposalRepository implements ProposalRepositoryPort {
   }
 
   async getById(id: string): Promise<Proposal | undefined> {
-    const result = await this.pool.query<ProposalRow>("select * from proposals where id = $1", [id]);
+    const result = await this.pool.query<ProposalRow>(`select proposals.*, ${canonicalContactSql("proposals")} from proposals where id = $1`, [id]);
     return result.rows[0] ? toDomain(result.rows[0]) : undefined;
   }
 
   async getByTokenHash(tokenHash: string): Promise<Proposal | undefined> {
-    const result = await this.pool.query<ProposalRow>("select * from proposals where public_token_hash = $1", [tokenHash]);
+    const result = await this.pool.query<ProposalRow>(`select proposals.*, ${canonicalContactSql("proposals")} from proposals where public_token_hash = $1`, [tokenHash]);
     return result.rows[0] ? toDomain(result.rows[0]) : undefined;
   }
 
@@ -155,6 +171,12 @@ export class PostgresProposalRepository implements ProposalRepositoryPort {
     const limit = filter.limit ?? 200;
     const conditions: string[] = ["tenant_id = $1", "workspace_id = $2"];
     const params: unknown[] = [filter.tenantId, filter.workspaceId];
+    if(filter.search?.trim()) {
+      params.push('%'+filter.search.trim()+'%');const q='$'+params.length;
+      const phoneSearch=/^[+\d\s().-]+$/.test(filter.search.trim())?filter.search.replace(/\D/g,""):filter.search.trim();
+      params.push('%'+phoneSearch+'%');const phoneQ='$'+params.length;
+      conditions.push(`(title ilike ${q} or number ilike ${q} or exists(select 1 from contacts c where c.id=coalesce(proposals.contact_id,(select d.contact_id from deals d where d.id=proposals.deal_id and d.tenant_id=proposals.tenant_id and d.workspace_id=proposals.workspace_id)) and c.tenant_id=proposals.tenant_id and c.workspace_id=proposals.workspace_id and (c.name ilike ${q} or regexp_replace(coalesce(c.custom_fields->>'phone',''),'[^0-9]','','g') ilike ${phoneQ})) or exists(select 1 from deals d where d.id=proposals.deal_id and d.tenant_id=proposals.tenant_id and d.workspace_id=proposals.workspace_id and d.title ilike ${q}))`);
+    }
     if (filter.dealId) {
       params.push(filter.dealId);
       conditions.push(`deal_id = $${params.length}`);
@@ -175,7 +197,7 @@ export class PostgresProposalRepository implements ProposalRepositoryPort {
     }
     params.push(limit);
     const result = await this.pool.query<ProposalRow>(
-      `select * from proposals where ${conditions.join(" and ")} order by created_at desc limit $${params.length}`,
+      `select proposals.*, ${canonicalContactSql("proposals")} from proposals where ${conditions.join(" and ")} order by created_at desc limit $${params.length}`,
       params,
     );
     return result.rows.map(toDomain);
@@ -210,20 +232,22 @@ export class PostgresProposalRepository implements ProposalRepositoryPort {
     return toDomain(result.rows[0]);
   }
 
-  async setStatus(id: string, input: { status: ProposalStatus; sentAt?: string | null; viewedAt?: string | null; respondedAt?: string | null }): Promise<Proposal> {
+  async setStatus(id: string, input: { status: ProposalStatus; expectedStatus?:ProposalStatus; sentAt?: string | null; viewedAt?: string | null; respondedAt?: string | null }): Promise<Proposal> {
     const existing = await this.getById(id);
     if (!existing) throw new Error(`PROPOSAL_NOT_FOUND: proposta "${id}" não existe.`);
     const result = await this.pool.query<ProposalRow>(
       `update proposals set status = $2, sent_at = $3, viewed_at = $4, responded_at = $5, updated_at = now()
-       where id = $1 returning *`,
+       where id = $1 and ($6::text is null or status=$6) returning *`,
       [
         id,
         input.status,
         input.sentAt !== undefined ? input.sentAt : existing.sentAt ?? null,
         input.viewedAt !== undefined ? input.viewedAt : existing.viewedAt ?? null,
         input.respondedAt !== undefined ? input.respondedAt : existing.respondedAt ?? null,
+        input.expectedStatus ?? null,
       ],
     );
+    if(!result.rows[0]) throw new Error("PROPOSAL_ALREADY_RESPONDED: a proposta foi alterada por outra ação. Atualize a página.");
     return toDomain(result.rows[0]);
   }
 
@@ -347,7 +371,7 @@ export class PostgresProposalRepository implements ProposalRepositoryPort {
   async markSuperseded(id: string, input: { supersededByProposalId: string; at: string }): Promise<Proposal | undefined> {
     const result = await this.pool.query<ProposalRow>(
       `update proposals set status = 'superseded', superseded_by_proposal_id = $2, superseded_at = $3, updated_at = now()
-       where id = $1 and status not in ('accepted', 'cancelled', 'superseded') returning *`,
+       where id = $1 and status not in ('accepted', 'invoiced', 'cancelled', 'superseded') returning *`,
       [id, input.supersededByProposalId, input.at],
     );
     return result.rows[0] ? toDomain(result.rows[0]) : undefined;
@@ -355,7 +379,7 @@ export class PostgresProposalRepository implements ProposalRepositoryPort {
 
   async markCancelled(id: string, at: string): Promise<Proposal | undefined> {
     const result = await this.pool.query<ProposalRow>(
-      "update proposals set status = 'cancelled', cancelled_at = $2, updated_at = now() where id = $1 and status not in ('accepted', 'cancelled', 'superseded') returning *",
+      "update proposals set status = 'cancelled', cancelled_at = $2, updated_at = now() where id = $1 and status not in ('accepted', 'invoiced', 'cancelled', 'superseded') returning *",
       [id, at],
     );
     return result.rows[0] ? toDomain(result.rows[0]) : undefined;
@@ -450,7 +474,7 @@ export class PostgresProposalRepository implements ProposalRepositoryPort {
     return result.rows.map((row) => {
       const proposalRow = row.proposal;
       // row_to_json devolve timestamps como string — normaliza para Date antes do mapeamento comum.
-      const dates = ["valid_until", "sent_at", "viewed_at", "last_viewed_at", "responded_at", "public_link_revoked_at", "created_at", "updated_at", "superseded_at", "cancelled_at"] as const;
+      const dates = ["valid_until", "sent_at", "viewed_at", "last_viewed_at", "responded_at", "public_link_revoked_at", "created_at", "updated_at", "superseded_at", "cancelled_at", "billed_at", "billing_voided_at"] as const;
       const normalized = { ...proposalRow } as Record<string, unknown>;
       for (const key of dates) normalized[key] = proposalRow[key] ? new Date(proposalRow[key] as unknown as string) : null;
       return { ...toDelivery(row), proposal: toDomain(normalized as unknown as ProposalRow) };

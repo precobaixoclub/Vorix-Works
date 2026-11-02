@@ -361,16 +361,7 @@ function GeneralBlock({
             setSaved(false);
           }}
         />
-        <ToggleRow
-          label="Finalizar a venda quando o cliente aceitar a proposta?"
-          description="Por padrão, o aceite registra a venda como ganha. Se escolher Não, a equipe recebe o aceite e finaliza a venda manualmente."
-          checked={draft.proposalAcceptAutoWin}
-          disabled={disabled || busy}
-          onChange={(value) => {
-            setDraft({ ...draft, proposalAcceptAutoWin: value });
-            setSaved(false);
-          }}
-        />
+        <p className="rounded-xl border border-border p-4 text-sm text-muted-foreground">O aceite da proposta coloca a oportunidade em Aguardando faturamento. A equipe confirma o faturamento manualmente para registrar o ganho.</p>
         <ToggleRow
           label="Mostrar a classificação dos vendedores?"
           description="Exibe os resultados da equipe ordenados pelo desempenho de cada vendedor."

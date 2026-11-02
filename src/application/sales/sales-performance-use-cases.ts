@@ -554,7 +554,7 @@ export async function getSalesReports(deps: SalesPerformanceDeps, actor: SalesAc
   const scopedProposals = proposals.filter((proposal) => !subject.userId || proposal.createdByUserId === subject.userId || proposal.sentByUserId === subject.userId);
   const sent = scopedProposals.filter((proposal) => proposal.sentAt);
   const viewed = sent.filter((proposal) => proposal.viewedAt);
-  const accepted = sent.filter((proposal) => proposal.status === "accepted");
+  const accepted = sent.filter((proposal) => (proposal.status === "accepted" || proposal.status === "invoiced" || Boolean(proposal.acceptedContentHash)));
   const hoursBetween = (a?: string, b?: string) => (a && b ? (new Date(b).getTime() - new Date(a).getTime()) / 3_600_000 : undefined);
   const avg = (values: (number | undefined)[]) => {
     const clean = values.filter((value): value is number => value !== undefined);

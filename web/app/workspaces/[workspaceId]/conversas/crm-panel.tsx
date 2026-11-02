@@ -1,4 +1,6 @@
 "use client";
+import { contactLabel,contactNameForInput } from "@/features/crm/contact-presentation";
+
 
 import { useMyAccess } from "@/features/auth/access";
 
@@ -73,7 +75,7 @@ export function CrmContextSection({
     setLinking(true);
     setLinkError(undefined);
     try {
-      const contact = await createContact({ workspaceId, name: conversation.contactName ?? conversation.contactPhone ?? "Contato do WhatsApp", origin: "whatsapp", inboxContactId: conversation.contactId });
+      const contact = await createContact({ workspaceId, name: contactNameForInput(conversation) || conversation.contactPhone || "Contato", origin: "whatsapp", inboxContactId: conversation.contactId });
       await linkContactIdentity(contact.id, workspaceId, "whatsapp", conversation.contactId);
       onLinked();
     } catch (error) {
@@ -91,7 +93,7 @@ export function CrmContextSection({
           <div className="mb-2 rounded-lg border border-ai/30 bg-ai-soft p-3 dark:bg-ai/10">
             <p className="text-sm font-medium text-foreground">Vorix encontrou uma oportunidade</p>
             <p className="mt-1 text-xs text-muted-foreground">
-              Esta conversa já tem várias trocas, mas {conversation.contactName ?? "este contato"} ainda não está no CRM.
+              Esta conversa já tem várias trocas, mas {contactLabel(conversation)} ainda não está no CRM.
             </p>
             <GuardedButton className="mt-2 w-full" onClick={handleLink} loading={linking} disabled={linking} allowed={canOperate} blockedReason={RBAC_COPY.operateConversations}>
               Vincular ao CRM
@@ -439,7 +441,7 @@ function LinkedCrmSection({
         <QuickCreateProposalModal
           workspaceId={workspaceId}
           contactId={contactId}
-          contactName={contact.name}
+          contactName={contactLabel(contact)}
           dealChoice={dealChoice}
           onClose={() => setCreatingProposal(false)}
           onCreateOpportunity={() => { setCreatingProposal(false); setCreateProposalAfterDeal(true); setCreatingDeal(true); }}
@@ -451,7 +453,7 @@ function LinkedCrmSection({
         <ProposalDetailModal
           workspaceId={workspaceId}
           proposal={openProposal}
-          contactName={contact.name}
+          contactName={contactLabel(contact)}
           dealTitle={(deals ?? []).find((deal) => deal.id === openProposal.dealId)?.title}
           conversationId={conversationId}
           onClose={() => setOpenProposalId(undefined)}

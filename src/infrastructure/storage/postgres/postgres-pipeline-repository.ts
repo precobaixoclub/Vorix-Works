@@ -23,6 +23,7 @@ type PipelineRow = {
 };
 
 type StageRow = {
+  is_awaiting_billing?: boolean;
   id: string;
   pipeline_id: string;
   name: string;
@@ -56,6 +57,7 @@ function toStage(row: StageRow): PipelineStage {
     position: row.position,
     isWon: row.is_won,
     isLost: row.is_lost,
+    isAwaitingBilling: row.is_awaiting_billing ?? false,
     probability: row.probability ?? undefined,
     staleAfterDays: row.stale_after_days ?? undefined,
     requiredFields: row.required_fields ?? [],
@@ -78,7 +80,7 @@ export class PostgresPipelineRepository implements PipelineRepositoryPort {
       input.teamId ? [pipelineId(), input.tenantId, input.workspaceId, input.name, input.isDefault ?? false, input.teamId] : [pipelineId(), input.tenantId, input.workspaceId, input.name, input.isDefault ?? false],
     );
     for (const stage of initialStages) {
-      await client.query("insert into pipeline_stages (id, pipeline_id, name, position, is_won, is_lost) values ($1, $2, $3, $4, $5, $6)", [stageId(), result.rows[0].id, stage.name, stage.position, stage.isWon ?? false, stage.isLost ?? false]);
+      await client.query("insert into pipeline_stages (id, pipeline_id, name, position, is_won, is_lost, is_awaiting_billing) values ($1, $2, $3, $4, $5, $6, $7)", [stageId(), result.rows[0].id, stage.name, stage.position, stage.isWon ?? false, stage.isLost ?? false, stage.isAwaitingBilling ?? false]);
     }
     await client.query("commit");
     return toPipeline(result.rows[0]);
@@ -173,8 +175,8 @@ export class PostgresPipelineStageRepository implements PipelineStageRepositoryP
       const stage = await client.query<StageRow>("select * from pipeline_stages where id = $1", [id]);
       if (!stage.rows[0]) throw new Error("PIPELINE_STAGE_NOT_FOUND: fase não encontrada.");
       await client.query("select id from pipelines where id = $1 for update", [stage.rows[0].pipeline_id]);
-      if (stage.rows[0].is_won || stage.rows[0].is_lost) throw new Error("PIPELINE_STAGE_INVALID: fase sistêmica de encerramento. Não pode ser removida.");
-      const count = await client.query<{ count: string }>("select count(*) as count from pipeline_stages where pipeline_id = $1 and not is_won and not is_lost", [stage.rows[0].pipeline_id]);
+      if (stage.rows[0].is_won || stage.rows[0].is_lost || stage.rows[0].is_awaiting_billing) throw new Error("PIPELINE_STAGE_INVALID: fase sistêmica de encerramento. Não pode ser removida.");
+      const count = await client.query<{ count: string }>("select count(*) as count from pipeline_stages where pipeline_id = $1 and not is_won and not is_lost and not is_awaiting_billing", [stage.rows[0].pipeline_id]);
       if (Number(count.rows[0].count) <= 1) throw new Error("PIPELINE_STAGE_INVALID: mantenha pelo menos uma fase em andamento.");
       await client.query("delete from pipeline_stages where id = $1", [id]);
       await client.query("commit");

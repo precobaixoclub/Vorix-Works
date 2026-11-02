@@ -1,0 +1,44 @@
+import {test} from 'node:test';
+import assert from 'node:assert/strict';
+import {mkdtempSync,readdirSync,copyFileSync,rmSync} from 'node:fs';
+import {tmpdir} from 'node:os';
+import {join,resolve,sep,basename} from 'node:path';
+import {startTestPostgres} from './helpers/pglite-test-db.mjs';
+import {applyMigrations} from '../dist/infrastructure/storage/postgres/migration-runner.js';
+import {PostgresWorkspaceRepository} from '../dist/infrastructure/storage/postgres/postgres-workspace-repository.js';
+import {PostgresDealRepository} from '../dist/infrastructure/storage/postgres/postgres-deal-repository.js';
+import {PostgresProposalRepository} from '../dist/infrastructure/storage/postgres/postgres-proposal-repository.js';
+test('0186 → 0187: ganho histórico não reabre nem baixa estoque; aceite aberto entra na fila uma vez, versões ambíguas mantêm prova e auditoria',async()=>{
+ const db=await startTestPostgres(),dir=mkdtempSync(join(tmpdir(),'vorix-billing-migration-')),migrations=join(process.cwd(),'db/migrations');
+ try{
+  for(const file of readdirSync(migrations).filter(f=>f.endsWith('.sql')&&f<'0187'))copyFileSync(join(migrations,file),join(dir,file));
+  await applyMigrations(db.pool,dir);
+  const ws=await new PostgresWorkspaceRepository(db.pool).create({tenantId:'billing-history',name:'Histórico'});
+  const scope={tenantId:ws.tenantId,workspaceId:ws.id};
+  await db.pool.query("insert into pipelines(id,tenant_id,workspace_id,name,is_default) values('legacy-pipeline',$1,$2,'Histórico',true)",[scope.tenantId,scope.workspaceId]);
+  for(let i=0;i<7;i++)await db.pool.query("insert into pipeline_stages(id,pipeline_id,name,position,is_won,is_lost) values($1,'legacy-pipeline',$2,$3,$4,$5)",['legacy-stage-'+i,['Novo','Contato Feito','Proposta Enviada','Negociação','Aguardando faturamento','Ganha','Perdida'][i],i,i===5,i===6]);
+  const deals=new PostgresDealRepository(db.pool),proposals=new PostgresProposalRepository(db.pool);
+  const won=await deals.create({...scope,pipelineId:'legacy-pipeline',stageId:'legacy-stage-3',title:'Venda já feita',valueCents:12300});
+  const open=await deals.create({...scope,pipelineId:'legacy-pipeline',stageId:'legacy-stage-3',title:'Aceite pendente',valueCents:9900});
+  const create=(deal,id)=>proposals.create({...scope,dealId:deal.id,title:id,items:[{name:'Produto',quantity:1,unitPriceCents:9900,subtotalCents:9900}],totalCents:9900,publicTokenHash:id,status:'accepted'});
+  const billed=await create(won,'historical-winner'),older=await create(open,'older-acceptance'),latest=await create(open,'latest-acceptance');
+  const unknown=await deals.create({...scope,pipelineId:'legacy-pipeline',stageId:'legacy-stage-3',title:'Ganho sem data antiga',valueCents:9900});
+  const unknownProposal=await create(unknown,'historical-without-date');
+  await db.pool.query("update deals set status='won',stage_id='legacy-stage-5',won_proposal_id=$2 where id=$1",[unknown.id,unknownProposal.id]);
+  await db.pool.query("update proposals set accepted_content_hash='original-proof',responded_at=case when id=$1 then '2026-10-31'::timestamptz else '2026-10-30'::timestamptz end where deal_id=$2",[latest.id,open.id]);
+  await db.pool.query("update deals set status='won',stage_id='legacy-stage-5',won_proposal_id=$2,closed_at='2026-10-20T12:00:00Z',won_at='2026-10-20T12:00:00Z',final_value_cents=12300 where id=$1",[won.id,billed.id]);
+  await applyMigrations(db.pool,migrations);
+  const after=await deals.getById(won.id),p=await proposals.getById(billed.id);
+  assert.equal(after.status,'won');assert.equal(after.finalValueCents,12300);assert.equal(after.closedAt,'2026-10-20T12:00:00.000Z');
+  assert.equal(p.status,'invoiced');assert.equal(p.billedAt,after.closedAt);assert.equal(p.billingSource,'legacy_won');assert.equal(p.billedByUserId,undefined);
+  const withoutDate=await proposals.getById(unknownProposal.id);assert.equal(withoutDate.status,'invoiced');assert.equal(withoutDate.billedAt,undefined,'não inventa data a partir de updatedAt');assert.equal(withoutDate.billedByUserId,undefined);
+  const queued=await deals.getById(open.id);assert.equal(queued.status,'open');assert.equal(queued.billingProposalId,latest.id);
+  assert.equal((await proposals.getById(older.id)).status,'cancelled');assert.equal((await proposals.getById(older.id)).acceptedContentHash,'original-proof');
+  assert.equal((await db.pool.query("select count(*) from pipeline_stages where pipeline_id='legacy-pipeline' and is_awaiting_billing")).rows[0].count,'1');
+  assert.equal(queued.stageId,'legacy-stage-4','fase existente é reaproveitada, preservando seu ID');
+  assert.equal((await db.pool.query("select count(*) from pipeline_stages where pipeline_id='legacy-pipeline'")).rows[0].count,'7');
+  assert.equal((await db.pool.query("select count(*) from timeline_events where entity_id=$1 and event_type='deal_won'",[won.id])).rows[0].count,'0');
+  assert.equal((await proposals.listEvents(billed.id)).filter(e=>e.eventType==='invoiced').length,1);
+  await applyMigrations(db.pool,migrations);assert.equal((await proposals.listEvents(billed.id)).filter(e=>e.eventType==='invoiced').length,1);
+ }finally{await db.stop();const target=resolve(dir);assert.ok(target.startsWith(resolve(tmpdir())+sep)&&basename(target).startsWith('vorix-billing-migration-'));rmSync(target,{recursive:true,force:true});}
+});

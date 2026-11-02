@@ -511,7 +511,7 @@ function CommercialStep({ workspaceId, onAdvance }: { workspaceId: string; onAdv
   return (
     <StepCard title="Seu funil comercial está pronto" description="Todo workspace novo já nasce com um pipeline de vendas configurado.">
       <ul className="space-y-1.5 text-sm text-foreground">
-        {["Novo Lead", "Contato Feito", "Proposta Enviada", "Negociação", "Ganho", "Perdido"].map((stage) => (
+        {["Novo", "Contato Feito", "Proposta Enviada", "Negociação", "Ganho", "Perdido"].map((stage) => (
           <li key={stage} className="flex items-center gap-2">
             <Circle className="h-3 w-3 text-primary" fill="currentColor" /> {stage}
           </li>

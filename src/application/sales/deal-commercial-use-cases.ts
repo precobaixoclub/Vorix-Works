@@ -1,3 +1,5 @@
+import {contactLabel} from "../../domain/crm/contact-presentation.js";
+import {recordFirstEvent} from "../product-analytics/product-analytics-use-cases.js";
 import { createHash } from "node:crypto";
 import type { Deal, PipelineStage, Task } from "../../domain/crm/crm.model.js";
 import {
@@ -407,7 +409,7 @@ export async function requestCommercialApproval(deps: SalesEngineDeps, actor: Sa
     reasons: evaluation.reasons,
     snapshot: {
       dealTitle: deal.title,
-      contactName: contact?.name,
+      contactName: contact ? contactLabel(contact) : undefined,
       ownerUserId: deal.ownerUserId,
       currency: deal.currency,
       listTotalCents: totals.listTotalCents,
@@ -442,12 +444,14 @@ export async function listCommercialApprovals(deps: SalesEngineDeps, actor: Sale
   const visibility = resolveVisibility(actor, settings);
   const requests = await deps.approvalRepository.listByWorkspace({ tenantId: actor.tenantId, workspaceId: input.workspaceId, status: input.status, dealId: input.dealId });
   // Vendedor vê os próprios pedidos; gestão vê todos. Custo/margem do snapshot seguem a visibilidade.
+  const canonical = new Map(await Promise.all(requests.map(async request=>{const deal=await deps.dealRepository.getById(request.dealId);return [request.id,deal?.tenantId===actor.tenantId && deal.workspaceId===input.workspaceId ? deal.contactDisplayName : undefined] as const;})));
   return requests
     .filter((request) => visibility.isManager || request.requestedByUserId === actor.userId)
     .map((request) => ({
       ...request,
       snapshot: {
         ...request.snapshot,
+        contactName: canonical.get(request.id) ?? contactLabel({name:typeof request.snapshot.contactName === "string" ? request.snapshot.contactName : undefined}),
         costCents: visibility.canViewCost ? request.snapshot.costCents : undefined,
         originalMarginBp: visibility.canViewMargin ? request.snapshot.originalMarginBp : undefined,
         proposedMarginBp: visibility.canViewMargin ? request.snapshot.proposedMarginBp : undefined,
@@ -602,7 +606,7 @@ async function validateTerminalRequirements(deps: SalesEngineDeps, deal: Deal, s
 function closureEvents(before: Deal, stageId: string, actor: SalesActor, source: string, eventType: string, payload: Record<string, unknown>) {
   const actorType = source === "automation" ? "automation" as const : source === "proposal_acceptance" ? "system" as const : "user" as const;
   const actorId = actorType === "user" ? actor.userId : undefined;
-  const base = { fromStageId: before.stageId, toStageId: stageId, fromStatus: before.status, source };
+  const base = { fromStageId: before.stageId, toStageId: stageId, fromStatus: before.status, source, isWon:eventType==="deal_won", isLost:eventType==="deal_lost" };
   return [
     ...(before.stageId === stageId ? [] : [{ eventType: "deal_stage_changed", actorType, actorId, payload: { ...base } }]),
     { eventType, actorType, actorId, payload: { ...base, ...payload } },
@@ -615,6 +619,7 @@ export async function winDeal(deps: SalesEngineDeps & { onDealWon?: DealClosedHo
   const deal = await mustDealInWorkspace(deps, input.dealId, actor.tenantId, input.workspaceId);
   if (deal.status === "won") return deal;
   if (deal.status !== "open") throw new Error("DEAL_CLOSED: reabra a oportunidade antes de marcá-la como ganha.");
+  if (deal.billingProposalId && input.source !== "proposal_billing" && !input.settledSale) throw new Error("PROPOSAL_BILLING_INVALID: use Marcar como faturado para concluir a proposta aceita.");
   if (input.proposalId && deps.proposalRepository) {
     const proposal = await deps.proposalRepository.getById(input.proposalId);
     if (!proposal || proposal.tenantId !== deal.tenantId || proposal.workspaceId !== deal.workspaceId || proposal.dealId !== deal.id) throw new Error("DEAL_PROPOSAL_INVALID: a proposta não pertence a esta oportunidade.");
@@ -629,6 +634,7 @@ export async function winDeal(deps: SalesEngineDeps & { onDealWon?: DealClosedHo
     auditEvents: closureEvents(deal, stageId, actor, closure.closureSource, "deal_won", { finalValueCents: closure.finalValueCents, previousValueCents: deal.valueCents, finalMarginBp: closure.finalMarginBp, wonReason: closure.wonReason, comment: closure.closeComment, proposalId: closure.wonProposalId, creditedOwnerUserId: closure.creditedOwnerUserId, snapshot: closure.finalSnapshot }),
   });
   if (!input.settledSale) await deductStockForWonDeal(deps, won, actor.userId);
+  if(deps.productAnalytics) await recordFirstEvent(deps.productAnalytics,{eventName:"first_deal_won",source:"server",tenantId:won.tenantId,workspaceId:won.workspaceId,userId:actor.userId});
   await deps.dealRepository.archiveDueClosedDeals({ tenantId: won.tenantId, workspaceId: won.workspaceId });
   await fireDealAutomation(deps, won, "deal_won");
   await deps.onDealWon?.(won).catch(() => undefined);
@@ -638,7 +644,8 @@ export async function winDeal(deps: SalesEngineDeps & { onDealWon?: DealClosedHo
 export async function loseDeal(deps: SalesEngineDeps, actor: SalesActor, input: { workspaceId: string; dealId: string; lossReason: string; competitorId?: string; competitorName?: string; comment?: string; source?: string }): Promise<Deal> {
   const deal = await mustDealInWorkspace(deps, input.dealId, actor.tenantId, input.workspaceId);
   if (deal.status === "lost") return deal;
-  if (deal.status !== "open") throw new Error("DEAL_CLOSED: reabra a oportunidade antes de marcá-la como perdida.");
+  if (deal.status !== "open" && deal.status !== "won") throw new Error("DEAL_CLOSED: reabra a oportunidade antes de marcá-la como perdida.");
+  if (deal.status === "won" && !hasPermission(actor,"deal:reopen")) throw new Error("DEAL_PERMISSION_REQUIRED: seu perfil não pode reverter uma venda ganha.");
   const reason = input.lossReason?.trim();
   if (!reason) throw new Error("DEAL_LOSS_REASON_REQUIRED: informe o motivo da perda.");
   const configured = await listCloseReasons(deps, { tenantId: deal.tenantId, workspaceId: deal.workspaceId, kind: "lost" });
@@ -655,12 +662,13 @@ export async function loseDeal(deps: SalesEngineDeps, actor: SalesActor, input: 
   await validateTerminalRequirements(deps, deal, stageId);
   const lost = await deps.dealRepository.setClosure(deal.id, {
     stageId, expectedStatus: deal.status, expectedUpdatedAt: deal.updatedAt, closureSource: input.source ?? "manual", lossReasonId: selectedReason.id,
-    auditEvents: closureEvents(deal, stageId, actor, input.source ?? "manual", "deal_lost", { lossReasonId: selectedReason.id, lossReason: selectedReason.label, comment: input.comment?.trim() || null, competitorId, valueCents: deal.valueCents }),
+    auditEvents: closureEvents(deal, stageId, actor, input.source ?? "manual", "deal_lost", { lossReasonId: selectedReason.id, lossReason: selectedReason.label, comment: input.comment?.trim() || null, competitorId, valueCents: deal.valueCents, previousClosure: deal.finalSnapshot, previousClosedAt: deal.closedAt, previousWonProposalId: deal.wonProposalId }),
     status: "lost", forecastCategory: "omitted", closedAt: new Date().toISOString(), closedByUserId: actor.userId, creditedOwnerUserId: deal.ownerUserId ?? null,
     creditedTeamId: deal.teamId ?? null, wonReason: null, lossReason: selectedReason.label, closeComment: input.comment?.trim() || null, competitorId: competitorId ?? null,
     wonProposalId: null, finalValueCents: deal.valueCents, finalCostCents: null, finalGrossProfitCents: null, finalMarginBp: null, finalMrrCents: null,
     finalArrCents: null, finalTcvCents: null, finalSnapshot: null,
   });
+  if (deal.status === "won") await revertStockForDeal(deps, deal, actor.userId);
   await deps.dealRepository.archiveDueClosedDeals({ tenantId: lost.tenantId, workspaceId: lost.workspaceId });
   await fireDealAutomation(deps, lost, "deal_lost");
   return (await deps.dealRepository.getById(lost.id)) ?? lost;
@@ -676,8 +684,8 @@ export async function reopenDeal(deps: SalesEngineDeps, actor: SalesActor, input
   const deal = await mustDealInWorkspace(deps, input.dealId, actor.tenantId, input.workspaceId);
   if (deal.status === "open") return deal;
   const stages = await deps.pipelineStageRepository.listByPipeline(deal.pipelineId);
-  const target = input.targetStageId ? stages.find(s => s.id === input.targetStageId) : [...stages].reverse().find(s => !s.isWon && !s.isLost);
-  if (!target || target.isWon || target.isLost) throw new Error("DEAL_STAGE_PIPELINE_MISMATCH: escolha uma fase em andamento para reabrir.");
+  const target = input.targetStageId ? stages.find(s => s.id === input.targetStageId) : [...stages].reverse().find(s => !s.isWon && !s.isLost && !s.isAwaitingBilling);
+  if (!target || target.isWon || target.isLost || target.isAwaitingBilling) throw new Error("DEAL_STAGE_PIPELINE_MISMATCH: escolha uma fase em andamento para reabrir.");
   const reopened = await deps.dealRepository.setClosure(deal.id, { ...REOPEN_CLOSURE, stageId: target.id, expectedStatus: deal.status, expectedUpdatedAt: deal.updatedAt, reopenedByUserId: input.source === "automation" ? undefined : actor.userId,
     auditEvents: closureEvents(deal, target.id, actor, input.source ?? "manual", "deal_reopened", { previousFinalValueCents: deal.finalValueCents, previousClosedAt: deal.closedAt, previousClosure: deal.finalSnapshot, previousLossReason: deal.lossReason, previousLossReasonId: deal.lossReasonId, previousCloseComment: deal.closeComment, previousWonReason: deal.wonReason, previousWonProposalId: deal.wonProposalId, previousClosedByUserId: deal.closedByUserId, previousCreditedOwnerUserId: deal.creditedOwnerUserId, previousCreditedTeamId: deal.creditedTeamId }),
   });

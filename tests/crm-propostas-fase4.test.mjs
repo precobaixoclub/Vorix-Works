@@ -177,7 +177,7 @@ test("Fase 4 reserva idempotente impede envio duplicado, inclusive em falha de p
   assert.equal(Number((await db.pool.query("select count(*) from inbox_messages where conversation_id = $1", [conversation.id])).rows[0].count), 2);
 });
 
-test("Fase 4 aceite move Deal pra Ganho e e idempotente em duplo aceite", async () => {
+test("Fase 4 aceite move Deal para faturamento e e idempotente em duplo aceite", async () => {
   const tenantId = "tenant-phase4-accept";
   const ws = await workspace(tenantId);
   const { deal } = await dealInOpenStage(tenantId, ws.id);
@@ -190,7 +190,9 @@ test("Fase 4 aceite move Deal pra Ganho e e idempotente em duplo aceite", async 
   assert.equal(accepted.status, "accepted");
   await applyProposalAcceptanceToDeal(linkDeps, accepted);
   const wonDeal = await linkDeps.dealRepository.getById(deal.id);
-  assert.ok(wonDeal.wonAt, "Deal deveria ter wonAt preenchido após aceite");
+  assert.equal(wonDeal.wonAt,undefined,"Aceite não preenche wonAt");
+  assert.equal(wonDeal.status,"open");
+  assert.equal((await linkDeps.pipelineStageRepository.getById(wonDeal.stageId)).isAwaitingBilling,true);
   assert.equal(wonDeal.lostAt, undefined);
 
   // Duplo aceite (retry/duplo-clique) — nem `acceptPublicProposal` nem
@@ -200,10 +202,10 @@ test("Fase 4 aceite move Deal pra Ganho e e idempotente em duplo aceite", async 
   assert.equal(acceptedAgain.respondedAt, accepted.respondedAt, "segundo aceite não deve trocar respondedAt");
   await applyProposalAcceptanceToDeal(linkDeps, acceptedAgain);
   const wonDealAgain = await linkDeps.dealRepository.getById(deal.id);
-  assert.equal(wonDealAgain.wonAt, wonDeal.wonAt, "segunda chamada não deve trocar wonAt (no-op, já estava na etapa de Ganho)");
+  assert.equal(wonDealAgain.wonAt, wonDeal.wonAt, "segunda chamada não deve trocar wonAt (no-op, já aguardava faturamento)");
 
   const timeline = await linkDeps.timelineEventRepository.listByEntity({ entityType: "deal", entityId: deal.id });
-  const wonEvents = timeline.filter((event) => event.eventType === "deal_stage_changed" && event.payload?.trigger === "proposal_accepted");
+  const wonEvents = timeline.filter((event) => event.eventType === "deal_awaiting_billing");
   assert.equal(wonEvents.length, 1, "deal_stage_changed por aceite de proposta deveria acontecer uma única vez, não duas");
 });
 

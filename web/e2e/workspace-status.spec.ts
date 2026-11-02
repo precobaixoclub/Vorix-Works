@@ -70,6 +70,38 @@ test("cancelar descarta a mudança de situação", async ({ page }) => {
   await expect(page.getByText("Ativo", { exact: true })).toBeVisible();
 });
 
+test("botões do cartão inativam e reativam preservando o espaço e oferecem ajuste do plano", async ({ page }) => {
+  const state = await fixture(page);
+  await page.goto("/workspaces");
+  await expect(page.getByRole("link", { name: "Plano e espaços", exact: true })).toHaveAttribute("href", "/conta/plano#quantidades-plano");
+  await page.getByRole("button", { name: "Inativar", exact: true }).click();
+  const confirm = page.getByRole("alertdialog");
+  await expect(confirm).toContainText("Os dados serão preservados");
+  await confirm.getByRole("button", { name: "Inativar espaço", exact: true }).click();
+  await expect(page.getByText("Inativo", { exact: true })).toBeVisible();
+  await expect(page.getByText(/0 ativo\(s\)/)).toBeVisible();
+  await page.getByRole("button", { name: "Ativar", exact: true }).click();
+  await confirm.getByRole("button", { name: "Ativar espaço", exact: true }).click();
+  await expect(page.getByText("Ativo", { exact: true })).toBeVisible();
+  expect(state.writes).toEqual(["deactivate", "activate"]);
+  expect(state.current().name).toBe("Empresa de teste");
+});
+
+test("reativação sem vaga mantém inativo e aponta para ajuste de capacidade", async ({ page }) => {
+  const state = await fixture(page, { status: "inactive" });
+  await page.route(`**/v1/workspaces/${WORKSPACE_ID}/activate`, route => route.fulfill({ status: 403, json: { ok: false, error: { code: "FORBIDDEN", message: "WORKSPACE_LIMIT_EXCEEDED: limite de espaços ativos atingido." } } }));
+  await page.goto("/workspaces");
+  await page.getByRole("button", { name: "Ativar", exact: true }).click();
+  const confirm = page.getByRole("alertdialog");
+  await confirm.getByRole("button", { name: "Ativar espaço", exact: true }).click();
+  await expect(confirm.getByRole("alert")).toContainText("limite de espaços ativos");
+  await expect(confirm.getByRole("link", { name: "Ajustar plano e tentar novamente" })).toHaveAttribute("href", "/conta/plano#quantidades-plano");
+  expect(state.current().status).toBe("inactive");
+  await confirm.getByRole("button", { name: "Cancelar", exact: true }).click();
+  await page.goto(`/workspaces/${WORKSPACE_ID}/site`);
+  await expect(page.getByRole("heading", { name: "Espaço de trabalho inativo", exact: true })).toBeVisible();
+});
+
 test("falha na mudança mantém o modal e permite tentar novamente sem repetir nome já salvo", async ({ page }) => {
   const state = await fixture(page, { failures: 1 });
   await page.goto("/workspaces");

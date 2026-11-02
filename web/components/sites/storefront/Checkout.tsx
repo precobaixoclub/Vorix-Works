@@ -1,4 +1,5 @@
 "use client";
+import {contactLabel} from "@/features/crm/contact-presentation";
 import {useCallback,useEffect,useMemo,useRef,useState,type FormEvent} from "react";
 import {Check,Copy,CreditCard,Lock,MapPin,Package,QrCode,Store,Truck} from "lucide-react";
 import type {CheckoutQuote,PublicOrder,PublicTenantSite,ShippingOption} from "@/features/sites/types";
@@ -140,7 +141,7 @@ export function OrderStatusPage({token,basePath}:{token:string;basePath:string})
  async function copy(){if(!pix?.pixQrCode)return;try{await navigator.clipboard.writeText(pix.pixQrCode);setCopied(true);setTimeout(()=>setCopied(false),2500);}catch{}}
  return <section className="ts-section ck"><div className="ts-container ck-narrow">
   <p className="ck-eyebrow">Pedido #{order.number}</p>
-  <h1 className="ck-title">{paid?`Obrigado, ${order.customerName}! Pagamento confirmado.`:order.status==="CANCELLED"?"Pedido cancelado":`Quase lá, ${order.customerName}!`}</h1>
+  <h1 className="ck-title">{paid?`Obrigado, ${contactLabel({name:order.customerName})}! Pagamento confirmado.`:order.status==="CANCELLED"?"Pedido cancelado":`Quase lá, ${contactLabel({name:order.customerName})}!`}</h1>
   <p className={`ck-status ck-status-${paid?"ok":order.status==="CANCELLED"?"bad":"wait"}`} role="status" aria-live="polite">{paid?<Check size={16} aria-hidden="true"/>:null}{order.statusLabel}</p>
   {order.status==="AWAITING_PAYMENT"&&pix?<div className="ck-card ck-pix">
    {pix.sandbox?<p className="ck-sandbox" role="note">Pedido de teste: nenhum valor será cobrado. A loja confirma o pagamento pelo painel.</p>:<><h2>Pague com PIX</h2>

@@ -1,4 +1,6 @@
 "use client";
+import { contactLabel } from "@/features/crm/contact-presentation";
+
 
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
@@ -2681,7 +2683,7 @@ function ContactPickerModal({
                   <UserRound className="h-4 w-4" />
                 </span>
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate font-medium text-foreground">{contact.name || contact.phoneNormalized}</span>
+                  <span className="block truncate font-medium text-foreground">{contactLabel(contact)}</span>
                   {contact.name ? <span className="block truncate text-xs text-muted-foreground">{contact.phoneNormalized}</span> : null}
                 </span>
               </button>
@@ -3446,7 +3448,7 @@ export function conversationTitle(conversation: InboxConversation): string {
   // `syncGroupMetadata` (worker) logo após a primeira mensagem; isto só aparece na janela curta
   // antes disso resolver (ver docs/conversas-inbox-organization-media-runtime.md).
   if (conversation.chatType === "group") return conversation.groupName ?? "Grupo";
-  return conversation.contactName ?? conversation.contactPhone ?? "Contato";
+  return contactLabel(conversation);
 }
 
 /** Melhoria visual (pedido explícito do usuário: linha 2 do item da lista mostra "canal +

@@ -108,8 +108,8 @@ export function useProducts(workspaceId: string, params?: { search?: string; act
   });
 }
 
-export function useProposals(workspaceId: string, params?: { dealId?: string; contactId?: string; status?: ProposalStatus }) {
-  return useSWR(["proposals", workspaceId, params?.dealId, params?.contactId, params?.status], () => listProposals(workspaceId, params));
+export function useProposals(workspaceId: string, params?: { search?:string; dealId?: string; contactId?: string; status?: ProposalStatus }) {
+  return useSWR(["proposals", workspaceId, params?.search, params?.dealId, params?.contactId, params?.status], () => listProposals(workspaceId, params));
 }
 
 export function useProposalTemplates(workspaceId: string, activeOnly?: boolean) {

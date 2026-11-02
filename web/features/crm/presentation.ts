@@ -18,9 +18,10 @@ export const TASK_STATUS_LABEL: Record<TaskStatus, string> = {
 
 export const PROPOSAL_STATUS_LABEL: Record<ProposalStatus, string> = {
   draft: "Rascunho",
-  sent: "Enviada",
-  viewed: "Visualizada",
-  accepted: "Aceita",
+  sent: "Enviada — aguardando resposta",
+  viewed: "Visualizada — aguardando resposta",
+  accepted: "Aceita — aguardando faturamento",
+  invoiced: "Faturada",
   rejected: "Recusada",
   expired: "Expirada",
   pending_approval: "Aguardando aprovação",
@@ -28,6 +29,10 @@ export const PROPOSAL_STATUS_LABEL: Record<ProposalStatus, string> = {
   cancelled: "Cancelada",
   superseded: "Substituída",
 };
+
+export function proposalBadgeStatus(status:ProposalStatus):string {
+  return status==="accepted"?"awaiting_billing":status==="sent"?"proposal_sent":status==="viewed"?"proposal_viewed":status;
+}
 
 /** Lê o texto de um campo de dinheiro em centavos. Aceita o formato da máscara ("1.234,56") e,
  * por segurança, o formato com ponto decimal ("1234.56") — nunca multiplica por 100 duas vezes. */
@@ -93,6 +98,9 @@ export function timelineEventLabel(event: TimelineEvent): string {
     deal_created: "Oportunidade criada",
     deal_updated: "Oportunidade atualizada",
     deal_stage_changed: "Etapa alterada",
+    deal_awaiting_billing: "Aguardando faturamento",
+    proposal_invoiced: "Proposta faturada",
+    proposal_billing_voided: "Faturamento/aceite cancelado",
     deal_won: "Oportunidade ganha",
     deal_reopened: "Oportunidade reaberta",
     deal_archived: "Oportunidade arquivada",

@@ -8,11 +8,12 @@ export type PipelineUseCaseDeps = {
 
 /** Etapas padrão de um pipeline recém-criado — vocabulário comum de vendas em português, editável
  * depois pelo usuário (nunca hardcoded na leitura, só no bootstrap inicial). */
-const DEFAULT_STAGE_NAMES: ReadonlyArray<{ name: string; isWon: boolean; isLost: boolean }> = [
+const DEFAULT_STAGE_NAMES: ReadonlyArray<{ name: string; isWon: boolean; isLost: boolean; isAwaitingBilling?: boolean }> = [
   { name: "Novo", isWon: false, isLost: false },
   { name: "Contato Feito", isWon: false, isLost: false },
   { name: "Proposta Enviada", isWon: false, isLost: false },
   { name: "Negociação", isWon: false, isLost: false },
+  { name: "Aguardando faturamento", isWon: false, isLost: false, isAwaitingBilling: true },
   { name: "Ganha", isWon: true, isLost: false },
   { name: "Perdida", isWon: false, isLost: true },
 ];
@@ -84,6 +85,7 @@ export async function createStage(deps: PipelineUseCaseDeps, input: { pipelineId
 export async function updateStage(deps: PipelineUseCaseDeps, input: { pipelineId: string; stageId: string; tenantId: string; workspaceId: string; patch: UpdateStageInput }): Promise<PipelineStage> {
   await mustPipelineBelongToTenantAndWorkspace(deps, input.pipelineId, input.tenantId, input.workspaceId);
   const stage = await mustStageBelongToPipeline(deps, input.stageId, input.pipelineId);
+  if (stage.isAwaitingBilling && input.patch.name && input.patch.name !== stage.name) throw new Error("PIPELINE_STAGE_INVALID: fase sistêmica de faturamento.");
   if ((input.patch.isWon !== undefined && input.patch.isWon !== stage.isWon) || (input.patch.isLost !== undefined && input.patch.isLost !== stage.isLost)) {
     throw new Error("PIPELINE_STAGE_INVALID: o resultado comercial de uma fase sistêmica não pode ser alterado.");
   }
@@ -94,9 +96,9 @@ export async function updateStage(deps: PipelineUseCaseDeps, input: { pipelineId
 export async function deleteStage(deps: PipelineUseCaseDeps, input: { pipelineId: string; stageId: string; tenantId: string; workspaceId: string }): Promise<void> {
   await mustPipelineBelongToTenantAndWorkspace(deps, input.pipelineId, input.tenantId, input.workspaceId);
   const stage = await mustStageBelongToPipeline(deps, input.stageId, input.pipelineId);
-  if (stage.isWon || stage.isLost) throw new Error("PIPELINE_STAGE_INVALID: fase sistêmica de encerramento. Não pode ser removida.");
+  if (stage.isWon || stage.isLost || stage.isAwaitingBilling) throw new Error("PIPELINE_STAGE_INVALID: fase sistêmica de encerramento. Não pode ser removida.");
   const stages = await deps.pipelineStageRepository.listByPipeline(input.pipelineId);
-  if (stages.filter(s => !s.isWon && !s.isLost).length <= 1) throw new Error("PIPELINE_STAGE_INVALID: mantenha pelo menos uma fase em andamento no funil.");
+  if (stages.filter(s => !s.isWon && !s.isLost && !s.isAwaitingBilling).length <= 1) throw new Error("PIPELINE_STAGE_INVALID: mantenha pelo menos uma fase em andamento no funil.");
   await deps.pipelineStageRepository.delete(input.stageId);
 }
 

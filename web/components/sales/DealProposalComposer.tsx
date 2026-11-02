@@ -1,4 +1,6 @@
 "use client";
+import { contactLabel } from "@/features/crm/contact-presentation";
+
 
 import { useState } from "react";
 import useSWR from "swr";
@@ -77,7 +79,7 @@ export function GenerateProposalModal({ workspaceId, deal, contactName, onClose,
           <p className="flex items-center gap-2 text-sm font-semibold"><Sparkles className="h-4 w-4 text-primary" />Aurora · uma proposta pronta para impressionar</p>
           <p className="mt-2 text-xs leading-relaxed text-muted-foreground">Visual moderno, detalhes completos e resposta pelo próprio link. Os dados da oportunidade já vêm preenchidos.</p>
           <div className="mt-4 grid gap-3 border-t border-border/60 pt-3 sm:grid-cols-2">
-            <div><p className="text-[11px] text-muted-foreground">Cliente</p><p className="mt-1 break-words text-sm font-medium">{contactName || contact?.name || "Sem contato vinculado"}</p>{contact?.company ? <p className="text-xs text-muted-foreground">{contact.company}</p> : null}</div>
+            <div><p className="text-[11px] text-muted-foreground">Cliente</p><p className="mt-1 break-words text-sm font-medium">{deal.contactDisplayName ?? (contact ? contactLabel(contact) : contactLabel({name:contactName}))}</p>{contact?.company ? <p className="text-xs text-muted-foreground">{contact.company}</p> : null}</div>
             <div><p className="text-[11px] text-muted-foreground">Valor atual da oportunidade</p><p className="mt-1 text-lg font-semibold tabular-nums">{formatCurrencyCents(deal.valueCents, deal.currency)}</p></div>
           </div>
           <p className="mt-3 flex items-center gap-1.5 text-[11px] text-muted-foreground"><Check className="h-3.5 w-3.5 text-primary" />{commercial?.items?.length ? `${commercial.items.length} itens, quantidades e descontos importados automaticamente.` : "O valor e o vínculo com o cliente vêm da oportunidade."}</p>
@@ -117,7 +119,7 @@ function ProposalReview({ workspaceId, deal, proposal, contactName, onClose, onC
   const recipient = conversations.find(conversation => conversation.id === conversationId);
   const pending = proposal.approvalRequired || proposal.status === "pending_approval";
   const loading = !connectionsData || (Boolean(deal.contactId) && !conversationsData);
-  const document: PublicProposal = { number: proposal.number, version: proposal.version ?? 1, title: proposal.title, introduction: proposal.introduction, items: proposal.items.map(item => ({ name: item.name, description: item.description, quantity: item.quantity, unitPriceCents: item.unitPriceCents, subtotalCents: item.subtotalCents, billingType: item.billingType })), subtotalCents: proposal.items.reduce((sum, item) => sum + item.subtotalCents, 0), discountCents: proposal.discountCents, totalCents: proposal.totalCents, currency: proposal.currency, validUntil: proposal.validUntil, conditions: proposal.conditions, notes: proposal.notes, terms: proposal.terms, status: proposal.status, superseded: false, customerName: contactName || contact?.name, customerCompany: contact?.company, issuerName: workspace.name, declineReasons: [] };
+  const document: PublicProposal = { number: proposal.number, version: proposal.version ?? 1, title: proposal.title, introduction: proposal.introduction, items: proposal.items.map(item => ({ name: item.name, description: item.description, quantity: item.quantity, unitPriceCents: item.unitPriceCents, subtotalCents: item.subtotalCents, billingType: item.billingType })), subtotalCents: proposal.items.reduce((sum, item) => sum + item.subtotalCents, 0), discountCents: proposal.discountCents, totalCents: proposal.totalCents, currency: proposal.currency, validUntil: proposal.validUntil, conditions: proposal.conditions, notes: proposal.notes, terms: proposal.terms, status: proposal.status, superseded: false, customerName: contact ? contactLabel(contact) : contactLabel({name:contactName}), customerCompany: contact?.company, issuerName: workspace.name, declineReasons: [] };
 
   function send() { if (recipient && !pending && !busy && !sent) setWhatsappOpen(true); }
 

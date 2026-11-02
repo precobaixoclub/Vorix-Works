@@ -2,8 +2,11 @@
 
 import Link from "next/link";
 import { useState } from "react";
+import { useSWRConfig } from "swr";
+import { toast } from "sonner";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/Button";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { EmptyState } from "@/components/EmptyState";
 import { RequireAuth } from "@/components/RequireAuth";
 import { Spinner } from "@/components/Spinner";
@@ -13,6 +16,9 @@ import { EditWorkspaceModal } from "@/features/workspace/components/EditWorkspac
 import { WorkspaceCard } from "@/features/workspace/components/WorkspaceCard";
 import { useWorkspaces } from "@/features/workspace/hooks";
 import type { Workspace } from "@/features/workspace/types";
+import { activateWorkspace, deactivateWorkspace } from "@/features/workspace/api";
+import { useMyAccess } from "@/features/auth/access";
+import { canManageBilling } from "@/lib/rbac";
 
 export default function WorkspacesPage() {
   return (
@@ -26,6 +32,11 @@ function WorkspacesPageContent() {
   const { data: workspaces, error, isLoading, mutate } = useWorkspaces();
   const [isCreating, setIsCreating] = useState(false);
   const [editingWorkspace, setEditingWorkspace] = useState<Workspace | undefined>();
+  const [transitioning, setTransitioning] = useState<Workspace>();
+  const [transitionBusy, setTransitionBusy] = useState(false);
+  const [transitionError, setTransitionError] = useState<string>();
+  const { mutate: mutateCache } = useSWRConfig();
+  const { can } = useMyAccess();
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | "active" | "inactive" | "archived">("all");
@@ -33,8 +44,28 @@ function WorkspacesPageContent() {
   const { state, logout } = useAuth();
   const isPlatformAdmin = state.status === "authenticated" && state.user.isPlatformAdmin;
   const user = state.status === "authenticated" ? state.user : null;
+  const canManagePlan = canManageBilling(state.status === "authenticated" ? state.role : undefined);
   const workspaceList = workspaces ?? [];
   const hasWorkspaces = workspaceList.length > 0;
+  async function refreshCapacity() {
+    await mutate(current => current, { revalidate: true, throwOnError: false });
+    await mutateCache(key => Array.isArray(key) && key[0] === "billing", undefined, { revalidate: true, throwOnError: false });
+  }
+  async function transitionWorkspace() {
+    if (!transitioning || transitionBusy) return;
+    setTransitionBusy(true);
+    setTransitionError(undefined);
+    try {
+      const updated = transitioning.status === "active" ? await deactivateWorkspace(transitioning.id) : await activateWorkspace(transitioning.id);
+      await mutateCache(["workspace", updated.id], updated, { revalidate: false });
+      await mutateCache(key => Array.isArray(key) && key[0] === "workspaces", undefined, { revalidate: true, throwOnError: false });
+      await refreshCapacity();
+      setTransitioning(undefined);
+      toast.success(updated.status === "active" ? "Espaço ativado." : "Espaço inativado. Uma vaga foi liberada.");
+    } catch (cause) {
+      setTransitionError(cause instanceof Error ? cause.message : "Não foi possível alterar a situação.");
+    } finally { setTransitionBusy(false); }
+  }
   const filteredWorkspaces = workspaceList.filter((workspace) => {
     const matchesQuery = workspace.name.toLowerCase().includes(query.trim().toLowerCase());
     const matchesStatus = statusFilter === "all" || workspace.status === statusFilter;
@@ -52,7 +83,8 @@ function WorkspacesPageContent() {
           </p>
         </div>
         <div className="flex items-center gap-2 self-start">
-          {hasWorkspaces ? <Button onClick={() => setIsCreating(true)}>+ Novo espaço</Button> : null}
+          {canManagePlan ? <Link href="/conta/plano#quantidades-plano" className="rounded-lg border border-border px-3 py-2 text-sm font-medium">Plano e espaços</Link> : null}
+          {hasWorkspaces && can("workspace:create") ? <Button onClick={() => setIsCreating(true)}>+ Novo espaço</Button> : null}
           {user ? (
             <div className="relative">
               <button
@@ -121,7 +153,7 @@ function WorkspacesPageContent() {
             <p className="mt-2 text-sm leading-relaxed text-ink-muted">
               Cada espaço separa produção, conexões, materiais e publicações de uma empresa ou cliente.
             </p>
-            <Button className="mt-5 min-h-12 px-5 text-base" onClick={() => setIsCreating(true)}>
+            <Button className="mt-5 min-h-12 px-5 text-base" disabled={!can("workspace:create")} onClick={() => setIsCreating(true)}>
               + Criar primeiro espaço de trabalho
             </Button>
           </div>
@@ -147,7 +179,7 @@ function WorkspacesPageContent() {
             <div>
               <h2 className="text-base font-semibold text-ink">Seus espaços</h2>
               <p className="mt-1 text-sm text-ink-muted">
-                {workspaceList.length} espaço(s) criado(s). A logo ajuda a identificar a marca rapidamente.
+                {workspaceList.filter(item => item.status === "active").length} ativo(s) · {workspaceList.length} criado(s). Apenas os ativos ocupam vagas no plano.
               </p>
             </div>
             <input
@@ -189,7 +221,7 @@ function WorkspacesPageContent() {
             ) : (
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
                 {filteredWorkspaces.map((workspace) => (
-                  <WorkspaceCard key={workspace.id} workspace={workspace} onEdit={() => setEditingWorkspace(workspace)} />
+                  <WorkspaceCard key={workspace.id} workspace={workspace} onEdit={can("workspace:update") || can("workspace:transition") ? () => setEditingWorkspace(workspace) : undefined} onTransition={can("workspace:transition") ? () => { setTransitionError(undefined); setTransitioning(workspace); } : undefined} />
                 ))}
               </div>
             )}
@@ -202,7 +234,7 @@ function WorkspacesPageContent() {
           onClose={() => setIsCreating(false)}
           onCreated={() => {
             setIsCreating(false);
-            mutate();
+            void refreshCapacity();
           }}
         />
       ) : null}
@@ -213,10 +245,15 @@ function WorkspacesPageContent() {
           onClose={() => setEditingWorkspace(undefined)}
           onUpdated={() => {
             setEditingWorkspace(undefined);
-            mutate();
+            void refreshCapacity();
           }}
         />
       ) : null}
+      <ConfirmDialog open={!!transitioning} title={`${transitioning?.status === "active" ? "Inativar" : "Ativar"} ${transitioning?.name ?? "espaço"}?`}
+        description={transitioning?.status === "active" ? "Os dados serão preservados e o espaço deixará de ocupar uma vaga. Para reduzir a mensalidade, ajuste a quantidade contratada em Plano e espaços." : "O espaço voltará a ocupar uma vaga do plano. A ativação depende de capacidade disponível e não contrata adicionais automaticamente."}
+        confirmLabel={transitioning?.status === "active" ? "Inativar espaço" : "Ativar espaço"} busy={transitionBusy} onConfirm={transitionWorkspace} onCancel={() => { if (!transitionBusy) setTransitioning(undefined); }}>
+        {transitionError ? <div role="alert" className="space-y-2 text-sm"><p className="text-destructive">{transitionError}</p>{canManagePlan ? <a href="/conta/plano#quantidades-plano" target="_blank" rel="noopener noreferrer" className="text-primary underline">Ajustar plano e tentar novamente</a> : <p>Peça ao administrador para ajustar o plano.</p>}</div> : null}
+      </ConfirmDialog>
     </main>
   );
 }

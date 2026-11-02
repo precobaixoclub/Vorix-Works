@@ -1,4 +1,6 @@
 "use client";
+import { contactLabel } from "@/features/crm/contact-presentation";
+
 
 import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle } from "lucide-react";
@@ -55,7 +57,7 @@ export function QuickCreateDealModal({
   }, [pipelines, pipelineId]);
 
   const { data: stages } = usePipelineStages(pipelineId, workspaceId);
-  const openStages = [...(stages ?? [])].filter((stage) => !stage.isWon && !stage.isLost).sort((a, b) => a.position - b.position);
+  const openStages = [...(stages ?? [])].filter((stage) => !stage.isWon && !stage.isLost && !stage.isAwaitingBilling).sort((a, b) => a.position - b.position);
   const [stageId, setStageId] = useState<string | undefined>();
   useEffect(() => {
     if (openStages.length > 0 && !openStages.some((stage) => stage.id === stageId)) setStageId(openStages[0].id);
@@ -133,7 +135,7 @@ export function QuickCreateDealModal({
         {contactId ? null : (
           <div>
             <Label>Contato</Label>
-            <SearchableCombo items={(contacts ?? []).map((contact) => ({ id: contact.id, label: contact.company ? `${contact.name} · ${contact.company}` : contact.name }))} value={selectedContactId} onValueChange={setSelectedContactId} placeholder="Selecionar contato" searchPlaceholder="Buscar contato..." extraOption={{ value: "", label: "Sem contato" }} />
+            <SearchableCombo items={(contacts ?? []).map((contact) => ({ id: contact.id, label: contactLabel(contact) }))} value={selectedContactId} onValueChange={setSelectedContactId} placeholder="Selecionar contato" searchPlaceholder="Buscar contato..." extraOption={{ value: "", label: "Sem contato" }} />
           </div>
         )}
 

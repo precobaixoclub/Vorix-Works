@@ -98,6 +98,8 @@ test("consulta arquivadas, mostra resposta da perda e reabre com histórico leg�
   await expect(modal.getByText("Negociação → Perdida", { exact: true })).toBeVisible();
   await page.screenshot({ path: info.outputPath("opportunity-closed-history.png"), fullPage: true });
   await modal.getByRole("button", { name: "Reabrir", exact: true }).click();
+  const reopening=page.getByRole("alertdialog",{name:"Reabrir oportunidade",exact:true});
+  await reopening.getByRole("button",{name:"Reabrir oportunidade",exact:true}).click();
   await expect(modal.getByRole("button", { name: "Ganha", exact: true })).toBeVisible();
   expect(state.deal.status).toBe("open");
   expect(state.deal.archivedAt).toBeUndefined();

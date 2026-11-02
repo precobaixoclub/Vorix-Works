@@ -104,6 +104,7 @@ const MOVE_STAGE_BODY_SCHEMA = {
 } as const;
 
 function translateDealError(error: unknown): never {
+  if(error instanceof Error && error.message.startsWith("PROPOSAL_BILLING_INVALID")) throw new ValidationError(error.message);
   if (error instanceof Error && error.message.startsWith("DEAL_NOT_FOUND")) throw new NotFoundError(error.message);
   if (error instanceof Error && (error.message.startsWith("DEAL_CONFLICT") || error.message.startsWith("COMMERCIAL_APPROVAL_REQUIRED"))) throw new ConflictError(error.message);
   if (error instanceof Error && (error.message.startsWith("DEAL_") || error.message.startsWith("COMMERCIAL_APPROVAL_REQUIRED"))) {
@@ -188,7 +189,7 @@ export async function registerDealsRoutes(app: FastifyInstance, deps: DealUseCas
       if (deps.sales && !dealVisibleInScope(existing, await resolveDealScope(deps.sales, { tenantId: principal.tenantId, userId: principal.userId, role: principal.role, permissions: principal.permissions, permissionRevokes: principal.permissionRevokes }, workspaceId))) throw new NotFoundError("Oportunidade não encontrada.");
       const target = await deps.pipelineStageRepository.getById(stageId);
       if (target?.isWon) requirePermission(request, "deal:win");
-      else if (target?.isLost) requirePermission(request, "deal:lose");
+      else if (target?.isLost) { requirePermission(request, "deal:lose"); if(existing.status === "won") requirePermission(request,"deal:reopen"); }
       else if (existing.status !== "open") requirePermission(request, "deal:reopen");
       const deal = await moveDealStage(deps, { dealId: id, tenantId: principal.tenantId, workspaceId, targetStageId: stageId, lossReason, lossComment, finalValueCents, closedAt, actorUserId: principal.userId });
       return successEnvelope(deal, request.id);

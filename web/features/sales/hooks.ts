@@ -98,11 +98,11 @@ export function useConversationProposals(workspaceId: string, conversationId: st
 }
 
 /** Prefixos de cache afetados por qualquer mudança comercial numa oportunidade. */
-export const SALES_CACHE_PREFIXES = ["deal-commercial", "deal-insights", "deal", "deals", "contact-open-deals", "proposals", "proposal-tracking", "commercial-approvals", "sales-performance", "sales-performance-team", "sales-forecast", "sales-goals", "deal-timeline"];
+export const SALES_CACHE_PREFIXES = ["deal-commercial", "deal-insights", "deal", "deals", "deals-summary", "contact-open-deals", "proposals", "proposal-tracking", "commercial-approvals", "sales-performance", "sales-performance-team", "sales-forecast", "sales-goals", "deal-timeline", "proposal-timeline", "contact-activity", "contact-timeline", "commercial-metrics", "stock-risk", "products"];
 
 
 /** Revalida tudo que depende dos números comerciais do workspace (cockpit, listas, metas...). */
 export function useInvalidateSales(workspaceId: string) {
   const { mutate } = useSWRConfig();
-  return () => mutate((key) => Array.isArray(key) && SALES_CACHE_PREFIXES.includes(String(key[0])) && key[1] === workspaceId);
+  return () => mutate((key) => Array.isArray(key) && SALES_CACHE_PREFIXES.includes(String(key[0])) && key[["deal-timeline","proposal-timeline","contact-activity","contact-timeline"].includes(String(key[0])) ? 2 : 1] === workspaceId);
 }

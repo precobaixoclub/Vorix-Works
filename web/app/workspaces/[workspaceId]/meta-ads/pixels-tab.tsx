@@ -151,7 +151,7 @@ function PixelEventsModal({ workspaceId, pixel, onOpenChange }: { workspaceId: s
             {events.map((event) => (
               <div key={event.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border/60 px-3 py-2 text-sm">
                 <div className="flex items-center gap-2">
-                  <span className={event.status === "sent" ? "font-medium text-foreground" : "font-medium text-destructive"}>{event.eventName}</span>
+                  <span className={event.status === "sent" ? "font-medium text-foreground" : "font-medium text-destructive"}>{event.eventName === "Lead" ? "Contato" : event.eventName}</span>
                   <span className="text-xs text-muted-foreground">{event.userDataFields.join(", ") || "sem user_data"}</span>
                   {event.testEventCode ? <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] text-muted-foreground">teste</span> : null}
                 </div>
@@ -251,7 +251,7 @@ function TestEventModal({ workspaceId, pixel, onClose }: { workspaceId: string; 
           <Select value={eventName} onValueChange={setEventName}>
             <SelectTrigger id="capi-event-name"><SelectValue /></SelectTrigger>
             <SelectContent>
-              {EVENT_NAMES.map((name) => <SelectItem key={name} value={name}>{name}</SelectItem>)}
+              {EVENT_NAMES.map((name) => <SelectItem key={name} value={name}>{name === "Lead" ? "Contato" : name}</SelectItem>)}
             </SelectContent>
           </Select>
         </div>

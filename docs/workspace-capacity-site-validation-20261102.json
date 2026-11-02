@@ -1,0 +1,61 @@
+{
+  "createdAt": "2026-11-02T20:27:37.529Z",
+  "scope": "workspace-active-capacity-and-site-editor",
+  "productionModified": false,
+  "realCharges": false,
+  "newMigration": false,
+  "checks": [
+    {
+      "command": "npm run build",
+      "cwd": ".",
+      "result": "passed",
+      "log": "tmp/workspace-build-final.log"
+    },
+    {
+      "command": "npm run build",
+      "cwd": "web",
+      "result": "passed",
+      "log": "tmp/workspace-web-build.log"
+    },
+    {
+      "command": "node --test tests/workspace-api.test.mjs tests/workspace-use-cases.test.mjs tests/billing-foundation.test.mjs tests/capacity-renewal.test.mjs tests/pricing-capacity.test.mjs tests/billing-lifecycle.test.mjs tests/billing-capacity-recordings.test.mjs tests/billing-overview-route.test.mjs tests/website-builder-templates.test.mjs tests/site-customization.test.mjs tests/product-site-engine.test.mjs",
+      "cwd": ".",
+      "result": "passed",
+      "passed": 149,
+      "failed": 0,
+      "log": "tmp/workspace-regression-final.log"
+    },
+    {
+      "command": "npm test",
+      "cwd": "web",
+      "result": "passed",
+      "passed": 229,
+      "failed": 0,
+      "log": "tmp/workspace-web-tests.log"
+    },
+    {
+      "command": "npx playwright test --config=playwright.sales-qa.config.ts --workers=1 e2e/workspace-status.spec.ts e2e/billing-capacity-self-service.spec.ts e2e/site-personalizar.spec.ts",
+      "cwd": "web",
+      "result": "passed",
+      "passed": 32,
+      "failed": 0,
+      "viewports": [
+        1366,
+        390
+      ],
+      "log": "tmp/workspace-browser-final.log"
+    },
+    {
+      "command": "npm run typecheck",
+      "cwd": ".",
+      "result": "passed",
+      "log": "tmp/workspace-api-typecheck-final.log"
+    },
+    {
+      "command": "npm run typecheck",
+      "cwd": "web",
+      "result": "passed",
+      "log": "tmp/workspace-web-typecheck-final.log"
+    }
+  ]
+}

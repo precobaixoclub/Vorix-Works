@@ -1,4 +1,8 @@
 "use client";
+import { contactLabel , commercialTitle} from "@/features/crm/contact-presentation";
+
+import { InvoiceProposalButton } from "@/components/sales/InvoiceProposalButton";
+
 
 import { useMyAccess } from "@/features/auth/access";
 
@@ -215,7 +219,8 @@ function DealsView() {
     const permission = targetStage.isWon ? "deal:win" : targetStage.isLost ? "deal:lose" : deal.status !== "open" ? "deal:reopen" : "deal:manage";
     if (!can("deal:manage") || !can(permission)) { toast.error("Sem permissão para mover esta oportunidade."); return; }
     if (movingDealId || deal.stageId === targetStage.id) return;
-    if (deal.status && deal.status !== "open" && (targetStage.isWon || targetStage.isLost)) { toast.info("Reabra a oportunidade em uma fase em andamento antes de registrar outro resultado."); return; }
+    if(targetStage.isAwaitingBilling || (deal.billingProposalId && !targetStage.isLost)) {toast.info("Use Marcar como faturado para concluir a proposta aceita, ou marque a oportunidade como perdida.");return;}
+    if (deal.status && deal.status !== "open" && (targetStage.isWon || targetStage.isLost) && !(deal.status === "won" && targetStage.isLost && can("deal:reopen"))) { toast.info("Reabra a oportunidade em uma fase em andamento antes de registrar outro resultado."); return; }
     if (targetStage.isWon) { setWinPrompt({ deal, stage: targetStage }); return; }
     if (targetStage.isLost) {
       setLossPrompt({ deal, stage: targetStage });
@@ -283,6 +288,7 @@ function DealsView() {
       <DealCard
         key={deal.id}
         deal={deal}
+        onInvoiced={refresh}
         stockRisk={deal.status === "open" ? stockRiskByDeal.get(deal.id) : undefined}
         contact={contactsList.find((item) => item.id === deal.contactId)}
         conversation={deal.contactId ? conversationByContactId.get(deal.contactId) : undefined}
@@ -461,7 +467,7 @@ function DealsView() {
         </>
       ) : null}
 
-      {proposalDeal ? <DealProposalComposer workspaceId={workspace.id} deal={proposalDeal} contactName={proposalDeal.contactId ? conversationByContactId.get(proposalDeal.contactId)?.contactName || contactsList.find(contact => contact.id === proposalDeal.contactId)?.name : undefined} onClose={() => setProposalDeal(undefined)} onChanged={refresh} /> : null}
+      {proposalDeal ? <DealProposalComposer workspaceId={workspace.id} deal={proposalDeal} contactName={proposalDeal.contactDisplayName ?? contactLabel(contactsList.find(contact => contact.id === proposalDeal.contactId) ?? conversationByContactId.get(proposalDeal.contactId ?? ""))} onClose={() => setProposalDeal(undefined)} onChanged={refresh} /> : null}
 
       {createOpen ? (
         <QuickCreateDealModal
@@ -549,6 +555,7 @@ function DealCard({
   teams,
   moving,
   onOpen,
+  onInvoiced,
   onGenerateProposal,
   canGenerateProposal,
   onDragStart,
@@ -569,6 +576,7 @@ function DealCard({
   teams: readonly Team[];
   moving: boolean;
   onOpen: () => void;
+  onInvoiced: () => unknown;
   onGenerateProposal: () => void;
   canGenerateProposal: boolean;
   onDragStart: (event: React.DragEvent) => void;
@@ -576,7 +584,7 @@ function DealCard({
   onOpenConversation: (conversation: InboxConversation) => void;
   onToggleConversationRead: (conversation: InboxConversation) => void;
 }) {
-  const moveTargets = stages.filter((stage) => stage.id !== deal.stageId);
+  const moveTargets = stages.filter((stage) => stage.id !== deal.stageId && !stage.isAwaitingBilling && (!deal.billingProposalId || stage.isLost));
   const nextTask = nextPendingTask(tasks, { dealId: deal.id });
   const isUnread = Boolean(conversation && conversation.unreadCount > 0);
 
@@ -599,8 +607,8 @@ function DealCard({
       {stockRisk ? <StockRiskBadge risk={stockRisk} className="mb-2" /> : null}
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
-          <p className="truncate text-sm font-semibold text-foreground">{conversation?.contactName?.trim() || contact?.name?.trim() || conversation?.contactPhone || deal.title}</p>
-          <p className="mt-0.5 truncate text-xs text-muted-foreground">{contact ? deal.title : deal.origin ?? "Sem contato vinculado"}</p>
+          <p className="truncate text-sm font-semibold text-foreground">{deal.contactDisplayName ?? contactLabel(contact ?? conversation)}</p>
+          <p className="mt-0.5 truncate text-xs text-muted-foreground">{commercialTitle(deal.title,"Oportunidade")}</p>
         </div>
         <Popover>
           <PopoverTrigger asChild>
@@ -689,7 +697,8 @@ function DealCard({
           {deal.teamId ? <span className="rounded-full bg-muted px-2 py-0.5">{teamLabel(deal.teamId, teams)}</span> : null}
         </div>
       ) : null}
-      {(deal.status === "open" || (!deal.status && !deal.wonAt && !deal.lostAt)) ? <Button className="mt-3 w-full gap-2" disabled={!canGenerateProposal || moving} onClick={event => { event.stopPropagation(); onGenerateProposal(); }}><FileText className="h-4 w-4" />Gerar proposta</Button> : null}
+      {deal.status === "open" && deal.billingProposalId ? <div className="mt-3"><InvoiceProposalButton workspaceId={deal.workspaceId} dealId={deal.id} proposalId={deal.billingProposalId} onChanged={onInvoiced}/></div> : null}
+      {!deal.billingProposalId && (deal.status === "open" || (!deal.status && !deal.wonAt && !deal.lostAt)) ? <Button className="mt-3 w-full gap-2" disabled={!canGenerateProposal || moving} onClick={event => { event.stopPropagation(); onGenerateProposal(); }}><FileText className="h-4 w-4" />Gerar proposta</Button> : null}
     </article>
   );
 }
@@ -708,8 +717,4 @@ function KanbanSkeleton() {
       ))}
     </div>
   );
-}
-
-function contactLabel(contact: Contact): string {
-  return contact.company ? `${contact.name} · ${contact.company}` : contact.name;
 }

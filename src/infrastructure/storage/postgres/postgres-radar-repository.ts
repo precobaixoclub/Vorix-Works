@@ -1,3 +1,4 @@
+import { contactLabel } from "../../../domain/crm/contact-presentation.js";
 import type { Pool } from "pg";
 import type {
   RadarAiAnalysisLog,
@@ -102,8 +103,8 @@ const UNANSWERED_LATERALS = `
  * avaliação) — é o que mantém o escopo correto depois de uma transferência. */
 const LIST_SELECT = `
   select crs.*,
-         ct.name as contact_name,
-         ct.phone_normalized as contact_phone,
+         coalesce(cc.name,ct.name) as contact_name,
+         coalesce(cc.custom_fields->>'phone',ct.whatsapp_pn,ct.phone_normalized) as contact_phone,
          u.name as agent_name,
          t.name as team_name,
          conv.assigned_user_id as live_agent_id,
@@ -115,6 +116,7 @@ const LIST_SELECT = `
   from conversation_risk_scores crs
   join inbox_conversations conv on conv.id = crs.conversation_id
   left join inbox_contacts ct on ct.id = conv.contact_id
+  left join contacts cc on cc.id=ct.contact_id and cc.tenant_id=conv.tenant_id and cc.workspace_id=conv.workspace_id
   left join users u on u.id = conv.assigned_user_id
   left join teams t on t.id = conv.current_team_id
   ${UNANSWERED_LATERALS}`;
@@ -789,7 +791,7 @@ function toListItem(row: ListRow): RadarListItem {
     ...toRisk(row),
     agentId: row.live_agent_id ?? undefined,
     teamId: row.live_team_id ?? undefined,
-    contactName: row.contact_name ?? undefined,
+    contactName: contactLabel({name:row.contact_name,phone:row.contact_phone}),
     contactPhone: row.contact_phone ?? undefined,
     agentName: row.agent_name ?? undefined,
     teamName: row.team_name ?? undefined,

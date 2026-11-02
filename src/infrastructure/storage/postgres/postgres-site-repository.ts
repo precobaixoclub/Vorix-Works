@@ -1,3 +1,4 @@
+import {contactNameForInput} from "../../../shared/utils/contact-presentation.js";
 import type {Pool} from "pg";
 import {randomUUID} from "node:crypto";
 import type {SiteRepositoryPort} from "../../../application/ports/site-repository.port.js";
@@ -34,7 +35,7 @@ export class PostgresSiteRepository implements SiteRepositoryPort{
  async verifyDomain(input:Parameters<SiteRepositoryPort["verifyDomain"]>[0]){const {rows}=await this.pool.query("update site_domains set verified_at=now(),expires_at=now()+interval '30 days' where id=$1 and site_id=$2 and tenant_id=$3 and challenge=$4 and expires_at>now() returning *",[input.id,input.siteId,input.tenantId,input.challenge]);return rows[0]?domain(rows[0]):undefined;}
  async removeDomain(input:Parameters<SiteRepositoryPort["removeDomain"]>[0]){await this.pool.query("delete from site_domains where id=$1 and site_id=$2 and tenant_id=$3",[input.id,input.siteId,input.tenantId]);}
  async addInquiry(input:Parameters<SiteRepositoryPort["addInquiry"]>[0]){
-  input={...input,phone:requireContactPhone(input.phone)};
+  input={...input,name:contactNameForInput(input)||requireContactPhone(input.phone),phone:requireContactPhone(input.phone)};
   const client=await this.pool.connect();try{await client.query("begin");
    await client.query("select pg_advisory_xact_lock(hashtext($1))",[input.site.id+":"+input.requestKey]);
    const previous=await client.query("select id,contact_id from site_inquiries where site_id=$1 and request_key=$2",[input.site.id,input.requestKey]);

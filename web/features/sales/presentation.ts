@@ -61,6 +61,8 @@ export const PROPOSAL_EVENT_LABEL: Record<ProposalEventType, string> = {
   viewed: "Proposta aberta pelo cliente",
   downloaded: "Cliente salvou/imprimiu",
   accepted: "Aceita pelo cliente",
+  invoiced: "Faturada manualmente",
+  billing_voided: "Aceite/faturamento cancelado na oportunidade",
   declined: "Recusada pelo cliente",
   expired: "Expirou",
   superseded: "Substituída por nova versão",

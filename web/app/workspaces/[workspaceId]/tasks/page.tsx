@@ -1,4 +1,6 @@
 "use client";
+import { contactLabel } from "@/features/crm/contact-presentation";
+
 
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { Check, Clock3, MoreHorizontal, Search, SlidersHorizontal } from "lucide-react";
@@ -140,7 +142,7 @@ function TasksView() {
       .filter((task) => !teamFilter || task.teamId === teamFilter)
       .filter((task) => !typeFilter || task.type === typeFilter)
       .filter((task) => {
-        const haystack = `${task.title} ${task.description ?? ""} ${contactName(task.contactId, contactsList)} ${dealName(task.dealId, dealsList)}`.toLowerCase();
+        const haystack = `${task.title} ${task.description ?? ""} ${task.contactDisplayName ?? contactName(task.contactId, contactsList)} ${dealName(task.dealId, dealsList)}`.toLowerCase();
         return !debouncedSearch || haystack.includes(debouncedSearch.toLowerCase());
       });
   }, [contactFilter, contactsList, dealFilter, dealsList, debouncedSearch, now, tasks, teamFilter, typeFilter, view]);
@@ -222,7 +224,7 @@ function TasksView() {
     setCreateTeamId("");
   }
 
-  const contactOptions = contactsList.map((contact) => ({ id: contact.id, label: contact.company ? `${contact.name} · ${contact.company}` : contact.name }));
+  const contactOptions = contactsList.map((contact) => ({ id: contact.id, label: contactLabel(contact) }));
   const dealOptions = dealsList.map((deal) => ({ id: deal.id, label: deal.title }));
 
   return (
@@ -439,7 +441,7 @@ function TaskRow({
             <span>{TASK_STATUS_LABEL[task.status]}</span>
           </div>
           <div className="mt-3 flex flex-wrap gap-2">
-            {contact ? <Button variant="ghost" size="sm" onClick={() => onOpenContact(contact.id)}>{contact.name}</Button> : null}
+            {task.contactId ? <Button variant="ghost" size="sm" onClick={() => onOpenContact(task.contactId!)}>{task.contactDisplayName ?? contactLabel(contact)}</Button> : task.contactDisplayName ? <span>{task.contactDisplayName}</span> : null}
             {deal ? <Button variant="ghost" size="sm" onClick={() => onOpenDeal(deal.id)}>{deal.title}</Button> : null}
             {conversation ? <Button variant="ghost" size="sm" onClick={() => onOpenConversation(conversation.id)}>Abrir conversa</Button> : null}
           </div>
@@ -488,7 +490,7 @@ function TaskListSkeleton() {
 
 function contactName(contactId: string | undefined, contacts: readonly Contact[]): string {
   if (!contactId) return "";
-  return contacts.find((contact) => contact.id === contactId)?.name ?? "";
+  return contactLabel(contacts.find((contact) => contact.id === contactId));
 }
 
 function dealName(dealId: string | undefined, deals: readonly Deal[]): string {

@@ -6,6 +6,7 @@ import { Input, Label } from "@/components/Field";
 import { Modal } from "@/components/Modal";
 import { createWorkspace } from "../api";
 import type { Workspace } from "../types";
+import { WorkspacePlanHelp } from "./WorkspacePlanHelp";
 
 export function CreateWorkspaceModal({ onClose, onCreated }: { onClose: () => void; onCreated: (workspace: Workspace) => void }) {
   const [name, setName] = useState("");
@@ -42,7 +43,7 @@ export function CreateWorkspaceModal({ onClose, onCreated }: { onClose: () => vo
           <Label htmlFor="workspace-kind">Tipo (opcional)</Label>
           <Input id="workspace-kind" value={kind} onChange={(e) => setKind(e.target.value)} placeholder="Ex.: cliente, marca" />
         </div>
-        {error ? <p className="text-sm text-red-600">{error}</p> : null}
+        {error ? <div role="alert"><p className="text-sm text-red-600">{error}</p><WorkspacePlanHelp error={error} /></div> : null}
         <div className="flex flex-col-reverse gap-2 pt-1 sm:flex-row sm:justify-end">
           <Button type="button" variant="secondary" className="w-full sm:w-auto" onClick={onClose}>
             Cancelar

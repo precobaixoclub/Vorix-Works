@@ -1,4 +1,6 @@
 "use client";
+import { contactLabel } from "@/features/crm/contact-presentation";
+
 
 import { useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -412,7 +414,7 @@ function ApprovalCard({ workspaceId, request, isManager, members, onDecided }: {
     <Card><CardBody className="space-y-3">
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div>
-          <p className="font-medium">{snapshot.dealTitle ?? "Oportunidade"}{snapshot.contactName ? <span className="text-muted-foreground"> · {snapshot.contactName}</span> : null}</p>
+          <p className="font-medium">{snapshot.dealTitle ?? "Oportunidade"}{snapshot.contactName ? <span className="text-muted-foreground"> · {contactLabel({name:snapshot.contactName})}</span> : null}</p>
           <p className="text-xs text-muted-foreground">Vendedor: {userLabel(request.requestedByUserId, members)} · {formatDateTime(request.createdAt)}</p>
         </div>
         <p className="text-sm font-medium text-rose-600 dark:text-rose-300">{request.reasons.map((item) => APPROVAL_REASON_LABEL[item]).join(" · ")}</p>

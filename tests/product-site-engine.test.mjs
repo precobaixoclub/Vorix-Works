@@ -40,10 +40,17 @@ test("upgrade 0163 → migrations atuais preserva produto, variante comercial e 
  const directory=await mkdtemp(join(tmpdir(),"vorix-product-upgrade-fixture-"));const legacy=await startTestPostgres();
  try{
   const migrations=join(process.cwd(),"db/migrations");for(const file of await readdir(migrations))if(file.endsWith(".sql")&&Number(file.slice(0,4))<=163)await copyFile(join(migrations,file),join(directory,file));
-  await applyMigrations(legacy.pool,directory);const c=await productSiteContext(legacy.pool);const productId="legacy-fixture-"+randomUUID();
+  await applyMigrations(legacy.pool,directory);
+  // Dados da versão antiga precisam usar o schema antigo, sem depender dos adapters atuais.
+  const tenantId="legacy-tenant-"+randomUUID(),workspaceId=randomUUID(),pipelineId=randomUUID(),stageId=randomUUID(),deal={id:randomUUID()};
+  await legacy.pool.query("insert into workspaces(id,tenant_id,name,status,settings,created_at,updated_at) values($1,$2,'Empresa legada','active','{}'::jsonb,now(),now())",[workspaceId,tenantId]);
+  await legacy.pool.query("insert into pipelines(id,tenant_id,workspace_id,name,is_default) values($1,$2,$3,'Pipeline legado',true)",[pipelineId,tenantId,workspaceId]);
+  await legacy.pool.query("insert into pipeline_stages(id,pipeline_id,name,position) values($1,$2,'Etapa legada',1)",[stageId,pipelineId]);
+  await legacy.pool.query("insert into deals(id,tenant_id,workspace_id,pipeline_id,stage_id,title,value_cents) values($1,$2,$3,$4,$5,'Oportunidade legada',0)",[deal.id,tenantId,workspaceId,pipelineId,stageId]);
+  const c={tenantId,workspaceId},productId="legacy-fixture-"+randomUUID();
   await legacy.pool.query("insert into products(id,tenant_id,workspace_id,name,price_cents,cost_cents,minimum_price_cents,stock_quantity) values($1,$2,$3,'Produto anterior à evolução',15000,5000,12000,9)",[productId,c.tenantId,c.workspaceId]);
-  const variant=await legacy.pool.query("insert into product_variants(id,tenant_id,workspace_id,product_id,name,list_price_cents) values($1,$2,$3,$4,'Variante comercial anterior',16000) returning id",[randomUUID(),c.tenantId,c.workspaceId,productId]);const deal=await c.deal();
-  const applied=await applyMigrations(legacy.pool,migrations);assert.equal(applied.applied.length,(await readdir(migrations)).filter(file=>file.endsWith(".sql")&&Number(file.slice(0,4))>163).length);const restored=await c.d.productRepository.getById(productId);assert.equal(restored.id,productId);assert.equal(restored.details.type,"GENERAL");assert.equal(restored.stockQuantity,9);assert.equal(restored.costCents,5000);assert.equal(restored.minimumPriceCents,12000);assert.equal((await c.d.salesCatalogRepository.getVariant(variant.rows[0].id)).priceOverride,true);assert.equal((await c.d.dealRepository.getById(deal.id)).id,deal.id);assert.deepEqual((await applyMigrations(legacy.pool,migrations)).applied,[]);
+  const variant=await legacy.pool.query("insert into product_variants(id,tenant_id,workspace_id,product_id,name,list_price_cents) values($1,$2,$3,$4,'Variante comercial anterior',16000) returning id",[randomUUID(),c.tenantId,c.workspaceId,productId]);
+  const applied=await applyMigrations(legacy.pool,migrations);assert.equal(applied.applied.length,(await readdir(migrations)).filter(file=>file.endsWith(".sql")&&Number(file.slice(0,4))>163).length);const current=(await productSiteContext(legacy.pool)).d;const restored=await current.productRepository.getById(productId);assert.equal(restored.id,productId);assert.equal(restored.details.type,"GENERAL");assert.equal(restored.stockQuantity,9);assert.equal(restored.costCents,5000);assert.equal(restored.minimumPriceCents,12000);assert.equal((await current.salesCatalogRepository.getVariant(variant.rows[0].id)).priceOverride,true);assert.equal((await current.dealRepository.getById(deal.id)).id,deal.id);assert.deepEqual((await applyMigrations(legacy.pool,migrations)).applied,[]);
  }finally{await legacy.stop();const absolute=resolve(directory);assert.equal(dirname(absolute),resolve(tmpdir()));assert.ok(absolute.startsWith(join(resolve(tmpdir()),"vorix-product-upgrade-fixture-")));await rm(absolute,{recursive:true,force:true});}
 });
 

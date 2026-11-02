@@ -1,4 +1,6 @@
 "use client";
+import { contactLabel, humanContactName } from "@/features/crm/contact-presentation";
+
 
 import { Suspense, useMemo, useState, type ReactNode } from "react";
 import { BriefcaseBusiness, ClipboardCheck, FileText, History, Info, MessageSquareText, Phone, PhoneOff, Search, SlidersHorizontal } from "lucide-react";
@@ -377,9 +379,9 @@ function ContactCard({
       className="min-w-0 rounded-2xl border border-border/70 bg-card px-4 py-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
     >
       <div className="flex items-start gap-3">
-        <Avatar name={contact.name} />
+        <Avatar name={contactLabel(contact)} />
         <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-semibold text-foreground">{contact.name}</p>
+          <p className="truncate text-sm font-semibold text-foreground">{contactLabel(contact)}</p>
           <p className="truncate text-xs text-muted-foreground">{contact.company ?? "Sem empresa"}</p>
           {phone?.kind === "phone" && phone.phone ? (
             <p className="mt-0.5 flex items-center gap-1 text-xs font-medium tabular-nums text-foreground"><Phone className="h-3 w-3 text-solution" />{formatPhone(phone.phone)}</p>
@@ -497,10 +499,10 @@ function ContactDetailModal({
       <DetailModal
         open={open}
         onOpenChange={onOpenChange}
-        title={contact.name}
+        title={contactLabel(contact)}
         description={<span className="text-sm text-muted-foreground">{headerSubtitle || "Contato comercial"}</span>}
         eyebrow="Contato 360"
-        avatar={<Avatar name={contact.name} large />}
+        avatar={<Avatar name={contactLabel(contact)} large />}
         headerExtra={(
           <div className="flex flex-wrap items-center justify-end gap-1.5">
             <Button size="sm" onClick={() => setCreatingDeal(true)}>
@@ -531,7 +533,7 @@ function ContactDetailModal({
                 <InfoCell label="Responsável" value={userLabel(contact.ownerUserId, members)} />
                 <InfoCell label="Equipe" value={teamLabel(contact.teamId, teams)} />
                 <InfoCell label="Origem" value={contact.origin ?? "—"} />
-                <InfoCell label="Lead score" value={scoreLoading ? "Carregando..." : leadScore ? `${leadScore.score} · ${leadScore.temperature}` : "—"} />
+                <InfoCell label="Pontuação do contato" value={scoreLoading ? "Carregando..." : leadScore ? `${leadScore.score} · ${leadScore.temperature}` : "—"} />
                 <InfoCell label="Oportunidades em andamento" value={metrics.count} strong />
                 <InfoCell label="Valor em negociação" value={metrics.value} strong />
                 <InfoCell label="Última interação" value={formatDateTime(contact.lastInteractionAt)} />
@@ -711,7 +713,7 @@ function ContactDetailModal({
         <QuickCreateProposalModal
           workspaceId={workspaceId}
           contactId={contact.id}
-          contactName={contact.name}
+          contactName={contactLabel(contact)}
           dealChoice={dealChoice}
           onClose={() => setCreatingProposal(false)}
           onCreateOpportunity={() => { setCreatingProposal(false); setCreateProposalAfterDeal(true); setCreatingDeal(true); }}
@@ -722,7 +724,7 @@ function ContactDetailModal({
         <ProposalDetailModal
           workspaceId={workspaceId}
           proposal={proposals.find((proposal) => proposal.id === openProposalId)!}
-          contactName={contact.name}
+          contactName={contactLabel(contact)}
           dealTitle={deals.find((deal) => deal.id === proposals.find((proposal) => proposal.id === openProposalId)?.dealId)?.title}
           conversationId={primaryConversation?.id}
           onClose={() => setOpenProposalId(undefined)}
@@ -830,7 +832,7 @@ function DealStatusGroup({
 }
 
 function EditContactModal({ workspaceId, contact, onClose, onSaved }: { workspaceId: string; contact: Contact; onClose: () => void; onSaved: () => void | Promise<void> }) {
-  const [name, setName] = useState(contact.name);
+  const [name, setName] = useState(humanContactName(contact.name) ?? "");
   const [company, setCompany] = useState(contact.company ?? "");
   const [origin, setOrigin] = useState(contact.origin ?? "");
   const [ownerUserId, setOwnerUserId] = useState(contact.ownerUserId ?? "");
@@ -974,9 +976,7 @@ function TimelineSkeleton() {
   );
 }
 
-function contactLabel(contact: Contact): string {
-  return contact.company ? `${contact.name} · ${contact.company}` : contact.name;
-}
+
 
 function ReactChildrenCount(children: ReactNode): number {
   if (Array.isArray(children)) return children.filter(Boolean).length;

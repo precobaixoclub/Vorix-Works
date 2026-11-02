@@ -1,3 +1,4 @@
+import {contactLabel} from "../../shared/utils/contact-presentation.js";
 import type { CommercialCopilotDealInput, CommercialCopilotGeneratorPort, CommercialCopilotTaskInput } from "../ports/commercial-copilot-generator.port.js";
 import type { CommercialSuggestionRepositoryPort } from "../ports/commercial-suggestion-repository.port.js";
 import type { ContactRepositoryPort } from "../ports/contact-repository.port.js";
@@ -64,7 +65,7 @@ async function buildGeneratorContext(deps: CommercialCopilotUseCaseDeps, contact
   return {
     tenantId,
     workspaceId,
-    contactName: contact.name,
+    contactName: contactLabel(contact),
     origin: contact.origin,
     tags: contact.tags,
     daysSinceLastInteraction,

@@ -12,7 +12,28 @@ import {analyticsRange,conversionRate,safeReferrer} from "../dist/domain/sites/s
 import {siteContentSchema,siteThemeSchema} from "../dist/domain/sites/site.model.js";
 import {newSalesIntentReference} from "../dist/domain/sites/site-commerce.js";
 import {registerSiteAnalyticsRoutes} from "../dist/interfaces/api/routes/v1/site-analytics.route.js";
+import {createProposalFromDeal,invoiceAcceptedProposal} from "../dist/application/sales/proposal-sales-use-cases.js";
+import {acceptPublicProposal,sendProposal} from "../dist/application/crm/proposal-use-cases.js";
+import {addDealItem,reopenDeal,loseDeal} from "../dist/application/sales/deal-commercial-use-cases.js";
 let db;before(async()=>{db=await startTestPostgres();await applyMigrations(db.pool,join(process.cwd(),"db/migrations"));});after(async()=>{await db?.stop();});
+
+test("aceite/fila não contam venda; faturamento conta uma vez; reabertura/perda removem venda sem alterar pedido pago",async()=>{
+ const c=await setup(),deal=await c.deal();
+ const contact=await c.d.contactRepository.create({...c.scope,name:"Lead 123",customFields:{phone:"+5546999999999"}});
+ await c.d.dealRepository.update(deal.id,{contactId:contact.id});
+ await addDealItem(c.d,c.actor,{workspaceId:c.workspaceId,dealId:deal.id,productId:c.product.id,quantity:1});
+ const {proposal,rawToken}=await createProposalFromDeal(c.d,c.actor,{workspaceId:c.workspaceId,dealId:deal.id});
+ await sendProposal(c.d.proposal,{...c.scope,proposalId:proposal.id});
+ await c.intent({status:"CONVERTED",contactId:contact.id,dealId:deal.id});await c.intent({status:"CONVERTED",contactId:contact.id,dealId:deal.id});
+ const query={...c.query,range:analyticsRange({period:"custom",from:"2026-01-01",to:"2026-12-31",timezone:"America/Sao_Paulo"})};
+ await acceptPublicProposal(c.d.proposal,rawToken);
+ let report=await c.analytics.report(query);assert.equal(report.metrics.SALE?.count??0,0);assert.deepEqual(report.revenue,{});
+ const invoice=()=>invoiceAcceptedProposal(c.d,c.actor,{workspaceId:c.workspaceId,dealId:deal.id,proposalId:proposal.id});
+ await Promise.all([invoice(),invoice()]);report=await c.analytics.report(query);assert.equal(report.metrics.SALE.count,1);assert.deepEqual(report.revenue,{BRL:proposal.totalCents});
+ await reopenDeal(c.d,c.actor,{workspaceId:c.workspaceId,dealId:deal.id});report=await c.analytics.report(query);assert.equal(report.metrics.SALE?.count??0,0);assert.deepEqual(report.revenue,{});
+ await loseDeal(c.d,c.actor,{workspaceId:c.workspaceId,dealId:deal.id,lossReason:"Cliente desistiu"});report=await c.analytics.report(query);assert.equal(report.metrics.SALE?.count??0,0);
+ await c.emit("ORDER_PAID",{orderId:"independent-paid-order",opportunityId:deal.id,amountCents:17000,currency:"BRL"});await c.stamp();report=await c.analytics.report(query);assert.equal(report.metrics.SALE.count,1);assert.deepEqual(report.revenue,{BRL:17000});
+});
 async function setup(){
  const c=await productSiteContext(db.pool),events=new PostgresSiteCommerceRepository(db.pool),analytics=new PostgresSiteAnalyticsRepository(db.pool);
  const site=await c.siteDeps.repository.create({...c.scope,slug:"analytics-"+randomUUID().slice(0,8),draft:{content:siteContentSchema.parse({name:"Loja analítica",blocks:[]}),theme:siteThemeSchema.parse({})}});

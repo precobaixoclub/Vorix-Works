@@ -1,0 +1,640 @@
+{
+  "date": "2026-11-02",
+  "scope": "Code inventory; production data was not accessed.",
+  "initialCandidateLines": 97,
+  "initialCandidateFiles": 35,
+  "firstPassNamePresentationReplacements": 34,
+  "literalUiLabelsChanged": 4,
+  "literalUiLabels": [
+    "Novo Lead → Novo",
+    "Lead score → Pontuação do contato",
+    "Meta event selector Lead → Contato",
+    "Meta event history Lead → Contato"
+  ],
+  "canonicalReadSurfaces": [
+    "contacts",
+    "deals",
+    "internal_proposals",
+    "public_proposals",
+    "tasks",
+    "inbox_conversations",
+    "radar",
+    "commerce_orders",
+    "commercial_approvals",
+    "notifications"
+  ],
+  "initialCandidates": [
+    {
+      "file": "web\\app\\workspaces\\[workspaceId]\\contacts\\page.tsx",
+      "line": 380,
+      "text": "<Avatar name={contact.name} />"
+    },
+    {
+      "file": "web\\app\\workspaces\\[workspaceId]\\contacts\\page.tsx",
+      "line": 382,
+      "text": "<p className=\"truncate text-sm font-semibold text-foreground\">{contact.name}</p>"
+    },
+    {
+      "file": "web\\app\\workspaces\\[workspaceId]\\contacts\\page.tsx",
+      "line": 500,
+      "text": "title={contact.name}"
+    },
+    {
+      "file": "web\\app\\workspaces\\[workspaceId]\\contacts\\page.tsx",
+      "line": 503,
+      "text": "avatar={<Avatar name={contact.name} large />}"
+    },
+    {
+      "file": "web\\app\\workspaces\\[workspaceId]\\contacts\\page.tsx",
+      "line": 550,
+      "text": ": <Button variant=\"secondary\" onClick={() => router.push(`/workspaces/${workspaceId}/conversas?${new URLSearchParams({ nova: \"\", nome: contact.name ?? \"\" }).toString()}`)}>Iniciar conversa no WhatsApp</Button>}"
+    },
+    {
+      "file": "web\\app\\workspaces\\[workspaceId]\\contacts\\page.tsx",
+      "line": 714,
+      "text": "contactName={contact.name}"
+    },
+    {
+      "file": "web\\app\\workspaces\\[workspaceId]\\contacts\\page.tsx",
+      "line": 725,
+      "text": "contactName={contact.name}"
+    },
+    {
+      "file": "web\\app\\workspaces\\[workspaceId]\\contacts\\page.tsx",
+      "line": 833,
+      "text": "const [name, setName] = useState(contact.name);"
+    },
+    {
+      "file": "web\\app\\workspaces\\[workspaceId]\\contacts\\page.tsx",
+      "line": 978,
+      "text": "return contact.company ? `${contact.name} · ${contact.company}` : contact.name;"
+    },
+    {
+      "file": "web\\app\\workspaces\\[workspaceId]\\proposals\\page.tsx",
+      "line": 132,
+      "text": "return `${proposal.title} ${contact?.name ?? \"\"} ${deal?.title ?? \"\"}`.toLowerCase().includes(q);"
+    },
+    {
+      "file": "web\\app\\workspaces\\[workspaceId]\\proposals\\page.tsx",
+      "line": 157,
+      "text": "const contactOptions = contactsList.map((contact) => ({ id: contact.id, label: contact.company ? `${contact.name} · ${contact.company}` : contact.name }));"
+    },
+    {
+      "file": "web\\app\\workspaces\\[workspaceId]\\proposals\\page.tsx",
+      "line": 207,
+      "text": "const message = `${contact?.name ? `Olá, ${contact.name}! ` : \"Olá! \"}Preparei sua proposta comercial.\\n\\nVocê pode visualizar aqui:\\n{{proposalUrl}}`;"
+    },
+    {
+      "file": "web\\app\\workspaces\\[workspaceId]\\proposals\\page.tsx",
+      "line": 468,
+      "text": "<p className=\"mt-0.5 truncate text-xs text-muted-foreground\">{contact?.name ?? \"Sem contato\"}{deal ? ` · ${deal.title}` : \"\"}</p>"
+    },
+    {
+      "file": "web\\app\\workspaces\\[workspaceId]\\proposals\\page.tsx",
+      "line": 537,
+      "text": "{contact ? <Button variant=\"secondary\" size=\"sm\" className=\"h-auto min-h-9 max-w-full whitespace-normal border-border bg-muted/40 text-left\" aria-label={`Abrir contato ${contact.name}`} onClick={() => router.push(`/workspaces/${workspaceId}/contacts?contactId=${contact.id}`)}>{contact.name}<ExternalLink className=\"h-3.5 w-3.5 shrink-0\" /></Button> : <span>Sem contato</span>}"
+    },
+    {
+      "file": "web\\app\\workspaces\\[workspaceId]\\proposals\\page.tsx",
+      "line": 570,
+      "text": "<InfoCell label=\"Cliente\" value={contact?.name ?? \"Sem contato\"} />"
+    },
+    {
+      "file": "web\\app\\workspaces\\[workspaceId]\\tasks\\page.tsx",
+      "line": 143,
+      "text": "const haystack = `${task.title} ${task.description ?? \"\"} ${contactName(task.contactId, contactsList)} ${dealName(task.dealId, dealsList)}`.toLowerCase();"
+    },
+    {
+      "file": "web\\app\\workspaces\\[workspaceId]\\tasks\\page.tsx",
+      "line": 225,
+      "text": "const contactOptions = contactsList.map((contact) => ({ id: contact.id, label: contact.company ? `${contact.name} · ${contact.company}` : contact.name }));"
+    },
+    {
+      "file": "web\\app\\workspaces\\[workspaceId]\\tasks\\page.tsx",
+      "line": 442,
+      "text": "{contact ? <Button variant=\"ghost\" size=\"sm\" onClick={() => onOpenContact(contact.id)}>{contact.name}</Button> : null}"
+    },
+    {
+      "file": "web\\app\\workspaces\\[workspaceId]\\tasks\\page.tsx",
+      "line": 489,
+      "text": "function contactName(contactId: string | undefined, contacts: readonly Contact[]): string {"
+    },
+    {
+      "file": "web\\app\\workspaces\\[workspaceId]\\deals\\page.tsx",
+      "line": 464,
+      "text": "{proposalDeal ? <DealProposalComposer workspaceId={workspace.id} deal={proposalDeal} contactName={proposalDeal.contactId ? conversationByContactId.get(proposalDeal.contactId)?.contactName || contactsList.find(contact => contact.id === proposalDeal.contactId)?.name : undefined} onClose={() => setProposalDeal(undefined)} onChanged={refresh} /> : null}"
+    },
+    {
+      "file": "web\\app\\workspaces\\[workspaceId]\\deals\\page.tsx",
+      "line": 602,
+      "text": "<p className=\"truncate text-sm font-semibold text-foreground\">{conversation?.contactName?.trim() || contact?.name?.trim() || conversation?.contactPhone || deal.title}</p>"
+    },
+    {
+      "file": "web\\app\\workspaces\\[workspaceId]\\deals\\page.tsx",
+      "line": 714,
+      "text": "return contact.company ? `${contact.name} · ${contact.company}` : contact.name;"
+    },
+    {
+      "file": "web\\app\\workspaces\\[workspaceId]\\conversas\\inbox-tab.tsx",
+      "line": 647,
+      "text": "conversation.contactName,"
+    },
+    {
+      "file": "web\\app\\workspaces\\[workspaceId]\\conversas\\inbox-tab.tsx",
+      "line": 1776,
+      "text": "await sendInboxContactMessage(workspaceId, conversation.id, { contactName: contact.name || contact.phoneNormalized, contactPhone: contact.phoneNormalized });"
+    },
+    {
+      "file": "web\\app\\workspaces\\[workspaceId]\\conversas\\inbox-tab.tsx",
+      "line": 2684,
+      "text": "<span className=\"block truncate font-medium text-foreground\">{contact.name || contact.phoneNormalized}</span>"
+    },
+    {
+      "file": "web\\app\\workspaces\\[workspaceId]\\conversas\\inbox-tab.tsx",
+      "line": 2685,
+      "text": "{contact.name ? <span className=\"block truncate text-xs text-muted-foreground\">{contact.phoneNormalized}</span> : null}"
+    },
+    {
+      "file": "web\\app\\workspaces\\[workspaceId]\\conversas\\inbox-tab.tsx",
+      "line": 3449,
+      "text": "return conversation.contactName ?? conversation.contactPhone ?? \"Contato\";"
+    },
+    {
+      "file": "web\\app\\workspaces\\[workspaceId]\\conversas\\message-media.tsx",
+      "line": 107,
+      "text": "const name = message.metadata?.contactName;"
+    },
+    {
+      "file": "web\\app\\workspaces\\[workspaceId]\\conversas\\crm-panel.tsx",
+      "line": 76,
+      "text": "const contact = await createContact({ workspaceId, name: conversation.contactName ?? conversation.contactPhone ?? \"Contato do WhatsApp\", origin: \"whatsapp\", inboxContactId: conversation.contactId });"
+    },
+    {
+      "file": "web\\app\\workspaces\\[workspaceId]\\conversas\\crm-panel.tsx",
+      "line": 94,
+      "text": "Esta conversa já tem várias trocas, mas {conversation.contactName ?? \"este contato\"} ainda não está no CRM."
+    },
+    {
+      "file": "web\\app\\workspaces\\[workspaceId]\\conversas\\crm-panel.tsx",
+      "line": 442,
+      "text": "contactName={contact.name}"
+    },
+    {
+      "file": "web\\app\\workspaces\\[workspaceId]\\conversas\\crm-panel.tsx",
+      "line": 454,
+      "text": "contactName={contact.name}"
+    },
+    {
+      "file": "web\\app\\workspaces\\[workspaceId]\\conversas\\create-opportunity-button.tsx",
+      "line": 44,
+      "text": "const contactName = conversation.contactName ?? conversation.contactPhone ?? \"Contato do WhatsApp\";"
+    },
+    {
+      "file": "web\\app\\workspaces\\[workspaceId]\\conversas\\create-opportunity-button.tsx",
+      "line": 60,
+      "text": "const contact = await createContact({ workspaceId, name: contactName, origin: \"whatsapp\", inboxContactId: conversation.contactId });"
+    },
+    {
+      "file": "web\\app\\workspaces\\[workspaceId]\\conversas\\create-opportunity-button.tsx",
+      "line": 126,
+      "text": "description={`Deseja gerar a proposta para ${contactName} agora? Ela usa os produtos e preços da oportunidade.`}"
+    },
+    {
+      "file": "web\\app\\workspaces\\[workspaceId]\\kanban\\kanban-board.tsx",
+      "line": 195,
+      "text": "conversation.contactName,"
+    },
+    {
+      "file": "web\\app\\workspaces\\[workspaceId]\\performance\\page.tsx",
+      "line": 415,
+      "text": "<p className=\"font-medium\">{snapshot.dealTitle ?? \"Oportunidade\"}{snapshot.contactName ? <span className=\"text-muted-foreground\"> · {snapshot.contactName}</span> : null}</p>"
+    },
+    {
+      "file": "web\\features\\sites\\types.ts",
+      "line": 33,
+      "text": "export type PublicOrder={number:number;status:string;statusLabel:string;paymentStatus:string;shippingStatus:string;items:{name:string;variantLabel?:string;quantity:number;unitPriceCents:number;totalCents:number;imageUrl?:string}[];subtotalCents:number;discountCents:number;shippingCents:number;totalCents:number;currency:string;delivery:{label:string;kind:string;days?:number};customerName:string;reservationExpiresAt?:string;payment?:{method:string;status:string;instructions:{pixQrCode?:string;pixQrCodeBase64?:string;pixTicketUrl?:string;expiresAt?:string;sandbox?:boolean}};createdAt:string;publicToken?:string;repeated?:boolean};"
+    },
+    {
+      "file": "web\\features\\inbox\\types.ts",
+      "line": 101,
+      "text": "contactName?: string;"
+    },
+    {
+      "file": "web\\features\\inbox\\types.ts",
+      "line": 243,
+      "text": "* mídia já foi baixada e enriquecida (ver `downloadInboundMediaAndAttach`). `contactName`/"
+    },
+    {
+      "file": "web\\features\\inbox\\types.ts",
+      "line": 252,
+      "text": "contactName?: string;"
+    },
+    {
+      "file": "web\\app\\workspaces\\[workspaceId]\\radar\\page.tsx",
+      "line": 127,
+      "text": "return alerts.filter((alert) => [alert.contactName, alert.contactPhone, alert.agentName, alert.teamName, ...alert.reasons].some((value) => value?.toLowerCase().includes(term)));"
+    },
+    {
+      "file": "web\\app\\workspaces\\[workspaceId]\\radar\\page.tsx",
+      "line": 133,
+      "text": "contact: (alert) => (alert.contactName ?? alert.contactPhone ?? \"\").toLowerCase() || null,"
+    },
+    {
+      "file": "web\\app\\workspaces\\[workspaceId]\\radar\\page.tsx",
+      "line": 281,
+      "text": "<p className=\"truncate font-medium text-foreground\">{alert.contactName ?? alert.contactPhone ?? \"Contato sem nome\"}</p>"
+    },
+    {
+      "file": "web\\app\\workspaces\\[workspaceId]\\radar\\page.tsx",
+      "line": 282,
+      "text": "{alert.contactName && alert.contactPhone ? <p className=\"truncate text-[11px] text-muted-foreground\">{alert.contactPhone}</p> : null}"
+    },
+    {
+      "file": "web\\app\\workspaces\\[workspaceId]\\radar\\page.tsx",
+      "line": 424,
+      "text": "title={alert ? alert.contactName ?? alert.contactPhone ?? \"Contato sem nome\" : \"Alerta do Radar\"}"
+    },
+    {
+      "file": "web\\features\\inbox\\api.ts",
+      "line": 251,
+      "text": "export function sendInboxContactMessage(workspaceId: string, conversationId: string, contact: { contactName: string; contactPhone: string }): Promise<InboxMessage> {"
+    },
+    {
+      "file": "web\\features\\crm\\types.ts",
+      "line": 268,
+      "text": "customerName?: string;"
+    },
+    {
+      "file": "web\\features\\radar\\types.ts",
+      "line": 38,
+      "text": "contactName?: string;"
+    },
+    {
+      "file": "web\\features\\crm\\public-proposal-api.ts",
+      "line": 31,
+      "text": "customerName?: string;"
+    },
+    {
+      "file": "web\\features\\sales\\types.ts",
+      "line": 63,
+      "text": "contactName?: string;"
+    },
+    {
+      "file": "web\\components\\crm\\DealDetailModal.tsx",
+      "line": 134,
+      "text": "<button type=\"button\" onClick={() => onOpenContact(contact.id)} className=\"underline-offset-2 hover:text-foreground hover:underline\">{contact.name}</button>"
+    },
+    {
+      "file": "web\\components\\crm\\DealDetailModal.tsx",
+      "line": 136,
+      "text": "<span>{contact?.name ?? \"Sem contato vinculado\"}</span>"
+    },
+    {
+      "file": "web\\components\\crm\\DealDetailModal.tsx",
+      "line": 284,
+      "text": "contactName={contact?.name}"
+    },
+    {
+      "file": "web\\components\\crm\\DealDetailModal.tsx",
+      "line": 291,
+      "text": "<ProposalDetailModal workspaceId={workspaceId} proposal={dealProposals.find((proposal) => proposal.id === openProposalId)!} contactName={contact?.name} dealTitle={deal.title} onClose={() => setOpenProposalId(undefined)} onChanged={onChanged} onCreateNewProposal={() => { setOpenProposalId(undefined); setCreatingProposal(true); }} onCreateFollowUp={() => { setOpenProposalId(undefined); setCreatingTask(true); }} onMarkDealLost={stages.some((stage) => stage.isLost) ? () => { setOpenProposalId(undefined); void onMove(deal, stages.find((stage) => stage.isLost)!); } : undefined} onOpenContact={onOpenContact} />"
+    },
+    {
+      "file": "web\\components\\crm\\DealDetailModal.tsx",
+      "line": 345,
+      "text": "<InfoCell label=\"Contato\" value={contact?.name ?? \"Sem contato\"} />"
+    },
+    {
+      "file": "web\\components\\crm\\DealDetailModal.tsx",
+      "line": 515,
+      "text": "const contactOptions = contacts.map((contact) => ({ id: contact.id, label: contact.company ? `${contact.name} · ${contact.company}` : contact.name }));"
+    },
+    {
+      "file": "web\\components\\meetings\\MeetingIntelligence.tsx",
+      "line": 266,
+      "text": "const [recipientName, setRecipientName] = useState(insights.crm.contact?.name ?? \"\");"
+    },
+    {
+      "file": "web\\components\\meetings\\MeetingIntelligence.tsx",
+      "line": 358,
+      "text": "{contact ? <p className=\"text-[11px] text-muted-foreground\">Contato vinculado: {contact.name}</p> : null}"
+    },
+    {
+      "file": "web\\components\\meetings\\MeetingIntelligence.tsx",
+      "line": 412,
+      "text": "<div className=\"min-w-0\"><p className=\"truncate text-sm font-medium text-foreground\">{contact.name}</p><p className=\"truncate text-xs text-muted-foreground\">{[contact.company, contact.whatsappPhone].filter(Boolean).join(\" · \") || \"Contato do CRM\"}</p></div>"
+    },
+    {
+      "file": "web\\components\\crm\\ProposalDetailModal.tsx",
+      "line": 16,
+      "text": "export function ProposalDetailModal({ workspaceId, proposal, contactName, dealTitle, conversationId, onClose, onChanged, onCreateNewProposal, onCreateFollowUp, onMarkDealLost, onOpenContact, onOpenDeal }: {"
+    },
+    {
+      "file": "web\\components\\crm\\ProposalDetailModal.tsx",
+      "line": 19,
+      "text": "contactName?: string;"
+    },
+    {
+      "file": "web\\components\\crm\\ProposalDetailModal.tsx",
+      "line": 72,
+      "text": "<button type=\"button\" onClick={() => onOpenContact(proposal.contactId!)} className=\"underline-offset-2 hover:text-foreground hover:underline\">{contactName ?? \"Sem contato\"}</button>"
+    },
+    {
+      "file": "web\\components\\crm\\ProposalDetailModal.tsx",
+      "line": 74,
+      "text": "<span>{contactName ?? \"Sem contato\"}</span>"
+    },
+    {
+      "file": "web\\components\\crm\\QuickCreateDealModal.tsx",
+      "line": 136,
+      "text": "<SearchableCombo items={(contacts ?? []).map((contact) => ({ id: contact.id, label: contact.company ? `${contact.name} · ${contact.company}` : contact.name }))} value={selectedContactId} onValueChange={setSelectedContactId} placeholder=\"Selecionar contato\" searchPlaceholder=\"Buscar contato...\" extraOption={{ value: \"\", label: \"Sem contato\" }} />"
+    },
+    {
+      "file": "web\\components\\crm\\QuickCreateProposalModal.tsx",
+      "line": 25,
+      "text": "export function QuickCreateProposalModal({ workspaceId, contactId, contactName, dealChoice, onClose, onCreateOpportunity, onCreated }: {"
+    },
+    {
+      "file": "web\\components\\crm\\QuickCreateProposalModal.tsx",
+      "line": 28,
+      "text": "contactName?: string;"
+    },
+    {
+      "file": "web\\components\\crm\\QuickCreateProposalModal.tsx",
+      "line": 95,
+      "text": "<div><Label>Cliente</Label><Input value={contactName ?? \"Contato selecionado\"} readOnly /></div>"
+    },
+    {
+      "file": "web\\components\\proposals\\ProposalDocument.tsx",
+      "line": 12,
+      "text": "const customerName = proposal.customerName && /\\p{L}/u.test(proposal.customerName) && !proposal.customerName.includes(\"@\") ? proposal.customerName.trim() : undefined;"
+    },
+    {
+      "file": "web\\components\\proposals\\ProposalDocument.tsx",
+      "line": 13,
+      "text": "const customer = [customerName, proposal.customerCompany?.trim()].filter(Boolean).join(\" · \");"
+    },
+    {
+      "file": "web\\components\\sales\\DealDataBlocks.tsx",
+      "line": 107,
+      "text": "<SearchableCombo items={(contacts ?? []).filter((contact) => contact.id !== deal.contactId).map((contact) => ({ id: contact.id, label: contact.company ? `${contact.name} · ${contact.company}` : contact.name }))} value={contactId} onValueChange={setContactId} placeholder=\"Adicionar contato\" searchPlaceholder=\"Buscar contato...\" />"
+    },
+    {
+      "file": "web\\e2e\\sales-engine.spec.ts",
+      "line": 29,
+      "text": "customerName: \"Ana Souza\","
+    },
+    {
+      "file": "web\\e2e\\proposal-responsive.spec.ts",
+      "line": 5,
+      "text": "customerName: \"Ana Souza\", customerCompany: \"Empresa ABC\", issuerName: \"Preço Baixo Club\","
+    },
+    {
+      "file": "web\\e2e\\proposal-responsive.spec.ts",
+      "line": 75,
+      "text": "await page.route(\"**/v1/public/proposals/**\", route => route.fulfill({ json: { ok: true, data: { ...proposal, customerName: \"+118644193411194\", customerCompany: undefined, discountCents: 0, totalCents: 299900 } } }));"
+    },
+    {
+      "file": "web\\components\\sales\\DealProposalComposer.tsx",
+      "line": 32,
+      "text": "export function GenerateProposalModal({ workspaceId, deal, contactName, onClose, onCreated }: {"
+    },
+    {
+      "file": "web\\components\\sales\\DealProposalComposer.tsx",
+      "line": 33,
+      "text": "workspaceId: string; deal: Deal; contactName?: string; onClose: () => void;"
+    },
+    {
+      "file": "web\\components\\sales\\DealProposalComposer.tsx",
+      "line": 80,
+      "text": "<div><p className=\"text-[11px] text-muted-foreground\">Cliente</p><p className=\"mt-1 break-words text-sm font-medium\">{contactName || contact?.name || \"Sem contato vinculado\"}</p>{contact?.company ? <p className=\"text-xs text-muted-foreground\">{contact.company}</p> : null}</div>"
+    },
+    {
+      "file": "web\\components\\sales\\DealProposalComposer.tsx",
+      "line": 99,
+      "text": "export function DealProposalComposer({ workspaceId, deal, contactName, onClose, onChanged }: { workspaceId: string; deal: Deal; contactName?: string; onClose: () => void; onChanged: () => void | Promise<void> }) {"
+    },
+    {
+      "file": "web\\components\\sales\\DealProposalComposer.tsx",
+      "line": 102,
+      "text": "return created ? <ProposalReview workspaceId={workspaceId} deal={deal} proposal={created} contactName={contactName} onClose={onClose} onChanged={async () => { await Promise.all([invalidate(), onChanged()]); }} /> : <GenerateProposalModal workspaceId={workspaceId} deal={deal} contactName={contactName} onClose={onClose} onCreated={async (proposal, approvalRequired) => { setCreated({ ...proposal, approvalRequired }); await invalidate(); }} />;"
+    },
+    {
+      "file": "web\\components\\sales\\DealProposalComposer.tsx",
+      "line": 105,
+      "text": "function ProposalReview({ workspaceId, deal, proposal, contactName, onClose, onChanged }: { workspaceId: string; deal: Deal; proposal: ProposalWithToken & { approvalRequired: boolean }; contactName?: string; onClose: () => void; onChanged: () => Promise<void> }) {"
+    },
+    {
+      "file": "web\\components\\sales\\DealProposalComposer.tsx",
+      "line": 120,
+      "text": "const document: PublicProposal = { number: proposal.number, version: proposal.version ?? 1, title: proposal.title, introduction: proposal.introduction, items: proposal.items.map(item => ({ name: item.name, description: item.description, quantity: item.quantity, unitPriceCents: item.unitPriceCents, subtotalCents: item.subtotalCents, billingType: item.billingType })), subtotalCents: proposal.items.reduce((sum, item) => sum + item.subtotalCents, 0), discountCents: proposal.discountCents, totalCents: proposal.totalCents, currency: proposal.currency, validUntil: proposal.validUntil, conditions: proposal.conditions, notes: proposal.notes, terms: proposal.terms, status: proposal.status, superseded: false, customerName: contactName || contact?.name, customerCompany: contact?.company, issuerName: workspace.name, declineReasons: [] };"
+    },
+    {
+      "file": "web\\components\\sales\\DealProposalComposer.tsx",
+      "line": 129,
+      "text": "{conversationsError || connectionsError ? <p role=\"alert\" className=\"text-sm text-destructive\">Não foi possível carregar as conversas. Feche e abra a proposta novamente para tentar.</p> : loading ? <p className=\"text-xs text-muted-foreground\">Buscando as conversas deste cliente...</p> : !deal.contactId || conversations.length === 0 ? <p className=\"text-sm text-muted-foreground\">Este cliente ainda não tem uma conversa em um WhatsApp conectado. O rascunho está salvo; vincule o contato a uma conversa para enviar depois.</p> : <div className=\"grid items-end gap-3 sm:grid-cols-[minmax(0,1fr)_auto]\"><div className=\"min-w-0 space-y-1.5\"><Label htmlFor=\"proposal-whatsapp-recipient\">Conversa de destino</Label><Select value={conversationId} onValueChange={setSelected} disabled={busy}><SelectTrigger id=\"proposal-whatsapp-recipient\"><SelectValue placeholder=\"Escolha a conversa do cliente\" /></SelectTrigger><SelectContent>{conversations.map(conversation => <SelectItem key={conversation.id} value={conversation.id}>{conversation.contactPhone || conversation.contactName || \"Cliente\"} · {connections.find(connection => connection.id === conversation.connectionId)?.displayName}</SelectItem>)}</SelectContent></Select></div><Button onClick={send} loading={busy} disabled={!recipient}><Send className=\"h-4 w-4\" />Enviar pelo WhatsApp</Button></div>}"
+    },
+    {
+      "file": "web\\e2e\\proposal-aurora.spec.ts",
+      "line": 9,
+      "text": "const publicContent = { number: \"PROP-2026-0042\", version: 1, title: \"Uma nova fase para sua operação\", introduction: \"Preparamos uma solução para organizar seu atendimento e acompanhar cada oportunidade.\", customerName: \"Ana Souza\", customerCompany: \"Empresa ABC\", issuerName: \"Orbit Studio\", items, subtotalCents: 299900, discountCents: 5000, totalCents: 294900, currency: \"BRL\", validUntil, conditions: \"Implantação em até 10 dias. Pagamento em duas parcelas.\", terms: \"O escopo considerado está descrito nos itens desta proposta.\", status: \"viewed\", superseded: false, declineReasons: [\"Preço\", \"Prazo\", \"Outro\"] };"
+    },
+    {
+      "file": "web\\e2e\\proposal-aurora.spec.ts",
+      "line": 28,
+      "text": "else if (path === \"/v1/inbox/conversations\") data = { conversations: options.noConversation ? [] : [{ id: \"conv-aurora\", connectionId: \"conn-1\", connectionProvider: \"wuzapi\", chatType: \"direct\", contactId: \"inbox-aurora\", crmContactId: contact.id, contactName: contact.name, contactPhone: \"+5511999990001\", status: \"open\", unreadCount: 0, assignedUserId: \"user-qa\" }] };"
+    },
+    {
+      "file": "web\\e2e\\opportunity-attention.spec.ts",
+      "line": 11,
+      "text": "const conversation = { id: \"conv-media\", connectionId: \"conn-1\", chatType: \"direct\", contactId: \"contact-1\", crmContactId: \"crm-1\", contactName: \"Cleverton Marcelo\", contactPhone: \"+5511999990001\", status: \"open\", assignedUserId: \"user-qa\", lastMessageAt: now, unreadCount: 0, isUrgent: false, isPinned: false, aiEnabled: false, automationEnabled: false, lastMessagePreview: { type: \"text\", direction: \"inbound\", body: \"Quero saber mais\" } };"
+    },
+    {
+      "file": "web\\e2e\\opportunity-attention.spec.ts",
+      "line": 27,
+      "text": "else if (path === \"/v1/inbox/conversations\") data = { conversations: [conversation, { ...conversation, id: \"conv-text\", contactId: \"contact-2\", crmContactId: undefined, contactName: \"Contato sem oportunidade\" }] };"
+    },
+    {
+      "file": "web\\e2e\\kanban-unassigned-conversations.spec.ts",
+      "line": 10,
+      "text": "{ ...common, id: \"with-team\", contactName: \"Cliente em atendimento\", currentTeamId: teams[0].id, currentPhaseId: phase(teams[0].id).id },"
+    },
+    {
+      "file": "web\\e2e\\kanban-unassigned-conversations.spec.ts",
+      "line": 11,
+      "text": "{ ...common, id: \"without-team\", contactName: \"Cliente sem equipe\", unreadCount: 1 },"
+    },
+    {
+      "file": "web\\e2e\\kanban-unassigned-conversations.spec.ts",
+      "line": 12,
+      "text": "{ ...common, id: \"other-team\", contactName: \"Cliente do suporte\", currentTeamId: teams[1].id, currentPhaseId: phase(teams[1].id).id },"
+    },
+    {
+      "file": "web\\e2e\\kanban-unassigned-conversations.spec.ts",
+      "line": 13,
+      "text": "{ ...common, id: \"closed\", contactName: \"Cliente finalizado\", status: \"resolved\" },"
+    },
+    {
+      "file": "web\\e2e\\phase4-proposals.spec.ts",
+      "line": 22,
+      "text": "if (path === \"/v1/inbox/conversations\") return ok({ conversations: [{ id: \"conversation-phase4\", contactId: \"inbox-contact\", crmContactId: contact.id, contactName: contact.name, contactPhone: \"+5511999999999\", connectionId: \"connection\", status: \"open\", chatType: \"direct\", unreadCount: 0 }] });"
+    },
+    {
+      "file": "web\\e2e\\phase4-proposals.spec.ts",
+      "line": 140,
+      "text": "const proposal = { id: \"public-phase4\", version: 1, superseded: false, declineReasons: [\"Preço\", \"Prazo\", \"Outro\"], subtotalCents: 250000, title: \"Proposta Mobile\", status: \"viewed\", currency: \"BRL\", items: [{ name: \"Implantacao\", quantity: 1, unitPriceCents: 250000, subtotalCents: 250000 }], discountCents: 0, totalCents: 250000, validUntil: \"2026-12-31\", conditions: \"Pagamento na entrega\", viewCount: 2, customerName: \"Cliente Mobile\", customerCompany: \"Empresa Mobile\", issuerName: \"Vorix QA\", createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };"
+    },
+    {
+      "file": "web\\e2e\\phase3-tasks.spec.ts",
+      "line": 24,
+      "text": "if (path === \"/v1/inbox/conversations\") return ok({ conversations: [{ id: \"conv-phase3\", contactId: \"inbox-phase3\", crmContactId: contact.id, contactName: contact.name, connectionId: \"conn-qa\", status: \"open\", chatType: \"direct\", unreadCount: 0 }] });"
+    },
+    {
+      "file": "web\\e2e\\fixtures\\mock-backend.ts",
+      "line": 28,
+      "text": "contactName: \"Carla Mendes\","
+    },
+    {
+      "file": "web\\e2e\\fixtures\\mock-backend.ts",
+      "line": 42,
+      "text": "contactName: \"Rodrigo Alves\","
+    },
+    {
+      "file": "web\\e2e\\fixtures\\mock-backend.ts",
+      "line": 56,
+      "text": "contactName: \"Fernanda Souza\","
+    },
+    {
+      "file": "web\\components\\sites\\storefront\\Checkout.tsx",
+      "line": 143,
+      "text": "<h1 className=\"ck-title\">{paid?`Obrigado, ${order.customerName}! Pagamento confirmado.`:order.status===\"CANCELLED\"?\"Pedido cancelado\":`Quase lá, ${order.customerName}!`}</h1>"
+    }
+  ],
+  "firstPassReplacements": [
+    {
+      "file": "web\\app\\workspaces\\[workspaceId]\\contacts\\page.tsx",
+      "pattern": "{contact.name}",
+      "count": 6
+    },
+    {
+      "file": "web\\app\\workspaces\\[workspaceId]\\contacts\\page.tsx",
+      "pattern": "label=\"Lead score\"",
+      "count": 1
+    },
+    {
+      "file": "web\\app\\workspaces\\[workspaceId]\\conversas\\crm-panel.tsx",
+      "pattern": "{contact.name}",
+      "count": 2
+    },
+    {
+      "file": "web\\app\\workspaces\\[workspaceId]\\conversas\\inbox-tab.tsx",
+      "pattern": "{contact.name || contact.phoneNormalized}",
+      "count": 1
+    },
+    {
+      "file": "web\\app\\workspaces\\[workspaceId]\\conversas\\inbox-tab.tsx",
+      "pattern": "return conversation.contactName ?? conversation.contactPhone ?? \"Contato\";",
+      "count": 1
+    },
+    {
+      "file": "web\\app\\workspaces\\[workspaceId]\\onboarding\\page.tsx",
+      "pattern": "\"Novo Lead\"",
+      "count": 1
+    },
+    {
+      "file": "web\\app\\workspaces\\[workspaceId]\\performance\\page.tsx",
+      "pattern": "{snapshot.contactName}",
+      "count": 1
+    },
+    {
+      "file": "web\\app\\workspaces\\[workspaceId]\\proposals\\page.tsx",
+      "pattern": "contact.company ? `${contact.name} · ${contact.company}` : contact.name",
+      "count": 1
+    },
+    {
+      "file": "web\\app\\workspaces\\[workspaceId]\\proposals\\page.tsx",
+      "pattern": "{contact.name}",
+      "count": 3
+    },
+    {
+      "file": "web\\app\\workspaces\\[workspaceId]\\proposals\\page.tsx",
+      "pattern": "contact?.name ?? \"Sem contato\"",
+      "count": 2
+    },
+    {
+      "file": "web\\app\\workspaces\\[workspaceId]\\radar\\page.tsx",
+      "pattern": "{alert.contactName ?? alert.contactPhone ?? \"Contato sem nome\"}",
+      "count": 1
+    },
+    {
+      "file": "web\\app\\workspaces\\[workspaceId]\\radar\\page.tsx",
+      "pattern": "alert ? alert.contactName ?? alert.contactPhone ?? \"Contato sem nome\" : \"Alerta do Radar\"",
+      "count": 1
+    },
+    {
+      "file": "web\\app\\workspaces\\[workspaceId]\\tasks\\page.tsx",
+      "pattern": "contact.company ? `${contact.name} · ${contact.company}` : contact.name",
+      "count": 1
+    },
+    {
+      "file": "web\\app\\workspaces\\[workspaceId]\\tasks\\page.tsx",
+      "pattern": "{contact.name}",
+      "count": 1
+    },
+    {
+      "file": "web\\app\\workspaces\\[workspaceId]\\tasks\\page.tsx",
+      "pattern": "return contacts.find((contact) => contact.id === contactId)?.name ?? \"\";",
+      "count": 1
+    },
+    {
+      "file": "web\\components\\crm\\DealDetailModal.tsx",
+      "pattern": "contact.company ? `${contact.name} · ${contact.company}` : contact.name",
+      "count": 1
+    },
+    {
+      "file": "web\\components\\crm\\DealDetailModal.tsx",
+      "pattern": "{contact.name}",
+      "count": 1
+    },
+    {
+      "file": "web\\components\\crm\\DealDetailModal.tsx",
+      "pattern": "contact?.name ?? \"Sem contato\"",
+      "count": 1
+    },
+    {
+      "file": "web\\components\\crm\\DealDetailModal.tsx",
+      "pattern": "contact?.name ?? \"Sem contato vinculado\"",
+      "count": 1
+    },
+    {
+      "file": "web\\components\\crm\\DealDetailModal.tsx",
+      "pattern": "contactName={contact?.name}",
+      "count": 2
+    },
+    {
+      "file": "web\\components\\crm\\QuickCreateDealModal.tsx",
+      "pattern": "contact.company ? `${contact.name} · ${contact.company}` : contact.name",
+      "count": 1
+    },
+    {
+      "file": "web\\components\\meetings\\MeetingIntelligence.tsx",
+      "pattern": "{contact.name}",
+      "count": 2
+    },
+    {
+      "file": "web\\components\\sales\\DealDataBlocks.tsx",
+      "pattern": "contact.company ? `${contact.name} · ${contact.company}` : contact.name",
+      "count": 1
+    },
+    {
+      "file": "web\\components\\sales\\DealProposalComposer.tsx",
+      "pattern": "contactName || contact?.name || \"Sem contato vinculado\"",
+      "count": 1
+    },
+    {
+      "file": "web\\components\\sales\\DealProposalComposer.tsx",
+      "pattern": "customerName: contactName || contact?.name",
+      "count": 1
+    }
+  ]
+}

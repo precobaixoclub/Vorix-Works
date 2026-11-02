@@ -3,6 +3,9 @@ import type {CapacityMutationRepositoryPort,CapacityMutationRepositories} from "
 import {PostgresSubscriptionRepository,PostgresSubscriptionItemRepository} from "./postgres-subscription-repository.js";
 import {PostgresSubscriptionPendingChangeRepository} from "./postgres-subscription-pending-change-repository.js";
 import {PostgresBillingEventRepository} from "./postgres-billing-ops-repository.js";
+import {PostgresWorkspaceRepository} from "./postgres-workspace-repository.js";
+import {PostgresPlanVersionRepository,PostgresAddonDefinitionRepository} from "./postgres-plan-version-repository.js";
+import {PostgresPlatformBillingRepository} from "./postgres-platform-billing-repository.js";
 export class PostgresCapacityMutationRepository implements CapacityMutationRepositoryPort{
  private static readonly queues=new Map<string,Promise<void>>();
  constructor(private readonly pool:Pool){}
@@ -17,7 +20,7 @@ export class PostgresCapacityMutationRepository implements CapacityMutationRepos
   try{
    await client.query("select pg_advisory_lock(hashtext($1))",[`billing-capacity:${tenantId}`]);
    const connection=client as unknown as Pool;
-   const value=await work({beginCapacityWrite:async()=>{if(!writing){await client.query("begin");writing=true;}},subscriptionRepository:new PostgresSubscriptionRepository(connection),subscriptionItemRepository:new PostgresSubscriptionItemRepository(connection),subscriptionPendingChangeRepository:new PostgresSubscriptionPendingChangeRepository(connection),billingEventRepository:new PostgresBillingEventRepository(connection)});
+   const value=await work({beginCapacityWrite:async()=>{if(!writing){await client.query("begin");writing=true;}},subscriptionRepository:new PostgresSubscriptionRepository(connection),subscriptionItemRepository:new PostgresSubscriptionItemRepository(connection),subscriptionPendingChangeRepository:new PostgresSubscriptionPendingChangeRepository(connection),billingEventRepository:new PostgresBillingEventRepository(connection),workspaceRepository:new PostgresWorkspaceRepository(connection),entitlementCatalog:{planVersionRepository:new PostgresPlanVersionRepository(connection),addonDefinitionRepository:new PostgresAddonDefinitionRepository(connection),platformBillingRepository:new PostgresPlatformBillingRepository(connection)}});
    if(writing)await client.query("commit");return value;
   }catch(error){if(writing)await client.query("rollback");throw error;}finally{try{await client.query("select pg_advisory_unlock(hashtext($1))",[`billing-capacity:${tenantId}`]);}finally{client.release();}}
  }

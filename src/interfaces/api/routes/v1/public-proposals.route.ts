@@ -1,3 +1,4 @@
+import { contactLabel } from "../../../../domain/crm/contact-presentation.js";
 import type { FastifyInstance } from "fastify";
 import {
   acceptPublicProposal,
@@ -20,6 +21,7 @@ import { successEnvelope } from "../../http/response-envelope.js";
 const TOKEN_PARAMS_SCHEMA = { type: "object", required: ["token"], properties: { token: { type: "string", minLength: 1, maxLength: 200 } } } as const;
 
 function translatePublicProposalError(error: unknown): never {
+  if(error instanceof Error && error.message.startsWith("PROPOSAL_BILLING_INVALID")) throw new ValidationError(error.message);
   if (error instanceof Error && error.message.startsWith("PROPOSAL_NOT_FOUND")) throw new NotFoundError(error.message);
   if (error instanceof Error && (error.message.startsWith("PROPOSAL_EXPIRED") || error.message.startsWith("PROPOSAL_ALREADY_RESPONDED") || error.message.startsWith("PROPOSAL_LINK_REVOKED") || error.message.startsWith("PROPOSAL_SUPERSEDED"))) {
     throw new ValidationError(error.message);
@@ -36,6 +38,9 @@ function translatePublicProposalError(error: unknown): never {
 type PublicProposalRoutesDeps = ProposalUseCaseDeps & ProposalDealLinkDeps & { workspaceRepository: WorkspaceRepositoryPort; salesConfigRepository?: SalesConfigRepositoryPort };
 
 async function publicPayload(deps: PublicProposalRoutesDeps, proposal: Proposal) {
+  // View/acceptance writes return database rows; refresh the scoped read projection after them.
+  const projected=proposal.contactDisplayName ? proposal : await deps.proposalRepository.getById?.(proposal.id);
+  const displayName=projected?.tenantId===proposal.tenantId && projected.workspaceId===proposal.workspaceId ? projected.contactDisplayName : undefined;
   const [contact, workspace, reasons] = await Promise.all([
     proposal.contactId && deps.contactRepository ? deps.contactRepository.getById(proposal.contactId) : undefined,
     deps.workspaceRepository.getById(proposal.workspaceId),
@@ -48,8 +53,8 @@ async function publicPayload(deps: PublicProposalRoutesDeps, proposal: Proposal)
     respondedAt: proposal.respondedAt,
     rejectionReason: proposal.rejectionReason,
     superseded: proposal.status === "superseded",
-    customerName: contact?.name,
-    customerCompany: contact?.company,
+    customerName: contact?.tenantId===proposal.tenantId && contact.workspaceId===proposal.workspaceId ? contactLabel(contact) : displayName,
+    customerCompany: contact?.tenantId===proposal.tenantId && contact.workspaceId===proposal.workspaceId ? contact.company : undefined,
     issuerName: workspace?.name,
     declineReasons: uniqueCloseReasonLabels(reasons.length > 0 ? reasons.map((reason) => reason.label) : DEFAULT_CLOSE_REASONS.proposal_decline),
   };

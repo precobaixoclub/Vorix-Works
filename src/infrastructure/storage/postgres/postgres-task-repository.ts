@@ -1,3 +1,5 @@
+import {canonicalContactSql} from "./postgres-canonical-contact.js";
+import {contactLabel,type ContactPresentationInput} from "../../../shared/utils/contact-presentation.js";
 import { ownedScopeSql } from "./postgres-owned-scope.js";
 import type { Pool } from "pg";
 import type { CreateTaskInput, ListTasksFilter, TaskRepositoryPort, UpdateTaskInput } from "../../../application/ports/task-repository.port.js";
@@ -6,6 +8,7 @@ import type { Task, TaskStatus } from "../../../domain/crm/crm.model.js";
 const taskId = () => `task-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 
 type TaskRow = {
+  canonical_contact?:ContactPresentationInput|null;
   id: string;
   tenant_id: string;
   workspace_id: string;
@@ -26,6 +29,7 @@ type TaskRow = {
 function toDomain(row: TaskRow): Task {
   return {
     id: row.id,
+    contactDisplayName:row.canonical_contact?contactLabel(row.canonical_contact):undefined,
     tenantId: row.tenant_id,
     workspaceId: row.workspace_id,
     contactId: row.contact_id ?? undefined,
@@ -60,7 +64,7 @@ export class PostgresTaskRepository implements TaskRepositoryPort {
   }
 
   async getById(id: string): Promise<Task | undefined> {
-    const result = await this.pool.query<TaskRow>("select * from tasks where id = $1", [id]);
+    const result = await this.pool.query<TaskRow>(`select tasks.*, ${canonicalContactSql("tasks")} from tasks where id = $1`, [id]);
     return result.rows[0] ? toDomain(result.rows[0]) : undefined;
   }
 
@@ -96,7 +100,7 @@ export class PostgresTaskRepository implements TaskRepositoryPort {
     }
     params.push(limit);
     const result = await this.pool.query<TaskRow>(
-      `select * from tasks where ${conditions.join(" and ")} order by due_at asc nulls last, created_at desc limit $${params.length}`,
+      `select tasks.*, ${canonicalContactSql("tasks")} from tasks where ${conditions.join(" and ")} order by due_at asc nulls last, created_at desc limit $${params.length}`,
       params,
     );
     return result.rows.map(toDomain);

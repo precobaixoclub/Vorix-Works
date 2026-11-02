@@ -1,6 +1,7 @@
 export type ContactChannel = "whatsapp" | "instagram" | "facebook" | "tiktok";
 
 export type Contact = {
+  displayName?: string;
   id: string;
   tenantId: string;
   workspaceId: string;
@@ -73,6 +74,7 @@ export type Pipeline = {
 };
 
 export type PipelineStage = {
+  isAwaitingBilling?: boolean;
   id: string;
   pipelineId: string;
   name: string;
@@ -90,6 +92,8 @@ export type DealStatus = "open" | "won" | "lost" | "cancelled";
 export type ForecastCategory = "pipeline" | "best_case" | "commit" | "closed" | "omitted";
 
 export type Deal = {
+  billingProposalId?: string;
+  contactDisplayName?: string;
   id: string;
   tenantId: string;
   workspaceId: string;
@@ -152,6 +156,7 @@ export type TaskType = "ligacao" | "whatsapp" | "reuniao" | "enviar_proposta" | 
 export type TaskStatus = "pending" | "done" | "cancelled";
 
 export type Task = {
+  contactDisplayName?:string;
   id: string;
   tenantId: string;
   workspaceId: string;
@@ -224,7 +229,7 @@ export type ProposalItem = {
   discountCents?: number;
 };
 
-export type ProposalStatus = "draft" | "pending_approval" | "approved" | "sent" | "viewed" | "accepted" | "rejected" | "expired" | "cancelled" | "superseded";
+export type ProposalStatus = "draft" | "pending_approval" | "approved" | "sent" | "viewed" | "accepted" | "invoiced" | "rejected" | "expired" | "cancelled" | "superseded";
 
 export type ProposalTemplate = {
   id: string;
@@ -243,6 +248,12 @@ export type ProposalTemplate = {
 };
 
 export type Proposal = {
+  contactDisplayName?: string;
+  billedAt?: string;
+  billedByUserId?: string;
+  billingSource?: string;
+  billingVoidedAt?: string;
+  billingVoidReason?: string;
   id: string;
   tenantId: string;
   workspaceId: string;

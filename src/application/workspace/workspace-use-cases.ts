@@ -4,6 +4,8 @@ import { emptyMonthlyUsage, getPlatformPlan, periodOf } from "../../domain/platf
 import type { WorkspaceRepositoryPort } from "../ports/workspace-repository.port.js";
 import type { PlatformBillingRepositoryPort } from "../ports/platform-billing-repository.port.js";
 import type { CreativeEngineEntitlementRepositoryPort } from "../ports/creative-engine-entitlement-repository.port.js";
+import { assertWithinLimit, type EntitlementUseCaseDeps } from "../billing/entitlement-use-cases.js";
+import type { CapacityMutationRepositoryPort } from "../ports/capacity-mutation-repository.port.js";
 
 /**
  * Casos de uso de Workspace — Sprint 03 (Fase 6). Camada `application`, sem nenhuma dependência
@@ -27,7 +29,45 @@ export type WorkspaceUseCaseDeps = {
   workspaceRepository: WorkspaceRepositoryPort;
   platformBillingRepository?: PlatformBillingRepositoryPort;
   creativeEngineEntitlementRepository?: CreativeEngineEntitlementRepositoryPort;
+  entitlementDeps?: EntitlementUseCaseDeps;
+  capacityMutationRepository?: CapacityMutationRepositoryPort;
 };
+
+/** Usa o mesmo lock da alteração de mensalidade: duas ativações não podem ocupar a última vaga. */
+async function withWorkspaceCapacity<T>(deps: WorkspaceUseCaseDeps, tenantId: string, work: (scoped: WorkspaceUseCaseDeps) => Promise<T>): Promise<T> {
+  if (!deps.capacityMutationRepository) return work(deps);
+  return deps.capacityMutationRepository.run(tenantId, async (repositories) => {
+    const workspaceRepository = repositories.workspaceRepository ?? deps.workspaceRepository;
+    const entitlementDeps = deps.entitlementDeps ? {
+      ...deps.entitlementDeps,
+      ...repositories.entitlementCatalog,
+      subscriptionRepository: repositories.subscriptionRepository,
+      subscriptionItemRepository: repositories.subscriptionItemRepository,
+      subscriptionPendingChangeRepository: repositories.subscriptionPendingChangeRepository,
+      resourceCounter: {
+        count: async (input: Parameters<EntitlementUseCaseDeps["resourceCounter"]["count"]>[0]) => input.resource === "workspaces"
+          ? (await workspaceRepository.listByTenant(input.tenantId)).filter(item => item.status === "active").length
+          : deps.entitlementDeps!.resourceCounter.count(input),
+      },
+    } : undefined;
+    await repositories.beginCapacityWrite();
+    return work({ ...deps, workspaceRepository, entitlementDeps });
+  });
+}
+
+async function assertWorkspaceCapacity(deps: WorkspaceUseCaseDeps, tenantId: string): Promise<void> {
+  if (deps.entitlementDeps) {
+    await assertWithinLimit(deps.entitlementDeps, { tenantId, resource: "workspaces", increment: 1 });
+    return;
+  }
+  // Compatibilidade para instalações sem a fundação de assinaturas.
+  const billing = await deps.platformBillingRepository?.getTenantBilling(tenantId);
+  const plan = billing ? getPlatformPlan(billing.planCode) : undefined;
+  if (plan && plan.maxWorkspaces !== null) {
+    const activeCount = (await deps.workspaceRepository.listByTenant(tenantId)).filter(item => item.status === "active").length;
+    if (activeCount >= plan.maxWorkspaces) throw new Error(`WORKSPACE_LIMIT_EXCEEDED: o plano ${plan.name} permite ${plan.maxWorkspaces} espaço(s) ativo(s). Ajuste a quantidade contratada em Plano e espaços.`);
+  }
+}
 
 async function mustBelongToTenant(repository: WorkspaceRepositoryPort, id: string, tenantId: string): Promise<Workspace> {
   const workspace = await repository.getById(id);
@@ -64,22 +104,10 @@ export async function createWorkspace(deps: WorkspaceUseCaseDeps, input: CreateW
   const name = input.name?.trim();
   if (!name) throw new Error("WORKSPACE_VALIDATION_ERROR: name é obrigatório.");
 
-  if (deps.platformBillingRepository) {
-    // Tenants criados fora do signup público (ex.: provisionamento interno/testes) podem não ter
-    // linha em tenant_billing ainda — nesse caso não há plano para aplicar, então não limitamos
-    // (mesmo comportamento de quando `platformBillingRepository` nem está configurado).
-    const billing = await deps.platformBillingRepository.getTenantBilling(input.tenantId);
-    const plan = billing ? getPlatformPlan(billing.planCode) : undefined;
-    if (plan && plan.maxWorkspaces !== null) {
-      const existing = await deps.workspaceRepository.listByTenant(input.tenantId);
-      const activeCount = existing.filter((workspace) => workspace.status !== "archived").length;
-      if (activeCount >= plan.maxWorkspaces) {
-        throw new Error(`WORKSPACE_LIMIT_EXCEEDED: o plano ${plan.name} permite no máximo ${plan.maxWorkspaces} workspace(s). Faça upgrade para criar mais.`);
-      }
-    }
-  }
-
-  const workspace = await deps.workspaceRepository.create({ tenantId: input.tenantId, name, kind: input.kind?.trim() || undefined });
+  const workspace = await withWorkspaceCapacity(deps, input.tenantId, async (scoped) => {
+    await assertWorkspaceCapacity(scoped, input.tenantId);
+    return scoped.workspaceRepository.create({ tenantId: input.tenantId, name, kind: input.kind?.trim() || undefined });
+  });
   try {
     await provisionCreativeEngineForNewWorkspace(deps, { tenantId: workspace.tenantId, workspaceId: workspace.id, kind: workspace.kind });
   } catch (error) {
@@ -124,21 +152,28 @@ export async function updateWorkspace(deps: WorkspaceUseCaseDeps, input: UpdateW
 export type WorkspaceTransitionUseCaseInput = { tenantId: string; id: string };
 
 export async function activateWorkspace(deps: WorkspaceUseCaseDeps, input: WorkspaceTransitionUseCaseInput): Promise<Workspace> {
-  const workspace = await mustBelongToTenant(deps.workspaceRepository, input.id, input.tenantId);
-  assertValidWorkspaceTransition(workspace.status, "activate");
-  return deps.workspaceRepository.activate(input.id);
+  return withWorkspaceCapacity(deps, input.tenantId, async (scoped) => {
+    const workspace = await mustBelongToTenant(scoped.workspaceRepository, input.id, input.tenantId);
+    assertValidWorkspaceTransition(workspace.status, "activate");
+    await assertWorkspaceCapacity(scoped, input.tenantId);
+    return scoped.workspaceRepository.activate(input.id);
+  });
 }
 
 export async function deactivateWorkspace(deps: WorkspaceUseCaseDeps, input: WorkspaceTransitionUseCaseInput): Promise<Workspace> {
-  const workspace = await mustBelongToTenant(deps.workspaceRepository, input.id, input.tenantId);
-  assertValidWorkspaceTransition(workspace.status, "deactivate");
-  return deps.workspaceRepository.deactivate(input.id);
+  return withWorkspaceCapacity(deps, input.tenantId, async (scoped) => {
+    const workspace = await mustBelongToTenant(scoped.workspaceRepository, input.id, input.tenantId);
+    assertValidWorkspaceTransition(workspace.status, "deactivate");
+    return scoped.workspaceRepository.deactivate(input.id);
+  });
 }
 
 export async function archiveWorkspace(deps: WorkspaceUseCaseDeps, input: WorkspaceTransitionUseCaseInput): Promise<Workspace> {
-  const workspace = await mustBelongToTenant(deps.workspaceRepository, input.id, input.tenantId);
-  assertValidWorkspaceTransition(workspace.status, "archive");
-  return deps.workspaceRepository.archive(input.id);
+  return withWorkspaceCapacity(deps, input.tenantId, async (scoped) => {
+    const workspace = await mustBelongToTenant(scoped.workspaceRepository, input.id, input.tenantId);
+    assertValidWorkspaceTransition(workspace.status, "archive");
+    return scoped.workspaceRepository.archive(input.id);
+  });
 }
 
 export type TenantCreditsSummary = {

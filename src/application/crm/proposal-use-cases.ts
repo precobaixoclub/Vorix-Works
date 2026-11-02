@@ -48,7 +48,7 @@ export type ProposalDealLinkDeps = {
 
 const OPEN_FOR_EDIT: readonly Proposal["status"][] = ["draft", "pending_approval", "approved"];
 const SENDABLE: readonly Proposal["status"][] = ["draft", "pending_approval", "approved", "sent", "viewed"];
-const CLOSED: readonly Proposal["status"][] = ["accepted", "rejected", "expired", "cancelled", "superseded"];
+const CLOSED: readonly Proposal["status"][] = ["accepted", "invoiced", "rejected", "expired", "cancelled", "superseded"];
 
 export function generateProposalToken(): string {
   return randomBytes(32).toString("hex");
@@ -167,7 +167,7 @@ async function expireIfNeeded(deps: ProposalUseCaseDeps, proposal: Proposal): Pr
   return expired;
 }
 
-export async function listProposals(deps: ProposalUseCaseDeps, input: { tenantId: string; workspaceId: string; dealId?: string; contactId?: string; status?: Proposal["status"] }): Promise<Proposal[]> {
+export async function listProposals(deps: ProposalUseCaseDeps, input: { tenantId: string; workspaceId: string; search?:string; dealId?: string; contactId?: string; status?: Proposal["status"] }): Promise<Proposal[]> {
   const proposals = await deps.proposalRepository.listByWorkspace(input);
   return Promise.all(proposals.map((proposal) => expireIfNeeded(deps, proposal)));
 }
@@ -237,7 +237,11 @@ export async function sendProposal(deps: ProposalUseCaseDeps, input: { proposalI
  * for efetivamente enviada — até lá o cliente continua vendo a versão que recebeu. */
 export async function createProposalVersion(deps: ProposalUseCaseDeps, input: { proposalId: string; tenantId: string; workspaceId: string; actorUserId?: string; overrides?: Partial<Pick<Proposal, "title" | "validUntil" | "conditions" | "introduction" | "notes" | "terms" | "discountCents">> & { items?: readonly ProposalItem[] } }): Promise<{ proposal: Proposal; rawToken: string }> {
   const base = await mustProposalBelongToTenantAndWorkspace(deps, input.proposalId, input.tenantId, input.workspaceId);
-  if (base.status === "cancelled") throw new Error("PROPOSAL_NOT_EDITABLE: proposta cancelada não gera nova versão.");
+  if (base.status === "cancelled" && !base.billingVoidedAt) throw new Error("PROPOSAL_NOT_EDITABLE: proposta cancelada não gera nova versão.");
+  if (base.billingVoidedAt && base.dealId) {
+    const deal=await deps.dealRepository?.getById(base.dealId);
+    if(!deal || deal.tenantId!==base.tenantId || deal.workspaceId!==base.workspaceId || deal.status!=="open") throw new Error("PROPOSAL_NOT_EDITABLE: reabra a oportunidade para renegociar uma nova versão.");
+  }
   const versions = await deps.proposalRepository.listVersions(base.rootProposalId);
   const nextVersion = Math.max(...versions.map((version) => version.version), base.version) + 1;
   const overrides = input.overrides ?? {};
@@ -387,7 +391,7 @@ async function respondToPublicProposal(deps: ProposalUseCaseDeps, rawToken: stri
   if (proposal.status !== "sent" && proposal.status !== "viewed") {
     throw new Error(`PROPOSAL_ALREADY_RESPONDED: esta proposta já está com status "${proposal.status}".`);
   }
-  const updated = await deps.proposalRepository.setStatus(proposal.id, { status: decision, respondedAt: new Date().toISOString() });
+  const updated = await deps.proposalRepository.setStatus(proposal.id, { status: decision, expectedStatus:proposal.status, respondedAt: new Date().toISOString() });
   let responded = updated;
   if (decision === "rejected") {
     responded = await deps.proposalRepository.setRejection(updated.id, { reason: details.reason?.trim() || undefined, comment: details.comment?.trim() || undefined });
@@ -439,11 +443,7 @@ export async function recordPublicProposalDownload(deps: ProposalUseCaseDeps, ra
   await appendEvent(deps, proposal, "downloaded", {}, recipientId);
 }
 
-/**
- * Comportamento legado (sem Sales Engine): aceitar uma proposta ligada a um negócio move o negócio
- * para a etapa de Ganho do MESMO pipeline. Com Sales Engine (`acceptanceHandler`), o padrão passa a
- * ser só sinalizar o aceite — ganho automático apenas se o tenant configurar.
- */
+/** Acceptance only queues operational work; invoicing is the sole proposal-to-win command. */
 export async function applyProposalAcceptanceToDeal(deps: ProposalDealLinkDeps, proposal: Proposal): Promise<void> {
   if (deps.acceptanceHandler) {
     await deps.acceptanceHandler(proposal);
@@ -451,11 +451,11 @@ export async function applyProposalAcceptanceToDeal(deps: ProposalDealLinkDeps, 
   }
   if (!proposal.dealId) return;
   const deal = await deps.dealRepository.getById(proposal.dealId);
-  if (!deal) return;
+  if (!deal || deal.tenantId !== proposal.tenantId || deal.workspaceId !== proposal.workspaceId || deal.status !== "open") return;
   const stages = await deps.pipelineStageRepository.listByPipeline(deal.pipelineId);
-  const wonStage = stages.find((stage) => stage.isWon);
+  const wonStage = stages.find((stage) => stage.isAwaitingBilling);
   if (!wonStage || deal.stageId === wonStage.id) return;
-  await deps.dealRepository.moveStage(deal.id, { stageId: wonStage.id, wonAt: new Date().toISOString(), lostAt: null, lossReason: null });
+  await deps.dealRepository.moveStage(deal.id, { stageId: wonStage.id, wonAt: null, lostAt: null, lossReason: null });
   await deps.timelineEventRepository.record({
     tenantId: deal.tenantId,
     workspaceId: deal.workspaceId,
@@ -463,9 +463,7 @@ export async function applyProposalAcceptanceToDeal(deps: ProposalDealLinkDeps, 
     entityId: deal.id,
     eventType: "deal_stage_changed",
     actorType: "system",
-    payload: { fromStageId: deal.stageId, toStageId: wonStage.id, trigger: "proposal_accepted", proposalId: proposal.id, isWon: true },
+    payload: { fromStageId: deal.stageId, toStageId: wonStage.id, trigger: "proposal_accepted", proposalId: proposal.id, isWon: false },
   });
-  if (deps.productAnalytics) {
-    await recordFirstEvent(deps.productAnalytics, { eventName: "first_deal_won", source: "server", tenantId: deal.tenantId, workspaceId: deal.workspaceId });
-  }
+
 }

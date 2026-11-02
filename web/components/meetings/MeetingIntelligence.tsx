@@ -1,4 +1,6 @@
 "use client";
+import { contactLabel, humanContactName } from "@/features/crm/contact-presentation";
+
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
@@ -263,7 +265,7 @@ export function KeywordHitsPanel({ workspaceId, insights, onSeek }: { workspaceI
 // ── Follow-up ────────────────────────────────────────────────────────────────────────────────
 
 export function FollowUpPanel({ workspaceId, meetingId, insights, hasAnalysis, canAct, onChanged }: { workspaceId: string; meetingId: string; insights: MeetingInsights; hasAnalysis: boolean; canAct: boolean; onChanged: () => Promise<unknown> }) {
-  const [recipientName, setRecipientName] = useState(insights.crm.contact?.name ?? "");
+  const [recipientName, setRecipientName] = useState(humanContactName(insights.crm.contact?.name) ?? "");
   const [busy, setBusy] = useState(false);
   const [sendOpen, setSendOpen] = useState(false);
   const draft = insights.followUp;
@@ -355,7 +357,7 @@ function SendWhatsAppDialog({ workspaceId, meetingId, message: initialMessage, c
         <div className="space-y-1">
           <Label htmlFor="follow-up-phone">WhatsApp do destinatário</Label>
           <Input id="follow-up-phone" inputMode="tel" value={phone} onChange={(event) => setPhone(event.target.value)} placeholder="(11) 91234-5678" />
-          {contact ? <p className="text-[11px] text-muted-foreground">Contato vinculado: {contact.name}</p> : null}
+          {contact ? <p className="text-[11px] text-muted-foreground">Contato vinculado: {contactLabel(contact)}</p> : null}
         </div>
         <div className="space-y-1">
           <Label htmlFor="follow-up-message">Mensagem</Label>
@@ -409,7 +411,7 @@ export function CrmPanel({ workspaceId, meetingId, insights, canAct, onChanged }
       {contact ? (
         <div className="space-y-3">
           <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-primary/30 bg-primary/5 p-3">
-            <div className="min-w-0"><p className="truncate text-sm font-medium text-foreground">{contact.name}</p><p className="truncate text-xs text-muted-foreground">{[contact.company, contact.whatsappPhone].filter(Boolean).join(" · ") || "Contato do CRM"}</p></div>
+            <div className="min-w-0"><p className="truncate text-sm font-medium text-foreground">{contactLabel(contact)}</p><p className="truncate text-xs text-muted-foreground">{[contact.company, contact.whatsappPhone].filter(Boolean).join(" · ") || "Contato do CRM"}</p></div>
             <div className="flex gap-1">
               <Button size="sm" variant="ghost" asChild><Link href={`/workspaces/${workspaceId}/contacts?contactId=${contact.id}`}>Abrir contato</Link></Button>
               {canAct ? <Button size="sm" variant="ghost" onClick={() => void link({ contactId: null, dealId: null })} disabled={busy}>Desvincular</Button> : null}

@@ -92,7 +92,7 @@ export class PostgresCommercialMetricsRepository implements CommercialMetricsRep
       `select count(*) as count from proposals p where ${proposalConditions.join(" and ")} and p.sent_at is not null
        and ($3::timestamptz is null or p.sent_at >= $3) and ($4::timestamptz is null or p.sent_at <= $4)`, proposalParams);
     const proposalsAcceptedResult = await this.pool.query<{ count: string }>(
-      `select count(*) as count from proposals p where ${proposalConditions.join(" and ")} and p.status = 'accepted'
+      `select count(*) as count from proposals p where ${proposalConditions.join(" and ")} and (p.status in ('accepted','invoiced') or p.accepted_content_hash is not null)
        and ($3::timestamptz is null or p.responded_at >= $3) and ($4::timestamptz is null or p.responded_at <= $4)`, proposalParams);
 
     const noNextActionParams: unknown[] = [tenantId, workspaceId];

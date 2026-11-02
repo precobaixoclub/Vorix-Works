@@ -1,4 +1,9 @@
 "use client";
+import { contactLabel , commercialTitle} from "@/features/crm/contact-presentation";
+
+import {ReopenDealButton} from "@/components/sales/ReopenDealButton";
+import { InvoiceProposalButton } from "@/components/sales/InvoiceProposalButton";
+
 
 import { useMyAccess } from "@/features/auth/access";
 
@@ -127,22 +132,23 @@ export function DealDetailModal({
         className={styles.dialog}
         open={open}
         onOpenChange={onOpenChange}
-        title={deal.title}
+        title={commercialTitle(deal.title,"Oportunidade")}
         description={
           <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
             {contact && onOpenContact ? (
-              <button type="button" onClick={() => onOpenContact(contact.id)} className="underline-offset-2 hover:text-foreground hover:underline">{contact.name}</button>
+              <button type="button" onClick={() => onOpenContact(contact.id)} className="underline-offset-2 hover:text-foreground hover:underline">{contactLabel(contact)}</button>
             ) : (
-              <span>{contact?.name ?? "Sem contato vinculado"}</span>
+              <span>{deal.contactDisplayName ?? contactLabel(contact)}</span>
             )}
             <span>·</span>
             <span>{formatCurrencyCents(deal.status === "won" ? deal.finalValueCents ?? deal.valueCents : deal.valueCents, deal.currency)}</span>
           </div>
         }
         eyebrow="Oportunidade"
-        avatar={<DealAvatar title={deal.title} stage={stage} />}
+        avatar={<DealAvatar title={commercialTitle(deal.title,"Oportunidade")} stage={stage} />}
         headerExtra={
           <div className={cn(styles.headerActions, "flex flex-wrap items-center gap-2")}>
+            {status === "won" && can("deal:lose") && can("deal:reopen") ? <Button size="sm" variant="secondary" onClick={()=>setClosing("lost")}>Marcar como perdida</Button> : null}
             <StatusBadge status={status === "cancelled" ? "cancelled" : status} />
             {deal.archivedAt ? <span className="rounded-full border border-border px-2 py-1 text-xs text-muted-foreground">Arquivada</span> : null}
             {can(deal.archivedAt ? "deal:unarchive" : "deal:archive") && (status === "won" || status === "lost") ? <Button size="sm" variant="secondary" onClick={async () => {
@@ -152,19 +158,11 @@ export function DealDetailModal({
             {canCorrect && (status === "won" || status === "lost") ? <Button size="sm" variant="secondary" onClick={() => setCorrecting(true)}>{status === "won" ? "Ajustar valor final" : "Corrigir motivo"}</Button> : null}
             {canOperate && status === "open" ? (
               <>
-                <Button size="sm" disabled={!can("deal:win")} onClick={() => setClosing("won")}><Trophy className="mr-1.5 h-4 w-4" />Ganha</Button>
+                {deal.billingProposalId ? <InvoiceProposalButton workspaceId={workspaceId} dealId={deal.id} proposalId={deal.billingProposalId} onChanged={onChanged}/> : <Button size="sm" disabled={!can("deal:win")} onClick={() => setClosing("won")}><Trophy className="mr-1.5 h-4 w-4" />Ganha</Button>}
                 <Button size="sm" variant="secondary" disabled={!can("deal:lose")} onClick={() => setClosing("lost")}><XCircle className="mr-1.5 h-4 w-4" />Perdida</Button>
               </>
             ) : can("deal:reopen") && status !== "open" ? (
-              <Button size="sm" variant="secondary" onClick={async () => {
-                try {
-                  await reopenDeal(deal.id, workspaceId);
-                  await Promise.all([invalidateSales(), onChanged()]);
-                  toast.success("Oportunidade reaberta.");
-                } catch (cause) {
-                  toast.error("Não foi possível reabrir", { description: cause instanceof Error ? cause.message : undefined });
-                }
-              }}><RotateCcw className="mr-1.5 h-4 w-4" />Reabrir</Button>
+              <ReopenDealButton workspaceId={workspaceId} dealId={deal.id} stages={stages} onChanged={onChanged}/>
             ) : null}
           </div>
         }
@@ -205,7 +203,7 @@ export function DealDetailModal({
             nextTask={nextTask}
             pendingTasks={pendingDealTasks}
             completingTaskId={completingTaskId}
-            stages={canOperate ? stages.filter(item => (item.isWon ? can("deal:win") : item.isLost ? can("deal:lose") : status === "open" || can("deal:reopen"))) : []}
+            stages={canOperate ? stages.filter(item => !item.isAwaitingBilling && (!deal.billingProposalId || item.isLost) && (item.isWon ? can("deal:win") : item.isLost ? can("deal:lose") : status === "open" || can("deal:reopen"))) : []}
             ownerLabel={userLabel(deal.ownerUserId, members)}
             teamLabel={teamLabel(deal.teamId, teams)}
             onEdit={canOperate && (status === "open" || canCorrect) ? () => setEditing(true) : undefined}
@@ -281,14 +279,14 @@ export function DealDetailModal({
         <QuickCreateProposalModal
           workspaceId={workspaceId}
           contactId={deal.contactId}
-          contactName={contact?.name}
+          contactName={deal.contactDisplayName ?? contactLabel(contact)}
           dealChoice={{ mode: "auto", dealId: deal.id }}
           onClose={() => setCreatingProposal(false)}
           onCreated={async () => { setCreatingProposal(false); await onChanged(); }}
         />
       ) : null}
       {openProposalId ? (
-        <ProposalDetailModal workspaceId={workspaceId} proposal={dealProposals.find((proposal) => proposal.id === openProposalId)!} contactName={contact?.name} dealTitle={deal.title} onClose={() => setOpenProposalId(undefined)} onChanged={onChanged} onCreateNewProposal={() => { setOpenProposalId(undefined); setCreatingProposal(true); }} onCreateFollowUp={() => { setOpenProposalId(undefined); setCreatingTask(true); }} onMarkDealLost={stages.some((stage) => stage.isLost) ? () => { setOpenProposalId(undefined); void onMove(deal, stages.find((stage) => stage.isLost)!); } : undefined} onOpenContact={onOpenContact} />
+        <ProposalDetailModal workspaceId={workspaceId} proposal={dealProposals.find((proposal) => proposal.id === openProposalId)!} contactName={contactLabel(contact)} dealTitle={commercialTitle(deal.title,"Oportunidade")} onClose={() => setOpenProposalId(undefined)} onChanged={onChanged} onCreateNewProposal={() => { setOpenProposalId(undefined); setCreatingProposal(true); }} onCreateFollowUp={() => { setOpenProposalId(undefined); setCreatingTask(true); }} onMarkDealLost={stages.some((stage) => stage.isLost) ? () => { setOpenProposalId(undefined); void onMove(deal, stages.find((stage) => stage.isLost)!); } : undefined} onOpenContact={onOpenContact} />
       ) : null}
     </>
   );
@@ -342,7 +340,7 @@ function DealSummary({
         action={onEdit ? <Button variant="secondary" size="sm" onClick={onEdit}><Pencil className="mr-2 h-4 w-4" /> Editar</Button> : undefined}
       >
         <div className="grid gap-3 sm:grid-cols-2">
-          <InfoCell label="Contato" value={contact?.name ?? "Sem contato"} />
+          <InfoCell label="Contato" value={deal.contactDisplayName ?? contactLabel(contact)} />
           <InfoCell label="Responsável" value={ownerLabel} />
           <InfoCell label="Equipe" value={teamLabel} />
           <InfoCell label="Etapa" value={stage?.name ?? "Sem etapa"} />
@@ -512,7 +510,7 @@ function EditDealModal({
     }
   }
 
-  const contactOptions = contacts.map((contact) => ({ id: contact.id, label: contact.company ? `${contact.name} · ${contact.company}` : contact.name }));
+  const contactOptions = contacts.map((contact) => ({ id: contact.id, label: contactLabel(contact) }));
 
   return (
     <Modal title="Editar oportunidade" onClose={onClose} maxWidthClass="sm:max-w-2xl">

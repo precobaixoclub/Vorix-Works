@@ -48,7 +48,7 @@ const ITEM_SCHEMA = {
 const LIST_QUERY_SCHEMA = {
   type: "object",
   required: ["workspaceId"],
-  properties: { workspaceId: { type: "string", minLength: 1 }, dealId: { type: "string" }, contactId: { type: "string" }, status: { type: "string", enum: [...PROPOSAL_STATUSES] } },
+  properties: { workspaceId: { type: "string", minLength: 1 }, search: {type:"string",maxLength:200}, dealId: { type: "string" }, contactId: { type: "string" }, status: { type: "string", enum: [...PROPOSAL_STATUSES] } },
 } as const;
 const WORKSPACE_QUERY_SCHEMA = { type: "object", required: ["workspaceId"], properties: { workspaceId: { type: "string", minLength: 1 } } } as const;
 const ID_PARAMS_SCHEMA = { type: "object", required: ["id"], properties: { id: { type: "string", minLength: 1 } } } as const;

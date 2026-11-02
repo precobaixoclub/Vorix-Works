@@ -22,6 +22,9 @@ import {buildApp} from "../dist/interfaces/api/app.js";
 import {loadApiConfig} from "../dist/interfaces/api/config/api-config.js";
 import { itemsForCapacity } from "../dist/application/billing/checkout-use-cases.js";
 import { computeCapacityCost } from "../dist/domain/platform-billing/capacity.model.js";
+import {PostgresWorkspaceRepository} from "../dist/infrastructure/storage/postgres/postgres-workspace-repository.js";
+import {DefaultResourceCounterAdapter} from "../dist/infrastructure/billing/resource-counter-adapter.js";
+import {createWorkspace,activateWorkspace,deactivateWorkspace} from "../dist/application/workspace/workspace-use-cases.js";
 let db;before(async()=>{const url=process.env.VORIX_CAPACITY_FIXTURE_PG_URL;if(url){assert.match(new URL(url).pathname,/^\/vorix_capacity_fixture/);const pool=new pg.Pool({connectionString:url});db={pool,stop:()=>pool.end()};}else db=await startTestPostgres();await applyMigrations(db.pool,join(process.cwd(),"db/migrations"));});after(()=>db.stop());
 async function setup({interval="monthly",used=1}={}){
  const tenantId="renewal-fixture-"+randomUUID(),calls=[];const provider=new SandboxBillingProvider();provider.setRecurringItems=async input=>{calls.push(input);return {ok:true,providerItemIds:Object.fromEntries(input.items.filter(item=>item.quantity>0).map(item=>[item.addonCode,"fixture-item-"+item.addonCode]))};};
@@ -88,6 +91,74 @@ async function workspaceSetup({ usedWorkspaces = 1, increment = 1, interval = "m
   context.deps.resourceCounter.count = async ({ resource }) => resource === "workspaces" ? usedWorkspaces : 1;
   return { ...context, plan, addon, addonCode };
 }
+
+async function activeWorkspaceSetup() {
+  const context = await workspaceSetup();
+  const workspaceRepository = new PostgresWorkspaceRepository(db.pool);
+  const previousCounter = context.deps.resourceCounter;
+  const counter = new DefaultResourceCounterAdapter({ workspaceRepository });
+  context.deps.resourceCounter = { count: input => input.resource === "workspaces" ? counter.count(input) : previousCounter.count(input) };
+  const workspaceDeps = { workspaceRepository, entitlementDeps: context.deps, capacityMutationRepository: context.deps.capacityMutationRepository };
+  return { ...context, workspaceDeps, workspaceRepository };
+}
+
+test("Espaços ativos: inativar libera vaga, adicionais liberam reativação e redução exige desocupar a vaga", async () => {
+  const c = await activeWorkspaceSetup(), tenantId = c.tenantId;
+  const first = await createWorkspace(c.workspaceDeps, { tenantId, name: "Primeira empresa" });
+  await assert.rejects(createWorkspace(c.workspaceDeps, { tenantId, name: "Segunda empresa" }), /USAGE_LIMIT_REACHED/);
+  await deactivateWorkspace(c.workspaceDeps, { tenantId, id: first.id });
+  const second = await createWorkspace(c.workspaceDeps, { tenantId, name: "Segunda empresa" });
+  assert.equal(await c.deps.resourceCounter.count({ tenantId, resource: "workspaces" }), 1);
+  await assert.rejects(activateWorkspace(c.workspaceDeps, { tenantId, id: first.id }), /USAGE_LIMIT_REACHED/);
+  assert.equal(c.calls.length, 0, "mudar situação não altera a contratação");
+  await applyCapacityChange(c.deps, { tenantId, workspaces: 2 });
+  assert.equal(c.calls.length, 1);
+  await activateWorkspace(c.workspaceDeps, { tenantId, id: first.id });
+  await assert.rejects(applyCapacityChange(c.deps, { tenantId, workspaces: 1 }), /CAPACITY_REDUCTION_BELOW_USAGE/);
+  await deactivateWorkspace(c.workspaceDeps, { tenantId, id: second.id });
+  await applyCapacityChange(c.deps, { tenantId, workspaces: 1 });
+  const state = await getCapacityState(c.deps, tenantId);
+  assert.equal(state.next.totalWorkspaces, 1);
+  assert.equal(state.nextCharge.amount, c.calls.at(-1).amount);
+  assert.equal(state.nextCharge.amount, c.plan.monthlyPriceUsd);
+  await assert.rejects(activateWorkspace(c.workspaceDeps, { tenantId, id: second.id }), /USAGE_LIMIT_REACHED/);
+  assert.equal((await c.workspaceRepository.getById(second.id)).name, "Segunda empresa");
+  assert.equal((await c.workspaceRepository.listByTenant(tenantId)).length, 2, "inativação preserva registros");
+});
+
+test("Última vaga: criações concorrentes respeitam assinatura real e não passam pelo catálogo fixo", async () => {
+  const c = await activeWorkspaceSetup();
+  const results = await Promise.allSettled(["Empresa A", "Empresa B"].map(name => createWorkspace(c.workspaceDeps, { tenantId: c.tenantId, name })));
+  assert.equal(results.filter(result => result.status === "fulfilled").length, 1);
+  assert.match(results.find(result => result.status === "rejected").reason.message, /USAGE_LIMIT_REACHED/);
+  assert.equal(await c.deps.resourceCounter.count({ tenantId: c.tenantId, resource: "workspaces" }), 1);
+  const active = (await c.workspaceRepository.listByTenant(c.tenantId))[0];
+  await deactivateWorkspace(c.workspaceDeps, { tenantId: c.tenantId, id: active.id });
+  await c.deps.subscriptionRepository.update(c.subscription.id, { status: "past_due" });
+  await assert.rejects(activateWorkspace(c.workspaceDeps, { tenantId: c.tenantId, id: active.id }), /ENTITLEMENT_ACCOUNT_READ_ONLY/);
+  await assert.rejects(createWorkspace(c.workspaceDeps, { tenantId: c.tenantId, name: "Bloqueada" }), /ENTITLEMENT_ACCOUNT_READ_ONLY/);
+  await assert.rejects(activateWorkspace(c.workspaceDeps, { tenantId: "outro-tenant", id: active.id }), /WORKSPACE_NOT_FOUND/);
+});
+
+test("Redução e reativação concorrentes compartilham lock e respeitam a quantidade futura", async () => {
+  const c = await activeWorkspaceSetup(), tenantId = c.tenantId;
+  await applyCapacityChange(c.deps, { tenantId, workspaces: 2 });
+  await createWorkspace(c.workspaceDeps, { tenantId, name: "Ativa" });
+  const inactive = await c.workspaceRepository.create({ tenantId, name: "Inativa" });
+  await deactivateWorkspace(c.workspaceDeps, { tenantId, id: inactive.id });
+  let releaseProvider, markProvider;
+  const providerEntered = new Promise(resolve => { markProvider = resolve; });
+  const providerGate = new Promise(resolve => { releaseProvider = resolve; });
+  const original = c.deps.billingProvider.setRecurringItems;
+  c.deps.billingProvider.setRecurringItems = async input => { markProvider(); await providerGate; return original(input); };
+  const reducing = applyCapacityChange(c.deps, { tenantId, workspaces: 1 });
+  await providerEntered;
+  const activating = activateWorkspace(c.workspaceDeps, { tenantId, id: inactive.id });
+  releaseProvider();
+  await reducing;
+  await assert.rejects(activating, /USAGE_LIMIT_REACHED/);
+  assert.equal((await c.workspaceRepository.getById(inactive.id)).status, "inactive");
+});
 
 test("Workspaces: preview calcula os três recursos sem escrever e salvamento sincroniza a próxima mensalidade", async () => {
   const c = await workspaceSetup();

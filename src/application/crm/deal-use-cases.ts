@@ -39,7 +39,7 @@ export async function createDeal(deps: DealUseCaseDeps, input: { customFields?: 
   if (!stage || stage.pipelineId !== input.pipelineId) {
     throw new Error(`DEAL_STAGE_PIPELINE_MISMATCH: etapa "${input.stageId}" não pertence ao pipeline "${input.pipelineId}".`);
   }
-  if (stage.isWon || stage.isLost) throw new Error("DEAL_STAGE_PIPELINE_MISMATCH: crie a oportunidade em uma fase em andamento e registre o fechamento em seguida.");
+  if (stage.isWon || stage.isLost || stage.isAwaitingBilling) throw new Error("DEAL_STAGE_PIPELINE_MISMATCH: crie a oportunidade em uma fase de negociação; o aceite a coloca em faturamento.");
   const { actorUserId, ...createInput } = input;
   const deal = await deps.dealRepository.create(createInput);
   await deps.timelineEventRepository.record({
@@ -120,6 +120,8 @@ export async function moveDealStage(deps: DealUseCaseDeps, input: { dealId: stri
     throw new Error(`DEAL_STAGE_PIPELINE_MISMATCH: etapa "${input.targetStageId}" não pertence ao pipeline desta oportunidade.`);
   }
   if (deal.stageId === targetStage.id) return deal;
+  if (deal.billingProposalId && !targetStage.isLost) throw new Error("PROPOSAL_BILLING_INVALID: fature a proposta aceita ou marque a oportunidade como perdida.");
+  if (targetStage.isAwaitingBilling) throw new Error("PROPOSAL_BILLING_INVALID: esta fase é reservada às propostas aceitas.");
   if (targetStage.isLost && !input.lossReason?.trim()) {
     throw new Error("DEAL_LOSS_REASON_REQUIRED: informe o motivo da perda para mover uma oportunidade para uma etapa de perda.");
   }

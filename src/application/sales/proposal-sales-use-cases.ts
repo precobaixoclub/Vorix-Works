@@ -1,10 +1,11 @@
+import { contactLabel } from "../../domain/crm/contact-presentation.js";
 import type { Proposal, ProposalItem } from "../../domain/crm/crm.model.js";
 import { computeCommercialTotals, evaluateCommercialTerms, type PricingLineInput } from "../../domain/sales/pricing.js";
 import { DEFAULT_PROPOSAL_REMINDER_TEMPLATE, DEFAULT_PROPOSAL_WHATSAPP_TEMPLATE } from "../../domain/sales/sales.model.js";
 import type { ProposalRepositoryPort } from "../ports/proposal-repository.port.js";
 import type { ProposalTemplateRepositoryPort } from "../ports/proposal-template-repository.port.js";
 import { notifyBestEffort } from "../notification/notification-use-cases.js";
-import { createProposal, type ProposalBuyerEvent, type ProposalUseCaseDeps } from "../crm/proposal-use-cases.js";
+import { applyProposalAcceptanceToDeal, createProposal, type ProposalBuyerEvent, type ProposalUseCaseDeps } from "../crm/proposal-use-cases.js";
 import { assertTermsApproved, itemsToPricingLines, requestCommercialApproval, termsFingerprint, winDeal } from "./deal-commercial-use-cases.js";
 import { loadCommercialSettings, mustDealInWorkspace, resolveEffectivePolicy, type SalesActor, type SalesEngineDeps } from "./sales-context.js";
 import {mustProductInWorkspace,resolveProductPricing,type CatalogDeps} from "./catalog-use-cases.js";
@@ -141,12 +142,13 @@ export function proposalBuyerEventHandler(deps: SalesEngineDeps): (event: Propos
     const contact = proposal.contactId && deps.contactRepository ? await deps.contactRepository.getById(proposal.contactId) : undefined;
     const userId = proposalOwnerUserId(proposal, deal?.ownerUserId);
     if (!userId) return;
-    const who = contact?.company || contact?.name || "O cliente";
+    if(deal && (deal.tenantId!==proposal.tenantId || deal.workspaceId!==proposal.workspaceId)) return;
+    const who = contact?.tenantId===proposal.tenantId && contact.workspaceId===proposal.workspaceId ? contactLabel(contact) : deal?.contactDisplayName ?? "O cliente";
     const label = `${proposal.number ?? "Proposta"}${proposal.version > 1 ? ` v${proposal.version}` : ""}`;
     const copy = {
       first_view: { title: `${who} abriu sua proposta agora`, body: `${label} · ${proposal.title}` },
       hot_view: { title: `${who} abriu a proposta ${proposal.viewCount} vezes`, body: `Sinal de interesse em ${label} — bom momento para um contato.` },
-      accepted: { title: `${who} aceitou a proposta`, body: `${label} · finalize a oportunidade como ganha.` },
+      accepted: { title: `${who} aceitou a proposta`, body: `${label} · aguardando faturamento.` },
       declined: { title: `${who} recusou a proposta`, body: `${label}${proposal.rejectionReason ? ` · motivo: ${proposal.rejectionReason}` : ""} — crie nova versão, continue negociando ou marque como perdida.` },
     }[type];
     notifyBestEffort(deps.notification, {
@@ -156,20 +158,31 @@ export function proposalBuyerEventHandler(deps: SalesEngineDeps): (event: Propos
   };
 }
 
-/** A política de aceite é resolvida por empresa; o padrão é registrar a venda como ganha. */
-export function proposalAcceptanceHandler(deps: SalesEngineDeps & { onDealWon?: (deal: import("../../domain/crm/crm.model.js").Deal) => Promise<void> }): (proposal: Proposal) => Promise<void> {
-  return async (proposal) => {
-    if (!proposal.dealId) return;
-    const deal = await deps.dealRepository.getById(proposal.dealId);
-    if (!deal || deal.status !== "open") return;
-    const settings = await loadCommercialSettings(deps, deal.tenantId, deal.workspaceId);
-    if (!settings.proposalAcceptAutoWin) {
-      await deps.timelineEventRepository.record({ tenantId: deal.tenantId, workspaceId: deal.workspaceId, entityType: "deal", entityId: deal.id, eventType: "deal_proposal_accepted", actorType: "system", payload: { proposalId: proposal.id, version: proposal.version } });
-      return;
+/** Acceptance never closes or deducts stock, regardless of legacy auto-win settings. */
+export function proposalAcceptanceHandler(deps: SalesEngineDeps): (proposal: Proposal) => Promise<void> {
+  return proposal => applyProposalAcceptanceToDeal(deps, proposal);
+}
+
+/** Invoice and gain use the existing CAS closure, stock ledger and scoped permissions. */
+export async function invoiceAcceptedProposal(deps: SalesEngineDeps, actor: SalesActor, input: {workspaceId:string; dealId:string; proposalId?:string}): Promise<import("../../domain/crm/crm.model.js").Deal> {
+  const deal = await mustDealInWorkspace(deps, input.dealId, actor.tenantId, input.workspaceId);
+  const id = input.proposalId ?? deal.billingProposalId;
+  const proposal = id ? await deps.proposalRepository?.getById(id) : undefined;
+  if (!proposal || proposal.tenantId !== deal.tenantId || proposal.workspaceId !== deal.workspaceId || proposal.dealId !== deal.id)
+    throw new Error("PROPOSAL_BILLING_INVALID: proposta vinculada não encontrada.");
+  if (deal.status === "won" && proposal.status === "invoiced" && deal.wonProposalId === proposal.id) return deal;
+  if (deal.status !== "open" || proposal.status !== "accepted" || deal.billingProposalId !== proposal.id)
+    throw new Error("PROPOSAL_BILLING_INVALID: proposta não está aguardando faturamento.");
+  try {
+    return await winDeal(deps,actor,{...input,proposalId:proposal.id,finalValueCents:proposal.totalCents,source:"proposal_billing",comment:"Faturamento manual da proposta aceita."});
+  } catch(error) {
+    if (error instanceof Error && error.message.startsWith("DEAL_CONFLICT")) {
+      const current=await deps.dealRepository.getById(deal.id);
+      const billed=await deps.proposalRepository?.getById(proposal.id);
+      if(current?.status==="won" && current.wonProposalId===proposal.id && billed?.status==="invoiced") return current;
     }
-    const finalValueCents = proposal.totalCents;
-    await winDeal(deps, { tenantId: deal.tenantId, userId: deal.ownerUserId ?? "system", role: "owner" }, { workspaceId: deal.workspaceId, dealId: deal.id, proposalId: proposal.id, finalValueCents, source: "proposal_acceptance", comment: "Ganho automático pelo aceite da proposta." });
-  };
+    throw error;
+  }
 }
 
 export { renderProposalMessage } from "../../domain/sales/proposal-message.js";

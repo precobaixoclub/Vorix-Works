@@ -1,3 +1,4 @@
+import {commercialTitle} from "../../domain/crm/contact-presentation.js";
 import type { OwnedResourceScope } from "../ports/owned-resource-scope.js";
 import type { InboxConversationVisibility } from "../ports/inbox-conversation-repository.port.js";
 import type { ContactRepositoryPort } from "../ports/contact-repository.port.js";
@@ -86,16 +87,17 @@ function mapContactEvent(event: TimelineEvent): ContactActivityItem | undefined 
  * PRÓPRIO negócio, não um evento isolado. Por isso os eventos de cada deal são processados juntos,
  * em ordem crescente, antes de entrarem na lista final (que depois é reordenada por `occurredAt`). */
 function mapDealEvents(deal: Deal, events: readonly TimelineEvent[]): ContactActivityItem[] {
-  const stageEvents = events.filter((event) => event.eventType === "deal_stage_changed").slice().sort((a, b) => a.occurredAt.localeCompare(b.occurredAt));
+  const stageEvents = events.filter((event) => (event.eventType === "deal_stage_changed" || event.eventType === "deal_awaiting_billing")).slice().sort((a, b) => a.occurredAt.localeCompare(b.occurredAt));
   let wasTerminal = false;
   const stageItems: ContactActivityItem[] = stageEvents.map((event) => {
     const isWon = event.payload?.isWon === true;
     const isLost = event.payload?.isLost === true;
     let type = "deal_stage_changed";
-    let title = `Etapa de "${deal.title}" alterada`;
-    if (isWon) { type = "deal_won"; title = `Oportunidade "${deal.title}" ganha`; }
-    else if (isLost) { type = "deal_lost"; title = `Oportunidade "${deal.title}" perdida`; }
-    else if (wasTerminal) { type = "deal_reopened"; title = `Oportunidade "${deal.title}" reaberta`; }
+    let title = `Etapa de "${commercialTitle(deal.title,"Oportunidade")}" alterada`;
+    if(event.eventType === "deal_awaiting_billing") {type="deal_awaiting_billing";title="Proposta aceita; aguardando faturamento";}
+    else if (isWon) { type = "deal_won"; title = `Oportunidade "${commercialTitle(deal.title,"Oportunidade")}" ganha`; }
+    else if (isLost) { type = "deal_lost"; title = `Oportunidade "${commercialTitle(deal.title,"Oportunidade")}" perdida`; }
+    else if (wasTerminal) { type = "deal_reopened"; title = `Oportunidade "${commercialTitle(deal.title,"Oportunidade")}" reaberta`; }
     wasTerminal = isWon || isLost;
     const lossReason = typeof event.payload?.lossReason === "string" ? event.payload.lossReason : undefined;
     const trigger = typeof event.payload?.trigger === "string" ? event.payload.trigger : undefined;
@@ -114,7 +116,7 @@ function mapDealEvents(deal: Deal, events: readonly TimelineEvent[]): ContactAct
   });
   const createdEvent = events.find((event) => event.eventType === "deal_created");
   const createdItem: ContactActivityItem[] = createdEvent
-    ? [{ id: createdEvent.id, type: "deal_created", category: "deal", occurredAt: createdEvent.occurredAt, actor: actorFor(createdEvent), title: `Oportunidade "${deal.title}" criada`, entityType: "deal", entityId: deal.id, metadata: { dealId: deal.id } }]
+    ? [{ id: createdEvent.id, type: "deal_created", category: "deal", occurredAt: createdEvent.occurredAt, actor: actorFor(createdEvent), title: `Oportunidade "${commercialTitle(deal.title,"Oportunidade")}" criada`, entityType: "deal", entityId: deal.id, metadata: { dealId: deal.id } }]
     : [];
   return [...createdItem, ...stageItems];
 }
@@ -148,20 +150,22 @@ function mapProposalEvents(proposal: Proposal, events: readonly TimelineEvent[])
     const asCustomer = PROPOSAL_CUSTOMER_ACTIONS.has(event.eventType);
     const actor = actorFor(event, asCustomer);
     if (event.eventType === "proposal_created") {
-      items.push({ id: event.id, type: "proposal_created", category: "proposal", occurredAt: event.occurredAt, actor, title: `Proposta "${proposal.title}" criada`, entityType: "proposal", entityId: proposal.id, metadata: { proposalId: proposal.id } });
+      items.push({ id: event.id, type: "proposal_created", category: "proposal", occurredAt: event.occurredAt, actor, title: `Proposta "${commercialTitle(proposal.title,"Proposta")}" criada`, entityType: "proposal", entityId: proposal.id, metadata: { proposalId: proposal.id } });
     } else if (event.eventType === "proposal_sent") {
-      items.push({ id: event.id, type: "proposal_sent", category: "proposal", occurredAt: event.occurredAt, actor, title: `Proposta "${proposal.title}" enviada`, entityType: "proposal", entityId: proposal.id, metadata: { proposalId: proposal.id } });
+      items.push({ id: event.id, type: "proposal_sent", category: "proposal", occurredAt: event.occurredAt, actor, title: `Proposta "${commercialTitle(proposal.title,"Proposta")}" enviada`, entityType: "proposal", entityId: proposal.id, metadata: { proposalId: proposal.id } });
     } else if (event.eventType === "proposal_resent") {
-      items.push({ id: event.id, type: "proposal_resent", category: "proposal", occurredAt: event.occurredAt, actor, title: `Proposta "${proposal.title}" reenviada`, entityType: "proposal", entityId: proposal.id, metadata: { proposalId: proposal.id } });
+      items.push({ id: event.id, type: "proposal_resent", category: "proposal", occurredAt: event.occurredAt, actor, title: `Proposta "${commercialTitle(proposal.title,"Proposta")}" reenviada`, entityType: "proposal", entityId: proposal.id, metadata: { proposalId: proposal.id } });
     } else if (event.eventType === "proposal_link_regenerated") {
       items.push({ id: event.id, type: "proposal_link_regenerated", category: "proposal", occurredAt: event.occurredAt, actor, title: "Link da proposta regenerado", entityType: "proposal", entityId: proposal.id, metadata: { proposalId: proposal.id } });
     } else if (event.eventType === "proposal_viewed") {
-      items.push({ id: event.id, type: "proposal_viewed", category: "proposal", occurredAt: event.occurredAt, actor, title: `Proposta "${proposal.title}" visualizada pelo cliente`, entityType: "proposal", entityId: proposal.id, metadata: { proposalId: proposal.id } });
+      items.push({ id: event.id, type: "proposal_viewed", category: "proposal", occurredAt: event.occurredAt, actor, title: `Proposta "${commercialTitle(proposal.title,"Proposta")}" visualizada pelo cliente`, entityType: "proposal", entityId: proposal.id, metadata: { proposalId: proposal.id } });
     } else if (event.eventType === "proposal_accepted") {
-      items.push({ id: event.id, type: "proposal_accepted", category: "proposal", occurredAt: event.occurredAt, actor, title: `Proposta "${proposal.title}" aceita pelo cliente`, entityType: "proposal", entityId: proposal.id, metadata: { proposalId: proposal.id } });
+      items.push({ id: event.id, type: "proposal_accepted", category: "proposal", occurredAt: event.occurredAt, actor, title: `Proposta "${commercialTitle(proposal.title,"Proposta")}" aceita pelo cliente`, entityType: "proposal", entityId: proposal.id, metadata: { proposalId: proposal.id } });
+    } else if(event.eventType === "proposal_invoiced" || event.eventType === "proposal_billing_voided") {
+      items.push({id:event.id,type:event.eventType,category:"proposal",occurredAt:event.occurredAt,actor,title:event.eventType === "proposal_invoiced"?"Proposta faturada":"Aceite/faturamento cancelado operacionalmente",entityType:"proposal",entityId:proposal.id,metadata:{proposalId:proposal.id}});
     } else if (event.eventType === "proposal_rejected") {
       const reason = typeof event.payload?.reason === "string" ? event.payload.reason : undefined;
-      items.push({ id: event.id, type: "proposal_rejected", category: "proposal", occurredAt: event.occurredAt, actor, title: `Proposta "${proposal.title}" recusada pelo cliente`, description: reason ? `Motivo: ${reason}` : undefined, entityType: "proposal", entityId: proposal.id, metadata: { proposalId: proposal.id } });
+      items.push({ id: event.id, type: "proposal_rejected", category: "proposal", occurredAt: event.occurredAt, actor, title: `Proposta "${commercialTitle(proposal.title,"Proposta")}" recusada pelo cliente`, description: reason ? `Motivo: ${reason}` : undefined, entityType: "proposal", entityId: proposal.id, metadata: { proposalId: proposal.id } });
     }
   }
   // Sintético — a expiração de proposta é lida sob demanda (`respondToPublicProposal`/`listProposals`
@@ -169,7 +173,7 @@ function mapProposalEvents(proposal: Proposal, events: readonly TimelineEvent[])
   // ver `proposal-use-cases.ts`). Deriva o evento a partir do estado atual real (nunca inventado):
   // só aparece quando `proposal.status === "expired"` de fato, com `occurredAt = validUntil`.
   if (proposal.status === "expired" && proposal.validUntil) {
-    items.push({ id: `${proposal.id}:expired`, type: "proposal_expired", category: "proposal", occurredAt: proposal.validUntil, actor: { type: "system" }, title: `Proposta "${proposal.title}" expirada`, entityType: "proposal", entityId: proposal.id, metadata: { proposalId: proposal.id } });
+    items.push({ id: `${proposal.id}:expired`, type: "proposal_expired", category: "proposal", occurredAt: proposal.validUntil, actor: { type: "system" }, title: `Proposta "${commercialTitle(proposal.title,"Proposta")}" expirada`, entityType: "proposal", entityId: proposal.id, metadata: { proposalId: proposal.id } });
   }
   return items;
 }

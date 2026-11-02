@@ -277,8 +277,9 @@ export type CreateProposalInput = {
   conditions?: string;
 };
 
-export function listProposals(workspaceId: string, params?: { dealId?: string; contactId?: string; status?: ProposalStatus }): Promise<Proposal[]> {
+export function listProposals(workspaceId: string, params?: { search?:string; dealId?: string; contactId?: string; status?: ProposalStatus }): Promise<Proposal[]> {
   const query = new URLSearchParams({ workspaceId });
+  if (params?.search) query.set("search",params.search);
   if (params?.dealId) query.set("dealId", params.dealId);
   if (params?.contactId) query.set("contactId", params.contactId);
   if (params?.status) query.set("status", params.status);

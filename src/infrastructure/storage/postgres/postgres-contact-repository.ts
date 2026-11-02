@@ -1,3 +1,4 @@
+import { contactLabel,contactNameForInput } from "../../../domain/crm/contact-presentation.js";
 import type { InboxConversationVisibility } from "../../../application/ports/inbox-conversation-repository.port.js";
 import { inboxVisibilitySql } from "./postgres-inbox-visibility.js";
 import { ownedScopeSql } from "./postgres-owned-scope.js";
@@ -37,7 +38,7 @@ export class PostgresContactRepository implements ContactRepositoryPort {
        values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
        returning *`,
       [
-        idGenerator(), input.tenantId, input.workspaceId, input.name,
+        idGenerator(), input.tenantId, input.workspaceId, contactNameForInput(input) || phone,
         input.company ?? null, input.document ?? null, input.origin ?? null,
         input.ownerUserId ?? null, input.teamId ?? null,
         JSON.stringify(input.tags ?? []), JSON.stringify({ ...input.customFields, phone }), input.notes ?? null,
@@ -57,7 +58,10 @@ export class PostgresContactRepository implements ContactRepositoryPort {
     const params: unknown[] = [input.tenantId, input.workspaceId];
     if (input.search) {
       params.push(`%${input.search}%`);
-      conditions.push(`name ilike $${params.length}`);
+      const nameQ=`$${params.length}`;
+      const phoneSearch=/^[+\d\s().-]+$/.test(input.search.trim())?input.search.replace(/\D/g,""):input.search.trim();
+      params.push(`%${phoneSearch}%`);
+      conditions.push(`(name ilike ${nameQ} or regexp_replace(coalesce(c.custom_fields->>'phone',''),'[^0-9]','','g') ilike $${params.length})`);
     }
     if (input.ownerUserId) {
       params.push(input.ownerUserId);
@@ -132,6 +136,7 @@ export class PostgresContactRepository implements ContactRepositoryPort {
       tenantId: row.tenant_id,
       workspaceId: row.workspace_id,
       name: row.name,
+      displayName: contactLabel({name:row.name,customFields:row.custom_fields}),
       company: row.company ?? undefined,
       document: row.document ?? undefined,
       origin: row.origin ?? undefined,

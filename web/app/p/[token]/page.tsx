@@ -177,6 +177,8 @@ export default function PublicProposalPage() {
 function StatusBanner({ proposal }: { proposal: PublicProposal }) {
   const banner = proposal.superseded
     ? { icon: FileText, text: "Esta versão foi substituída por uma proposta mais recente. Use o link da versão nova.", tone: "bg-muted text-muted-foreground" }
+    : proposal.status === "invoiced"
+      ? {icon: CheckCircle2,text:"Esta proposta foi faturada. Obrigado!",tone:"bg-emerald-50 text-emerald-800"}
     : proposal.status === "accepted"
       ? { icon: CheckCircle2, text: `Proposta aceita${proposal.respondedAt ? ` em ${formatDate(proposal.respondedAt)}` : ""}. Obrigado!`, tone: "bg-emerald-50 text-emerald-800" }
       : proposal.status === "rejected"

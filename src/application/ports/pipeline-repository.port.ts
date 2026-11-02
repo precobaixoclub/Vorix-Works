@@ -9,6 +9,7 @@ export type CreatePipelineInput = {
 };
 
 export type CreateStageInput = {
+  isAwaitingBilling?: boolean;
   pipelineId: string;
   name: string;
   position: number;

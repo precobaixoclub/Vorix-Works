@@ -1,3 +1,4 @@
+import { contactLabel } from "../../../domain/crm/contact-presentation.js";
 import { inboxVisibilitySql } from "./postgres-inbox-visibility.js";
 import type { Pool } from "pg";
 import type {
@@ -167,12 +168,13 @@ export class PostgresInboxConversationRepository implements InboxConversationRep
         connection_provider: string | null;
       }
     >(
-      `select c.*, ct.name as contact_name, ct.phone_normalized as contact_phone, ct.contact_id as crm_contact_id,
+      `select c.*, coalesce(cc.name,ct.name) as contact_name, coalesce(cc.custom_fields->>'phone',ct.whatsapp_pn,ct.phone_normalized) as contact_phone, ct.contact_id as crm_contact_id,
               ct.profile_picture_storage_ref as contact_profile_picture_storage_ref,
               lm.type as lm_type, lm.body as lm_body, lm.direction as lm_direction, lm.sender_display_name as lm_sender_display_name,
               mc.provider as connection_provider
        from inbox_conversations c
        left join inbox_contacts ct on ct.id = c.contact_id
+       left join contacts cc on cc.id=ct.contact_id and cc.tenant_id=c.tenant_id and cc.workspace_id=c.workspace_id
        left join messaging_connections mc on mc.id = c.connection_id
        left join lateral (
          select type, body, direction, sender_display_name
@@ -187,7 +189,7 @@ export class PostgresInboxConversationRepository implements InboxConversationRep
     );
     return result.rows.map((row) => ({
       ...this.toDomain(row),
-      contactName: row.contact_name ?? undefined,
+      contactName: row.chat_type === "group" ? row.contact_name ?? undefined : contactLabel({name:row.contact_name,phone:row.contact_phone}),
       contactPhone: row.contact_phone ?? undefined,
       crmContactId: row.crm_contact_id ?? undefined,
       contactProfilePictureStorageRef: row.contact_profile_picture_storage_ref ?? undefined,

@@ -9,6 +9,7 @@ import { StatusBadge } from "@/components/StatusBadge";
 import { useMyAccess } from "@/features/auth/access";
 import { activateWorkspace, deactivateWorkspace, updateWorkspace } from "../api";
 import type { Workspace } from "../types";
+import { WorkspacePlanHelp } from "./WorkspacePlanHelp";
 
 export function EditWorkspaceModal({
   workspace,
@@ -37,6 +38,7 @@ export function EditWorkspaceModal({
   async function rememberWorkspace(updated: Workspace) {
     setSavedWorkspace(updated);
     await mutate(["workspace", updated.id], updated, { revalidate: false });
+    await mutate(key => Array.isArray(key) && key[0] === "billing", undefined, { revalidate: true, throwOnError: false });
     // Inclui as listas filtradas utilizadas pelo seletor de espaços.
     await mutate((key) => Array.isArray(key) && key[0] === "workspaces", (current: Workspace[] | undefined) => current?.map(item => item.id === updated.id ? updated : item), { revalidate: true, throwOnError: false });
   }
@@ -162,7 +164,7 @@ export function EditWorkspaceModal({
             {savedWorkspace.status === "archived" ? "Este espaço está arquivado." : !canTransition ? "Você não tem permissão para ativar ou inativar este espaço." : "Você pode inativar o espaço e reativá-lo quando precisar. Encontre cada situação nos filtros da lista de espaços."}
           </p>
         </div>
-        {error ? <p role="alert" className="text-sm text-red-600">{error}</p> : null}
+        {error ? <div role="alert"><p className="text-sm text-red-600">{error}</p><WorkspacePlanHelp error={error} /></div> : null}
         <div className="flex flex-col-reverse gap-2 pt-1 sm:flex-row sm:justify-end">
           <Button type="button" variant="secondary" className="w-full sm:w-auto" disabled={submitting} onClick={onClose}>
             Cancelar

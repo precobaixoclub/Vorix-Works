@@ -1,0 +1,530 @@
+{
+  "at": "2026-11-02T21:54:50.357Z",
+  "timezone": "America/Sao_Paulo",
+  "release": "f7ebda948a0b94ef852d52ec062d0f6a499bc18b",
+  "productionDeployed": true,
+  "cpuUnit": "percent of one CPU core",
+  "sampleSecondsBefore": 30,
+  "sampleSecondsAfter": 30,
+  "measurements": [
+    {
+      "service": "conversas-gateway-rabbitmq-1",
+      "before": {
+        "cpuAverage": 9.42,
+        "cpuPeak": 114.79,
+        "workingSetMiB": 40.6
+      },
+      "after": {
+        "cpuAverage": 0.71,
+        "cpuPeak": 4.91,
+        "workingSetMiB": 90.9
+      },
+      "healthSamplesAfter": [
+        {
+          "seconds": 0.180887,
+          "exitCode": 0
+        },
+        {
+          "seconds": 0.174314,
+          "exitCode": 0
+        },
+        {
+          "seconds": 0.066183,
+          "exitCode": 0
+        },
+        {
+          "seconds": 0.085012,
+          "exitCode": 0
+        },
+        {
+          "seconds": 0.077097,
+          "exitCode": 0
+        }
+      ]
+    },
+    {
+      "service": "zuno-zuno-api-1",
+      "before": {
+        "cpuAverage": 3.81,
+        "cpuPeak": 58.95,
+        "workingSetMiB": 116.1
+      },
+      "after": {
+        "cpuAverage": 1.18,
+        "cpuPeak": 6.11,
+        "workingSetMiB": 74.4
+      },
+      "healthSamplesAfter": [
+        {
+          "seconds": 0.087818,
+          "exitCode": 0
+        },
+        {
+          "seconds": 0.10917,
+          "exitCode": 0
+        },
+        {
+          "seconds": 0.091329,
+          "exitCode": 0
+        },
+        {
+          "seconds": 0.097681,
+          "exitCode": 0
+        },
+        {
+          "seconds": 0.083178,
+          "exitCode": 0
+        }
+      ]
+    },
+    {
+      "service": "zuno-zuno-postgres-1",
+      "before": {
+        "cpuAverage": 1.48,
+        "cpuPeak": 14.48,
+        "workingSetMiB": 29.5
+      },
+      "after": {
+        "cpuAverage": 1.12,
+        "cpuPeak": 6.62,
+        "workingSetMiB": 33.4
+      },
+      "healthSamplesAfter": [
+        {
+          "seconds": 0.074653,
+          "exitCode": 0
+        },
+        {
+          "seconds": 0.093628,
+          "exitCode": 0
+        },
+        {
+          "seconds": 0.135682,
+          "exitCode": 0
+        },
+        {
+          "seconds": 0.087785,
+          "exitCode": 0
+        },
+        {
+          "seconds": 0.082869,
+          "exitCode": 0
+        }
+      ]
+    },
+    {
+      "service": "zuno-zuno-web-1",
+      "before": {
+        "cpuAverage": 1.27,
+        "cpuPeak": 37.88,
+        "workingSetMiB": 93.4
+      },
+      "after": {
+        "cpuAverage": 0.46,
+        "cpuPeak": 13.65,
+        "workingSetMiB": 47.8
+      },
+      "healthSamplesAfter": [
+        {
+          "seconds": 0.66833,
+          "exitCode": 0
+        },
+        {
+          "seconds": 0.185421,
+          "exitCode": 0
+        },
+        {
+          "seconds": 0.142723,
+          "exitCode": 0
+        },
+        {
+          "seconds": 0.220881,
+          "exitCode": 0
+        },
+        {
+          "seconds": 0.188648,
+          "exitCode": 0
+        }
+      ]
+    },
+    {
+      "service": "zuno-social-provider-gateway-1",
+      "before": {
+        "cpuAverage": 1.23,
+        "cpuPeak": 34.71,
+        "workingSetMiB": 165.5
+      },
+      "after": {
+        "cpuAverage": 0.21,
+        "cpuPeak": 6.23,
+        "workingSetMiB": 214.8
+      },
+      "healthSamplesAfter": [
+        {
+          "seconds": 0.072227,
+          "exitCode": 0
+        },
+        {
+          "seconds": 0.308559,
+          "exitCode": 0
+        },
+        {
+          "seconds": 0.099981,
+          "exitCode": 0
+        },
+        {
+          "seconds": 0.093769,
+          "exitCode": 0
+        },
+        {
+          "seconds": 0.116793,
+          "exitCode": 0
+        }
+      ]
+    },
+    {
+      "service": "conversas-gateway-wuzapi-postgres-1",
+      "before": {
+        "cpuAverage": 0.62,
+        "cpuPeak": 5.2,
+        "workingSetMiB": 8
+      },
+      "after": {
+        "cpuAverage": 0.9,
+        "cpuPeak": 9.76,
+        "workingSetMiB": 7.1
+      },
+      "healthSamplesAfter": [
+        {
+          "seconds": 0.074161,
+          "exitCode": 0
+        },
+        {
+          "seconds": 0.099648,
+          "exitCode": 0
+        },
+        {
+          "seconds": 0.07102,
+          "exitCode": 0
+        },
+        {
+          "seconds": 0.083958,
+          "exitCode": 0
+        },
+        {
+          "seconds": 0.105929,
+          "exitCode": 0
+        }
+      ]
+    },
+    {
+      "service": "zuno-vorix-worker-1",
+      "before": {
+        "cpuAverage": 0.56,
+        "cpuPeak": 9.85,
+        "workingSetMiB": 39.4
+      },
+      "after": {
+        "cpuAverage": 0.48,
+        "cpuPeak": 11.57,
+        "workingSetMiB": 46
+      },
+      "healthSamplesAfter": [
+        {
+          "seconds": 0.159447,
+          "exitCode": 0
+        },
+        {
+          "seconds": 0.395229,
+          "exitCode": 0
+        },
+        {
+          "seconds": 0.139702,
+          "exitCode": 0
+        },
+        {
+          "seconds": 0.118004,
+          "exitCode": 0
+        },
+        {
+          "seconds": 0.12529,
+          "exitCode": 0
+        }
+      ]
+    },
+    {
+      "service": "conversas-gateway-wuzapi-1",
+      "before": {
+        "cpuAverage": 0.44,
+        "cpuPeak": 6.94,
+        "workingSetMiB": 17.7
+      },
+      "after": {
+        "cpuAverage": 0.5,
+        "cpuPeak": 6.3,
+        "workingSetMiB": 17.2
+      },
+      "healthSamplesAfter": [
+        {
+          "seconds": 0.076932,
+          "exitCode": 0
+        },
+        {
+          "seconds": 0.120309,
+          "exitCode": 0
+        },
+        {
+          "seconds": 0.13335,
+          "exitCode": 0
+        },
+        {
+          "seconds": 0.08216,
+          "exitCode": 0
+        },
+        {
+          "seconds": 0.067501,
+          "exitCode": 0
+        }
+      ]
+    },
+    {
+      "service": "zuno-marketplaces-worker-1",
+      "before": {
+        "cpuAverage": 0.31,
+        "cpuPeak": 9.01,
+        "workingSetMiB": 20.1
+      },
+      "after": {
+        "cpuAverage": 0.33,
+        "cpuPeak": 9.56,
+        "workingSetMiB": 14
+      },
+      "healthSamplesAfter": [
+        {
+          "seconds": 0.11689,
+          "exitCode": 0
+        },
+        {
+          "seconds": 0.276665,
+          "exitCode": 0
+        },
+        {
+          "seconds": 0.112697,
+          "exitCode": 0
+        },
+        {
+          "seconds": 0.129506,
+          "exitCode": 0
+        },
+        {
+          "seconds": 0.12101,
+          "exitCode": 0
+        }
+      ]
+    }
+  ],
+  "login": [
+    {
+      "network": "facebook",
+      "beforeMedianInputMs": 807,
+      "beforeMaxInputMs": 1957,
+      "afterMedianInputMs": 464,
+      "afterMaxInputMs": 727,
+      "samplesBefore": [
+        {
+          "frameMs": 2620,
+          "inputMs": 807
+        },
+        {
+          "frameMs": 581,
+          "inputMs": 1957
+        },
+        {
+          "frameMs": 691,
+          "inputMs": 714
+        }
+      ],
+      "samplesAfter": [
+        {
+          "frameMs": 1207,
+          "inputMs": 464
+        },
+        {
+          "frameMs": 1931,
+          "inputMs": 727
+        },
+        {
+          "frameMs": 481,
+          "inputMs": 84
+        }
+      ]
+    },
+    {
+      "network": "instagram",
+      "beforeMedianInputMs": 516,
+      "beforeMaxInputMs": 1560,
+      "afterMedianInputMs": 134,
+      "afterMaxInputMs": 238,
+      "samplesBefore": [
+        {
+          "frameMs": 1300,
+          "inputMs": 1560
+        },
+        {
+          "frameMs": 495,
+          "inputMs": 516
+        },
+        {
+          "frameMs": 205,
+          "inputMs": 214
+        }
+      ],
+      "samplesAfter": [
+        {
+          "frameMs": 1174,
+          "inputMs": 134
+        },
+        {
+          "frameMs": 628,
+          "inputMs": 238
+        },
+        {
+          "frameMs": 195,
+          "inputMs": 53
+        }
+      ]
+    },
+    {
+      "network": "tiktok",
+      "beforeMedianInputMs": 1353,
+      "beforeMaxInputMs": 4172,
+      "afterMedianInputMs": 373,
+      "afterMaxInputMs": 1268,
+      "samplesBefore": [
+        {
+          "frameMs": 3985,
+          "inputMs": 4172
+        },
+        {
+          "frameMs": 762,
+          "inputMs": 787
+        },
+        {
+          "frameMs": 1380,
+          "inputMs": 1353
+        }
+      ],
+      "samplesAfter": [
+        {
+          "frameMs": 4866,
+          "inputMs": 1268
+        },
+        {
+          "frameMs": 1419,
+          "inputMs": 373
+        },
+        {
+          "frameMs": 2170,
+          "inputMs": 133
+        }
+      ]
+    }
+  ],
+  "probeLimit": "Only public login pages and Tab events. No credentials, login completion, CAPTCHA bypass or publication.",
+  "gatewayIdle": {
+    "activeContexts": 0,
+    "queuedContexts": 0,
+    "browserRunning": false,
+    "interactiveFlows": 0
+  },
+  "broker": {
+    "health": "healthy",
+    "persistentQueues": 37,
+    "consumers": 7,
+    "pendingMessages": 0
+  },
+  "health": {
+    "apiReady": true,
+    "webStatus": 200,
+    "fatalLogErrors": 0,
+    "services": [
+      "zuno-api",
+      "vorix-worker",
+      "marketplaces-worker",
+      "social-provider-gateway",
+      "zuno-web"
+    ]
+  },
+  "sourceChecks": [
+    {
+      "file": "docker-compose.zuno.yml",
+      "sha256": "b9cd707777cef03ba7476330d92987b9d64d3dcfb61b7bfa0942b3b19617ac21"
+    },
+    {
+      "file": "docker-compose.conversas-gateway.yml",
+      "sha256": "1bbfb647dc7304bdb5d1b87f9c14ffeb66ed6b81a9e24e3fcd0703d61195dc41"
+    },
+    {
+      "file": "src/infrastructure/social/gateway/browser-pool.ts",
+      "sha256": "0230e33ef8f34651ef5ad72ee6dd7b6c0a05a45d81dfcc00f317cc21e41fb913"
+    },
+    {
+      "file": "src/infrastructure/social/gateway/service.ts",
+      "sha256": "c4ea6637ec604638eda5a4037e0e99af9f2ad5599a152e9f5a390ff51cb5fb49"
+    },
+    {
+      "file": "web/app/workspaces/[workspaceId]/social/connect/page.tsx",
+      "sha256": "6f8f4028b53fdd3323c650d2a56887220b4f2fdffe36720d2bb3a4fd9ac631c3"
+    },
+    {
+      "file": "web/features/social/remote-input.ts",
+      "sha256": "6a6171c4d07d41789e3958e82cf8b931c7208624d254b40ceeef050ba8e8ea95"
+    },
+    {
+      "file": "scripts/operations/rabbitmq-healthcheck.sh",
+      "sha256": "301cd0a08ce0bf7727c726c40f2647a61c5611784b8a401c150e2d89ebede3e3"
+    }
+  ],
+  "validation": {
+    "backendTests": 63,
+    "webUnitTests": 234,
+    "browserTests": 12,
+    "builds": "passed",
+    "compose": "passed"
+  },
+  "idleMemory": {
+    "at": "2026-11-02T21:52:07.439Z",
+    "warm": {
+      "resources": {
+        "activeContexts": 0,
+        "queuedContexts": 0,
+        "browserRunning": true,
+        "interactiveFlows": 0
+      },
+      "anonymousMiB": 179.7,
+      "fileCacheMiB": 299.7
+    },
+    "cold": {
+      "resources": {
+        "activeContexts": 0,
+        "queuedContexts": 0,
+        "browserRunning": false,
+        "interactiveFlows": 0
+      },
+      "anonymousMiB": 72.6,
+      "fileCacheMiB": 290.3
+    },
+    "anonymousReleasedMiB": 107.1,
+    "diagnosticNodeIncludedInBothSamples": true,
+    "credentialsEntered": false
+  },
+  "memoryAccounting": "Docker working set includes active file cache; use the paired anonymous-memory measurement for the idle-browser release. General before/after cache workloads differ.",
+  "maintenance": {
+    "workerRestartCount": 7,
+    "workerLastStartedAt": "2026-11-02T21:45:37.268787249Z",
+    "workerOomKilled": false,
+    "observation": "Stable since broker maintenance; no further restarts at 21:56 UTC, healthy and no fatal errors in the last 3 minutes. Other application services and broker restart counters were zero."
+  },
+  "deploymentLog": "/var/log/vorix-deploy-f7ebda9-20261102213526.log",
+  "brokerLog": "/var/log/vorix-rabbit-performance-f7ebda9.log"
+}

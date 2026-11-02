@@ -60,5 +60,76 @@ os checks HTTP de [monitoramento](https://www.rabbitmq.com/docs/4.1/monitoring) 
 [endpoints de saúde](https://www.rabbitmq.com/docs/http-api-reference). A captura mantém as opções
 de máscara do [Playwright](https://playwright.dev/docs/api/class-page#page-screenshot).
 
-Os números finais após publicação serão registrados junto do resultado de deploy e das novas
-amostras. O diagnóstico de transporte não comprova login completo/MFA nas contas das redes.
+## Resultado publicado
+
+Release `f7ebda948a0b94ef852d52ec062d0f6a499bc18b`, enviada à branch `main` e publicada em
+produção. O deploy finalizou com `DEPLOY_DONE`, API pronta, interface HTTP 200, imagens atuais
+saudáveis e zero erros fatais no recorte de logs do deploy. Não há migration nova nesta correção.
+
+A troca do healthcheck do RabbitMQ foi aplicada separadamente, sem trocar sua imagem, remover
+volumes ou reiniciar o WuzAPI. Foram preservadas as 37 filas duráveis; os sete consumidores
+reconectaram e a conferência final encontrou zero mensagens pendentes/em processamento. O arquivo
+de ambiente do broker manteve o mesmo hash. A operação só iniciou após confirmar filas vazias.
+
+O worker de atendimento registra sete reinícios durante essa manutenção do broker. Seu último
+início foi às 18:45:37 (America/Sao_Paulo); a conferência às 18:56 continuava com o mesmo contador,
+saudável, sem OOM e sem erros fatais nos três minutos anteriores. Os demais serviços conferidos
+estavam com contador zero. Esse evento de manutenção é separado da medição de consumo em repouso.
+
+| Serviço | CPU média antes | CPU média depois | Pico antes | Pico depois |
+| --- | ---: | ---: | ---: | ---: |
+| RabbitMQ | 9,42% | 0,71% | 114,79% | 4,91% |
+| API | 3,81% | 1,18% | 58,95% | 6,11% |
+| Interface | 1,27% | 0,46% | 37,88% | 13,65% |
+| Gateway social | 1,23% | 0,21% | 34,71% | 6,23% |
+
+Percentuais de um núcleo; cada janela teve 30 segundos, sem build ou diagnóstico de login em
+execução. São amostras operacionais, não um teste de carga nem garantia de consumo constante.
+Outros serviços do host continuaram ativos e não foram alterados.
+
+| Rede | Mediana da entrada antes | Depois | Maior latência antes | Depois |
+| --- | ---: | ---: | ---: | ---: |
+| Facebook | 807 ms | 464 ms | 1.957 ms | 727 ms |
+| Instagram | 516 ms | 134 ms | 1.560 ms | 238 ms |
+| TikTok | 1.353 ms | 373 ms | 4.172 ms | 1.268 ms |
+
+Foram três eventos Tab por rede em páginas públicas, sem credenciais. A duração de carregar a
+página, de produzir a imagem, da rede do cliente e de concluir login/MFA é distinta dessa latência.
+As capturas ainda podem demorar mais, especialmente durante o carregamento inicial do TikTok;
+elas passaram a ocorrer independentemente da fila de entrada. Não foi comprovado login completo
+nas contas dos clientes nem publicação nas redes.
+
+### Memória de processos e cache
+
+Foi confirmado em produção `activeContexts=0`, `interactiveFlows=0` e `browserRunning=false`
+depois do período ocioso. Em uma verificação pareada no mesmo container, após encerrar um contexto
+de diagnóstico mas ainda com o Chromium aberto, a memória anônima era 179,7 MiB. Depois do timer
+de ociosidade ela caiu para 72,6 MiB: **107,1 MiB liberados**, sem forçar coleta, descarte de cache
+ou encerramento de sessões alheias. O pequeno processo de diagnóstico estava presente nas duas
+leituras; não se deve interpretar 72,6 MiB como o custo exclusivo do gateway.
+
+O indicador de working set do Docker variou de 165,5 para 214,8 MiB na coleta geral, que ocorreu
+após carregar as três redes para diagnóstico. Isso inclui páginas de arquivos ainda consideradas
+ativas pelo kernel. A inspeção confirmou somente o Node no gateway, com cerca de 62 MiB de
+memória anônima naquele instante e aproximadamente 145 MiB de cache ativo de arquivos. Portanto,
+essa variação não comprova aumento do heap ou permanência do Chromium: não foi escondida nem
+comparada como se todas as páginas de cache fossem memória privada de processos.
+
+O host apresentou 716 MiB disponíveis na conferência posterior, contra 612 MiB na primeira leitura;
+o valor depende também dos outros serviços e do cache. Não foi realizado `drop_caches` nem alteração
+de limites para produzir uma redução artificial no painel.
+
+### Backups e evidências
+
+- Código: `/opt/zuno/deploy_backups/pre-f7ebda9-20261102213526.tgz`.
+- Banco: `/opt/zuno/deploy_backups/db-pre-f7ebda9-20261102213526.sql.gz`.
+- Configuração principal: `/root/.env.zuno.pre-f7ebda9-20261102213526`.
+- Broker: Compose anterior em `/root/vorix-rabbit-compose-pre-f7ebda9.yml` e ambiente preservado
+  em `/root/.env.conversas.pre-f7ebda9`.
+- Logs: `/var/log/vorix-deploy-f7ebda9-20261102213526.log` e
+  `/var/log/vorix-rabbit-performance-f7ebda9.log`.
+- [Medições e validação estruturadas](social-login-performance-validation-20261102.json).
+
+Os sete arquivos principais também tiveram SHA-256 conferido contra o commit publicado.
+Conexões salvas permanecem no volume cifrado. Janelas de autenticação abertas antes da troca do
+gateway precisam ser reabertas para carregar o fluxo atualizado.

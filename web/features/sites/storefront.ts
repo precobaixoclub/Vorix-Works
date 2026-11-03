@@ -34,11 +34,14 @@ async function call<T>(slug:string,action:string,body:Record<string,unknown>):Pr
  return data.data as T;
 }
 export type WhatsappIntent={reference:string;redirectPath:string;whatsappUrl:string};
+/** Pedido registrado sem WhatsApp no site: não há para onde redirecionar. */
+export type ReceivedIntent={reference:string;received:true};
 /** Abre a aba antes do await (senão o navegador bloqueia como pop-up) e redireciona quando a intenção existe. */
-export async function openWhatsapp(start:()=>Promise<WhatsappIntent>,basePath:string){
+export async function openWhatsapp<T extends WhatsappIntent|ReceivedIntent>(start:()=>Promise<T>,basePath:string):Promise<T>{
  const popup=window.open("","_blank");
  try{
-  const intent=await start();const target=new URL(`${basePath}/i/${encodeURIComponent(intent.reference)}`,window.location.href).href;
+  const intent=await start();
+  if("received" in intent){popup?.close();return intent;}const target=new URL(`${basePath}/i/${encodeURIComponent(intent.reference)}`,window.location.href).href;
   if(popup&&!popup.closed){popup.opener=null;popup.location.href=target;}else window.location.assign(target);
   return intent;
  }catch(error){popup?.close();throw error;}
@@ -50,9 +53,9 @@ export async function setCartItem(slug:string,input:{productId:string;variantId?
  if(cart.token)storeCartToken(slug,cart.token);
  return cart;
 }
-export async function checkoutCart(slug:string,requestKey:string){
+export async function checkoutCart(slug:string,requestKey:string,customer?:{name:string;phone:string}){
  const token=cartToken(slug);if(!token)throw Error("Seu carrinho está vazio.");
- return call<WhatsappIntent>(slug,"checkout",{token,requestKey,...visitorContext(slug)});
+ return call<WhatsappIntent|ReceivedIntent>(slug,"checkout",{token,requestKey,...(customer?{customer}:{}),...visitorContext(slug)});
 }
 export function trackSiteEvent(slug:string,type:"SITE_VIEW"|"PRODUCT_VIEW",productId?:string){
  const device=window.matchMedia("(max-width: 600px)").matches?"mobile":window.matchMedia("(max-width: 1024px)").matches?"tablet":"desktop";

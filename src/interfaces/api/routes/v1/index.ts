@@ -11,7 +11,7 @@ import {siteCheckoutStatus} from "../../../../application/commerce/checkout-use-
 import {PostgresCommerceOrderRepository} from "../../../../infrastructure/storage/postgres/postgres-commerce-order-repository.js";
 import {SandboxPaymentProvider,MercadoPagoPaymentProvider} from "../../../../infrastructure/commerce/payment-providers.js";
 import {OwnShippingProvider,MelhorEnvioShippingProvider} from "../../../../infrastructure/commerce/shipping-providers.js";
-import type {SiteLeadDeps} from "../../../../application/commercial-bridge/site-lead-use-cases.js";
+import {processSiteCartLead,type SiteLeadDeps} from "../../../../application/commercial-bridge/site-lead-use-cases.js";
 import { registerCommercialResponseVisibility } from "../../http/commercial-response-visibility.js";
 import { registerWorkspaceTenantGuard } from "../../http/workspace-tenant-guard.js";
 import { registerCrmAccessGuards } from "../../http/crm-access.js";
@@ -544,6 +544,7 @@ export async function registerV1Routes(app: FastifyInstance): Promise<void> {
         workspaceRepository: app.zunoContainer.workspaceRepository,
         teamBelongsToWorkspace: async ({ tenantId, workspaceId, teamId }) => { const team = await identity.teamRepository.getById(teamId); return !!team && team.tenantId === tenantId && team.workspaceId === workspaceId; },
         log: siteLead.log,
+        registerCartLead: (input) => processSiteCartLead(siteLead, input),
         access: { teamMembershipRepository: identity.teamMembershipRepository },
       });
       await registerCommerceRoutes(app, {

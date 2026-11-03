@@ -12,7 +12,7 @@ import {publishSite,publicSite} from "../dist/application/sites/site-use-cases.j
 import {generateVariantGrid} from "../dist/application/sales/catalog-use-cases.js";
 import {resolveProductCommerce,defaultSiteCommerceSettings,siteCommerceSettingsSchema,extractSalesIntentReference,newSalesIntentReference,salesIntentWhatsappMessage} from "../dist/domain/sites/site-commerce.js";
 import {startProductWhatsapp,resolveSalesIntentRedirect,setPublicCartItem,getPublicCart,checkoutPublicCartToWhatsapp,saveSiteCommerceSettings,recordPublicSiteEvent} from "../dist/application/sites/site-commerce-use-cases.js";
-import {convertSalesIntentFromInbound,attachAttendanceToConvertedIntent,processSiteFormLead} from "../dist/application/commercial-bridge/site-lead-use-cases.js";
+import {convertSalesIntentFromInbound,attachAttendanceToConvertedIntent,processSiteFormLead,processSiteCartLead} from "../dist/application/commercial-bridge/site-lead-use-cases.js";
 import {searchConversationProducts,sendProductToConversation,addProductToConversationOpportunity} from "../dist/application/commercial-bridge/conversation-product-use-cases.js";
 import {getSharedProduct} from "../dist/application/commercial-bridge/public-product-use-cases.js";
 import {createProductShareCodec} from "../dist/shared/utils/product-share-token.js";
@@ -44,7 +44,7 @@ async function commerce({whatsapp=WHATSAPP}={}){
  const c=await productSiteContext(db.pool);
  const commerceRepository=new PostgresSiteCommerceRepository(db.pool);
  const siteDeps={...c.siteDeps,commerceRepository};
- const site=await c.siteDeps.repository.create({...c.scope,slug:"loja-"+randomUUID().slice(0,8),draft:{content:siteContentSchema.parse({name:"Loja Fixture",whatsapp,blocks:[{id:"catalog",type:"catalog",title:"Catálogo"}]}),theme:siteThemeSchema.parse({})}});
+ const site=await c.siteDeps.repository.create({...c.scope,slug:"loja-"+randomUUID().slice(0,8),draft:{content:siteContentSchema.parse({name:"Loja Fixture",...(whatsapp?{whatsapp}:{}),blocks:[{id:"catalog",type:"catalog",title:"Catálogo"}]}),theme:siteThemeSchema.parse({})}});
  await publishSite(siteDeps,{...c.scope,id:site.id,revision:site.revision,actorUserId:c.actor.userId});
  const productA=await c.product({name:"Camiseta Basic Preta",priceCents:5990,details:visible({slug:"camiseta-basic"})});
  const productB=await c.product({name:"Calça Jeans",priceCents:15990,trackStock:true,details:visible({type:"APPAREL",slug:"calca-jeans",options:[{key:"size",name:"Tamanho",values:["P","M","G"]}]})});
@@ -221,6 +221,36 @@ test("E2E 52 — carrinho com variação vira uma oportunidade com todos os iten
  assert.equal((await c.d.dealRepository.getById(intent.dealId)).valueCents,5990*2+15990);
  await c.inbound(`Ref: ${checkout.reference}`,{phone:"+5511955554444"});
  assert.equal(await dealsOf(c),1);
+});
+
+test("carrinho registrado no Vorix: pede nome e WhatsApp, cria contato e oportunidade na hora (sem WhatsApp conectado) e a mensagem só vincula",async()=>{
+ const c=await commerce();
+ await saveSiteCommerceSettings(c.siteDeps,{site:c.site,settings:{mode:"WHATSAPP_CART",cartLead:true},actorUserId:c.actor.userId});
+ const deps={...c.siteDeps,registerCartLead:input=>processSiteCartLead(c.siteLead,input)};
+ let cart=await setPublicCartItem(deps,{lookup:c.lookup,productId:c.productA.id,quantity:2});const token=cart.token;
+ cart=await setPublicCartItem(deps,{lookup:c.lookup,token,productId:c.productB.id,variantId:c.variantM.id,quantity:1});
+ await assert.rejects(checkoutPublicCartToWhatsapp(deps,{lookup:c.lookup,token,requestKey:randomUUID()}),/nome e WhatsApp/);
+ const requestKey=randomUUID();
+ const checkout=await checkoutPublicCartToWhatsapp(deps,{lookup:c.lookup,token,requestKey,customer:{name:"Ana Compradora",phone:"+5511977776666"}});
+ assert.ok(checkout.whatsappUrl);
+ await checkoutPublicCartToWhatsapp(deps,{lookup:c.lookup,token,requestKey,customer:{name:"Ana Compradora",phone:"+5511977776666"}});
+ const intent=await c.commerceRepository.getIntentByReference(checkout.reference);
+ assert.ok(intent.contactId);assert.ok(intent.dealId);assert.equal(await dealsOf(c),1);
+ const items=await c.d.dealItemRepository.listByDeal(intent.dealId);
+ assert.deepEqual(items.map(item=>[item.productId,item.variantId??null,Number(item.quantity)]).sort(),[[c.productA.id,null,2],[c.productB.id,c.variantM.id,1]].sort());
+ assert.equal((await c.d.dealRepository.getById(intent.dealId)).contactId,intent.contactId);
+ // A mensagem com a referência, se chegar, usa a mesma oportunidade.
+ const {result}=await c.inbound(`Ref: ${checkout.reference}`,{phone:"+5511977776666"});
+ assert.equal(result.dealId,intent.dealId);assert.equal(await dealsOf(c),1);
+});
+
+test("carrinho registrado no Vorix sem número no site: pedido recebido, sem redirecionar",async()=>{
+ const c=await commerce({whatsapp:""});
+ await saveSiteCommerceSettings(c.siteDeps,{site:c.site,settings:{mode:"WHATSAPP_CART",cartLead:true},actorUserId:c.actor.userId});
+ const deps={...c.siteDeps,registerCartLead:input=>processSiteCartLead(c.siteLead,input)};
+ const cart=await setPublicCartItem(deps,{lookup:c.lookup,productId:c.productA.id,quantity:1});
+ const checkout=await checkoutPublicCartToWhatsapp(deps,{lookup:c.lookup,token:cart.token,requestKey:randomUUID(),customer:{name:"Bruno",phone:"+5511966665555"}});
+ assert.equal(checkout.received,true);assert.equal(checkout.whatsappUrl,undefined);assert.equal(await dealsOf(c),1);
 });
 
 test("referência expirada não converte; referência de outro tenant é ignorada",async()=>{

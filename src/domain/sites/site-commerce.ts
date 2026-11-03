@@ -22,6 +22,8 @@ export const siteCommerceSettingsSchema=z.object({
  /** Equipe que recebe os novos clientes do Site; a distribuição é a da própria equipe. */
  teamId:z.string().min(1).max(160).optional(),
  createOpportunityFromWhatsapp:z.boolean().default(true),
+ /** Carrinho finalizado pede nome e WhatsApp do cliente e já cria contato + oportunidade com os itens, mesmo sem WhatsApp conectado ao Vorix. */
+ cartLead:z.boolean().default(false),
  form:z.object({openAttendance:z.boolean().default(false),createOpportunity:z.boolean().default(false)}).strict().default({openAttendance:false,createOpportunity:false}),
  notifyTeam:z.boolean().default(true),
  outOfStock:z.enum(["ASK_AVAILABILITY","SHOW_UNAVAILABLE","HIDE_CTA"]).default("ASK_AVAILABILITY"),
@@ -64,7 +66,8 @@ export function resolveProductCommerce(input:{settings:SiteCommerceSettings;hasW
  // Compra online só com loja pronta e preço válido; senão cai para conversa (nunca botão de compra quebrado).
  const canCheckout=requested==="ONLINE_CHECKOUT"&&checkoutReady&&(input.product.priceCents??0)>0;
  let saleMode:EffectiveSaleMode=canCheckout?"ONLINE_CHECKOUT":requested==="SHOW_ONLY"?"SHOW_ONLY":requested==="WHATSAPP_CART"?"WHATSAPP_CART":"WHATSAPP_DIRECT";
- if((saleMode==="WHATSAPP_DIRECT"||saleMode==="WHATSAPP_CART")&&!input.hasWhatsapp)saleMode="SHOW_ONLY";
+ // Carrinho registrado no Vorix funciona sem número no site: o pedido vira oportunidade e a equipe retorna.
+ if(saleMode==="WHATSAPP_DIRECT"&&!input.hasWhatsapp||saleMode==="WHATSAPP_CART"&&!input.hasWhatsapp&&!input.settings.cartLead)saleMode="SHOW_ONLY";
  const availability=!input.product.trackStock||input.product.availableQuantity===undefined?"untracked":input.product.availableQuantity>0?"available":"unavailable";
  const inquiry:CommerceAction[]=input.contactForm?["inquiry"]:[];
  const base={requestedSaleMode:input.product.saleMode??"INHERIT_SITE_DEFAULT",checkoutAvailable:saleMode==="ONLINE_CHECKOUT",availability} as const;
@@ -75,7 +78,7 @@ export function resolveProductCommerce(input:{settings:SiteCommerceSettings;hasW
   return {...base,saleMode,allowedActions:input.settings.outOfStock==="SHOW_UNAVAILABLE"?inquiry:[],ctaLabel:"Indisponível no momento"};
  }
  if(saleMode==="ONLINE_CHECKOUT")return {...base,saleMode,allowedActions:["buy_now","add_to_cart",...(input.hasWhatsapp?["whatsapp" as const]:[]),...inquiry],ctaLabel:"Comprar agora"};
- if(saleMode==="WHATSAPP_CART")return {...base,saleMode,allowedActions:["add_to_cart","whatsapp",...inquiry],ctaLabel:"Adicionar ao carrinho"};
+ if(saleMode==="WHATSAPP_CART")return {...base,saleMode,allowedActions:["add_to_cart",...(input.hasWhatsapp?["whatsapp" as const]:[]),...inquiry],ctaLabel:"Adicionar ao carrinho"};
  return {...base,saleMode,allowedActions:["whatsapp",...inquiry],ctaLabel:"Falar no WhatsApp"};
 }
 /** O que falta para a loja vender online. Vazio = pronta. Credencial do gateway é checada fora (segredo). */
@@ -90,7 +93,7 @@ export function checkoutReadiness(settings:SiteCommerceSettings,input:{paymentCr
 }
 export function siteCommerceSummary(settings:SiteCommerceSettings,hasWhatsapp:boolean,checkoutReady=false){
  const cartModes=settings.mode==="WHATSAPP_CART"||settings.mode==="HYBRID"||settings.mode==="ONLINE_CHECKOUT";
- return {mode:settings.mode,cartEnabled:cartModes&&(hasWhatsapp||checkoutReady),whatsappEnabled:hasWhatsapp,checkoutAvailable:checkoutReady,showcaseCta:SHOWCASE_CTAS[settings.showcaseCta],sandbox:checkoutReady&&settings.checkout.payment.provider==="SANDBOX"};
+ return {mode:settings.mode,cartEnabled:cartModes&&(hasWhatsapp||checkoutReady||settings.cartLead),collectCustomer:cartModes&&settings.cartLead,whatsappEnabled:hasWhatsapp,checkoutAvailable:checkoutReady,showcaseCta:SHOWCASE_CTAS[settings.showcaseCta],sandbox:checkoutReady&&settings.checkout.payment.provider==="SANDBOX"};
 }
 
 // Referência curta: alfabeto sem 0/O/1/I/L, 6 posições (~887 milhões), sorteada com CSPRNG — não

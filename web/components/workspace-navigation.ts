@@ -60,7 +60,7 @@ const MARKETING_BACKSTAGE: readonly WorkspaceNavItem[] = [
 ] as const;
 
 export const SOLUTION_NAVIGATION: Readonly<Record<SolutionKey, SolutionNavigation>> = {
-  site:{home:{href:"/site",label:"Meu site",icon:"home"},sections:[{label:"SITE",items:[{href:"/site",label:"Editor do site",icon:"settings"},{href:"/site/products",label:"Produtos",icon:"products"},{href:"/site/pedidos",label:"Pedidos",icon:"orders"},{href:"/site/analytics",label:"Analytics",icon:"analytics"}]}],backstage:[],mobilePrimary:[{href:"/site",label:"Meu site",icon:"home"},{href:"/site/products",label:"Produtos",icon:"products"},{href:"/site/pedidos",label:"Pedidos",icon:"orders"},{href:"/site/analytics",label:"Analytics",icon:"analytics"}],mobileMenu:[]},
+  site:{home:{href:"/site",label:"Meu site",icon:"home"},sections:[{label:"SITE",items:[{href:"/site",label:"Editor do site",icon:"settings"},{href:"/site/products",label:"Produtos",icon:"products"},{href:"/site/pedidos",label:"Pedidos",icon:"orders"},{href:"/site/analytics",label:"Analytics",icon:"analytics"}]},{label:"VENDAS",items:[{href:"/site/oportunidades",label:"Oportunidades",icon:"deals"},{href:"/site/propostas",label:"Propostas",icon:"proposals"}]}],backstage:[],mobilePrimary:[{href:"/site",label:"Meu site",icon:"home"},{href:"/site/products",label:"Produtos",icon:"products"},{href:"/site/pedidos",label:"Pedidos",icon:"orders"},{href:"/site/analytics",label:"Analytics",icon:"analytics"}],mobileMenu:[{label:"Vendas",items:[{href:"/site/oportunidades",label:"Oportunidades",icon:"deals"},{href:"/site/propostas",label:"Propostas",icon:"proposals"}]}]},
   conversations: {
     home: CONVERSATIONS_HOME,
     sections: [

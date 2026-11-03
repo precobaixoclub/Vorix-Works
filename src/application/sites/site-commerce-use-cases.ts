@@ -6,7 +6,10 @@ import type {CreateSalesIntentInput,SiteCartItemSnapshot,SiteCommerceRepositoryP
 import {commerceContext,isPublicCatalogProduct,presentPublicProduct,resolvePublishedSite,type PublicSiteProduct,type SiteCommerceContext,type SiteEngineDeps} from "./site-use-cases.js";
 import {signOwnedUrl,OBJECT_URL_TTL} from "../../shared/utils/object-url-signing.js";
 
-export type SiteCommerceDeps=SiteEngineDeps&{commerceRepository:SiteCommerceRepositoryPort;teamBelongsToWorkspace?:(input:{tenantId:string;workspaceId:string;teamId:string})=>Promise<boolean>;now?:()=>Date;log?:(event:string,data:Record<string,unknown>)=>void};
+export type SiteCommerceDeps=SiteEngineDeps&{commerceRepository:SiteCommerceRepositoryPort;
+ /** Registra o pedido do carrinho no CRM (contato já criado → oportunidade com os itens). Vem da ponte Site→CRM. */
+ registerCartLead?:(input:{intentId:string;contactId:string;customer:string})=>Promise<{dealId?:string}>;
+teamBelongsToWorkspace?:(input:{tenantId:string;workspaceId:string;teamId:string})=>Promise<boolean>;now?:()=>Date;log?:(event:string,data:Record<string,unknown>)=>void};
 export type PublicLookup={slug?:string;hostname?:string};
 export type VisitorContext={sessionId?:string;pageUrl?:string;utm?:Utm;eventKey?:string;referrer?:string;device?:"mobile"|"tablet"|"desktop"|"unknown"};
 const CART_TTL_MS=30*24*60*60*1000;
@@ -141,16 +144,20 @@ export async function setPublicCartItem(deps:SiteCommerceDeps,input:{lookup:Publ
  return {...(await presentCart(deps,context,cart,token)).view,token};
 }
 /** "Finalizar pelo WhatsApp": congela o carrinho numa intenção CART_WHATSAPP. Repetir devolve a mesma intenção. */
-export async function checkoutPublicCartToWhatsapp(deps:SiteCommerceDeps,input:{lookup:PublicLookup;token:string;requestKey:string}&VisitorContext){
+export async function checkoutPublicCartToWhatsapp(deps:SiteCommerceDeps,input:{lookup:PublicLookup;token:string;requestKey:string;customer?:{name:string;phone:string}}&VisitorContext){
  const context=await publicContext(deps,input.lookup);const number=context.snapshot.content.whatsapp;
- if(!number)throw Error("SITE_VALIDATION: o WhatsApp da empresa não está configurado.");
+ const cartLead=context.commerce.settings.cartLead;
+ if(!number&&!cartLead)throw Error("SITE_VALIDATION: o WhatsApp da empresa não está configurado.");
+ if(cartLead&&!input.customer)throw Error("SITE_VALIDATION: informe seu nome e WhatsApp para finalizar o pedido.");
+ // Sem número no site, o pedido fica registrado no Vorix e a equipe entra em contato.
+ const result=(intent:SalesIntent)=>number?intentResult(intent,number):{reference:intent.reference,received:true as const};
  const cart=await deps.commerceRepository.getCart({siteId:context.site.id,tokenHash:hashToken(input.token)});
  if(!cart)throw Error("SITE_NOT_FOUND: carrinho não encontrado.");
  const repeated=await deps.commerceRepository.findIntentByRequestKey({siteId:context.site.id,requestKey:input.requestKey});
- if(repeated)return intentResult(repeated,number);
+ if(repeated)return result(repeated);
  if(cart.status==="CHECKED_OUT"&&cart.salesIntentId){
   const previous=await deps.commerceRepository.getIntent(cart.salesIntentId);
-  if(previous)return intentResult(previous,number);
+  if(previous)return result(previous);
  }
  if(cart.status!=="ACTIVE"||Date.parse(cart.expiresAt)<=now(deps).getTime())throw Error("SITE_VALIDATION: este carrinho expirou. Monte um novo carrinho.");
  const {lines:allLines}=await presentCart(deps,context,cart,input.token);
@@ -167,7 +174,15 @@ export async function checkoutPublicCartToWhatsapp(deps:SiteCommerceDeps,input:{
  else for(const line of lines)await deps.commerceRepository.removeCartItem({cartId:cart.id,productId:line.productId,variantId:line.variantId});
  const base={tenantId:intent.tenantId,workspaceId:intent.workspaceId,siteId:intent.siteId,anonymousSessionId:input.sessionId,cartId:cart.id,salesIntentId:intent.id,pageUrl,utm};
  if(created){emit(deps,{...base,type:"CART_WHATSAPP_START"});emit(deps,{...base,type:"SALES_INTENT_CREATED"});deps.log?.("WhatsAppCartStarted",{intentId:intent.id,siteId:intent.siteId,lines:items.length});}
- return intentResult(intent,number);
+ if(created&&cartLead&&input.customer){
+  // Mesmo padrão do formulário: falha no CRM nunca perde o pedido do visitante; o erro fica no log.
+  try{
+   const list=items.map(item=>`${item.quantity}x ${item.name}${item.variantLabel?` (${item.variantLabel})`:""}`).join("\n");
+   const saved=await deps.repository.addInquiry({site:context.site,name:input.customer.name,phone:input.customer.phone,message:`Pedido pelo carrinho do site (${intent.reference}):\n${list}`.slice(0,4000),requestKey:input.requestKey});
+   if(saved.contactId){if(deps.registerCartLead)await deps.registerCartLead({intentId:intent.id,contactId:saved.contactId,customer:input.customer.name});else await deps.commerceRepository.updateIntentLinks(intent.id,{contactId:saved.contactId});}
+  }catch(error){deps.log?.("site_cart_lead_failed",{intentId:intent.id,error:error instanceof Error?error.message:String(error)});}
+ }
+ return result(intent);
 }
 
 // ---------------------------------------------------------------- administração

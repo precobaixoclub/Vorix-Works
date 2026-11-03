@@ -7,6 +7,7 @@ import {assertWorkspaceBelongsToTenant} from "./workspace-ownership.js";
 import {mustSite} from "../../../../application/sites/site-use-cases.js";
 import {checkoutPublicCartToWhatsapp,getPublicCart,getSiteCommerceSettings,listSiteSalesIntents,recordPublicSiteEvent,resolveSalesIntentRedirect,saveSiteCommerceSettings,setPublicCartItem,startProductWhatsapp,type SiteCommerceDeps} from "../../../../application/sites/site-commerce-use-cases.js";
 import {utmSchema} from "../../../../domain/sites/site-commerce.js";
+import {normalizeContactPhone} from "../../../../domain/crm/contact-phone.js";
 import {analyticsEventContextSchema} from "../../../../domain/sites/site-analytics.js";
 import type {WorkspaceRepositoryPort} from "../../../../application/ports/workspace-repository.port.js";
 import {hasPermission,type Permission} from "../../../../domain/identity/identity.model.js";
@@ -40,8 +41,10 @@ export async function registerSiteCommerceRoutes(app:FastifyInstance,deps:SiteCo
   return successEnvelope(await setPublicCartItem(deps,{...body,lookup:lookup(request)}),request.id);
  }));
  app.post("/public/sites/:slug/cart/checkout",async request=>guard(async()=>{
-  const body=z.object({token:cartToken,requestKey:z.string().uuid(),...visitor}).strict().parse(request.body);
-  return successEnvelope(await checkoutPublicCartToWhatsapp(deps,{...body,lookup:lookup(request)}),request.id);
+  const body=z.object({token:cartToken,requestKey:z.string().uuid(),customer:z.object({name:z.string().trim().min(2).max(160),phone:z.string().trim().min(8).max(40)}).strict().optional(),...visitor}).strict().parse(request.body);
+  const phone=body.customer?normalizeContactPhone(body.customer.phone):undefined;
+  if(body.customer&&!phone)throw new ValidationError("Informe um WhatsApp válido com DDD.");
+  return successEnvelope(await checkoutPublicCartToWhatsapp(deps,{...body,customer:body.customer&&phone?{name:body.customer.name,phone}:undefined,lookup:lookup(request)}),request.id);
  }));
  app.post("/public/sites/:slug/events",async(request,reply)=>guard(async()=>{
   const body=z.object({type:z.enum(["SITE_VIEW","PRODUCT_VIEW"]),productId:id.optional(),...visitor,...analyticsEventContextSchema.shape}).strict().parse(request.body);

@@ -130,6 +130,22 @@ export async function attachAttendanceToConvertedIntent(deps:SiteLeadDeps,input:
  if(attendance)await deps.commerceRepository.updateIntentLinks(input.intentId,{attendanceId:attendance.id});
 }
 
+/**
+ * Carrinho finalizado com nome e WhatsApp: a oportunidade nasce na hora, com os itens do carrinho,
+ * mesmo sem WhatsApp conectado. Se a mensagem com a referência chegar depois, a conversão só
+ * vincula a conversa a este mesmo contato e oportunidade (idempotente via intent.contactId/dealId).
+ */
+export async function processSiteCartLead(deps:SiteLeadDeps,input:{intentId:string;contactId:string;customer:string}):Promise<{dealId?:string}>{
+ const intent=await deps.commerceRepository.getIntent(input.intentId);if(!intent)return {};
+ const settings=await settingsFor(deps,intent.siteId);
+ await deps.commerceRepository.updateIntentLinks(intent.id,{contactId:input.contactId});
+ const ownerUserId=settings.teamId&&deps.inbox?.teamRepository&&deps.inbox.teamMembershipRepository?(await resolveNextTeamMember({teamRepository:deps.inbox.teamRepository,teamMembershipRepository:deps.inbox.teamMembershipRepository},{teamId:settings.teamId}).catch(()=>undefined))?.userId:undefined;
+ const dealId=await ensureOpportunity(deps,{...intent,contactId:input.contactId},{contactId:input.contactId,ownerUserId,teamId:settings.teamId});
+ await notifyLead(deps,{intent,settings,customer:input.customer,assigneeUserId:ownerUserId,dealId});
+ deps.log?.("SiteCartLeadCreated",{intentId:intent.id,siteId:intent.siteId,dealId});
+ return {dealId};
+}
+
 export type SiteFormLeadInput={siteId:string;tenantId:string;workspaceId:string;inquiryId:string;contactId:string;name:string;phone?:string;productId?:string;variantId?:string;quantity?:number;item?:SalesIntent["snapshot"]["items"][number];requestKey:string;anonymousSessionId?:string;pageUrl?:string;utm:SalesIntent["utm"]};
 /** Formulário do Site: o contato já existe (criado pelo repositório do Site); aqui entram as regras configuráveis. */
 export async function processSiteFormLead(deps:SiteLeadDeps,input:SiteFormLeadInput):Promise<{intentId:string;dealId?:string;conversationId?:string}>{

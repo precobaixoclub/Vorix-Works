@@ -51,6 +51,16 @@ describe("vitrine — visitante anônimo", () => {
     expect(popup.opener).toBeNull();
   });
 
+  it("pedido recebido sem WhatsApp fecha a aba provisória e mantém o visitante no site", async () => {
+    const popup = { location: { href: "" }, closed: false, opener: {}, close: vi.fn() };
+    const win = browser("https://loja.test/s/minha-loja", { popup });
+    const received = { reference: "VX-A8F2KM", received: true as const };
+    expect(await openWhatsapp(async () => received, "/s/minha-loja")).toEqual(received);
+    expect(popup.close).toHaveBeenCalledOnce();
+    expect(win.location.assign).not.toHaveBeenCalled();
+    expect(popup.location.href).toBe("");
+  });
+
   it("sem pop-up (bloqueado) segue na mesma aba; erro fecha a aba aberta", async () => {
     const win = browser("https://loja.test/produto/camiseta", { popup: null });
     await openWhatsapp(async () => ({ reference: "VX-A8F2KM", redirectPath: "", whatsappUrl: "" }), "");

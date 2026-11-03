@@ -120,7 +120,7 @@ test("alterar acesso: aplica perfil + exceções, audita cada diferença e vale 
   const { deps, person, contextOf } = await company(tenantId);
   const ownerId = await person("owner", { accountOwner: true });
   const carlosId = await person("editor");
-  const resolver = new AccessResolver(deps.membershipRepository);
+  const resolver = new AccessResolver(deps.membershipRepository, 10_000);
   const accessDeps = { ...deps, onAccessChanged: (userId, tenant) => resolver.invalidate(userId, tenant) };
   const principal = { userId: carlosId, tenantId, role: "editor", sessionId: "s", isPlatformAdmin: false };
   assert.equal(scopeFor({ permissions: (await resolver.resolve(principal)).permissions }, "inbox"), "own");
@@ -152,7 +152,7 @@ test("desativar: perde acesso na hora; principal e último Administrador protegi
   const { deps, person, contextOf } = await company(tenantId);
   const ownerId = await person("owner", { accountOwner: true });
   const anaId = await person("editor");
-  const resolver = new AccessResolver(deps.membershipRepository);
+  const resolver = new AccessResolver(deps.membershipRepository, 10_000);
   const accessDeps = { ...deps, onAccessChanged: (userId, tenant) => resolver.invalidate(userId, tenant) };
   const anaPrincipal = { userId: anaId, tenantId, role: "editor", sessionId: "s", isPlatformAdmin: false };
   assert.ok(await resolver.resolve(anaPrincipal));

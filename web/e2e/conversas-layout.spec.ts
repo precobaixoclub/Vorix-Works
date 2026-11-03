@@ -45,8 +45,7 @@ test("lista de conversas mostra preview real da última mensagem (texto e rótul
   await expect(page.getByText("Muito obrigada pelo atendimento!")).toBeVisible();
 });
 
-test("header da conversa é compacto e mostra Assumir/Finalizar sem precisar do menu extra (desktop, com a largura recuperada da sidebar/subnav)", async ({ page }) => {
-  test.skip(test.info().project.name === "mobile-390", "abaixo de md, Assumir/Finalizar ficam só no menu '⋯' — comportamento existente, não alterado nesta rodada");
+test("header da conversa mostra Assumir/Finalizar sem precisar do menu extra (no celular, numa segunda linha)", async ({ page }) => {
   await page.goto(`/workspaces/${WORKSPACE_ID}/conversas`);
   await page.getByText("Carla Mendes").click();
   await expect(page.getByRole("button", { name: /Assumir/ })).toBeVisible();

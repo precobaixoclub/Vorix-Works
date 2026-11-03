@@ -127,6 +127,28 @@ test("Rate limiter: limita por grupo, tenant, principal e janela", async () => {
   assert.equal((await limiter.consume(input)).allowed, true);
 });
 
+test("Rate limiter persistente: consumo atômico numa ida ao banco, sem estourar com requisições paralelas", async () => {
+  const db = await startTestPostgres({ port: 55437 });
+  try {
+    await applyMigrations(db.pool, MIGRATIONS_DIR);
+    const repo = new PostgresOperationalStateRepository(db.pool);
+    let now = new Date("2026-07-30T10:00:00.000Z");
+    const limiter = new OperationalRateLimiter(repo, { defaultLimit: 3, windowMs: 60_000, now: () => now });
+    const input = { routeGroup: "read", tenantId: "tenant-ops", principalId: "owner-ops", ip: "127.0.0.1" };
+    const results = await Promise.all(Array.from({ length: 5 }, () => limiter.consume(input)));
+    assert.equal(results.filter((result) => result.allowed).length, 3);
+    const blocked = results.find((result) => !result.allowed);
+    assert.equal(blocked.bucket.remaining, 0);
+    assert.ok(blocked.retryAfterMs > 0);
+    now = new Date("2026-07-30T10:01:01.000Z");
+    const renewed = await limiter.consume(input);
+    assert.equal(renewed.allowed, true);
+    assert.equal(renewed.bucket.remaining, 2);
+  } finally {
+    await db.stop();
+  }
+});
+
 test("Backpressure: ativa quando outbox/dead letters excedem limites e registra sinal seguro", async () => {
   const repo = new InMemoryOperationalStateRepository();
   const controller = new BackpressureController(repo, {

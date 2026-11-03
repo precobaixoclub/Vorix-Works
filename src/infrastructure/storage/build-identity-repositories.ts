@@ -187,7 +187,9 @@ export function buildIdentityRepositories(options: { databaseUrl: string; secret
   return {
     userRepository: new PostgresUserRepository(pool),
     membershipRepository,
-    accessResolver: new AccessResolver(membershipRepository),
+    // Cache curto: sem ele, toda requisição autenticada fazia uma consulta de membership. Mudanças
+    // de acesso feitas por este processo invalidam na hora (`onAccessChanged`); as demais valem em até 10s.
+    accessResolver: new AccessResolver(membershipRepository, 10_000),
     accessAuditLog: new PostgresAccessAuditLog(pool),
     sessionRepository: new PostgresSessionRepository(pool),
     refreshTokenRepository: new PostgresRefreshTokenRepository(pool),

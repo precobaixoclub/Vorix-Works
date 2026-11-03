@@ -62,7 +62,7 @@ export function BottomNav({ workspaceId }: { workspaceId: string }) {
 
   return (
     <>
-      <nav className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-5 border-t border-border bg-card/95 px-2 pb-[env(safe-area-inset-bottom)] pt-1.5 backdrop-blur md:hidden">
+      <nav className="mobile-chat-hide fixed inset-x-0 bottom-0 z-30 grid grid-cols-5 border-t border-border bg-card/95 px-2 pb-[env(safe-area-inset-bottom)] pt-1.5 backdrop-blur md:hidden">
         {PRIMARY_MOBILE_NAV.map((item) =>
           item.href === "/create" ? (
             <Link key={item.href} href={`${base}${item.href}`} className="flex flex-col items-center gap-1 px-1 py-1 text-[11px] font-medium text-primary dark:text-primary-glow">

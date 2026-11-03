@@ -104,6 +104,27 @@ export class PostgresOperationalStateRepository implements OperationalStateRepos
     return mapRateLimit(result.rows[0]);
   }
 
+  /** Uma ida ao banco por requisição (antes: select + upsert) e sem corrida entre requisições paralelas. */
+  async consumeRateLimitBucket(input: Omit<OperationalRateLimitBucket, "remaining" | "resetAt" | "updatedAt"> & { windowMs: number; now: string }): Promise<{ allowed: boolean; bucket: OperationalRateLimitBucket }> {
+    const result = await this.pool.query<RateLimitRow>(
+      `insert into operational_rate_limit_buckets as b (bucket_key, route_group, tenant_id, principal_id, ip, limit_value, remaining, reset_at, updated_at)
+       values ($1, $2, $3, $4, $5, $6, $6 - 1, $7::timestamptz + make_interval(secs => $8::double precision / 1000), $7)
+       on conflict (bucket_key) do update set
+         route_group = excluded.route_group,
+         tenant_id = excluded.tenant_id,
+         principal_id = excluded.principal_id,
+         ip = excluded.ip,
+         limit_value = excluded.limit_value,
+         remaining = case when b.reset_at <= excluded.updated_at then excluded.limit_value - 1 else greatest(b.remaining - 1, -1) end,
+         reset_at = case when b.reset_at <= excluded.updated_at then excluded.reset_at else b.reset_at end,
+         updated_at = excluded.updated_at
+       returning *`,
+      [input.key, input.routeGroup, input.tenantId, input.principalId, input.ip, input.limit, input.now, input.windowMs],
+    );
+    const bucket = mapRateLimit(result.rows[0]);
+    return { allowed: bucket.remaining >= 0, bucket: { ...bucket, remaining: Math.max(0, bucket.remaining) } };
+  }
+
   async listRateLimitBuckets(filter: { tenantId?: string; principalId?: string; routeGroup?: string; limit?: number } = {}): Promise<readonly OperationalRateLimitBucket[]> {
     const result = await this.pool.query<RateLimitRow>(
       `select * from operational_rate_limit_buckets

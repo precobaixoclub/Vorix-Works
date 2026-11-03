@@ -160,6 +160,10 @@ export class OperationalRateLimiter {
     const limit = input.limit ?? this.options.defaultLimit;
     const now = this.now();
     const key = rateLimitKey(input);
+    if (this.repository.consumeRateLimitBucket) {
+      const { allowed, bucket } = await this.repository.consumeRateLimitBucket({ key, routeGroup: input.routeGroup, tenantId: input.tenantId, principalId: input.principalId, ip: input.ip, limit, windowMs: this.options.windowMs, now: now.toISOString() });
+      return { allowed, bucket, retryAfterMs: allowed ? undefined : Math.max(0, Date.parse(bucket.resetAt) - now.getTime()) };
+    }
     const existing = await this.repository.getRateLimitBucket(key);
     const resetAt = existing ? new Date(existing.resetAt) : new Date(now.getTime() + this.options.windowMs);
     const expired = !existing || resetAt.getTime() <= now.getTime();

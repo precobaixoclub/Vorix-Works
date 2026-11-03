@@ -276,6 +276,22 @@ html:has(.app-shell) {
   font-size: 90%;
 }
 
+@media (max-width: 767px) {
+  /* iOS dá zoom ao focar campos com fonte menor que 16px (o painel usa 90%): mantém 16px no celular. */
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]),
+  textarea,
+  select {
+    font-size: 16px !important;
+  }
+  /* Conversa aberta (`InboxTab`): tela cheia, sem barra do topo, abas e menu inferior. */
+  html[data-mobile-chat] .mobile-chat-hide {
+    display: none !important;
+  }
+  html[data-mobile-chat] .mobile-chat-full {
+    padding-bottom: 0 !important;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: 0.01ms !important;

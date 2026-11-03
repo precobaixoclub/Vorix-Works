@@ -26,6 +26,7 @@ import {
   StickyNote,
   Mic,
   MoreHorizontal,
+  Package,
   Paperclip,
   Plus,
   Reply,
@@ -42,6 +43,7 @@ import {
   Video,
   Volume2,
   X,
+  Zap,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/Button";
@@ -662,6 +664,13 @@ export function InboxTab({ workspaceId }: { workspaceId: string }) {
   useEffect(() => {
     if (selectedConversationId) setMobileView("conversation");
   }, [selectedConversationId]);
+  // Conversa aberta no celular ocupa a tela inteira (sem barra do topo nem menu inferior), como no WhatsApp.
+  const chatOpen = mobileView === "conversation" && Boolean(selectedConversation);
+  useEffect(() => {
+    if (!chatOpen) return;
+    document.documentElement.dataset.mobileChat = "";
+    return () => { delete document.documentElement.dataset.mobileChat; };
+  }, [chatOpen]);
 
   function setSelectedConversationId(conversationId: string | undefined) {
     const nextParams = new URLSearchParams(searchParams.toString());
@@ -691,7 +700,7 @@ export function InboxTab({ workspaceId }: { workspaceId: string }) {
           // caber o conteúdo (`grid-auto-rows` padrão é `auto` = tamanho do conteúdo, ignorando
           // `h-full`/`min-h-0` do item) — sem isso, uma conversa longa empurra a linha (e a página
           // inteira) além da viewport no mobile, mesmo com overflow-y-auto interno correto.
-          "grid h-full min-h-0 grid-rows-[minmax(0,1fr)]",
+          "grid h-full min-h-0 grid-cols-[minmax(0,1fr)] grid-rows-[minmax(0,1fr)]",
           // Largura da lista lateral (pedido explícito do usuário: "muito estreita para a
           // quantidade de informação exibida") — 356px em vez de 320px, dentro da faixa 340-360px
           // pedida; telas menores continuam caindo pro layout de 1 coluna (abaixo de `md`), sem
@@ -1806,9 +1815,9 @@ export function ConversationTimelinePane({
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-background">
-      <div className="border-b border-border bg-card px-3 py-2.5 sm:px-4">
-        <div className="flex min-w-0 items-center gap-2">
-          <Button variant="ghost" size="icon" className="md:hidden" onClick={onBack} aria-label="Voltar para a lista">
+      <div className="border-b border-border bg-card px-2 py-2 sm:px-4 sm:py-2.5">
+        <div className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-2 sm:gap-x-2 md:flex-nowrap">
+          <Button variant="ghost" size="icon" className="-ml-1 shrink-0 md:hidden" onClick={onBack} aria-label="Voltar para a lista">
             <ArrowLeft className="h-4 w-4" />
           </Button>
           <InboxAvatar
@@ -1817,7 +1826,7 @@ export function ConversationTimelinePane({
             targetId={headerAvatarProps.targetId}
             storageRef={headerAvatarProps.storageRef}
             fallback={initials(conversationTitle(conversation))}
-            className="h-10 w-10 shrink-0 rounded-xl"
+            className="h-9 w-9 shrink-0 rounded-xl sm:h-10 sm:w-10"
             fallbackClassName="rounded-xl bg-primary/10 text-xs text-primary dark:bg-primary-glow/10 dark:text-primary-glow"
           />
           <div className="min-w-0 flex-1">
@@ -1826,12 +1835,13 @@ export function ConversationTimelinePane({
               <StatusDot status={conversation.status} />
             </div>
             <p className="truncate text-xs text-muted-foreground">
-              {conversationHeaderSubtitle(conversation)} · {statusLabelFor(conversation.status)}
+              {conversationHeaderSubtitle(conversation)}<span className="hidden sm:inline"> · {statusLabelFor(conversation.status)}</span>
               {conversation.currentTeamId ? ` · ${teamLabel(conversation.currentTeamId, teams)}` : ""} · {agentLabel(conversation.assignedUserId, currentUserId, members)}
             </p>
           </div>
 
-          <div className="hidden items-center gap-1.5 md:flex">
+          {/* No celular as ações principais descem para uma segunda linha (antes ficavam escondidas, sem acesso). */}
+          <div className="order-last flex w-full min-w-0 items-center gap-1.5 overflow-x-auto md:order-none md:w-auto md:overflow-visible">
             {!isAssignedToMe && !isResolved ? (
               <GuardedButton
                 size="sm"
@@ -1891,9 +1901,9 @@ export function ConversationTimelinePane({
              — é a porta de entrada pro painel inteiro de Contexto/CRM/Oportunidade/Proposta.
              Nunca `GuardedButton` aqui — abrir o painel é só leitura, não uma operação que
              precise de permissão de atendimento. */}
-          <Button size="sm" variant="secondary" onClick={onOpenContext}>
+          <Button size="sm" variant="secondary" className="shrink-0" onClick={onOpenContext} aria-label="Detalhes do contato">
             <UserRound className="h-3.5 w-3.5" />
-            Detalhes
+            <span className="hidden sm:inline">Detalhes</span>
           </Button>
         </div>
         {/* Cabeçalho compacto (pedido explícito do usuário: "evitar muitos badges e textos ao
@@ -1917,7 +1927,7 @@ export function ConversationTimelinePane({
 
       <div
         ref={scrollRef}
-        className="min-h-0 flex-1 overflow-y-auto px-3 py-4"
+        className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-2 py-3 sm:px-3 sm:py-4"
         onScroll={(event) => {
           const element = event.currentTarget;
           stickToBottom.current = element.scrollHeight - element.scrollTop - element.clientHeight < 80;
@@ -1969,7 +1979,7 @@ export function ConversationTimelinePane({
         </div>
       </div>
 
-      <div className="border-t border-border bg-card px-3 py-3">
+      <div className="border-t border-border bg-card px-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-2 sm:px-3 sm:py-3">
         <div className="mx-auto w-full max-w-4xl space-y-2">
           {sendError ? (
             <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
@@ -2103,24 +2113,35 @@ export function ConversationTimelinePane({
                   <UserRound className="h-4 w-4 text-muted-foreground" />
                   Contato
                 </button>
+                {/* No celular estes atalhos saem da barra (sobra espaço para digitar) e entram aqui. */}
+                <button type="button" className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm hover:bg-muted sm:hidden" onClick={() => setQuickRepliesOpen(true)}>
+                  <Zap className="h-4 w-4 text-muted-foreground" />
+                  Respostas rápidas
+                </button>
+                {can("product:read") ? <button type="button" className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm hover:bg-muted sm:hidden" onClick={() => setProductPickerOpen(true)}>
+                  <Package className="h-4 w-4 text-muted-foreground" />
+                  Produtos do catálogo
+                </button> : null}
               </PopoverContent>
             </Popover> : null}
-            <EmojiPickerButton disabled={!canOperate} onSelect={insertEmoji} />
-            {composerMode === "message" ? <StickerPickerButton workspaceId={workspaceId} conversationId={conversation.id} disabled={!canOperate || attaching} onSent={refreshThread} /> : null}
-            {composerMode === "message" ? <QuickRepliesButton disabled={!canOperate} onOpen={() => setQuickRepliesOpen(true)} /> : null}
-            {composerMode === "message" && can("product:read") ? <ProductPickerButton disabled={!canOperate} onOpen={() => setProductPickerOpen(true)} /> : null}
+            <div className="hidden sm:contents">
+              <EmojiPickerButton disabled={!canOperate} onSelect={insertEmoji} />
+              {composerMode === "message" ? <StickerPickerButton workspaceId={workspaceId} conversationId={conversation.id} disabled={!canOperate || attaching} onSent={refreshThread} /> : null}
+              {composerMode === "message" ? <QuickRepliesButton disabled={!canOperate} onOpen={() => setQuickRepliesOpen(true)} /> : null}
+              {composerMode === "message" && can("product:read") ? <ProductPickerButton disabled={!canOperate} onOpen={() => setProductPickerOpen(true)} /> : null}
+            </div>
             <Textarea
               ref={textareaRef}
               value={draft}
               onChange={(event) => setDraft(event.target.value)}
               onKeyDown={(event) => {
                 if (composerMode === "message" && quickReplies.handleKeyDown(event)) return;
-                if (event.key === "Enter" && !event.shiftKey) {
+                if (event.key === "Enter" && !event.shiftKey && !window.matchMedia("(pointer: coarse)").matches) {
                   event.preventDefault();
                   void handleSend();
                 }
               }}
-              placeholder={!canOperate ? "Seu papel permite visualizar, mas não operar esta conversa." : composerMode === "note" ? "Escreva uma nota para a equipe..." : "Digite uma mensagem ou / para respostas rápidas..."}
+              placeholder={!canOperate ? "Seu papel permite visualizar, mas não operar esta conversa." : composerMode === "note" ? "Escreva uma nota para a equipe..." : typeof window !== "undefined" && window.matchMedia("(pointer: coarse)").matches ? "Mensagem" : "Digite uma mensagem ou / para respostas rápidas..."}
               className="max-h-36 min-h-[36px] flex-1 resize-none border-0 bg-transparent px-1.5 py-1.5 shadow-none focus:border-0 focus:ring-0"
               rows={1}
               // Nunca `|| sending` aqui (achado da causa raiz do bug de foco, pedido explícito do

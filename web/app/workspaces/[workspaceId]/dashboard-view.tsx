@@ -88,7 +88,7 @@ export function DashboardView({ workspaceId, inboxEnabled }: { workspaceId: stri
 
       {data ? (
         <>
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+          <div className="grid grid-cols-2 gap-3 xl:grid-cols-5 [&>*:last-child:nth-child(odd)]:col-span-2 xl:[&>*:last-child:nth-child(odd)]:col-span-1">
             <KpiCard label="FRT médio" value={attendance ? avgTime(attendance.frt) : "—"} hint={attendance ? sample(attendance.frt, "respostas") : "Sem acesso a atendimento"} icon={<Timer className="h-4 w-4" />} />
             <KpiCard label="TMR" value={attendance ? avgTime(attendance.tmr) : "—"} hint={attendance ? sample(attendance.tmr, "finalizados") : undefined} icon={<Clock className="h-4 w-4" />} />
             <KpiCard label="SLA 1ª resposta" value={attendance?.sla.configured ? pctBp(attendance.sla.firstResponse.rateBp) : "—"} hint={attendance ? (attendance.sla.configured ? `${num(attendance.sla.openBreached)} vencidos agora · ${num(attendance.sla.openNear)} perto de vencer` : "SLA não configurado") : undefined} accent={attendance && attendance.sla.openBreached > 0 ? "negative" : "default"} icon={<Gauge className="h-4 w-4" />} />
@@ -148,7 +148,7 @@ function AttendanceSection({ attendance, nameOf, teamName }: { attendance: Dashb
   return (
     <div className="grid gap-5 xl:grid-cols-2">
       <Block title="Atendimento" icon={Headset} description="FRT por ciclo de responsabilidade: o relógio de cada pessoa começa quando ela recebe o atendimento.">
-        <div className="grid gap-2 sm:grid-cols-3">
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
           <Stat label="Abertos" value={num(attendance.volume.opened)} />
           <Stat label="Finalizados" value={num(attendance.volume.finalized)} hint="Cada atendimento conta uma vez" />
           <Stat label="Backlog agora" value={num(backlog.total)} tone={backlog.slaBreached ? "danger" : backlog.total ? "warning" : undefined} hint={backlog.slaBreached ? `${num(backlog.slaBreached)} com SLA vencido` : undefined} />
@@ -179,7 +179,7 @@ function AttendanceSection({ attendance, nameOf, teamName }: { attendance: Dashb
         ) : (
           <p className="flex items-center gap-2 rounded-lg bg-muted/40 px-3 py-2 text-xs text-muted-foreground"><AlertTriangle className="h-3.5 w-3.5" /> Nenhum prazo de SLA configurado. Configure em Configurações &gt; Atendimento.</p>
         )}
-        <div className="grid gap-2 sm:grid-cols-3">
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
           <Stat label="CSAT médio" value={attendance.csat.average.value !== undefined ? `${new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 2 }).format(attendance.csat.average.value)}/5` : "—"} hint={sample(attendance.csat.average, "avaliações")} />
           <Stat label="Pesquisas" value={`${num(attendance.csat.answered)}/${num(attendance.csat.sent)}`} hint={`Respondidas/enviadas · ${pctBp(attendance.csat.responseRateBp)}`} />
           <Stat label="Não enviadas" value={num(attendance.csat.waived + attendance.csat.disabledByChannel)} hint={`${num(attendance.csat.waived)} dispensadas · ${num(attendance.csat.disabledByChannel)} desligadas no canal`} />
@@ -214,7 +214,7 @@ function CommercialSection({ commercial, nameOf }: { commercial: DashboardCommer
   return (
     <div className="grid gap-5 xl:grid-cols-2">
       <Block title="Comercial" icon={WalletCards} description="Conversão = ganhas ÷ (ganhas + perdidas) fechadas no período. Ticket médio usa o valor final de fechamento.">
-        <div className="grid gap-2 sm:grid-cols-3">
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
           <Stat label="Em andamento" value={num(commercial.open.count)} hint={brlCents(commercial.open.valueCents)} />
           <Stat label="Ganhas" value={num(commercial.won.count)} hint={brlCents(commercial.won.valueCents)} />
           <Stat label="Perdidas" value={num(commercial.lost.count)} hint={brlCents(commercial.lost.valueCents)} />
@@ -231,7 +231,7 @@ function CommercialSection({ commercial, nameOf }: { commercial: DashboardCommer
           <p className="mb-2 text-xs font-medium text-muted-foreground">Motivos de perda</p>
           <BarList emptyText="Nenhuma perda no período." rows={commercial.lost.reasons.slice(0, 6).map((row) => ({ label: row.reason, value: row.count, detail: `${num(row.count)} · ${pctBp(row.shareBp)}` }))} />
         </div>
-        <div className="grid gap-2 sm:grid-cols-3">
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
           <Stat label="Propostas enviadas" value={num(commercial.proposals.sent)} hint={`${num(commercial.proposals.created)} criadas`} />
           <Stat label="Aceitas" value={num(commercial.proposals.accepted)} hint={`Aceite ${pctBp(commercial.proposals.acceptanceRateBp)} · ${num(commercial.proposals.declined)} recusadas`} />
           <Stat label="Viraram venda" value={num(commercial.proposals.convertedToSale)} hint={`${pctBp(commercial.proposals.saleConversionBp)} das enviadas`} />
@@ -252,7 +252,7 @@ function GoalsSection({ goals }: { goals: DashboardGoals }) {
     <Block title={`Meta de ${month}`} icon={Target} description="Realizado = vendas ganhas creditadas no mês. Em andamento = pipeline aberto atual.">
       {goals.hasGoal ? (
         <>
-          <div className="grid gap-2 sm:grid-cols-5">
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
             <Stat label="Meta" value={brlCents(goals.targetCents)} />
             <Stat label="Realizado" value={brlCents(goals.realizedCents)} />
             <Stat label="Em andamento" value={brlCents(goals.pipelineCents)} />

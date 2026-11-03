@@ -1289,7 +1289,6 @@ function PriceBookItems({
   );
 }
 
-export { percentInputFromBp };
 
 function ArchiveSettingsBlock({ workspaceId, days, disabled, onSaved }: { workspaceId: string; days: number | null; disabled: boolean; onSaved: () => void }) {
   const choiceFor = (value: number | null) => value === null ? "never" : [0, 1, 3, 7].includes(value) ? String(value) : "custom";

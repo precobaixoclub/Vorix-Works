@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { IBM_Plex_Mono, Instrument_Sans, Inter } from "next/font/google";
 import { AuthProvider } from "@/contexts/auth-context";
 import { Providers } from "./providers";
@@ -10,6 +10,10 @@ const inter = Inter({ subsets: ["latin"], variable: "--font-sans" });
 // timestamps) — nunca usados no corpo de texto, só em `font-display`/`font-mono`.
 const instrumentSans = Instrument_Sans({ subsets: ["latin"], weight: ["500", "600", "700"], variable: "--font-display" });
 const plexMono = IBM_Plex_Mono({ subsets: ["latin"], weight: ["400", "500"], variable: "--font-mono" });
+
+// No celular o teclado encolhe a área visível (o campo de mensagem fica acima dele) e a página
+// usa a tela inteira, respeitando o notch via `env(safe-area-inset-*)`.
+export const viewport: Viewport = { width: "device-width", initialScale: 1, viewportFit: "cover", interactiveWidget: "resizes-content" };
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://vorixworks.com"),

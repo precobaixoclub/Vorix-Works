@@ -16,6 +16,8 @@ export type OperationalStateRepositoryPort = {
 
   getRateLimitBucket(key: string): Promise<OperationalRateLimitBucket | undefined>;
   upsertRateLimitBucket(bucket: OperationalRateLimitBucket): Promise<OperationalRateLimitBucket>;
+  /** Consome uma unidade do bucket numa única operação atômica (opcional; sem ele, leitura + gravação). */
+  consumeRateLimitBucket?(input: Omit<OperationalRateLimitBucket, "remaining" | "resetAt" | "updatedAt"> & { windowMs: number; now: string }): Promise<{ allowed: boolean; bucket: OperationalRateLimitBucket }>;
   listRateLimitBuckets(filter?: { tenantId?: string; principalId?: string; routeGroup?: string; limit?: number }): Promise<readonly OperationalRateLimitBucket[]>;
 
   recordBackpressureSignal(signal: OperationalBackpressureSignal): Promise<OperationalBackpressureSignal>;

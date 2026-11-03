@@ -1,0 +1,50 @@
+{
+  "at": "2026-11-03T01:13:53.982Z",
+  "result": "PASS",
+  "cause": "WhatsApp rejected the old connector with ClientOutdated",
+  "restored": {
+    "at": "2026-11-03T01:09:12.099Z",
+    "connectionId": "msgconn-mupusumh-3ojn05",
+    "workspaceId": "workspace-mscc9pi2-jkvwbo",
+    "displayName": "Atendimento",
+    "status": "connected",
+    "visibleInConnections": true,
+    "existingSessionPreserved": true,
+    "qrScanRequired": false
+  },
+  "upgrade": {
+    "at": "2026-11-03T01:07:59Z",
+    "backup": "/opt/zuno/deploy_backups/whatsapp-recovery-20261103T010334Z",
+    "oldImage": "sha256:9849d36d8c4e336af6f3b4ce2011b471f303590922d1b4604f12cbae5487ec01",
+    "image": "asternic/wuzapi:1.1.0@sha256:d9139ddcd5b3293e7ba7cd9af210b39adc6eafb16a0e23e84f4fea0f385395be",
+    "newImage": "sha256:d9139ddcd5b3293e7ba7cd9af210b39adc6eafb16a0e23e84f4fea0f385395be",
+    "healthy": true,
+    "credentialsAndEncryptionKeyPreserved": true,
+    "otherServicesUnchanged": true
+  },
+  "browser": {
+    "at": "2026-11-03T01:11:52.037Z",
+    "viewports": [
+      {
+        "width": 1440,
+        "existingChannelVisible": true,
+        "connected": true
+      },
+      {
+        "width": 390,
+        "existingChannelVisible": true,
+        "connected": true
+      }
+    ],
+    "pageErrors": [],
+    "blockedBusinessWrites": [],
+    "result": "PASS"
+  },
+  "history": {
+    "inbox_conversations": 2,
+    "inbox_messages": 42,
+    "inbox_contacts": 95
+  },
+  "existingConnectionIdPreserved": true,
+  "outboundTestMessagesSent": false
+}

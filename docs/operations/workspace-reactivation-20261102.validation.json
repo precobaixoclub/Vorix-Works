@@ -1,0 +1,85 @@
+{
+  "result": "PASS",
+  "tests": {
+    "backend": 88,
+    "browser": 18
+  },
+  "allowance": {
+    "at": "2026-11-03T00:03:56.400Z",
+    "tenantId": "tenant-vorix",
+    "authorizedLimit": 2,
+    "beforeLimit": 0,
+    "afterLimit": 2,
+    "beforeVersion": 3,
+    "afterVersion": 4,
+    "contractAndRecurringPriceUnchanged": true,
+    "otherControlsUnchanged": true
+  },
+  "backend": {
+    "at": "2026-11-03T00:16:39.108Z",
+    "result": "PASS",
+    "workspaceId": "workspace-cee-prelaunch-mv47cmfh",
+    "name": "Bambilu Kids",
+    "reactivationSucceeded": true,
+    "archivedAtCleared": true,
+    "linkedDataPreserved": true,
+    "verificationRolledBack": true,
+    "businessChangesCommitted": false
+  },
+  "browser": {
+    "at": "2026-11-03T00:16:34.959Z",
+    "release": "bdb4a75",
+    "api": {
+      "activeWorkspaceLimit": 2,
+      "preservedWorkspaces": true,
+      "archivedWorkspace": "Bambilu Kids"
+    },
+    "viewports": [
+      {
+        "width": 1440,
+        "restoreCardVisible": true,
+        "editCanReactivate": true,
+        "cancelledWithoutSaving": true,
+        "noHorizontalOverflow": true
+      },
+      {
+        "width": 390,
+        "restoreCardVisible": true,
+        "editCanReactivate": true,
+        "cancelledWithoutSaving": true,
+        "noHorizontalOverflow": true
+      }
+    ],
+    "unexpectedWrites": [],
+    "pageErrors": [],
+    "result": "PASS"
+  },
+  "deployment": {
+    "at": "2026-11-03T00:16:37.238Z",
+    "release": "bdb4a75",
+    "deploymentLog": "/var/log/vorix-deploy-bdb4a75-20261103000623.log",
+    "environmentPreserved": true,
+    "ready": true,
+    "webHttpStatus": 200,
+    "fatalLogErrors": 0,
+    "services": [
+      "zuno-zuno-web-1:Up About a minute (healthy)",
+      "zuno-zuno-api-1:Up About a minute (healthy)",
+      "zuno-social-provider-gateway-1:Up About a minute (healthy)",
+      "zuno-vorix-worker-1:Up About a minute (healthy)",
+      "zuno-marketplaces-worker-1:Up About a minute (healthy)",
+      "zuno-zuno-postgres-1:Up 21 hours (healthy)"
+    ],
+    "migrations": [
+      "MIGRATIONS_BEFORE [migrate] 189 aplicada(s), 0 pendente(s).",
+      "MIGRATIONS_AFTER [migrate] 189 aplicada(s), 0 pendente(s)."
+    ],
+    "backup": "BACKUP code=deploy_backups/pre-bdb4a75-20261103000623.tgz db=deploy_backups/db-pre-bdb4a75-20261103000623.sql.gz env=/root/.env.zuno.pre-bdb4a75-20261103000623",
+    "source": {
+      "sha": "bdb4a75bdacf86eb9760ceed8d3590dd8482ff09",
+      "archive": "/tmp/vorix-release-bdb4a75.tgz",
+      "sha256": "fe57b8ca08958c6c335ea3aa3b49985f99cfd7520aa076d188b7b08e54bb3609",
+      "verifiedTrackedFiles": 3835
+    }
+  }
+}

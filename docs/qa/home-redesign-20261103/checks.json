@@ -1,0 +1,28 @@
+{
+  "date": "2026-11-03",
+  "scope": "Institutional home redesign, local visual review only",
+  "base": "http://localhost:3401",
+  "productionDeployed": false,
+  "build": {
+    "command": "npm run build -- --webpack",
+    "cwd": "web",
+    "distDir": ".next-site-qa-acde20261103",
+    "exitCode": 0
+  },
+  "typecheck": { "command": "npm run typecheck", "cwd": "web", "exitCode": 0 },
+  "webTests": { "command": "npm test", "cwd": "web", "files": 34, "tests": 248, "failed": 0, "exitCode": 0 },
+  "architecture": { "command": "npm run architecture:check", "contracts": 49, "exitCode": 0 },
+  "lint": {
+    "eslint": "9.39.1",
+    "typescriptEslint": "8.46.3",
+    "configuration": "recommended; no-unused-vars with argsIgnorePattern ^_",
+    "scope": ["web/app/page.tsx", "web/components/public/home", "web/components/public/PublicHeader.tsx", "web/components/public/PublicFooter.tsx", "web/features/public-site/home.ts", "web/tests/public-home-offers.test.ts"],
+    "temporaryToolsOnly": true,
+    "exitCode": 0
+  },
+  "format": { "tool": "Prettier 3.6.2", "result": "PASS" },
+  "syntax": { "command": "node --check", "files": ["scripts/public-site/home-redesign-smoke.mjs", "scripts/public-site/capture-home-product-ui.cjs"], "exitCode": 0 },
+  "diffWhitespace": { "command": "git diff --check", "exitCode": 0 },
+  "browser": { "evidence": "browser-smoke.json", "widths": [360, 390, 430, 768, 1024, 1440], "exitCode": 0 },
+  "accessibility": { "axeCore": "4.10.3", "tags": ["wcag2a", "wcag2aa", "wcag21aa"], "evidence": "accessibility.json", "violations": 0, "limitation": "Automated local checks, not a complete human accessibility certification" }
+}

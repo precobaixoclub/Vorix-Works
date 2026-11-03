@@ -57,6 +57,7 @@ export function proxy(request: NextRequest) {
     // Link compartilhado de reunião do Vorix Meetings (o token é a autorização).
     pathname.startsWith("/r/") ||
     pathname.startsWith("/product-shots/") ||
+    pathname.startsWith("/marketing/home/") ||
     pathname === "/empresa" ||
     pathname === "/pricing" ||
     pathname === "/precos" ||

@@ -1,0 +1,845 @@
+{
+  "date": "2026-11-03",
+  "caption": "Interface real do Vorix · dados demonstrativos",
+  "screenshots": [
+    {
+      "name": "hero/command-center",
+      "source": "artifacts/vorix-home-redesign-audit/fresh/dashboard.png",
+      "kind": "actual_current_product_ui",
+      "data": "authored_demonstration_fixtures",
+      "date": "2026-11-03",
+      "files": [
+        {
+          "file": "web/public/marketing/home/hero/command-center-640.webp",
+          "bytes": 23602
+        },
+        {
+          "file": "web/public/marketing/home/hero/command-center-640.avif",
+          "bytes": 17510
+        },
+        {
+          "file": "web/public/marketing/home/hero/command-center-960.webp",
+          "bytes": 42704
+        },
+        {
+          "file": "web/public/marketing/home/hero/command-center-960.avif",
+          "bytes": 31779
+        },
+        {
+          "file": "web/public/marketing/home/hero/command-center-1280.webp",
+          "bytes": 63740
+        },
+        {
+          "file": "web/public/marketing/home/hero/command-center-1280.avif",
+          "bytes": 47013
+        }
+      ]
+    },
+    {
+      "name": "conversas/inbox",
+      "source": "artifacts/vorix-home-redesign-audit/fresh/conversas.png",
+      "kind": "actual_current_product_ui",
+      "data": "authored_demonstration_fixtures",
+      "date": "2026-11-03",
+      "files": [
+        {
+          "file": "web/public/marketing/home/conversas/inbox-640.webp",
+          "bytes": 16370
+        },
+        {
+          "file": "web/public/marketing/home/conversas/inbox-640.avif",
+          "bytes": 12111
+        },
+        {
+          "file": "web/public/marketing/home/conversas/inbox-960.webp",
+          "bytes": 30822
+        },
+        {
+          "file": "web/public/marketing/home/conversas/inbox-960.avif",
+          "bytes": 21835
+        },
+        {
+          "file": "web/public/marketing/home/conversas/inbox-1120.webp",
+          "bytes": 39392
+        },
+        {
+          "file": "web/public/marketing/home/conversas/inbox-1120.avif",
+          "bytes": 28025
+        }
+      ]
+    },
+    {
+      "name": "conversas/pipeline",
+      "source": "artifacts/vorix-home-redesign-audit/fresh/crm-kanban.png",
+      "kind": "actual_current_product_ui",
+      "data": "authored_demonstration_fixtures",
+      "date": "2026-11-03",
+      "files": [
+        {
+          "file": "web/public/marketing/home/conversas/pipeline-640.webp",
+          "bytes": 22064
+        },
+        {
+          "file": "web/public/marketing/home/conversas/pipeline-640.avif",
+          "bytes": 15986
+        },
+        {
+          "file": "web/public/marketing/home/conversas/pipeline-960.webp",
+          "bytes": 40424
+        },
+        {
+          "file": "web/public/marketing/home/conversas/pipeline-960.avif",
+          "bytes": 29503
+        },
+        {
+          "file": "web/public/marketing/home/conversas/pipeline-1120.webp",
+          "bytes": 50472
+        },
+        {
+          "file": "web/public/marketing/home/conversas/pipeline-1120.avif",
+          "bytes": 37246
+        }
+      ]
+    },
+    {
+      "name": "meetings/summary",
+      "source": "artifacts/vorix-home-redesign-audit/fresh/meetings-summary.png",
+      "kind": "actual_current_product_ui",
+      "data": "authored_demonstration_fixtures",
+      "date": "2026-11-03",
+      "files": [
+        {
+          "file": "web/public/marketing/home/meetings/summary-640.webp",
+          "bytes": 15176
+        },
+        {
+          "file": "web/public/marketing/home/meetings/summary-640.avif",
+          "bytes": 11314
+        },
+        {
+          "file": "web/public/marketing/home/meetings/summary-960.webp",
+          "bytes": 28812
+        },
+        {
+          "file": "web/public/marketing/home/meetings/summary-960.avif",
+          "bytes": 21185
+        },
+        {
+          "file": "web/public/marketing/home/meetings/summary-1120.webp",
+          "bytes": 35964
+        },
+        {
+          "file": "web/public/marketing/home/meetings/summary-1120.avif",
+          "bytes": 26553
+        }
+      ]
+    },
+    {
+      "name": "meetings/transcript",
+      "source": "artifacts/vorix-home-redesign-audit/fresh/meetings-transcript.png",
+      "kind": "actual_current_product_ui",
+      "data": "authored_demonstration_fixtures",
+      "date": "2026-11-03",
+      "files": [
+        {
+          "file": "web/public/marketing/home/meetings/transcript-640.webp",
+          "bytes": 14894
+        },
+        {
+          "file": "web/public/marketing/home/meetings/transcript-640.avif",
+          "bytes": 11455
+        },
+        {
+          "file": "web/public/marketing/home/meetings/transcript-960.webp",
+          "bytes": 27802
+        },
+        {
+          "file": "web/public/marketing/home/meetings/transcript-960.avif",
+          "bytes": 20696
+        },
+        {
+          "file": "web/public/marketing/home/meetings/transcript-1120.webp",
+          "bytes": 35556
+        },
+        {
+          "file": "web/public/marketing/home/meetings/transcript-1120.avif",
+          "bytes": 26466
+        }
+      ]
+    },
+    {
+      "name": "marketing/content",
+      "source": "artifacts/vorix-home-redesign-audit/fresh/marketing.png",
+      "kind": "actual_current_product_ui",
+      "data": "authored_demonstration_fixtures",
+      "date": "2026-11-03",
+      "files": [
+        {
+          "file": "web/public/marketing/home/marketing/content-640.webp",
+          "bytes": 14610
+        },
+        {
+          "file": "web/public/marketing/home/marketing/content-640.avif",
+          "bytes": 11577
+        },
+        {
+          "file": "web/public/marketing/home/marketing/content-960.webp",
+          "bytes": 27410
+        },
+        {
+          "file": "web/public/marketing/home/marketing/content-960.avif",
+          "bytes": 20786
+        },
+        {
+          "file": "web/public/marketing/home/marketing/content-1120.webp",
+          "bytes": 33864
+        },
+        {
+          "file": "web/public/marketing/home/marketing/content-1120.avif",
+          "bytes": 25858
+        }
+      ]
+    },
+    {
+      "name": "analytics/dashboard",
+      "source": "artifacts/vorix-home-redesign-audit/fresh/results.png",
+      "kind": "actual_current_product_ui",
+      "data": "authored_demonstration_fixtures",
+      "date": "2026-11-03",
+      "files": [
+        {
+          "file": "web/public/marketing/home/analytics/dashboard-640.webp",
+          "bytes": 15490
+        },
+        {
+          "file": "web/public/marketing/home/analytics/dashboard-640.avif",
+          "bytes": 12471
+        },
+        {
+          "file": "web/public/marketing/home/analytics/dashboard-960.webp",
+          "bytes": 28646
+        },
+        {
+          "file": "web/public/marketing/home/analytics/dashboard-960.avif",
+          "bytes": 22547
+        },
+        {
+          "file": "web/public/marketing/home/analytics/dashboard-1120.webp",
+          "bytes": 36654
+        },
+        {
+          "file": "web/public/marketing/home/analytics/dashboard-1120.avif",
+          "bytes": 28113
+        }
+      ]
+    },
+    {
+      "name": "commerce/site",
+      "source": "artifacts/vorix-home-redesign-audit/fresh/site-editor.png",
+      "kind": "actual_current_product_ui",
+      "data": "authored_demonstration_fixtures",
+      "date": "2026-11-03",
+      "files": [
+        {
+          "file": "web/public/marketing/home/commerce/site-640.webp",
+          "bytes": 21866
+        },
+        {
+          "file": "web/public/marketing/home/commerce/site-640.avif",
+          "bytes": 15940
+        },
+        {
+          "file": "web/public/marketing/home/commerce/site-960.webp",
+          "bytes": 39978
+        },
+        {
+          "file": "web/public/marketing/home/commerce/site-960.avif",
+          "bytes": 29731
+        },
+        {
+          "file": "web/public/marketing/home/commerce/site-1120.webp",
+          "bytes": 50788
+        },
+        {
+          "file": "web/public/marketing/home/commerce/site-1120.avif",
+          "bytes": 37276
+        }
+      ]
+    },
+    {
+      "name": "commerce/orders",
+      "source": "artifacts/vorix-home-redesign-audit/fresh/commerce-orders.png",
+      "kind": "actual_current_product_ui",
+      "data": "authored_demonstration_fixtures",
+      "date": "2026-11-03",
+      "files": [
+        {
+          "file": "web/public/marketing/home/commerce/orders-640.webp",
+          "bytes": 12668
+        },
+        {
+          "file": "web/public/marketing/home/commerce/orders-640.avif",
+          "bytes": 10431
+        },
+        {
+          "file": "web/public/marketing/home/commerce/orders-960.webp",
+          "bytes": 22926
+        },
+        {
+          "file": "web/public/marketing/home/commerce/orders-960.avif",
+          "bytes": 18002
+        },
+        {
+          "file": "web/public/marketing/home/commerce/orders-1120.webp",
+          "bytes": 29094
+        },
+        {
+          "file": "web/public/marketing/home/commerce/orders-1120.avif",
+          "bytes": 22417
+        }
+      ]
+    },
+    {
+      "name": "conversas/mobile",
+      "source": "artifacts/vorix-home-redesign-audit/fresh/mobile-conversas.png",
+      "kind": "actual_current_product_ui",
+      "data": "authored_demonstration_fixtures",
+      "date": "2026-11-03",
+      "files": [
+        {
+          "file": "web/public/marketing/home/conversas/mobile-390.webp",
+          "bytes": 26016
+        },
+        {
+          "file": "web/public/marketing/home/conversas/mobile-390.avif",
+          "bytes": 23690
+        }
+      ]
+    }
+  ],
+  "photography": [
+    {
+      "name": "atendimento",
+      "kind": "licensed-stock-photography",
+      "author": "Alena Shekhovtcova",
+      "source": "https://www.pexels.com/photo/woman-using-laptop-in-an-office-8067778/",
+      "download": "https://images.pexels.com/photos/8067778/pexels-photo-8067778.jpeg?auto=compress&cs=tinysrgb&w=1400",
+      "license": "https://www.pexels.com/license/",
+      "usage": "Illustrative work environment; no customer or team endorsement",
+      "files": [
+        {
+          "file": "web/public/marketing/home/people/atendimento-480.webp",
+          "bytes": 30732
+        },
+        {
+          "file": "web/public/marketing/home/people/atendimento-480.avif",
+          "bytes": 18553
+        },
+        {
+          "file": "web/public/marketing/home/people/atendimento-800.webp",
+          "bytes": 63468
+        },
+        {
+          "file": "web/public/marketing/home/people/atendimento-800.avif",
+          "bytes": 36990
+        },
+        {
+          "file": "web/public/marketing/home/people/atendimento-1120.webp",
+          "bytes": 99910
+        },
+        {
+          "file": "web/public/marketing/home/people/atendimento-1120.avif",
+          "bytes": 59096
+        }
+      ]
+    },
+    {
+      "name": "reuniao",
+      "kind": "licensed-stock-photography",
+      "author": "Ron Lach",
+      "source": "https://www.pexels.com/photo/man-wearing-headphones-while-using-his-laptop-9909080/",
+      "download": "https://images.pexels.com/photos/9909080/pexels-photo-9909080.jpeg?auto=compress&cs=tinysrgb&w=1400",
+      "license": "https://www.pexels.com/license/",
+      "usage": "Illustrative work environment; no customer or team endorsement",
+      "files": [
+        {
+          "file": "web/public/marketing/home/people/reuniao-480.webp",
+          "bytes": 10290
+        },
+        {
+          "file": "web/public/marketing/home/people/reuniao-480.avif",
+          "bytes": 6760
+        },
+        {
+          "file": "web/public/marketing/home/people/reuniao-800.webp",
+          "bytes": 18850
+        },
+        {
+          "file": "web/public/marketing/home/people/reuniao-800.avif",
+          "bytes": 12416
+        }
+      ]
+    },
+    {
+      "name": "equipe",
+      "kind": "licensed-stock-photography",
+      "author": "Yan Krukau",
+      "source": "https://www.pexels.com/photo/a-team-looking-at-a-laptop-7793702/",
+      "download": "https://images.pexels.com/photos/7793702/pexels-photo-7793702.jpeg?auto=compress&cs=tinysrgb&w=1400",
+      "license": "https://www.pexels.com/license/",
+      "usage": "Illustrative work environment; no customer or team endorsement",
+      "files": [
+        {
+          "file": "web/public/marketing/home/people/equipe-480.webp",
+          "bytes": 26928
+        },
+        {
+          "file": "web/public/marketing/home/people/equipe-480.avif",
+          "bytes": 15865
+        },
+        {
+          "file": "web/public/marketing/home/people/equipe-800.webp",
+          "bytes": 54138
+        },
+        {
+          "file": "web/public/marketing/home/people/equipe-800.avif",
+          "bytes": 33014
+        },
+        {
+          "file": "web/public/marketing/home/people/equipe-1120.webp",
+          "bytes": 86506
+        },
+        {
+          "file": "web/public/marketing/home/people/equipe-1120.avif",
+          "bytes": 53246
+        }
+      ]
+    }
+  ],
+  "originalCaptures": {
+    "capturedDate": "2026-11-03",
+    "baseUrl": "http://localhost:3401",
+    "fixtureHelper": "scripts/public-site/capture-home-product-ui.cjs",
+    "productionDataAccess": false,
+    "customDashboardMarkup": false,
+    "caption": "Interface real do Vorix · dados demonstrativos",
+    "assets": [
+      {
+        "file": "commerce-orders.png",
+        "width": 1440,
+        "height": 960,
+        "bytes": 108723,
+        "sha256": "3cdbe57954eb3427cb58e0e2b38cc80d1d3c29f91a2291e380a0199f496b3e35",
+        "kind": "actual_current_app_ui",
+        "data": "authored_demonstration_fixtures",
+        "theme": "dark"
+      },
+      {
+        "file": "conversas.png",
+        "width": 1440,
+        "height": 960,
+        "bytes": 137217,
+        "sha256": "ae5bd9c3fbb217dd3bdac289f6c84aef7a4e453f916ce09d77a44b6fcd0dd902",
+        "kind": "actual_current_app_ui",
+        "data": "authored_demonstration_fixtures",
+        "theme": "dark"
+      },
+      {
+        "file": "crm-kanban.png",
+        "width": 1440,
+        "height": 960,
+        "bytes": 187774,
+        "sha256": "7b56e0545e324ebdaac4abe782c160d47381badddd475e9ac322502cf9ee99d2",
+        "kind": "actual_current_app_ui",
+        "data": "authored_demonstration_fixtures",
+        "theme": "dark"
+      },
+      {
+        "file": "dashboard.png",
+        "width": 1440,
+        "height": 960,
+        "bytes": 187862,
+        "sha256": "b9e05be4cd051b93d7c97ed818c0fb8cf82d64a36a95d9da4aa3e8a34fc6f7ba",
+        "kind": "actual_current_app_ui",
+        "data": "authored_demonstration_fixtures",
+        "theme": "dark"
+      },
+      {
+        "file": "marketing.png",
+        "width": 1440,
+        "height": 960,
+        "bytes": 135173,
+        "sha256": "7bdd4dde25dfe29a363b0a72f2687e34129cc57c2bc2ae472e05d4cc90c8b957",
+        "kind": "actual_current_app_ui",
+        "data": "authored_demonstration_fixtures",
+        "theme": "dark"
+      },
+      {
+        "file": "meetings-overview.png",
+        "width": 1440,
+        "height": 960,
+        "bytes": 100947,
+        "sha256": "4165ddf3abd0d36600441223ce99756eed6a4d999a992ae7a71b9f4a9b087a40",
+        "kind": "actual_current_app_ui",
+        "data": "authored_demonstration_fixtures",
+        "theme": "dark"
+      },
+      {
+        "file": "meetings-summary-full.png",
+        "width": 1440,
+        "height": 960,
+        "bytes": 273093,
+        "sha256": "22431160dc0d1536ac5bdf0eb0ba3fd84b7f6ccb3937404e892f57f26ea610b8",
+        "kind": "actual_current_app_ui",
+        "data": "authored_demonstration_fixtures",
+        "theme": "dark"
+      },
+      {
+        "file": "meetings-summary.png",
+        "width": 1440,
+        "height": 960,
+        "bytes": 273093,
+        "sha256": "22431160dc0d1536ac5bdf0eb0ba3fd84b7f6ccb3937404e892f57f26ea610b8",
+        "kind": "actual_current_app_ui",
+        "data": "authored_demonstration_fixtures",
+        "theme": "dark"
+      },
+      {
+        "file": "meetings-transcript.png",
+        "width": 1440,
+        "height": 960,
+        "bytes": 127203,
+        "sha256": "2c538d251a244a4d3d64dd23a899dc55d300659d5648969b335d605eaf40b2ef",
+        "kind": "actual_current_app_ui",
+        "data": "authored_demonstration_fixtures",
+        "theme": "dark"
+      },
+      {
+        "file": "mobile-conversas.png",
+        "width": 390,
+        "height": 844,
+        "bytes": 47453,
+        "sha256": "5de193ce74c3100a4a3ba330d246df1351c4bb125f3cb76676b4c99841e629f1",
+        "kind": "actual_current_app_ui",
+        "data": "authored_demonstration_fixtures",
+        "theme": "dark"
+      },
+      {
+        "file": "results.png",
+        "width": 1440,
+        "height": 960,
+        "bytes": 128600,
+        "sha256": "d65e59a99a38d96d26599eb8d7eeeb6a90b5f384dd33200d3366183ecafae53d",
+        "kind": "actual_current_app_ui",
+        "data": "authored_demonstration_fixtures",
+        "theme": "dark"
+      },
+      {
+        "file": "site-editor.png",
+        "width": 1440,
+        "height": 960,
+        "bytes": 240891,
+        "sha256": "e0404cd8906f96208c14dead2940131c56d335c15c64db0e62631beea1c48b42",
+        "kind": "actual_current_app_ui",
+        "data": "authored_demonstration_fixtures",
+        "theme": "dark"
+      }
+    ]
+  },
+  "notes": [
+    "Actual current React product UI rendered with Playwright API fixtures. No production customer data.",
+    "Authored meeting transcript/summary: demonstration, not an actual recording or AI run.",
+    "Product/template artwork inside the Site screen is application demo artwork; provenance docs/qa/website-builder/generated-assets.json.",
+    "Professional stock photography is illustrative, not Vorix team/client endorsements."
+  ],
+  "derivatives": [
+    {
+      "file": "web/public/marketing/home/hero/command-center-640.webp",
+      "sha256": "82cd3c8596dc3e5a707b85cf7ef32c7ec1d7a66f45988eaf02460b1088af6c95"
+    },
+    {
+      "file": "web/public/marketing/home/hero/command-center-640.avif",
+      "sha256": "6f912f2283703f9ea502ac72eed9e5f6d1c91841c6cb6fb1610f4b77249b6674"
+    },
+    {
+      "file": "web/public/marketing/home/hero/command-center-960.webp",
+      "sha256": "73c25e0f123621b5ecdafa26dbff20e183c7e2f4f925434ae3f604f8af06a58e"
+    },
+    {
+      "file": "web/public/marketing/home/hero/command-center-960.avif",
+      "sha256": "8b95f0a2802e478e8643064ff3cdd4a6a3657bb2392cfd6a11b9a55634736562"
+    },
+    {
+      "file": "web/public/marketing/home/hero/command-center-1280.webp",
+      "sha256": "f53c8be2fd0a6f9245a4b1205e58a3611f3777f47a5343316ad7a46e28d0a095"
+    },
+    {
+      "file": "web/public/marketing/home/hero/command-center-1280.avif",
+      "sha256": "14e922797ba2c234e38b43625201ee8da9e7eee34371a0c52529a283c32d3c53"
+    },
+    {
+      "file": "web/public/marketing/home/conversas/inbox-640.webp",
+      "sha256": "d3b06eeeb0a19b8608ce4947a8824cefcbf4b8ce53dfb8a2f7cf8adc94ef6d12"
+    },
+    {
+      "file": "web/public/marketing/home/conversas/inbox-640.avif",
+      "sha256": "be509c543dce3826a78f6563a19c628083a5f959cd4080c334099e08b4cc0ca4"
+    },
+    {
+      "file": "web/public/marketing/home/conversas/inbox-960.webp",
+      "sha256": "6956e0af616151407e28741ebbeec824c80de0512b0cc8ab23cfe13048f38155"
+    },
+    {
+      "file": "web/public/marketing/home/conversas/inbox-960.avif",
+      "sha256": "9d6a8c0942b17f657178bca86aa2b7fbc0299c2ca55612e087af85a7bc3abb69"
+    },
+    {
+      "file": "web/public/marketing/home/conversas/inbox-1120.webp",
+      "sha256": "3f54a0701460f30b2b593a8620c9fcdcca8118a61f36f622c00858d6c2177b07"
+    },
+    {
+      "file": "web/public/marketing/home/conversas/inbox-1120.avif",
+      "sha256": "7eaaa53fed2e965ff646ad28b5a603196124bfcfb36b63cb7fcbbd850d32d469"
+    },
+    {
+      "file": "web/public/marketing/home/conversas/pipeline-640.webp",
+      "sha256": "6df1977f7e9c9461fe8544997fba596de209ade04d228ed2e53a3baa9b412544"
+    },
+    {
+      "file": "web/public/marketing/home/conversas/pipeline-640.avif",
+      "sha256": "817a022e7f9accffce06112bf1180e6494bf06c5ce8391544dbd4df9fdde544d"
+    },
+    {
+      "file": "web/public/marketing/home/conversas/pipeline-960.webp",
+      "sha256": "5141109db59c96141eca2a2cb64c5800bf9f51678a7488bfd60734dc73da548d"
+    },
+    {
+      "file": "web/public/marketing/home/conversas/pipeline-960.avif",
+      "sha256": "d50b1291da65ab7e7b1b1476a1a75d39eb37e5cb5720705a26e91a89709b2fe0"
+    },
+    {
+      "file": "web/public/marketing/home/conversas/pipeline-1120.webp",
+      "sha256": "5eb2d8e2197d35ff2533820a8bffd980edaa8c2390e3edf5a65c6b170a2e4766"
+    },
+    {
+      "file": "web/public/marketing/home/conversas/pipeline-1120.avif",
+      "sha256": "5c7e9e4d222b71aab1f80b0beafeb6fadf3317b0e806c854f3c21d46b034874a"
+    },
+    {
+      "file": "web/public/marketing/home/meetings/summary-640.webp",
+      "sha256": "881e3cfef121311592b46b35b2c895e300a79a285b72080477ef250df7c8a9d9"
+    },
+    {
+      "file": "web/public/marketing/home/meetings/summary-640.avif",
+      "sha256": "103cf9c3ab669bf2880f69962f957b13d319a6a1b9230daf1d5041ff9ae6d73d"
+    },
+    {
+      "file": "web/public/marketing/home/meetings/summary-960.webp",
+      "sha256": "a4d6bcefd4df7f60341168c00bb4a8f4b064938650255b70ff122b6fffbdda83"
+    },
+    {
+      "file": "web/public/marketing/home/meetings/summary-960.avif",
+      "sha256": "1cedef7b8fd0b7883768d8fa0940acfa2d66c992986865f6c032d4012ea61510"
+    },
+    {
+      "file": "web/public/marketing/home/meetings/summary-1120.webp",
+      "sha256": "0bb224cc1a308fbc3d58fc0b1c36d28e4cd9df3dfa5611df02a499557a741dde"
+    },
+    {
+      "file": "web/public/marketing/home/meetings/summary-1120.avif",
+      "sha256": "d3869d738158459306155f1f382b795ff9182b16e9efb81488943db7a4f3f31c"
+    },
+    {
+      "file": "web/public/marketing/home/meetings/transcript-640.webp",
+      "sha256": "a53d2a83b38fe54a1518c8c95924b07321aa23da92a4eebea094554a2ca65659"
+    },
+    {
+      "file": "web/public/marketing/home/meetings/transcript-640.avif",
+      "sha256": "5cecf2b17504a72f87bc0f1d38640f91ef8cd9d84a0ec54f0dc5103bd0b9c0b4"
+    },
+    {
+      "file": "web/public/marketing/home/meetings/transcript-960.webp",
+      "sha256": "045beb466c2eb0e021564c89b443bec881a3b6b3fc7381c8eb1dc4c8a22e2ba4"
+    },
+    {
+      "file": "web/public/marketing/home/meetings/transcript-960.avif",
+      "sha256": "5866940923ff143c164c0d4fbdc0b305a82c94f1006050bfcbd18978a329a96c"
+    },
+    {
+      "file": "web/public/marketing/home/meetings/transcript-1120.webp",
+      "sha256": "2bc818611e0223e5a72703f14be754be196f8bf4d08c58db062dd433d84abf3d"
+    },
+    {
+      "file": "web/public/marketing/home/meetings/transcript-1120.avif",
+      "sha256": "b7a8ac30f002e7c39c79f19b1f19e58fcf88d8a80958e179291cc25edc5fd3d7"
+    },
+    {
+      "file": "web/public/marketing/home/marketing/content-640.webp",
+      "sha256": "93948047e21ddaa271db08d7c859546b977d04d3b802e286cb7c71d8149651d5"
+    },
+    {
+      "file": "web/public/marketing/home/marketing/content-640.avif",
+      "sha256": "574a73aec6b68589d4c2feaa699f1237cc9b6e45b8067aad92dae267b0de4d7f"
+    },
+    {
+      "file": "web/public/marketing/home/marketing/content-960.webp",
+      "sha256": "75431e78d6e4a83b6016fc76b1976d70f27768100ce8319990936c3f51f45a39"
+    },
+    {
+      "file": "web/public/marketing/home/marketing/content-960.avif",
+      "sha256": "d5f274f2f5e84a849df794687a8ab3de7ccff7ae08d309205881740d8ae144d3"
+    },
+    {
+      "file": "web/public/marketing/home/marketing/content-1120.webp",
+      "sha256": "e93ca9a898aa09e1ab2b03abe165f5d12e94154858e19d6fddc5cda6ddafb3c1"
+    },
+    {
+      "file": "web/public/marketing/home/marketing/content-1120.avif",
+      "sha256": "48728a26452a18806aefc4e057ff8600c0f9ecb244426006b5104e846c5b1050"
+    },
+    {
+      "file": "web/public/marketing/home/analytics/dashboard-640.webp",
+      "sha256": "7a1000110483cabd6ea89fdf442fb128ab394573b5b30ce159d8fdfc1e832f66"
+    },
+    {
+      "file": "web/public/marketing/home/analytics/dashboard-640.avif",
+      "sha256": "99f7e9d9b2a0d5554e0a6111fe35bc75e96d9133cde58a14330adf1f9f8b9b7a"
+    },
+    {
+      "file": "web/public/marketing/home/analytics/dashboard-960.webp",
+      "sha256": "28f50e7eb0bc9a2ba3b5c3da806d3b7a3261ac3ea91f5e3bc3a5fc4386fac78d"
+    },
+    {
+      "file": "web/public/marketing/home/analytics/dashboard-960.avif",
+      "sha256": "1f29a097b2188eb0ee27e996578e14fd6f212640567b3ab2ccafb6fd6e63efb1"
+    },
+    {
+      "file": "web/public/marketing/home/analytics/dashboard-1120.webp",
+      "sha256": "e4a1964d8f58da698940a765b12fa02b55ff673a6d747ed7b27b38b71a5144db"
+    },
+    {
+      "file": "web/public/marketing/home/analytics/dashboard-1120.avif",
+      "sha256": "c840989a6f836653d7c6701c7805f6d05e07cd95179c769de7b8c90a4036b945"
+    },
+    {
+      "file": "web/public/marketing/home/commerce/site-640.webp",
+      "sha256": "e41e3718f24ad9487ebecf3b51b8b6bf99cc71eb8137252bfbfa6db25b6e963e"
+    },
+    {
+      "file": "web/public/marketing/home/commerce/site-640.avif",
+      "sha256": "aa46e10812ef563238b415f1e7088741a9ab07688914f4d93f11f54869b49e65"
+    },
+    {
+      "file": "web/public/marketing/home/commerce/site-960.webp",
+      "sha256": "f99cf32d87a051f3021a84c6bcf99cd51c1820141027c07073fcc7173e64b4c5"
+    },
+    {
+      "file": "web/public/marketing/home/commerce/site-960.avif",
+      "sha256": "57f6c69b926dafdffe0d580c465208ed7d07e45537b605d1877311950e6c548f"
+    },
+    {
+      "file": "web/public/marketing/home/commerce/site-1120.webp",
+      "sha256": "4d3228826937a31c126428c718e78c1b2038758359d30ab4df657f435481196e"
+    },
+    {
+      "file": "web/public/marketing/home/commerce/site-1120.avif",
+      "sha256": "c9d9c5b7b4342f0c49448af592ca4b590889d932bfc8291aaf016633e2b3f825"
+    },
+    {
+      "file": "web/public/marketing/home/commerce/orders-640.webp",
+      "sha256": "2a8fc91a127339ee98656160ef1b095f4c212a5396ffbe30398d2922658b2efc"
+    },
+    {
+      "file": "web/public/marketing/home/commerce/orders-640.avif",
+      "sha256": "e8373ed48974cc58cb0e9ac88f40b9bdd56caae5dde8518ccfbdfdac23628872"
+    },
+    {
+      "file": "web/public/marketing/home/commerce/orders-960.webp",
+      "sha256": "69b1d9e8ff09dfd11320eb8c994adc52127f0fc94c7bdc3fa038082d9da1477f"
+    },
+    {
+      "file": "web/public/marketing/home/commerce/orders-960.avif",
+      "sha256": "cfb6253b62817b618c0c4f5f26ac4256a2a258bb03920ece2bf39157943bd41d"
+    },
+    {
+      "file": "web/public/marketing/home/commerce/orders-1120.webp",
+      "sha256": "269c93fa2cb2c7d482acafd7cc871aadacc192327243e70a4c1df22eb7841f23"
+    },
+    {
+      "file": "web/public/marketing/home/commerce/orders-1120.avif",
+      "sha256": "8fea01de7b09d2f4ad1d750e6cd788104412c0c7d4a3a7021254777b9dd28be6"
+    },
+    {
+      "file": "web/public/marketing/home/conversas/mobile-390.webp",
+      "sha256": "d2e9d346e132af9639d9fc43f9c837c2d2afc8c4c6cb521464fdadae69c6c9cb"
+    },
+    {
+      "file": "web/public/marketing/home/conversas/mobile-390.avif",
+      "sha256": "7f7cc311fbbe399832855ea480c752611bbeda4200600350a63f0a0ebae244c9"
+    },
+    {
+      "file": "web/public/marketing/home/people/atendimento-480.webp",
+      "sha256": "13d8467c382e8a532db9a4ca67ec0f1c193f3f94821ce330332713bb642b2335"
+    },
+    {
+      "file": "web/public/marketing/home/people/atendimento-480.avif",
+      "sha256": "aceb67beea0de8bd980a74d2cd7edb6ae822b37e302205f68b48262a12cc3049"
+    },
+    {
+      "file": "web/public/marketing/home/people/atendimento-800.webp",
+      "sha256": "b921b028fb09b400a4c0a923e6921378d435d6f332229ea2dbc01028ef31adf6"
+    },
+    {
+      "file": "web/public/marketing/home/people/atendimento-800.avif",
+      "sha256": "4ef04f8e0360b273f5349b7597d7eb64e3d7e866740ef7678aaa2663343b4da6"
+    },
+    {
+      "file": "web/public/marketing/home/people/atendimento-1120.webp",
+      "sha256": "fb7066140493899c54e1a72137e88f8f19f4c26aff73e6eb6e0d7c49a96e4eb8"
+    },
+    {
+      "file": "web/public/marketing/home/people/atendimento-1120.avif",
+      "sha256": "49f51a4ea4c8bb4974d47b0e480fe17a6fc23321053db5138a3dbfa6741c4363"
+    },
+    {
+      "file": "web/public/marketing/home/people/reuniao-480.webp",
+      "sha256": "a1968c174c7ddc259f8c561803ed9aa02c1fdb252c5b4fc97a7c040c8688bbc2"
+    },
+    {
+      "file": "web/public/marketing/home/people/reuniao-480.avif",
+      "sha256": "a16a93172f456785f4ecb1e47526694cd9975ed79003c9c395c621ee98ac6e1e"
+    },
+    {
+      "file": "web/public/marketing/home/people/reuniao-800.webp",
+      "sha256": "30a88f41a582a1a9946fb5c04c52caf9d4b8ac308511c3dbbb80217b946499ad"
+    },
+    {
+      "file": "web/public/marketing/home/people/reuniao-800.avif",
+      "sha256": "e217b206a5c2d58e32b90d3cf0b07a7a22868bc3e8291d9f3a5dfdd9fe3beb35"
+    },
+    {
+      "file": "web/public/marketing/home/people/equipe-480.webp",
+      "sha256": "c6e3e5a61890ce868b412a4954e4118af83502c2e1e1cdeb4cccb690d408b3f2"
+    },
+    {
+      "file": "web/public/marketing/home/people/equipe-480.avif",
+      "sha256": "a1b094fa1e8eab68ebda92138fd6773123ac1e9f7c43ef46672134af486cc8e3"
+    },
+    {
+      "file": "web/public/marketing/home/people/equipe-800.webp",
+      "sha256": "cc9f7f054a091799381875e855718a31d71bfc65ee7ef514bde17ed44e8c932a"
+    },
+    {
+      "file": "web/public/marketing/home/people/equipe-800.avif",
+      "sha256": "37f09b663af623c939a52f2b57c69c62867270aea964dd23901ad78dabb67bfb"
+    },
+    {
+      "file": "web/public/marketing/home/people/equipe-1120.webp",
+      "sha256": "fa9d96b3373de20ebe72140c57766717c1a38a832d80015250fc6332ef9938a5"
+    },
+    {
+      "file": "web/public/marketing/home/people/equipe-1120.avif",
+      "sha256": "37f67aa1918b6ab4936f426dfa722d9ddb283ad0f4084851380640d75c46e20c"
+    }
+  ]
+}

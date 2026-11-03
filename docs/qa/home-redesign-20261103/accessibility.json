@@ -1,0 +1,27 @@
+[
+  {
+    "width": 390,
+    "state": "home",
+    "violations": []
+  },
+  {
+    "width": 390,
+    "state": "demo",
+    "violations": []
+  },
+  {
+    "width": 390,
+    "state": "mobile-menu",
+    "violations": []
+  },
+  {
+    "width": 1440,
+    "state": "home",
+    "violations": []
+  },
+  {
+    "width": 1440,
+    "state": "demo",
+    "violations": []
+  }
+]

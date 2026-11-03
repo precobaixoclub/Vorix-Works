@@ -1,0 +1,330 @@
+{
+  "base": "http://localhost:3401",
+  "results": [
+    {
+      "width": 360,
+      "status": "PASS",
+      "height": 15212,
+      "scrollWidth": 360,
+      "cls": 0,
+      "images": [
+        {
+          "src": "http://localhost:3401/marketing/home/hero/command-center-640.avif",
+          "width": 338,
+          "loading": "eager"
+        },
+        {
+          "src": "http://localhost:3401/marketing/home/conversas/inbox-640.avif",
+          "width": 316,
+          "loading": "lazy"
+        },
+        {
+          "src": "http://localhost:3401/marketing/home/meetings/summary-640.avif",
+          "width": 316,
+          "loading": "lazy"
+        },
+        {
+          "src": "http://localhost:3401/marketing/home/marketing/content-640.avif",
+          "width": 316,
+          "loading": "lazy"
+        },
+        {
+          "src": "http://localhost:3401/marketing/home/commerce/site-640.avif",
+          "width": 316,
+          "loading": "lazy"
+        },
+        {
+          "src": "http://localhost:3401/marketing/home/people/atendimento-480.avif",
+          "width": 216,
+          "loading": "lazy"
+        },
+        {
+          "src": "http://localhost:3401/marketing/home/people/reuniao-480.avif",
+          "width": 125,
+          "loading": "lazy"
+        },
+        {
+          "src": "http://localhost:3401/marketing/home/people/equipe-480.avif",
+          "width": 125,
+          "loading": "lazy"
+        },
+        {
+          "src": "http://localhost:3401/marketing/home/analytics/dashboard-640.avif",
+          "width": 331,
+          "loading": "lazy"
+        }
+      ]
+    },
+    {
+      "width": 390,
+      "status": "PASS",
+      "height": 15062,
+      "scrollWidth": 390,
+      "cls": 0,
+      "images": [
+        {
+          "src": "http://localhost:3401/marketing/home/hero/command-center-640.avif",
+          "width": 366,
+          "loading": "eager"
+        },
+        {
+          "src": "http://localhost:3401/marketing/home/conversas/inbox-640.avif",
+          "width": 343,
+          "loading": "lazy"
+        },
+        {
+          "src": "http://localhost:3401/marketing/home/meetings/summary-640.avif",
+          "width": 343,
+          "loading": "lazy"
+        },
+        {
+          "src": "http://localhost:3401/marketing/home/marketing/content-640.avif",
+          "width": 343,
+          "loading": "lazy"
+        },
+        {
+          "src": "http://localhost:3401/marketing/home/commerce/site-640.avif",
+          "width": 343,
+          "loading": "lazy"
+        },
+        {
+          "src": "http://localhost:3401/marketing/home/people/atendimento-480.avif",
+          "width": 233,
+          "loading": "lazy"
+        },
+        {
+          "src": "http://localhost:3401/marketing/home/people/reuniao-480.avif",
+          "width": 136,
+          "loading": "lazy"
+        },
+        {
+          "src": "http://localhost:3401/marketing/home/people/equipe-480.avif",
+          "width": 136,
+          "loading": "lazy"
+        },
+        {
+          "src": "http://localhost:3401/marketing/home/analytics/dashboard-640.avif",
+          "width": 358,
+          "loading": "lazy"
+        }
+      ]
+    },
+    {
+      "width": 430,
+      "status": "PASS",
+      "height": 14909,
+      "scrollWidth": 430,
+      "cls": 0.03124506976744186,
+      "images": [
+        {
+          "src": "http://localhost:3401/marketing/home/hero/command-center-640.avif",
+          "width": 404,
+          "loading": "eager"
+        },
+        {
+          "src": "http://localhost:3401/marketing/home/conversas/inbox-640.avif",
+          "width": 378,
+          "loading": "lazy"
+        },
+        {
+          "src": "http://localhost:3401/marketing/home/meetings/summary-640.avif",
+          "width": 378,
+          "loading": "lazy"
+        },
+        {
+          "src": "http://localhost:3401/marketing/home/marketing/content-640.avif",
+          "width": 378,
+          "loading": "lazy"
+        },
+        {
+          "src": "http://localhost:3401/marketing/home/commerce/site-640.avif",
+          "width": 378,
+          "loading": "lazy"
+        },
+        {
+          "src": "http://localhost:3401/marketing/home/people/atendimento-480.avif",
+          "width": 257,
+          "loading": "lazy"
+        },
+        {
+          "src": "http://localhost:3401/marketing/home/people/reuniao-480.avif",
+          "width": 150,
+          "loading": "lazy"
+        },
+        {
+          "src": "http://localhost:3401/marketing/home/people/equipe-480.avif",
+          "width": 150,
+          "loading": "lazy"
+        },
+        {
+          "src": "http://localhost:3401/marketing/home/analytics/dashboard-640.avif",
+          "width": 395,
+          "loading": "lazy"
+        }
+      ]
+    },
+    {
+      "width": 768,
+      "status": "PASS",
+      "height": 10272,
+      "scrollWidth": 768,
+      "cls": 0,
+      "images": [
+        {
+          "src": "http://localhost:3401/marketing/home/hero/command-center-640.avif",
+          "width": 491,
+          "loading": "eager"
+        },
+        {
+          "src": "http://localhost:3401/marketing/home/conversas/inbox-640.avif",
+          "width": 345,
+          "loading": "lazy"
+        },
+        {
+          "src": "http://localhost:3401/marketing/home/meetings/summary-640.avif",
+          "width": 345,
+          "loading": "lazy"
+        },
+        {
+          "src": "http://localhost:3401/marketing/home/marketing/content-640.avif",
+          "width": 345,
+          "loading": "lazy"
+        },
+        {
+          "src": "http://localhost:3401/marketing/home/commerce/site-640.avif",
+          "width": 345,
+          "loading": "lazy"
+        },
+        {
+          "src": "http://localhost:3401/marketing/home/people/atendimento-480.avif",
+          "width": 340,
+          "loading": "lazy"
+        },
+        {
+          "src": "http://localhost:3401/marketing/home/people/reuniao-480.avif",
+          "width": 289,
+          "loading": "lazy"
+        },
+        {
+          "src": "http://localhost:3401/marketing/home/people/equipe-480.avif",
+          "width": 289,
+          "loading": "lazy"
+        },
+        {
+          "src": "http://localhost:3401/marketing/home/analytics/dashboard-960.avif",
+          "width": 800,
+          "loading": "lazy"
+        }
+      ]
+    },
+    {
+      "width": 1024,
+      "status": "PASS",
+      "height": 7677,
+      "scrollWidth": 1024,
+      "cls": 0.014355690851807594,
+      "images": [
+        {
+          "src": "http://localhost:3401/marketing/home/hero/command-center-960.avif",
+          "width": 655,
+          "loading": "eager"
+        },
+        {
+          "src": "http://localhost:3401/marketing/home/conversas/inbox-640.avif",
+          "width": 299,
+          "loading": "lazy"
+        },
+        {
+          "src": "http://localhost:3401/marketing/home/meetings/summary-640.avif",
+          "width": 299,
+          "loading": "lazy"
+        },
+        {
+          "src": "http://localhost:3401/marketing/home/marketing/content-640.avif",
+          "width": 299,
+          "loading": "lazy"
+        },
+        {
+          "src": "http://localhost:3401/marketing/home/commerce/site-640.avif",
+          "width": 299,
+          "loading": "lazy"
+        },
+        {
+          "src": "http://localhost:3401/marketing/home/people/atendimento-480.avif",
+          "width": 340,
+          "loading": "lazy"
+        },
+        {
+          "src": "http://localhost:3401/marketing/home/people/reuniao-480.avif",
+          "width": 289,
+          "loading": "lazy"
+        },
+        {
+          "src": "http://localhost:3401/marketing/home/people/equipe-480.avif",
+          "width": 289,
+          "loading": "lazy"
+        },
+        {
+          "src": "http://localhost:3401/marketing/home/analytics/dashboard-960.avif",
+          "width": 800,
+          "loading": "lazy"
+        }
+      ]
+    },
+    {
+      "width": 1440,
+      "status": "PASS",
+      "height": 7905,
+      "scrollWidth": 1440,
+      "cls": 0.025206309641143423,
+      "images": [
+        {
+          "src": "http://localhost:3401/marketing/home/hero/command-center-960.avif",
+          "width": 849,
+          "loading": "eager"
+        },
+        {
+          "src": "http://localhost:3401/marketing/home/conversas/inbox-640.avif",
+          "width": 299,
+          "loading": "lazy"
+        },
+        {
+          "src": "http://localhost:3401/marketing/home/meetings/summary-640.avif",
+          "width": 299,
+          "loading": "lazy"
+        },
+        {
+          "src": "http://localhost:3401/marketing/home/marketing/content-640.avif",
+          "width": 299,
+          "loading": "lazy"
+        },
+        {
+          "src": "http://localhost:3401/marketing/home/commerce/site-640.avif",
+          "width": 299,
+          "loading": "lazy"
+        },
+        {
+          "src": "http://localhost:3401/marketing/home/people/atendimento-480.avif",
+          "width": 340,
+          "loading": "lazy"
+        },
+        {
+          "src": "http://localhost:3401/marketing/home/people/reuniao-480.avif",
+          "width": 289,
+          "loading": "lazy"
+        },
+        {
+          "src": "http://localhost:3401/marketing/home/people/equipe-480.avif",
+          "width": 289,
+          "loading": "lazy"
+        },
+        {
+          "src": "http://localhost:3401/marketing/home/analytics/dashboard-960.avif",
+          "width": 800,
+          "loading": "lazy"
+        }
+      ]
+    }
+  ],
+  "errors": []
+}

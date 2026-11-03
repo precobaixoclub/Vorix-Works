@@ -7,7 +7,7 @@ import { ProductEngineEditor, PRODUCT_SECTIONS } from "@/components/products/Pro
 import { newProductDetails,type ProductDetails } from "@/features/product-engine/types";
 import {defaultRealEstate,validateSpecializedForm} from "@/features/product-engine/specializations";
 const FormSectionContext=createContext("geral");
-import { ImagePlus, Loader2, Star, Trash2, X } from "lucide-react";
+import { Copy, ImagePlus, Loader2, Star, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/Button";
 import { Input, Label, MoneyInput, Textarea } from "@/components/Field";
@@ -30,29 +30,30 @@ const MAX_PHOTOS = 30;
  * quanto custa, estoque (só se quiser controlar — aí pede quantidade, aviso de reposição e
  * unidade) e descrição. Usado no menu Produtos (vitrine) e em Configurações.
  */
-export function ProductFormModal({ workspaceId, product, canViewCost, isManager, onClose, onSaved }: { workspaceId: string; product?: Product; canViewCost: boolean; isManager: boolean; onClose: () => void; onSaved: (product: Product) => Promise<void> | void }) {
+export function ProductFormModal({ workspaceId, product, template, canViewCost, isManager, onClose, onSaved, onDuplicate }: { workspaceId: string; product?: Product; /** Produto usado como base de um novo cadastro (Duplicar): copia tudo, menos código, endereço e saldo. */ template?: Product; canViewCost: boolean; isManager: boolean; onClose: () => void; onSaved: (product: Product) => Promise<void> | void; onDuplicate?: (product: Product) => void }) {
+  const source = product ?? template;
   const [section,setSection]=useState("geral");
-  const [details,setDetails]=useState(product?.details??newProductDetails());
+  const [details,setDetails]=useState(product?.details??(template?.details?{...template.details,slug:undefined}:newProductDetails()));
   const familyDrafts=useRef<Partial<Record<ProductDetails["type"],ProductDetails>>>({});
   const specialized=details.type==="VEHICLE"||details.type==="REAL_ESTATE";
   const sections=PRODUCT_SECTIONS.filter(item=>item.value!=="variacoes"||!specialized).map(item=>item.value==="estoque"&&details.type==="REAL_ESTATE"?{...item,label:"Disponibilidade"}:item);
   if(specialized)sections.splice(1,0,{value:"ficha",label:details.type==="VEHICLE"?"Ficha do veículo":"Ficha do imóvel"},{value:"localizacao",label:"Localização"});
-  const [categoryId,setCategoryId]=useState(product?.categoryId);
-  const [brandId,setBrandId]=useState(product?.brandId);
-  const [name, setName] = useState(product?.name ?? "");
+  const [categoryId,setCategoryId]=useState(source?.categoryId);
+  const [brandId,setBrandId]=useState(source?.brandId);
+  const [name, setName] = useState(product?.name ?? (template ? `${template.name} (cópia)` : ""));
   const [code, setCode] = useState(product?.code ?? "");
-  const [category, setCategory] = useState(product?.category ?? "");
-  const [itemType, setItemType] = useState<"product" | "service">(product?.itemType ?? "product");
-  const [billingType, setBillingType] = useState<BillingType>(product?.billingType ?? "one_time");
-  const [unit, setUnit] = useState(product?.unit ?? "");
-  const [description, setDescription] = useState(product?.description ?? "");
-  const [list, setList] = useState(product ? currencyInputFromCents(product.listPriceCents ?? product.priceCents) : "");
-  const [minimum, setMinimum] = useState(product?.minimumPriceCents !== undefined ? currencyInputFromCents(product.minimumPriceCents) : "");
-  const [cost, setCost] = useState(product?.costCents !== undefined ? currencyInputFromCents(product.costCents) : "");
-  const [trackStock, setTrackStock] = useState(product?.trackStock ?? false);
+  const [category, setCategory] = useState(source?.category ?? "");
+  const [itemType, setItemType] = useState<"product" | "service">(source?.itemType ?? "product");
+  const [billingType, setBillingType] = useState<BillingType>(source?.billingType ?? "one_time");
+  const [unit, setUnit] = useState(source?.unit ?? "");
+  const [description, setDescription] = useState(source?.description ?? "");
+  const [list, setList] = useState(source ? currencyInputFromCents(source.listPriceCents ?? source.priceCents) : "");
+  const [minimum, setMinimum] = useState(source?.minimumPriceCents !== undefined ? currencyInputFromCents(source.minimumPriceCents) : "");
+  const [cost, setCost] = useState(source?.costCents !== undefined ? currencyInputFromCents(source.costCents) : "");
+  const [trackStock, setTrackStock] = useState(source?.trackStock ?? false);
   const [stock, setStock] = useState(product?.stockQuantity !== undefined && product.trackStock ? formatQuantityInput(product.stockQuantity) : "");
-  const [alertAt, setAlertAt] = useState(product?.stockAlertThreshold !== undefined ? formatQuantityInput(product.stockAlertThreshold) : "");
-  const [photos, setPhotos] = useState<string[]>(product?.imageUrls ?? []);
+  const [alertAt, setAlertAt] = useState(source?.stockAlertThreshold !== undefined ? formatQuantityInput(source.stockAlertThreshold) : "");
+  const [photos, setPhotos] = useState<string[]>(source?.imageUrls ?? []);
   const [uploading, setUploading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
@@ -87,16 +88,19 @@ export function ProductFormModal({ workspaceId, product, canViewCost, isManager,
     if(product?.details?.options.length&&(type==="VEHICLE"||type==="REAL_ESTATE")){setError("Este produto possui combinações já cadastradas. Cadastre o veículo ou imóvel como um novo produto para preservar as negociações e o estoque.");return;}
     familyDrafts.current[details.type]=details;
     const stored=familyDrafts.current[type];
-    const next=stored??{...details,type,options:[],apparel:undefined,vehicle:undefined,realEstate:undefined,...(type==="VEHICLE"?{vehicle:{make:"",model:"",kind:"car" as const,features:[]}}:{}),...(type==="REAL_ESTATE"?{realEstate:defaultRealEstate()}:{}),...(type==="APPAREL"?{options:[{key:"size",name:"Tamanho",values:["P","M","G"]}]}:{})};
+    const next=stored??{...details,type,options:[],apparel:undefined,vehicle:undefined,realEstate:undefined,...(type==="VEHICLE"?{vehicle:{make:"",model:"",kind:"car" as const,features:[]}}:{}),...(type==="REAL_ESTATE"?{realEstate:defaultRealEstate()}:{}),...(type==="APPAREL"?{options:[{key:"size",name:"Tamanho",values:[]},{key:"color",name:"Cor",values:[]}]}:{})};
     setDetails(next);setError(undefined);if(type==="VEHICLE"||type==="REAL_ESTATE"){setItemType("product");setBillingType(next.realEstate?.purpose==="rent"?"monthly":"one_time");}
   }
 
   async function handleSave() {
     const problem=validateSpecializedForm(details);if(problem){setError(problem.message);setSection(problem.section);return;}
+    // Opções sem nenhum valor marcado (ex.: "Cor" de um produto de cor única) não geram combinações.
+    const options=details.options.filter(option=>option.values.length);
+    if(options.some(option=>!option.name.trim())){setError("Dê um nome a cada opção de variação.");setSection("variacoes");return;}
     setBusy(true);
     setError(undefined);
     const payload: Omit<CreateProductInput, "workspaceId"> = {
-      details:{...details,media:photos.map(url=>({url,alt:details.media.find(item=>item.url===url)?.alt??""}))},categoryId:categoryId??null,brandId:brandId??null,
+      details:{...details,options,media:photos.map(url=>({url,alt:details.media.find(item=>item.url===url)?.alt??""}))},categoryId:categoryId??null,brandId:brandId??null,
       name: name.trim(),
       description: description.trim() || undefined,
       priceCents: listCents,
@@ -109,7 +113,7 @@ export function ProductFormModal({ workspaceId, product, canViewCost, isManager,
       ...(isManager ? { minimumPriceCents: minimum.trim() ? centsFromCurrencyInput(minimum) : null } : {}),
       trackStock:details.type==="REAL_ESTATE"?false:trackStock,
       // Saldo só vai quando o usuário mudou o número: reenviar o valor lido ao abrir desfaria vendas feitas enquanto o modal estava aberto.
-      ...(trackStock && details.type!=="REAL_ESTATE" ? { ...(details.options.length||(product?.trackStock&&stock===formatQuantityInput(product.stockQuantity??0))?{}:{stockQuantity:quantityFromInput(stock)??0}),stockAlertThreshold:quantityFromInput(alertAt)??null } : {}),
+      ...(trackStock && details.type!=="REAL_ESTATE" ? { ...(options.length||(product?.trackStock&&stock===formatQuantityInput(product.stockQuantity??0))?{}:{stockQuantity:quantityFromInput(stock)??0}),stockAlertThreshold:quantityFromInput(alertAt)??null } : {}),
       imageUrls: photos,
     };
     try {
@@ -124,8 +128,9 @@ export function ProductFormModal({ workspaceId, product, canViewCost, isManager,
   }
 
   return (
-    <Modal title={product ? "Editar produto" : "Cadastrar produto"} onClose={onClose} maxWidthClass="sm:max-w-6xl">
+    <Modal title={product ? "Editar produto" : template ? "Duplicar produto" : "Cadastrar produto"} onClose={onClose} maxWidthClass="sm:max-w-6xl">
       <FormSectionContext.Provider value={section}><PageSubnav className="min-w-0 max-w-full" items={sections} value={section} onValueChange={value=>{setSection(value);setError(undefined);}}><div className="min-w-0 space-y-5">
+        {template&&section==="geral" ? <p className="rounded-md border border-border/70 bg-muted/30 px-3 py-2 text-sm text-muted-foreground">Cópia de <strong className="text-foreground">{template.name}</strong>. Altere só o que muda no produto novo. O código é gerado automaticamente{details.options.length ? "; depois de cadastrar, abra o produto em Variações e gere as combinações" : ""}.</p> : null}
         {error ? <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</p> : null}
 
         {section==="geral"?<div className="space-y-2"><Label htmlFor="product-engine-type">O que você vai cadastrar?</Label><select id="product-engine-type" className="h-9 w-full rounded-md border border-border bg-background px-3 text-sm" value={details.type} onChange={event=>changeType(event.target.value as ProductDetails["type"])}><option value="GENERAL">Geral — produto ou serviço</option><option value="APPAREL">Vestuário — roupas e acessórios</option><option value="VEHICLE">Veículos — automóveis, motos e utilitários</option><option value="REAL_ESTATE">Imóveis — casas, apartamentos e terrenos</option></select><p className="text-xs text-muted-foreground">Os campos e as seções se ajustam ao tipo escolhido. Fotos e descrição são comuns a todos.</p></div>:null}
@@ -182,7 +187,7 @@ export function ProductFormModal({ workspaceId, product, canViewCost, isManager,
               </Select>
             </div>:null}
             <div><Label htmlFor="product-category">Categoria (opcional)</Label><Input id="product-category" value={category} onChange={(event) => setCategory(event.target.value)} placeholder="Ex.: Equipamentos" /></div>
-            <div><Label htmlFor="product-code">Código/SKU (opcional)</Label><Input id="product-code" value={code} onChange={(event) => setCode(event.target.value)} /></div>
+            <div><Label htmlFor="product-code">Código do produto</Label><Input id="product-code" value={code} onChange={(event) => setCode(event.target.value)} placeholder="Gerado automaticamente" /><p className="mt-1 text-[11px] text-muted-foreground">{product ? "Pode trocar por um código seu. Se apagar, o atual é mantido." : "Deixe em branco para receber o próximo número da sequência."}</p></div>
           </div>
         </FormSection>
 
@@ -239,6 +244,7 @@ export function ProductFormModal({ workspaceId, product, canViewCost, isManager,
 
         {product&&section==="geral"&&<ProductChannels workspaceId={workspaceId} productId={product.id} siteVisible={details.siteVisible}/>}
         <div className="sticky bottom-0 -mx-1 flex justify-end gap-2 bg-popover px-1 pt-2">
+          {product&&onDuplicate ? <Button variant="ghost" className="mr-auto" onClick={() => onDuplicate(product)} disabled={busy}><Copy className="h-4 w-4" />Duplicar produto</Button> : null}
           <Button variant="secondary" onClick={onClose} disabled={busy}>Cancelar</Button>
           <Button onClick={handleSave} loading={busy} disabled={!name.trim() || busy || uploading}>{product ? "Salvar alterações" : "Cadastrar produto"}</Button>
         </div>

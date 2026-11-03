@@ -1,6 +1,7 @@
 "use client";
 import {useState} from "react";
 import {VehicleFields,RealEstateFields} from "./ProductSpecializedFields";
+import {OptionValuePicker,optionKind} from "./OptionValuePicker";
 import {defaultRealEstate} from "@/features/product-engine/specializations";
 import useSWR from "swr";
 import {toast} from "sonner";
@@ -26,8 +27,9 @@ export const PRODUCT_SECTIONS=[{value:"geral",label:"Geral"},{value:"variacoes",
 export function ProductEngineEditor({section,workspaceId,product,details,onChange,categoryId,onCategory,brandId,onBrand,photos,isManager,canViewCost}:{section:string;workspaceId:string;product?:Product;details:ProductDetails;onChange:(value:ProductDetails)=>void;categoryId?:string;onCategory:(id?:string)=>void;brandId?:string;onBrand:(id?:string)=>void;photos:string[];isManager:boolean;canViewCost:boolean}){
  const {data:metadata,error,mutate}=useSWR(["product-metadata",workspaceId],()=>getProductMetadata(workspaceId));
  const [organizing,setOrganizing]=useState(false);
- const [optionDrafts,setOptionDrafts]=useState<Record<string,string>>({});
  const patch=(value:Partial<ProductDetails>)=>onChange({...details,...value});
+ // Novas opções começam vazias: a pessoa marca só os tamanhos e cores que tem.
+ const addOption=(base:string,name:string)=>{const keys=new Set(details.options.map(option=>option.key));let key=base==='option'?`option_${details.options.length+1}`:base;for(let n=2;keys.has(key);n++)key=`${base}_${n}`;patch({options:[...details.options,{key,name,values:[]}]});};
  const vehicle=details.vehicle??{make:"",model:"",features:[]};
  const ancestors=new Set<string>();let parent=categoryId;while(parent&&!ancestors.has(parent)){ancestors.add(parent);parent=metadata?.categories.find(category=>category.id===parent)?.parentId;}
  const attributes=(metadata?.attributes??[]).filter(attribute=>attribute.active&&(!attribute.categoryId||ancestors.has(attribute.categoryId)));
@@ -42,8 +44,8 @@ export function ProductEngineEditor({section,workspaceId,product,details,onChang
   </>:null}
   {section==="variacoes"?<>
    <p className="text-sm text-muted-foreground">{product?"Defina as opções, salve o produto e gere as combinações.":"Defina as opções e salve o produto. Depois abra-o novamente e use Gerar combinações salvas."} Cada combinação terá seu próprio SKU, saldo e preço.</p>
-   {details.options.map((option,index)=><div key={index} className="space-y-2 rounded-xl border border-border/60 p-3"><div className="grid gap-2 sm:grid-cols-2"><div><Label htmlFor={`option-name-${index}`}>Nome da opção</Label><Input id={`option-name-${index}`} value={option.name} disabled={!isManager} onChange={event=>patch({options:details.options.map((item,i)=>i===index?{...item,name:event.target.value}:item)})} /></div><div><Label htmlFor={`option-values-${index}`}>Valores (separados por vírgula)</Label><Input id={`option-values-${index}`} value={optionDrafts[option.key]??option.values.join(", ")} disabled={!isManager} onChange={event=>{setOptionDrafts({...optionDrafts,[option.key]:event.target.value});patch({options:details.options.map((item,i)=>i===index?{...item,values:event.target.value.split(",").map(value=>value.trim()).filter(Boolean)}:item)});}} /></div></div><Button variant="ghost" size="sm" disabled={!isManager} onClick={()=>patch({options:details.options.filter((_,i)=>i!==index)})}>Remover opção</Button></div>)}
-   <div className="flex flex-wrap gap-2"><Button variant="secondary" disabled={!isManager||details.options.length>=4} onClick={()=>patch({options:[...details.options,{key:`option_${details.options.length+1}`,name:details.options.length?"Cor":"Tamanho",values:details.options.length?["Preto","Branco"]:["P","M","G"]}]})}>Adicionar opção</Button></div>
+   {details.options.map((option,index)=><div key={option.key} className="space-y-3 rounded-xl border border-border/60 p-3"><div className="flex flex-wrap items-end justify-between gap-2"><div className="min-w-48 flex-1 sm:max-w-xs"><Label htmlFor={`option-name-${index}`}>Nome da opção</Label><Input id={`option-name-${index}`} value={option.name} disabled={!isManager} onChange={event=>patch({options:details.options.map((item,i)=>i===index?{...item,name:event.target.value}:item)})} /></div><Button variant="ghost" size="sm" disabled={!isManager} onClick={()=>patch({options:details.options.filter((_,i)=>i!==index)})}>Remover opção</Button></div><OptionValuePicker name={option.name} values={option.values} disabled={!isManager} onChange={values=>patch({options:details.options.map((item,i)=>i===index?{...item,values}:item)})}/></div>)}
+   <div className="flex flex-wrap gap-2">{([["size","Tamanho","Adicionar tamanhos"],["color","Cor","Adicionar cores"]] as const).filter(([,name])=>!details.options.some(option=>optionKind(option.name)===optionKind(name))).map(([key,name,label])=><Button key={key} variant="secondary" disabled={!isManager||details.options.length>=4} onClick={()=>addOption(key,name)}>{label}</Button>)}<Button variant="ghost" disabled={!isManager||details.options.length>=4} onClick={()=>addOption("option","")}>Outra opção</Button></div>
    {product?<VariantGrid workspaceId={workspaceId} product={product} isManager={isManager} canViewCost={canViewCost}/>:<p className="text-sm text-muted-foreground">Cadastre o produto para gerar e ajustar suas combinações.</p>}
   </>:null}
   {section==="estoque"&&product&&details.type!=="REAL_ESTATE"?<InventoryPanel workspaceId={workspaceId} product={product}/>:null}

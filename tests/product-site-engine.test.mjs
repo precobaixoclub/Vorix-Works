@@ -79,7 +79,7 @@ test("entitlement Site: padrão fechado, plano, revogação explícita e kill sw
 });
 test("adicional Site pago amplia capability do produto unificado sem alterar plano",async()=>{
  const plan={id:"fixture-plan",planCode:"FIXTURE",capabilities:{site:false},limits:{users:2}};
- const deps={subscriptionRepository:{getActiveByTenant:async()=>({id:"subscription",planVersionId:plan.id,status:"active"})},planVersionRepository:{getById:async()=>plan},subscriptionItemRepository:{listBySubscription:async()=>[{addonCode:"site_fixture",quantity:1}]},addonDefinitionRepository:{getByCode:async()=>({resource:"site"})}};
+ const deps={platformBillingRepository:{getTenantControls:async()=>undefined},subscriptionRepository:{getActiveByTenant:async()=>({id:"subscription",planVersionId:plan.id,status:"active"})},planVersionRepository:{getById:async()=>plan},subscriptionItemRepository:{listBySubscription:async()=>[{addonCode:"site_fixture",quantity:1}]},addonDefinitionRepository:{getByCode:async()=>({resource:"site"})}};
  const effective=await resolveEffectiveEntitlements(deps,"fixture");assert.equal(effective.capabilities.site,true);assert.equal(effective.capabilities.commerce,undefined);assert.equal(plan.capabilities.site,false);
 });
 test("Commerce: estados finais e notificações repetidas não reabrem pedidos",()=>{
@@ -90,6 +90,14 @@ test("preço configurável: somente plataforma, preserva recurso e só cadastra 
  const input={code:"site_"+randomUUID().replaceAll("-",""),name:"Site configurado em fixture",description:"Preço controlado, nunca oferta real",monthlyPriceUsd:139,yearlyPriceUsd:1390,currency:"BRL",resource:"site",increment:1,active:true};const headers={"x-fixture-platform-admin":"true"};
  try{assert.equal((await app.inject({method:"PUT",url:"/admin/site-commerce-modules",payload:input})).statusCode,403);let response=await app.inject({method:"PUT",url:"/admin/site-commerce-modules",payload:input,headers});assert.equal(response.statusCode,200,response.body);assert.equal((await repository.getByCode(input.code)).monthlyPriceUsd,139);assert.equal((await app.inject({method:"PUT",url:"/admin/site-commerce-modules",payload:{...input,resource:"commerce"},headers})).statusCode,400);assert.equal((await app.inject({method:"PUT",url:"/admin/site-commerce-modules",payload:{...input,code:input.code+"_future",resource:"commerce"},headers})).statusCode,400);assert.equal((await app.inject({method:"PUT",url:"/admin/site-commerce-modules",payload:{...input,monthlyPriceUsd:-1},headers})).statusCode,400);}
  finally{await app.close();}
+});
+
+test("código automático: sequência por workspace, sem repetir, respeitando códigos numéricos digitados",async()=>{
+ const c=await setup();const make=code=>c.d.productRepository.create({...c.scope,name:"Produto "+randomUUID(),priceCents:1000,...(code===undefined?{}:{code})});
+ assert.equal((await make()).code,"000001");assert.equal((await make("")).code,"000002");assert.equal((await make("SKU-FORNECEDOR")).code,"SKU-FORNECEDOR");
+ await make("000040");const next=await make();assert.equal(next.code,"000041");
+ const kept=await updateProduct(c.d,{...c.scope,productId:next.id,patch:{code:null}});assert.equal(kept.code,"000041");
+ const other=await setup();assert.equal((await other.d.productRepository.create({...other.scope,name:"Outro workspace",priceCents:1})).code,"000001");
 });
 
 test("01 GENERAL e produto legado: mesmos IDs, preços, defaults e atualização compatível",async()=>{

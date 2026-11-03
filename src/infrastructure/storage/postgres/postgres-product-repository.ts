@@ -70,7 +70,20 @@ function toDomain(row: ProductRow): Product {
 export class PostgresProductRepository implements ProductRepositoryPort {
   constructor(private readonly pool: Pool) {}
 
+  /** Próximo código da sequência do workspace; nunca reutiliza números e pula códigos numéricos digitados à mão. */
+  private async nextCode(workspaceId: string): Promise<string> {
+    const typed = "(select max(code::bigint) from products where workspace_id = $1 and code ~ '^[0-9]{1,15}$')";
+    const result = await this.pool.query<{ last_value: string }>(
+      `insert into product_code_sequences (workspace_id, last_value) values ($1, coalesce(${typed}, 0) + 1)
+       on conflict (workspace_id) do update set last_value = greatest(product_code_sequences.last_value, coalesce(${typed}, 0)) + 1
+       returning last_value`,
+      [workspaceId],
+    );
+    return result.rows[0].last_value.padStart(6, "0");
+  }
+
   async create(input: CreateProductInput): Promise<Product> {
+    if (!input.code?.trim()) input = { ...input, code: await this.nextCode(input.workspaceId) };
     const result = await this.pool.query<ProductRow>(
       `insert into products (id, tenant_id, workspace_id, name, description, price_cents, currency, code, category, item_type, unit, billing_type,
          cost_cents, minimum_price_cents, commission_type, commission_value, tax_metadata, track_stock, stock_quantity, stock_alert_threshold, image_urls, details, category_id, brand_id)
@@ -146,7 +159,8 @@ export class PostgresProductRepository implements ProductRepositoryPort {
         input.priceCents ?? existing.priceCents,
         input.currency ?? existing.currency,
         input.active ?? existing.active,
-        input.code !== undefined ? input.code : existing.code ?? null,
+        // O código nunca fica vazio: apagar o campo mantém o atual (ou gera um, para produto antigo sem código).
+        input.code?.trim() ? input.code : existing.code || await this.nextCode(existing.workspaceId),
         input.category !== undefined ? input.category : existing.category ?? null,
         input.itemType ?? existing.itemType,
         input.unit !== undefined ? input.unit : existing.unit ?? null,

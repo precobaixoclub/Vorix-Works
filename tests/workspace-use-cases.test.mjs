@@ -106,12 +106,15 @@ test("deactivateWorkspace: falha quando o workspace já está inactive", async (
   await assert.rejects(() => deactivateWorkspace(deps, { tenantId: "tenant-1", id: created.id }), /WORKSPACE_INVALID_TRANSITION/);
 });
 
-test("activateWorkspace/deactivateWorkspace: falham quando o workspace está archived (terminal)", async () => {
+test("activateWorkspace: restaura um arquivado com os mesmos dados e limpa archivedAt", async () => {
   const deps = makeDeps();
   const created = await createWorkspace(deps, { tenantId: "tenant-1", name: "X" });
   await archiveWorkspace(deps, { tenantId: "tenant-1", id: created.id });
-  await assert.rejects(() => activateWorkspace(deps, { tenantId: "tenant-1", id: created.id }), /WORKSPACE_INVALID_TRANSITION/);
   await assert.rejects(() => deactivateWorkspace(deps, { tenantId: "tenant-1", id: created.id }), /WORKSPACE_INVALID_TRANSITION/);
+  const restored = await activateWorkspace(deps, { tenantId: "tenant-1", id: created.id });
+  assert.equal(restored.status, "active");
+  assert.equal(restored.archivedAt, undefined);
+  for (const key of ["id", "tenantId", "name", "settings", "createdAt", "members", "integrations"]) assert.deepEqual(restored[key], created[key]);
 });
 
 test("archiveWorkspace: falha quando o workspace já está archived", async () => {

@@ -5,7 +5,6 @@ import { useSWRConfig } from "swr";
 import { Button } from "@/components/Button";
 import { Input, Label } from "@/components/Field";
 import { Modal } from "@/components/Modal";
-import { StatusBadge } from "@/components/StatusBadge";
 import { useMyAccess } from "@/features/auth/access";
 import { activateWorkspace, deactivateWorkspace, updateWorkspace } from "../api";
 import type { Workspace } from "../types";
@@ -148,20 +147,19 @@ export function EditWorkspaceModal({
         </div>
         <div className="rounded-xl border border-border bg-surface p-4">
           <Label htmlFor="edit-workspace-status">Situação do espaço</Label>
-          {savedWorkspace.status === "archived" ? <StatusBadge status="archived" /> : (
             <select
               id="edit-workspace-status"
               value={status}
-              onChange={(event) => setStatus(event.target.value as "active" | "inactive")}
+              onChange={(event) => setStatus(event.target.value as Workspace["status"])}
               disabled={submitting || !canTransition}
               className="min-h-10 w-full rounded-lg border border-border bg-surface-sunken px-3 py-2 text-sm text-ink outline-none focus:border-primary disabled:cursor-not-allowed disabled:opacity-60"
             >
+              {savedWorkspace.status === "archived" ? <option value="archived">Arquivado</option> : null}
               <option value="active">Ativo</option>
-              <option value="inactive">Inativo</option>
+              {savedWorkspace.status !== "archived" ? <option value="inactive">Inativo</option> : null}
             </select>
-          )}
           <p className="mt-2 text-xs leading-relaxed text-ink-muted">
-            {savedWorkspace.status === "archived" ? "Este espaço está arquivado." : !canTransition ? "Você não tem permissão para ativar ou inativar este espaço." : "Você pode inativar o espaço e reativá-lo quando precisar. Encontre cada situação nos filtros da lista de espaços."}
+            {!canTransition ? "Você não tem permissão para ativar ou inativar este espaço." : savedWorkspace.status === "archived" ? "Você pode reativar este espaço preservando seus dados. É necessário ter uma vaga disponível no plano." : "Você pode inativar o espaço e reativá-lo quando precisar. Encontre cada situação nos filtros da lista de espaços."}
           </p>
         </div>
         {error ? <div role="alert"><p className="text-sm text-red-600">{error}</p><WorkspacePlanHelp error={error} /></div> : null}

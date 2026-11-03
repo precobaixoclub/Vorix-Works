@@ -42,7 +42,7 @@ export function WorkspaceCard({ workspace, onEdit, onTransition }: { workspace: 
             {workspace.status === "active" ? "Acessar espaço" : "Ver situação do espaço"}
           </span>
         </Link>
-        {onTransition && workspace.status !== "archived" ? <Button type="button" variant="secondary" onClick={onTransition}>{workspace.status === "active" ? "Inativar" : "Ativar"}</Button> : null}
+        {onTransition ? <Button type="button" variant="secondary" onClick={onTransition}>{workspace.status === "active" ? "Inativar" : workspace.status === "archived" ? "Reativar" : "Ativar"}</Button> : null}
       </CardBody>
     </Card>
   );

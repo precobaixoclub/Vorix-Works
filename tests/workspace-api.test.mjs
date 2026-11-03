@@ -180,6 +180,20 @@ test("POST /v1/workspaces/:id/deactivate + /activate: fluxo válido", async () =
   await app.close();
 });
 
+test("POST /v1/workspaces/:id/activate: restaura arquivado, preserva dados e impede outro tenant", async () => {
+  const app = await buildTestApp();
+  try {
+    const created = (await app.inject({ method: "POST", url: "/v1/workspaces", headers: authHeader("tenant-a"), payload: { name: "Espaço preservado" } })).json().data;
+    const archived = await app.inject({ method: "POST", url: `/v1/workspaces/${created.id}/archive`, headers: authHeader("tenant-a") });
+    assert.equal(archived.statusCode, 200); assert.ok(archived.json().data.archivedAt);
+    assert.equal((await app.inject({ method: "POST", url: `/v1/workspaces/${created.id}/activate`, headers: authHeader("tenant-b") })).statusCode, 404);
+    const restored = await app.inject({ method: "POST", url: `/v1/workspaces/${created.id}/activate`, headers: authHeader("tenant-a") });
+    assert.equal(restored.statusCode, 200, restored.body);
+    assert.equal(restored.json().data.status, "active"); assert.equal(restored.json().data.archivedAt, undefined);
+    for (const key of ["id", "name", "settings", "createdAt", "members", "integrations"]) assert.deepEqual(restored.json().data[key], created[key]);
+  } finally { await app.close(); }
+});
+
 test("POST /v1/workspaces/:id/activate: transição inválida responde 409 CONFLICT", async () => {
   const app = await buildTestApp();
   const created = (

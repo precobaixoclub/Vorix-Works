@@ -24,7 +24,7 @@ import { itemsForCapacity } from "../dist/application/billing/checkout-use-cases
 import { computeCapacityCost } from "../dist/domain/platform-billing/capacity.model.js";
 import {PostgresWorkspaceRepository} from "../dist/infrastructure/storage/postgres/postgres-workspace-repository.js";
 import {DefaultResourceCounterAdapter} from "../dist/infrastructure/billing/resource-counter-adapter.js";
-import {createWorkspace,activateWorkspace,deactivateWorkspace} from "../dist/application/workspace/workspace-use-cases.js";
+import {createWorkspace,activateWorkspace,deactivateWorkspace,archiveWorkspace} from "../dist/application/workspace/workspace-use-cases.js";
 let db;before(async()=>{const url=process.env.VORIX_CAPACITY_FIXTURE_PG_URL;if(url){assert.match(new URL(url).pathname,/^\/vorix_capacity_fixture/);const pool=new pg.Pool({connectionString:url});db={pool,stop:()=>pool.end()};}else db=await startTestPostgres();await applyMigrations(db.pool,join(process.cwd(),"db/migrations"));});after(()=>db.stop());
 async function setup({interval="monthly",used=1}={}){
  const tenantId="renewal-fixture-"+randomUUID(),calls=[];const provider=new SandboxBillingProvider();provider.setRecurringItems=async input=>{calls.push(input);return {ok:true,providerItemIds:Object.fromEntries(input.items.filter(item=>item.quantity>0).map(item=>[item.addonCode,"fixture-item-"+item.addonCode]))};};
@@ -124,6 +124,35 @@ test("Espaços ativos: inativar libera vaga, adicionais liberam reativação e r
   await assert.rejects(activateWorkspace(c.workspaceDeps, { tenantId, id: second.id }), /USAGE_LIMIT_REACHED/);
   assert.equal((await c.workspaceRepository.getById(second.id)).name, "Segunda empresa");
   assert.equal((await c.workspaceRepository.listByTenant(tenantId)).length, 2, "inativação preserva registros");
+});
+
+test("Arquivado: reativação exige vaga, preserva o registro e não altera cobrança", async () => {
+  const c = await activeWorkspaceSetup(), tenantId = c.tenantId;
+  const archived = await createWorkspace(c.workspaceDeps, { tenantId, name: "Marca arquivada" });
+  await archiveWorkspace(c.workspaceDeps, { tenantId, id: archived.id });
+  const replacement = await createWorkspace(c.workspaceDeps, { tenantId, name: "Marca ativa" });
+  const before = await c.workspaceRepository.getById(archived.id);
+  await assert.rejects(activateWorkspace(c.workspaceDeps, { tenantId, id: archived.id }), /USAGE_LIMIT_REACHED/);
+  assert.deepEqual(await c.workspaceRepository.getById(archived.id), before);
+  await deactivateWorkspace(c.workspaceDeps, { tenantId, id: replacement.id });
+  const restored = await activateWorkspace(c.workspaceDeps, { tenantId, id: archived.id });
+  assert.equal(restored.status, "active"); assert.equal(restored.archivedAt, undefined);
+  assert.equal(restored.name, archived.name); assert.equal(restored.createdAt, archived.createdAt);
+  assert.equal(c.calls.length, 0);
+});
+
+test("Última vaga: dois arquivados não podem ser reativados acima da capacidade", async () => {
+  const c = await activeWorkspaceSetup(), tenantId = c.tenantId;
+  const records = [];
+  for (const name of ["Marca A", "Marca B"]) {
+    const workspace = await createWorkspace(c.workspaceDeps, { tenantId, name });
+    await archiveWorkspace(c.workspaceDeps, { tenantId, id: workspace.id }); records.push(workspace);
+  }
+  const results = await Promise.allSettled(records.map(workspace => activateWorkspace(c.workspaceDeps, { tenantId, id: workspace.id })));
+  assert.equal(results.filter(result => result.status === "fulfilled").length, 1);
+  assert.match(results.find(result => result.status === "rejected").reason.message, /USAGE_LIMIT_REACHED/);
+  assert.equal(await c.deps.resourceCounter.count({ tenantId, resource: "workspaces" }), 1);
+  assert.equal((await c.workspaceRepository.listByTenant(tenantId)).filter(workspace => workspace.status === "archived").length, 1);
 });
 
 test("Última vaga: criações concorrentes respeitam assinatura real e não passam pelo catálogo fixo", async () => {

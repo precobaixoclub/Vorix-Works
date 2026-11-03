@@ -249,9 +249,9 @@ function WorkspacesPageContent() {
           }}
         />
       ) : null}
-      <ConfirmDialog open={!!transitioning} title={`${transitioning?.status === "active" ? "Inativar" : "Ativar"} ${transitioning?.name ?? "espaço"}?`}
+      <ConfirmDialog open={!!transitioning} title={`${transitioning?.status === "active" ? "Inativar" : transitioning?.status === "archived" ? "Reativar" : "Ativar"} ${transitioning?.name ?? "espaço"}?`}
         description={transitioning?.status === "active" ? "Os dados serão preservados e o espaço deixará de ocupar uma vaga. Para reduzir a mensalidade, ajuste a quantidade contratada em Plano e espaços." : "O espaço voltará a ocupar uma vaga do plano. A ativação depende de capacidade disponível e não contrata adicionais automaticamente."}
-        confirmLabel={transitioning?.status === "active" ? "Inativar espaço" : "Ativar espaço"} busy={transitionBusy} onConfirm={transitionWorkspace} onCancel={() => { if (!transitionBusy) setTransitioning(undefined); }}>
+        confirmLabel={transitioning?.status === "active" ? "Inativar espaço" : transitioning?.status === "archived" ? "Reativar espaço" : "Ativar espaço"} busy={transitionBusy} onConfirm={transitionWorkspace} onCancel={() => { if (!transitionBusy) setTransitioning(undefined); }}>
         {transitionError ? <div role="alert" className="space-y-2 text-sm"><p className="text-destructive">{transitionError}</p>{canManagePlan ? <a href="/conta/plano#quantidades-plano" target="_blank" rel="noopener noreferrer" className="text-primary underline">Ajustar plano e tentar novamente</a> : <p>Peça ao administrador para ajustar o plano.</p>}</div> : null}
       </ConfirmDialog>
     </main>

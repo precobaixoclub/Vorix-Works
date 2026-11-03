@@ -129,11 +129,37 @@ test("usuário sem permissão não altera situação e espaço arquivado não of
   expect(state.writes).toEqual([]);
 });
 
-test("espaço arquivado mantém a situação terminal", async ({ page }) => {
-  await fixture(page, { status: "archived" });
+test("reativa um arquivado pelo modal, preserva o nome e move para os espaços ativos", async ({ page }) => {
+  const state = await fixture(page, { status: "archived" });
   await page.goto("/workspaces");
   await page.getByRole("button", { name: "Editar", exact: true }).click();
   const modal = page.getByRole("dialog");
-  await expect(modal.getByText("Arquivado", { exact: true })).toBeVisible();
-  await expect(modal.getByRole("combobox")).toHaveCount(0);
+  await expect(modal.getByLabel("Situação do espaço")).toHaveValue("archived");
+  await modal.getByLabel("Situação do espaço").selectOption("active");
+  await modal.getByRole("button", { name: "Salvar alterações", exact: true }).click();
+  await expect(modal).toBeHidden();
+  await expect(page.getByText("Ativo", { exact: true })).toBeVisible();
+  expect(state.writes).toEqual(["activate"]); expect(state.current().name).toBe("Empresa de teste");
+  await page.reload(); await expect(page.getByText("Ativo", { exact: true })).toBeVisible();
+});
+
+test("cartão arquivado oferece reativação e respeita o filtro", async ({ page }) => {
+  const state = await fixture(page, { status: "archived" });
+  await page.goto("/workspaces"); await page.getByRole("button", { name: "Arquivados", exact: true }).click();
+  await page.getByRole("button", { name: "Reativar", exact: true }).click();
+  const dialog = page.getByRole("alertdialog"); await expect(dialog).toContainText("capacidade disponível");
+  await dialog.getByRole("button", { name: "Reativar espaço", exact: true }).click();
+  await expect(dialog).toBeHidden(); await expect(page.getByText("Nenhum espaço encontrado")).toBeVisible();
+  await page.getByRole("button", { name: "Ativos", exact: true }).click(); await expect(page.getByText("Empresa de teste", { exact: true })).toBeVisible();
+  expect(state.writes).toEqual(["activate"]);
+});
+
+test("arquivado sem vaga permanece arquivado e oferece ajuste do plano", async ({ page }) => {
+  const state = await fixture(page, { status: "archived" });
+  await page.route(`**/v1/workspaces/${WORKSPACE_ID}/activate`, route => route.fulfill({ status: 403, json: { ok: false, error: { code: "FORBIDDEN", message: "USAGE_LIMIT_REACHED: limite de espaços ativos atingido." } } }));
+  await page.goto("/workspaces"); await page.getByRole("button", { name: "Reativar", exact: true }).click();
+  const dialog = page.getByRole("alertdialog"); await dialog.getByRole("button", { name: "Reativar espaço", exact: true }).click();
+  await expect(dialog.getByRole("alert")).toContainText("limite de espaços ativos");
+  await expect(dialog.getByRole("link", { name: "Ajustar plano e tentar novamente" })).toBeVisible();
+  expect(state.current().status).toBe("archived"); expect(state.writes).toEqual([]);
 });

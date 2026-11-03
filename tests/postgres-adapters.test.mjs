@@ -90,6 +90,11 @@ test("Postgres Workspace: activate()/deactivate()/archive() mutam status incondi
   const archived = await repo.archive(created.id);
   assert.equal(archived.status, "archived");
   assert.ok(archived.archivedAt);
+  const restored = await repo.activate(created.id);
+  assert.equal(restored.status, "active");
+  assert.equal(restored.archivedAt, undefined);
+  assert.equal((await repo.getById(created.id)).archivedAt, undefined);
+  assert.equal(restored.name, created.name);
 });
 
 test("Postgres Workspace: update()/activate()/archive() em id inexistente lança WORKSPACE_NOT_FOUND", async () => {

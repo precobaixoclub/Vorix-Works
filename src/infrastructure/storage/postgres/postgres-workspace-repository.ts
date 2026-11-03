@@ -130,7 +130,7 @@ export class PostgresWorkspaceRepository implements WorkspaceRepositoryPort {
 
   private async setStatus(id: string, status: "active" | "inactive"): Promise<Workspace> {
     await this.mustGetRow(id);
-    const result = await this.pool.query<WorkspaceRow>(`update workspaces set status = $2, updated_at = now() where id = $1 returning *`, [
+    const result = await this.pool.query<WorkspaceRow>(`update workspaces set status = $2, archived_at = null, updated_at = now() where id = $1 returning *`, [
       id,
       status,
     ]);

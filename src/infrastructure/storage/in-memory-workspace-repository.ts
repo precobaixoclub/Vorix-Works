@@ -91,7 +91,8 @@ export class InMemoryWorkspaceRepository implements WorkspaceRepositoryPort {
     if (!existing) {
       throw new Error(`WORKSPACE_NOT_FOUND: workspace "${id}" não existe.`);
     }
-    const updated: Workspace = { ...existing, status, updatedAt: this.now().toISOString() };
+    const { archivedAt: _archivedAt, ...preserved } = existing;
+    const updated: Workspace = { ...preserved, status, updatedAt: this.now().toISOString() };
     this.workspaces.set(id, clone(updated));
     return clone(updated);
   }

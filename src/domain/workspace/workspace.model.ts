@@ -21,9 +21,8 @@ export const WORKSPACE_STATUSES = ["active", "inactive", "archived"] as const;
 export type WorkspaceStatus = (typeof WORKSPACE_STATUSES)[number];
 
 /**
- * Transições de status permitidas (Sprint 03, correção obrigatória #2). `archived` é terminal
- * nesta sprint — não existe "reativar um workspace arquivado" ainda (reabrir é decisão adiada,
- * não uma omissão). A validação mora aqui (domínio), não no repositório nem no handler HTTP —
+ * Arquivamento é reversível: um espaço arquivado pode voltar a ativo, sujeito à capacidade
+ * disponível do tenant. A validação mora aqui (domínio), não no repositório nem no handler HTTP —
  * os casos de uso (Fase 6) chamam `assertValidWorkspaceTransition` antes de tocar o repositório;
  * os adapters (memória/Postgres) fazem a mutação de forma incondicional, confiando que quem
  * chamou já validou.
@@ -31,7 +30,7 @@ export type WorkspaceStatus = (typeof WORKSPACE_STATUSES)[number];
 export type WorkspaceTransitionAction = "activate" | "deactivate" | "archive";
 
 const WORKSPACE_VALID_TRANSITIONS: Record<WorkspaceTransitionAction, readonly WorkspaceStatus[]> = {
-  activate: ["inactive"],
+  activate: ["inactive", "archived"],
   deactivate: ["active"],
   archive: ["active", "inactive"],
 };

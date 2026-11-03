@@ -64,7 +64,8 @@ services:
       start_period: 30s
 
   wuzapi:
-    image: ${WUZAPI_IMAGE:-asternic/wuzapi:latest}
+    # Versão validada contra ClientOutdated (405); atualizar de forma controlada, com backup.
+    image: ${WUZAPI_IMAGE:-asternic/wuzapi:1.1.0@sha256:d9139ddcd5b3293e7ba7cd9af210b39adc6eafb16a0e23e84f4fea0f385395be}
     restart: unless-stopped
     depends_on:
       wuzapi-postgres:

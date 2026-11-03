@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { createProduct, deleteProduct, getProduct, listProducts, updateProduct } from "../../../../application/crm/product-use-cases.js";
-import type { ProductUseCaseDeps } from "../../../../application/crm/product-use-cases.js";
+import { validateProductExtension } from "../../../../application/products/product-engine-use-cases.js";
+import type { ProductMutation, ProductUseCaseDeps } from "../../../../application/crm/product-use-cases.js";
 import { assertProductPricing, redactProduct } from "../../../../application/sales/catalog-use-cases.js";
 import { loadCommercialSettings, resolveVisibility, type SalesVisibility } from "../../../../application/sales/sales-context.js";
 import type { SalesConfigRepositoryPort } from "../../../../application/ports/sales-engine-repository.port.js";
@@ -15,6 +16,9 @@ import { assertWorkspaceBelongsToTenant } from "./workspace-ownership.js";
 import { canonicalWorkspaceImages, uploadWorkspaceImage } from "../../http/workspace-images.js";
 import type { AuthPrincipal } from "../../../../domain/identity/identity.model.js";
 import type { Product } from "../../../../domain/crm/crm.model.js";
+import { hasPermission } from "../../../../domain/identity/identity.model.js";
+import { productDetailsSchema } from "../../../../domain/products/product-details.js";
+import { applyVariantSync, prepareVariantSync, validateVariantDrafts, variantDraftsSchema, type VariantDraft } from "../../../../application/products/product-variant-sync.js";
 import { NotFoundError, ValidationError } from "../../http/app-error.js";
 import { requirePermission } from "../../http/require-principal.js";
 import { successEnvelope } from "../../http/response-envelope.js";
@@ -50,7 +54,9 @@ const CREATE_BODY_SCHEMA = {
     stockQuantity: { type: "number", minimum: -1000000000, maximum: 1000000000 },
     stockAlertThreshold: { type: ["number", "null"], minimum: 0, maximum: 1000000000 },
     imageUrls: { type: "array", maxItems: 30, items: { type: "string", minLength: 1, maxLength: 2000 } },
-    details: { type: "object", maxProperties: 16 }, categoryId: { type: ["string", "null"], maxLength: 160 }, brandId: { type: ["string", "null"], maxLength: 160 },
+    details: { type: "object", maxProperties: 24 }, categoryId: { type: ["string", "null"], maxLength: 160 }, brandId: { type: ["string", "null"], maxLength: 160 },
+    /** Combinações gravadas junto com o produto (cadastro em etapas). Ausente = combinações não mudam. */
+    variants: { type: "array", maxItems: 500, items: { type: "object" } },
   },
 } as const;
 const UPDATE_BODY_SCHEMA = {
@@ -77,7 +83,9 @@ const UPDATE_BODY_SCHEMA = {
     stockQuantity: { type: "number", minimum: -1000000000, maximum: 1000000000 },
     stockAlertThreshold: { type: ["number", "null"], minimum: 0, maximum: 1000000000 },
     imageUrls: { type: "array", maxItems: 30, items: { type: "string", minLength: 1, maxLength: 2000 } },
-    details: { type: "object", maxProperties: 16 }, categoryId: { type: ["string", "null"], maxLength: 160 }, brandId: { type: ["string", "null"], maxLength: 160 },
+    details: { type: "object", maxProperties: 24 }, categoryId: { type: ["string", "null"], maxLength: 160 }, brandId: { type: ["string", "null"], maxLength: 160 },
+    /** Combinações gravadas junto com o produto (cadastro em etapas). Ausente = combinações não mudam. */
+    variants: { type: "array", maxItems: 500, items: { type: "object" } },
     active: { type: "boolean" },
   },
 } as const;
@@ -94,6 +102,7 @@ function translateProductError(error: unknown): never {
  * (senão o próprio vendedor afrouxaria o piso que dispara a aprovação). Campos sem permissão são
  * ignorados na escrita e omitidos na leitura. */
 type ProductRouteDeps = ProductUseCaseDeps & {
+  withProductMutation?: ProductMutation;
   salesConfigRepository?: SalesConfigRepositoryPort;
   /** Alerta de estoque baixo para a gestão (opcional — sem isto o ajuste só não notifica). */
   membershipRepository?: TenantMembershipRepositoryPort;
@@ -131,7 +140,21 @@ function sanitizeProductWrite<T extends Record<string, unknown>>(body: T, visibi
   return clean as T;
 }
 
+/** Lê e valida as combinações contra as opções e a galeria que o produto TERÁ depois de gravado. */
+function variantDrafts(raw: unknown, details: unknown, imageUrls: readonly string[]): VariantDraft[] | undefined {
+  if (raw === undefined) return undefined;
+  const parsedDrafts = variantDraftsSchema.safeParse(raw);
+  if (!parsedDrafts.success) throw new ValidationError(`PRODUCT_VALIDATION: combinações inválidas (${parsedDrafts.error.issues[0]?.message ?? "formato"}).`);
+  const parsedDetails = productDetailsSchema.safeParse(details ?? {});
+  if (!parsedDetails.success) throw new ValidationError(`PRODUCT_VALIDATION: ${parsedDetails.error.issues.map((issue) => issue.message).join(" ")}`);
+  return validateVariantDrafts(parsedDrafts.data, parsedDetails.data, imageUrls);
+}
+
 const NO_MEMBERS = { listByTenant: async () => [] } as unknown as TenantMembershipRepositoryPort;
+
+function productWrite<T>(deps: ProductRouteDeps, scope: {tenantId:string;workspaceId:string;productId?:string}, work: (deps: ProductRouteDeps) => Promise<T>): Promise<T> {
+  return deps.withProductMutation ? deps.withProductMutation(scope, scoped => work({...deps,...scoped})) : work(deps);
+}
 
 const present = (product: Product, visibility: SalesVisibility) => ({ ...redactProduct(product, visibility.canViewCost), listPriceCents: product.priceCents, commissionValue: visibility.canViewCost ? product.commissionValue : undefined, lowStock: isLowStock(product) });
 
@@ -172,11 +195,20 @@ export async function registerProductsRoutes(app: FastifyInstance, deps: Product
     const body = sanitizeProductWrite(raw, visibility);
     const imageUrls = cleanImageUrls(deps, principal.tenantId, raw.workspaceId, raw.imageUrls);
     if (imageUrls) (body as Record<string, unknown>).imageUrls = imageUrls;
+    const { variants: rawVariants, ...productBody } = body as Record<string, unknown>;
     try {
-      assertProductPricing(body as never);
-      const product = await createProduct(deps, { tenantId: principal.tenantId, ...body } as never);
+      const drafts = variantDrafts(rawVariants, productBody.details, imageUrls ?? []);
+      assertProductPricing(productBody as never);
+      const presented = await productWrite(deps, {tenantId:principal.tenantId,workspaceId:raw.workspaceId}, async deps => {
+      let product = await createProduct(deps, { tenantId: principal.tenantId, ...productBody } as never);
+      if (drafts?.length && deps.salesCatalogRepository) {
+        await applyVariantSync({ salesCatalogRepository: deps.salesCatalogRepository, productEngineRepository: deps.productEngineRepository }, product, drafts, { ...visibility, canManageInventory: hasPermission(principal, "inventory:manage") }, principal);
+        product = await getProduct(deps, { productId: product.id, tenantId: principal.tenantId, workspaceId: raw.workspaceId });
+      }
+      return presentWithStock(deps,product,visibility);
+      });
       reply.code(201);
-      return successEnvelope(await presentWithStock(deps,product,visibility), request.id);
+      return successEnvelope(presented, request.id);
     } catch (error) {
       translateProductError(error);
     }
@@ -203,13 +235,22 @@ export async function registerProductsRoutes(app: FastifyInstance, deps: Product
       const patch = sanitizeProductWrite(rawPatch, visibility);
       const imageUrls = cleanImageUrls(deps, principal.tenantId, workspaceId, rawPatch.imageUrls);
       if (imageUrls) (patch as Record<string, unknown>).imageUrls = imageUrls;
+      const presented = await productWrite(deps, {tenantId:principal.tenantId,workspaceId,productId:id}, async deps => {
       const existing = await getProduct(deps, { productId: id, tenantId: principal.tenantId, workspaceId });
       assertProductPricing(patch as never, existing);
       // Saldo de estoque muda só via movimento (auditável e com alerta), nunca por sobrescrita direta.
-      const { stockQuantity, ...rest } = patch as { stockQuantity?: number } & Record<string, unknown>;
+      const { stockQuantity, variants: rawVariants, ...rest } = patch as { stockQuantity?: number; variants?: unknown } & Record<string, unknown>;
+      let drafts = variantDrafts(rawVariants, rest.details ?? existing.details, (rest.imageUrls as string[] | undefined) ?? existing.imageUrls);
+      const syncDeps = deps.salesCatalogRepository ? { salesCatalogRepository: deps.salesCatalogRepository, productEngineRepository: deps.productEngineRepository } : undefined;
+      if (drafts && syncDeps) {
+        // Valida o produto inteiro antes de remover ou renomear combinações; só então elas mudam.
+        await validateProductExtension(deps, structuredClone(rest) as never, { tenantId: principal.tenantId, workspaceId }, existing, { skipVariantCheck: true });
+        drafts = await prepareVariantSync(syncDeps, existing, drafts);
+      }
       if(stockQuantity!==undefined&&((patch.details as {options?:unknown[]}|undefined)?.options??existing.details?.options)?.length)throw new ValidationError("Ajuste o estoque de cada variante.");
       if(stockQuantity!==undefined&&stockQuantity<(existing.reservedQuantity??0))throw new ValidationError(`Há ${existing.reservedQuantity} unidade(s) reservada(s) em pedidos; o saldo não pode ficar abaixo disso.`);
       let product = await updateProduct(deps, { productId: id, tenantId: principal.tenantId, workspaceId, patch: rest as never });
+      if (drafts && syncDeps) await applyVariantSync(syncDeps, product, drafts, { ...visibility, canManageInventory: hasPermission(principal, "inventory:manage") }, principal);
       if (stockQuantity !== undefined && product.trackStock) {
         product = await setStockQuantity(
           { productRepository: deps.productRepository, membershipRepository: deps.membershipRepository ?? NO_MEMBERS, notification: deps.notification },
@@ -218,7 +259,9 @@ export async function registerProductsRoutes(app: FastifyInstance, deps: Product
           principal.userId,
         );
       }
-      return successEnvelope(await presentWithStock(deps,product,visibility), request.id);
+      return presentWithStock(deps,product,visibility);
+      });
+      return successEnvelope(presented, request.id);
     } catch (error) {
       translateProductError(error);
     }

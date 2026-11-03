@@ -1,9 +1,4 @@
 "use client";
-import {useState} from "react";
-import {Check,Plus,X} from "lucide-react";
-import {Button} from "@/components/Button";
-import {Input} from "@/components/Field";
-import {cn} from "@/lib/utils";
 
 /**
  * Catálogo de tipos de variação: o lojista escolhe o tipo (tamanho, cor, voltagem, marca do veículo...)
@@ -43,31 +38,3 @@ export const VARIATION_TYPES:VariationType[]=[
 export const SUGGESTED_TYPES:Record<string,string[]>={APPAREL:["size","shoe_size","color","material"],GENERAL:["color","dimension","voltage","model"]};
 const normalize=(text:string)=>text.normalize("NFD").replace(/[̀-ͯ]/g,"").trim().toLowerCase();
 export function variationType(name:string):VariationType|undefined{const n=normalize(name);return n?VARIATION_TYPES.find(type=>normalize(type.name)===n||type.aliases?.includes(n)):undefined;}
-
-export function OptionValuePicker({name,values,disabled,onChange}:{name:string;values:string[];disabled?:boolean;onChange:(values:string[])=>void}){
- const [typed,setTyped]=useState("");
- const type=variationType(name),groups=type?.groups??[];
- const presets=groups.flatMap(group=>group.values);
- // Mantém a ordem natural da lista pronta (P antes de M, etc.); valores próprios vêm depois, na ordem em que foram incluídos.
- const ordered=(next:string[])=>[...presets.filter(value=>next.includes(value)),...next.filter(value=>!presets.includes(value))];
- const toggle=(value:string)=>onChange(ordered(values.includes(value)?values.filter(item=>item!==value):[...values,value]));
- const add=()=>{const value=typed.trim();if(!value)return;const existing=[...presets,...values].find(item=>normalize(item)===normalize(value));if(existing&&!values.includes(existing))toggle(existing);else if(!existing)onChange(ordered([...values,value]));setTyped("");};
- const custom=values.filter(value=>!presets.includes(value));
- const swatch=(value:string)=>type?.id==="color"?COLORS.find(color=>color.value===value)?.hex:undefined;
- const chip=(value:string)=>{const on=values.includes(value),hex=swatch(value);return <button key={value} type="button" disabled={disabled} aria-pressed={on} onClick={()=>toggle(value)} className={cn("inline-flex min-h-8 items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors disabled:opacity-50",on?"border-primary bg-primary/15 text-foreground":"border-border/70 text-muted-foreground hover:border-foreground/30 hover:text-foreground")}>{on?<Check size={12}/>:null}{hex?<span aria-hidden className="h-3.5 w-3.5 rounded-full border border-border" style={{background:hex}}/>:null}{value}</button>;};
- return <div className="space-y-3">
-  {groups.map((group,index)=><div key={group.label??index}>{group.label?<p className="mb-1.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{group.label}</p>:null}<div className="flex max-h-48 flex-wrap gap-1.5 overflow-y-auto">{group.values.map(value=>chip(value))}</div></div>)}
-  {custom.length?<div><p className="mb-1.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{groups.length?"Seus valores":"Valores"}</p><div className="flex flex-wrap gap-1.5">{custom.map(value=><span key={value} className="inline-flex min-h-8 items-center gap-1 rounded-full border border-primary bg-primary/15 px-3 py-1 text-xs font-medium">{value}<button type="button" disabled={disabled} aria-label={`Remover ${value}`} onClick={()=>toggle(value)} className="rounded-full p-0.5 hover:bg-background/60"><X size={12}/></button></span>)}</div></div>:null}
-  <div className="flex gap-2"><Input aria-label={`Adicionar outro valor de ${name||"variação"}`} value={typed} disabled={disabled} placeholder={type?.placeholder??"Digite um valor e adicione"} onChange={event=>setTyped(event.target.value)} onKeyDown={event=>{if(event.key==="Enter"){event.preventDefault();add();}}}/><Button type="button" variant="secondary" disabled={disabled||!typed.trim()} onClick={add}><Plus size={14}/>Adicionar</Button></div>
-  <p className="text-xs text-muted-foreground">{values.length?`${values.length} selecionado${values.length>1?"s":""}: ${values.join(", ")}`:"Nenhum valor selecionado. Marque os que você tem."}</p>
- </div>;
-}
-
-/** Escolha do tipo de variação ao adicionar uma opção ao produto. */
-export function VariationTypePicker({productType,usedNames,onPick,onCancel}:{productType:string;usedNames:string[];onPick:(type?:VariationType)=>void;onCancel:()=>void}){
- const used=new Set(usedNames.map(name=>variationType(name)?.id).filter(Boolean));
- const suggested=SUGGESTED_TYPES[productType]??[];
- const sorted=[...VARIATION_TYPES.filter(type=>suggested.includes(type.id)).sort((a,b)=>suggested.indexOf(a.id)-suggested.indexOf(b.id)),...VARIATION_TYPES.filter(type=>!suggested.includes(type.id))];
- const card=(type:VariationType|undefined)=>{const taken=!!type&&used.has(type.id);return <button key={type?.id??"custom"} type="button" disabled={taken} onClick={()=>onPick(type)} className="rounded-lg border border-border/70 p-3 text-left transition-colors hover:border-primary/60 hover:bg-primary/5 disabled:cursor-not-allowed disabled:opacity-40"><span className="flex items-center justify-between gap-2 text-sm font-medium">{type?.name??"Personalizada"}{type&&suggested.includes(type.id)?<span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-semibold text-primary">Sugerida</span>:null}</span><span className="mt-0.5 block text-xs text-muted-foreground">{taken?"Já adicionada":type?.hint??"Crie seu próprio tipo e valores"}</span></button>;};
- return <div className="space-y-3 rounded-xl border border-dashed border-border p-3"><div className="flex items-center justify-between gap-2"><p className="text-sm font-semibold">Qual tipo de variação?</p><Button variant="ghost" size="sm" onClick={onCancel}>Cancelar</Button></div><div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">{sorted.map(card)}{card(undefined)}</div></div>;
-}

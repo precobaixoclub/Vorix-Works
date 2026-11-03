@@ -8,6 +8,9 @@ export type ProductUseCaseDeps = {
   productRepository: ProductRepositoryPort;
 };
 
+/** Produto, combinações e movimentos são confirmados juntos; uma falha desfaz o cadastro inteiro. */
+export type ProductMutation = <T>(scope: {tenantId:string;workspaceId:string;productId?:string}, work: (deps: ProductUseCaseDeps) => Promise<T>) => Promise<T>;
+
 /** Guard de tenant/workspace — nunca 403, sempre 404. */
 export async function mustProductBelongToTenantAndWorkspace(deps: ProductUseCaseDeps, productId: string, tenantId: string, workspaceId: string): Promise<Product> {
   const product = await deps.productRepository.getById(productId);

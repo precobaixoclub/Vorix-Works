@@ -3,7 +3,14 @@ import {vehicleDetailsSchema,realEstateDetailsSchema} from "./product-specializa
 
 export const PRODUCT_TYPES = ["GENERAL", "APPAREL", "VEHICLE", "REAL_ESTATE"] as const;
 const short = z.string().trim().max(160);
-export const productOptionSchema = z.object({ key: z.string().regex(/^[a-z][a-z0-9_]{0,39}$/), name: short.min(1), values: z.array(short.min(1)).min(1).max(50) }).strict();
+const hexColor = z.string().regex(/^#[0-9a-fA-F]{6}$/);
+/** Valores são livres ("Marrom — Logo Branca"); a cor visual (`swatches`) e a foto do valor (`images`)
+ * são só apresentação: dois valores podem ter a mesma cor e continuar sendo variações diferentes. */
+export const productOptionSchema = z.object({ key: z.string().regex(/^[a-z][a-z0-9_]{0,39}$/), name: short.min(1), values: z.array(short.min(1)).min(1).max(50), swatches: z.record(short, hexColor).optional(), images: z.record(short, z.string().max(2000)).optional() }).strict().superRefine((option, ctx) => {
+  for (const field of ["swatches", "images"] as const) if (Object.keys(option[field] ?? {}).some(value => !option.values.includes(value))) ctx.addIssue({ code: "custom", message: "Cor ou foto de um valor que não existe mais na variação.", path: [field] });
+});
+/** Característica do segmento (ex.: "Modelagem: Oversized"), com o rótulo junto para o site exibir sem configuração. */
+export const productSpecSchema = z.object({ key: z.string().regex(/^[a-z][a-z0-9_]{0,39}$/), label: short.min(1), value: z.union([z.string().trim().max(2000), z.number().finite(), z.boolean()]) }).strict();
 const attributeValue = z.union([short, z.number().finite(), z.boolean()]);
 export const productDetailsSchema = z.preprocess(raw=>{
  if(!raw||typeof raw!=="object"||Array.isArray(raw))return raw;
@@ -28,6 +35,9 @@ export const productDetailsSchema = z.preprocess(raw=>{
  return value;
 },z.object({
   type: z.enum(PRODUCT_TYPES).default("GENERAL"),
+  /** Segmento escolhido no cadastro (vestuário, calçados, eletrônicos...): define campos e sugestões da tela. */
+  segment: z.string().regex(/^[a-z][a-z0-9_]{0,39}$/).optional(),
+  specs: z.array(productSpecSchema).max(40).default([]),
   slug: z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/).max(160).optional(),
   attributes: z.record(z.string().regex(/^[a-z][a-z0-9_]{0,39}$/), attributeValue).default({}),
   options: z.array(productOptionSchema).max(4).default([]),
@@ -45,6 +55,7 @@ export const productDetailsSchema = z.preprocess(raw=>{
   if (new Set(value.options.map(option => option.key)).size !== value.options.length) ctx.addIssue({ code: "custom", message: "Cada opção precisa de uma chave diferente.", path: ["options"] });
   for (const option of value.options) if (new Set(option.values).size !== option.values.length) ctx.addIssue({ code: "custom", message: "Remova valores repetidos da opção.", path: ["options"] });
   if (value.options.reduce((n, option) => n * option.values.length, 1) > 500) ctx.addIssue({ code: "custom", message: "Use no máximo 500 combinações por produto.", path: ["options"] });
+  if (new Set(value.specs.map(spec => spec.key)).size !== value.specs.length) ctx.addIssue({ code: "custom", message: "Cada característica precisa de uma chave diferente.", path: ["specs"] });
   if (value.type === "VEHICLE" && !value.vehicle) ctx.addIssue({ code: "custom", message: "Informe marca e modelo do veículo.", path: ["vehicle"] });
   if (value.type === "REAL_ESTATE" && !value.realEstate) ctx.addIssue({code:"custom",message:"Preencha a ficha do imóvel.",path:["realEstate"]});
   if ((value.type==="REAL_ESTATE"||value.type==="VEHICLE")&&value.options.length)ctx.addIssue({code:"custom",message:"Veículos e imóveis devem ter um cadastro próprio por unidade, sem combinações de tamanho ou cor.",path:["options"]});

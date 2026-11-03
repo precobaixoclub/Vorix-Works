@@ -69,6 +69,7 @@ import { registerPipelinesRoutes } from "./pipelines.route.js";
 import { registerDealsRoutes } from "./deals.route.js";
 import { registerTasksRoutes } from "./tasks.route.js";
 import { registerProductsRoutes } from "./products.route.js";
+import { productMutation } from "../../../../infrastructure/storage/postgres/product-mutation.js";
 import { registerProductEngineRoutes } from "./product-engine.route.js";
 import {registerCatalogBulkRoutes} from "./catalog-bulk.route.js";
 import {PostgresCatalogBulk} from "../../../../infrastructure/storage/postgres/postgres-catalog-bulk.js";
@@ -622,6 +623,7 @@ export async function registerV1Routes(app: FastifyInstance): Promise<void> {
     // CRM/Comercial (Fase 3) — Tarefas, Catálogo de produtos, Propostas (com link público).
     await registerTasksRoutes(app, { access: crmAccess, taskRepository: identity.taskRepository, timelineEventRepository: identity.timelineEventRepository });
     await registerProductsRoutes(app, {
+      withProductMutation: productMutation(identity.pool),
       productRepository: identity.productRepository,
       productEngineRepository: identity.productEngineRepository,
       salesCatalogRepository: identity.salesCatalogRepository,

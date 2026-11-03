@@ -233,7 +233,12 @@ export type CreateProductInput = {
   stockQuantity?: number;
   stockAlertThreshold?: number | null;
   imageUrls?: string[];
+  active?: boolean;
+  /** Combinações gravadas junto com o produto (cadastro em etapas); ausente = combinações não mudam. */
+  variants?: VariantDraftInput[];
 };
+/** `id` = combinação existente (renomear um valor a preserva); `priceCents: null` segue o preço do produto. */
+export type VariantDraftInput = { id?: string; optionValues: Record<string, string>; code?: string | null; priceCents?: number | null; costCents?: number | null; minimumPriceCents?: number | null; stockQuantity?: number; imageUrl?: string | null; active: boolean };
 
 /** Envia uma foto de produto (JPG/PNG/WEBP até 5 MB) e devolve a URL para salvar no produto. */
 export function uploadProductImage(workspaceId: string, file: File): Promise<{ url: string }> {

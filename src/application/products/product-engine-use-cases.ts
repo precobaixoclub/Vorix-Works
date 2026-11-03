@@ -4,7 +4,7 @@ import type { ProductUseCaseDeps } from "../crm/product-use-cases.js";
 import type { CreateProductInput } from "../ports/product-repository.port.js";
 import {stripObjectUrlSignature} from "../../shared/utils/object-url-signing.js";
 
-export async function validateProductExtension(deps: ProductUseCaseDeps, input: Partial<CreateProductInput>, scope: {tenantId:string;workspaceId:string}, existing?: Product): Promise<void> {
+export async function validateProductExtension(deps: ProductUseCaseDeps, input: Partial<CreateProductInput>, scope: {tenantId:string;workspaceId:string}, existing?: Product, options: {skipVariantCheck?: boolean} = {}): Promise<void> {
  if(input.details){
   const parsed=productDetailsSchema.safeParse(input.details);
   if(!parsed.success)throw Error(`PRODUCT_VALIDATION: ${parsed.error.issues.map(issue=>issue.message).join(" ")}`);
@@ -12,7 +12,9 @@ export async function validateProductExtension(deps: ProductUseCaseDeps, input: 
   input.details.media=input.details.media.map(media=>({...media,url:stripObjectUrlSignature(media.url)}));
   const images=input.imageUrls??existing?.imageUrls??[];
   if(input.details.media.some(media=>!images.includes(media.url)))throw Error("PRODUCT_VALIDATION: a mídia precisa estar na galeria do produto.");
-  if(deps.salesCatalogRepository&&existing){
+  input.details.options=input.details.options.map(option=>option.images?{...option,images:Object.fromEntries(Object.entries(option.images).map(([value,url])=>[value,stripObjectUrlSignature(url)]))}:option);
+  if(input.details.options.some(option=>Object.values(option.images??{}).some(url=>!images.includes(url))))throw Error("PRODUCT_VALIDATION: a foto da variação precisa estar na galeria do produto.");
+  if(deps.salesCatalogRepository&&existing&&!options.skipVariantCheck){
    for(const variant of await deps.salesCatalogRepository.listVariants(existing.id)){
     if(Object.keys(variant.optionValues??{}).length)validateVariantSelection(input.details.options,variant.optionValues!);
    }

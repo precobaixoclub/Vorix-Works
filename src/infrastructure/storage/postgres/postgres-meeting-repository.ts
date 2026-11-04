@@ -14,6 +14,9 @@ import type {
 } from "../../../application/ports/meeting-repository.port.js";
 import {
   ACTIVE_RECORDING_STATUSES,
+  DEFAULT_MEETING_TRANSCRIPTION_ENGINE,
+  type MeetingTranscriptionEngine,
+  type MeetingTranscriptionSettings,
   type AutoRecordWindow,
   type MeetingActionItem,
   type MeetingActionItemType,
@@ -909,6 +912,47 @@ export class PostgresMeetingRepository implements MeetingRepositoryPort {
     return result.rowCount ?? 0;
   }
 
+  async getTranscriptionSettings(): Promise<MeetingTranscriptionSettings> {
+    const result = await this.pool.query<{ engine: MeetingTranscriptionEngine; updated_by: string | null; updated_at: Date }>(
+      `select engine, updated_by, updated_at from meeting_transcription_settings where id = 'singleton'`,
+    );
+    const row = result.rows[0];
+    if (!row) return { engine: DEFAULT_MEETING_TRANSCRIPTION_ENGINE };
+    return { engine: row.engine, ...(row.updated_by ? { updatedBy: row.updated_by } : {}), updatedAt: new Date(row.updated_at).toISOString() };
+  }
+
+  async setTranscriptionSettings(input: { engine: MeetingTranscriptionEngine; updatedBy: string; now: Date }): Promise<MeetingTranscriptionSettings> {
+    await this.pool.query(
+      `insert into meeting_transcription_settings (id, engine, updated_by, updated_at) values ('singleton', $1, $2, $3)
+       on conflict (id) do update set engine = excluded.engine, updated_by = excluded.updated_by, updated_at = excluded.updated_at`,
+      [input.engine, input.updatedBy, input.now],
+    );
+    return this.getTranscriptionSettings();
+  }
+
+  async countActiveRecorderRuns(): Promise<number> {
+    const result = await this.pool.query<{ n: string }>(
+      `select count(*) as n from meeting_recorder_runs where state in ('starting', 'waiting_admission', 'recording')`,
+    );
+    return Number(result.rows[0]?.n ?? 0);
+  }
+
+  async touchRecorderWorker(input: { workerId: string; provisioning: boolean; now: Date }): Promise<void> {
+    await this.pool.query(
+      `insert into meeting_recorder_workers (worker_id, provisioning, last_seen_at) values ($1, $2, $3)
+       on conflict (worker_id) do update set provisioning = excluded.provisioning, last_seen_at = excluded.last_seen_at`,
+      [input.workerId, input.provisioning, input.now],
+    );
+  }
+
+  async recorderWorkerOnline(input: { since: Date; provisioning?: boolean }): Promise<boolean> {
+    const result = await this.pool.query(
+      `select 1 from meeting_recorder_workers where last_seen_at >= $1 and ($2::boolean is null or provisioning = $2) limit 1`,
+      [input.since, input.provisioning ?? null],
+    );
+    return (result.rowCount ?? 0) > 0;
+  }
+
   async getRecorderBotSession(botId: string): Promise<string | undefined> {
     const result = await this.pool.query<{ encrypted_session_state: string | null }>(
       `select encrypted_session_state from recorder_bot_accounts where id = $1 and status <> 'busy' and removed_at is null`, [botId],
@@ -1014,6 +1058,9 @@ export class PostgresMeetingRepository implements MeetingRepositoryPort {
            select id from meeting_jobs
            where kind = any($1::text[])
              and ((status = 'queued' and run_at <= now()) or (status = 'running' and locked_until < now()))
+             -- Uma transcrição por vez no ambiente: com outra em andamento (lease válido), as demais esperam.
+             and not (kind = 'transcribe' and exists (
+               select 1 from meeting_jobs r where r.kind = 'transcribe' and r.status = 'running' and r.locked_until >= now()))
            order by run_at, created_at
            for update skip locked
            limit 1)

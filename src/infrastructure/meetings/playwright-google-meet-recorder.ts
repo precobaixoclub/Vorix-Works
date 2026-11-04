@@ -29,10 +29,22 @@ export type GoogleMeetRecorderOptions = {
   pactlPath?: string;
   viewport?: { width: number; height: number };
   frameRate?: number;
+  /**
+   * Grava também a tela (vídeo H.264). Padrão: só o áudio — transcrição, resumo e player só precisam
+   * dele, e codificar vídeo em tempo real era o maior consumo de CPU do recorder (ver
+   * `docs/meetings-recorder-architecture.md`). Ligue com MEETINGS_RECORDER_CAPTURE_VIDEO=true.
+   */
+  captureVideo?: boolean;
   endGraceMs?: number;
   pollMs?: number;
 };
 
+/** Flags de economia do Chromium do recorder (sem extensões, sync, tradução nem atualizações de componente). */
+export const LEAN_CHROME_ARGS = [
+  "--disable-extensions", "--disable-background-networking", "--disable-component-update", "--disable-default-apps",
+  "--disable-sync", "--no-first-run", "--no-default-browser-check", "--renderer-process-limit=2",
+  "--disable-features=Translate,MediaRouter,OptimizationHints,AutofillServerCommunication,InterestFeedContentSuggestions",
+];
 export type BotSessionHealth = { ok: boolean; reason?: "redirect_login" | "challenge" | "meet_unavailable"; details: Record<string, unknown> };
 
 export class GoogleMeetBotHealthChecker {
@@ -44,7 +56,7 @@ export class GoogleMeetBotHealthChecker {
     let browser: BrowserLike | undefined;
     let context: ContextLike | undefined;
     try {
-      browser = await playwright.chromium.launch({ headless: true, ...(this.chromiumExecutablePath ? { executablePath: this.chromiumExecutablePath } : {}), args: ["--no-sandbox", "--disable-dev-shm-usage"] });
+      browser = await playwright.chromium.launch({ headless: true, ...(this.chromiumExecutablePath ? { executablePath: this.chromiumExecutablePath } : {}), args: ["--no-sandbox", "--disable-dev-shm-usage", ...LEAN_CHROME_ARGS] });
       context = await browser.newContext({ storageState: JSON.parse(storageStateJson), locale: "pt-BR" });
       const page = await context.newPage();
       await page.goto("https://meet.google.com/", { waitUntil: "domcontentloaded", timeout: 45_000 });
@@ -80,6 +92,7 @@ export class PlaywrightGoogleMeetRecorder implements RecorderRuntimePort {
       pactlPath: options.pactlPath ?? "pactl",
       viewport: options.viewport ?? { width: 1280, height: 720 },
       frameRate: options.frameRate ?? 25,
+      captureVideo: options.captureVideo ?? false,
       endGraceMs: options.endGraceMs ?? 12_000,
       pollMs: options.pollMs ?? 1_000,
     };
@@ -90,7 +103,8 @@ export class PlaywrightGoogleMeetRecorder implements RecorderRuntimePort {
     const startedCpu = process.cpuUsage();
     const startedAt = Date.now();
     const tempDir = await mkdtemp(join(tmpdir(), `vorix-recorder-${safe(input.recordingId)}-`));
-    const outputPath = join(tempDir, "capture.mp4");
+    const mimeType = this.options.captureVideo ? "video/mp4" : "audio/mp4";
+    const outputPath = join(tempDir, this.options.captureVideo ? "capture.mp4" : "capture.m4a");
     const allocation = await allocateDisplay(input.recordingId);
     const display = `:${allocation.number}`;
     const audioSink = `vorix_${safe(input.recordingId)}`;
@@ -117,6 +131,8 @@ export class PlaywrightGoogleMeetRecorder implements RecorderRuntimePort {
         args: [
           "--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu", "--autoplay-policy=no-user-gesture-required",
           "--use-fake-ui-for-media-stream", `--window-size=${this.options.viewport.width},${this.options.viewport.height}`,
+          // Menos processos e serviços de fundo: o recorder só precisa da aba do Meet.
+          ...LEAN_CHROME_ARGS,
         ],
       });
       const processSession = await browser.newBrowserCDPSession();
@@ -148,13 +164,18 @@ export class PlaywrightGoogleMeetRecorder implements RecorderRuntimePort {
       await input.onState("recording", joinedAt);
       if (input.consentMessage) await this.postConsentNotice(page, input.consentMessage);
 
-      ffmpeg = spawn(this.options.ffmpegPath, [
+      ffmpeg = spawn(this.options.ffmpegPath, this.options.captureVideo ? [
         "-hide_banner", "-loglevel", "warning", "-y",
         "-f", "x11grab", "-draw_mouse", "0", "-framerate", String(this.options.frameRate),
         "-video_size", `${this.options.viewport.width}x${this.options.viewport.height}`, "-i", `${display}.0`,
         "-f", "pulse", "-i", `${audioSink}.monitor`,
         "-c:v", "libx264", "-preset", "veryfast", "-pix_fmt", "yuv420p", "-crf", "23",
         "-c:a", "aac", "-b:a", "128k", "-ar", "48000", "-ac", "2", "-movflags", "+faststart", outputPath,
+      ] : [
+        // Só áudio: AAC mono 64 kbit/s (~29 MB por hora), voz nítida para ouvir e transcrever.
+        "-hide_banner", "-loglevel", "warning", "-y",
+        "-f", "pulse", "-i", `${audioSink}.monitor`,
+        "-c:a", "aac", "-b:a", "64k", "-ar", "48000", "-ac", "1", "-movflags", "+faststart", outputPath,
       ], { env: { ...process.env, DISPLAY: display, PULSE_SINK: audioSink }, stdio: ["pipe", "pipe", "pipe"] });
       ffmpeg.stderr.on("data", (chunk: Buffer) => { stderr = `${stderr}${chunk.toString("utf8")}`.slice(-20_000); });
       ffmpeg.once("close", (code) => { ffmpegExitCode = code ?? -1; });
@@ -189,6 +210,7 @@ export class PlaywrightGoogleMeetRecorder implements RecorderRuntimePort {
       const cpu = process.cpuUsage(startedCpu);
       return {
         filePath: outputPath,
+        mimeType,
         stopReason,
         actualJoinedAt: joinedAt,
         admissionWaitSeconds: (joinedMs - admissionStartedAt) / 1000,

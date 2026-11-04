@@ -66,7 +66,7 @@ const authPort = {
   async verifyToken(token) {
     if (!token) return { authenticated: false, reason: "missing_token" };
     const [tenantId, role, userId] = token.split("|");
-    return { authenticated: true, principal: { tenantId, role, userId, sessionId: "s1", isPlatformAdmin: false } };
+    return { authenticated: true, principal: { tenantId, role: role === "platform" ? "owner" : role, userId, sessionId: "s1", isPlatformAdmin: role === "platform" } };
   },
 };
 const auth = (tenantId, role = "owner", userId = `user-${tenantId}`) => ({ authorization: `Bearer ${tenantId}|${role}|${userId}` });
@@ -113,6 +113,8 @@ async function meeting(scope, { human = "pessoa@empresa.test", autoRecord = fals
   });
 }
 
+/** Sinal de vida de um recorder que aceita logins (sem ele a API recusa conectar contas). */
+const recorderUp = (now = new Date()) => repo().touchRecorderWorker({ workerId: "recorder-test", provisioning: true, now });
 const admit = (scope, meetingId, max = 3) => repo().admitRecording({ ...scope, meetingId, maxConcurrentRecordings: max, now: new Date() });
 
 // --- Domínio ----------------------------------------------------------------------------------
@@ -330,8 +332,51 @@ test("API GRAVAR AGORA: pergunta a conta Google da pessoa, depois grava com outr
   await app.close();
 });
 
+test("PAINEL TRANSCRIÇÃO: só admin da plataforma; padrão local; OpenAI exige aceitar o custo externo", async () => {
+  const app = await buildTestApp();
+  const url = "/v1/admin/meetings/transcription-settings";
+  const admin = auth("tenant-platform", "platform");
+  assert.equal((await app.inject({ method: "GET", url, headers: auth("tenant-x", "owner") })).statusCode, 403, "dono de empresa não troca o motor global");
+  const current = (await app.inject({ method: "GET", url, headers: admin })).json().data;
+  assert.equal(current.engine, "LOCAL_FASTER_WHISPER");
+  assert.equal(current.openAiKeyConfigured, false);
+  const refused = await app.inject({ method: "PUT", url, headers: admin, payload: { engine: "OPENAI_OPTIONAL" } });
+  assert.equal(refused.statusCode, 400, "OpenAI sem confirmar o custo é recusada");
+  assert.equal((await app.inject({ method: "GET", url, headers: admin })).json().data.engine, "LOCAL_FASTER_WHISPER");
+  const economic = await app.inject({ method: "PUT", url, headers: admin, payload: { engine: "LOCAL_WHISPER_CPP" } });
+  assert.equal(economic.statusCode, 200);
+  assert.equal(economic.json().data.engine, "LOCAL_WHISPER_CPP");
+  assert.equal((await app.inject({ method: "PUT", url, headers: admin, payload: { engine: "OPENAI_OPTIONAL", acceptExternalCost: true } })).json().data.engine, "OPENAI_OPTIONAL");
+  assert.equal((await app.inject({ method: "PUT", url, headers: admin, payload: { engine: "WHISPER_ORIGINAL" } })).statusCode, 400);
+  await app.inject({ method: "PUT", url, headers: admin, payload: { engine: "LOCAL_FASTER_WHISPER" } });
+  await app.close();
+});
+
+test("API CONTAS: sem recorder ligado, conectar é recusado sem criar conta e a tela é avisada", async () => {
+  const app = await buildTestApp();
+  const scope = await tenant("offline");
+  const list = async () => (await app.inject({ method: "GET", url: `/v1/meetings/recorder-accounts?workspaceId=${scope.workspaceId}`, headers: auth(scope.tenantId) })).json().data;
+  const connect = () => app.inject({ method: "POST", url: "/v1/meetings/recorder-accounts", headers: auth(scope.tenantId), payload: { workspaceId: scope.workspaceId, label: "Gravador", googleEmail: "gravador@empresa.test" } });
+  assert.equal((await list()).recorderOnline, false);
+  const refused = await connect();
+  assert.equal(refused.statusCode, 503);
+  assert.equal(refused.json().error.code, "RECORDER_OFFLINE");
+  assert.equal((await db.pool.query(`select count(*)::int as n from recorder_bot_accounts where tenant_id = $1`, [scope.tenantId])).rows[0].n, 0, "nenhuma conta pela metade");
+  // Sinal antigo (recorder parado há 2 min) continua contando como desligado.
+  await recorderUp(new Date(Date.now() - 120_000));
+  assert.equal((await connect()).statusCode, 503);
+  // Recorder que não aceita logins não libera a conexão.
+  await repo().touchRecorderWorker({ workerId: "recorder-sem-login", provisioning: false, now: new Date() });
+  assert.equal((await list()).recorderOnline, false);
+  await recorderUp();
+  assert.equal((await list()).recorderOnline, true);
+  assert.equal((await connect()).statusCode, 201);
+  await app.close();
+});
+
 test("API CONTAS: RBAC, conectar (só hash do token no banco), duplicado, isolamento, remover apaga a sessão", async () => {
   const app = await buildTestApp();
+  await recorderUp();
   const a = await tenant("api-acc-a", 3);
   const b = await tenant("api-acc-b");
   const editor = await app.inject({ method: "GET", url: `/v1/meetings/recorder-accounts?workspaceId=${a.workspaceId}`, headers: auth(a.tenantId, "editor") });
@@ -437,6 +482,7 @@ async function provisioningRig({ loggedEmail }) {
   attachProvisioningStreamProxy(server, { repository: repo(), authPort, canUseMeetings: (tenantId) => solutions().hasAccess(tenantId, "meetings"), masterSecret: MASTER, now: () => new Date(), workerWaitMs: 5_000 });
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
   const apiPort = server.address().port;
+  await recorderUp();
   const connect = await app.inject({ method: "POST", url: "/v1/meetings/recorder-accounts", headers: auth(scope.tenantId), payload: { workspaceId: scope.workspaceId, label: "Gravador 01", googleEmail: "gravador01@empresa.test" } });
   const started = connect.json().data;
   // Fila só com esta sessão (testes anteriores deixaram conexões pendentes; o worker pega a mais antiga).

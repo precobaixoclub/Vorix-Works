@@ -21,6 +21,10 @@ import { AiGatewayMeetingAnalyzer } from "../../infrastructure/ai-gateway/meetin
 import { GoogleCalendarApiClient } from "../../infrastructure/calendar/google-calendar-api-client.js";
 import { GoogleCalendarOAuthService } from "../../infrastructure/calendar/google-calendar-oauth-service.js";
 import { FasterWhisperTranscriptionEngine } from "../../infrastructure/meetings/faster-whisper-engine.js";
+import { OpenAiTranscriptionEngine } from "../../infrastructure/meetings/openai-transcription-engine.js";
+import { WhisperCppTranscriptionEngine } from "../../infrastructure/meetings/whisper-cpp-engine.js";
+import { checkHostCapacity } from "../../infrastructure/meetings/host-resource-guard.js";
+import { ConfiguredTranscriptionEngine } from "../../application/meetings/transcription-engine-selector.js";
 import { FfmpegAudioExtractor } from "../../infrastructure/meetings/ffmpeg-audio-extractor.js";
 import { ObjectStorageMeetingMedia } from "../../infrastructure/meetings/object-storage-meeting-media.js";
 import { PostgresSecretManager } from "../../infrastructure/operations/postgres-secret-manager.js";
@@ -128,15 +132,45 @@ async function main(): Promise<void> {
     ...(roles.has("transcribe")
       ? {
           extractor: new FfmpegAudioExtractor(defaultFfmpegPath()),
-          engine: new FasterWhisperTranscriptionEngine({
-            pythonPath: env.MEETINGS_WHISPER_PYTHON?.trim() || "python3",
-            scriptPath: env.MEETINGS_WHISPER_SCRIPT?.trim() || join(process.cwd(), "scripts", "meetings", "faster_whisper_transcribe.py"),
-            model: env.MEETINGS_WHISPER_MODEL?.trim() || "small",
-            computeType: env.MEETINGS_WHISPER_COMPUTE_TYPE?.trim() || "int8",
-            cpuThreads: int(env.MEETINGS_WHISPER_THREADS, 0),
-            beamSize: int(env.MEETINGS_WHISPER_BEAM_SIZE, 5),
-            ...(env.MEETINGS_WHISPER_CACHE_DIR?.trim() ? { modelCacheDir: env.MEETINGS_WHISPER_CACHE_DIR.trim() } : {}),
-            ...(env.MEETINGS_DIARIZATION?.trim() === "pyannote" ? { diarization: "pyannote" as const } : {}),
+          // Motor escolhido no painel (padrão: local otimizado, gratuito). A OpenAI só é usada se o
+          // admin escolher explicitamente — sem chave, nada é tentado e nenhum custo é gerado.
+          engine: new ConfiguredTranscriptionEngine({
+            selected: async () => (await repository.getTranscriptionSettings()).engine,
+            engines: {
+              LOCAL_FASTER_WHISPER: new FasterWhisperTranscriptionEngine({
+                pythonPath: env.MEETINGS_WHISPER_PYTHON?.trim() || "python3",
+                scriptPath: env.MEETINGS_WHISPER_SCRIPT?.trim() || join(process.cwd(), "scripts", "meetings", "faster_whisper_transcribe.py"),
+                model: env.MEETINGS_WHISPER_MODEL?.trim() || "small",
+                computeType: env.MEETINGS_WHISPER_COMPUTE_TYPE?.trim() || "int8",
+                // 1 thread e busca gulosa: a transcrição nunca ocupa a máquina inteira.
+                cpuThreads: int(env.MEETINGS_WHISPER_THREADS, 1),
+                beamSize: int(env.MEETINGS_WHISPER_BEAM_SIZE, 1),
+                chunkSeconds: int(env.MEETINGS_WHISPER_CHUNK_SECONDS, 600),
+                ...(env.MEETINGS_WHISPER_CACHE_DIR?.trim() ? { modelCacheDir: env.MEETINGS_WHISPER_CACHE_DIR.trim() } : {}),
+                ...(env.MEETINGS_DIARIZATION?.trim() === "pyannote" ? { diarization: "pyannote" as const } : {}),
+              }),
+              ...(env.MEETINGS_WHISPER_CPP_PATH?.trim() ? {
+                LOCAL_WHISPER_CPP: new WhisperCppTranscriptionEngine({
+                  command: env.MEETINGS_WHISPER_CPP_PATH.trim(),
+                  ffmpegPath: defaultFfmpegPath(),
+                  model: env.MEETINGS_WHISPER_CPP_MODEL?.trim() || "ggml-base-q5_1.bin",
+                  modelDir: env.MEETINGS_WHISPER_CPP_MODEL_DIR?.trim() || env.MEETINGS_WHISPER_CACHE_DIR?.trim() || join(process.cwd(), "whisper-models"),
+                  vadModel: env.MEETINGS_WHISPER_CPP_VAD_MODEL?.trim() || "ggml-silero-v5.1.2.bin",
+                  threads: int(env.MEETINGS_WHISPER_THREADS, 1),
+                  chunkSeconds: int(env.MEETINGS_WHISPER_CHUNK_SECONDS, 600),
+                }),
+              } : {}),
+              OPENAI_OPTIONAL: new OpenAiTranscriptionEngine({
+                ffmpegPath: defaultFfmpegPath(),
+                getApiKey: async () => {
+                  const stored = await new PostgresSecretManager(pool, jwtSecret).get("ai-provider:openai").catch(() => undefined);
+                  const key = (stored?.value as { apiKey?: unknown } | undefined)?.apiKey;
+                  return typeof key === "string" && key.trim() ? key.trim() : env.OPENAI_API_KEY?.trim() || undefined;
+                },
+                ...(env.OPENAI_API_BASE_URL?.trim() ? { apiBaseUrl: env.OPENAI_API_BASE_URL.trim() } : {}),
+                ...(env.MEETINGS_OPENAI_TRANSCRIPTION_MODEL?.trim() ? { model: env.MEETINGS_OPENAI_TRANSCRIPTION_MODEL.trim() } : {}),
+              }),
+            },
           }),
         }
       : {}),
@@ -171,8 +205,31 @@ async function main(): Promise<void> {
 
   const jobKinds = (["transcribe", "analyze"] as MeetingJobKind[]).filter((kind) => roles.has(kind));
   if (jobKinds.length) {
+    // Proteção do host: a transcrição local só começa com folga de memória/CPU e sem gravação em
+    // andamento (Chrome + ASR nunca disputam a mesma CPU). Sem folga, o job espera na fila; a
+    // análise (IA remota, leve) continua normalmente.
+    const capacityLimits = {
+      minAvailableMemoryMb: int(env.MEETINGS_TRANSCRIBE_MIN_AVAILABLE_MB, 450),
+      maxCpuPressurePct: int(env.MEETINGS_TRANSCRIBE_MAX_CPU_PRESSURE, 40),
+      maxMemoryPressurePct: int(env.MEETINGS_TRANSCRIBE_MAX_MEMORY_PRESSURE, 10),
+      maxLoadPerCpu: Number(env.MEETINGS_TRANSCRIBE_MAX_LOAD_PER_CPU ?? "") || 1.5,
+    };
+    const pauseDuringRecording = env.MEETINGS_TRANSCRIBE_PAUSE_DURING_RECORDING?.trim() !== "false";
+    let lastWaitLog = 0;
+    const transcriptionAllowed = async (): Promise<boolean> => {
+      if (!jobKinds.includes("transcribe")) return false;
+      const recording = pauseDuringRecording ? await repository.countActiveRecorderRuns().catch(() => 0) : 0;
+      const verdict = recording > 0 ? { ok: false as const, reason: `${recording} gravação(ões) em andamento` } : await checkHostCapacity(capacityLimits);
+      if (!verdict.ok && Date.now() - lastWaitLog > 60_000) {
+        lastWaitLog = Date.now();
+        log("transcrição aguardando folga do servidor", { reason: verdict.reason });
+      }
+      return verdict.ok;
+    };
     loop("jobs", idleMs, async () => {
-      const outcome = await processNextMeetingJob(processing, jobKinds);
+      const kinds = await transcriptionAllowed() ? jobKinds : jobKinds.filter((kind) => kind !== "transcribe");
+      if (!kinds.length) return false;
+      const outcome = await processNextMeetingJob(processing, kinds);
       if (outcome) log(`job ${outcome.kind} → ${outcome.status}`, { jobId: outcome.jobId });
       return Boolean(outcome);
     });

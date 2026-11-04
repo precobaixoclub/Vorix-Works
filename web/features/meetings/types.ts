@@ -251,10 +251,10 @@ export const MEETING_SOURCE_LABEL: Record<MeetingSource, string> = {
 };
 
 export const TRANSCRIPT_STATUS_LABEL: Record<MeetingTranscriptStatus, string> = {
-  queued: "Na fila",
+  queued: "Aguardando transcrição",
   running: "Transcrevendo",
-  completed: "Disponível",
-  failed: "Falhou",
+  completed: "Transcrição concluída",
+  failed: "Falha na transcrição",
 };
 
 /** Estados em que a tela consulta de novo sozinha (o processamento ainda anda). */

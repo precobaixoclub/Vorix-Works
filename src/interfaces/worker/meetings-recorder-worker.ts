@@ -60,6 +60,7 @@ async function main(): Promise<void> {
     pactlPath: env.MEETINGS_PACTL_PATH?.trim() || "pactl",
     viewport: { width: int(env.MEETINGS_RECORDER_WIDTH, 1280), height: int(env.MEETINGS_RECORDER_HEIGHT, 720) },
     frameRate: int(env.MEETINGS_RECORDER_FPS, 25),
+    captureVideo: env.MEETINGS_RECORDER_CAPTURE_VIDEO?.trim() === "true",
     endGraceMs: int(env.MEETINGS_RECORDER_END_GRACE_MS, 12_000),
   });
   const validator = new FfprobeRecordingFileValidator(env.MEETINGS_FFPROBE_PATH?.trim() || "ffprobe", env.MEETINGS_FFMPEG_PATH?.trim() || "ffmpeg");
@@ -86,15 +87,16 @@ async function main(): Promise<void> {
     log,
   };
 
-  // Sinal de saúde do container (HEALTHCHECK): timer PRÓPRIO, porque o laço fica bloqueado durante
-  // uma gravação inteira. Só atualiza se o banco responder — processo vivo sem banco não é saudável.
-  const healthFile = env.MEETINGS_RECORDER_HEALTH_FILE?.trim() || "/tmp/recorder-health";
-  const markHealthy = () => identity.pool.query("select 1").then(() => writeFile(healthFile, String(Date.now()))).catch(() => undefined);
-  void markHealthy();
-  const healthTimer = setInterval(markHealthy, 15_000);
-
   // Login SELF-SERVICE das contas de gravação dos clientes: laço PRÓPRIO, em paralelo às gravações.
   const provisioningEnabled = env.MEETINGS_PROVISIONING_ENABLED?.trim() !== "false";
+
+  // Sinal de saúde do container (HEALTHCHECK) e presença no banco (a API só oferece "Conectar conta"
+  // com um recorder vivo): timer PRÓPRIO, porque o laço fica bloqueado durante uma gravação inteira.
+  // Só atualiza se o banco responder — processo vivo sem banco não é saudável.
+  const healthFile = env.MEETINGS_RECORDER_HEALTH_FILE?.trim() || "/tmp/recorder-health";
+  const markHealthy = () => repository.touchRecorderWorker({ workerId, provisioning: provisioningEnabled, now: new Date() }).then(() => writeFile(healthFile, String(Date.now()))).catch(() => undefined);
+  void markHealthy();
+  const healthTimer = setInterval(markHealthy, 15_000);
   const provisioningPort = int(env.MEETINGS_PROVISIONING_PORT, 7088);
   const provisioning = provisioningEnabled
     ? new RecorderProvisioningHost({

@@ -481,6 +481,15 @@ export function meetingJobRetryDelayMs(attempts: number): number {
 
 export type TranscriptionSegmentInput = { startMs: number; endMs: number; text: string; speaker?: string; confidence?: number };
 
+/**
+ * Motor de transcrição (escolha do admin da plataforma). Os dois locais são gratuitos e rodam no
+ * servidor; OPENAI_OPTIONAL gera custo externo e só é usado quando escolhido explicitamente.
+ */
+export const MEETING_TRANSCRIPTION_ENGINES = ["LOCAL_FASTER_WHISPER", "LOCAL_WHISPER_CPP", "OPENAI_OPTIONAL"] as const;
+export type MeetingTranscriptionEngine = (typeof MEETING_TRANSCRIPTION_ENGINES)[number];
+export const DEFAULT_MEETING_TRANSCRIPTION_ENGINE: MeetingTranscriptionEngine = "LOCAL_FASTER_WHISPER";
+export type MeetingTranscriptionSettings = { engine: MeetingTranscriptionEngine; updatedBy?: string; updatedAt?: string };
+
 export type TranscriptionResult = {
   language: string;
   engine: string;

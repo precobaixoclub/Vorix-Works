@@ -14,6 +14,8 @@ export type FasterWhisperConfig = {
   /** Threads de CPU do CTranslate2 (0 = automático). */
   cpuThreads: number;
   beamSize: number;
+  /** Duração (s) de cada bloco de áudio lido pelo script — RAM constante em reuniões longas. */
+  chunkSeconds?: number;
   /** Diretório de cache dos modelos (download na primeira execução). */
   modelCacheDir?: string;
   /** Separação de falantes (MEETINGS_DIARIZATION=pyannote; token em MEETINGS_HF_TOKEN). */
@@ -46,7 +48,8 @@ export class FasterWhisperTranscriptionEngine implements TranscriptionEnginePort
       "--compute-type", this.config.computeType,
       "--threads", String(this.config.cpuThreads),
       "--beam-size", String(this.config.beamSize),
-      ...(input.language ? ["--language", input.language] : []),
+      "--language", input.language || "auto",
+      ...(this.config.chunkSeconds ? ["--chunk-seconds", String(this.config.chunkSeconds)] : []),
       ...(this.config.modelCacheDir ? ["--cache-dir", this.config.modelCacheDir] : []),
       ...(this.config.diarization ? ["--diarize", this.config.diarization] : []),
     ];
@@ -57,7 +60,8 @@ export class FasterWhisperTranscriptionEngine implements TranscriptionEnginePort
       child.stderr.on("data", (chunk: Buffer) => {
         stderr = (stderr + chunk.toString("utf8")).slice(-4000);
       });
-      const timer = setTimeout(() => child.kill("SIGKILL"), input.timeoutMs);
+      let timedOut = false;
+      const timer = setTimeout(() => { timedOut = true; child.kill("SIGKILL"); }, input.timeoutMs);
       child.on("error", (error) => {
         clearTimeout(timer);
         reject(new MeetingJobError(`Motor de transcrição indisponível: ${error.message}`, true));
@@ -66,7 +70,10 @@ export class FasterWhisperTranscriptionEngine implements TranscriptionEnginePort
         clearTimeout(timer);
         if (code === 0) return resolve();
         const tail = stderr.trim().split("\n").slice(-4).join(" ");
-        reject(new MeetingJobError(signal === "SIGKILL" ? "A transcrição passou do tempo limite." : `Falha no motor de transcrição: ${tail || `código ${code}`}`, true));
+        // SIGKILL sem ser o nosso timeout = limite de memória do container: o job volta para a fila
+        // (com espera crescente) e falha de vez depois das tentativas — nunca derruba o host.
+        const killed = signal === "SIGKILL" || code === 137;
+        reject(new MeetingJobError(timedOut ? "A transcrição passou do tempo limite." : killed ? "A transcrição foi interrompida por falta de memória no servidor; ela será tentada de novo mais tarde." : `Falha no motor de transcrição: ${tail || `código ${code}`}`, true));
       });
     });
     const output = JSON.parse(await readFile(outputPath, "utf8")) as ScriptOutput;

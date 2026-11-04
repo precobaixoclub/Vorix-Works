@@ -55,6 +55,7 @@ import { registerSolutionRoutes } from "./solutions.route.js";
 import { registerMeetingRoutes } from "./meetings.route.js";
 import { registerMeetingAgendaRoutes } from "./meetings-agenda.route.js";
 import { registerMeetingsRecorderAdminRoutes } from "./meetings-recorder-admin.route.js";
+import { registerMeetingsTranscriptionAdminRoutes } from "./meetings-transcription-admin.route.js";
 import { registerMeetingRecorderAccountRoutes } from "./meetings-recorder-accounts.route.js";
 import { newViewerToken } from "../../../../infrastructure/meetings/provisioning-link-auth.js";
 import { encryptSecret } from "../../../../infrastructure/crypto/secret-cipher.js";
@@ -184,6 +185,18 @@ export async function registerV1Routes(app: FastifyInstance): Promise<void> {
       newViewerToken,
       workspaceRepository: app.zunoContainer.workspaceRepository,
       streamAvailable: Boolean(app.zunoConfig.jwtSecret),
+      // Presença do recorder: sinal de vida a cada 15 s; 60 s sem sinal = desligado.
+      recorderOnline: () => app.zunoContainer.meetings!.repository.recorderWorkerOnline({ since: new Date(Date.now() - 60_000), provisioning: true }),
+    });
+    // Painel → Transcrição de reuniões (admin da plataforma): motor global, local por padrão.
+    await registerMeetingsTranscriptionAdminRoutes(app, {
+      repository: app.zunoContainer.meetings.repository,
+      openAiKeyConfigured: async () => {
+        const stored = await app.zunoContainer.secretManager.get("ai-provider:openai").catch(() => undefined);
+        const key = (stored?.value as { apiKey?: unknown } | undefined)?.apiKey;
+        return (typeof key === "string" && key.trim().length > 0) || Boolean(app.zunoConfig.mediaProviders.openaiApiKey);
+      },
+      now: () => new Date(),
     });
   }
   if (app.zunoContainer.meetingsAgenda) {

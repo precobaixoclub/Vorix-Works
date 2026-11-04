@@ -133,6 +133,7 @@ test('SELF-SERVICE UI + JWT real + WebSocket + PostgreSQL: fixtures sem Google r
     await t.test('JWT/RBAC/tenant: editor não administra, outro tenant não vê e outro usuário não abre sessão',async()=>{
       assert.equal((await request(`/v1/meetings/recorder-accounts?workspaceId=${owner.workspaceId}`,editor)).status,403);
       assert.equal((await request(`/v1/meetings/recorder-accounts/${accountA.id}/test`,foreign,{},'POST')).status,404);
+      await repository.touchRecorderWorker({workerId:'recorder-browser-qa',provisioning:true,now:new Date()});
       const result=await request(`/v1/meetings/recorder-accounts/${accountA.id}/reconnect`,owner,{workspaceId:owner.workspaceId});
       assert.equal(result.status,201);const start=result.body.data;
       assert.equal((await request(`/v1/meetings/recorder-provisioning/${start.session.id}`,another)).status,404);
@@ -153,6 +154,7 @@ test('SELF-SERVICE UI + JWT real + WebSocket + PostgreSQL: fixtures sem Google r
     });
     await t.test('sessão temporária expira sem substituir o estado anterior ou manter browser aberto',async()=>{
       const old=(await pool.query(`select encrypted_session_state from recorder_bot_accounts where id=$1`,[accountA.id])).rows[0].encrypted_session_state;
+      await repository.touchRecorderWorker({workerId:'recorder-browser-qa',provisioning:true,now:new Date()});
       const start=(await request(`/v1/meetings/recorder-accounts/${accountA.id}/reconnect`,owner,{workspaceId:owner.workspaceId})).body.data;
       await pool.query(`update recorder_provisioning_sessions set expires_at=now()+interval '2 seconds' where id=$1`,[start.session.id]);
       await waitFor(async()=>(await pool.query(`select status from recorder_provisioning_sessions where id=$1`,[start.session.id])).rows[0].status==='expired');

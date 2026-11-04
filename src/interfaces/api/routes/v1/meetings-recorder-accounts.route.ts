@@ -25,7 +25,12 @@ import { assertWorkspaceBelongsToTenant } from "./workspace-ownership.js";
  * `meeting:manage_recorder_accounts` (admin/owner do tenant); o resumo de capacidade é visível a
  * quem lê reuniões. Nenhuma resposta carrega sessão, cookie ou referência a segredo.
  */
-export type MeetingRecorderAccountRoutesDeps = RecorderAccountDeps & { workspaceRepository: WorkspaceRepositoryPort; streamAvailable: boolean };
+export type MeetingRecorderAccountRoutesDeps = RecorderAccountDeps & {
+  workspaceRepository: WorkspaceRepositoryPort;
+  streamAvailable: boolean;
+  /** Há worker do recorder vivo aceitando logins? Sem ele, conectar só criaria uma conta pela metade. */
+  recorderOnline?: () => Promise<boolean>;
+};
 
 const WORKSPACE_QUERY = { type: "object", required: ["workspaceId"], properties: { workspaceId: { type: "string", minLength: 1 } } } as const;
 const ACCOUNT_PARAMS = { type: "object", required: ["accountId"], properties: { accountId: { type: "string", minLength: 1, maxLength: 100 } } } as const;
@@ -57,6 +62,10 @@ function translate(error: unknown): never {
 }
 
 export async function registerMeetingRecorderAccountRoutes(app: FastifyInstance, deps: MeetingRecorderAccountRoutesDeps): Promise<void> {
+  const recorderOnline = async () => deps.recorderOnline ? deps.recorderOnline().catch(() => false) : true;
+  const assertRecorderOnline = async () => {
+    if (!await recorderOnline()) throw new AppError({ code: "RECORDER_OFFLINE", message: "A gravação de reuniões ainda não está ativa neste ambiente. Nenhuma conta foi criada; tente novamente quando o serviço estiver ligado.", statusCode: 503, recoverable: true });
+  };
   app.get("/meetings/recording-capacity", { schema: { querystring: WORKSPACE_QUERY } }, async (request) => {
     const actor = actorOf(request, "meeting:read");
     const { workspaceId } = request.query as { workspaceId: string };
@@ -69,7 +78,7 @@ export async function registerMeetingRecorderAccountRoutes(app: FastifyInstance,
     const { workspaceId } = request.query as { workspaceId: string };
     await assertWorkspaceBelongsToTenant(deps.workspaceRepository, { tenantId: actor.tenantId, workspaceId });
     try {
-      return successEnvelope({ ...(await listTenantRecorderAccounts(deps, actor)), selfServiceAvailable: deps.streamAvailable }, request.id);
+      return successEnvelope({ ...(await listTenantRecorderAccounts(deps, actor)), selfServiceAvailable: deps.streamAvailable, recorderOnline: await recorderOnline() }, request.id);
     } catch (error) { translate(error); }
   });
 
@@ -77,6 +86,7 @@ export async function registerMeetingRecorderAccountRoutes(app: FastifyInstance,
     const actor = actorOf(request, "meeting:manage_recorder_accounts");
     const body = request.body as { workspaceId: string; label: string; googleEmail: string };
     await assertWorkspaceBelongsToTenant(deps.workspaceRepository, { tenantId: actor.tenantId, workspaceId: body.workspaceId });
+    await assertRecorderOnline();
     try {
       const started = await connectRecorderAccount(deps, actor, body);
       reply.code(201);
@@ -89,6 +99,7 @@ export async function registerMeetingRecorderAccountRoutes(app: FastifyInstance,
     const { accountId } = request.params as { accountId: string };
     const { workspaceId } = request.body as { workspaceId: string };
     await assertWorkspaceBelongsToTenant(deps.workspaceRepository, { tenantId: actor.tenantId, workspaceId });
+    await assertRecorderOnline();
     try {
       const started = await reconnectRecorderAccount(deps, actor, { workspaceId, accountId });
       reply.code(201);

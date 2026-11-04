@@ -19,7 +19,7 @@ ENV NODE_ENV=production \
     PULSE_SERVER=unix:/tmp/pulse/native
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      chromium ffmpeg xvfb pulseaudio pulseaudio-utils dbus-x11 \
+      ffmpeg xvfb pulseaudio pulseaudio-utils dbus-x11 \
       fonts-liberation fonts-noto-color-emoji ca-certificates procps tini \
     && rm -rf /var/lib/apt/lists/* \
     && useradd --create-home --uid 10001 recorder \
@@ -27,7 +27,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && chown -R recorder:recorder /app /tmp/pulse /tmp/vorix-recorder-displays
 
 # Official Chrome stable is a compatibility candidate for Google's supported-browser login.
-# Keep the distro Chromium available for diagnostics. Browser authentication remains unproven
+# Only Chrome is installed (the distro Chromium was a second ~300 MB browser used only for
+# diagnostics); apt pulls Chrome's own dependencies. Browser authentication remains unproven
 # until a user completes login; no stealth flags or security-check bypass are applied.
 ADD https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb /tmp/google-chrome-stable.deb
 RUN test "$(dpkg --print-architecture)" = amd64 \

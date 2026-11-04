@@ -175,6 +175,53 @@ test("FILA: worker morre depois do claim → lease expira → outro worker recup
   assert.ok(job.claimed_at && job.heartbeat_at);
 });
 
+test("FILA CONCORRÊNCIA 1: duas reuniões terminando juntas — uma transcrição por vez; a análise não espera", async () => {
+  const account = await setupTenant("concurrency");
+  const first = await meetingWithRecording(account, "Reunião A");
+  const second = await meetingWithRecording(account, "Reunião B");
+  // As duas terminaram juntas: duas transcrições na fila.
+  for (const item of [first, second]) await repository().enqueueTranscription({ tenantId: account.tenantId, workspaceId: account.workspaceId, meetingId: item.meeting.id, recordingId: item.recording.id });
+  const claim = (workerId, kinds = ["transcribe"]) => repository().claimJob({ kinds, workerId, leaseMs: 60_000 });
+
+  const running = await claim("worker-a");
+  assert.ok(running, "a primeira transcrição começa");
+  assert.equal(await claim("worker-b"), undefined, "a segunda espera — nunca duas transcrições ao mesmo tempo");
+  const analysis = await repository().enqueueAnalysis({ tenantId: account.tenantId, workspaceId: account.workspaceId, meetingId: second.meeting.id });
+  assert.equal((await claim("worker-b", ["transcribe", "analyze"]))?.kind, "analyze", "análise (IA remota, leve) não fica presa atrás da transcrição");
+  await db.pool.query(`update meeting_jobs set status = 'cancelled' where id = $1`, [analysis.jobId]);
+
+  // Worker reiniciado no meio: lease vence e a MESMA transcrição é retomada por outro worker.
+  await db.pool.query(`update meeting_jobs set locked_until = now() - interval '1 second' where id = $1`, [running.id]);
+  const resumed = await claim("worker-c");
+  assert.equal(resumed?.id, running.id, "job interrompido é retomado, não fica travado");
+  assert.equal(await claim("worker-d"), undefined);
+  await repository().completeJob({ jobId: resumed.id, workerId: "worker-c" });
+  const next = await claim("worker-d");
+  assert.ok(next && next.id !== running.id, "terminada a primeira, a próxima da fila começa");
+  assert.deepEqual(new Set([running.meetingId, next.meetingId]), new Set([first.meeting.id, second.meeting.id]));
+});
+
+test("SILÊNCIO: gravação sem fala termina como concluída, sem trechos e sem análise", async () => {
+  const account = await setupTenant("silence");
+  const { meeting, recording } = await meetingWithRecording(account, "Reunião muda");
+  await repository().enqueueTranscription({ tenantId: account.tenantId, workspaceId: account.workspaceId, meetingId: meeting.id, recordingId: recording.id });
+  const outcome = await processNextMeetingJob(processingDeps({ engine: fakeEngine([]) }), ["transcribe"]);
+  assert.equal(outcome.status, "completed");
+  const detail = await repository().getDetail({ tenantId: account.tenantId, workspaceId: account.workspaceId, meetingId: meeting.id });
+  assert.equal(detail.status, "completed");
+  assert.equal(detail.transcript.status, "completed");
+  assert.equal((await db.pool.query(`select count(*)::int as n from meeting_jobs where meeting_id = $1 and kind = 'analyze'`, [meeting.id])).rows[0].n, 0);
+});
+
+test("CONFIGURAÇÃO: motor padrão é o local otimizado; troca persiste; valores inválidos são recusados pelo banco", async () => {
+  await db.pool.query(`update meeting_transcription_settings set engine = 'LOCAL_FASTER_WHISPER', updated_by = null`);
+  assert.equal((await repository().getTranscriptionSettings()).engine, "LOCAL_FASTER_WHISPER");
+  const saved = await repository().setTranscriptionSettings({ engine: "LOCAL_WHISPER_CPP", updatedBy: "admin-1", now: new Date() });
+  assert.deepEqual([saved.engine, saved.updatedBy], ["LOCAL_WHISPER_CPP", "admin-1"]);
+  await assert.rejects(db.pool.query(`update meeting_transcription_settings set engine = 'OPENAI_AUTO'`));
+  await repository().setTranscriptionSettings({ engine: "LOCAL_FASTER_WHISPER", updatedBy: "admin-1", now: new Date() });
+});
+
 test("FILA: tentativas esgotadas por crashes viram FAILED — nunca fica travado para sempre", async () => {
   const account = await setupTenant("exhaust");
   const { meeting, recording } = await meetingWithRecording(account);

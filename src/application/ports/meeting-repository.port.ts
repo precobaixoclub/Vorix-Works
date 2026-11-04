@@ -16,6 +16,8 @@ import type {
   RecorderRunState,
   MeetingSource,
   MeetingStatus,
+  MeetingTranscriptionEngine,
+  MeetingTranscriptionSettings,
   MeetingTranscriptSegment,
   HumanJoinIdentitySource,
   RecordingCaptureStrategy,
@@ -172,6 +174,15 @@ export type MeetingRepositoryPort = {
   updateProvisioningSession(input: { sessionId: string; status: RecorderProvisioningSession["status"]; workerId?: string; errorCode?: string; errorMessage?: string }): Promise<boolean>;
   expireProvisioningSessions(now: Date): Promise<number>;
   getRecorderBotSession(botId: string): Promise<string | undefined>;
+  /** Motor de transcrição escolhido no painel (linha única; padrão LOCAL_FASTER_WHISPER). */
+  getTranscriptionSettings(): Promise<MeetingTranscriptionSettings>;
+  setTranscriptionSettings(input: { engine: MeetingTranscriptionEngine; updatedBy: string; now: Date }): Promise<MeetingTranscriptionSettings>;
+  /** Gravações em andamento no momento (a transcrição local espera para não disputar CPU com o Chrome). */
+  countActiveRecorderRuns(): Promise<number>;
+  /** Sinal de vida do worker do recorder (a cada 15 s); `provisioning` = aceita logins self-service. */
+  touchRecorderWorker(input: { workerId: string; provisioning: boolean; now: Date }): Promise<void>;
+  /** Há worker do recorder vivo desde `since` (com `provisioning`, só os que aceitam login)? */
+  recorderWorkerOnline(input: { since: Date; provisioning?: boolean }): Promise<boolean>;
   upsertRecorderBot(input: { id: string; label: string; googleEmail: string; displayName: string; encryptedSessionState?: string; status: RecorderBotStatus }): Promise<RecorderBotAccount>;
   updateRecorderBotStatus(input: { botId: string; status: RecorderBotStatus; health?: Record<string, unknown>; lastError?: string; checkedAt?: Date; expectedHealth?: { requestedAt?: string } }): Promise<RecorderBotAccount | undefined>;
   dashboard(input: { tenantId: string; workspaceId: string; visibleToUserId?: string; todayStart: Date; todayEnd: Date; weekStart: Date; weekEnd: Date }): Promise<MeetingDashboard>;

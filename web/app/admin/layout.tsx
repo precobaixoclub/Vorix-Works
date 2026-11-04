@@ -22,7 +22,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
 
 const navigationGroups = [
   { label: "Gestão", links: [["/admin", "Visão geral"], ["/admin/tenants", "Contas e contratos"], ["/admin/growth", "Aquisição e conversão"]] },
-  { label: "Produtos", links: [["/admin/site", "Sites e modelos"], ["/admin/meetings-bots", "Contas de gravação"], ["/admin/social-providers", "Integrações sociais"]] },
+  { label: "Produtos", links: [["/admin/site", "Sites e modelos"], ["/admin/meetings-bots", "Contas de gravação"], ["/admin/meetings-transcription", "Transcrição de reuniões"], ["/admin/social-providers", "Integrações sociais"]] },
   { label: "Plataforma", links: [["/admin/ai-providers", "Provedores de IA"], ["/admin/settings", "Gateway e extração de IA"], ["/admin/billing-provider", "Provedor de cobrança"]] },
 ];
 

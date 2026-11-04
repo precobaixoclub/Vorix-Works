@@ -17,6 +17,8 @@ export type RecorderProcessSnapshot = {
 
 export type RecorderCaptureResult = {
   filePath: string;
+  /** Formato do arquivo: só áudio (padrão do recorder) ou vídeo. */
+  mimeType?: "video/mp4" | "audio/mp4";
   stopReason: "meeting_ended" | "manual" | "max_duration";
   actualJoinedAt: string;
   admissionWaitSeconds: number;
@@ -44,10 +46,11 @@ export type RecorderRuntimePort = {
 export type RecordingFileProbe = {
   durationSeconds: number;
   bytes: number;
-  videoCodec: string;
+  /** Ausentes em gravação só de áudio. */
+  videoCodec?: string;
   audioCodec: string;
-  width: number;
-  height: number;
+  width?: number;
+  height?: number;
   audioMeanVolumeDb?: number;
 };
 
@@ -170,8 +173,10 @@ export async function processNextRecorderJob(deps: RecorderWorkerDeps): Promise<
     const actualBytes = (await stat(capture.filePath)).size;
     if (actualBytes !== probe.bytes) throw new RecorderFailure("FILE_VALIDATION_FAILED", "O tamanho do arquivo mudou durante a validacao.");
 
-    const storageKey = `meetings/${job.tenantId}/${job.workspaceId}/${job.meetingId}/recording-${recordingId}.mp4`;
-    await deps.media.putFile({ key: storageKey, filePath: capture.filePath, contentType: "video/mp4" });
+    const mimeType = capture.mimeType ?? "video/mp4";
+    const extension = mimeType === "audio/mp4" ? "m4a" : "mp4";
+    const storageKey = `meetings/${job.tenantId}/${job.workspaceId}/${job.meetingId}/recording-${recordingId}.${extension}`;
+    await deps.media.putFile({ key: storageKey, filePath: capture.filePath, contentType: mimeType });
     const recording = await deps.repository.addRecording({
       id: recordingId,
       meetingId: job.meetingId,
@@ -179,7 +184,7 @@ export async function processNextRecorderJob(deps: RecorderWorkerDeps): Promise<
       workspaceId: job.workspaceId,
       kind: "original",
       storageKey,
-      mimeType: "video/mp4",
+      mimeType,
       bytes: probe.bytes,
       durationSeconds: probe.durationSeconds,
       videoCodec: probe.videoCodec,
@@ -187,7 +192,7 @@ export async function processNextRecorderJob(deps: RecorderWorkerDeps): Promise<
       width: probe.width,
       height: probe.height,
       checksumSha256,
-      originalFileName: `${recordingId}.mp4`,
+      originalFileName: `${recordingId}.${extension}`,
     });
     await deps.repository.updateRecorderRun({ runId, workerId: deps.workerId, patch: { state: "completed", recordingId: recording.id, bytesProduced: probe.bytes, durationSeconds: probe.durationSeconds, metrics: { ...capture.metrics, ...(probe.audioMeanVolumeDb !== undefined ? { audio_mean_volume_db: probe.audioMeanVolumeDb } : {}) } } });
     await deps.repository.enqueueTranscription({ tenantId: job.tenantId, workspaceId: job.workspaceId, meetingId: job.meetingId, recordingId: recording.id });

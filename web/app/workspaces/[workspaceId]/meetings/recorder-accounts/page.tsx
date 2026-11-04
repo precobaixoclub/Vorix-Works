@@ -78,7 +78,7 @@ export default function RecorderAccountsPage() {
       <PageHeader
         title="Contas de gravação"
         description="Contas Google que o Vorix usa para entrar e gravar as reuniões. A escolha da conta em cada reunião é automática."
-        actions={<Button onClick={() => setConnecting({ mode: "new" })} disabled={data?.selfServiceAvailable === false}><Plus className="h-4 w-4" aria-hidden="true" />Conectar conta</Button>}
+        actions={<Button onClick={() => setConnecting({ mode: "new" })} disabled={data?.selfServiceAvailable === false || data?.recorderOnline === false}><Plus className="h-4 w-4" aria-hidden="true" />Conectar conta</Button>}
       />
 
       {error ? <ErrorState error={error} onRetry={() => mutate()} /> : null}
@@ -88,6 +88,12 @@ export default function RecorderAccountsPage() {
 
       {data ? (
         <>
+          {data.recorderOnline === false ? (
+            <Card className="border-warning/40 bg-warning/5 p-4 text-sm" role="status">
+              <p className="font-medium text-foreground">A gravação de reuniões ainda não está ativa</p>
+              <p className="mt-1 text-muted-foreground">O serviço que entra nas reuniões e conecta as contas Google está desligado neste ambiente. Assim que ele for ligado, o botão “Conectar conta” volta a funcionar — nada do que já está cadastrado é perdido.</p>
+            </Card>
+          ) : null}
           <CapacityCards capacity={data.capacity} />
           <CapacityAlert capacity={data.capacity} />
           <Card className="space-y-2 p-5 text-sm text-muted-foreground">

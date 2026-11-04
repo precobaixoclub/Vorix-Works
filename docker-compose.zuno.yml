@@ -214,7 +214,8 @@ services:
   zuno-web:
     logging: *bounded-logging
     healthcheck:
-      test: ["CMD", "node", "-e", "require('node:http').get('http://127.0.0.1:3001/login',r=>{r.resume();process.exit(r.statusCode===200?0:1)}).on('error',()=>process.exit(1))"]
+      # `/healthz` é estático (antes: renderizava a página /login inteira a cada verificação).
+      test: ["CMD", "node", "-e", "require('node:http').get('http://127.0.0.1:3001/healthz',r=>{r.resume();process.exit(r.statusCode===200?0:1)}).on('error',()=>process.exit(1))"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -318,7 +319,9 @@ services:
     # uma conexão zumbi com o RabbitMQ não derrubam o processo sozinhos, então `docker ps` sozinho
     # nunca detectaria isso — o healthcheck falhando aciona `restart: unless-stopped` acima.
     healthcheck:
-      test: ["CMD", "node", "scripts/inbox-worker-healthcheck.mjs"]
+      # Mesma regra de `scripts/inbox-worker-healthcheck.mjs` (heartbeat com menos de 90 s), em shell:
+      # não sobe um processo Node (~40 MB) a cada verificação.
+      test: ["CMD-SHELL", "test $$(( $$(date +%s) - $$(stat -c %Y /tmp/inbox-worker-heartbeat) )) -lt 90"]
       interval: 30s
       timeout: 5s
       retries: 3
@@ -360,7 +363,8 @@ services:
     networks: [zuno_network]
     init: true
     healthcheck:
-      test: ["CMD", "node", "-e", "const s=require('fs').statSync('/tmp/marketplaces-worker-heartbeat');process.exit(Date.now()-s.mtimeMs<180000?0:1)"]
+      # Idade do heartbeat em shell (sem subir um processo Node a cada verificação).
+      test: ["CMD-SHELL", "test $$(( $$(date +%s) - $$(stat -c %Y /tmp/marketplaces-worker-heartbeat) )) -lt 180"]
       interval: 30s
       timeout: 5s
       retries: 3
@@ -409,6 +413,85 @@ services:
       retries: 3
       start_period: 20s
 
+  # ── Vorix Meetings (perfil `meetings`: NÃO sobe no deploy normal) ───────────────────────────
+  # Ativação: `docker compose --profile meetings up -d --no-build meetings-worker meetings-recorder`
+  # depois de construir as imagens. Antes do 1º start do recorder (usuário 10001), criar a pasta dele
+  # no volume de uploads: docker run --rm -v zuno_uploads:/u alpine sh -c 'mkdir -p /u/meetings && chown 10001 /u/meetings'
+  #
+  # Processamento: transcrição LOCAL e gratuita (padrão faster-whisper small INT8; motor escolhido no
+  # painel admin) + resumo pela IA da plataforma. Uma transcrição por vez, só com folga no host e
+  # sem gravação em andamento. Limites rígidos: estourar a memória derruba só este job (volta para
+  # a fila), nunca a API, o banco ou o WhatsApp. Modelos ficam no volume e não são baixados de novo.
+  meetings-worker:
+    profiles: [meetings]
+    logging: *bounded-logging
+    build:
+      context: .
+      dockerfile: docker/meetings-processing.Dockerfile
+    restart: unless-stopped
+    # Mesmo usuário da API: a retenção apaga gravações no volume de uploads (dono root).
+    user: "0:0"
+    depends_on:
+      zuno-postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: "postgres://zuno:${ZUNO_POSTGRES_PASSWORD}@zuno-postgres:5432/zuno"
+      JWT_SECRET: "${ZUNO_JWT_SECRET}"
+      ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:-}"
+      MEETINGS_REAL_RECORDING_ENABLED: "${MEETINGS_REAL_RECORDING_ENABLED:-false}"
+      MEETINGS_WHISPER_MODEL: "${MEETINGS_WHISPER_MODEL:-small}"
+      MEETINGS_WHISPER_THREADS: "1"
+      MEETINGS_WHISPER_BEAM_SIZE: "1"
+      MEETINGS_WHISPER_CPP_MODEL: "${MEETINGS_WHISPER_CPP_MODEL:-ggml-base-q5_1.bin}"
+      MEETINGS_TRANSCRIBE_MIN_AVAILABLE_MB: "${MEETINGS_TRANSCRIBE_MIN_AVAILABLE_MB:-450}"
+      OBJECT_STORAGE_ENABLED: "${OBJECT_STORAGE_ENABLED:-true}"
+      OBJECT_STORAGE_DRIVER: "${OBJECT_STORAGE_DRIVER:-local}"
+      OBJECT_STORAGE_LOCAL_DIR: "${OBJECT_STORAGE_LOCAL_DIR:-/app/uploads}"
+      OBJECT_STORAGE_PUBLIC_BASE_URL: "${OBJECT_STORAGE_PUBLIC_BASE_URL:-https://api.vorixworks.com/uploads}"
+    volumes:
+      - zuno_uploads:/app/uploads
+      - zuno_meetings_models:/data/whisper-cache
+    networks: [zuno_network]
+    init: true
+    mem_limit: 1200m
+    mem_reservation: 96m
+    memswap_limit: 1200m
+    cpus: 1.0
+    pids_limit: 128
+
+  # Gravador: Chrome + PulseAudio. Grava SÓ ÁUDIO por padrão (sem codificar vídeo), 1 login por vez.
+  # Limites rígidos: se o Chrome estourar, cai a gravação — nunca a API, o site ou o WhatsApp.
+  meetings-recorder:
+    profiles: [meetings]
+    logging: *bounded-logging
+    build:
+      context: .
+      dockerfile: docker/meetings-recorder.Dockerfile
+    restart: unless-stopped
+    depends_on:
+      zuno-postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: "postgres://zuno:${ZUNO_POSTGRES_PASSWORD}@zuno-postgres:5432/zuno"
+      JWT_SECRET: "${ZUNO_JWT_SECRET}"
+      MEETINGS_RECORDER_WORKER_ID: recorder-1
+      MEETINGS_PROVISIONING_PUBLIC_ENDPOINT: ws://meetings-recorder:7088
+      MEETINGS_PROVISIONING_MAX_CONCURRENT: "1"
+      MEETINGS_RECORDER_CAPTURE_VIDEO: "false"
+      OBJECT_STORAGE_ENABLED: "${OBJECT_STORAGE_ENABLED:-true}"
+      OBJECT_STORAGE_DRIVER: "${OBJECT_STORAGE_DRIVER:-local}"
+      OBJECT_STORAGE_LOCAL_DIR: "${OBJECT_STORAGE_LOCAL_DIR:-/app/uploads}"
+      OBJECT_STORAGE_PUBLIC_BASE_URL: "${OBJECT_STORAGE_PUBLIC_BASE_URL:-https://api.vorixworks.com/uploads}"
+    volumes:
+      - zuno_uploads:/app/uploads
+    networks: [zuno_network]
+    mem_limit: 900m
+    mem_reservation: 128m
+    memswap_limit: 1200m
+    cpus: 1.0
+    pids_limit: 512
+    shm_size: 256m
+
 networks:
   zuno_network:
     name: zuno_network
@@ -426,3 +509,5 @@ volumes:
     name: zuno_uploads
   zuno_inbox_media:
     name: zuno_inbox_media
+  zuno_meetings_models:
+    name: zuno_meetings_models

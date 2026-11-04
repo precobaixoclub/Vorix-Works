@@ -119,6 +119,30 @@ test("RECORDER: captura validada vai para storage e reutiliza o job de transcric
   assert.deepEqual([bot.status, bot.currentMeetingId], ["active", undefined]);
 });
 
+test("RECORDER SÓ ÁUDIO: gravação sem vídeo vira M4A (audio/mp4) e segue para transcrição", async () => {
+  const queued = await queuedRecording("audio-only");
+  const runtime = {
+    async capture(input) {
+      const dir = await mkdtemp(join(tmpdir(), "vorix-fake-capture-"));
+      const filePath = join(dir, "capture.m4a");
+      await input.onProcesses({ browserPid: 111, ffmpegPid: 222, display: ":142", audioSink: "sink_142", tempDir: dir });
+      const joined = new Date().toISOString();
+      await input.onState("recording", joined);
+      await writeFile(filePath, Buffer.from("audio-only-capture"));
+      return { filePath, mimeType: "audio/mp4", stopReason: "meeting_ended", actualJoinedAt: joined, admissionWaitSeconds: 1, metrics: {}, ffmpegExitCode: 0 };
+    },
+  };
+  const validator = { async validate(path) { return { durationSeconds: 30, bytes: (await stat(path)).size, audioCodec: "aac", audioMeanVolumeDb: -22 }; } };
+  assert.equal((await processNextRecorderJob(deps(runtime, validator))).status, "completed");
+  const [recording] = (await repository().getDetail({ tenantId: queued.tenantId, workspaceId: queued.workspaceId, meetingId: queued.meeting.id })).recordings;
+  assert.equal(recording.mimeType, "audio/mp4");
+  assert.match(recording.storageKey, /\.m4a$/);
+  assert.equal(recording.videoCodec, undefined);
+  assert.equal(recording.width, undefined);
+  assert.deepEqual(await readFile(join(storageDir, recording.storageKey)), Buffer.from("audio-only-capture"));
+  assert.equal((await db.pool.query(`select status from meeting_jobs where meeting_id = $1 and kind = 'transcribe'`, [queued.meeting.id])).rows[0].status, "queued");
+});
+
 test("CANCEL: antes da admissao cancela job/reuniao e libera bot saudavel", async () => {
   const queued = await queuedRecording("cancel");
   await repository().requestRecordingStop({ tenantId: queued.tenantId, workspaceId: queued.workspaceId, meetingId: queued.meeting.id, actorUserId: "owner-1" });

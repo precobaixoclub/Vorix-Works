@@ -26,7 +26,8 @@ export class FfprobeRecordingFileValidator implements RecordingFileValidatorPort
     const audio = parsed.streams?.find((stream) => stream.codec_type === "audio");
     const durationSeconds = Number(parsed.format?.duration ?? 0);
     const bytes = (await stat(filePath)).size;
-    if (!video?.codec_name || !video.width || !video.height) throw new Error("FILE_VALIDATION_FAILED: arquivo sem stream de video valido.");
+    // Vídeo é opcional (o recorder grava só áudio por padrão), mas se existir precisa ser válido.
+    if (video && (!video.codec_name || !video.width || !video.height)) throw new Error("FILE_VALIDATION_FAILED: arquivo sem stream de video valido.");
     if (!audio?.codec_name) throw new Error("FILE_VALIDATION_FAILED: arquivo sem stream de audio valido.");
     if (!Number.isFinite(durationSeconds) || durationSeconds <= 0 || bytes <= 0) throw new Error("FILE_VALIDATION_FAILED: duracao ou tamanho invalido.");
 
@@ -36,7 +37,7 @@ export class FfprobeRecordingFileValidator implements RecordingFileValidatorPort
     if (audioMeanVolumeDb === undefined || !Number.isFinite(audioMeanVolumeDb) || audioMeanVolumeDb < -90) {
       throw new Error("FILE_VALIDATION_FAILED: stream de audio vazio ou silencioso.");
     }
-    return { durationSeconds, bytes, videoCodec: video.codec_name, audioCodec: audio.codec_name, width: video.width, height: video.height, audioMeanVolumeDb };
+    return { durationSeconds, bytes, ...(video ? { videoCodec: video.codec_name, width: video.width, height: video.height } : {}), audioCodec: audio.codec_name, audioMeanVolumeDb };
   }
 }
 

@@ -246,10 +246,22 @@ export default function MeetingDetailPage() {
         {section === "transcript" ? (
           <Card className="p-5">
             {!meeting.transcript ? <p className="text-sm text-muted-foreground">Esta reunião ainda não tem gravação para transcrever.</p> : null}
+            {meeting.transcript ? <TranscriptProgress status={meeting.transcript.status} /> : null}
             {meeting.transcript && meeting.transcript.status !== "completed" ? (
-              <p className="text-sm text-muted-foreground">
-                {meeting.transcript.status === "failed" ? `A transcrição falhou${meeting.transcript.lastError ? `: ${meeting.transcript.lastError}` : "."}` : `Transcrição ${TRANSCRIPT_STATUS_LABEL[meeting.transcript.status].toLowerCase()} — esta página atualiza sozinha.`}
-              </p>
+              <div className="mb-3 space-y-2 text-sm">
+                {meeting.transcript.status === "failed" ? (
+                  <>
+                    <p className="text-destructive">A transcrição falhou{meeting.transcript.lastError ? `: ${meeting.transcript.lastError}` : "."} A gravação continua salva.</p>
+                    {canAnalyze ? <Button size="sm" variant="secondary" onClick={retranscribe} loading={busy} disabled={busy}>Tentar novamente</Button> : null}
+                  </>
+                ) : (
+                  <p className="text-muted-foreground">
+                    {meeting.transcript.status === "queued"
+                      ? "A gravação foi concluída e entrou na fila. A transcrição começa assim que o servidor estiver livre — uma reunião por vez."
+                      : "Transcrevendo a gravação."} Esta página atualiza sozinha.
+                  </p>
+                )}
+              </div>
             ) : null}
             {transcriptReady && transcript.error ? <ErrorState error={transcript.error} onRetry={() => transcript.mutate()} /> : null}
             {transcriptReady && transcript.data ? (
@@ -364,6 +376,27 @@ export default function MeetingDetailPage() {
 }
 
 /** Player real: URL assinada curta pedida na hora (e renovada antes de expirar). */
+/** Linha do tempo do processamento: gravação → fila → transcrição (falha não bloqueia a reunião). */
+function TranscriptProgress({ status }: { status: "queued" | "running" | "completed" | "failed" }) {
+  const steps: { label: string; state: "done" | "current" | "todo" | "failed" }[] = [
+    { label: "Gravação concluída", state: "done" },
+    { label: "Aguardando transcrição", state: status === "queued" ? "current" : "done" },
+    { label: status === "failed" ? "Falha na transcrição" : status === "completed" ? "Transcrição concluída" : "Transcrevendo", state: status === "failed" ? "failed" : status === "completed" ? "done" : status === "running" ? "current" : "todo" },
+  ];
+  return (
+    <ol className="mb-3 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs" aria-label="Andamento da transcrição">
+      {steps.map((step, index) => (
+        <li key={step.label} className="flex items-center gap-2" aria-current={step.state === "current" ? "step" : undefined}>
+          {index ? <span className="text-muted-foreground" aria-hidden="true">→</span> : null}
+          <span className={step.state === "failed" ? "font-medium text-destructive" : step.state === "current" ? "font-medium text-foreground" : step.state === "done" ? "text-success" : "text-muted-foreground"}>
+            {step.state === "done" ? "✓ " : ""}{step.label}
+          </span>
+        </li>
+      ))}
+    </ol>
+  );
+}
+
 function RecordingPlayer({ workspaceId, meetingId, recording, playerRef }: { workspaceId: string; meetingId: string; recording: MeetingRecording; playerRef: React.MutableRefObject<HTMLMediaElement | null> }) {
   const [source, setSource] = useState<{ url: string; mimeType: string } | null>(null);
   const [failed, setFailed] = useState<string | null>(null);

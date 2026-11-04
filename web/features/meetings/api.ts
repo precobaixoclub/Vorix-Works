@@ -66,7 +66,7 @@ export function getRecordingCapacity(workspaceId: string) {
 }
 
 export function listRecorderAccounts(workspaceId: string) {
-  return apiClient.get<{ accounts: RecorderAccount[]; capacity: RecordingCapacity; selfServiceAvailable: boolean }>(`/v1/meetings/recorder-accounts?workspaceId=${q(workspaceId)}`);
+  return apiClient.get<{ accounts: RecorderAccount[]; capacity: RecordingCapacity; selfServiceAvailable: boolean; recorderOnline?: boolean }>(`/v1/meetings/recorder-accounts?workspaceId=${q(workspaceId)}`);
 }
 
 export function connectRecorderAccount(workspaceId: string, input: { label: string; googleEmail: string }) {

@@ -172,13 +172,13 @@ export async function registerProductsRoutes(app: FastifyInstance, deps: Product
     return successEnvelope(await Promise.all(products.map((product) => presentWithStock(deps,product,visibility))), request.id);
   });
 
-  /** Foto do produto: JPEG/PNG/WEBP até 5 MB, gravada na pasta de produtos do workspace. */
+  /** Foto do produto: JPEG/PNG/WEBP até 5 MB, gravada otimizada (WEBP, até 1920 px) na pasta de produtos do workspace. */
   app.post("/products/images", { schema: { querystring: WORKSPACE_QUERY_SCHEMA } }, async (request) => {
     const principal = requirePermission(request, "product:manage");
     const { workspaceId } = request.query as { workspaceId: string };
     if (deps.workspaceRepository) await assertWorkspaceBelongsToTenant(deps.workspaceRepository, { tenantId: principal.tenantId, workspaceId });
     if (!deps.objectStorage) throw new ValidationError("PRODUCT_IMAGES_INVALID: envio de fotos indisponível.");
-    return successEnvelope(await uploadWorkspaceImage(request,deps.objectStorage,{tenantId:principal.tenantId,workspaceId},deps.maxUploadBytes),request.id);
+    return successEnvelope(await uploadWorkspaceImage(request,deps.objectStorage,{tenantId:principal.tenantId,workspaceId},deps.maxUploadBytes,true),request.id);
   });
 
   /** Risco de estoque das oportunidades abertas (laranja = atenção, vermelho = revisar). */

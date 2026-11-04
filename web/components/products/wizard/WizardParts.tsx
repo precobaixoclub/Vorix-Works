@@ -3,6 +3,7 @@ import {Check,ImageOff} from "lucide-react";
 import {Popover,PopoverContent,PopoverTrigger} from "@/components/ui/popover";
 import {PRODUCT_SEGMENTS,type ProductSegment} from "@/features/product-engine/segments";
 import {bareUrl} from "@/features/product-engine/wizard";
+import {thumbUrl} from "@/lib/media";
 import {cn} from "@/lib/utils";
 
 export type WizardStep={id:string;label:string;title:string};
@@ -51,7 +52,7 @@ export function PhotoChooser({photos,value,inherited,onChange,label,disabled,siz
   <PopoverTrigger asChild>
    <button type="button" disabled={disabled} aria-label={label} title={label} className={cn("relative shrink-0 overflow-hidden rounded-md border bg-muted/40 disabled:opacity-50",size,value?"border-primary":"border-border/70")}>
     {/* eslint-disable-next-line @next/next/no-img-element */}
-    {shown?<img src={shown} alt="" className={cn("h-full w-full object-cover",!value&&"opacity-60")}/>:<ImageOff className="m-auto h-4 w-4 text-muted-foreground"/>}
+    {shown?<img src={thumbUrl(shown,160)} alt="" loading="lazy" decoding="async" className={cn("h-full w-full object-cover",!value&&"opacity-60")}/>:<ImageOff className="m-auto h-4 w-4 text-muted-foreground"/>}
    </button>
   </PopoverTrigger>
   <PopoverContent align="start" className="w-72 space-y-2 p-3">
@@ -60,7 +61,7 @@ export function PhotoChooser({photos,value,inherited,onChange,label,disabled,siz
     <button type="button" onClick={()=>onChange(undefined)} aria-pressed={!value} className={cn("flex aspect-square items-center justify-center rounded-md border text-[10px] leading-tight text-muted-foreground",!value?"border-primary ring-2 ring-primary/30":"border-border/70")}>Padrão</button>
     {photos.map((url,index)=><button key={url} type="button" onClick={()=>onChange(url)} aria-pressed={bareUrl(value)===bareUrl(url)} aria-label={`Foto ${index+1}`} className={cn("aspect-square overflow-hidden rounded-md border",bareUrl(value)===bareUrl(url)?"border-primary ring-2 ring-primary/30":"border-border/70")}>
      {/* eslint-disable-next-line @next/next/no-img-element */}
-     <img src={url} alt="" className="h-full w-full object-cover"/>
+     <img src={thumbUrl(url,160)} alt="" loading="lazy" decoding="async" className="h-full w-full object-cover"/>
     </button>)}
    </div>}
    <p className="text-[11px] text-muted-foreground">Padrão = foto da cor ou, sem ela, a capa do produto.</p>

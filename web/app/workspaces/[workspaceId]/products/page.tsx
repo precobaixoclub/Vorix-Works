@@ -7,6 +7,7 @@ import type { Product, ProductStockRisk } from "@/features/crm/types";
 import { BILLING_SUFFIX } from "@/features/sales/presentation";
 import { PROPERTY_STATUS_LABELS } from "@/features/product-engine/specializations";
 import { formatCurrencyCents, formatRelativeTime } from "@/lib/format";
+import { thumbUrl } from "@/lib/media";
 import { cn } from "@/lib/utils";
 const DAY=86_400_000, NEW_DAYS=15;
 const isNew=(p:Product)=>Date.now()-new Date(p.createdAt).getTime()<=NEW_DAYS*DAY;
@@ -55,7 +56,7 @@ function ProductThumb({ product, className }: { product: Product; className?: st
   const cover = product.imageUrls?.[0];
   if (cover) {
     // eslint-disable-next-line @next/next/no-img-element
-    return <img src={cover} alt={product.name} loading="lazy" className={cn("bg-surface-2 object-cover", className)} />;
+    return <img src={thumbUrl(cover, 480)} alt={product.name} loading="lazy" decoding="async" className={cn("bg-surface-2 object-cover", className)} />;
   }
   const initials = product.name.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]?.toUpperCase()).join("");
   return (

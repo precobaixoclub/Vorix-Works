@@ -7,6 +7,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import Fastify from "fastify";
 import multipart from "@fastify/multipart";
+import sharp from "sharp";
 
 import { buildApp } from "../dist/interfaces/api/app.js";
 import { loadApiConfig } from "../dist/interfaces/api/config/api-config.js";
@@ -281,7 +282,8 @@ test("Fotos de produto: upload devolve preview assinado, mantém arquivo privado
     registerSignedObjectUrlResponses(mini, { publicBaseUrl: BASE, authorize: createObjectKeyReadAuthorizer({ workspaceRepository: app.zunoContainer.workspaceRepository, qaTenantIds: [] }) });
     const storedProducts = [];
     await registerProductsRoutes(mini, { objectStorage: app.zunoContainer.objectStorage, workspaceRepository: app.zunoContainer.workspaceRepository, productRepository: { create: async (input) => { storedProducts.push(input); return { id: "product-fixture", ...input }; } } });
-    const upload = async (contentType = "image/png", body = Buffer.from("fixture-photo"), token = "owner", workspaceId = wsA1) => mini.inject({
+    const photo = await sharp({ create: { width: 2400, height: 1600, channels: 3, background: "#2255aa" } }).jpeg({ quality: 95 }).toBuffer();
+    const upload = async (contentType = "image/jpeg", body = photo, token = "owner", workspaceId = wsA1) => mini.inject({
       method: "POST", url: `/products/images?workspaceId=${workspaceId}`,
       headers: { ...(token ? { authorization: `Bearer ${token}` } : {}), "content-type": "multipart/form-data; boundary=product-photo" },
       payload: Buffer.concat([Buffer.from(`--product-photo\r\nContent-Disposition: form-data; name="file"; filename="photo.png"\r\nContent-Type: ${contentType}\r\n\r\n`), body, Buffer.from("\r\n--product-photo--\r\n")]),
@@ -290,15 +292,27 @@ test("Fotos de produto: upload devolve preview assinado, mantém arquivo privado
     assert.equal(response.statusCode, 200, response.body);
     const url = response.json().data.url;
     assert.match(url, /\?exp=\d+&sig=[A-Za-z0-9_-]{43}$/);
-    assert.match(stripObjectUrlSignature(url), new RegExp(`/assets/tenant-A/${wsA1}/products/[a-f0-9-]+\\.png$`));
+    // Gravada otimizada: WEBP com no máximo 1920 px no maior lado.
+    assert.match(stripObjectUrlSignature(url), new RegExp(`/assets/tenant-A/${wsA1}/products/[a-f0-9-]+\\.webp$`));
     const read = await app.inject({ method: "GET", url: pathOf(url) });
     assert.equal(read.statusCode, 200, read.body);
-    assert.equal(read.body, "fixture-photo");
+    assert.deepEqual(await sharp(read.rawPayload).metadata().then(({ format, width, height }) => ({ format, width, height })), { format: "webp", width: 1920, height: 1280 });
+    // Miniatura `?w=`: mesma assinatura, gerada uma vez e reaproveitada; largura fora da lista serve o original.
+    const thumb = await app.inject({ method: "GET", url: `${pathOf(url)}&w=480` });
+    assert.equal(thumb.statusCode, 200);
+    assert.equal(thumb.headers["content-type"], "image/webp");
+    assert.equal((await sharp(thumb.rawPayload).metadata()).width, 480);
+    assert.ok(thumb.rawPayload.length < read.rawPayload.length);
+    assert.deepEqual((await app.inject({ method: "GET", url: `${pathOf(url)}&w=480` })).rawPayload, thumb.rawPayload);
+    assert.equal((await app.inject({ method: "GET", url: `${pathOf(url)}&w=333` })).rawPayload.length, read.rawPayload.length);
+    assert.equal((await app.inject({ method: "GET", url: `${pathOf(stripObjectUrlSignature(url))}?w=480` })).statusCode, 404);
+    assert.equal((await app.inject({ method: "GET", url: `/uploads/.thumbs/480/${new URL(stripObjectUrlSignature(url)).pathname.replace("/uploads/", "")}.webp` })).statusCode, 404);
     assert.equal((await app.inject({ method: "GET", url: pathOf(stripObjectUrlSignature(url)) })).statusCode, 404);
     assert.equal((await sign("tenant-B", stripObjectUrlSignature(url))).statusCode, 404);
     assert.equal((await sign("tenant-A", canonical(`assets/tenant-A/${wsB1}/products/forged.png`))).statusCode, 404);
     assert.equal((await upload("image/svg+xml")).statusCode, 400);
     assert.equal((await upload("image/png", Buffer.alloc(5_000_001))).statusCode, 400);
+    assert.equal((await upload("image/png", Buffer.from("not-an-image"))).statusCode, 400);
     assert.equal((await upload("image/png", undefined, "viewer")).statusCode, 403);
     assert.equal((await upload("image/png", undefined, "")).statusCode, 401);
     assert.equal((await upload("image/png", undefined, "owner", wsB1)).statusCode, 404);

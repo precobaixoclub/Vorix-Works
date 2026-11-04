@@ -1,7 +1,9 @@
 import type { FastifyInstance } from "fastify";
+import { randomUUID } from "node:crypto";
 import { createReadStream } from "node:fs";
-import { realpath, stat } from "node:fs/promises";
-import { sep } from "node:path";
+import { mkdir, readFile, realpath, rename, stat, writeFile } from "node:fs/promises";
+import { dirname, join, sep } from "node:path";
+import sharp from "sharp";
 import type { PublicObjectRepositoryPort } from "../../../application/ports/public-object-repository.port.js";
 import { resolveObjectPath } from "../../../infrastructure/storage/local-object-storage.js";
 import { verifyObjectSignature } from "../../../shared/utils/object-url-signing.js";
@@ -17,7 +19,7 @@ import { NotFoundError } from "../http/app-error.js";
 export async function registerUploadedObjectRoutes(app: FastifyInstance, options: { rootDir: string; publicObjects?: PublicObjectRepositoryPort }): Promise<void> {
   app.get("/uploads/*", async (request, reply) => {
     const key = (request.params as { "*": string })["*"];
-    const query = (request.query ?? {}) as { exp?: unknown; sig?: unknown };
+    const query = (request.query ?? {}) as { exp?: unknown; sig?: unknown; w?: unknown };
     // Observabilidade: o MOTIVO da negação vai para o log (nunca a chave nem a assinatura); a
     // resposta é sempre o mesmo 404, para não revelar se o arquivo existe.
     const notFound = (reason: string) => {
@@ -48,6 +50,14 @@ export async function registerUploadedObjectRoutes(app: FastifyInstance, options
     if (!fileStat?.isFile()) throw notFound("NOT_FOUND");
 
     reply.header("Cache-Control", publicObject ? "public, max-age=3600" : "private, max-age=900");
+    const width = Number(query.w);
+    if (THUMB_WIDTHS.has(width) && THUMB_SOURCES.test(key)) {
+      const thumb = await thumbnail(realRoot, realFile, key, width, fileStat.mtimeMs).catch((error) => {
+        request.log.warn({ err: error }, "uploads: miniatura indisponível, servindo o original");
+        return undefined;
+      });
+      if (thumb) return reply.type("image/webp").header("Content-Length", String(thumb.length)).send(thumb);
+    }
     reply.header("Accept-Ranges", "bytes");
     reply.type(contentTypeForKey(key));
     // Range (um único intervalo): o player de áudio/vídeo navega pela gravação sem baixar tudo.
@@ -63,6 +73,27 @@ export async function registerUploadedObjectRoutes(app: FastifyInstance, options
     reply.header("Content-Length", String(fileStat.size));
     return reply.send(createReadStream(realFile));
   });
+}
+
+/**
+ * Miniatura (`?w=`) de foto: a tela mostra quadrados de ~200 px, e baixar/decodificar o original
+ * (até 5 MB, milhares de pixels) para cada um deixava o cadastro de produto lento. Gerada uma vez e
+ * guardada em `.thumbs/` (prefixo com ponto: nunca é uma chave servível); refeita se o original mudar.
+ * Só larguras fixas, para não virar redimensionamento arbitrário sob demanda.
+ */
+const THUMB_WIDTHS = new Set([160, 480, 960]);
+const THUMB_SOURCES = /\.(?:jpe?g|png|webp)$/i;
+async function thumbnail(root: string, source: string, key: string, width: number, sourceMtime: number): Promise<Buffer> {
+  const target = join(root, ".thumbs", String(width), `${key}.webp`);
+  const cached = await stat(target).catch(() => undefined);
+  if (cached && cached.mtimeMs >= sourceMtime) return readFile(target);
+  // Lido para memória antes: o sharp com caminho mantém o arquivo aberto no cache do libvips.
+  const body = await sharp(await readFile(source), { limitInputPixels: 64_000_000 }).rotate().resize({ width, height: width, fit: "inside", withoutEnlargement: true }).webp({ quality: 78 }).toBuffer();
+  await mkdir(dirname(target), { recursive: true });
+  const temporary = `${target}.${randomUUID()}.tmp`;
+  await writeFile(temporary, body);
+  await rename(temporary, target);
+  return body;
 }
 
 /** `bytes=a-b` | `bytes=a-` | `bytes=-n`. Múltiplos intervalos ou formato inválido = ignora (200 inteiro). */

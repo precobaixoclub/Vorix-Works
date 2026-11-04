@@ -5,6 +5,7 @@ import {Button} from "@/components/Button";
 import {Input} from "@/components/Field";
 import {Popover,PopoverContent,PopoverTrigger} from "@/components/ui/popover";
 import {bareUrl,rowKey,rowLabel,type DraftOption,type DraftRow} from "@/features/product-engine/wizard";
+import {thumbUrl} from "@/lib/media";
 import {cn} from "@/lib/utils";
 
 export const MAX_PHOTOS=30;
@@ -39,7 +40,7 @@ export function PhotoManager({photos,onPhotos,alts,onAlt,upload,uploading,option
     className={cn("group overflow-hidden rounded-xl border bg-card",index===0?"border-primary ring-1 ring-primary/40":"border-border/70",dragging===index&&"opacity-50")}>
     <div className="relative aspect-square bg-muted/40">
      {/* eslint-disable-next-line @next/next/no-img-element */}
-     <img src={url} alt={alts[bareUrl(url)!]||`Foto ${index+1}`} className="h-full w-full object-cover"/>
+     <img src={thumbUrl(url,480)} alt={alts[bareUrl(url)!]||`Foto ${index+1}`} loading="lazy" decoding="async" className="h-full w-full object-cover"/>
      {index===0?<span className="absolute left-2 top-2 rounded-full bg-primary px-2 py-0.5 text-[11px] font-semibold text-primary-foreground">Capa</span>:null}
     </div>
     <div className="space-y-2 p-2">

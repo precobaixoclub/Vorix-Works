@@ -24,6 +24,7 @@ import { bareUrl, effectiveImage, formatQuantity, optionsFromDetails, quantityFr
 import { listVariants } from "@/features/sales/api";
 import { BILLING_TYPE_LABEL, formatBp } from "@/features/sales/presentation";
 import { formatCurrencyCents } from "@/lib/format";
+import { thumbUrl } from "@/lib/media";
 import { cn } from "@/lib/utils";
 import { CombinationTable } from "./wizard/CombinationTable";
 import { MAX_PHOTOS, PhotoManager } from "./wizard/PhotoManager";
@@ -381,7 +382,7 @@ function ReviewStep({ state, patchDetails, patch, segment, variationsOn, stockOn
   return <section className="space-y-6">
     <StepIntro title="Revisão" hint="Confira como o produto vai ficar antes de salvar." />
     <div className="overflow-hidden rounded-xl border border-border/70 sm:flex">
-      <div className="h-44 w-full bg-muted/40 sm:aspect-square sm:h-auto sm:w-56 sm:shrink-0">{/* eslint-disable-next-line @next/next/no-img-element */}{state.photos[0] ? <img src={state.photos[0]} alt="" className="h-full w-full object-cover" /> : <span className="flex h-full items-center justify-center text-sm text-muted-foreground">Sem foto</span>}</div>
+      <div className="h-44 w-full bg-muted/40 sm:aspect-square sm:h-auto sm:w-56 sm:shrink-0">{/* eslint-disable-next-line @next/next/no-img-element */}{state.photos[0] ? <img src={thumbUrl(state.photos[0], 480)} alt="" decoding="async" className="h-full w-full object-cover" /> : <span className="flex h-full items-center justify-center text-sm text-muted-foreground">Sem foto</span>}</div>
       <div className="min-w-0 flex-1 space-y-3 p-4">
         <div><p className="text-xs text-muted-foreground">{segment.icon} {segment.label}</p><p className="text-lg font-semibold">{state.name || "Sem nome"}</p><p className="text-base font-medium">{range[0] === range[1] ? formatCurrencyCents(range[0]) : `${formatCurrencyCents(range[0])} a ${formatCurrencyCents(range[1])}`}</p></div>
         {state.description ? <p className="line-clamp-3 text-sm text-muted-foreground">{state.description}</p> : null}
@@ -393,7 +394,7 @@ function ReviewStep({ state, patchDetails, patch, segment, variationsOn, stockOn
         </dl>
       </div>
     </div>
-    {variationsOn && activeRows.length ? <details className="rounded-xl border border-border/70 p-3"><summary className="cursor-pointer text-sm font-medium">Ver as {activeRows.length} combinações ativas</summary><ul className="mt-3 grid gap-2 sm:grid-cols-2">{activeRows.map((row) => { const image = effectiveImage(row, usable, state.photos[0]); return <li key={rowLabel(row, usable)} className="flex items-center gap-2 text-sm">{/* eslint-disable-next-line @next/next/no-img-element */}{image ? <img src={image} alt="" className="h-9 w-9 rounded-md object-cover" /> : <span className="h-9 w-9 rounded-md bg-muted" />}<span className="min-w-0 flex-1 truncate">{rowLabel(row, usable)}</span><span className="tabular-nums text-muted-foreground">{formatCurrencyCents(row.price.trim() ? centsFromCurrencyInput(row.price) : price)}{stockOn ? ` · ${row.stock || 0} un` : ""}</span></li>; })}</ul></details> : null}
+    {variationsOn && activeRows.length ? <details className="rounded-xl border border-border/70 p-3"><summary className="cursor-pointer text-sm font-medium">Ver as {activeRows.length} combinações ativas</summary><ul className="mt-3 grid gap-2 sm:grid-cols-2">{activeRows.map((row) => { const image = effectiveImage(row, usable, state.photos[0]); return <li key={rowLabel(row, usable)} className="flex items-center gap-2 text-sm">{/* eslint-disable-next-line @next/next/no-img-element */}{image ? <img src={thumbUrl(image, 160)} alt="" loading="lazy" decoding="async" className="h-9 w-9 rounded-md object-cover" /> : <span className="h-9 w-9 rounded-md bg-muted" />}<span className="min-w-0 flex-1 truncate">{rowLabel(row, usable)}</span><span className="tabular-nums text-muted-foreground">{formatCurrencyCents(row.price.trim() ? centsFromCurrencyInput(row.price) : price)}{stockOn ? ` · ${row.stock || 0} un` : ""}</span></li>; })}</ul></details> : null}
     {warnings.length ? <ul className="space-y-1.5" aria-label="Pontos de atenção">{warnings.map(([step, text]) => <li key={text} className="flex items-center justify-between gap-2 rounded-lg border border-warning/40 bg-warning/5 px-3 py-2 text-sm"><span>{text}</span><button type="button" className="shrink-0 text-xs font-medium underline" onClick={() => onEdit(step)}>Ajustar</button></li>)}</ul> : null}
     <div className="space-y-3 border-t border-border/60 pt-5">
       <h4 className="text-sm font-semibold">Publicação</h4>

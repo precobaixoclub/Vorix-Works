@@ -22,6 +22,7 @@ transcrição: o resultado sai sem falantes e com `diarization_error` nas métri
 """
 
 import argparse
+import gc
 import json
 import os
 import sys
@@ -102,6 +103,18 @@ def audio_blocks(path, chunk_seconds):
             yield consumed / SAMPLE_RATE, buffer
 
 
+def release_memory():
+    """Devolve ao sistema a memória do bloco anterior (sem isto o pico cresce ~50% numa reunião de 1 h)."""
+    gc.collect()
+    if sys.platform.startswith("linux"):
+        try:
+            import ctypes
+
+            ctypes.CDLL("libc.so.6").malloc_trim(0)
+        except Exception:  # noqa: BLE001 — otimização opcional
+            pass
+
+
 def load_model(args):
     from faster_whisper import WhisperModel
 
@@ -180,6 +193,8 @@ def main():
         if language is None:
             # Idioma do 1º bloco vale para a reunião inteira.
             language, language_probability = info.language, float(info.language_probability)
+        del block, pieces
+        release_memory()
 
     diarization_metrics = {}
     if args.diarize == "pyannote" and segments:

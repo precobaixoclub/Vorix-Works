@@ -61,9 +61,13 @@ Trecho de comparação (referência: "Estudara em Coimbra e Padua"):
 | 5 min | 81 s | 572 MB | 12,6% |
 | 10 min | 177 s | 635 MB | 12,9% |
 | 30 min | 467 s | 603 MB | 12,6% |
-| 60 min | ver nota abaixo | — | — |
+| 60 min | 1.022 s | 944 MB | 13,1% |
 
-A RAM não cresce com a duração (blocos de 10 min). O VAD faz o silêncio custar quase nada.
+Até 30 min a RAM ficou estável (~600 MB). Em 60 min o pico subiu para 944 MB: fragmentação do
+alocador entre os blocos (a 60 min rodou junto com outras tarefas na máquina, o que também pesa no
+tempo). Correção aplicada: depois de cada bloco o script libera a memória (`gc` + `malloc_trim` no
+Linux). Mesmo sem ela, o pico fica abaixo do limite de 1,2 GB do container. O VAD faz o silêncio
+custar quase nada.
 
 ## Decisão
 
@@ -79,7 +83,7 @@ A RAM não cresce com a duração (blocos de 10 min). O VAD faz o silêncio cust
 | Item | Valor | Motivo |
 |---|---|---|
 | CPU do worker | `cpus: 1.0` | sempre sobra 1 vCPU para API, banco e WhatsApp |
-| RAM do worker | `mem_limit: 1200m`, sem swap extra | pico medido ~640 MB; estouro mata só o job (volta para a fila) |
+| RAM do worker | `mem_limit: 1200m`, sem swap extra | pico medido 600–950 MB (até 60 min); estouro mata só o job (volta para a fila) |
 | Concorrência | 1 transcrição no ambiente | trava no banco: com uma rodando, as outras esperam |
 | Folga para começar | ≥ 450 MB livres, pressão de memória ≤ 10%, de CPU ≤ 40%, carga ≤ 1,5/CPU | sem folga, o job espera; a análise continua |
 | Gravações | transcrição espera enquanto há gravação em andamento | Chrome e ASR nunca disputam a CPU |

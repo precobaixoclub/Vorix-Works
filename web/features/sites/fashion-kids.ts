@@ -5,12 +5,6 @@ export function isFashionKidsSite(site: Pick<PublicTenantSite, "slug" | "theme">
   return site.slug === "bambilu-kids" && site.theme.template === "nexus";
 }
 
-/** The catalog can omit hex values for basic names. This changes the preview dot only. */
-export function fashionColorSwatch(value: string) {
-  const basic: Record<string, string> = {preto: "#252825", black: "#252825", branco: "#FFFFFF", white: "#FFFFFF"};
-  return basic[value.toLocaleLowerCase("pt-BR").trim()];
-}
-
 export function fashionKidsTheme(theme: SiteTheme): SiteTheme {
   return {
     ...theme,

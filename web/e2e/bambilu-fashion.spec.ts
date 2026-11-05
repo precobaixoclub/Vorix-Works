@@ -19,7 +19,7 @@ async function swipe(page: Page, gallery: Locator) {
   await client.detach();
 }
 
-test("Fashion Kids: composição, grid, swatches, ofertas e busca sem mutações", async ({page}) => {
+test("Fashion Kids: composição, grid, miniaturas de cor, ofertas e busca sem mutações", async ({page}) => {
   const errors: string[] = [], mutations: string[] = [];
   page.on("pageerror", e => errors.push(e.message));
   await page.route("**/api/tenant-site/commerce/**", route => {
@@ -33,9 +33,16 @@ test("Fashion Kids: composição, grid, swatches, ofertas e busca sem mutações
   await expect(page.getByRole("button", {name: /Abrir carrinho/})).toHaveCount(0);
   const grid = page.locator("#catalogo .ts-product-grid");
   const card = grid.locator('[data-product-card="shirt"]');
-  await expect(card.locator(".sp-swatch")).toHaveCount(4);
+  await expect(card.locator(".sp-swatch")).toHaveCount(0);
+  await expect(card.locator(".sp-color-photo-button")).toHaveCount(4);
   await expect(card.locator(".sp-more")).toHaveText("+3");
-  await expect(card.getByRole("button", {name: "Prévia: Cor Preto", exact: true}).locator("span")).toHaveCSS("background-color", "rgb(37, 40, 37)");
+  await expect(card.getByRole("button", {name: "Prévia: Cor Preto", exact: true}).locator("img")).toHaveAttribute("src", /color-1/);
+  await card.getByRole("button", {name: "Mostrar mais 3 cores", exact: true}).click();
+  await expect(card.locator(".sp-color-photo-button")).toHaveCount(7);
+  await card.getByRole("button", {name: "Prévia: Cor Branco", exact: true}).click();
+  await expect(card.locator(".sp-photo")).toHaveAttribute("src", /color-6/);
+  await card.getByRole("button", {name: "Mostrar menos cores", exact: true}).click();
+  await expect(card.locator(".sp-color-photo-button")).toHaveCount(4);
   await card.locator(".fk-card-offer summary").click();
   await expect(card.locator(".sc-quantity-offer")).toContainText("R$ 55,00");
   await expect(card.locator(".sc-quantity-offer")).toContainText("R$ 50,00");
@@ -68,6 +75,8 @@ test("Fashion Kids: seleção e swipe preservam a galeria e o CTA de interesse",
   const gallery = page.locator('[data-product-gallery="detail"]');
   await page.getByLabel("Tamanho", {exact: true}).selectOption("P");
   await page.getByRole("radio", {name: "Cinza", exact: true}).click();
+  await expect(page.getByRole("radio", {name: "Cinza", exact: true}).locator("img")).toHaveAttribute("src", /combination/);
+  await expect(page.getByRole("radiogroup", {name: "Cor", exact: true}).getByRole("radio")).toHaveCount(7);
   await expect(gallery.locator(".sp-photo")).toHaveAttribute("src", /combination/);
   await expect(page.locator(".ts-detail-price")).toHaveText("R$ 60,00");
   await expect(page.locator(".ts-detail-copy .sc-quantity-offer")).toContainText("R$ 55,00");

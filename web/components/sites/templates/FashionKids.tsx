@@ -75,7 +75,7 @@ export function FashionKidsHero({site, block, basePath}: TemplateHeroProps) {
 }
 
 export function FashionKidsProductCard({site, product, basePath}: TemplateCardProps) {
-  return <ProductCard product={product} compact className="fk-product" href={`${basePath}/produto/${encodeURIComponent(product.slug)}`}>
+  return <ProductCard product={product} compact photoColors className="fk-product" href={`${basePath}/produto/${encodeURIComponent(product.slug)}`}>
     <div className="premium-product-image fk-product-image"><ProductCardMedia/></div>
     <div className="fk-product-copy"><ProductCardTitle/>{site.theme.catalog?.showPrice !== false ? <span className="fk-price">{formatCurrencyCents(product.priceCents, product.currency)}</span> : null}</div>
   </ProductCard>;

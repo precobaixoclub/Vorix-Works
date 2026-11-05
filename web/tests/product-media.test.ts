@@ -1,5 +1,5 @@
 import {describe,expect,it} from "vitest";
-import {isColorOption,productPhotoAlt,productPhotos} from "@/features/sites/product-media";
+import {isColorOption,productPhotoAlt,productPhotos,productOptionPhoto} from "@/features/sites/product-media";
 import type {PublicSiteProduct} from "@/features/sites/types";
 
 const product=(patch:Partial<PublicSiteProduct>={}):PublicSiteProduct=>({id:"shirt",slug:"shirt",type:"APPAREL",name:"Camisa",priceCents:6000,currency:"BRL",imageUrls:["gray","black","general"],media:[{url:"general",alt:"Detalhe do tecido"}],attributes:{},options:[{key:"color",name:"Cor",values:["Cinza","Preto"],images:{Cinza:"gray",Preto:"black"}},{key:"size",name:"Tamanho",values:["P","M"]}],seo:{},canPurchaseOnline:false,variants:[{id:"gp",name:"Cinza P",optionValues:{color:"Cinza",size:"P"},priceCents:6000,imageUrl:"gray-p"},{id:"gm",name:"Cinza M",optionValues:{color:"Cinza",size:"M"},priceCents:6000},{id:"bp",name:"Preto P",optionValues:{color:"Preto",size:"P"},priceCents:6000}],...patch});
@@ -16,4 +16,7 @@ describe("public product photo ordering",()=>{
  it("finds alt text by URL after reordering",()=>{expect(productPhotoAlt(product(),"general",0)).toBe("Detalhe do tecido");expect(productPhotoAlt(product(),"black",1)).toBe("Camisa — foto 2");});
  it("recognizes colors without swatch metadata and other custom visual options",()=>{expect(isColorOption({key:"color",name:"Cor",values:["Preto"]})).toBe(true);expect(isColorOption({key:"finish",name:"Acabamento",values:["Azul"],swatches:{Azul:"#00f"}})).toBe(true);expect(isColorOption({key:"size",name:"Tamanho",values:["P"]})).toBe(false);});
  it("does not mutate catalog, inventory, price or variant selection",()=>{const p=product();const before=structuredClone(p);productPhotos(p,{color:"Cinza",size:"P"});expect(p).toEqual(before);});
+ it("color thumbnails use the linked color and the exact combination once a size is selected",()=>{const p=product(),option=p.options[0];expect(productOptionPhoto(p,option,"Cinza")).toBe("gray");expect(productOptionPhoto(p,option,"Cinza",{size:"P"})).toBe("gray-p");expect(productOptionPhoto(p,option,"Preto",{size:"P"})).toBe("black");});
+ it("color thumbnails can use variant photos but never borrow another color's gallery image",()=>{const p=product();p.options[0].images=undefined;expect(productOptionPhoto(p,p.options[0],"Cinza")).toBe("gray-p");expect(productOptionPhoto(p,p.options[0],"Preto")).toBeUndefined();});
+ it("preview resolution does not change the selected values or catalog",()=>{const p=product(),choice={size:"P",color:"Preto"},before=structuredClone(p);productOptionPhoto(p,p.options[0],"Cinza",choice);expect(choice).toEqual({size:"P",color:"Preto"});expect(p).toEqual(before);});
 });

@@ -6,6 +6,14 @@ export function isColorOption(option:ProductOption){
 }
 const unique=(urls:(string|undefined)[])=>[...new Set(urls.filter((url):url is string=>!!url))];
 
+/** A color preview must show a photo linked to that value, never an unrelated gallery image. */
+export function productOptionPhoto(product:PublicSiteProduct,option:ProductOption,value:string,selected:Record<string,string>={}){
+ const choice={...selected,[option.key]:value};
+ const matching=product.variants.filter(variant=>Object.entries(choice).every(([key,v])=>!v||variant.optionValues[key]===v));
+ const complete=product.options.filter(item=>item.values.length).every(item=>!!choice[item.key]);
+ return (complete?matching.find(variant=>variant.imageUrl)?.imageUrl:undefined)??option.images?.[value]??matching.find(variant=>variant.imageUrl)?.imageUrl;
+}
+
 /** Uses the existing option/value and combination photo links; unlinked photos are general. */
 export function productPhotos(product:PublicSiteProduct,selected:Record<string,string>={}){
  const options=product.options.filter(option=>option.values.length);

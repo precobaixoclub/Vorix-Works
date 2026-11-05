@@ -2,6 +2,8 @@
 
 [Comparativo interativo](comparativo.html) · [Relatório](../../standard-template-improvements-20261105.md).
 
+[Capturas e verificações após publicação](production/README.md).
+
 `before/` e `after/` contêm 36 capturas cada: catálogo e detalhe, seis modelos e três larguras (390, 768 e 1440 px). Os arquivos `after/*-metrics.json` registram as seis larguras testadas e os erros de página/requisições comerciais observados.
 
 ## Demonstrações reais

@@ -1,5 +1,7 @@
 # Recursos e apresentação dos modelos padrão
 
+Publicado na release `adb3b4c`. [Relatório do deploy e conferência em produção](production-template-parity-deploy-20261105.md).
+
 As melhorias de imagens, cores, cards, navegação e apresentação passaram para os componentes comuns. Nexus, Aura e Pulse mantêm suas identidades; Catálogo, Institucional e Vitrine editorial também recebem os recursos. A apresentação Fashion / Kids da Bambilu continua com sua identidade, usando os mesmos componentes de cor e carrinho.
 
 ## Entrega

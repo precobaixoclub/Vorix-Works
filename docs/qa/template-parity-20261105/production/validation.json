@@ -1,0 +1,425 @@
+{
+  "release": "adb3b4c",
+  "at": "2026-11-05T17:48:26.300Z",
+  "readiness": {
+    "ready": true,
+    "status": "degraded"
+  },
+  "publicDataPreserved": true,
+  "beforeDigest": "3f96e2a7b3b78f5d6c0adee16ca34b9624a035714a782b023a48aef945efd233",
+  "afterDigest": "3f96e2a7b3b78f5d6c0adee16ca34b9624a035714a782b023a48aef945efd233",
+  "checks": [
+    {
+      "model": "nexus",
+      "surface": "home",
+      "width": 360,
+      "status": 200,
+      "contain": true,
+      "overflow": false,
+      "brokenImages": 0
+    },
+    {
+      "model": "nexus",
+      "surface": "home",
+      "width": 390,
+      "status": 200,
+      "contain": true,
+      "overflow": false,
+      "brokenImages": 0
+    },
+    {
+      "model": "nexus",
+      "surface": "home",
+      "width": 430,
+      "status": 200,
+      "contain": true,
+      "overflow": false,
+      "brokenImages": 0
+    },
+    {
+      "model": "nexus",
+      "surface": "home",
+      "width": 768,
+      "status": 200,
+      "contain": true,
+      "overflow": false,
+      "brokenImages": 0
+    },
+    {
+      "model": "nexus",
+      "surface": "home",
+      "width": 1024,
+      "status": 200,
+      "contain": true,
+      "overflow": false,
+      "brokenImages": 0
+    },
+    {
+      "model": "nexus",
+      "surface": "home",
+      "width": 1440,
+      "status": 200,
+      "contain": true,
+      "overflow": false,
+      "brokenImages": 0
+    },
+    {
+      "model": "nexus",
+      "surface": "product",
+      "width": 360,
+      "status": 200,
+      "contain": true,
+      "overflow": false,
+      "brokenImages": 0
+    },
+    {
+      "model": "nexus",
+      "surface": "product",
+      "width": 390,
+      "status": 200,
+      "contain": true,
+      "overflow": false,
+      "brokenImages": 0
+    },
+    {
+      "model": "nexus",
+      "surface": "product",
+      "width": 430,
+      "status": 200,
+      "contain": true,
+      "overflow": false,
+      "brokenImages": 0
+    },
+    {
+      "model": "nexus",
+      "surface": "product",
+      "width": 768,
+      "status": 200,
+      "contain": true,
+      "overflow": false,
+      "brokenImages": 0
+    },
+    {
+      "model": "nexus",
+      "surface": "product",
+      "width": 1024,
+      "status": 200,
+      "contain": true,
+      "overflow": false,
+      "brokenImages": 0
+    },
+    {
+      "model": "nexus",
+      "surface": "product",
+      "width": 1440,
+      "status": 200,
+      "contain": true,
+      "overflow": false,
+      "brokenImages": 0
+    },
+    {
+      "model": "aura",
+      "surface": "home",
+      "width": 360,
+      "status": 200,
+      "contain": true,
+      "overflow": false,
+      "brokenImages": 0
+    },
+    {
+      "model": "aura",
+      "surface": "home",
+      "width": 390,
+      "status": 200,
+      "contain": true,
+      "overflow": false,
+      "brokenImages": 0
+    },
+    {
+      "model": "aura",
+      "surface": "home",
+      "width": 430,
+      "status": 200,
+      "contain": true,
+      "overflow": false,
+      "brokenImages": 0
+    },
+    {
+      "model": "aura",
+      "surface": "home",
+      "width": 768,
+      "status": 200,
+      "contain": true,
+      "overflow": false,
+      "brokenImages": 0
+    },
+    {
+      "model": "aura",
+      "surface": "home",
+      "width": 1024,
+      "status": 200,
+      "contain": true,
+      "overflow": false,
+      "brokenImages": 0
+    },
+    {
+      "model": "aura",
+      "surface": "home",
+      "width": 1440,
+      "status": 200,
+      "contain": true,
+      "overflow": false,
+      "brokenImages": 0
+    },
+    {
+      "model": "aura",
+      "surface": "product",
+      "width": 360,
+      "status": 200,
+      "contain": true,
+      "overflow": false,
+      "brokenImages": 0
+    },
+    {
+      "model": "aura",
+      "surface": "product",
+      "width": 390,
+      "status": 200,
+      "contain": true,
+      "overflow": false,
+      "brokenImages": 0
+    },
+    {
+      "model": "aura",
+      "surface": "product",
+      "width": 430,
+      "status": 200,
+      "contain": true,
+      "overflow": false,
+      "brokenImages": 0
+    },
+    {
+      "model": "aura",
+      "surface": "product",
+      "width": 768,
+      "status": 200,
+      "contain": true,
+      "overflow": false,
+      "brokenImages": 0
+    },
+    {
+      "model": "aura",
+      "surface": "product",
+      "width": 1024,
+      "status": 200,
+      "contain": true,
+      "overflow": false,
+      "brokenImages": 0
+    },
+    {
+      "model": "aura",
+      "surface": "product",
+      "width": 1440,
+      "status": 200,
+      "contain": true,
+      "overflow": false,
+      "brokenImages": 0
+    },
+    {
+      "model": "pulse",
+      "surface": "home",
+      "width": 360,
+      "status": 200,
+      "contain": true,
+      "overflow": false,
+      "brokenImages": 0
+    },
+    {
+      "model": "pulse",
+      "surface": "home",
+      "width": 390,
+      "status": 200,
+      "contain": true,
+      "overflow": false,
+      "brokenImages": 0
+    },
+    {
+      "model": "pulse",
+      "surface": "home",
+      "width": 430,
+      "status": 200,
+      "contain": true,
+      "overflow": false,
+      "brokenImages": 0
+    },
+    {
+      "model": "pulse",
+      "surface": "home",
+      "width": 768,
+      "status": 200,
+      "contain": true,
+      "overflow": false,
+      "brokenImages": 0
+    },
+    {
+      "model": "pulse",
+      "surface": "home",
+      "width": 1024,
+      "status": 200,
+      "contain": true,
+      "overflow": false,
+      "brokenImages": 0
+    },
+    {
+      "model": "pulse",
+      "surface": "home",
+      "width": 1440,
+      "status": 200,
+      "contain": true,
+      "overflow": false,
+      "brokenImages": 0
+    },
+    {
+      "model": "pulse",
+      "surface": "product",
+      "width": 360,
+      "status": 200,
+      "contain": true,
+      "overflow": false,
+      "brokenImages": 0
+    },
+    {
+      "model": "pulse",
+      "surface": "product",
+      "width": 390,
+      "status": 200,
+      "contain": true,
+      "overflow": false,
+      "brokenImages": 0
+    },
+    {
+      "model": "pulse",
+      "surface": "product",
+      "width": 430,
+      "status": 200,
+      "contain": true,
+      "overflow": false,
+      "brokenImages": 0
+    },
+    {
+      "model": "pulse",
+      "surface": "product",
+      "width": 768,
+      "status": 200,
+      "contain": true,
+      "overflow": false,
+      "brokenImages": 0
+    },
+    {
+      "model": "pulse",
+      "surface": "product",
+      "width": 1024,
+      "status": 200,
+      "contain": true,
+      "overflow": false,
+      "brokenImages": 0
+    },
+    {
+      "model": "pulse",
+      "surface": "product",
+      "width": 1440,
+      "status": 200,
+      "contain": true,
+      "overflow": false,
+      "brokenImages": 0
+    },
+    {
+      "model": "bambilu-kids",
+      "surface": "product",
+      "width": 360,
+      "status": 200,
+      "photoChoices": 7,
+      "overflow": false
+    },
+    {
+      "model": "bambilu-kids",
+      "surface": "product",
+      "width": 390,
+      "status": 200,
+      "photoChoices": 7,
+      "overflow": false
+    },
+    {
+      "model": "bambilu-kids",
+      "surface": "product",
+      "width": 430,
+      "status": 200,
+      "photoChoices": 7,
+      "overflow": false
+    },
+    {
+      "model": "bambilu-kids",
+      "surface": "product",
+      "width": 768,
+      "status": 200,
+      "photoChoices": 7,
+      "overflow": false
+    },
+    {
+      "model": "bambilu-kids",
+      "surface": "product",
+      "width": 1024,
+      "status": 200,
+      "photoChoices": 7,
+      "overflow": false
+    },
+    {
+      "model": "bambilu-kids",
+      "surface": "product",
+      "width": 1440,
+      "status": 200,
+      "photoChoices": 7,
+      "overflow": false
+    }
+  ],
+  "previewAssets": [
+    {
+      "model": "nexus",
+      "mode": "desktop",
+      "status": 200,
+      "sha256": "6d1e8f07dea1a04482d760b9a7ebea1f4747377ac33483ff2f855489f33bb221"
+    },
+    {
+      "model": "nexus",
+      "mode": "mobile",
+      "status": 200,
+      "sha256": "5b0440362f23f90c598683e31bc5a02f0b7e2d59df3086737eac70fb0bdab022"
+    },
+    {
+      "model": "aura",
+      "mode": "desktop",
+      "status": 200,
+      "sha256": "ea1db1246219664460fee574743a6c67750882a9edf61b4fd2dd08655aaa0f82"
+    },
+    {
+      "model": "aura",
+      "mode": "mobile",
+      "status": 200,
+      "sha256": "2460b68b63df627c7192e1c0e3a53b2da85187b714798deb5811e8c98f47de48"
+    },
+    {
+      "model": "pulse",
+      "mode": "desktop",
+      "status": 200,
+      "sha256": "bb3a67719c2dab58f03ede6e8a995affa0eb8cde2329f88821448139f7434b11"
+    },
+    {
+      "model": "pulse",
+      "mode": "mobile",
+      "status": 200,
+      "sha256": "bb76cef42c84b4df541cb7fc4f00ee0da4f64d54d4a318013303010382850920"
+    }
+  ],
+  "pageErrors": [],
+  "businessRequests": []
+}

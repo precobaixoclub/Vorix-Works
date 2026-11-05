@@ -2,7 +2,7 @@ import {test,expect,type Page} from "@playwright/test";
 import {mkdir,writeFile} from "node:fs/promises";
 import path from "node:path";
 import templates from "../features/sites/template-registry.generated.json";
-const api="http://127.0.0.1:3390",evidence=path.resolve("../docs/qa/commercial-rules-20261104");
+const api="http://127.0.0.1:3390",evidence=path.resolve("../docs/qa/template-parity-20261105/commerce");
 type Scope={fixtureOnly:boolean;commercialRulesFixture:boolean;email:string;password:string;workspaceId:string;siteId:string;slug:string;generalId:string;productId:string;variantId:string;commercialRuleId:string;initialRule:Record<string,unknown>};
 let scope:Scope,token:string;
 test.beforeAll(async({request})=>{scope=await(await request.get(api+"/fixture-only/scope")).json();expect(scope.fixtureOnly).toBe(true);expect(scope.commercialRulesFixture).toBe(true);expect(scope.email).toMatch(/\.invalid$/);const login=await(await request.post(api+"/v1/auth/login",{data:{email:scope.email,password:scope.password}})).json();token=login.data.accessToken;await mkdir(evidence,{recursive:true});});
@@ -28,7 +28,7 @@ test("site e carrinho: faixas recalculam todas as unidades e oferecem a próxima
  const response=await request.put(`${api}/v1/public/sites/${scope.slug}/cart/items`,{data:{productId:scope.generalId,quantity:2}});expect(response.ok()).toBe(true);const cart=(await response.json()).data;
  await page.addInitScript(({slug,token})=>localStorage.setItem(`vx_cart:${slug}`,token),{slug:scope.slug,token:cart.token});
  await page.setViewportSize({width:1440,height:1000});await page.goto(`/s/${scope.slug}`);await expect(page.locator(".sc-quantity-offer").first()).toContainText("55,00");await proof(page,"site-1440");await page.setViewportSize({width:390,height:844});await proof(page,"site-390");
- await page.getByRole("button",{name:"Abrir carrinho, 2 itens",exact:true}).click();const drawer=page.getByRole("dialog",{name:"Seu carrinho",exact:true});await expect(drawer).toContainText("Adicione mais 1 item elegível");await expect(drawer.locator(".sc-subtotal")).toContainText("120,00");await proof(page,"cart-2-390");
+ await page.getByRole("button",{name:"Carrinho de compras",exact:true}).click();const drawer=page.getByRole("dialog",{name:"Seu carrinho",exact:true});await expect(drawer).toContainText("Adicione mais 1 item elegível");await expect(drawer.locator(".sc-subtotal")).toContainText("120,00");await proof(page,"cart-2-390");
  await drawer.getByRole("button",{name:"Aumentar quantidade",exact:true}).click();await expect(drawer.locator(".sc-subtotal")).toContainText("165,00");await expect(drawer).toContainText("Preço especial aplicado: R$ 55,00 por unidade.");await proof(page,"cart-3-390");
  await drawer.getByRole("button",{name:"Aumentar quantidade",exact:true}).click();await expect(drawer.locator(".sc-subtotal")).toContainText("220,00");await expect(drawer).toContainText("Adicione mais 1 item elegível");
  await drawer.getByRole("button",{name:"Aumentar quantidade",exact:true}).click();await expect(drawer.locator(".sc-subtotal")).toContainText("250,00");await expect(drawer).toContainText("Preço especial aplicado: R$ 50,00 por unidade.");await proof(page,"cart-5-390");await page.setViewportSize({width:1440,height:1000});await proof(page,"cart-5-1440");

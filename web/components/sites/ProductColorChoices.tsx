@@ -14,7 +14,7 @@ export function CardColorPhotos({product,option,selected,onSelect}:{product:Publ
  const [expanded,setExpanded]=useState(false),limit=4,values=expanded?option.values:option.values.slice(0,limit);
  return <div className="sp-color-options"><div className="sp-color-photo-list" role="group" aria-label={option.name} data-expanded={expanded}>
   {values.map(value=><button type="button" key={value} className="sp-color-photo-button" aria-label={`Prévia: ${option.name} ${value}`} title={value} aria-pressed={selected[option.key]===value}
-   onPointerEnter={event=>{if(event.pointerType==="mouse")onSelect(value);}} onFocus={()=>onSelect(value)} onClick={event=>{event.preventDefault();event.stopPropagation();onSelect(value);}}>
+   onPointerMove={event=>{if(event.pointerType==="mouse"&&selected[option.key]!==value)onSelect(value);}} onFocus={()=>onSelect(value)} onClick={event=>{event.preventDefault();event.stopPropagation();onSelect(value);}}>
    <ColorOptionPhoto product={product} option={option} value={value} selected={selected}/>
   </button>)}
   {option.values.length>limit?<button type="button" className="sp-more sp-color-more" aria-expanded={expanded} aria-label={expanded?"Mostrar menos cores":`Mostrar mais ${option.values.length-limit} cores`} onClick={event=>{event.preventDefault();event.stopPropagation();setExpanded(!expanded);}}>{expanded?"−":`+${option.values.length-limit}`}</button>:null}

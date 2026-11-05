@@ -43,7 +43,7 @@ test("Fashion Kids: composição, grid, miniaturas de cor, ofertas e busca sem m
   await expect(card.locator(".sp-photo")).toHaveAttribute("src", /color-6/);
   await card.getByRole("button", {name: "Mostrar menos cores", exact: true}).click();
   await expect(card.locator(".sp-color-photo-button")).toHaveCount(4);
-  await card.locator(".fk-card-offer summary").click();
+  await card.locator(".sp-card-offer summary").click();
   await expect(card.locator(".sc-quantity-offer")).toContainText("R$ 55,00");
   await expect(card.locator(".sc-quantity-offer")).toContainText("R$ 50,00");
   await card.getByRole("button", {name: "Prévia: Cor Preto", exact: true}).hover();

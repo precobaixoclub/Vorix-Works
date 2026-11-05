@@ -7,7 +7,7 @@ import {isColorOption} from "@/features/sites/product-media";
 import {formatCurrencyCents} from "@/lib/format";
 import {thumbUrl} from "@/lib/media";
 import {ProductCard, ProductCardTitle, ProductCardMedia} from "../ProductCard";
-import {useStorefront} from "../storefront/SiteCommerce";
+import {SiteHeaderCart} from "../SiteHeaderActions";
 import type {TemplateCardProps, TemplateHeaderProps, TemplateHeroProps} from "./PremiumTemplates";
 
 function Brand({site}: {site: PublicTenantSite}) {
@@ -16,7 +16,7 @@ function Brand({site}: {site: PublicTenantSite}) {
 }
 
 export function FashionKidsHeader({site, basePath, query, onQuery, onSearch, menuOpen, onMenu}: TemplateHeaderProps) {
-  const store = useStorefront(), header = resolvedHeader(site.content);
+  const header = resolvedHeader(site.content);
   const [searchOpen, setSearchOpen] = useState(false), searchInput = useRef<HTMLInputElement>(null), searchButton = useRef<HTMLButtonElement>(null);
   const catalogEnabled = site.content.blocks.some(b => b.enabled && b.type === "catalog");
   const contactEnabled = site.content.blocks.some(b => b.enabled && b.type === "contact");
@@ -38,13 +38,13 @@ export function FashionKidsHeader({site, basePath, query, onQuery, onSearch, men
         <a href={basePath || "/"} className="fk-brand" aria-label={`${site.content.name} — início`}><Brand site={site}/></a>
         <div className="fk-header-actions">
           {catalogEnabled ? <button type="button" ref={searchButton} className="fk-icon" aria-label="Buscar na coleção" aria-expanded={searchOpen} aria-controls="fk-search" onClick={() => {if(searchOpen)closeSearch();else {setSearchOpen(true);requestAnimationFrame(() => searchInput.current?.focus());}}}><Search/></button> : null}
-          {site.commerce?.cartEnabled && store && !store.preview ? <button type="button" className="fk-icon fk-cart" aria-label={`Abrir carrinho, ${store.cart?.itemCount ?? 0} itens`} aria-haspopup="dialog" onClick={store.openCart}><ShoppingBag/>{store.cart?.itemCount ? <small>{store.cart.itemCount}</small> : null}</button> : null}
+          <SiteHeaderCart className="fk-icon fk-cart"/>
         </div>
       </div>
       <nav className="fk-desktop-nav" aria-label="Navegação do site">{links.map(link => <a key={link.id} href={siteHref(link.url, basePath)} target={link.newTab ? "_blank" : undefined} rel={link.newTab ? "noopener noreferrer" : undefined}>{link.label}</a>)}</nav>
       {menuOpen ? <nav className="ts-container fk-mobile-nav" id="fk-mobile-menu" aria-label="Menu do celular" onKeyDown={event => {if(event.key === "Escape")onMenu();}}>{links.map(link => <a key={link.id} href={siteHref(link.url, basePath)} target={link.newTab ? "_blank" : undefined} rel={link.newTab ? "noopener noreferrer" : undefined} onClick={onMenu}>{link.label}<ArrowUpRight size={15}/></a>)}</nav> : null}
       {searchOpen ? <form className="ts-container fk-search" id="fk-search" role="search" onSubmit={event => {event.preventDefault();onSearch(event.currentTarget.ownerDocument);setSearchOpen(false);}} onKeyDown={event => {if(event.key === "Escape")closeSearch();}}>
-        <Search size={18}/><label className="fk-sr-only" htmlFor="fk-search-input">Buscar no site</label><input id="fk-search-input" ref={searchInput} value={query} onChange={event => onQuery(event.target.value)} placeholder="O que vamos descobrir hoje?"/><button type="submit" className="fk-text-link">Buscar<ArrowRight size={15}/></button><button type="button" className="fk-icon" aria-label="Fechar busca" onClick={closeSearch}><X/></button>
+        <Search size={18}/><label className="fk-sr-only" htmlFor="fk-search-input">Buscar no site</label><input id="fk-search-input" ref={searchInput} value={query} onChange={event => onQuery(event.target.value)} placeholder="O que vamos descobrir hoje?" onKeyDown={event=>{if(event.key==="Enter"){event.preventDefault();onSearch(event.currentTarget.ownerDocument);setSearchOpen(false);}}}/><button type="button" className="fk-text-link" onClick={event=>{onSearch(event.currentTarget.ownerDocument);setSearchOpen(false);}}>Buscar<ArrowRight size={15}/></button><button type="button" className="fk-icon" aria-label="Fechar busca" onClick={closeSearch}><X/></button>
       </form> : null}
     </header>
   </>;
@@ -88,7 +88,7 @@ function FashionExplore({site, basePath}: {site: PublicTenantSite; basePath: str
 }
 
 function FashionEditorial({site, basePath}: {site: PublicTenantSite; basePath: string}) {
-  const block = site.content.blocks.find(b => b.enabled && b.type === "image_text" && b.imageUrl);
+  const block = site.content.blocks.find(b => b.enabled && b.type === "image_text");
   const product = site.products.find(p => p.id !== site.products[0]?.id && p.imageUrls.length) ?? site.products[0];
   return <section className="fk-editorial" id="nosso-olhar"><div className="ts-container fk-editorial-layout">
     <FashionPhoto product={product} image={block?.imageUrl} alt={block?.imageAlt}/>

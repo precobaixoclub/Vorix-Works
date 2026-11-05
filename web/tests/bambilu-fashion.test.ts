@@ -21,7 +21,7 @@ describe("Fashion Kids: isolamento da apresentação", () => {
     expect(site).toEqual(before);
     expect(html).toContain('class="fk-hero"');
     expect(html).toContain('class="fk-editorial"');
-    expect(html).toContain('class="fk-card-offer"');
+    expect(html).toContain('class="sp-card-offer"');
     expect(html).toContain("55,00"); expect(html).toContain("50,00");
     expect(html).not.toContain("Abrir carrinho");
     expect(html).not.toContain("Mais vendidos");

@@ -7,7 +7,7 @@ import {ProductCommercialInfo} from "./storefront/CommercialPricingInfo";
 import {ProductGallery} from "./ProductGallery";
 
 const CardContext=createContext<{product:PublicSiteProduct;href:string;selected:Record<string,string>}> (null!);
-export function ProductCard({product,href,className,children,compact=false,photoColors=false}:{product:PublicSiteProduct;href:string;className:string;children:ReactNode;compact?:boolean;photoColors?:boolean}){
+export function ProductCard({product,href,className,children,compact=true,photoColors=true}:{product:PublicSiteProduct;href:string;className:string;children:ReactNode;compact?:boolean;photoColors?:boolean}){
  const [selected,setSelected]=useState<Record<string,string>>({});
  const colors=product.options.filter(option=>option.values.length&&isColorOption(option));
  const others=product.options.filter(option=>option.values.length&&!isColorOption(option));
@@ -19,7 +19,7 @@ export function ProductCard({product,href,className,children,compact=false,photo
     <span style={{background:color??"var(--site-line)"}}>{color?null:value.slice(0,2)}</span></button>;})}{option.values.length>colorLimit?<span className="sp-more" aria-label={`${option.values.length-colorLimit} outras opções`}>+{option.values.length-colorLimit}</span>:null}</div>{!compact?<small>{option.values.length} {option.values.length===1?"cor disponível":"cores disponíveis"}</small>:null}</div>)}
    {!compact?others.map(option=><small key={option.key}>{option.name}: {option.values.slice(0,4).join(" · ")}{option.values.length>4?` +${option.values.length-4}`:""}</small>):null}
   </div>:null}
- {compact?product.quantityOffers?.some(offer=>offer.tiers.some(tier=>tier.minimum>1||tier.unitPriceCents!==product.priceCents))?<details className="fk-card-offer"><summary>Preço por quantidade</summary><ProductCommercialInfo product={product}/></details>:null:<ProductCommercialInfo product={product}/>}</article></CardContext.Provider>;
+ {compact?product.quantityOffers?.[0]?.tiers.some(tier=>tier.minimum>1||tier.unitPriceCents!==product.priceCents)?<details className="sp-card-offer"><summary>Preço por quantidade</summary><ProductCommercialInfo product={product}/></details>:null:<ProductCommercialInfo product={product}/>}</article></CardContext.Provider>;
 }
 export function ProductCardTitle(){const {product,href}=useContext(CardContext);return <a className="sp-card-title" href={href}><h3>{product.name}</h3></a>;}
 export function ProductCardMedia({children}:{children?:ReactNode}){const {product,href,selected}=useContext(CardContext);return <ProductGallery product={product} selected={selected} href={href} card>{children}</ProductGallery>;}

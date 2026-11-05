@@ -86,7 +86,8 @@
     ],
     "characteristics": [
       "Modelo anterior preservado"
-    ]
+    ],
+    "presentationVersion": 2
   },
   {
     "id": "studio",
@@ -175,7 +176,8 @@
     ],
     "characteristics": [
       "Modelo anterior preservado"
-    ]
+    ],
+    "presentationVersion": 2
   },
   {
     "id": "showcase",
@@ -264,7 +266,8 @@
     ],
     "characteristics": [
       "Modelo anterior preservado"
-    ]
+    ],
+    "presentationVersion": 2
   },
   {
     "id": "nexus",
@@ -322,7 +325,7 @@
       "sectionSpacing": "spacious",
       "catalog": {
         "columns": 3,
-        "mobileColumns": 1,
+        "mobileColumns": 2,
         "imageRatio": "square",
         "cardStyle": "minimal",
         "showPrice": true,
@@ -355,7 +358,8 @@
       "Imersivo e tecnológico",
       "Produtos em grande escala",
       "Dark com contraste preciso"
-    ]
+    ],
+    "presentationVersion": 2
   },
   {
     "id": "aura",
@@ -446,7 +450,8 @@
       "Tipografia editorial",
       "Composição assimétrica",
       "Imagens protagonistas"
-    ]
+    ],
+    "presentationVersion": 2
   },
   {
     "id": "pulse",
@@ -537,6 +542,7 @@
       "Categorias em destaque",
       "Descoberta rápida",
       "Banners comerciais"
-    ]
+    ],
+    "presentationVersion": 2
   }
 ]

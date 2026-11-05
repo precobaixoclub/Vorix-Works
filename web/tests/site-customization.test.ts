@@ -9,7 +9,7 @@ const site=(draft:SiteSnapshot):PublicTenantSite=>({id:"fixture",slug:"fixture",
 
 describe("personalização do Site",()=>{
  it("trocar modelo preserva textos, imagens, páginas, catálogo e links já escolhidos",()=>{
-  const original=initialSiteSnapshot("Empresa de teste");original.content.blocks[0].title="Meu título";original.content.blocks[0].imageUrl="https://media.fixture.invalid/image.png";original.content.blocks[1].productIds=["product-1"];original.content.pages=[{slug:"sobre",title:"Sobre",seoDescription:"Minha história",published:true,blocks:[newSiteBlock("text")]}];
+  const original=initialSiteSnapshot("Empresa de teste");original.content.blocks[0].title="Meu título";original.content.blocks[0].imageUrl="https://media.fixture.invalid/image.png";original.content.blocks.find(block=>block.type==="catalog")!.productIds=["product-1"];original.content.pages=[{slug:"sobre",title:"Sobre",seoDescription:"Minha história",published:true,blocks:[newSiteBlock("text")]}];
   for(const preset of TEMPLATE_PRESETS){const changed=applySiteTemplate(original,preset.id);expect(changed.content).toEqual(original.content);expect(changed.theme.template).toBe(preset.id);expect(changed.theme.primary).toBe(preset.theme.primary);}
   expect(original.theme.template).toBe("catalog");
  });

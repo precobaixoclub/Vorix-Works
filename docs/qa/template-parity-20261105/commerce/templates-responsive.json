@@ -1,0 +1,182 @@
+[
+  {
+    "template": "catalog",
+    "width": 360,
+    "overflow": false
+  },
+  {
+    "template": "catalog",
+    "width": 390,
+    "overflow": false
+  },
+  {
+    "template": "catalog",
+    "width": 430,
+    "overflow": false
+  },
+  {
+    "template": "catalog",
+    "width": 768,
+    "overflow": false
+  },
+  {
+    "template": "catalog",
+    "width": 1024,
+    "overflow": false
+  },
+  {
+    "template": "catalog",
+    "width": 1440,
+    "overflow": false
+  },
+  {
+    "template": "studio",
+    "width": 360,
+    "overflow": false
+  },
+  {
+    "template": "studio",
+    "width": 390,
+    "overflow": false
+  },
+  {
+    "template": "studio",
+    "width": 430,
+    "overflow": false
+  },
+  {
+    "template": "studio",
+    "width": 768,
+    "overflow": false
+  },
+  {
+    "template": "studio",
+    "width": 1024,
+    "overflow": false
+  },
+  {
+    "template": "studio",
+    "width": 1440,
+    "overflow": false
+  },
+  {
+    "template": "showcase",
+    "width": 360,
+    "overflow": false
+  },
+  {
+    "template": "showcase",
+    "width": 390,
+    "overflow": false
+  },
+  {
+    "template": "showcase",
+    "width": 430,
+    "overflow": false
+  },
+  {
+    "template": "showcase",
+    "width": 768,
+    "overflow": false
+  },
+  {
+    "template": "showcase",
+    "width": 1024,
+    "overflow": false
+  },
+  {
+    "template": "showcase",
+    "width": 1440,
+    "overflow": false
+  },
+  {
+    "template": "nexus",
+    "width": 360,
+    "overflow": false
+  },
+  {
+    "template": "nexus",
+    "width": 390,
+    "overflow": false
+  },
+  {
+    "template": "nexus",
+    "width": 430,
+    "overflow": false
+  },
+  {
+    "template": "nexus",
+    "width": 768,
+    "overflow": false
+  },
+  {
+    "template": "nexus",
+    "width": 1024,
+    "overflow": false
+  },
+  {
+    "template": "nexus",
+    "width": 1440,
+    "overflow": false
+  },
+  {
+    "template": "aura",
+    "width": 360,
+    "overflow": false
+  },
+  {
+    "template": "aura",
+    "width": 390,
+    "overflow": false
+  },
+  {
+    "template": "aura",
+    "width": 430,
+    "overflow": false
+  },
+  {
+    "template": "aura",
+    "width": 768,
+    "overflow": false
+  },
+  {
+    "template": "aura",
+    "width": 1024,
+    "overflow": false
+  },
+  {
+    "template": "aura",
+    "width": 1440,
+    "overflow": false
+  },
+  {
+    "template": "pulse",
+    "width": 360,
+    "overflow": false
+  },
+  {
+    "template": "pulse",
+    "width": 390,
+    "overflow": false
+  },
+  {
+    "template": "pulse",
+    "width": 430,
+    "overflow": false
+  },
+  {
+    "template": "pulse",
+    "width": 768,
+    "overflow": false
+  },
+  {
+    "template": "pulse",
+    "width": 1024,
+    "overflow": false
+  },
+  {
+    "template": "pulse",
+    "width": 1440,
+    "overflow": false
+  }
+]

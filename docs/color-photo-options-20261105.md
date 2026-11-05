@@ -1,5 +1,7 @@
 # Bambilu Kids — opções de cor com fotos
 
+Publicado na release `9f0b31b`. [Relatório do deploy e conferência em produção](production-color-options-deploy-20261105.md).
+
 As opções de cor da apresentação Fashion / Kids usam miniaturas reais do produto no catálogo, nos destaques, nos relacionados e no detalhe. Clicar, tocar ou focar uma miniatura no card troca a foto principal; no detalhe, a escolha continua passando pela seleção e disponibilidade de variantes existente.
 
 Nos cards aparecem quatro fotos e um botão `+N`, que expande as cores restantes. No detalhe aparecem todas as opções, com foto, nome, seleção marcada e estado indisponível quando aplicável. Imagens usam `contain`, sem cortar a peça; as miniaturas usam a derivação de 160 px e carregamento sob demanda.

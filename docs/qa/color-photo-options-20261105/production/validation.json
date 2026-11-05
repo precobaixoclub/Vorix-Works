@@ -1,0 +1,82 @@
+{
+  "at": "2026-11-05T16:42:06.833Z",
+  "production": true,
+  "checks": [
+    {
+      "surface": "card",
+      "width": 360,
+      "photoChoices": 4,
+      "overflow": false
+    },
+    {
+      "surface": "card",
+      "width": 390,
+      "photoChoices": 4,
+      "overflow": false
+    },
+    {
+      "surface": "card",
+      "width": 430,
+      "photoChoices": 4,
+      "overflow": false
+    },
+    {
+      "surface": "card",
+      "width": 768,
+      "photoChoices": 4,
+      "overflow": false
+    },
+    {
+      "surface": "card",
+      "width": 1024,
+      "photoChoices": 4,
+      "overflow": false
+    },
+    {
+      "surface": "card",
+      "width": 1440,
+      "photoChoices": 4,
+      "overflow": false
+    },
+    {
+      "surface": "detail",
+      "width": 360,
+      "photoChoices": 7,
+      "overflow": false
+    },
+    {
+      "surface": "detail",
+      "width": 390,
+      "photoChoices": 7,
+      "overflow": false
+    },
+    {
+      "surface": "detail",
+      "width": 430,
+      "photoChoices": 7,
+      "overflow": false
+    },
+    {
+      "surface": "detail",
+      "width": 768,
+      "photoChoices": 7,
+      "overflow": false
+    },
+    {
+      "surface": "detail",
+      "width": 1024,
+      "photoChoices": 7,
+      "overflow": false
+    },
+    {
+      "surface": "detail",
+      "width": 1440,
+      "photoChoices": 7,
+      "overflow": false
+    }
+  ],
+  "pageErrors": [],
+  "businessRequests": [],
+  "mode": "SHOWCASE",
+  "publicDataPreserved": true
+}

@@ -28,6 +28,16 @@ createServer(async(req,res)=>{
  res.setHeader("Access-Control-Allow-Origin","*");res.setHeader("Content-Type","application/json");
  if(url.pathname==="/health"){res.end('{"fixtureOnly":true}');return;}
  if(url.pathname.startsWith("/photos/")){res.setHeader("Content-Type","image/webp");res.setHeader("Cache-Control","public,max-age=3600");res.end(await image(url.pathname.split("/").pop().replace(".webp","")));return;}
+ if(url.pathname==="/v1/public/sites/bambilu-kids"){
+  const payload=site(templates.find(template=>template.id==="nexus"));
+  payload.slug="bambilu-kids";payload.content.name="Bambilu Kids";payload.categories=[];
+  payload.content.blocks[0].title="Boas escolhas começam por aqui.";
+  payload.content.contactForm=true;payload.content.blocks.push({id:"contact",type:"contact",title:"Vamos conversar?",text:"",imageAlt:"",enabled:true,productIds:[],items:[]});
+  payload.commerce={mode:"SHOWCASE",cartEnabled:false,whatsappEnabled:false,checkoutAvailable:false,showcaseCta:"Tenho interesse"};
+  payload.products[0]={...payload.products[0],commerce:{saleMode:"SHOW_ONLY",requestedSaleMode:"INHERIT_SITE_DEFAULT",allowedActions:["inquiry"],ctaLabel:"Tenho interesse",availability:"untracked",checkoutAvailable:false},quantityOffers:[{id:"fixture-rule",name:"Preço progressivo",count:"ELIGIBLE",currency:"BRL",tiers:[{minimum:1,maximum:2,unitPriceCents:6000},{minimum:3,maximum:4,unitPriceCents:5500},{minimum:5,unitPriceCents:5000}]}]};
+  payload.products[0].options=payload.products[0].options.map(option=>({...option,...(option.swatches?{swatches:Object.fromEntries(Object.entries(option.swatches).filter(([name])=>name!=="Preto"))}:{})}));
+  res.end(JSON.stringify({ok:true,data:payload}));return;
+ }
  const match=url.pathname.match(/^\/v1\/public\/sites\/media-([^/]+)(?:\/(.*))?$/),template=templates.find(template=>template.id===match?.[1]);
  if(template){const payload=site(template);if(url.searchParams.get("path")==="produto/album")payload.products.push({...landscape,id:"album",slug:"album",name:"Galeria extensa",imageUrls:Array.from({length:24},(_,i)=>photo(`album-${i}`))});res.end(JSON.stringify({ok:true,data:match[2]?{}:payload}));return;}
  res.statusCode=404;res.end('{"ok":false}');

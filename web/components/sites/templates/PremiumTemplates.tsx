@@ -5,6 +5,8 @@ import type {PublicTenantSite,PublicSiteProduct,SiteBlock} from "@/features/site
 import {resolvedHeader,safeSiteHref,siteHref} from "@/features/sites/customization";
 import {ProductCard,ProductCardTitle,ProductCardMedia} from "../ProductCard";
 import {formatCurrencyCents} from "@/lib/format";
+import {isFashionKidsSite} from "@/features/sites/fashion-kids";
+import {FASHION_KIDS_RENDERER} from "./FashionKids";
 
 export type TemplateHeroProps={block:SiteBlock;site:PublicTenantSite;basePath:string};
 export type TemplateCardProps={product:PublicSiteProduct;site:PublicTenantSite;basePath:string;index:number};
@@ -40,6 +42,6 @@ export const PulseHeader=(props:TemplateHeaderProps)=><TemplateHeader {...props}
 
 // O registro concentra a resolução; o editor e o catálogo não conhecem os IDs.
 export const PREMIUM_RENDERERS={nexus:{Hero:withHeroSlides(NexusHero),ProductCard:NexusProductCard,Header:NexusHeader},aura:{Hero:withHeroSlides(AuraHero),ProductCard:AuraProductCard,Header:AuraHeader},pulse:{Hero:withHeroSlides(PulseHero),ProductCard:PulseProductCard,Header:PulseHeader}};
-export function premiumRenderer(id:string):typeof PREMIUM_RENDERERS[keyof typeof PREMIUM_RENDERERS]|undefined{return PREMIUM_RENDERERS[id as keyof typeof PREMIUM_RENDERERS];}
+export function premiumRenderer(id:string,site?:PublicTenantSite):typeof PREMIUM_RENDERERS[keyof typeof PREMIUM_RENDERERS]|undefined{return site&&isFashionKidsSite(site)?FASHION_KIDS_RENDERER:PREMIUM_RENDERERS[id as keyof typeof PREMIUM_RENDERERS];}
 
 function withHeroSlides(Component:ComponentType<TemplateHeroProps>){return function TemplateHero(props:TemplateHeroProps){const [selected,setSelected]=useState(0),slides=props.block.slides?.filter(slide=>slide.enabled),slide=slides?.[selected%(slides.length||1)],layout=props.site.layoutConfig;let block=slide?{...props.block,...slide,id:props.block.id,slides:[slide]}:props.block;if(layout?.heroImageUrl)block={...block,imageUrl:layout.heroImageUrl,slides:[{id:"template-hero",title:block.title,text:block.text,enabled:true,imageUrl:layout.heroImageUrl,mobileImageUrl:layout.heroMobileImageUrl,imageAlt:block.imageAlt}]};return <div className="premium-hero-wrapper" style={{...(block.style?.background?{"--site-bg":block.style.background}:{}),...(block.style?.foreground?{"--site-fg":block.style.foreground}:{})} as CSSProperties}><Component {...props} block={block}/>{!layout?.heroImageUrl&&slides&&slides.length>1?<div className="premium-slider-controls" aria-label="Banners em destaque">{slides.map((slide,index)=><button key={slide.id} type="button" aria-label={`Mostrar banner ${index+1}`} aria-pressed={selected===index} onClick={()=>setSelected(index)}>{index+1}</button>)}</div>:null}</div>;};}

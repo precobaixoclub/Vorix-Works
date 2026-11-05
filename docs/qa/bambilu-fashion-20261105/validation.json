@@ -1,0 +1,136 @@
+{
+  "at": "2026-11-05T10:46:52.645Z",
+  "scope": "local preview of real public catalog",
+  "deployed": false,
+  "publicSource": "https://vorixworks.com/s/bambilu-kids",
+  "sourceProducts": 24,
+  "widths": [
+    360,
+    390,
+    430,
+    768,
+    1024,
+    1440
+  ],
+  "checks": [
+    {
+      "surface": "home",
+      "width": 360,
+      "status": 200,
+      "contain": true,
+      "overflow": false,
+      "brokenImages": 0,
+      "columns": 2
+    },
+    {
+      "surface": "product",
+      "width": 360,
+      "status": 200,
+      "contain": true,
+      "overflow": false,
+      "brokenImages": 0
+    },
+    {
+      "surface": "home",
+      "width": 390,
+      "status": 200,
+      "contain": true,
+      "overflow": false,
+      "brokenImages": 0,
+      "columns": 2
+    },
+    {
+      "surface": "product",
+      "width": 390,
+      "status": 200,
+      "contain": true,
+      "overflow": false,
+      "brokenImages": 0
+    },
+    {
+      "surface": "home",
+      "width": 430,
+      "status": 200,
+      "contain": true,
+      "overflow": false,
+      "brokenImages": 0,
+      "columns": 2
+    },
+    {
+      "surface": "product",
+      "width": 430,
+      "status": 200,
+      "contain": true,
+      "overflow": false,
+      "brokenImages": 0
+    },
+    {
+      "surface": "home",
+      "width": 768,
+      "status": 200,
+      "contain": true,
+      "overflow": false,
+      "brokenImages": 0,
+      "columns": 3
+    },
+    {
+      "surface": "product",
+      "width": 768,
+      "status": 200,
+      "contain": true,
+      "overflow": false,
+      "brokenImages": 0
+    },
+    {
+      "surface": "home",
+      "width": 1024,
+      "status": 200,
+      "contain": true,
+      "overflow": false,
+      "brokenImages": 0,
+      "columns": 3
+    },
+    {
+      "surface": "product",
+      "width": 1024,
+      "status": 200,
+      "contain": true,
+      "overflow": false,
+      "brokenImages": 0
+    },
+    {
+      "surface": "home",
+      "width": 1440,
+      "status": 200,
+      "contain": true,
+      "overflow": false,
+      "brokenImages": 0,
+      "columns": 4
+    },
+    {
+      "surface": "product",
+      "width": 1440,
+      "status": 200,
+      "contain": true,
+      "overflow": false,
+      "brokenImages": 0
+    }
+  ],
+  "pageErrors": [],
+  "businessRequests": [],
+  "commerce": {
+    "mode": "SHOWCASE",
+    "cartEnabled": false,
+    "checkoutAvailable": false
+  },
+  "checksInteractive": [
+    "real color photo preview",
+    "quantity prices 55/50",
+    "mobile menu",
+    "search with empty results",
+    "native touch swipe",
+    "gallery keyboard",
+    "size/color selection",
+    "showcase CTA preserved"
+  ]
+}

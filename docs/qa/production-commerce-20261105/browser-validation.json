@@ -1,0 +1,122 @@
+{
+  "release": "f3626e8638d1ffe2be8f06035eec3f1dad929e56",
+  "at": "2026-11-05T04:16:54.372Z",
+  "timezone": "America/Sao_Paulo",
+  "readOnly": true,
+  "checks": [
+    {
+      "surface": "catalog",
+      "width": 360,
+      "status": 200,
+      "contain": true,
+      "overflow": false
+    },
+    {
+      "surface": "product",
+      "width": 360,
+      "status": 200,
+      "contain": true,
+      "overflow": false
+    },
+    {
+      "surface": "catalog",
+      "width": 390,
+      "status": 200,
+      "contain": true,
+      "overflow": false
+    },
+    {
+      "surface": "product",
+      "width": 390,
+      "status": 200,
+      "contain": true,
+      "overflow": false
+    },
+    {
+      "surface": "catalog",
+      "width": 430,
+      "status": 200,
+      "contain": true,
+      "overflow": false
+    },
+    {
+      "surface": "product",
+      "width": 430,
+      "status": 200,
+      "contain": true,
+      "overflow": false
+    },
+    {
+      "surface": "catalog",
+      "width": 768,
+      "status": 200,
+      "contain": true,
+      "overflow": false
+    },
+    {
+      "surface": "product",
+      "width": 768,
+      "status": 200,
+      "contain": true,
+      "overflow": false
+    },
+    {
+      "surface": "catalog",
+      "width": 1024,
+      "status": 200,
+      "contain": true,
+      "overflow": false
+    },
+    {
+      "surface": "product",
+      "width": 1024,
+      "status": 200,
+      "contain": true,
+      "overflow": false
+    },
+    {
+      "surface": "catalog",
+      "width": 1440,
+      "status": 200,
+      "contain": true,
+      "overflow": false
+    },
+    {
+      "surface": "product",
+      "width": 1440,
+      "status": 200,
+      "contain": true,
+      "overflow": false
+    }
+  ],
+  "pageErrors": [],
+  "readiness": {
+    "ready": true,
+    "status": "degraded"
+  },
+  "store": {
+    "slug": "bambilu-kids",
+    "template": "nexus",
+    "mode": "SHOWCASE",
+    "cartEnabled": false,
+    "checkoutAvailable": false,
+    "ruleId": "rule-e0e406c3-2677-4c66-a9ad-4436b4a9c90a",
+    "tiers": [
+      {
+        "minimum": 1,
+        "maximum": 2,
+        "unitPriceCents": 6000
+      },
+      {
+        "minimum": 3,
+        "maximum": 4,
+        "unitPriceCents": 5500
+      },
+      {
+        "minimum": 5,
+        "unitPriceCents": 5000
+      }
+    ]
+  },
+  "adminAuthentication": 401
+}

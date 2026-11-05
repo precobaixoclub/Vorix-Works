@@ -1,0 +1,100 @@
+{
+  "release": "f3626e8",
+  "at": "2026-11-05T04:15:47.807Z",
+  "siteSlug": "bambilu-kids",
+  "ruleId": "rule-e0e406c3-2677-4c66-a9ad-4436b4a9c90a",
+  "name": "Preço progressivo por quantidade",
+  "active": true,
+  "created": true,
+  "revision": 1,
+  "definition": {
+    "name": "Preço progressivo por quantidade",
+    "active": true,
+    "priority": 0,
+    "stackable": false,
+    "allowCoupon": false,
+    "channels": [
+      "CHECKOUT",
+      "WHATSAPP"
+    ],
+    "currency": "BRL",
+    "scope": {
+      "type": "STORE",
+      "ids": []
+    },
+    "trigger": {
+      "type": "QUANTITY",
+      "count": "ELIGIBLE",
+      "minimum": 1
+    },
+    "benefit": {
+      "type": "UNIT_PRICE",
+      "tiers": [
+        {
+          "minimum": 1,
+          "maximum": 2,
+          "unitPriceCents": 6000
+        },
+        {
+          "minimum": 3,
+          "maximum": 4,
+          "unitPriceCents": 5500
+        },
+        {
+          "minimum": 5,
+          "unitPriceCents": 5000
+        }
+      ]
+    }
+  },
+  "examples": [
+    {
+      "quantity": 1,
+      "totalCents": 6000,
+      "productCount": 1
+    },
+    {
+      "quantity": 2,
+      "totalCents": 12000,
+      "productCount": 2
+    },
+    {
+      "quantity": 3,
+      "totalCents": 16500,
+      "productCount": 3
+    },
+    {
+      "quantity": 4,
+      "totalCents": 22000,
+      "productCount": 3
+    },
+    {
+      "quantity": 5,
+      "totalCents": 25000,
+      "productCount": 3
+    },
+    {
+      "quantity": 6,
+      "totalCents": 30000,
+      "productCount": 3
+    },
+    {
+      "quantity": 10,
+      "totalCents": 50000,
+      "productCount": 3
+    }
+  ],
+  "preserved": {
+    "catalog": true,
+    "stock": true,
+    "commerceSettings": true,
+    "customers": true,
+    "orders": true
+  },
+  "storefront": {
+    "mode": "SHOWCASE",
+    "cartEnabled": false,
+    "checkoutAvailable": false,
+    "template": "nexus"
+  }
+}

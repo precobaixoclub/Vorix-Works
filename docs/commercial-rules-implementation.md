@@ -1,6 +1,6 @@
-# Regras Comerciais configuráveis — entrega local
+# Regras Comerciais configuráveis — implementação
 
-Trabalho iniciado em 04/11/2026 e validado em 05/11/2026. **Sem deploy e sem alteração da loja em produção.** A configuração da Bambilu Kids foi cadastrada pela API normal numa cópia local de teste, com banco PostgreSQL/PGlite descartável, produtos fictícios e pagamento sandbox.
+Trabalho iniciado em 04/11/2026 e validado em 05/11/2026. A primeira validação ocorreu numa cópia local de teste, com banco PostgreSQL/PGlite descartável, produtos fictícios e pagamento sandbox. Após autorização, o commit `f3626e8` foi publicado em 05/11/2026 e a regra da Bambilu Kids foi ativada em produção. Consulte o [relatório da publicação](production-deploy-20261105.md). A loja permanece em modo vitrine, com carrinho e checkout desabilitados.
 
 ## Auditoria anterior à implementação
 
@@ -111,7 +111,7 @@ Arquivo: `config/commercial-rules/bambilu-kids-progressive.json`.
 | 6 | R$ 300,00 |
 | 10 | R$ 500,00 |
 
-Essa configuração foi cadastrada e exercitada na cópia local descartável, pela API autenticada do módulo. **Ela ainda não está cadastrada na loja publicada**, pois o novo schema/código não foi implantado, conforme a instrução de aguardar revisão visual.
+Essa configuração foi cadastrada e exercitada na cópia local descartável, pela API autenticada do módulo. Após a autorização de publicação, foi cadastrada na loja publicada pelo caso de uso normal da aplicação, com auditoria da release. A [evidência de ativação](qa/production-commerce-20261105/rule-activation.json) registra a revisão 1 ativa e os totais conferidos com produtos reais, sem criar pedidos.
 
 O importador genérico `scripts/commercial-rules/import-rule.mjs` permite cadastrar a configuração pela API normal após o deploy autorizado. Sem `--apply`, apenas apresenta o conteúdo. Com aplicação explícita, localiza a loja pelo slug dentro do workspace informado e cria/atualiza a regra por nome. O token é recebido por variável de ambiente e não é registrado no relatório.
 
@@ -125,4 +125,4 @@ O importador genérico `scripts/commercial-rules/import-rule.mjs` permite cadast
 
 Casos cobertos: mudanças de faixa, produtos/variações mistos, elegibilidade, remoção e quantidade, inatividade, vigência, canal/moeda, conflitos, acumulação, cupons, carrinho vazio, centavos, histórico, isolamento de tenant/workspace, revisão concorrente, alteração durante checkout e estorno do valor pago.
 
-As capturas, os snapshots financeiros e as métricas ficam em [docs/qa/commercial-rules-20261104](qa/commercial-rules-20261104/README.md). Dados, imagens e pagamentos são de teste; não houve cobrança nem deploy.
+As capturas, os snapshots financeiros e as métricas da fase local ficam em [docs/qa/commercial-rules-20261104](qa/commercial-rules-20261104/README.md). Nessa fase, dados, imagens e pagamentos eram de teste e não houve cobrança nem deploy. As [evidências posteriores de produção](qa/production-commerce-20261105/README.md) registram a publicação autorizada e a conferência da loja real.

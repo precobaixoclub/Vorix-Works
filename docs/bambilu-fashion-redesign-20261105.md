@@ -1,6 +1,6 @@
 # Bambilu Kids — redesenho Fashion / Kids
 
-Implementação visual local sobre `b80f187`, em 05/11/2026. **Sem novo deploy nesta etapa.** A comparação visual solicitada está pronta para revisão.
+Implementação visual validada localmente sobre `b80f187`, em 05/11/2026. Após autorização, a release `02a696d` foi enviada à `main` e publicada. [Relatório e evidências do deploy](production-fashion-deploy-20261105.md).
 
 [Abrir comparativo interativo antes/depois](qa/bambilu-fashion-20261105/comparativo.html). A página permite alternar home/produto, largura de 390/768/1440 px e rolagem independente das capturas.
 

@@ -15,4 +15,4 @@ Primeira tela: [390 px](after-fold-390.png), [768 px](after-fold-768.png), [1440
 
 Cards: [390 px](after-cards-390.png), [1440 px](after-cards-1440.png).
 
-Antes: aplicação publicada na release `f3626e8`. Depois: implementação local, sem novo deploy. Fotografias reais do catálogo, sem campanha infantil ou logo cadastrado. Capturas da home e do mesmo primeiro produto, com viewport de 1000 px de altura e página inteira.
+Antes: aplicação publicada na release `f3626e8`. Depois: implementação local capturada antes do novo deploy. A release `02a696d` foi posteriormente publicada, com [conferência em produção](../bambilu-fashion-production-20261105/README.md). Fotografias reais do catálogo, sem campanha infantil ou logo cadastrado. Capturas da home e do mesmo primeiro produto, com viewport de 1000 px de altura e página inteira.

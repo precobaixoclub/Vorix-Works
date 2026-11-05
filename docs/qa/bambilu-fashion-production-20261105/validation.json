@@ -1,0 +1,138 @@
+{
+  "release": "02a696d",
+  "at": "2026-11-05T11:06:16.304Z",
+  "readOnly": true,
+  "readiness": {
+    "ready": true,
+    "status": "degraded"
+  },
+  "publicDataPreserved": true,
+  "beforeDigest": "3f96e2a7b3b78f5d6c0adee16ca34b9624a035714a782b023a48aef945efd233",
+  "afterDigest": "3f96e2a7b3b78f5d6c0adee16ca34b9624a035714a782b023a48aef945efd233",
+  "commerce": {
+    "mode": "SHOWCASE",
+    "cartEnabled": false,
+    "collectCustomer": false,
+    "whatsappEnabled": false,
+    "checkoutAvailable": false,
+    "showcaseCta": "Tenho interesse",
+    "sandbox": false,
+    "couponsAvailable": false
+  },
+  "checks": [
+    {
+      "surface": "home",
+      "width": 360,
+      "status": 200,
+      "contain": true,
+      "overflow": false,
+      "brokenImages": 0,
+      "columns": 2
+    },
+    {
+      "surface": "product",
+      "width": 360,
+      "status": 200,
+      "contain": true,
+      "overflow": false,
+      "brokenImages": 0
+    },
+    {
+      "surface": "home",
+      "width": 390,
+      "status": 200,
+      "contain": true,
+      "overflow": false,
+      "brokenImages": 0,
+      "columns": 2,
+      "colorPreview": true,
+      "offers": true,
+      "menu": true,
+      "search": true
+    },
+    {
+      "surface": "product",
+      "width": 390,
+      "status": 200,
+      "contain": true,
+      "overflow": false,
+      "brokenImages": 0,
+      "swipe": true,
+      "keyboard": true,
+      "variants": true
+    },
+    {
+      "surface": "home",
+      "width": 430,
+      "status": 200,
+      "contain": true,
+      "overflow": false,
+      "brokenImages": 0,
+      "columns": 2
+    },
+    {
+      "surface": "product",
+      "width": 430,
+      "status": 200,
+      "contain": true,
+      "overflow": false,
+      "brokenImages": 0
+    },
+    {
+      "surface": "home",
+      "width": 768,
+      "status": 200,
+      "contain": true,
+      "overflow": false,
+      "brokenImages": 0,
+      "columns": 3
+    },
+    {
+      "surface": "product",
+      "width": 768,
+      "status": 200,
+      "contain": true,
+      "overflow": false,
+      "brokenImages": 0
+    },
+    {
+      "surface": "home",
+      "width": 1024,
+      "status": 200,
+      "contain": true,
+      "overflow": false,
+      "brokenImages": 0,
+      "columns": 3
+    },
+    {
+      "surface": "product",
+      "width": 1024,
+      "status": 200,
+      "contain": true,
+      "overflow": false,
+      "brokenImages": 0
+    },
+    {
+      "surface": "home",
+      "width": 1440,
+      "status": 200,
+      "contain": true,
+      "overflow": false,
+      "brokenImages": 0,
+      "columns": 4
+    },
+    {
+      "surface": "product",
+      "width": 1440,
+      "status": 200,
+      "contain": true,
+      "overflow": false,
+      "brokenImages": 0
+    }
+  ],
+  "pageErrors": [],
+  "businessRequests": [],
+  "verificationNotes": [
+    "The first eager image batch hit HTTP 429 after 9 checks. Resumed the last two widths after the Retry-After window; no server limits changed."
+  ]
+}

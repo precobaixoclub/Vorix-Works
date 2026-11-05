@@ -58,7 +58,7 @@ export async function registerCommerceRoutes(app:FastifyInstance,deps:CommerceRo
   return successEnvelope(await quoteCheckout(deps,{...body,lookup:lookup(request)}),request.id);
  }));
  app.post("/public/sites/:slug/checkout/orders",async request=>guard(async()=>{
-  const body=z.object({token:cartToken,requestKey:z.string().uuid(),customer:z.unknown(),address:z.unknown().optional(),deliveryOptionId:z.string().min(1).max(80),
+  const body=z.object({token:cartToken,pricingKey:z.string().regex(/^[a-f0-9]{64}$/).optional(),requestKey:z.string().uuid(),customer:z.unknown(),address:z.unknown().optional(),deliveryOptionId:z.string().min(1).max(80),
    payment:z.object({method:z.enum(["PIX","CARD","SANDBOX"]),cardToken:z.string().max(200).optional(),cardPaymentMethodId:z.string().max(40).optional(),installments:z.number().int().min(1).max(24).optional()}).strict(),...visitor}).strict().parse(request.body);
   return successEnvelope(await placeOrder(deps,{...body,lookup:lookup(request)}),request.id);
  }));

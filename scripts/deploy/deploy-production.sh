@@ -93,7 +93,9 @@ rollback() {
   # A full disk used to leave the host tree half-restored and abort before restoring image tags.
   RESTORE_DIR="$ROOT/deploy_backups/restore-$STAMP"
   if mkdir -p "$RESTORE_DIR" && tar -xzf "deploy_backups/pre-$SHA-$STAMP.tgz" -C "$RESTORE_DIR"; then
-    for entry in assets db docs examples scripts src tests web .dockerignore .editorconfig .env.example .env.zuno.example .gitignore CHANGELOG.md Dockerfile README.md docker-compose.zuno.yml package.json package-lock.json tsconfig.json scratch-creative-benchmark.mjs; do
+    # Remove a newly introduced versioned config directory if the previous release had none.
+    [ -e "$RESTORE_DIR/config" ] || rm -rf -- "$ROOT/config"
+    for entry in assets config db docs examples scripts src tests web .dockerignore .editorconfig .env.example .env.zuno.example .gitignore CHANGELOG.md Dockerfile README.md docker-compose.zuno.yml package.json package-lock.json tsconfig.json scratch-creative-benchmark.mjs; do
       [ -e "$RESTORE_DIR/$entry" ] || continue
       rm -rf -- "$ROOT/$entry"
       mv -- "$RESTORE_DIR/$entry" "$ROOT/$entry"
@@ -119,7 +121,7 @@ rollback() {
 }
 
 # 4. troca do código
-rm -rf assets db docs examples scripts src tests web .dockerignore .editorconfig .env.example .env.zuno.example .gitignore CHANGELOG.md Dockerfile README.md docker-compose.zuno.yml package.json package-lock.json tsconfig.json scratch-creative-benchmark.mjs
+rm -rf assets config db docs examples scripts src tests web .dockerignore .editorconfig .env.example .env.zuno.example .gitignore CHANGELOG.md Dockerfile README.md docker-compose.zuno.yml package.json package-lock.json tsconfig.json scratch-creative-benchmark.mjs
 tar -xzf "$TARBALL" -C "$ROOT"
 chown -R root:root "$ROOT"
 ENV_AFTER=$(md5sum .env.zuno | cut -c1-12)

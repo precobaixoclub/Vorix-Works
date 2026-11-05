@@ -58,7 +58,7 @@ export function OrderReturns({workspaceId,order,returns,actions,canManage,canRef
   })}</ul>
   {confirm?<ConfirmDialog open variant="danger" busy={busy} title={`${RETURN_ACTION_LABELS[confirm.to]} desta devolução?`} description={confirm.to==="REJECTED"?"A devolução será recusada e os itens voltam a poder ser devolvidos depois. Esta ação não pode ser desfeita.":"A devolução será cancelada e os itens voltam a poder ser devolvidos depois. Esta ação não pode ser desfeita."} confirmLabel={RETURN_ACTION_LABELS[confirm.to]}
    onCancel={()=>setConfirm(undefined)} onConfirm={async()=>{const {ret,to}=confirm;await run(()=>transitionOrderReturn(workspaceId,ret.id,to),`Devolução: ${returnStatusLabel(to).toLowerCase()}.`);setConfirm(undefined);}}/>:null}
-  {refunding?<RefundDialog order={order} ret={refunding} partial={!!actions?.partialRefund} busy={busy} onCancel={()=>setRefunding(undefined)} onConfirm={async amount=>{if(await run(()=>refundOrderReturn(workspaceId,refunding.id,amount),"Reembolso solicitado."))setRefunding(undefined);}}/>:null}
+  {refunding?<RefundDialog previous={returns.filter(r=>r.id!==refunding.id&&r.refundStatus==="REFUNDED").flatMap(r=>r.items)} order={order} ret={refunding} partial={!!actions?.partialRefund} busy={busy} onCancel={()=>setRefunding(undefined)} onConfirm={async amount=>{if(await run(()=>refundOrderReturn(workspaceId,refunding.id,amount),"Reembolso solicitado."))setRefunding(undefined);}}/>:null}
  </div>;
 }
 
@@ -111,8 +111,8 @@ function ReceiveForm({ret,itemName,busy,onCancel,onSubmit}:{ret:OrderReturn;item
  </form>;
 }
 
-function RefundDialog({order,ret,partial,busy,onCancel,onConfirm}:{order:CommerceOrder;ret:OrderReturn;partial:boolean;busy:boolean;onCancel:()=>void;onConfirm:(amountCents?:number)=>Promise<void>}){
- const suggested=defaultRefundCents(order.items,ret.items),remaining=Math.max(0,order.totalCents-(order.refundedCents??0));
+function RefundDialog({order,ret,partial,busy,onCancel,onConfirm,previous}:{previous:{orderItemId:string;quantity:number}[];order:CommerceOrder;ret:OrderReturn;partial:boolean;busy:boolean;onCancel:()=>void;onConfirm:(amountCents?:number)=>Promise<void>}){
+ const suggested=defaultRefundCents(order.items,ret.items,previous),remaining=Math.max(0,order.totalCents-(order.refundedCents??0));
  const [text,setText]=useState(currencyInputFromCents(Math.min(suggested,remaining)||suggested));
  const amount=centsFromCurrencyInput(text),invalid=partial&&(!amount||amount>remaining);
  return <ConfirmDialog open variant="danger" busy={busy} confirmDisabled={invalid} title="Reembolsar esta devolução?"

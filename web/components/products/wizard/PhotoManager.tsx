@@ -9,14 +9,17 @@ import {thumbUrl} from "@/lib/media";
 import {cn} from "@/lib/utils";
 
 export const MAX_PHOTOS=30;
+/** Foto escolhida que ainda está sendo reduzida/enviada: aparece na grade com a prévia local. */
+export type PendingPhoto={id:string;preview:string;name:string};
 
 /**
  * Fotos do cadastro: envio múltiplo (arrastar ou escolher, câmera/galeria no celular), ordem, capa,
  * texto alternativo e vínculo com variações — tudo antes de salvar o produto. O vínculo é o mesmo
  * que a combinação usa na etapa de preço: escolher aqui ou lá altera a mesma informação.
  */
-export function PhotoManager({photos,onPhotos,alts,onAlt,upload,uploading,options,onOptions,rows,onRows,disabled}:{photos:string[];onPhotos:(photos:string[])=>void;alts:Record<string,string>;onAlt:(url:string,alt:string)=>void;upload:(files:File[])=>void;uploading:boolean;options:DraftOption[];onOptions:(options:DraftOption[])=>void;rows:DraftRow[];onRows:(rows:DraftRow[])=>void;disabled?:boolean}){
+export function PhotoManager({photos,onPhotos,alts,onAlt,upload,pending=[],options,onOptions,rows,onRows,disabled}:{photos:string[];onPhotos:(photos:string[])=>void;alts:Record<string,string>;onAlt:(url:string,alt:string)=>void;upload:(files:File[])=>void;pending?:PendingPhoto[];options:DraftOption[];onOptions:(options:DraftOption[])=>void;rows:DraftRow[];onRows:(rows:DraftRow[])=>void;disabled?:boolean}){
  const input=useRef<HTMLInputElement>(null);const [dragging,setDragging]=useState<number>(),[over,setOver]=useState(false);
+ const uploading=pending.length>0;
  const usable=options.filter(option=>option.values.length);
  const move=(from:number,to:number)=>{if(to<0||to>=photos.length||from===to)return;const next=[...photos];const [item]=next.splice(from,1);next.splice(to,0,item);onPhotos(next);};
  const remove=(url:string)=>{
@@ -30,12 +33,12 @@ export function PhotoManager({photos,onPhotos,alts,onAlt,upload,uploading,option
   <div onDragOver={event=>{if(event.dataTransfer.types.includes("Files")){event.preventDefault();setOver(true);}}} onDragLeave={()=>setOver(false)} onDrop={event=>{if(!event.dataTransfer.files.length)return;event.preventDefault();setOver(false);pick(event.dataTransfer.files);}}
    className={cn("flex flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed px-4 py-6 text-center transition-colors",over?"border-primary bg-primary/5":"border-border")}>
    {uploading?<Loader2 className="h-6 w-6 animate-spin text-muted-foreground"/>:<ImagePlus className="h-6 w-6 text-muted-foreground"/>}
-   <p className="text-sm font-medium">{uploading?"Enviando fotos...":"Arraste as fotos aqui"}</p>
-   <p className="text-xs text-muted-foreground">JPG, PNG ou WEBP, até 5 MB cada · {photos.length}/{MAX_PHOTOS} fotos</p>
-   <Button type="button" variant="secondary" disabled={disabled||uploading||photos.length>=MAX_PHOTOS} onClick={()=>input.current?.click()}>Escolher fotos</Button>
+   <p className="text-sm font-medium" aria-live="polite">{uploading?`Enviando ${pending.length} foto(s)... você pode continuar o cadastro`:"Arraste as fotos aqui"}</p>
+   <p className="text-xs text-muted-foreground">JPG, PNG ou WEBP · fotos grandes são reduzidas automaticamente · {photos.length+pending.length}/{MAX_PHOTOS} fotos</p>
+   <Button type="button" variant="secondary" disabled={disabled||photos.length+pending.length>=MAX_PHOTOS} onClick={()=>input.current?.click()}>Escolher fotos</Button>
    <input ref={input} type="file" accept="image/jpeg,image/png,image/webp" multiple className="hidden" aria-label="Escolher fotos do produto" onChange={event=>{pick(event.target.files);event.target.value="";}}/>
   </div>
-  {photos.length?<ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4" aria-label="Fotos do produto">
+  {photos.length||uploading?<ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4" aria-label="Fotos do produto">
    {photos.map((url,index)=>{const linked=linksOf(url,usable,rows);return <li key={url} draggable={!disabled} onDragStart={()=>setDragging(index)} onDragOver={event=>{if(dragging!==undefined)event.preventDefault();}} onDrop={event=>{if(dragging===undefined)return;event.preventDefault();move(dragging,index);setDragging(undefined);}} onDragEnd={()=>setDragging(undefined)}
     className={cn("group overflow-hidden rounded-xl border bg-card",index===0?"border-primary ring-1 ring-primary/40":"border-border/70",dragging===index&&"opacity-50")}>
     <div className="relative aspect-square bg-muted/40">
@@ -55,6 +58,14 @@ export function PhotoManager({photos,onPhotos,alts,onAlt,upload,uploading,option
      </div>
     </div>
    </li>;})}
+   {pending.map(item=><li key={item.id} className="overflow-hidden rounded-xl border border-dashed border-border bg-card" aria-label={`Enviando ${item.name}`}>
+    <div className="relative aspect-square bg-muted/40">
+     {/* eslint-disable-next-line @next/next/no-img-element */}
+     <img src={item.preview} alt="" decoding="async" className="h-full w-full object-cover opacity-60"/>
+     <span className="absolute inset-0 flex items-center justify-center"><Loader2 className="h-6 w-6 animate-spin text-foreground"/></span>
+    </div>
+    <p className="truncate p-2 text-xs text-muted-foreground">Enviando...</p>
+   </li>)}
   </ul>:null}
   {photos.length>1?<p className="text-xs text-muted-foreground">Arraste para reordenar (ou use as setas). A primeira foto é a capa.</p>:null}
  </div>;

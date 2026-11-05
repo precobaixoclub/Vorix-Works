@@ -35,7 +35,7 @@ export type OrderAddress={postalCode:string;street:string;number:string;compleme
 export type DeliveryKind="PICKUP"|"FREE"|"FIXED"|"TABLE"|"PROVIDER";
 export type OrderDelivery={optionId:string;kind:DeliveryKind;label:string;priceCents:number;days?:number;provider?:string;requiresAddress:boolean};
 /** `productId` vazio: item de anúncio externo ainda não vinculado a um produto do Vorix (sem baixa de estoque). */
-export type OrderItem={id:string;position:number;productId:string;externalItemId?:string;externalVariationId?:string;variantId?:string;sku?:string;name:string;variantLabel?:string;imageUrl?:string;quantity:number;unitPriceCents:number;totalCents:number;trackStock:boolean;specifications:{label:string;value:string}[]};
+export type OrderItem={pricingSnapshot?:{originalUnitPriceCents:number;appliedUnitPriceCents?:number;unitPriceBeforeLineDiscountCents?:number;originalTotalCents:number;appliedTotalCents:number;discountCents:number;appliedRules:import("./commercial-rules.js").AppliedCommercialRule[]};id:string;position:number;productId:string;externalItemId?:string;externalVariationId?:string;variantId?:string;sku?:string;name:string;variantLabel?:string;imageUrl?:string;quantity:number;unitPriceCents:number;totalCents:number;trackStock:boolean;specifications:{label:string;value:string}[]};
 export type Order={
  customerDisplayName?:string;
  id:string;tenantId:string;workspaceId:string;siteId?:string;number:number;source:OrderSource;status:OrderStatus;paymentStatus:PaymentStatus;shippingStatus:ShippingStatus;stockState:StockState;

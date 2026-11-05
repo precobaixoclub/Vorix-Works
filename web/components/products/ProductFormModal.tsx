@@ -2,9 +2,10 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import useSWR from "swr";
-import { ArrowLeft, ArrowRight, Copy } from "lucide-react";
+import { AlertTriangle, ArrowLeft, ArrowRight, Copy } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/Button";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { Input, MoneyInput, Textarea } from "@/components/Field";
 import { SearchableCombo } from "@/components/SearchableCombo";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
@@ -24,10 +25,11 @@ import { bareUrl, effectiveImage, formatQuantity, optionsFromDetails, quantityFr
 import { listVariants } from "@/features/sales/api";
 import { BILLING_TYPE_LABEL, formatBp } from "@/features/sales/presentation";
 import { formatCurrencyCents } from "@/lib/format";
+import { compressImage, forEachLimited } from "@/lib/image-compress";
 import { thumbUrl } from "@/lib/media";
 import { cn } from "@/lib/utils";
 import { CombinationTable } from "./wizard/CombinationTable";
-import { MAX_PHOTOS, PhotoManager } from "./wizard/PhotoManager";
+import { MAX_PHOTOS, PhotoManager, type PendingPhoto } from "./wizard/PhotoManager";
 import { VariationEditor } from "./wizard/VariationEditor";
 import { Field, SegmentPicker, StepIntro, WizardStepper, type WizardStep } from "./wizard/WizardParts";
 
@@ -84,7 +86,8 @@ export function ProductFormModal({ workspaceId, product, template, canViewCost, 
   const [visited, setVisited] = useState<Set<string>>(() => new Set(editing ? ["info", "details", "variations", "photos", "pricing", "review"] : ["info"]));
   const [errors, setErrors] = useState<string[]>([]);
   const [busy, setBusy] = useState<"draft" | "save">();
-  const [uploading, setUploading] = useState(0);
+  const [pending, setPending] = useState<PendingPhoto[]>([]);
+  const uploading = pending.length;
   const [organizing, setOrganizing] = useState(false);
   const [restorable, setRestorable] = useState<StoredDraft>();
   const [lastStored, setLastStored] = useState<string>();
@@ -93,8 +96,11 @@ export function ProductFormModal({ workspaceId, product, template, canViewCost, 
   const { data: variants, error: variantsError } = useSWR(variantSource?.details?.options.length ? ["product-variants", workspaceId, variantSource.id, variantSource.updatedAt] : null, () => listVariants(variantSource!.id, workspaceId), { revalidateOnFocus: false });
   const rowsLoaded = useRef(!variantSource?.details?.options.length);
   const segment = PRODUCT_SEGMENTS.find((item) => item.id === state.segmentId);
-  const patch = (next: Partial<WizardState>) => { setState((current) => ({ ...current, ...next })); setErrors([]); };
-  const patchDetails = (next: Partial<ProductDetails>) => { setState((current) => ({ ...current, details: { ...current.details, ...next } })); setErrors([]); };
+  // Alterado pelo usuário desde a abertura ou o último salvamento (as combinações carregadas do servidor não contam).
+  const [dirty, setDirty] = useState(false);
+  const [confirmClose, setConfirmClose] = useState(false);
+  const patch = (next: Partial<WizardState>) => { setState((current) => ({ ...current, ...next })); setErrors([]); setDirty(true); };
+  const patchDetails = (next: Partial<ProductDetails>) => { setState((current) => ({ ...current, details: { ...current.details, ...next } })); setErrors([]); setDirty(true); };
 
   // Combinações já salvas entram na tela (a chave inclui `updatedAt`: reabrir depois de salvar nunca usa a lista antiga) com preço, estoque, foto e status (na cópia, sem id nem código).
   useEffect(() => {
@@ -145,7 +151,7 @@ export function ProductFormModal({ workspaceId, product, template, canViewCost, 
       },
       billingType: next.family === "REAL_ESTATE" ? (current.details.realEstate?.purpose === "rent" ? "monthly" : "one_time") : current.billingType,
     }));
-    setErrors([]);
+    setErrors([]); setDirty(true);
   }
 
   /** Problemas de uma etapa; `id` da etapa onde corrigir. */
@@ -157,19 +163,33 @@ export function ProductFormModal({ workspaceId, product, template, canViewCost, 
     return [];
   }
   function go(index: number) { setStepIndex(index); setVisited((current) => new Set([...current, steps[index].id])); setErrors([]); document.getElementById("product-wizard-body")?.scrollTo({ top: 0 }); }
+  /** Leva à Revisão (onde fica o botão de salvar) ou à primeira etapa com pendência. */
+  function goToSave() { for (const [index, item] of steps.entries()) { const problems = item.id === "review" ? [] : problemsOf(item.id); if (problems.length) { go(index); setErrors(problems); return; } } go(steps.length - 1); }
   function next() { const problems = problemsOf(step.id); if (problems.length) { setErrors(problems); return; } go(Math.min(stepIndex + 1, steps.length - 1)); }
 
   async function upload(files: File[]) {
-    const room = MAX_PHOTOS - state.photos.length;
+    const room = MAX_PHOTOS - state.photos.length - pending.length;
     if (room <= 0) { toast.info(`Cada produto pode ter até ${MAX_PHOTOS} fotos.`); return; }
     const list = files.slice(0, room);
     if (files.length > room) toast.info(`Só ${room} foto(s) couberam: o limite é ${MAX_PHOTOS}.`);
-    setUploading(list.length);
-    for (const file of list) {
-      try { const { url } = await uploadProductImage(workspaceId, file); setState((current) => ({ ...current, photos: [...current.photos, url].slice(0, MAX_PHOTOS) })); }
-      catch (cause) { toast.error(`Não foi possível enviar ${file.name}`, { description: message(cause, "") }); }
-      finally { setUploading((count) => Math.max(0, count - 1)); }
-    }
+    // Prévia na hora; cada foto é reduzida no aparelho e enviada em paralelo (3 por vez). As URLs
+    // entram na ordem em que foram escolhidas, assim que as anteriores terminam.
+    const batch = list.map((file) => ({ id: `${Date.now()}-${Math.random().toString(36).slice(2)}`, preview: URL.createObjectURL(file), name: file.name }));
+    setPending((current) => [...current, ...batch]);
+    const results: (string | null | undefined)[] = list.map(() => undefined);
+    let flushed = 0;
+    const flush = () => {
+      const ready: string[] = [];
+      while (flushed < results.length && results[flushed] !== undefined) { const url = results[flushed++]; if (url) ready.push(url); }
+      if (ready.length) { setState((current) => ({ ...current, photos: [...current.photos, ...ready].slice(0, MAX_PHOTOS) })); setDirty(true); }
+    };
+    await forEachLimited(list, 3, async (file, index) => {
+      try { results[index] = (await uploadProductImage(workspaceId, await compressImage(file))).url; }
+      catch (cause) { results[index] = null; toast.error(`Não foi possível enviar ${file.name}`, { description: message(cause, "") }); }
+      flush();
+      setPending((current) => current.filter((item) => item.id !== batch[index].id));
+      URL.revokeObjectURL(batch[index].preview);
+    });
   }
 
   function payload(active: boolean): Omit<CreateProductInput, "workspaceId"> {
@@ -211,6 +231,7 @@ export function ProductFormModal({ workspaceId, product, template, canViewCost, 
       const body = payload(kind === "draft" && !saved ? false : state.active);
       const result = saved ? await updateProduct(saved.id, workspaceId, body) : await createProduct({ workspaceId, ...body });
       dropDraft(draftKey);
+      setDirty(false);
       if (kind === "save") { toast.success(saved ? "Produto atualizado." : "Produto cadastrado."); await onSaved(result); return; }
       // Rascunho no servidor: o cadastro continua aberto, agora editando o produto salvo.
       const fresh = result.details?.options.length ? await listVariants(result.id, workspaceId) : [];
@@ -227,22 +248,36 @@ export function ProductFormModal({ workspaceId, product, template, canViewCost, 
   const saveLabel = editing ? "Salvar alterações" : state.details.siteVisible ? "Publicar produto" : "Salvar produto";
   const cover = state.photos[0];
   const title = saved ? "Editar produto" : template ? "Duplicar produto" : "Cadastrar produto";
+  // Cadastro novo/cópia nunca salvo, ou edição com mudanças pendentes: avisa em destaque e confirma ao sair.
+  const unsaved = canManage && (!saved || dirty);
+  const requestClose = () => { if (unsaved && (dirty || uploading > 0 || Boolean(template && !saved))) setConfirmClose(true); else onClose(); };
+  useEffect(() => {
+    if (!unsaved || (!dirty && !uploading)) return;
+    const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ""; };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [unsaved, dirty, uploading]);
 
   return (
-    <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
+    <Dialog open onOpenChange={(open) => { if (!open) requestClose(); }}>
       <DialogContent className="flex h-dvh max-h-dvh w-screen max-w-none flex-col gap-0 overflow-hidden rounded-none p-0 sm:h-[92vh] sm:max-h-[92vh] sm:w-[calc(100vw-2rem)] sm:max-w-5xl sm:rounded-xl">
         <div className="flex items-start justify-between gap-3 border-b border-border/70 px-4 py-3 pr-12 sm:px-6">
           <div className="min-w-0">
-            <DialogTitle className="truncate text-base font-semibold sm:text-lg">{title}{state.name.trim() ? <span className="font-normal text-muted-foreground"> · {state.name.trim()}</span> : null}</DialogTitle>
+            <DialogTitle className="flex min-w-0 items-center gap-2 text-base font-semibold sm:text-lg"><span className="truncate">{title}{state.name.trim() ? <span className="font-normal text-muted-foreground"> · {state.name.trim()}</span> : null}</span>{unsaved ? <span className="shrink-0 rounded-full bg-warning px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-warning-foreground">Não salvo</span> : null}</DialogTitle>
             <DialogDescription className="text-xs text-muted-foreground" aria-live="polite">{!canManage ? "Somente leitura: seu perfil não altera produtos." : lastStored ? `Rascunho guardado neste aparelho às ${lastStored}` : "O progresso fica guardado neste aparelho."}</DialogDescription>
           </div>
         </div>
+        {unsaved ? <div role="status" className="flex items-start gap-2.5 border-b border-warning/50 bg-warning/15 px-4 py-2.5 text-sm sm:items-center sm:px-6">
+          <AlertTriangle aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0 text-warning sm:mt-0" />
+          <p className="min-w-0 flex-1"><strong className="font-semibold">{saved ? "Há alterações não salvas." : template ? "Esta cópia ainda não foi salva." : "Este produto ainda não foi salvo."}</strong> <span className="text-muted-foreground">{saved ? `Clique em “${saveLabel}” para gravar.` : `Ele só passa a existir no catálogo${state.details.siteVisible ? " e no site" : ""} depois de “${saveLabel}” na etapa Revisão.`}</span></p>
+          {!saved && !last ? <Button type="button" size="sm" variant="secondary" className="shrink-0" onClick={goToSave}>Ir para salvar</Button> : null}
+        </div> : null}
         <WizardStepper steps={steps} current={stepIndex} visited={visited} onSelect={go} />
         <div id="product-wizard-body" className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
           <div className={cn("mx-auto w-full space-y-6 px-4 py-5 sm:px-6 sm:py-6", step.id === "pricing" || step.id === "variations" ? "max-w-4xl" : "max-w-3xl")}>
             {restorable ? <div role="status" className="flex flex-col gap-2 rounded-xl border border-primary/40 bg-primary/5 p-3 text-sm sm:flex-row sm:items-center sm:justify-between">
               <span>Você tem um cadastro não salvo de {new Date(restorable.savedAt).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" })}.</span>
-              <span className="flex gap-2"><Button size="sm" onClick={() => { setState({ ...restorable.state, rows: restorable.state.rows ?? [] }); rowsLoaded.current = true; setRestorable(undefined); }}>Continuar de onde parei</Button><Button size="sm" variant="ghost" onClick={() => { dropDraft(draftKey); setRestorable(undefined); }}>Descartar</Button></span>
+              <span className="flex gap-2"><Button size="sm" onClick={() => { setState({ ...restorable.state, rows: restorable.state.rows ?? [] }); rowsLoaded.current = true; setRestorable(undefined); setDirty(true); }}>Continuar de onde parei</Button><Button size="sm" variant="ghost" onClick={() => { dropDraft(draftKey); setRestorable(undefined); }}>Descartar</Button></span>
             </div> : null}
             {template && !saved && step.id === "info" ? <p className="rounded-lg border border-border/70 bg-muted/30 px-3 py-2 text-sm text-muted-foreground">Cópia de <strong className="text-foreground">{template.name}</strong>. Altere só o que muda; o código é gerado automaticamente e o estoque começa zerado.</p> : null}
             {errors.length ? <div role="alert" className="space-y-1 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">{errors.map((error) => <p key={error}>{error}</p>)}</div> : null}
@@ -262,7 +297,7 @@ export function ProductFormModal({ workspaceId, product, template, canViewCost, 
             </section> : null}
             {step.id === "photos" ? <section className="space-y-5">
               <StepIntro title="Fotos" hint={variationsOn ? "Envie todas as fotos e diga a qual variação cada uma pertence. Não precisa salvar antes." : "A primeira foto é a capa do produto."} />
-              <PhotoManager photos={state.photos} onPhotos={(photos) => patch({ photos })} alts={state.alts} onAlt={(url, alt) => patch({ alts: { ...state.alts, [bareUrl(url)!]: alt } })} upload={(files) => void upload(files)} uploading={uploading > 0} options={activeOptions} onOptions={(options) => patch({ options: state.options.map((option) => options.find((item) => item.id === option.id) ?? option) })} rows={variationsOn ? state.rows : []} onRows={(rows) => patch({ rows })} disabled={!canManage} />
+              <PhotoManager photos={state.photos} onPhotos={(photos) => patch({ photos })} alts={state.alts} onAlt={(url, alt) => patch({ alts: { ...state.alts, [bareUrl(url)!]: alt } })} upload={(files) => void upload(files)} pending={pending} options={activeOptions} onOptions={(options) => patch({ options: state.options.map((option) => options.find((item) => item.id === option.id) ?? option) })} rows={variationsOn ? state.rows : []} onRows={(rows) => patch({ rows })} disabled={!canManage} />
             </section> : null}
             {step.id === "pricing" ? <PricingStep state={state} patch={patch} patchDetails={patchDetails} segment={segment} variationsOn={variationsOn} canViewCost={canViewCost} isManager={isManager} canManage={canManage} canInventory={canInventory} saved={saved} workspaceId={workspaceId} /> : null}
             {step.id === "review" ? <ReviewStep state={state} patch={patch} patchDetails={patchDetails} segment={segment} variationsOn={variationsOn} stockOn={stockOn} saved={saved} workspaceId={workspaceId} onEdit={(id) => go(steps.findIndex((item) => item.id === id))} canManage={canManage} /> : null}
@@ -276,6 +311,7 @@ export function ProductFormModal({ workspaceId, product, template, canViewCost, 
           {!last ? <Button type="button" variant={editing ? "secondary" : "primary"} onClick={next}>Avançar<ArrowRight className="h-4 w-4" /></Button> : null}
           {canManage && (last || editing) ? <Button type="button" loading={busy === "save"} disabled={Boolean(busy) || uploading > 0 || waitingVariants} onClick={() => void save("save")} aria-label={saveLabel}>{editing && !last ? <><span className="sm:hidden">Salvar</span><span className="hidden sm:inline">{saveLabel}</span></> : saveLabel}</Button> : null}
         </footer>
+        <ConfirmDialog open={confirmClose} title={saved ? "Sair sem salvar as alterações?" : template ? "Sair sem salvar a cópia?" : "Sair sem salvar o produto?"} description={uploading > 0 ? "Ainda há fotos sendo enviadas e o cadastro não foi salvo. O que já foi preenchido fica guardado neste aparelho para continuar depois." : saved ? "As alterações ainda não foram gravadas. Elas ficam guardadas neste aparelho para continuar depois." : "O produto ainda não existe no catálogo. O que foi preenchido fica guardado neste aparelho para continuar depois."} confirmLabel="Sair sem salvar" cancelLabel="Continuar cadastro" variant="danger" onCancel={() => setConfirmClose(false)} onConfirm={() => { setConfirmClose(false); onClose(); }} />
         {organizing ? <TaxonomyManager workspaceId={workspaceId} onClose={() => { setOrganizing(false); void refreshMetadata(); }} /> : null}
       </DialogContent>
     </Dialog>

@@ -1,3 +1,4 @@
+import {PostgresCommercialRuleRepository} from "../../../../infrastructure/storage/postgres/postgres-commercial-rule-repository.js";
 import { registerMarketplaceRoutes } from "./marketplaces.route.js";
 import { buildMarketplaceService } from "../../../../infrastructure/marketplaces/build-marketplace-service.js";
 import { marketplaceProvidersFromEnv } from "../../../../infrastructure/marketplaces/marketplace-providers.js";
@@ -551,7 +552,7 @@ export async function registerV1Routes(app: FastifyInstance): Promise<void> {
       // Modo de teste: desligado por padrão; quando ligado, pode ficar restrito a tenants de QA.
       const sandboxTenants = new Set(commerceConfig.sandboxTenantIds ?? []);
       const checkoutBase = { secrets: app.zunoContainer.secretManager, sandboxAllowed: (tenantId: string) => commerceConfig.sandboxPaymentsEnabled && (!sandboxTenants.size || sandboxTenants.has(tenantId)) };
-      const siteEngine = { ...app.zunoContainer.siteEngine, commerceRepository, checkoutStatus: (site: import("../../../../domain/sites/site.model.js").Site, settings: import("../../../../domain/sites/site-commerce.js").SiteCommerceSettings) => siteCheckoutStatus(checkoutBase, site, settings) };
+      const siteEngine = { ...app.zunoContainer.siteEngine, commerceRepository, commercialRules:new PostgresCommercialRuleRepository(identity.pool), checkoutStatus: (site: import("../../../../domain/sites/site.model.js").Site, settings: import("../../../../domain/sites/site-commerce.js").SiteCommerceSettings) => siteCheckoutStatus(checkoutBase, site, settings) };
       await registerSiteRoutes(app, { ...siteEngine, workspaceRepository: app.zunoContainer.workspaceRepository, objectStorage: app.zunoContainer.objectStorage, publicBaseDomain: app.zunoConfig.sitePublicBaseDomain, siteLead });
       await registerSiteCommerceRoutes(app, {
         ...siteEngine,

@@ -7,7 +7,7 @@ import type {CommerceOrderRepositoryPort} from "../ports/commerce-ports.js";
 import {createContact,type ContactUseCaseDeps} from "../crm/contact-use-cases.js";
 import {createDeal,type DealUseCaseDeps} from "../crm/deal-use-cases.js";
 import {ensureDefaultPipeline,type PipelineUseCaseDeps} from "../crm/pipeline-use-cases.js";
-import {addDealItem,loseDeal,reopenDeal,winDeal} from "../sales/deal-commercial-use-cases.js";
+import {updateDealCommercialTerms,addDealItem,loseDeal,reopenDeal,winDeal} from "../sales/deal-commercial-use-cases.js";
 import type {SalesEngineDeps} from "../sales/sales-context.js";
 import {listCloseReasons} from "../sales/sales-config-use-cases.js";
 import type {Order} from "../../domain/commerce/order.model.js";
@@ -42,6 +42,8 @@ export async function createWonOpportunityForOrder(deps:OrderCrmDeps,order:Order
   catch{await addDealItem(deps.sales,actor,{workspaceId:order.workspaceId,dealId:deal.id,name:`${item.name}${item.variantLabel?` (${item.variantLabel})`:""}`,listPriceCents:item.unitPriceCents,quantity:item.quantity});}
  }
  if(order.shippingCents>0)await addDealItem(deps.sales,actor,{workspaceId:order.workspaceId,dealId:deal.id,name:`Frete — ${order.delivery.label}`,listPriceCents:order.shippingCents,quantity:1});
+ const residualDiscount=order.items.reduce((sum,item)=>sum+Math.max(0,item.unitPriceCents*item.quantity-item.totalCents),0);
+ if(residualDiscount)await updateDealCommercialTerms(deps.sales,actor,{workspaceId:order.workspaceId,dealId:deal.id,discountCents:residualDiscount});
  await winDeal(deps.sales,actor,{workspaceId:order.workspaceId,dealId:deal.id,finalValueCents:order.totalCents,wonReason:"Compra na loja online",source:"automation",settledSale:true});
  return deal.id;
 }

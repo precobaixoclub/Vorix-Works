@@ -1,3 +1,4 @@
+import {ruleVersion} from "../../../application/commerce/commercial-rule-use-cases.js";
 import {canonicalContactSql} from "./postgres-canonical-contact.js";
 import {contactLabel} from "../../../domain/crm/contact-presentation.js";
 import type {Pool,PoolClient} from "pg";
@@ -15,7 +16,7 @@ function mapOrder(row:Row,items:Row[]):Order{
   reservationExpiresAt:iso(row.reservation_expires_at),cancelReason:row.cancel_reason??undefined,createdAt:iso(row.created_at)!,updatedAt:iso(row.updated_at)!,paidAt:iso(row.paid_at),cancelledAt:iso(row.cancelled_at),
   connectionId:row.connection_id??undefined,externalOrderId:row.external_order_id??undefined,externalStatus:row.external_status??undefined,externalUpdatedAt:iso(row.external_updated_at),externalData:row.external_data??{},
   refundedCents:num(row.refunded_cents),shippedAt:iso(row.shipped_at),deliveredAt:iso(row.delivered_at),
-  items:items.filter(item=>item.order_id===row.id).sort((a,b)=>a.position-b.position).map(item=>({id:item.id,position:item.position,productId:item.product_id??"",externalItemId:item.external_item_id??undefined,externalVariationId:item.external_variation_id??undefined,variantId:item.variant_id??undefined,sku:item.sku??undefined,name:item.name,variantLabel:item.variant_label??undefined,imageUrl:item.image_url??undefined,quantity:item.quantity,unitPriceCents:num(item.unit_price_cents),totalCents:num(item.total_cents),trackStock:item.track_stock,specifications:item.specifications??[]}))};
+  items:items.filter(item=>item.order_id===row.id).sort((a,b)=>a.position-b.position).map(item=>({id:item.id,position:item.position,productId:item.product_id??"",externalItemId:item.external_item_id??undefined,externalVariationId:item.external_variation_id??undefined,variantId:item.variant_id??undefined,sku:item.sku??undefined,name:item.name,variantLabel:item.variant_label??undefined,imageUrl:item.image_url??undefined,quantity:item.quantity,unitPriceCents:num(item.unit_price_cents),totalCents:num(item.total_cents),pricingSnapshot:item.pricing_snapshot??undefined,trackStock:item.track_stock,specifications:item.specifications??[]}))};
 }
 const mapPayment=(row:Row):Payment=>({id:row.id,orderId:row.order_id,provider:row.provider,method:row.method as PaymentMethod,status:row.status as PaymentStatus,amountCents:num(row.amount_cents),refundedCents:num(row.refunded_cents),currency:row.currency,providerPaymentId:row.provider_payment_id??undefined,instructions:(row.instructions??{}) as PaymentInstructions,failureReason:row.failure_reason??undefined,createdAt:iso(row.created_at)!,approvedAt:iso(row.approved_at),refundedAt:iso(row.refunded_at)});
 const mapEvent=(row:Row):OrderEvent=>({id:row.id,orderId:row.order_id,type:row.type,fromStatus:row.from_status??undefined,toStatus:row.to_status??undefined,actorType:row.actor_type,actorId:row.actor_id??undefined,data:row.data??{},createdAt:iso(row.created_at)!});
@@ -37,13 +38,18 @@ export class PostgresCommerceOrderRepository implements CommerceOrderRepositoryP
    const previous=await client.query("select id from commerce_orders where site_id=$1 and request_key=$2",[input.siteId,input.requestKey]);
    if(previous.rowCount){await client.query("commit");result={id:previous.rows[0].id,created:false};}
    else{
+   if(input.commercialRuleVersion!==undefined){
+    await client.query("select pg_advisory_xact_lock(hashtext($1))",[`commerce-rules:${input.siteId}`]);
+    const current=(await client.query("select id,revision,definition from commerce_rules where tenant_id=$1 and workspace_id=$2 and site_id=$3",[input.tenantId,input.workspaceId,input.siteId])).rows;
+    if(ruleVersion(current.map(row=>({...row.definition,id:row.id,revision:row.revision})),new Date())!==input.commercialRuleVersion)throw Error("SITE_VALIDATION: as regras comerciais mudaram. Revise os valores antes de finalizar.");
+   }
    const {rows:[counter]}=await client.query("insert into commerce_order_counters(workspace_id,last_number) values($1,1) on conflict(workspace_id) do update set last_number=commerce_order_counters.last_number+1 returning last_number",[input.workspaceId]);
    const id="order-"+randomUUID();
    await client.query(`insert into commerce_orders(id,tenant_id,workspace_id,site_id,number,public_token_hash,source,status,payment_status,shipping_status,stock_state,customer,shipping_address,delivery,subtotal_cents,discount_cents,shipping_cents,total_cents,currency,cart_id,request_key,anonymous_session_id,utm,reservation_expires_at)
     values($1,$2,$3,$4,$5,$6,'SITE','PENDING','PENDING',$7,'NONE',$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)`,
     [id,input.tenantId,input.workspaceId,input.siteId,counter.last_number,input.publicTokenHash,input.delivery.requiresAddress?"PENDING":"NOT_REQUIRED",JSON.stringify(input.customer),input.shippingAddress?JSON.stringify(input.shippingAddress):null,JSON.stringify(input.delivery),input.subtotalCents,input.discountCents,input.shippingCents,input.totalCents,input.currency,input.cartId??null,input.requestKey,input.anonymousSessionId??null,JSON.stringify(input.utm),input.reservationExpiresAt]);
-   for(const item of input.items)await client.query("insert into commerce_order_items(id,order_id,position,product_id,variant_id,sku,name,variant_label,image_url,quantity,unit_price_cents,total_cents,track_stock,specifications) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)",
-    ["order-item-"+randomUUID(),id,item.position,item.productId,item.variantId??null,item.sku??null,item.name,item.variantLabel??null,item.imageUrl??null,item.quantity,item.unitPriceCents,item.totalCents,item.trackStock,JSON.stringify(item.specifications)]);
+   for(const item of input.items)await client.query("insert into commerce_order_items(id,order_id,position,product_id,variant_id,sku,name,variant_label,image_url,quantity,unit_price_cents,total_cents,track_stock,specifications,pricing_snapshot) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)",
+    ["order-item-"+randomUUID(),id,item.position,item.productId,item.variantId??null,item.sku??null,item.name,item.variantLabel??null,item.imageUrl??null,item.quantity,item.unitPriceCents,item.totalCents,item.trackStock,JSON.stringify(item.specifications),item.pricingSnapshot?JSON.stringify(item.pricingSnapshot):null]);
    await insertEvent(client,id,{type:"order_created",toStatus:"PENDING",actorType:"customer",data:{totalCents:input.totalCents,items:input.items.length}});
    await client.query("commit");
    result={id,created:true};

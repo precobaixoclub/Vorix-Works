@@ -11,9 +11,10 @@ const intent=(row:Row):SalesIntent=>({id:row.id,tenantId:row.tenant_id,workspace
  utm:Object.fromEntries(Object.entries({source:row.utm_source,medium:row.utm_medium,campaign:row.utm_campaign,content:row.utm_content,term:row.utm_term}).filter(([,value])=>value!==null&&value!==undefined)),
  anonymousSessionId:row.anonymous_session_id??undefined,clickCount:Number(row.click_count),contactId:row.contact_id??undefined,conversationId:row.conversation_id??undefined,attendanceId:row.attendance_id??undefined,dealId:row.deal_id??undefined,conversionError:row.conversion_error??undefined,
  createdAt:iso(row.created_at)!,expiresAt:iso(row.expires_at)!,convertedAt:iso(row.converted_at)});
-const cart=(row:Row):SiteCart=>({id:row.id,tenantId:row.tenant_id,workspaceId:row.workspace_id,siteId:row.site_id,status:row.status,salesIntentId:row.sales_intent_id??undefined,expiresAt:iso(row.expires_at)!,updatedAt:iso(row.updated_at)!});
+const cart=(row:Row):SiteCart=>({couponCode:row.coupon_code??undefined,id:row.id,tenantId:row.tenant_id,workspaceId:row.workspace_id,siteId:row.site_id,status:row.status,salesIntentId:row.sales_intent_id??undefined,expiresAt:iso(row.expires_at)!,updatedAt:iso(row.updated_at)!});
 export class PostgresSiteCommerceRepository implements SiteCommerceRepositoryPort{
  constructor(private readonly pool:Pool){}
+ async setCartCoupon(cartId:string,code:string|undefined){await this.pool.query("update site_carts set coupon_code=$2,updated_at=now() where id=$1 and status='ACTIVE'",[cartId,code??null]);}
  async getSettings(siteId:string){const {rows}=await this.pool.query("select settings from site_commerce_settings where site_id=$1",[siteId]);return rows[0]?siteCommerceSettingsSchema.parse(rows[0].settings):undefined;}
  async saveSettings(input:{siteId:string;tenantId:string;workspaceId:string;settings:SiteCommerceSettings;actorUserId:string}){
   await this.pool.query("insert into site_commerce_settings(site_id,tenant_id,workspace_id,settings,updated_by_user_id) values($1,$2,$3,$4,$5) on conflict(site_id) do update set settings=excluded.settings,updated_by_user_id=excluded.updated_by_user_id,updated_at=now()",[input.siteId,input.tenantId,input.workspaceId,JSON.stringify(input.settings),input.actorUserId]);

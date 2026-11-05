@@ -1,7 +1,7 @@
 // Servidor LOCAL de QA: banco PGlite efêmero, JWT normal, dados .invalid e nenhuma integração externa.
 import {join} from "node:path";
 import {tmpdir} from "node:os";
-import {mkdtemp,mkdir,writeFile} from "node:fs/promises";
+import {mkdtemp,mkdir,writeFile,readFile} from "node:fs/promises";
 import {randomUUID} from "node:crypto";
 import pg from "pg";
 import {startTestPostgres} from "../helpers/pglite-test-db.mjs";
@@ -26,7 +26,7 @@ try{
  await applyMigrations(db.pool,join(process.cwd(),"db/migrations"));
  app=await buildApp({config:loadApiConfig({...(process.argv.includes("--site-commerce")?{CONVERSATIONS_MODULE_ENABLED:"true",COMMERCE_SANDBOX_PAYMENTS_ENABLED:"true"}:{}),AUTH_MODE:"jwt",JWT_SECRET:"public-fixture-only-product-site-jwt-key",DATABASE_URL:db.connectionString,PERSISTENCE_DRIVER:"postgres",BILLING_PROVIDER:"sandbox",API_CORS_ORIGIN:webOrigin,COOKIE_SECURE:"false",ZUNO_LOG_LEVEL:"silent",OPERATIONAL_RATE_LIMIT_DEFAULT:"10000",AI_GATEWAY_ENABLED:"false",OBJECT_STORAGE_ENABLED:"true",OBJECT_STORAGE_DRIVER:"local",OBJECT_STORAGE_LOCAL_DIR:root,OBJECT_STORAGE_PUBLIC_BASE_URL:`http://127.0.0.1:${port}/uploads`,MEETINGS_REAL_RECORDING_ENABLED:"false",SITE_PUBLIC_BASE_DOMAIN:"fixture.example.com"})});
  const tenantId="tenant-site-browser-"+randomUUID(),email="owner@product-site-fixture.invalid",password="Fixture-only-product-site-2026!";
- const info={fixtureOnly:true,database:realPg?"disposable-postgresql":"ephemeral-pglite",email,password,tenantId,workspaceId:"",slug:"product-site-fixture",productId:"",variantId:"",vehicleId:"",generalId:"",siteId:""};
+ const info={fixtureOnly:true,database:realPg?"disposable-postgresql":"ephemeral-pglite",email,password,tenantId,workspaceId:"",slug:process.argv.includes("--commercial-rules")?"bambilu-kids":"product-site-fixture",productId:"",variantId:"",vehicleId:"",generalId:"",siteId:""};
  app.addHook("onError",async(request,_reply,error)=>{console.error("FIXTURE_API_ERROR",request.method,request.url.split("?")[0],error.message);});
  app.get("/fixture-only/scope",async()=>info);
   app.post("/fixture-only/whatsapp-inbound",async request=>{
@@ -66,8 +66,8 @@ try{
  const category=await api("POST","/v1/product-metadata/categories"+ws,{name:"Vestuário",slug:"vestuario",active:true,siteVisible:true,position:0});
  const png=Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAQAAAAECAYAAACp8Z5+AAAACXBIWXMAAAPoAAAD6AG1e1JrAAAAEklEQVQImWNYtfvMf2TMQLoAAL4eMwFtMcU2AAAAAElFTkSuQmCC","base64");
  const uploaded=await app.zunoContainer.objectStorage.put({key:`assets/${tenantId}/${workspace.id}/products/fixture-product.png`,body:png,contentType:"image/png"});
- const create=async(input)=>api("POST","/v1/products",{workspaceId:workspace.id,name:"Fixture",priceCents:10000,costCents:4000,minimumPriceCents:8000,details:defaultProductDetails(),...input});
- const general=await create({name:"Pulverizador de fixture",imageUrls:[uploaded.url],details:{...defaultProductDetails(),type:"GENERAL",siteVisible:true,slug:"pulverizador-fixture",...(process.argv.includes("--site-commerce")?{saleMode:"WHATSAPP_CART"}:{})}});info.generalId=general.id;
+ const create=async(input)=>api("POST","/v1/products",{workspaceId:workspace.id,name:"Fixture",priceCents:process.argv.includes("--commercial-rules")?6000:10000,costCents:4000,minimumPriceCents:process.argv.includes("--commercial-rules")?4000:8000,details:defaultProductDetails(),...input});
+ const general=await create({name:"Pulverizador de fixture",imageUrls:[uploaded.url],details:{...defaultProductDetails(),type:"GENERAL",siteVisible:true,slug:"pulverizador-fixture",...(process.argv.includes("--site-commerce")&&!process.argv.includes("--commercial-rules")?{saleMode:"WHATSAPP_CART"}:{})}});info.generalId=general.id;
  const apparel=await create({name:"Camiseta de fixture",code:"CAM-FIX",trackStock:true,categoryId:category.id,imageUrls:[uploaded.url],details:{...defaultProductDetails(),type:"APPAREL",siteVisible:true,slug:"camiseta-fixture",apparel:{material:"Algodão",collection:"Coleção fixture"},options:[{key:"size",name:"Tamanho",values:["P","M"]},{key:"color",name:"Cor",values:["Preto","Branco"]}]}});info.productId=apparel.id;
  const variants=await api("POST",`/v1/products/${apparel.id}/variant-grid`,{workspaceId:workspace.id});info.variantId=variants[0].id;
  for(const variant of variants)await api("POST",`/v1/products/${apparel.id}/inventory${ws}`,{variantId:variant.id,kind:"IN",quantity:variant.optionValues.size==="P"?4:8,operationKey:randomUUID()});
@@ -90,6 +90,11 @@ try{
   const rental=await create({name:"Apartamento de aluguel fixture",priceCents:250000,imageUrls:[uploaded.url],details:{...defaultProductDetails(),...base,slug:"apartamento-aluguel-fixture",realEstate:{...property,kind:"apartment",purpose:"rent",usableArea:70,bedrooms:2,parkingSpaces:1,condominiumCents:45000,propertyTaxCents:120000,propertyTaxPeriod:"yearly",furnishing:"furnished"}}});info.rentalId=rental.id;
   fixtureContent=siteContentSchema.parse({...fixtureContent,blocks:fixtureContent.blocks.map(block=>block.type==="catalog"?{...block,productIds:[]}:block)});
   info.productVerticalsFixture=true;
+ }
+ if(process.argv.includes("--commercial-rules")){
+  const definitions=JSON.parse(await readFile(new URL("../../web/features/sites/template-registry.generated.json",import.meta.url),"utf8"));
+  fixtureTheme=siteThemeSchema.parse(definitions.find(template=>template.id==="nexus").defaultTheme);
+  fixtureContent=siteContentSchema.parse({...fixtureContent,name:"Bambilu Kids (validação local)"});
  }
  const site=await api("POST","/v1/sites"+ws,{slug:info.slug,draft:{content:fixtureContent,theme:fixtureTheme}});info.siteId=site.id;
  if(info.siteBuilderFixture)info.initialSiteSnapshot=site.draft;
@@ -117,6 +122,11 @@ try{
   const lead={commerceRepository:new PostgresSiteCommerceRepository(pool),siteRepository:id.siteRepository,crm:{dealRepository:id.dealRepository,pipelineRepository:new PostgresPipelineRepository(pool),pipelineStageRepository:new PostgresPipelineStageRepository(pool),timelineEventRepository:id.timelineEventRepository,sales},sales,inbox,crmBridge:{inboxContactRepository:inbox.contactRepository,inboxMessageRepository:inbox.messageRepository,contact:{contactRepository:id.contactRepository,contactIdentityRepository:new PostgresContactIdentityRepository(pool),timelineEventRepository:id.timelineEventRepository}}};
   commerceFixture={inbox,connection,lead,id,pool,workspaceId:workspace.id};
   info.siteCommerceFixture=true;
+ }
+ if(process.argv.includes("--commercial-rules")){
+  const initial=JSON.parse(await readFile(new URL("../../config/commercial-rules/bambilu-kids-progressive.json",import.meta.url),"utf8"));
+  const saved=await api("POST",`/v1/sites/${site.id}/commercial-rules${ws}`,{definition:initial.definition});
+  info.commercialRulesFixture=true;info.commercialRuleId=saved.id;info.initialRule=initial.definition;
  }
  await mkdir("tmp/product-site-browser",{recursive:true});await writeFile("tmp/product-site-browser/fixture.json",JSON.stringify(info,null,2));
  await app.listen({host:"127.0.0.1",port});console.log(`FIXTURE_READY http://127.0.0.1:${port} — banco efêmero; somente dados fictícios .invalid`);

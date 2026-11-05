@@ -65,8 +65,13 @@ export async function receiveReturn(deps:CheckoutDeps,scope:OrderAdminScope,inpu
 }
 
 /** Valor padrão do estorno: preço unitário × quantidade devolvida (frete fica de fora). */
-export function defaultReturnRefundCents(order:Order,ret:OrderReturn):number{
- return ret.items.reduce((sum,line)=>sum+(order.items.find(i=>i.id===line.orderItemId)?.unitPriceCents??0)*line.quantity,0);
+export function defaultReturnRefundCents(order:Order,ret:OrderReturn,previous:OrderReturn[]=[]):number{
+ return ret.items.reduce((sum,line)=>{
+  const item=order.items.find(i=>i.id===line.orderItemId);if(!item)return sum;
+  if(!item.pricingSnapshot)return sum+item.unitPriceCents*line.quantity;
+  const before=previous.filter(r=>r.id!==ret.id&&r.refundStatus==="REFUNDED").flatMap(r=>r.items).filter(i=>i.orderItemId===line.orderItemId).reduce((n,i)=>n+i.quantity,0);
+  return sum+Math.floor(item.totalCents*Math.min(item.quantity,before+line.quantity)/item.quantity)-Math.floor(item.totalCents*Math.min(item.quantity,before)/item.quantity);
+ },0);
 }
 
 export async function refundReturn(deps:CheckoutDeps,scope:OrderAdminScope,input:{returnId:string;amountCents?:number}){
@@ -77,7 +82,7 @@ export async function refundReturn(deps:CheckoutDeps,scope:OrderAdminScope,input
  const payment=(await deps.orders.payments(order.id)).find(p=>(p.status==="APPROVED"||p.status==="REFUNDED")&&p.refundedCents<p.amountCents&&p.providerPaymentId);
  if(!payment)throw Error("ORDER_RETURN_VALIDATION: não há pagamento aprovado com saldo para estornar.");
  const remaining=payment.amountCents-payment.refundedCents;
- const amount=input.amountCents??Math.min(remaining,defaultReturnRefundCents(order,ret));
+ const amount=input.amountCents??Math.min(remaining,defaultReturnRefundCents(order,ret,await deps.orders.returns(order.id)));
  if(!Number.isInteger(amount)||amount<=0||amount>remaining)throw Error(`ORDER_RETURN_VALIDATION: o estorno deve ficar entre R$ 0,01 e ${(remaining/100).toLocaleString("pt-BR",{style:"currency",currency:order.currency})}.`);
  const {provider,credentials}=await paymentProviderFor(deps,{tenantId:order.tenantId,id:order.siteId??""},payment.provider);
  if(amount<remaining&&!provider.partialRefund){

@@ -1,0 +1,67 @@
+{
+  "model": "studio",
+  "metrics": [
+    {
+      "surface": "catalog",
+      "width": 360,
+      "overflow": false
+    },
+    {
+      "surface": "catalog",
+      "width": 390,
+      "overflow": false
+    },
+    {
+      "surface": "catalog",
+      "width": 430,
+      "overflow": false
+    },
+    {
+      "surface": "catalog",
+      "width": 768,
+      "overflow": false
+    },
+    {
+      "surface": "catalog",
+      "width": 1024,
+      "overflow": false
+    },
+    {
+      "surface": "catalog",
+      "width": 1440,
+      "overflow": false
+    },
+    {
+      "surface": "detail",
+      "width": 360,
+      "overflow": false
+    },
+    {
+      "surface": "detail",
+      "width": 390,
+      "overflow": false
+    },
+    {
+      "surface": "detail",
+      "width": 430,
+      "overflow": false
+    },
+    {
+      "surface": "detail",
+      "width": 768,
+      "overflow": false
+    },
+    {
+      "surface": "detail",
+      "width": 1024,
+      "overflow": false
+    },
+    {
+      "surface": "detail",
+      "width": 1440,
+      "overflow": false
+    }
+  ],
+  "pageErrors": [],
+  "commercialMutations": []
+}

@@ -26,7 +26,7 @@ export type ShippingProviderPort={
 };
 
 // ------------------------------------------------------------------ Pedidos
-export type CreateOrderInput={tenantId:string;workspaceId:string;siteId:string;publicTokenHash:string;requestKey:string;customer:OrderCustomer;shippingAddress?:OrderAddress;delivery:OrderDelivery;
+export type CreateOrderInput={commercialRuleVersion?:string;tenantId:string;workspaceId:string;siteId:string;publicTokenHash:string;requestKey:string;customer:OrderCustomer;shippingAddress?:OrderAddress;delivery:OrderDelivery;
  subtotalCents:number;discountCents:number;shippingCents:number;totalCents:number;currency:string;cartId?:string;anonymousSessionId?:string;utm:Record<string,string>;reservationExpiresAt:string;
  items:Omit<OrderItem,"id">[]};
 export type OrderPatch={status?:OrderStatus;paymentStatus?:PaymentStatus;shippingStatus?:ShippingStatus;stockState?:StockState;contactId?:string;crmDealId?:string;salesIntentId?:string;cancelReason?:string;paidAt?:string;cancelledAt?:string;reservationExpiresAt?:string|null;

@@ -17,6 +17,7 @@ COPY package.json package-lock.json tsconfig.json ./
 COPY src ./src
 COPY scripts ./scripts
 COPY db ./db
+COPY config ./config
 RUN NODE_OPTIONS=--max-old-space-size=2048 npm run build
 
 FROM node:20-slim AS runtime
@@ -30,6 +31,7 @@ RUN npm ci --omit=dev && npm cache clean --force
 COPY --from=build /app/dist ./dist
 COPY --from=build /app/scripts ./scripts
 COPY --from=build /app/db ./db
+COPY --from=build /app/config ./config
 # FFmpeg oficial do runtime Linux (drawtext com harfbuzz, versão fixa + sha256) — o binário Linux do
 # pacote `ffmpeg-static` não tem o filtro drawtext que o renderizador de vídeo usa.
 RUN sh ./scripts/install-ffmpeg-linux.sh /opt/vorix/ffmpeg

@@ -1,3 +1,5 @@
+import {evaluateCommercialRules,pricingFingerprint,pricingLine} from "../commerce/commercial-rule-use-cases.js";
+import type {AppliedCommercialRule,RuleProgress} from "../../domain/commerce/commercial-rules.js";
 import {createHash,randomBytes} from "node:crypto";
 import type {Site,SiteSnapshot} from "../../domain/sites/site.model.js";
 import type {Product} from "../../domain/crm/crm.model.js";
@@ -42,7 +44,7 @@ export function availableQuantity(resolved:Resolved){return resolved.variant?res
 export function itemSnapshot(resolved:Resolved,quantity:number):SalesIntentItem{
  const {product,presented,variant}=resolved;
  const specifications=Object.entries(presented.attributes).slice(0,12).map(([key,value])=>({label:presented.attributeLabels[key]??key,value:typeof value==="boolean"?(value?"Sim":"Não"):String(value)}));
- return {productId:product.id,variantId:variant?.id,name:product.name,variantLabel:variantLabel(resolved),sku:variant?.sku??product.code,imageUrl:canonicalImage(product),quantity,unitPriceCents:variant?.priceCents??product.priceCents,currency:product.currency,...(specifications.length?{specifications}:{})};
+ return {productId:product.id,variantId:variant?.id,name:product.name,variantLabel:variantLabel(resolved),sku:variant?.sku??product.code,imageUrl:canonicalImage(product),quantity,unitPriceCents:variant?.originalPriceCents??variant?.priceCents??product.priceCents,currency:product.currency,...(specifications.length?{specifications}:{})};
 }
 /** Guarda a URL canônica (sem assinatura) para a imagem continuar válida no histórico. */
 function canonicalImage(product:Product){return product.imageUrls[0];}
@@ -66,8 +68,11 @@ export async function startProductWhatsapp(deps:SiteCommerceDeps,input:{lookup:P
  const resolved=await publicProduct(deps,context,input.productId,input.variantId);
  if(!number||!resolved.presented.commerce.allowedActions.includes("whatsapp"))throw Error("SITE_VALIDATION: este produto não está disponível para atendimento pelo WhatsApp.");
  const quantity=Math.max(1,Math.min(999,Math.trunc(input.quantity??1)));
- const item=itemSnapshot(resolved,quantity);const utm=cleanUtm(input.utm),pageUrl=safePageUrl(input.pageUrl);
- const {intent,created}=await createIntent(deps,{tenantId:context.site.tenantId,workspaceId:context.site.workspaceId,siteId:context.site.id,type:"PRODUCT_WHATSAPP",productId:item.productId,variantId:item.variantId,quantity,snapshot:{items:[item],subtotalCents:item.unitPriceCents*quantity,currency:item.currency,siteName:context.snapshot.content.name},pageUrl,utm,anonymousSessionId:input.sessionId,requestKey:input.requestKey});
+ const item=itemSnapshot(resolved,quantity);
+ const pricing=evaluateCommercialRules({lines:[pricingLine(resolved.product,resolved.variant?.id,quantity,item.unitPriceCents,context.metadata.categories)],rules:context.commerce.rules??[],channel:"WHATSAPP",now:now(deps)}).items[0];
+ Object.assign(item,{unitPriceCents:pricing.unitPriceCents,totalCents:pricing.totalCents,pricing:{originalUnitPriceCents:pricing.originalUnitPriceCents,discountCents:pricing.discountCents,appliedRules:pricing.appliedRules}});
+ const utm=cleanUtm(input.utm),pageUrl=safePageUrl(input.pageUrl);
+ const {intent,created}=await createIntent(deps,{tenantId:context.site.tenantId,workspaceId:context.site.workspaceId,siteId:context.site.id,type:"PRODUCT_WHATSAPP",productId:item.productId,variantId:item.variantId,quantity,snapshot:{items:[item],subtotalCents:item.totalCents??item.unitPriceCents*quantity,currency:item.currency,siteName:context.snapshot.content.name},pageUrl,utm,anonymousSessionId:input.sessionId,requestKey:input.requestKey});
  const base={tenantId:intent.tenantId,workspaceId:intent.workspaceId,siteId:intent.siteId,anonymousSessionId:input.sessionId,productId:item.productId,variantId:item.variantId,salesIntentId:intent.id,pageUrl,utm};
  // Duplo clique/retry devolve a mesma intenção sem contar o evento de novo.
  if(created){emit(deps,{...base,type:"PRODUCT_WHATSAPP_CLICK"});emit(deps,{...base,type:"SALES_INTENT_CREATED"});deps.log?.("SalesIntentCreated",{intentId:intent.id,type:intent.type,siteId:intent.siteId});}
@@ -100,7 +105,7 @@ export async function activeCart(deps:SiteCommerceDeps,context:PublicContext,tok
  if(!token)return undefined;const cart=await deps.commerceRepository.getCart({siteId:context.site.id,tokenHash:hashToken(token)});
  return cart&&cart.status==="ACTIVE"&&Date.parse(cart.expiresAt)>now(deps).getTime()?cart:undefined;
 }
-export async function presentCart(deps:SiteCommerceDeps,context:PublicContext,cart:{id:string}|undefined,token:string|undefined){
+export async function presentCart(deps:SiteCommerceDeps,context:PublicContext,cart:{id:string;couponCode?:string}|undefined,token:string|undefined){
  const items=cart?await deps.commerceRepository.listCartItems(cart.id):[];
  const lines=await Promise.all(items.map(async item=>{
   try{
@@ -114,12 +119,33 @@ export async function presentCart(deps:SiteCommerceDeps,context:PublicContext,ca
    return {productId:item.productId,variantId:item.variantId,quantity:item.quantity,name:item.productSnapshot.name,variantLabel:item.productSnapshot.variantLabel,sku:item.productSnapshot.sku,slug:undefined,imageUrl:undefined,unitPriceCents:item.productSnapshot.unitPriceCents,currency:item.productSnapshot.currency,availableQuantity:0,available:false,channel:"whatsapp" as const,resolved:undefined};
   }
  }));
- const valid=lines.filter(line=>line.available);const currency=valid[0]?.currency??lines[0]?.currency??"BRL";
- return {token,lines,view:{items:lines.map(({resolved:_resolved,...line})=>line),subtotalCents:valid.reduce((sum,line)=>sum+line.unitPriceCents*line.quantity,0),currency,itemCount:valid.reduce((sum,line)=>sum+line.quantity,0)}};
+ const rules=context.commerce.rules??[];
+ const raw=lines.map(line=>({...line,originalUnitPriceCents:line.unitPriceCents,totalCents:line.unitPriceCents*line.quantity,discountCents:0,appliedRules:[] as AppliedCommercialRule[]}));
+ const progress:RuleProgress[]=[],appliedRules:AppliedCommercialRule[]=[];
+ let couponStatus:import("../../domain/commerce/commercial-rules.js").CommercialPricing["couponStatus"];
+ const groups=[...new Set(raw.filter(line=>line.available).map(line=>JSON.stringify([line.channel,line.currency])))];
+ for(const group of groups){
+  const eligible=raw.filter(line=>line.available&&JSON.stringify([line.channel,line.currency])===group);
+  const pricing=evaluateCommercialRules({lines:eligible.map(line=>pricingLine(line.resolved!.product,line.variantId,line.quantity,line.originalUnitPriceCents,context.metadata.categories)),rules,channel:eligible[0].channel==="checkout"?"CHECKOUT":"WHATSAPP",now:now(deps),couponCode:cart?.couponCode});
+  for(const item of pricing.items){const line=raw.find(line=>JSON.stringify([line.productId,line.variantId??""])===item.key)!;Object.assign(line,{unitPriceCents:item.unitPriceCents,totalCents:item.totalCents,discountCents:item.discountCents,appliedRules:item.appliedRules});}
+  progress.push(...pricing.progress);appliedRules.push(...pricing.appliedRules);couponStatus=pricing.couponStatus;
+ }
+ const valid=raw.filter(line=>line.available),currency=valid[0]?.currency??raw[0]?.currency??"BRL";
+ const originalSubtotalCents=valid.reduce((sum,line)=>sum+line.originalUnitPriceCents*line.quantity,0),subtotalCents=valid.reduce((sum,line)=>sum+line.totalCents,0);
+ const pricingKey=pricingFingerprint(valid.map(line=>({...pricingLine(line.resolved!.product,line.variantId,line.quantity,line.originalUnitPriceCents,context.metadata.categories),totalCents:line.totalCents,discountCents:line.discountCents,appliedRules:line.appliedRules})),rules,cart?.couponCode);
+ return {token,lines:raw,view:{items:raw.map(({resolved:_resolved,...line})=>line),subtotalCents,originalSubtotalCents,discountCents:originalSubtotalCents-subtotalCents,currency,itemCount:valid.reduce((sum,line)=>sum+line.quantity,0),progress:progress.slice(0,3),appliedRules,couponCode:cart?.couponCode,couponStatus,pricingKey}};
 }
 export async function getPublicCart(deps:SiteCommerceDeps,input:{lookup:PublicLookup;token?:string}){
  const context=await publicContext(deps,input.lookup);const cart=await activeCart(deps,context,input.token);
  return (await presentCart(deps,context,cart,cart?input.token:undefined)).view;
+}
+export async function setPublicCartCoupon(deps:SiteCommerceDeps,input:{lookup:PublicLookup;token:string;code?:string}){
+ const context=await publicContext(deps,input.lookup),cart=await activeCart(deps,context,input.token);
+ if(!cart||!deps.commerceRepository.setCartCoupon)throw Error("SITE_VALIDATION: seu carrinho expirou.");
+ const code=input.code?.trim().toUpperCase()||undefined;
+ if(code){const preview=await presentCart(deps,context,{...cart,couponCode:code},input.token);if(!preview.view.appliedRules.some(rule=>rule.coupon))throw Error(preview.view.couponStatus==="CONFLICT"?"SITE_VALIDATION: o cupom não acumula com o benefício atual. A melhor condição permitida foi mantida.":"SITE_VALIDATION: cupom inválido, expirado ou não elegível para este carrinho.");}
+ await deps.commerceRepository.setCartCoupon(cart.id,code);
+ return {...(await presentCart(deps,context,{...cart,couponCode:code},input.token)).view,token:input.token};
 }
 /** Define a quantidade de uma linha (0 remove). Cria o carrinho anônimo na primeira inclusão. */
 export async function setPublicCartItem(deps:SiteCommerceDeps,input:{lookup:PublicLookup;token?:string;productId:string;variantId?:string;quantity:number}&VisitorContext){
@@ -166,10 +192,10 @@ export async function checkoutPublicCartToWhatsapp(deps:SiteCommerceDeps,input:{
  if(!lines.length)throw Error(allLines.length?"SITE_VALIDATION: estes itens são finalizados pela compra online.":"SITE_VALIDATION: o carrinho está vazio.");
  const blocked=lines.find(line=>!line.available||!line.resolved);
  if(blocked)throw Error(`SITE_VALIDATION: revise o carrinho — ${blocked.name}${blocked.variantLabel?` (${blocked.variantLabel})`:""} não está disponível nessa quantidade.`);
- const items=lines.map(line=>itemSnapshot(line.resolved!,line.quantity));
+ const items=lines.map(line=>({...itemSnapshot(line.resolved!,line.quantity),unitPriceCents:line.unitPriceCents,totalCents:line.totalCents,pricing:{originalUnitPriceCents:line.originalUnitPriceCents,discountCents:line.discountCents,appliedRules:line.appliedRules}}));
  const currencies=new Set(items.map(item=>item.currency));if(currencies.size>1)throw Error("SITE_VALIDATION: o carrinho tem produtos em moedas diferentes.");
  const utm=cleanUtm(input.utm),pageUrl=safePageUrl(input.pageUrl);
- const {intent,created}=await createIntent(deps,{tenantId:cart.tenantId,workspaceId:cart.workspaceId,siteId:cart.siteId,type:"CART_WHATSAPP",snapshot:{items,subtotalCents:items.reduce((sum,item)=>sum+item.unitPriceCents*item.quantity,0),currency:items[0].currency,siteName:context.snapshot.content.name},pageUrl,utm,anonymousSessionId:input.sessionId,requestKey:input.requestKey});
+ const {intent,created}=await createIntent(deps,{tenantId:cart.tenantId,workspaceId:cart.workspaceId,siteId:cart.siteId,type:"CART_WHATSAPP",snapshot:{items,subtotalCents:items.reduce((sum,item)=>sum+item.totalCents,0),currency:items[0].currency,siteName:context.snapshot.content.name},pageUrl,utm,anonymousSessionId:input.sessionId,requestKey:input.requestKey});
  if(lines.length===allLines.length)await deps.commerceRepository.checkoutCart({cartId:cart.id,salesIntentId:intent.id});
  else for(const line of lines)await deps.commerceRepository.removeCartItem({cartId:cart.id,productId:line.productId,variantId:line.variantId});
  const base={tenantId:intent.tenantId,workspaceId:intent.workspaceId,siteId:intent.siteId,anonymousSessionId:input.sessionId,cartId:cart.id,salesIntentId:intent.id,pageUrl,utm};

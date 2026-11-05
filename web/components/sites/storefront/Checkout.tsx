@@ -30,7 +30,7 @@ export function CheckoutPage({site,basePath}:{site:PublicTenantSite;basePath:str
  const set=(name:string,value:string)=>{setForm(current=>({...current,[name]:{value}}));setError(undefined);};
  const option:ShippingOption|undefined=quote?.shippingOptions.find(item=>item.id===optionId);
  const needsAddress=!!option?.requiresAddress;
- const total=(quote?.subtotalCents??0)+(option?.priceCents??0);
+ const total=(quote?.subtotalCents??0)-(quote?.discountCents??0)+(option?.priceCents??0);
  async function onPostal(value:string){
   const masked=maskPostal(value);set("postalCode",masked);
   const digits=onlyDigits(masked);if(digits.length!==8)return;
@@ -53,7 +53,7 @@ export function CheckoutPage({site,basePath}:{site:PublicTenantSite;basePath:str
   if(method==="CARD"&&!card){setError("Preencha os dados do cartão abaixo.");return;}
   setSubmitting(true);setError(undefined);
   try{
-   const order:PublicOrder=await placeOrder(site.slug,{requestKey,deliveryOptionId:option.id,
+   const order:PublicOrder=await placeOrder(site.slug,{requestKey,pricingKey:quote.pricingKey,deliveryOptionId:option.id,
     customer:{name:form.name.value.trim(),email:form.email.value.trim(),phone:form.phone.value,...(form.document.value.trim()?{document:form.document.value}:{})},
     ...(needsAddress?{address:{postalCode:form.postalCode.value,street:form.street.value,number:form.number.value,complement:form.complement.value||undefined,district:form.district.value,city:form.city.value,state:form.state.value}}:{}),
     payment:{method,...(card?{cardToken:card.token,cardPaymentMethodId:card.paymentMethodId,installments:card.installments}:{})}});
@@ -61,6 +61,7 @@ export function CheckoutPage({site,basePath}:{site:PublicTenantSite;basePath:str
   }catch(caught){
    // Recusado pela loja (ex.: cartão recusado): o pedido foi cancelado, a próxima tentativa é um pedido novo. Erro de rede mantém a chave (evita pedido duplicado).
    const status=(caught as {status?:number}).status;if(status&&status<500)setRequestKey(crypto.randomUUID());
+   if(caught instanceof Error&&/mudaram|atualizados/.test(caught.message))await load(onlyDigits(form.postalCode.value)||undefined);
    setError(caught instanceof Error?caught.message:"Não foi possível finalizar a compra.");setSubmitting(false);requestAnimationFrame(()=>errorRef.current?.focus());}
  }
  if(loadError&&!quote)return <section className="ts-section"><div className="ts-container ck-narrow"><h1>Finalizar compra</h1><p role="alert" className="ck-error">{loadError}</p><a className="ts-button" href={basePath||"/"}>Voltar à loja</a></div></section>;
@@ -94,9 +95,9 @@ export function CheckoutPage({site,basePath}:{site:PublicTenantSite;basePath:str
    </div>
    <aside className="ck-summary" aria-label="Resumo do pedido">
     <div className="ck-card"><h2>Resumo</h2>
-     <ul className="ck-items">{quote.items.map(item=><li key={`${item.productId}:${item.variantId??""}`}><span className="ck-thumb">{item.imageUrl?<img src={item.imageUrl} alt="" loading="lazy"/>:<Package size={20} aria-hidden="true"/>}<em>{item.quantity}</em></span><span className="ck-item-copy"><strong>{item.name}</strong>{item.variantLabel?<small>{item.variantLabel}</small>:null}</span><b>{money(item.unitPriceCents*item.quantity,item.currency)}</b></li>)}</ul>
+     <ul className="ck-items">{quote.items.map(item=><li key={`${item.productId}:${item.variantId??""}`}><span className="ck-thumb">{item.imageUrl?<img src={item.imageUrl} alt="" loading="lazy"/>:<Package size={20} aria-hidden="true"/>}<em>{item.quantity}</em></span><span className="ck-item-copy"><strong>{item.name}</strong>{item.variantLabel?<small>{item.variantLabel}</small>:null}</span><b>{money(item.totalCents??item.unitPriceCents*item.quantity,item.currency)}</b></li>)}</ul>
      {quote.otherItems?<p className="ck-muted">{quote.otherItems} item(ns) sob consulta continuam no carrinho para o WhatsApp.</p>:null}
-     <dl className="ck-totals"><div><dt>Subtotal</dt><dd>{money(quote.subtotalCents,quote.currency)}</dd></div><div><dt>Frete</dt><dd>{option?(option.priceCents?money(option.priceCents,quote.currency):"Grátis"):"—"}</dd></div><div className="ck-total"><dt>Total</dt><dd>{money(total,quote.currency)}</dd></div></dl>
+     <dl className="ck-totals"><div><dt>{quote.discountCents?"Subtotal original":"Subtotal"}</dt><dd>{money(quote.subtotalCents,quote.currency)}</dd></div>{quote.discountCents?<div><dt>Desconto / preço especial</dt><dd>− {money(quote.discountCents,quote.currency)}</dd></div>:null}<div><dt>Frete</dt><dd>{option?(option.priceCents?money(option.priceCents,quote.currency):"Grátis"):"—"}</dd></div><div className="ck-total"><dt>Total</dt><dd>{money(total,quote.currency)}</dd></div></dl>
      {error?<p className="ck-error" role="alert" tabIndex={-1} ref={errorRef}>{error}</p>:null}
      {method!=="CARD"?<button type="submit" className="ts-button ck-cta" disabled={submitting||!option||!method}>{submitting?"Finalizando...":<><Lock size={16} aria-hidden="true"/>Finalizar compra · {money(total,quote.currency)}</>}</button>:null}
      <p className="ck-secure"><Lock size={14} aria-hidden="true"/>Pagamento processado com segurança. Não guardamos dados do cartão.</p>
@@ -170,7 +171,7 @@ export const CHECKOUT_STYLES=`
 .ck-options{display:grid;gap:10px}.ck-option{display:flex;align-items:center;gap:12px;min-height:56px;padding:12px 14px;border:1px solid var(--site-line);border-radius:calc(var(--site-radius)*.6);cursor:pointer}.ck-option.is-selected{border-color:var(--site-primary);background:var(--site-soft)}
 .ck-option input{width:18px;height:18px;accent-color:var(--site-primary);flex:none}.ck-option-copy{display:grid;flex:1;min-width:0}.ck-option-copy small{opacity:.75}.ck-option b{font-variant-numeric:tabular-nums;white-space:nowrap}
 .ck-summary{position:sticky;top:20px}.ck-items{list-style:none;margin:0;padding:0;display:grid;gap:12px}.ck-items li{display:grid;grid-template-columns:56px 1fr auto;gap:12px;align-items:center}
-.ck-thumb{position:relative;width:56px;height:56px;border-radius:calc(var(--site-radius)*.6);background:var(--site-surface);display:grid;place-items:center;overflow:hidden}.ck-thumb img{width:100%;height:100%;object-fit:cover}.ck-thumb em{position:absolute;top:2px;right:2px;min-width:20px;height:20px;border-radius:999px;background:var(--site-fg);color:var(--site-bg);font-size:11px;font-style:normal;display:grid;place-items:center;font-weight:700}
+.ck-thumb{position:relative;width:56px;height:56px;border-radius:calc(var(--site-radius)*.6);background:var(--site-surface);display:grid;place-items:center;overflow:hidden}.ck-thumb img{width:100%;height:100%;object-fit:contain}.ck-thumb em{position:absolute;top:2px;right:2px;min-width:20px;height:20px;border-radius:999px;background:var(--site-fg);color:var(--site-bg);font-size:11px;font-style:normal;display:grid;place-items:center;font-weight:700}
 .ck-item-copy{display:grid;min-width:0}.ck-item-copy strong{overflow-wrap:anywhere;font-size:.92em}.ck-item-copy small{opacity:.75}.ck-items b,.ck-totals dd,.tabular{font-variant-numeric:tabular-nums}
 .ck-totals{margin:0;display:grid;gap:8px;border-top:1px solid var(--site-line);padding-top:12px}.ck-totals div{display:flex;justify-content:space-between;gap:12px}.ck-totals dd{margin:0}.ck-total{font-weight:700;font-size:1.15em}
 .ck-cta{width:100%}.ck-secure{display:flex;align-items:center;gap:6px;font-size:.8em;opacity:.75;margin:0}.ck-muted{opacity:.8;font-size:.9em;margin:0;display:flex;gap:6px;align-items:flex-start}

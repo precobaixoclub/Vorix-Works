@@ -79,10 +79,14 @@ export function validateReceipt(returnItems:readonly ReturnItemLike[],input:Reco
  return any?undefined:"Informe o que foi recebido.";
 }
 /** Reembolso sugerido de uma devolução: soma de preço unitário × quantidade devolvida. */
-export function defaultRefundCents(orderItems:readonly {id:string;unitPriceCents:number}[],returnItems:readonly {orderItemId:string;quantity:number}[]):number{
- const price=new Map(orderItems.map(i=>[i.id,i.unitPriceCents]));
- return returnItems.reduce((sum,i)=>sum+(price.get(i.orderItemId)??0)*i.quantity,0);
+export function defaultRefundCents(orderItems:readonly {id:string;unitPriceCents:number;quantity?:number;totalCents?:number;pricingSnapshot?:unknown}[],returnItems:readonly {orderItemId:string;quantity:number}[],previous:readonly {orderItemId:string;quantity:number}[]=[]):number{
+ return returnItems.reduce((sum,line)=>{const item=orderItems.find(i=>i.id===line.orderItemId);if(!item)return sum;
+  if(!item.pricingSnapshot||!item.quantity||item.totalCents===undefined)return sum+item.unitPriceCents*line.quantity;
+  const before=previous.filter(i=>i.orderItemId===line.orderItemId).reduce((n,i)=>n+i.quantity,0);
+  return sum+Math.floor(item.totalCents*Math.min(item.quantity,before+line.quantity)/item.quantity)-Math.floor(item.totalCents*Math.min(item.quantity,before)/item.quantity);
+ },0);
 }
+
 /** Reembolso só para devolução da loja (não MARKETPLACE), ativa e ainda não reembolsada. */
 export const canRefundReturn=(ret:Pick<ReturnLike,"status"|"refundStatus">,canRefund:boolean)=>canRefund&&ret.refundStatus!=="MARKETPLACE"&&(ret.refundStatus==="NONE"||ret.refundStatus==="FAILED")&&!["REJECTED","CANCELLED"].includes(ret.status);
 

@@ -1,0 +1,100 @@
+{
+  "number": 1,
+  "subtotalCents": 30000,
+  "discountCents": 5000,
+  "totalCents": 25000,
+  "items": [
+    {
+      "name": "Pulverizador de fixture",
+      "quantity": 2,
+      "totalCents": 10000,
+      "pricingSnapshot": {
+        "appliedRules": [
+          {
+            "id": "rule-337bc2c9-023e-46c2-8f4a-a4e596190998",
+            "name": "Preço progressivo por quantidade (revisada)",
+            "tier": {
+              "minimum": 5,
+              "unitPriceCents": 5000
+            },
+            "coupon": false,
+            "benefit": {
+              "type": "UNIT_PRICE",
+              "tiers": [
+                {
+                  "maximum": 2,
+                  "minimum": 1,
+                  "unitPriceCents": 6000
+                },
+                {
+                  "maximum": 4,
+                  "minimum": 3,
+                  "unitPriceCents": 5500
+                },
+                {
+                  "minimum": 5,
+                  "unitPriceCents": 5000
+                }
+              ]
+            },
+            "priority": 0,
+            "revision": 2,
+            "discountCents": 2000
+          }
+        ],
+        "discountCents": 2000,
+        "appliedTotalCents": 10000,
+        "originalTotalCents": 12000,
+        "appliedUnitPriceCents": 5000,
+        "originalUnitPriceCents": 6000,
+        "unitPriceBeforeLineDiscountCents": 5000
+      }
+    },
+    {
+      "name": "Camiseta de fixture",
+      "quantity": 3,
+      "totalCents": 15000,
+      "pricingSnapshot": {
+        "appliedRules": [
+          {
+            "id": "rule-337bc2c9-023e-46c2-8f4a-a4e596190998",
+            "name": "Preço progressivo por quantidade (revisada)",
+            "tier": {
+              "minimum": 5,
+              "unitPriceCents": 5000
+            },
+            "coupon": false,
+            "benefit": {
+              "type": "UNIT_PRICE",
+              "tiers": [
+                {
+                  "maximum": 2,
+                  "minimum": 1,
+                  "unitPriceCents": 6000
+                },
+                {
+                  "maximum": 4,
+                  "minimum": 3,
+                  "unitPriceCents": 5500
+                },
+                {
+                  "minimum": 5,
+                  "unitPriceCents": 5000
+                }
+              ]
+            },
+            "priority": 0,
+            "revision": 2,
+            "discountCents": 3000
+          }
+        ],
+        "discountCents": 3000,
+        "appliedTotalCents": 15000,
+        "originalTotalCents": 18000,
+        "appliedUnitPriceCents": 5000,
+        "originalUnitPriceCents": 6000,
+        "unitPriceBeforeLineDiscountCents": 5000
+      }
+    }
+  ]
+}

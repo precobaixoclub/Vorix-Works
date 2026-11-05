@@ -1,3 +1,4 @@
+import {ruleVersion} from "./commercial-rule-use-cases.js";
 /**
  * Vorix Commerce, Fase 2 — checkout, pedido, pagamento e estoque.
  *
@@ -76,14 +77,14 @@ async function checkoutLines(deps:CheckoutDeps,lookup:PublicLookup,token:string)
  const context=await publicContext(deps,lookup);
  if(!context.commerce.checkoutReady)throw Error("SITE_VALIDATION: a compra online não está disponível nesta loja.");
  const cart=await activeCart(deps,context,token);if(!cart)throw Error("SITE_VALIDATION: seu carrinho expirou. Adicione os produtos de novo.");
- const {lines:all}=await presentCart(deps,context,cart,token);
+ const {lines:all,view:cartView}=await presentCart(deps,context,cart,token);
  const lines=all.filter(line=>line.channel==="checkout");
  if(!lines.length)throw Error("SITE_VALIDATION: não há produtos para compra online no carrinho.");
  const blocked=lines.find(line=>!line.available||!line.resolved);
  if(blocked)throw Error(`SITE_VALIDATION: ${blocked.name}${blocked.variantLabel?` (${blocked.variantLabel})`:""} não está disponível nessa quantidade. Ajuste o carrinho.`);
  const currencies=new Set(lines.map(line=>line.currency));if(currencies.size>1)throw Error("SITE_VALIDATION: o carrinho tem produtos em moedas diferentes.");
  if(context.commerce.settings.checkout.payment.provider==="MERCADO_PAGO"&&lines[0].currency!=="BRL")throw Error("SITE_VALIDATION: o checkout do Mercado Pago Brasil aceita produtos em reais (BRL).");
- return {context,cart,lines,allLines:all};
+ return {context,cart,lines,allLines:all,cartView};
 }
 async function parcelItems(deps:CheckoutDeps,lines:CheckoutLine[]):Promise<ShippingParcelItem[]>{
  const measures=await deps.commerceRepository.variantMeasures(lines.map(line=>line.variantId).filter((id):id is string=>!!id));
@@ -92,7 +93,7 @@ async function parcelItems(deps:CheckoutDeps,lines:CheckoutLine[]):Promise<Shipp
 }
 async function shippingOptions(deps:CheckoutDeps,context:Awaited<ReturnType<typeof publicContext>>,lines:CheckoutLine[],postalCode:string|undefined):Promise<ShippingOption[]>{
  const settings=context.commerce.settings.checkout.shipping;
- const request={destinationPostalCode:postalCode,subtotalCents:lines.reduce((sum,line)=>sum+line.unitPriceCents*line.quantity,0),items:await parcelItems(deps,lines)};
+ const request={destinationPostalCode:postalCode,subtotalCents:lines.reduce((sum,line)=>sum+line.totalCents,0),items:await parcelItems(deps,lines)};
  const scope={tenantId:context.site.tenantId,workspaceId:context.site.workspaceId,siteId:context.site.id,settings};
  const options=[...await (deps.shippingProviders.OWN?.quote(scope,request)??Promise.resolve([]))];
  if(settings.provider.key!=="NONE"&&postalCode){
@@ -109,21 +110,21 @@ function paymentMethods(settings:SiteCommerceSettings,publicKey?:string){
  return [...(payment.pix?[{method:"PIX" as const,label:"PIX"}]:[]),...(payment.card&&publicKey?[{method:"CARD" as const,label:"Cartão de crédito",publicKey}]:[])];
 }
 export async function quoteCheckout(deps:CheckoutDeps,input:{lookup:PublicLookup;token:string;postalCode?:string}&VisitorContext){
- const {context,lines,allLines,cart}=await checkoutLines(deps,input.lookup,input.token);
+ const {context,lines,allLines,cart,cartView}=await checkoutLines(deps,input.lookup,input.token);
  const postal=input.postalCode?.replace(/\D/g,"");
  if(postal&&!/^\d{8}$/.test(postal))throw Error("SITE_VALIDATION: informe um CEP válido.");
  const options=await shippingOptions(deps,context,lines,postal);
- const totals=orderTotals(lines,0);
+ const originalSubtotalCents=lines.reduce((sum,line)=>sum+line.originalUnitPriceCents*line.quantity,0),finalSubtotalCents=lines.reduce((sum,line)=>sum+line.totalCents,0);
  const credential=context.commerce.settings.checkout.payment.provider==="MERCADO_PAGO"?await readCommerceCredential(deps,context.site,"MERCADO_PAGO"):undefined;
  const base={tenantId:context.site.tenantId,workspaceId:context.site.workspaceId,siteId:context.site.id,anonymousSessionId:input.sessionId,cartId:cart.id,pageUrl:safePageUrl(input.pageUrl),utm:cleanUtm(input.utm)};
  emit(deps,{...base,type:postal?"SHIPPING_QUOTED":"CHECKOUT_STARTED"});
- return {items:presentLines(lines),otherItems:allLines.length-lines.length,subtotalCents:totals.subtotalCents,currency:lines[0].currency,shippingOptions:options,
+ return {items:presentLines(lines),otherItems:allLines.length-lines.length,subtotalCents:originalSubtotalCents,discountCents:originalSubtotalCents-finalSubtotalCents,finalSubtotalCents,pricingKey:cartView.pricingKey,appliedRules:cartView.appliedRules.filter(rule=>lines.some(line=>line.appliedRules.some(own=>own.id===rule.id))),currency:lines[0].currency,shippingOptions:options,
   paymentMethods:paymentMethods(context.commerce.settings,credential?.publicKey),requireDocument:context.commerce.settings.checkout.requireDocument||context.commerce.settings.checkout.payment.provider==="MERCADO_PAGO",
   sandbox:context.commerce.settings.checkout.payment.provider==="SANDBOX",reservationMinutes:context.commerce.settings.checkout.reservationMinutes,storeName:context.snapshot.content.name};
 }
 
 // ------------------------------------------------------------------ pedido
-export type PlaceOrderInput={lookup:PublicLookup;token:string;requestKey:string;customer:unknown;address?:unknown;deliveryOptionId:string;payment:{method:PaymentMethod;cardToken?:string;cardPaymentMethodId?:string;installments?:number}}&VisitorContext;
+export type PlaceOrderInput={pricingKey?:string;lookup:PublicLookup;token:string;requestKey:string;customer:unknown;address?:unknown;deliveryOptionId:string;payment:{method:PaymentMethod;cardToken?:string;cardPaymentMethodId?:string;installments?:number}}&VisitorContext;
 const reserveKey=(order:Order,itemId:string)=>`order:${order.id}:reserve:${itemId}`;
 async function moveStock(deps:CheckoutDeps,order:Order,kind:"RESERVATION"|"RELEASE"|"SALE"|"RETURN",suffix:string,consumeReservation=false){
  for(const item of order.items.filter(item=>item.trackStock))
@@ -162,7 +163,8 @@ export async function placeOrder(deps:CheckoutDeps,input:PlaceOrderInput){
  const repeatedToken=orderToken(publishedSite.id,input.requestKey);
  const existing=await deps.orders.getByPublicTokenHash(hashToken(repeatedToken));
  if(existing)return {...(await publicOrderView(deps,existing)),publicToken:repeatedToken,repeated:true};
- const {context,lines,allLines,cart}=await checkoutLines(deps,input.lookup,input.token);
+ const {context,lines,allLines,cart,cartView}=await checkoutLines(deps,input.lookup,input.token);
+ if(input.pricingKey&&input.pricingKey!==cartView.pricingKey)throw Error("SITE_VALIDATION: os preços, regras ou itens do carrinho mudaram. Revise os valores atualizados antes de finalizar.");
  const settings=context.commerce.settings.checkout;
  const customer=orderCustomerSchema.parse(input.customer) as OrderCustomer;
  const needsDocument=settings.requireDocument||settings.payment.provider==="MERCADO_PAGO";
@@ -176,13 +178,14 @@ export async function placeOrder(deps:CheckoutDeps,input:PlaceOrderInput){
  const option=options.find(item=>item.id===input.deliveryOptionId);
  if(!option)throw Error("SITE_VALIDATION: a forma de entrega escolhida não está disponível para este CEP. Escolha outra.");
  if(option.requiresAddress&&!address)throw Error("SITE_VALIDATION: informe o endereço de entrega.");
- const items=lines.map((line,position)=>{const snap=itemSnapshot(line.resolved!,line.quantity);return {position,productId:snap.productId,variantId:snap.variantId,sku:snap.sku,name:snap.name,variantLabel:snap.variantLabel,imageUrl:snap.imageUrl,quantity:line.quantity,unitPriceCents:snap.unitPriceCents,totalCents:snap.unitPriceCents*line.quantity,trackStock:!!line.resolved!.product.trackStock,specifications:snap.specifications??[]};});
- const totals=orderTotals(items,option.priceCents);
+ const items=lines.map((line,position)=>{const snap=itemSnapshot(line.resolved!,line.quantity);return {position,productId:snap.productId,variantId:snap.variantId,sku:snap.sku,name:snap.name,variantLabel:snap.variantLabel,imageUrl:snap.imageUrl,quantity:line.quantity,unitPriceCents:line.unitPriceCents,totalCents:line.totalCents,pricingSnapshot:{originalUnitPriceCents:line.originalUnitPriceCents,appliedUnitPriceCents:line.totalCents%line.quantity===0?line.totalCents/line.quantity:undefined,unitPriceBeforeLineDiscountCents:line.unitPriceCents,originalTotalCents:line.originalUnitPriceCents*line.quantity,appliedTotalCents:line.totalCents,discountCents:line.discountCents,appliedRules:line.appliedRules},trackStock:!!line.resolved!.product.trackStock,specifications:snap.specifications??[]};});
+ const originalSubtotal=items.reduce((sum,item)=>sum+item.pricingSnapshot.originalTotalCents,0),finalSubtotal=items.reduce((sum,item)=>sum+item.totalCents,0);
+ const totals={subtotalCents:originalSubtotal,discountCents:originalSubtotal-finalSubtotal,shippingCents:option.priceCents,totalCents:finalSubtotal+option.priceCents};
  // Token de acompanhamento derivado da chave da requisição (aleatória, só o navegador conhece): uma
  // repetição após falha de rede devolve o MESMO pedido e o mesmo link, sem criar outro.
  const publicToken=orderToken(context.site.id,input.requestKey);
  const expiresAt=new Date(now(deps).getTime()+settings.reservationMinutes*60_000).toISOString();
- const {order:created,created:isNew}=await deps.orders.create({tenantId:context.site.tenantId,workspaceId:context.site.workspaceId,siteId:context.site.id,publicTokenHash:hashToken(publicToken),requestKey:input.requestKey,customer,shippingAddress:option.requiresAddress?address:undefined,
+ const {order:created,created:isNew}=await deps.orders.create({tenantId:context.site.tenantId,workspaceId:context.site.workspaceId,siteId:context.site.id,publicTokenHash:hashToken(publicToken),requestKey:input.requestKey,commercialRuleVersion:deps.commercialRules?ruleVersion(context.commerce.rules??[],now(deps)):undefined,customer,shippingAddress:option.requiresAddress?address:undefined,
   delivery:{optionId:option.id,kind:option.kind,label:option.label,priceCents:option.priceCents,days:option.days,provider:option.provider,requiresAddress:option.requiresAddress},...totals,currency:lines[0].currency,cartId:cart.id,anonymousSessionId:input.sessionId,utm:cleanUtm(input.utm) as Record<string,string>,reservationExpiresAt:expiresAt,items});
  // Repetição (duplo clique/retry): devolve o mesmo pedido. O token público só é revelado na criação.
  if(!isNew)return {...(await publicOrderView(deps,created)),publicToken,repeated:true};
@@ -225,7 +228,7 @@ export async function placeOrder(deps:CheckoutDeps,input:PlaceOrderInput){
 async function publicOrderView(deps:CheckoutDeps,order:Order){
  const payment=(await deps.orders.payments(order.id)).at(-1);
  return {number:order.number,status:order.status,statusLabel:ORDER_STATUS_LABELS[order.status],paymentStatus:order.paymentStatus,shippingStatus:order.shippingStatus,
-  items:order.items.map(item=>({name:item.name,variantLabel:item.variantLabel,quantity:item.quantity,unitPriceCents:item.unitPriceCents,totalCents:item.totalCents,imageUrl:item.imageUrl?signOwnedUrl(item.imageUrl,OBJECT_URL_TTL.preview):undefined})),
+  items:order.items.map(item=>({name:item.name,variantLabel:item.variantLabel,quantity:item.quantity,unitPriceCents:item.unitPriceCents,totalCents:item.totalCents,pricingSnapshot:item.pricingSnapshot,imageUrl:item.imageUrl?signOwnedUrl(item.imageUrl,OBJECT_URL_TTL.preview):undefined})),
   subtotalCents:order.subtotalCents,discountCents:order.discountCents,shippingCents:order.shippingCents,totalCents:order.totalCents,currency:order.currency,delivery:{label:order.delivery.label,kind:order.delivery.kind,days:order.delivery.days},
   customerName:order.customer.name.split(/\s+/)[0],reservationExpiresAt:order.status==="AWAITING_PAYMENT"?order.reservationExpiresAt:undefined,
   payment:payment?{method:payment.method,status:payment.status,instructions:payment.status==="PENDING"?payment.instructions:{sandbox:payment.instructions.sandbox}}:undefined,createdAt:order.createdAt};

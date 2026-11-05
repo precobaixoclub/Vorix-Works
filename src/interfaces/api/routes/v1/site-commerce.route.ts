@@ -1,3 +1,4 @@
+import {saveCommercialRule} from "../../../../application/commerce/commercial-rule-use-cases.js";
 import type {FastifyInstance,FastifyRequest} from "fastify";
 import {z} from "zod";
 import {requirePermission} from "../../http/require-principal.js";
@@ -5,7 +6,7 @@ import {NotFoundError,ValidationError,ForbiddenError} from "../../http/app-error
 import {successEnvelope} from "../../http/response-envelope.js";
 import {assertWorkspaceBelongsToTenant} from "./workspace-ownership.js";
 import {mustSite} from "../../../../application/sites/site-use-cases.js";
-import {checkoutPublicCartToWhatsapp,getPublicCart,getSiteCommerceSettings,listSiteSalesIntents,recordPublicSiteEvent,resolveSalesIntentRedirect,saveSiteCommerceSettings,setPublicCartItem,startProductWhatsapp,type SiteCommerceDeps} from "../../../../application/sites/site-commerce-use-cases.js";
+import {setPublicCartCoupon,checkoutPublicCartToWhatsapp,getPublicCart,getSiteCommerceSettings,listSiteSalesIntents,recordPublicSiteEvent,resolveSalesIntentRedirect,saveSiteCommerceSettings,setPublicCartItem,startProductWhatsapp,type SiteCommerceDeps} from "../../../../application/sites/site-commerce-use-cases.js";
 import {utmSchema} from "../../../../domain/sites/site-commerce.js";
 import {normalizeContactPhone} from "../../../../domain/crm/contact-phone.js";
 import {analyticsEventContextSchema} from "../../../../domain/sites/site-analytics.js";
@@ -40,6 +41,10 @@ export async function registerSiteCommerceRoutes(app:FastifyInstance,deps:SiteCo
   const body=z.object({token:cartToken.optional(),productId:id,variantId:id.optional(),quantity:z.number().int().min(0).max(99),...visitor}).strict().parse(request.body);
   return successEnvelope(await setPublicCartItem(deps,{...body,lookup:lookup(request)}),request.id);
  }));
+ app.put("/public/sites/:slug/cart/coupon",async request=>guard(async()=>{
+  const body=z.object({token:cartToken,code:z.string().trim().max(40).optional()}).strict().parse(request.body);
+  return successEnvelope(await setPublicCartCoupon(deps,{...body,lookup:lookup(request)}),request.id);
+ }));
  app.post("/public/sites/:slug/cart/checkout",async request=>guard(async()=>{
   const body=z.object({token:cartToken,requestKey:z.string().uuid(),customer:z.object({name:z.string().trim().min(2).max(160),phone:z.string().trim().min(8).max(40)}).strict().optional(),...visitor}).strict().parse(request.body);
   const phone=body.customer?normalizeContactPhone(body.customer.phone):undefined;
@@ -62,6 +67,25 @@ export async function registerSiteCommerceRoutes(app:FastifyInstance,deps:SiteCo
   const site=await mustSite(deps,{id:(request.params as {id:string}).id,tenantId:principal.tenantId,workspaceId});
   return {site,principal};
  };
+ const scopeOf=(site:{tenantId:string;workspaceId:string;id:string})=>({tenantId:site.tenantId,workspaceId:site.workspaceId,siteId:site.id});
+ app.get("/sites/:id/commercial-rules",async request=>guard(async()=>{
+  const {site}=await owned(request,"commerce:read");return successEnvelope(await deps.commercialRules?.list(scopeOf(site))??[],request.id);
+ }));
+ app.post("/sites/:id/commercial-rules",{config:{readOnlyGuard:true}},async request=>guard(async()=>{
+  const {site,principal}=await owned(request,"commerce:manage");const body=z.object({definition:z.unknown()}).strict().parse(request.body);
+  return successEnvelope(await saveCommercialRule(deps,scopeOf(site),body.definition,principal.userId),request.id);
+ }));
+ app.put("/sites/:id/commercial-rules/:ruleId",{config:{readOnlyGuard:true}},async request=>guard(async()=>{
+  const {site,principal}=await owned(request,"commerce:manage"),ruleId=id.parse((request.params as {ruleId:string}).ruleId);
+  const body=z.object({definition:z.unknown(),revision:z.number().int().positive()}).strict().parse(request.body);
+  return successEnvelope(await saveCommercialRule(deps,scopeOf(site),body.definition,principal.userId,{id:ruleId,revision:body.revision}),request.id);
+ }));
+ app.delete("/sites/:id/commercial-rules/:ruleId",{config:{readOnlyGuard:true}},async request=>guard(async()=>{
+  const {site,principal}=await owned(request,"commerce:manage"),ruleId=id.parse((request.params as {ruleId:string}).ruleId);
+  const revision=z.coerce.number().int().positive().parse((request.query as {revision:string}).revision);
+  if(!await deps.commercialRules?.remove(scopeOf(site),ruleId,revision,principal.userId))throw new ValidationError("A regra mudou ou foi excluída. Atualize a tela.");
+  return successEnvelope({deleted:true},request.id);
+ }));
  app.get("/sites/:id/commerce",async request=>guard(async()=>{const {site}=await owned(request,"site:read");return successEnvelope(await getSiteCommerceSettings(deps,site),request.id);}));
  app.put("/sites/:id/commerce",{config:{readOnlyGuard:true}},async request=>guard(async()=>{
   const {site,principal}=await owned(request,"commerce:manage");

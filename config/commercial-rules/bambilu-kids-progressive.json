@@ -1,0 +1,22 @@
+{
+  "siteSlug": "bambilu-kids",
+  "definition": {
+    "name": "Preço progressivo por quantidade",
+    "active": true,
+    "priority": 0,
+    "stackable": false,
+    "allowCoupon": false,
+    "currency": "BRL",
+    "channels": ["CHECKOUT", "WHATSAPP"],
+    "scope": { "type": "STORE", "ids": [] },
+    "trigger": { "type": "QUANTITY", "count": "ELIGIBLE", "minimum": 1 },
+    "benefit": {
+      "type": "UNIT_PRICE",
+      "tiers": [
+        { "minimum": 1, "maximum": 2, "unitPriceCents": 6000 },
+        { "minimum": 3, "maximum": 4, "unitPriceCents": 5500 },
+        { "minimum": 5, "unitPriceCents": 5000 }
+      ]
+    }
+  }
+}

@@ -111,7 +111,7 @@ export function extractSalesIntentReference(text:string|undefined):string|undefi
 export const SALES_INTENT_TYPES=["PRODUCT_WHATSAPP","CART_WHATSAPP","CONTACT_FORM","CHECKOUT","MARKETPLACE","OTHER"] as const;
 export type SalesIntentType=(typeof SALES_INTENT_TYPES)[number];
 export type SalesIntentStatus="OPEN"|"CONVERTING"|"CONVERTED"|"EXPIRED";
-export type SalesIntentItem={productId:string;variantId?:string;name:string;variantLabel?:string;sku?:string;imageUrl?:string;quantity:number;unitPriceCents:number;currency:string;specifications?:{label:string;value:string}[]};
+export type SalesIntentItem={productId:string;variantId?:string;name:string;variantLabel?:string;sku?:string;imageUrl?:string;quantity:number;unitPriceCents:number;totalCents?:number;pricing?:{originalUnitPriceCents:number;discountCents:number;appliedRules:import("../commerce/commercial-rules.js").AppliedCommercialRule[]};currency:string;specifications?:{label:string;value:string}[]};
 export type SalesIntentSnapshot={items:SalesIntentItem[];subtotalCents:number;currency:string;siteName?:string};
 export type Utm={source?:string;medium?:string;campaign?:string;content?:string;term?:string};
 export type SalesIntent={
@@ -127,7 +127,7 @@ const money=(cents:number,currency:string)=>new Intl.NumberFormat("pt-BR",{style
 export function salesIntentWhatsappMessage(intent:Pick<SalesIntent,"type"|"reference"|"snapshot">):string{
  const items=intent.snapshot.items;const describe=(item:SalesIntentItem)=>`${item.name}${item.variantLabel?` (${item.variantLabel})`:""}`;
  if(intent.type==="CART_WHATSAPP"){
-  const lines=items.map(item=>`• ${item.quantity}x ${describe(item)} — ${money(item.unitPriceCents*item.quantity,item.currency)}`);
+  const lines=items.map(item=>`• ${item.quantity}x ${describe(item)} — ${money(item.totalCents??item.unitPriceCents*item.quantity,item.currency)}`);
   return `Olá! Gostaria de comprar estes itens:\n${lines.join("\n")}\nTotal estimado: ${money(intent.snapshot.subtotalCents,intent.snapshot.currency)}\n\nRef: ${intent.reference}`;
  }
  const item=items[0];

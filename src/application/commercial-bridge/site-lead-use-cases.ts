@@ -11,7 +11,7 @@ import type {TeamMembershipRepositoryPort} from "../ports/team-repository.port.j
 import type {DealUseCaseDeps} from "../crm/deal-use-cases.js";
 import {createDeal} from "../crm/deal-use-cases.js";
 import {ensureDefaultPipeline,type PipelineUseCaseDeps} from "../crm/pipeline-use-cases.js";
-import {addDealItem} from "../sales/deal-commercial-use-cases.js";
+import {updateDealCommercialTerms,addDealItem} from "../sales/deal-commercial-use-cases.js";
 import type {SalesEngineDeps} from "../sales/sales-context.js";
 import {notifyBestEffort,type NotificationUseCaseDeps} from "../notification/notification-use-cases.js";
 import {routeUnassignedConversationToTeam,type InboxUseCaseDeps} from "../inbox/inbox-use-cases.js";
@@ -68,6 +68,8 @@ async function ensureOpportunity(deps:SiteLeadDeps,intent:SalesIntent,input:{con
    await addDealItem(deps.sales,systemActor(intent.tenantId),{workspaceId:intent.workspaceId,dealId:deal.id,name:`${item.name}${item.variantLabel?` (${item.variantLabel})`:""}`,listPriceCents:item.unitPriceCents,quantity:item.quantity});
   }
  }
+ const residualDiscount=intent.snapshot.items.reduce((sum,item)=>sum+Math.max(0,item.unitPriceCents*item.quantity-(item.totalCents??item.unitPriceCents*item.quantity)),0);
+ if(residualDiscount)await updateDealCommercialTerms(deps.sales,systemActor(intent.tenantId),{workspaceId:intent.workspaceId,dealId:deal.id,discountCents:residualDiscount});
  return deal.id;
 }
 async function notifyLead(deps:SiteLeadDeps,input:{intent:SalesIntent;settings:SiteCommerceSettings;customer:string;assigneeUserId?:string;conversationId?:string;dealId?:string}){

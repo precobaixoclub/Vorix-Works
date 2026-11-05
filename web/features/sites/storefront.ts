@@ -47,6 +47,7 @@ export async function openWhatsapp<T extends WhatsappIntent|ReceivedIntent>(star
  }catch(error){popup?.close();throw error;}
 }
 export const startProductWhatsapp=(slug:string,input:{productId:string;variantId?:string;quantity?:number})=>call<WhatsappIntent>(slug,"whatsapp-intents",{...input,requestKey:crypto.randomUUID(),...visitorContext(slug)});
+export const applyCartCoupon=(slug:string,code?:string)=>call<PublicCart>(slug,"cart-coupon",{token:cartToken(slug),code});
 export const fetchCart=(slug:string)=>call<PublicCart>(slug,"cart",{token:cartToken(slug)});
 export async function setCartItem(slug:string,input:{productId:string;variantId?:string;quantity:number}){
  const cart=await call<PublicCart>(slug,"cart-items",{...input,token:cartToken(slug),...visitorContext(slug)});
@@ -65,7 +66,7 @@ export function trackSiteEvent(slug:string,type:"SITE_VIEW"|"PRODUCT_VIEW",produ
 
 // ------------------------------------------------------------------ Fase 2: checkout e pedido
 export const quoteCheckout=(slug:string,postalCode?:string)=>{const token=cartToken(slug);if(!token)throw Error("Seu carrinho está vazio.");return call<import("./types").CheckoutQuote>(slug,"checkout-quote",{token,...(postalCode?{postalCode}:{}),...visitorContext(slug)});};
-export function placeOrder(slug:string,input:{requestKey:string;customer:Record<string,string|undefined>;address?:Record<string,string|undefined>;deliveryOptionId:string;payment:{method:"PIX"|"CARD"|"SANDBOX";cardToken?:string;cardPaymentMethodId?:string;installments?:number}}){
+export function placeOrder(slug:string,input:{pricingKey?:string;requestKey:string;customer:Record<string,string|undefined>;address?:Record<string,string|undefined>;deliveryOptionId:string;payment:{method:"PIX"|"CARD"|"SANDBOX";cardToken?:string;cardPaymentMethodId?:string;installments?:number}}){
  const token=cartToken(slug);if(!token)throw Error("Seu carrinho está vazio.");
  return call<import("./types").PublicOrder>(slug,"checkout-orders",{token,...input,...visitorContext(slug)});
 }

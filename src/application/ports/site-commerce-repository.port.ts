@@ -3,10 +3,11 @@ export type SiteEventType=import("../../domain/sites/site-analytics.js").SiteAna
 export type SiteEventInput={tenantId:string;workspaceId:string;siteId:string;type:SiteEventType;anonymousSessionId?:string;contactId?:string;productId?:string;variantId?:string;salesIntentId?:string;cartId?:string;pageUrl?:string;utm?:Utm;eventKey?:string;referrer?:string;device?:"mobile"|"tablet"|"desktop"|"unknown";orderId?:string;opportunityId?:string;conversationId?:string;attendanceId?:string;amountCents?:number;currency?:string};
 export type CreateSalesIntentInput={tenantId:string;workspaceId:string;siteId:string;reference:string;type:SalesIntentType;status?:"OPEN"|"CONVERTED";productId?:string;variantId?:string;quantity?:number;snapshot:SalesIntentSnapshot;pageUrl?:string;utm:Utm;anonymousSessionId?:string;requestKey?:string;expiresAt:string;contactId?:string;dealId?:string};
 export type SalesIntentLinks={contactId?:string;conversationId?:string;attendanceId?:string;dealId?:string};
-export type SiteCart={id:string;tenantId:string;workspaceId:string;siteId:string;status:"ACTIVE"|"CHECKED_OUT"|"ABANDONED";salesIntentId?:string;expiresAt:string;updatedAt:string};
+export type SiteCart={couponCode?:string;id:string;tenantId:string;workspaceId:string;siteId:string;status:"ACTIVE"|"CHECKED_OUT"|"ABANDONED";salesIntentId?:string;expiresAt:string;updatedAt:string};
 export type SiteCartItemSnapshot={name:string;variantLabel?:string;sku?:string;imageUrl?:string;unitPriceCents:number;currency:string};
 export type SiteCartItem={id:string;productId:string;variantId?:string;quantity:number;productSnapshot:SiteCartItemSnapshot};
 export type SiteCommerceRepositoryPort={
+ setCartCoupon?(cartId:string,code:string|undefined):Promise<void>;
  getSettings(siteId:string):Promise<SiteCommerceSettings|undefined>;
  saveSettings(input:{siteId:string;tenantId:string;workspaceId:string;settings:SiteCommerceSettings;actorUserId:string}):Promise<SiteCommerceSettings>;
  /** Idempotente por (siteId, requestKey): duplo clique/retry devolve a mesma intenção. */

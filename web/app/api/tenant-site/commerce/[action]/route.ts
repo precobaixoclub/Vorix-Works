@@ -3,6 +3,7 @@ import {getApiBaseUrl} from "@/lib/api-error";
 /** Proxy da vitrine pública para a API comercial do Site (mesmo padrão do formulário de contato). */
 const ROUTES:Record<string,{method:"POST"|"PUT";path:(slug:string)=>string}>={
  "whatsapp-intents":{method:"POST",path:slug=>`/v1/public/sites/${slug}/whatsapp-intents`},
+ "cart-coupon":{method:"PUT",path:slug=>`/v1/public/sites/${slug}/cart/coupon`},
  cart:{method:"POST",path:slug=>`/v1/public/sites/${slug}/cart`},
  "cart-items":{method:"PUT",path:slug=>`/v1/public/sites/${slug}/cart/items`},
  checkout:{method:"POST",path:slug=>`/v1/public/sites/${slug}/cart/checkout`},

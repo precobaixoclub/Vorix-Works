@@ -45,7 +45,7 @@ export function WorkspaceTopBar({ workspaceId, name, status, hideBreadcrumb }: {
   }
 
   return (
-    <header className="mobile-chat-hide vorix-glass sticky top-0 z-30 flex shrink-0 flex-col gap-1 border-b border-border/70 px-3 py-1.5 sm:px-5">
+    <header data-workspace-header className="mobile-chat-hide vorix-glass sticky top-0 z-30 flex shrink-0 flex-col gap-1 border-b border-border/70 px-3 py-1.5 sm:px-5">
       <div className="flex min-h-10 items-center justify-between gap-2">
         <div className="flex min-w-0 items-center gap-2.5">
           <WorkspaceSwitcher currentWorkspaceId={workspaceId} currentWorkspaceName={name} />

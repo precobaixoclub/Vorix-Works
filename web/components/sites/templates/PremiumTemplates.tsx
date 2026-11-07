@@ -1,4 +1,5 @@
 "use client";
+import {useEditingSlide} from "../SiteEditorContext";
 import {useState,type ComponentType,type CSSProperties} from "react";
 import {ArrowDown,ArrowRight,ArrowUpRight,Menu,Search,X,Plus,MoveUpRight} from "lucide-react";
 import type {PublicTenantSite,PublicSiteProduct,SiteBlock} from "@/features/sites/types";
@@ -37,7 +38,7 @@ function TemplateHeader(props:TemplateHeaderProps&{variant:string}){
  const nav=header.navigation.filter(link=>link.enabled&&safeSiteHref(link.url));
  const hasContact=site.content.blocks.some(block=>block.enabled&&block.type==="contact");
  const cta=siteHref(header.buttonUrl||(hasContact?"#contato":undefined),basePath);
- const links=nav.map(link=><a key={link.id} href={siteHref(link.url,basePath)} target={link.newTab?"_blank":undefined} rel={link.newTab?"noopener noreferrer":undefined}>{link.label}</a>);
+ const links=nav.map(link=><a key={link.id} data-site-link={link.id} href={siteHref(link.url,basePath)} target={link.newTab?"_blank":undefined} rel={link.newTab?"noopener noreferrer":undefined}>{link.label}</a>);
  return <>
   {header.announcement?.enabled&&header.announcement.text?<div className="ts-announcement">{safeSiteHref(header.announcement.url)?<a href={siteHref(header.announcement.url,basePath)}>{header.announcement.text}</a>:header.announcement.text}</div>:null}
   <header className={`premium-header ${variant}-header ${header.sticky?"is-sticky":""}`}>
@@ -52,7 +53,7 @@ function TemplateHeader(props:TemplateHeaderProps&{variant:string}){
     </div>
    </div>
    {menuOpen?<div className="premium-mobile-menu ts-container">
-    <nav aria-label="Menu do celular">{nav.map(link=><a key={link.id} onClick={onMenu} href={siteHref(link.url,basePath)} target={link.newTab?"_blank":undefined} rel={link.newTab?"noopener noreferrer":undefined}>{link.label}<ArrowUpRight size={16}/></a>)}</nav>
+    <nav aria-label="Menu do celular">{nav.map(link=><a key={link.id} data-site-link={link.id} onClick={onMenu} href={siteHref(link.url,basePath)} target={link.newTab?"_blank":undefined} rel={link.newTab?"noopener noreferrer":undefined}>{link.label}<ArrowUpRight size={16}/></a>)}</nav>
     <div className="premium-mobile-categories">{site.categories.map(category=><a key={category.id} onClick={onMenu} href={`${basePath}/categoria/${category.slug}`}>{category.name}</a>)}</div>
     {cta?<a className="ts-button" href={cta} onClick={onMenu}>{header.buttonLabel||"Fale com a equipe"}<ArrowUpRight size={16}/></a>:null}
    </div>:null}
@@ -68,4 +69,4 @@ export const PulseHeader=(props:TemplateHeaderProps)=><TemplateHeader {...props}
 export const PREMIUM_RENDERERS={nexus:{Hero:withHeroSlides(NexusHero),ProductCard:NexusProductCard,Header:NexusHeader},aura:{Hero:withHeroSlides(AuraHero),ProductCard:AuraProductCard,Header:AuraHeader},pulse:{Hero:withHeroSlides(PulseHero),ProductCard:PulseProductCard,Header:PulseHeader}};
 export function premiumRenderer(id:string,site?:PublicTenantSite):typeof PREMIUM_RENDERERS[keyof typeof PREMIUM_RENDERERS]|undefined{return site&&isFashionKidsSite(site)?FASHION_KIDS_RENDERER:PREMIUM_RENDERERS[id as keyof typeof PREMIUM_RENDERERS];}
 
-function withHeroSlides(Component:ComponentType<TemplateHeroProps>){return function TemplateHero(props:TemplateHeroProps){const [selected,setSelected]=useState(0),slides=props.block.slides?.filter(slide=>slide.enabled),slide=slides?.[selected%(slides.length||1)],layout=props.site.layoutConfig;let block=slide?{...props.block,...slide,id:props.block.id,slides:[slide]}:props.block;if(layout?.heroImageUrl)block={...block,imageUrl:layout.heroImageUrl,slides:[{id:"template-hero",title:block.title,text:block.text,enabled:true,imageUrl:layout.heroImageUrl,mobileImageUrl:layout.heroMobileImageUrl,imageAlt:block.imageAlt}]};if(slides&&slides.length===0)return null;return <div className="premium-hero-wrapper" style={{...(block.style?.background?{"--site-bg":block.style.background}:{}),...(block.style?.foreground?{"--site-fg":block.style.foreground}:{})} as CSSProperties}><Component {...props} block={block}/>{!layout?.heroImageUrl&&slides&&slides.length>1?<div className="premium-slider-controls" aria-label="Banners em destaque">{slides.map((slide,index)=><button key={slide.id} type="button" aria-label={`Mostrar banner ${index+1}`} aria-pressed={selected===index} onClick={()=>setSelected(index)}>{index+1}</button>)}</div>:null}</div>;};}
+function withHeroSlides(Component:ComponentType<TemplateHeroProps>){return function TemplateHero(props:TemplateHeroProps){const [selected,setSelected]=useState(0),editingSlide=useEditingSlide(props.block.id),slides=props.block.slides?.filter(slide=>slide.enabled),editingIndex=slides?.findIndex(slide=>slide.id===editingSlide)??-1,active=editingIndex>=0?editingIndex:selected%(slides?.length||1),slide=slides?.[active],layout=props.site.layoutConfig;let block=slide?{...props.block,...slide,id:props.block.id,slides:[slide]}:props.block;if(layout?.heroImageUrl)block={...block,imageUrl:layout.heroImageUrl,slides:[{id:"template-hero",title:block.title,text:block.text,enabled:true,imageUrl:layout.heroImageUrl,mobileImageUrl:layout.heroMobileImageUrl,imageAlt:block.imageAlt}]};if(slides&&slides.length===0)return null;return <div id={`secao-${props.block.id}`} className="premium-hero-wrapper" style={{...(block.style?.background?{"--site-bg":block.style.background}:{}),...(block.style?.foreground?{"--site-fg":block.style.foreground}:{})} as CSSProperties}><Component {...props} block={block}/>{!layout?.heroImageUrl&&slides&&slides.length>1?<div className="premium-slider-controls" aria-label="Banners em destaque">{slides.map((slide,index)=><button key={slide.id} type="button" aria-label={`Mostrar banner ${index+1}`} aria-pressed={active===index} onClick={()=>setSelected(index)}>{index+1}</button>)}</div>:null}</div>;};}

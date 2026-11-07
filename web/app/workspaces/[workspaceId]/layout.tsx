@@ -158,6 +158,10 @@ function WorkspaceShell({ children }: { children: React.ReactNode }) {
               className={
                 isFocusPath
                   ? "mobile-chat-full min-h-0 min-w-0 flex-1 overflow-hidden bg-surface-sunken pb-16 md:pb-0"
+                  : pathname === `${base}/site`
+                    // Let the editor preview stick to the viewport as the form grows.
+                    // An unconstrained overflow-y:auto ancestor prevents that behavior.
+                    ? "min-w-0 flex-1 overflow-x-clip bg-surface-sunken pb-24 md:pb-0"
                   : "min-w-0 flex-1 overflow-x-hidden overflow-y-auto bg-surface-sunken pb-24 md:pb-0"
               }
             >

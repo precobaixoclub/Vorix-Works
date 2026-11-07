@@ -7,6 +7,7 @@ import {isColorOption} from "@/features/sites/product-media";
 import {formatCurrencyCents} from "@/lib/format";
 import {thumbUrl} from "@/lib/media";
 import {ProductCard, ProductCardTitle, ProductCardMedia} from "../ProductCard";
+import {useEditingSlide} from "../SiteEditorContext";
 import {SiteHeaderCart} from "../SiteHeaderActions";
 import type {TemplateCardProps, TemplateHeaderProps, TemplateHeroProps} from "./PremiumTemplates";
 
@@ -41,8 +42,8 @@ export function FashionKidsHeader({site, basePath, query, onQuery, onSearch, men
           <SiteHeaderCart className="fk-icon fk-cart"/>
         </div>
       </div>
-      <nav className="fk-desktop-nav" aria-label="Navegação do site">{links.map(link => <a key={link.id} href={siteHref(link.url, basePath)} target={link.newTab ? "_blank" : undefined} rel={link.newTab ? "noopener noreferrer" : undefined}>{link.label}</a>)}</nav>
-      {menuOpen ? <nav className="ts-container fk-mobile-nav" id="fk-mobile-menu" aria-label="Menu do celular" onKeyDown={event => {if(event.key === "Escape")onMenu();}}>{links.map(link => <a key={link.id} href={siteHref(link.url, basePath)} target={link.newTab ? "_blank" : undefined} rel={link.newTab ? "noopener noreferrer" : undefined} onClick={onMenu}>{link.label}<ArrowUpRight size={15}/></a>)}</nav> : null}
+      <nav className="fk-desktop-nav" aria-label="Navegação do site">{links.map(link => <a key={link.id} data-site-link={link.id} href={siteHref(link.url, basePath)} target={link.newTab ? "_blank" : undefined} rel={link.newTab ? "noopener noreferrer" : undefined}>{link.label}</a>)}</nav>
+      {menuOpen ? <nav className="ts-container fk-mobile-nav" id="fk-mobile-menu" aria-label="Menu do celular" onKeyDown={event => {if(event.key === "Escape")onMenu();}}>{links.map(link => <a key={link.id} data-site-link={link.id} href={siteHref(link.url, basePath)} target={link.newTab ? "_blank" : undefined} rel={link.newTab ? "noopener noreferrer" : undefined} onClick={onMenu}>{link.label}<ArrowUpRight size={15}/></a>)}</nav> : null}
       {searchOpen ? <form className="ts-container fk-search" id="fk-search" role="search" onSubmit={event => {event.preventDefault();onSearch(event.currentTarget.ownerDocument);setSearchOpen(false);}} onKeyDown={event => {if(event.key === "Escape")closeSearch();}}>
         <Search size={18}/><label className="fk-sr-only" htmlFor="fk-search-input">Buscar no site</label><input id="fk-search-input" ref={searchInput} value={query} onChange={event => onQuery(event.target.value)} placeholder="O que vamos descobrir hoje?" onKeyDown={event=>{if(event.key==="Enter"){event.preventDefault();onSearch(event.currentTarget.ownerDocument);setSearchOpen(false);}}}/><button type="button" className="fk-text-link" onClick={event=>{onSearch(event.currentTarget.ownerDocument);setSearchOpen(false);}}>Buscar<ArrowRight size={15}/></button><button type="button" className="fk-icon" aria-label="Fechar busca" onClick={closeSearch}><X/></button>
       </form> : null}
@@ -56,11 +57,11 @@ function FashionPhoto({product, image, mobileImage, alt, priority = false, class
 }
 
 export function FashionKidsHero({site, block, basePath}: TemplateHeroProps) {
-  const [selected, setSelected] = useState(0), slides = block.slides?.filter(s => s.enabled) ?? [];
+  const [selected, setSelected] = useState(0), editingSlide=useEditingSlide(block.id), slides = block.slides?.filter(s => s.enabled) ?? [], editingIndex=slides.findIndex(slide=>slide.id===editingSlide), active=editingIndex>=0?editingIndex:selected % (slides.length || 1);
   const product = site.products.find(p => p.id === (site.layoutConfig?.featuredProductId ?? block.productIds[0])) ?? site.products[0];
-  const slide = slides[selected % (slides.length || 1)], image = site.layoutConfig?.heroImageUrl || slide?.imageUrl || block.imageUrl;
+  const slide = slides[active], image = site.layoutConfig?.heroImageUrl || slide?.imageUrl || block.imageUrl;
   const copy = slide ?? block, defaultCopy = !copy.title || copy.title === "Boas escolhas começam por aqui.";
-  return <section className="fk-hero" aria-label="Coleção Bambilu Kids">
+  return <section id={`secao-${block.id}`} className="fk-hero" aria-label="Coleção Bambilu Kids">
     <div className="fk-hero-copy"><span className="fk-kicker">UM MUNDO DE POSSIBILIDADES</span>
       <h1>{defaultCopy ? <>Estilo para<br/>acompanhar<br/><em>cada fase.</em></> : copy.title}</h1>
       <p>{defaultCopy ? "Para os dias cheios de histórias. E todos os que ainda estão por vir." : copy.text}</p>
@@ -69,7 +70,7 @@ export function FashionKidsHero({site, block, basePath}: TemplateHeroProps) {
     </div>
     <div className="fk-hero-visual"><FashionPhoto product={product} image={image} mobileImage={site.layoutConfig?.heroMobileImageUrl || slide?.mobileImageUrl} alt={slide?.imageAlt || block.imageAlt} priority/>
       <a href={`${basePath}#catalogo`} className="fk-photo-caption"><span>{image ? "O universo Bambilu" : "Um olhar para a nossa coleção"}</span><ArrowDown size={18}/></a>
-      {!site.layoutConfig?.heroImageUrl && slides.length > 1 ? <div className="fk-banner-controls" aria-label="Banners em destaque">{slides.map((s, index) => <button type="button" key={s.id} aria-label={`Mostrar banner ${index + 1}`} aria-pressed={selected === index} onClick={() => setSelected(index)}>{index + 1}</button>)}</div> : null}
+      {!site.layoutConfig?.heroImageUrl && slides.length > 1 ? <div className="fk-banner-controls" aria-label="Banners em destaque">{slides.map((s, index) => <button type="button" key={s.id} aria-label={`Mostrar banner ${index + 1}`} aria-pressed={active === index} onClick={() => setSelected(index)}>{index + 1}</button>)}</div> : null}
     </div>
   </section>;
 }
@@ -90,7 +91,7 @@ function FashionExplore({site, basePath}: {site: PublicTenantSite; basePath: str
 function FashionEditorial({site, basePath}: {site: PublicTenantSite; basePath: string}) {
   const block = site.content.blocks.find(b => b.enabled && b.type === "image_text");
   const product = site.products.find(p => p.id !== site.products[0]?.id && p.imageUrls.length) ?? site.products[0];
-  return <section className="fk-editorial" id="nosso-olhar"><div className="ts-container fk-editorial-layout">
+  return <section className="fk-editorial" id="nosso-olhar" data-site-block={block?.id}>{block?<span id={`secao-${block.id}`} aria-hidden="true"/>:null}<div className="ts-container fk-editorial-layout">
     <FashionPhoto product={product} image={block?.imageUrl} alt={block?.imageAlt}/>
     <div className="fk-editorial-copy"><span className="fk-kicker">{block?.eyebrow || "O NOSSO OLHAR"}</span><span className="fk-editorial-flower" aria-hidden="true">✳</span><h2>{block?.title || <>Para brincar,<br/>descobrir<br/>e <em>crescer.</em></>}</h2><p>{block?.text || "A infância acontece nos pequenos momentos. Nas cores preferidas, nas novas descobertas e na liberdade de ser quem se é."}</p><a className="fk-text-link" href={siteHref(block?.buttonUrl || "#catalogo", basePath)}>{block?.buttonLabel || "Encontre sua próxima escolha"}<ArrowRight size={18}/></a></div>
   </div></section>;

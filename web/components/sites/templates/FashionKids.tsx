@@ -51,24 +51,25 @@ export function FashionKidsHeader({site, basePath, query, onQuery, onSearch, men
   </>;
 }
 
-function FashionPhoto({product, image, mobileImage, alt, priority = false, className = ""}: {product?: PublicSiteProduct; image?: string; mobileImage?: string; alt?: string; priority?: boolean; className?: string}) {
+function FashionPhoto({product, image, mobileImage, alt, priority = false, className = "", intrinsic = false}: {product?: PublicSiteProduct; image?: string; mobileImage?: string; alt?: string; priority?: boolean; className?: string; intrinsic?: boolean}) {
   const url = image || product?.imageUrls[0];
-  return <div className={`fk-photo ${className}`}>{url ? <picture>{mobileImage ? <source media="(max-width:700px)" srcSet={mobileImage}/> : null}<img src={image ? url : thumbUrl(url, 960)} alt={alt || product?.name || ""} width={960} height={1200} loading={priority ? "eager" : "lazy"} fetchPriority={priority ? "high" : "auto"} decoding="async" data-fashion-product-photo={!image || undefined}/></picture> : <span className="fk-photo-empty">{product?.name || "Bambilu Kids"}</span>}</div>;
+  return <div className={`fk-photo ${className}`}>{url ? <picture>{mobileImage ? <source media="(max-width:700px)" srcSet={mobileImage}/> : null}<img src={image ? url : thumbUrl(url, 960)} alt={alt || product?.name || ""} width={intrinsic ? undefined : 960} height={intrinsic ? undefined : 1200} loading={priority ? "eager" : "lazy"} fetchPriority={priority ? "high" : "auto"} decoding="async" data-fashion-product-photo={!image || undefined}/></picture> : <span className="fk-photo-empty">{product?.name || "Bambilu Kids"}</span>}</div>;
 }
 
 export function FashionKidsHero({site, block, basePath}: TemplateHeroProps) {
   const [selected, setSelected] = useState(0), editingSlide=useEditingSlide(block.id), slides = block.slides?.filter(s => s.enabled) ?? [], editingIndex=slides.findIndex(slide=>slide.id===editingSlide), active=editingIndex>=0?editingIndex:selected % (slides.length || 1);
   const product = site.products.find(p => p.id === (site.layoutConfig?.featuredProductId ?? block.productIds[0])) ?? site.products[0];
   const slide = slides[active], image = site.layoutConfig?.heroImageUrl || slide?.imageUrl || block.imageUrl;
+  const mobileImage = site.layoutConfig?.heroMobileImageUrl || slide?.mobileImageUrl;
   const copy = slide ?? block, defaultCopy = !copy.title || copy.title === "Boas escolhas começam por aqui.";
-  return <section id={`secao-${block.id}`} className="fk-hero" aria-label="Coleção Bambilu Kids">
+  return <section id={`secao-${block.id}`} className="fk-hero" data-campaign-visual={!!image || undefined} data-mobile-campaign-visual={!!mobileImage || undefined} aria-label="Coleção Bambilu Kids">
     <div className="fk-hero-copy"><span className="fk-kicker">UM MUNDO DE POSSIBILIDADES</span>
       <h1>{defaultCopy ? <>Estilo para<br/>acompanhar<br/><em>cada fase.</em></> : copy.title}</h1>
       <p>{defaultCopy ? "Para os dias cheios de histórias. E todos os que ainda estão por vir." : copy.text}</p>
       <a href={siteHref(defaultCopy ? "#catalogo" : copy.buttonUrl || "#catalogo", basePath)} className="fk-text-link">{defaultCopy ? "Ver coleção" : copy.buttonLabel || "Ver coleção"}<ArrowRight size={18}/></a>
       <span className="fk-hero-footnote"><span aria-hidden="true">✳</span> O bonito é crescer do seu jeito.</span>
     </div>
-    <div className="fk-hero-visual"><FashionPhoto product={product} image={image} mobileImage={site.layoutConfig?.heroMobileImageUrl || slide?.mobileImageUrl} alt={slide?.imageAlt || block.imageAlt} priority/>
+    <div className="fk-hero-visual"><FashionPhoto product={product} image={image} mobileImage={mobileImage} alt={slide?.imageAlt || block.imageAlt} intrinsic={!!(image || mobileImage)} priority/>
       <a href={`${basePath}#catalogo`} className="fk-photo-caption"><span>{image ? "O universo Bambilu" : "Um olhar para a nossa coleção"}</span><ArrowDown size={18}/></a>
       {!site.layoutConfig?.heroImageUrl && slides.length > 1 ? <div className="fk-banner-controls" aria-label="Banners em destaque">{slides.map((s, index) => <button type="button" key={s.id} aria-label={`Mostrar banner ${index + 1}`} aria-pressed={active === index} onClick={() => setSelected(index)}>{index + 1}</button>)}</div> : null}
     </div>

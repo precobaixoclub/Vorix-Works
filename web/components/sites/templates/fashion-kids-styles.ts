@@ -44,5 +44,14 @@ export const FASHION_KIDS_STYLES = String.raw`
  .tenant-site-fashion-kids .ts-product-detail{padding-top:20px}.tenant-site-fashion-kids .ts-breadcrumb{font-size:9px;margin-bottom:18px}.tenant-site-fashion-kids .ts-product-detail-grid{grid-template-columns:1fr;gap:28px;margin-bottom:45px}.tenant-site-fashion-kids .sp-detail-gallery .sp-stage{aspect-ratio:4/5}.tenant-site-fashion-kids .sp-detail-gallery .sp-photo{padding:12px}.tenant-site-fashion-kids .sp-thumbnails button{flex-basis:51px;height:64px}.tenant-site-fashion-kids .sp-thumbnails{gap:8px;margin-top:10px}.tenant-site-fashion-kids .ts-detail-copy{gap:20px;padding-top:0}.tenant-site-fashion-kids .ts-detail-copy h1{font-size:43px}.tenant-site-fashion-kids .ts-detail-price{font-size:21px}.tenant-site-fashion-kids .ts-options{gap:18px}.tenant-site-fashion-kids .ts-related-products{padding-block:30px 40px}.tenant-site-fashion-kids .ts-related-products>div{gap:25px 14px}.tenant-site-fashion-kids .ts-related-products h2,.tenant-site-fashion-kids .ts-product-inquiry h2{font-size:33px}.tenant-site-fashion-kids .ts-product-inquiry .ts-form{padding-bottom:15px}
 }
 @media(max-width:700px){.tenant-site-fashion-kids .fk-header-main{grid-template-columns:72px minmax(0,1fr)72px;gap:6px}.tenant-site-fashion-kids .fk-brand{min-width:0;max-width:100%;overflow:hidden}.tenant-site-fashion-kids .fk-wordmark{display:block;max-width:100%;overflow:hidden;text-overflow:ellipsis}.tenant-site-fashion-kids .fk-header-actions{width:72px;min-width:0;gap:0}}
+/* Uploaded artwork keeps its own ratio. Fixed portrait frames are only for catalog photos. */
+.fk-hero[data-campaign-visual=true] .fk-hero-visual>.fk-photo{height:auto;max-height:none;background:transparent}
+.fk-hero[data-campaign-visual=true] .fk-hero-visual>.fk-photo picture{height:auto}
+.fk-hero[data-campaign-visual=true] .fk-hero-visual>.fk-photo img{height:auto;aspect-ratio:auto 2/1}
+@media(max-width:700px){
+ .fk-hero[data-mobile-campaign-visual=true] .fk-hero-visual>.fk-photo{height:auto;max-height:none;background:transparent}
+ .fk-hero[data-mobile-campaign-visual=true] .fk-hero-visual>.fk-photo picture{height:auto}
+ .fk-hero[data-mobile-campaign-visual=true] .fk-hero-visual>.fk-photo img{height:auto;aspect-ratio:auto 4/5}
+}
 @media(prefers-reduced-motion:reduce){.tenant-site-fashion-kids *{scroll-behavior:auto!important;transition:none!important}}
 `;

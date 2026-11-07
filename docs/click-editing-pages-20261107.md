@@ -22,4 +22,14 @@ Evidências locais em [qa/click-editing-pages-20261107](qa/click-editing-pages-2
 
 ## Publicação
 
-Registro da publicação e das verificações finais será acrescentado após o deploy.
+Release `cad27d6` enviada à main e publicada pelo procedimento oficial com alvo `web`. Build Linux e TypeScript aprovados, `DEPLOY_DONE`, API pronta, site HTTP 200, logs sem erros fatais e seis contêineres saudáveis. Os 15 arquivos de interface correspondem ao commit, a imagem em execução corresponde ao build e o ambiente foi preservado. Nenhum rollback necessário.
+
+A interface realmente publicada passou pela conferência em 1440 × 1000, 1920 × 1080 e 390 × 844 px. Seleção do conteúdo padrão e da foto, foco no campo, atualização imediata, aviso de rascunho, botão azul, criação de página, expansão/recolhimento e preservação de valores aprovados. Sem overflow horizontal ou erros JavaScript. A conferência usa uma API local fictícia interceptando todas as chamadas de produção; não grava dados reais.
+
+Os dados públicos da loja permaneceram iguais aos anteriores ao deploy, desconsiderando apenas assinatura e expiração dos links de mídia. A seleção e as edições feitas durante os testes também não alteraram a revisão salva nem a publicação da base fictícia.
+
+Evidências: [resultado no navegador](qa/click-editing-pages-20261107/production-editor-validation.json), [verificação do host](qa/click-editing-pages-20261107/production-host.json), [páginas no computador](qa/click-editing-pages-20261107/production-pages-desktop.png), [tela ampla](qa/click-editing-pages-20261107/production-pages-wide.png), [seleção no celular](qa/click-editing-pages-20261107/production-selection-mobile.png) e [páginas no celular](qa/click-editing-pages-20261107/production-pages-mobile.png).
+
+Recuperação: `/opt/zuno/deploy_backups/pre-cad27d6-20261107163121.tgz`, `/opt/zuno/deploy_backups/db-pre-cad27d6-20261107163121.sql.gz`, `/root/.env.zuno.pre-cad27d6-20261107163121` e imagem `zuno-zuno-web:rollback-20261107163121`. Pacote exato em `/opt/zuno/deploy_backups/release-cad27d6.tgz`, SHA-256 `5c6023135e7f8fc2835dea3363b371df9a80bf6aa4eebfcc9e74861b28cf530f`. Log: `/var/log/vorix-deploy-cad27d6-20261107163121.log`.
+
+O registro de produção é enviado em commit posterior de documentação. A aplicação publicada corresponde à release `cad27d6`.

@@ -1,0 +1,60 @@
+{
+  "release": "cad27d6",
+  "at": "2026-11-07T16:38:02.226Z",
+  "method": "Published frontend with local fictional API fixtures; all production API requests intercepted",
+  "editor": [
+    {
+      "mode": "desktop",
+      "width": 1440,
+      "height": 1000,
+      "clickOpensField": true,
+      "generatedContentEditable": true,
+      "selectionDoesNotDirtyDraft": true,
+      "liveChanges": true,
+      "photoFieldSelected": true,
+      "blueCreateButton": true,
+      "pageCreation": true,
+      "pageAccordion": true,
+      "valuesPreserved": true,
+      "savedDataUnchanged": true,
+      "publicContentUnchanged": true,
+      "overflow": false
+    },
+    {
+      "mode": "wide",
+      "width": 1920,
+      "height": 1080,
+      "clickOpensField": true,
+      "generatedContentEditable": true,
+      "selectionDoesNotDirtyDraft": true,
+      "liveChanges": true,
+      "photoFieldSelected": true,
+      "blueCreateButton": true,
+      "pageCreation": true,
+      "pageAccordion": true,
+      "valuesPreserved": true,
+      "savedDataUnchanged": true,
+      "publicContentUnchanged": true,
+      "overflow": false
+    },
+    {
+      "mode": "mobile",
+      "width": 390,
+      "height": 844,
+      "clickOpensField": true,
+      "generatedContentEditable": true,
+      "selectionDoesNotDirtyDraft": true,
+      "liveChanges": true,
+      "photoFieldSelected": true,
+      "blueCreateButton": true,
+      "pageCreation": true,
+      "pageAccordion": true,
+      "valuesPreserved": true,
+      "savedDataUnchanged": true,
+      "publicContentUnchanged": true,
+      "overflow": false
+    }
+  ],
+  "pageErrors": [],
+  "productionWrites": 0
+}

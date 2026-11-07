@@ -1,0 +1,22 @@
+{
+  "release": "cad27d6",
+  "sourceFilesMatched": 15,
+  "healthyContainers": 6,
+  "containers": {
+    "marketplaces-worker": "healthy",
+    "social-provider-gateway": "healthy",
+    "vorix-worker": "healthy",
+    "zuno-api": "healthy",
+    "zuno-postgres": "healthy",
+    "zuno-web": "healthy"
+  },
+  "environmentPreserved": true,
+  "webImage": "sha256:afc4be251a6d50074dc78819782e61dc32516bdac952a2b5554ea852333110c0",
+  "runningImageMatchesBuild": true,
+  "ready": true,
+  "webStatus": 200,
+  "deployDone": true,
+  "deployLog": "/var/log/vorix-deploy-cad27d6-20261107163121.log",
+  "publicDataUnchanged": true,
+  "archiveSha256": "5c6023135e7f8fc2835dea3363b371df9a80bf6aa4eebfcc9e74861b28cf530f"
+}

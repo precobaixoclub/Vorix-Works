@@ -23,4 +23,4 @@ Os componentes são compartilhados pelos seis modelos, mantendo as identidades v
 
 Capturas da rodada aprovada em [qa/site-editor-20261107](qa/site-editor-20261107). Os dados exibidos são fictícios.
 
-Este documento registra a implementação validada. O resultado da publicação é registrado separadamente após o deploy.
+Publicado em 07/11/2026. [Resultado do deploy e conferências de produção](production-site-editor-deploy-20261107.md).

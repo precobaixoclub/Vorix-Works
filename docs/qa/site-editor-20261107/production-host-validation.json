@@ -1,0 +1,12 @@
+{
+  "release": "f645661",
+  "sourceFilesMatched": 31,
+  "ready": true,
+  "readinessStatus": "degraded",
+  "publicDataPreserved": true,
+  "publicDataDigest": "62e2c44216679b4494ce6c84a3fde80eb3b9ea2229af20bc7b3a6d13d7fff7cb",
+  "environmentPreserved": true,
+  "deployLog": "/var/log/vorix-deploy-f645661-20261107124822.log",
+  "webImage": "sha256:5e62dca9f8416683ce0ca3db2a057f1c0fac9c267cc9c15b7ed6a28109f8f9cd",
+  "buildId": "JpEJNyaZ4jH34zaUIV7Pu"
+}

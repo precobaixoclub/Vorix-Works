@@ -1,0 +1,136 @@
+{
+  "release": "f645661",
+  "at": "2026-11-07T12:55:52.174Z",
+  "checks": [
+    {
+      "model": "nexus",
+      "surface": "home",
+      "width": 390,
+      "status": 200,
+      "overflow": false,
+      "brokenVisibleImages": 0
+    },
+    {
+      "model": "nexus",
+      "surface": "home",
+      "width": 1440,
+      "status": 200,
+      "overflow": false,
+      "brokenVisibleImages": 0
+    },
+    {
+      "model": "nexus",
+      "surface": "product",
+      "width": 390,
+      "status": 200,
+      "overflow": false,
+      "brokenVisibleImages": 0
+    },
+    {
+      "model": "nexus",
+      "surface": "product",
+      "width": 1440,
+      "status": 200,
+      "overflow": false,
+      "brokenVisibleImages": 0
+    },
+    {
+      "model": "aura",
+      "surface": "home",
+      "width": 390,
+      "status": 200,
+      "overflow": false,
+      "brokenVisibleImages": 0
+    },
+    {
+      "model": "aura",
+      "surface": "home",
+      "width": 1440,
+      "status": 200,
+      "overflow": false,
+      "brokenVisibleImages": 0
+    },
+    {
+      "model": "aura",
+      "surface": "product",
+      "width": 390,
+      "status": 200,
+      "overflow": false,
+      "brokenVisibleImages": 0
+    },
+    {
+      "model": "aura",
+      "surface": "product",
+      "width": 1440,
+      "status": 200,
+      "overflow": false,
+      "brokenVisibleImages": 0
+    },
+    {
+      "model": "pulse",
+      "surface": "home",
+      "width": 390,
+      "status": 200,
+      "overflow": false,
+      "brokenVisibleImages": 0
+    },
+    {
+      "model": "pulse",
+      "surface": "home",
+      "width": 1440,
+      "status": 200,
+      "overflow": false,
+      "brokenVisibleImages": 0
+    },
+    {
+      "model": "pulse",
+      "surface": "product",
+      "width": 390,
+      "status": 200,
+      "overflow": false,
+      "brokenVisibleImages": 0
+    },
+    {
+      "model": "pulse",
+      "surface": "product",
+      "width": 1440,
+      "status": 200,
+      "overflow": false,
+      "brokenVisibleImages": 0
+    },
+    {
+      "model": "bambilu-kids",
+      "surface": "home",
+      "width": 390,
+      "status": 200,
+      "overflow": false,
+      "brokenVisibleImages": 0
+    },
+    {
+      "model": "bambilu-kids",
+      "surface": "home",
+      "width": 1440,
+      "status": 200,
+      "overflow": false,
+      "brokenVisibleImages": 0
+    },
+    {
+      "model": "bambilu-kids",
+      "surface": "product",
+      "width": 390,
+      "status": 200,
+      "overflow": false,
+      "brokenVisibleImages": 0
+    },
+    {
+      "model": "bambilu-kids",
+      "surface": "product",
+      "width": 1440,
+      "status": 200,
+      "overflow": false,
+      "brokenVisibleImages": 0
+    }
+  ],
+  "pageErrors": [],
+  "businessWrites": 0
+}

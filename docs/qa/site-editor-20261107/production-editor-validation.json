@@ -1,0 +1,35 @@
+{
+  "release": "f645661",
+  "at": "2026-11-07T12:55:52.203Z",
+  "method": "Published frontend with local fictional API fixtures; all production API requests intercepted",
+  "editor": [
+    {
+      "mode": "desktop",
+      "width": 1440,
+      "height": 1000,
+      "liveDraft": true,
+      "dirtyNotice": true,
+      "photoButton": true,
+      "fieldGuidance": true,
+      "followFooter": true,
+      "previewVisible": true,
+      "guidedLinks": true,
+      "overflow": false
+    },
+    {
+      "mode": "mobile",
+      "width": 390,
+      "height": 844,
+      "liveDraft": true,
+      "dirtyNotice": true,
+      "photoButton": true,
+      "fieldGuidance": true,
+      "followFooter": true,
+      "previewVisible": true,
+      "guidedLinks": true,
+      "overflow": false
+    }
+  ],
+  "pageErrors": [],
+  "productionWrites": 0
+}

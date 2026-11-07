@@ -20,4 +20,14 @@ Evidências em [qa/banner-fill-20261107](qa/banner-fill-20261107): [imagem real 
 
 ## Publicação
 
-Registro da publicação e das verificações finais será acrescentado após o deploy.
+Release `94da075` enviada à main e publicada pelo procedimento oficial com alvo `web`. Build Linux e TypeScript aprovados, `DEPLOY_DONE`, API pronta, site HTTP 200, logs sem erros fatais e seis contêineres saudáveis. Os sete arquivos de interface correspondem ao commit e a imagem em execução corresponde ao build. Ambiente preservado; nenhum rollback necessário.
+
+A conferência no site publicado passou em 390, 768, 1440, 1920 e 3840 px. No computador, a foto corresponde às quatro bordas da coluna, sem espaços superiores ou inferiores, usando recorte central. No celular, a arte mantém a proporção natural. Título preservado, sem overflow horizontal ou erros JavaScript. As capturas usam a janela completa para mostrar o banner junto do cabeçalho, evitando a sobreposição de elementos fixos nas capturas isoladas.
+
+Dados públicos da loja iguais aos anteriores ao deploy, desconsiderando apenas assinatura e expiração dos links de mídia. As verificações não gravaram em produção; as imagens do restante do catálogo foram substituídas apenas no navegador de teste para limitar requisições.
+
+Evidências: [resultado no navegador](qa/banner-fill-20261107/production-validation.json), [verificação do host](qa/banner-fill-20261107/production-host.json), [computador](qa/banner-fill-20261107/production-real-1440.png), [tela ampla](qa/banner-fill-20261107/production-real-1920.png) e [celular](qa/banner-fill-20261107/production-real-390.png).
+
+Recuperação: `/opt/zuno/deploy_backups/pre-94da075-20261107151438.tgz`, `/opt/zuno/deploy_backups/db-pre-94da075-20261107151438.sql.gz`, `/root/.env.zuno.pre-94da075-20261107151438` e imagem `zuno-zuno-web:rollback-20261107151438`. Pacote exato em `/opt/zuno/deploy_backups/release-94da075.tgz`, SHA-256 `880eb1d984b140d69d4149e6a1f7a33a09856418107ea6a4b986ec908cefde55`. Log: `/var/log/vorix-deploy-94da075-20261107151438.log`.
+
+O registro de produção é enviado em commit posterior de documentação. A aplicação publicada corresponde à release `94da075`.

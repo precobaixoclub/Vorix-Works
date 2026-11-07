@@ -1,0 +1,78 @@
+{
+  "release": "94da075",
+  "at": "2026-11-07T15:20:15.536Z",
+  "checks": [
+    {
+      "width": 390,
+      "fit": "contain",
+      "naturalRatio": 0.8002853067047075,
+      "renderedRatio": 0.8002942258183156,
+      "gaps": [
+        18,
+        46,
+        25,
+        25
+      ],
+      "overflow": false,
+      "hasTitle": true
+    },
+    {
+      "width": 768,
+      "fit": "cover",
+      "naturalRatio": 2,
+      "renderedRatio": 0.6735549647819772,
+      "gaps": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "overflow": false,
+      "hasTitle": true
+    },
+    {
+      "width": 1440,
+      "fit": "cover",
+      "naturalRatio": 2,
+      "renderedRatio": 1.0153363016497816,
+      "gaps": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "overflow": false,
+      "hasTitle": true
+    },
+    {
+      "width": 1920,
+      "fit": "cover",
+      "naturalRatio": 2,
+      "renderedRatio": 1.3365398908496315,
+      "gaps": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "overflow": false,
+      "hasTitle": true
+    },
+    {
+      "width": 3840,
+      "fit": "cover",
+      "naturalRatio": 2,
+      "renderedRatio": 2.673079781699263,
+      "gaps": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "overflow": false,
+      "hasTitle": true
+    }
+  ],
+  "pageErrors": [],
+  "productionWrites": 0
+}

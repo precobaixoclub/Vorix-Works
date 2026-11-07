@@ -1,6 +1,6 @@
 import {defineConfig,devices} from "@playwright/test";
 export default defineConfig({
- testDir:"./e2e",testMatch:["website-builder-templates.spec.ts","site-editor-interactions.spec.ts"],outputDir:"test-results/template-parity",timeout:180000,workers:1,retries:0,reporter:[["list"]],
+ testDir:"./e2e",testMatch:["website-builder-templates.spec.ts","site-editor-interactions.spec.ts","site-click-editing.spec.ts"],outputDir:"test-results/template-parity",timeout:180000,workers:1,retries:0,reporter:[["list"]],
  use:{baseURL:"http://127.0.0.1:3391",channel:"chrome",trace:"retain-on-failure"},
  webServer:[
   {command:"node tests/fixtures/product-site-browser-server.mjs --site-commerce --site-builder",cwd:"..",url:"http://127.0.0.1:3390/fixture-only/scope",reuseExistingServer:false,timeout:120000},

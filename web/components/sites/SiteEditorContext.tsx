@@ -6,5 +6,7 @@ export type SitePreviewFocus={selector:string;label:string;path:string[];blockId
 export const PreviewEditingContext=createContext<SitePreviewFocus|undefined>(undefined);
 export type SitePreviewDestination=Omit<SitePreviewFocus,"token"|"field"|"path">&{path?:string[];field?:string};
 export const SiteEditorFollowContext=createContext<(target:SitePreviewDestination)=>void>(()=>{});
+export type SitePreviewSelection=SitePreviewDestination&{section:string;path:string[];fieldLabel?:string;columnId?:string;productId?:string;synthetic?:"fashion-editorial";token?:number};
+export const SiteEditorSelectionContext=createContext<SitePreviewSelection|undefined>(undefined);
 /** A preview-only carousel override; it never changes the draft or published content. */
 export function useEditingSlide(blockId:string){const focus=useContext(PreviewEditingContext);return focus?.blockId===blockId?focus.slideId:undefined;}

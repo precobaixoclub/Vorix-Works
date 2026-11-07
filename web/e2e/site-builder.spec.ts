@@ -73,7 +73,7 @@ test("seções permitem duplicar, mover, ocultar, desfazer e formatar texto",asy
 });
 
 test("páginas de rascunho têm prévia e ficam fora da publicação",async({page,context,request},info)=>{
- await login(page,"paginas");await page.getByRole("button",{name:"Adicionar página",exact:true}).click();await page.getByLabel("Título da página",{exact:true}).fill("Cuidados especiais");await page.getByLabel("Endereço da página",{exact:true}).fill("cuidados-especiais");await page.getByLabel("Título da seção",{exact:true}).fill("Um conteúdo só nosso");
+ await login(page,"paginas");await page.getByRole("button",{name:"Criar nova página",exact:true}).click();await page.getByLabel("Título da página",{exact:true}).fill("Cuidados especiais");await page.getByLabel("Endereço da página",{exact:true}).fill("cuidados-especiais");await page.getByLabel("Título da seção",{exact:true}).fill("Um conteúdo só nosso");
  await page.getByRole("button",{name:"Mostrar esta página na prévia",exact:true}).click();const frame=await preview(page);await expect(frame.getByRole("heading",{name:"Cuidados especiais",exact:true})).toBeVisible();await expect(frame.getByRole("heading",{name:"Um conteúdo só nosso",exact:true})).toBeVisible();await closePreview(page);await save(page);await publish(page);
  const visitor=await context.newPage();await visitor.goto(`/s/${scope.slug}/cuidados-especiais`);await expect(visitor.getByRole("heading",{name:"Cuidados especiais",exact:true})).toHaveCount(0);await visitor.close();
  const visibility=page.getByRole("switch",{name:"Incluir esta página na próxima publicação",exact:true});await visibility.click();await expect(visibility).toBeChecked();await save(page);await expect(visibility).toBeChecked();await publish(page);

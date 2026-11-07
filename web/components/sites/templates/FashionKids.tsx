@@ -3,6 +3,7 @@ import {Fragment, useRef, useState, type ReactNode} from "react";
 import {ArrowDown, ArrowRight, ArrowUpRight, Menu, Search, ShoppingBag, X, Palette, Ruler, MessageCircle} from "lucide-react";
 import type {PublicTenantSite, SiteBlock, PublicSiteProduct} from "@/features/sites/types";
 import {resolvedHeader, safeSiteHref, siteHref} from "@/features/sites/customization";
+import {fashionEditorialDefaults} from "@/features/sites/fashion-kids";
 import {isColorOption} from "@/features/sites/product-media";
 import {formatCurrencyCents} from "@/lib/format";
 import {thumbUrl} from "@/lib/media";
@@ -62,8 +63,8 @@ export function FashionKidsHero({site, block, basePath}: TemplateHeroProps) {
   const slide = slides[active], image = site.layoutConfig?.heroImageUrl || slide?.imageUrl || block.imageUrl;
   const mobileImage = site.layoutConfig?.heroMobileImageUrl || slide?.mobileImageUrl;
   const copy = slide ?? block, defaultCopy = !copy.title || copy.title === "Boas escolhas começam por aqui.";
-  return <section id={`secao-${block.id}`} className="fk-hero" data-image-fit={block.style?.imageFit??"cover"} data-campaign-visual={!!image || undefined} data-mobile-campaign-visual={!!mobileImage || undefined} aria-label="Coleção Bambilu Kids">
-    <div className="fk-hero-copy"><span className="fk-kicker">UM MUNDO DE POSSIBILIDADES</span>
+  return <section id={`secao-${block.id}`} className="fk-hero" data-site-active-slide={slide?.id} data-image-fit={block.style?.imageFit??"cover"} data-campaign-visual={!!image || undefined} data-mobile-campaign-visual={!!mobileImage || undefined} aria-label="Coleção Bambilu Kids">
+    <div className="fk-hero-copy"><span className="fk-kicker">{block.eyebrow||"UM MUNDO DE POSSIBILIDADES"}</span>
       <h1>{defaultCopy ? <>Estilo para<br/>acompanhar<br/><em>cada fase.</em></> : copy.title}</h1>
       <p>{defaultCopy ? "Para os dias cheios de histórias. E todos os que ainda estão por vir." : copy.text}</p>
       <a href={siteHref(defaultCopy ? "#catalogo" : copy.buttonUrl || "#catalogo", basePath)} className="fk-text-link">{defaultCopy ? "Ver coleção" : copy.buttonLabel || "Ver coleção"}<ArrowRight size={18}/></a>
@@ -91,10 +92,11 @@ function FashionExplore({site, basePath}: {site: PublicTenantSite; basePath: str
 
 function FashionEditorial({site, basePath}: {site: PublicTenantSite; basePath: string}) {
   const block = site.content.blocks.find(b => b.enabled && b.type === "image_text");
+  const copy=block??fashionEditorialDefaults();
   const product = site.products.find(p => p.id !== site.products[0]?.id && p.imageUrls.length) ?? site.products[0];
   return <section className="fk-editorial" id="nosso-olhar" data-site-block={block?.id}>{block?<span id={`secao-${block.id}`} aria-hidden="true"/>:null}<div className="ts-container fk-editorial-layout">
     <FashionPhoto product={product} image={block?.imageUrl} alt={block?.imageAlt}/>
-    <div className="fk-editorial-copy"><span className="fk-kicker">{block?.eyebrow || "O NOSSO OLHAR"}</span><span className="fk-editorial-flower" aria-hidden="true">✳</span><h2>{block?.title || <>Para brincar,<br/>descobrir<br/>e <em>crescer.</em></>}</h2><p>{block?.text || "A infância acontece nos pequenos momentos. Nas cores preferidas, nas novas descobertas e na liberdade de ser quem se é."}</p><a className="fk-text-link" href={siteHref(block?.buttonUrl || "#catalogo", basePath)}>{block?.buttonLabel || "Encontre sua próxima escolha"}<ArrowRight size={18}/></a></div>
+    <div className="fk-editorial-copy">{copy.eyebrow?<span className="fk-kicker">{copy.eyebrow}</span>:null}<span className="fk-editorial-flower" aria-hidden="true">✳</span>{copy.title?<h2>{copy.title===fashionEditorialDefaults().title?<>Para brincar,<br/>descobrir<br/>e <em>crescer.</em></>:copy.title}</h2>:null}{copy.text?<p>{copy.text}</p>:null}{copy.buttonLabel?<a className="fk-text-link" href={siteHref(copy.buttonUrl || "#catalogo", basePath)}>{copy.buttonLabel}<ArrowRight size={18}/></a>:null}</div>
   </div></section>;
 }
 
@@ -114,13 +116,13 @@ function FashionDetails({site, basePath}: {site: PublicTenantSite; basePath: str
 export function FashionKidsHome({site, basePath, renderSection}: {site: PublicTenantSite; basePath: string; renderSection: (block: SiteBlock) => ReactNode}) {
   const blocks = site.content.blocks.filter(b => b.enabled), firstCatalog = blocks.find(b => b.type === "catalog");
   const featured = site.products.filter(p => !firstCatalog?.productIds.length || firstCatalog.productIds.includes(p.id)).slice(0, 4);
-  const editorial = blocks.find(b => b.type === "image_text" && b.imageUrl);
+  const editorial = blocks.find(b => b.type === "image_text"), showEditorial=!!editorial||!site.content.blocks.some(b=>b.type==="image_text");
   return <>{blocks.map(block => {
     if(block === editorial && firstCatalog)return null;
     if(block === firstCatalog)return <Fragment key={block.id}>
       <FashionExplore site={site} basePath={basePath}/>
       {featured.length ? <section className="ts-container fk-featured" id="em-destaque"><div className="fk-section-heading"><div><span className="fk-kicker">ESCOLHAS BAMBILU</span><h2>Pequenos favoritos.</h2></div><a className="fk-text-link" href={`${basePath}#catalogo`}>Ver tudo<ArrowRight size={16}/></a></div><div className="fk-featured-grid">{featured.map((product, index) => <FashionKidsProductCard key={product.id} product={product} site={site} basePath={basePath} index={index}/>)}</div></section> : null}
-      <FashionEditorial site={site} basePath={basePath}/>
+      {showEditorial?<FashionEditorial site={site} basePath={basePath}/>:null}
       {renderSection({...block, title: block.title === "Nosso catálogo" ? "Encontre a sua próxima escolha." : block.title, eyebrow: block.eyebrow || "TODA A COLEÇÃO"})}
       <FashionDetails site={site} basePath={basePath}/>
     </Fragment>;

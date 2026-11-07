@@ -1,4 +1,9 @@
-import type {PublicTenantSite, SiteTheme} from "./types";
+import type {PublicTenantSite, SiteTheme, SiteBlock} from "./types";
+
+export const FASHION_EDITORIAL_ID="fashion-editorial-default";
+export function fashionEditorialDefaults():SiteBlock {
+ return {id:FASHION_EDITORIAL_ID,type:"image_text",enabled:true,title:"Para brincar, descobrir e crescer.",eyebrow:"O NOSSO OLHAR",text:"A infância acontece nos pequenos momentos. Nas cores preferidas, nas novas descobertas e na liberdade de ser quem se é.",buttonLabel:"Encontre sua próxima escolha",buttonUrl:"#catalogo",imageAlt:"",productIds:[],items:[]};
+}
 
 /** Presentation only: the published catalog and commerce settings remain authoritative. */
 export function isFashionKidsSite(site: Pick<PublicTenantSite, "slug"> & {theme: Pick<SiteTheme, "template">}) {

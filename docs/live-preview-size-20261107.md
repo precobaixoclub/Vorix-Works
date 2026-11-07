@@ -8,6 +8,8 @@ O seletor de zoom oferece ajuste automático, 50%, 75%, 100%, 125% e 150%. Quand
 
 O acompanhamento considera a altura do cabeçalho fixo da loja. Se o texto cresce e sua posição muda durante a digitação, a prévia reposiciona o destaque para que o cabeçalho não cubra o começo do conteúdo.
 
+Ao focar ou alterar um campo, a página encaixa a prévia abaixo da barra superior também no computador, aproveitando toda a altura sem exigir rolagem manual. Esse encaixe usa a posição atual do painel fixo, preservando a navegação por formulários longos.
+
 O celular mantém a prévia compacta, os modos de computador/tablet/celular, o recolhimento e o formulário com rolagem própria. Zoom e modo de visualização são locais à sessão do editor e não alteram rascunho ou publicação.
 
 Não há alterações no conteúdo das lojas, catálogo, regras comerciais, backend, banco de dados ou permissões do iframe.

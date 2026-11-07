@@ -61,6 +61,7 @@ test("prévia ocupa a área disponível e permite ampliar sem alterar o rascunho
  if(info.project.name==="desktop"){
   const area=await panel.boundingBox(),visible=await canvas.boundingBox();expect(area!.width).toBeGreaterThan(700);expect(visible!.height).toBeGreaterThan(550);
  }
+ await section(page,"Sua marca");await page.getByLabel("Nome do site",{exact:true}).focus();await expect(panel).toBeInViewport({ratio:0.98});await section(page,"Banners e destaques");
  const initial=(await(await request.get(endpoint(),{headers})).json()).data;
  await panel.getByRole("button",{name:"Prévia em computador",exact:true}).click();await zoom.selectOption("100");await expect(iframe).toHaveCSS("width","1440px");await expect(iframe).toHaveCSS("transform","matrix(1, 0, 0, 1, 0, 0)");
  expect(await canvas.evaluate(element=>element.scrollWidth>element.clientWidth)).toBe(true);

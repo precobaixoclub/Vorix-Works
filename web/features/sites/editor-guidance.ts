@@ -1,3 +1,4 @@
+import {isFashionKidsSite} from "./fashion-kids";
 /** Editorial recommendations, separate from the validation limits in site.model.ts. */
 export type TextGuideline = {recommended: string; recommendedMax: number; max?: number; hint?: string};
 export const SITE_TEXT_GUIDANCE = {
@@ -43,7 +44,7 @@ export const SITE_IMAGE_GUIDANCE = {
  logo: {size:"800 × 400 px",ratio:"2:1",hint:"Prefira PNG ou WEBP com fundo transparente e mantenha uma margem ao redor da marca."},
  favicon: {size:"512 × 512 px",ratio:"1:1",hint:"Use um símbolo simples, centralizado e legível em tamanho pequeno."},
  heroWide: {size:"1920 × 960 px",ratio:"2:1",hint:"Mantenha o assunto principal no centro e evite texto dentro da imagem. Confira o recorte na prévia."},
- heroPortrait: {size:"1200 × 1500 px",ratio:"4:5",hint:"Ideal para a imagem ao lado do texto. Deixe margem ao redor do produto ou da pessoa."},
+ heroPortrait: {size:"1200 × 1500 px",ratio:"4:5",hint:"Ideal para a imagem ao lado do texto. No modo Preencher, pode haver recorte: mantenha o assunto principal no centro e deixe margem ao redor."},
  heroSquare: {size:"1200 × 1200 px",ratio:"1:1",hint:"Deixe margem ao redor do assunto e confira o recorte na prévia."},
  heroMobile: {size:"1080 × 1350 px",ratio:"4:5",hint:"Versão vertical para celular. Sem uma imagem própria, será usada a imagem para computador."},
  section: {size:"1600 × 900 px",ratio:"16:9",hint:"Use uma imagem horizontal com o assunto principal centralizado."},
@@ -53,7 +54,8 @@ export const SITE_IMAGE_GUIDANCE = {
  portrait: {size:"400 × 400 px",ratio:"1:1",hint:"Centralize o rosto: a foto será exibida em um recorte circular."},
 } as const;
 export type SiteImageGuidanceKey = keyof typeof SITE_IMAGE_GUIDANCE;
-export function heroImageGuidance(templateId?:string,position?:string):SiteImageGuidanceKey {
+export function heroImageGuidance(templateId?:string,position?:string,siteSlug?:string):SiteImageGuidanceKey {
+ if(isFashionKidsSite({slug:siteSlug??"",theme:{template:templateId??""}}))return "heroPortrait";
  if(templateId==="nexus")return "heroWide";
  if(templateId==="aura"||templateId==="pulse")return "heroPortrait";
  if(position==="background")return "heroWide";

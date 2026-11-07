@@ -2,6 +2,29 @@ import {test, expect, type Page, type Locator} from "@playwright/test";
 
 const base = "/s/bambilu-kids";
 const widths = [360, 390, 430, 768, 1024, 1440];
+
+test("Fashion Kids: campanha preenche a coluna e respeita a opção de mostrar inteira",async({page})=>{
+ const errors:string[]=[];page.on("pageerror",error=>errors.push(error.message));
+ for(const fit of ["cover","contain"]){
+  await page.goto(`${base}/banner-${fit}`);
+  for(const width of [390,768,1440,1920,3840]){
+   await page.setViewportSize({width,height:1000});
+   await page.locator(".fk-hero img").evaluate((image:HTMLImageElement)=>image.decode());
+   await page.evaluate(()=>document.fonts.ready);
+   const metrics=await page.locator(".fk-hero").evaluate(hero=>{
+    const visual=hero.querySelector(".fk-hero-visual")!.getBoundingClientRect(),image=hero.querySelector<HTMLImageElement>("img")!,photo=image.getBoundingClientRect(),copy=hero.querySelector(".fk-hero-copy")!.getBoundingClientRect();
+    return {visual:{top:visual.top,bottom:visual.bottom,left:visual.left,right:visual.right},photo:{top:photo.top,bottom:photo.bottom,left:photo.left,right:photo.right},natural:image.naturalWidth/image.naturalHeight,ratio:photo.width/photo.height,fit:getComputedStyle(image).objectFit,copyRight:copy.right};
+   });
+   if(width>700&&fit==="cover"){
+    for(const edge of ["top","bottom","left","right"] as const)expect(Math.abs(metrics.visual[edge]-metrics.photo[edge])).toBeLessThan(1);
+    expect(metrics.fit).toBe("cover");expect(metrics.copyRight).toBeLessThanOrEqual(metrics.photo.left+1);
+   }else{expect(Math.abs(metrics.ratio-metrics.natural)).toBeLessThan(.01);expect(metrics.fit).toBe("contain");}
+   await fits(page);
+   if(width===1440||width===390)await page.locator(".fk-hero").screenshot({path:`../tmp/banner-fill/${fit}-${width}.png`});
+  }
+ }
+ expect(errors).toEqual([]);
+});
 async function fits(page: Page) {
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   for(const photo of await page.locator(".sp-photo,[data-fashion-product-photo]").all()) {

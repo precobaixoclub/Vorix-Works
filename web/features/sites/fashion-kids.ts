@@ -1,7 +1,7 @@
 import type {PublicTenantSite, SiteTheme} from "./types";
 
 /** Presentation only: the published catalog and commerce settings remain authoritative. */
-export function isFashionKidsSite(site: Pick<PublicTenantSite, "slug" | "theme">) {
+export function isFashionKidsSite(site: Pick<PublicTenantSite, "slug"> & {theme: Pick<SiteTheme, "template">}) {
   return site.slug === "bambilu-kids" && site.theme.template === "nexus";
 }
 

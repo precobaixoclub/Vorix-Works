@@ -53,5 +53,13 @@ export const FASHION_KIDS_STYLES = String.raw`
  .fk-hero[data-mobile-campaign-visual=true] .fk-hero-visual>.fk-photo picture{height:auto}
  .fk-hero[data-mobile-campaign-visual=true] .fk-hero-visual>.fk-photo img{height:auto;aspect-ratio:auto 4/5}
 }
+/* Fill side-by-side campaigns when requested; contain keeps the complete artwork. */
+@media(min-width:701px){
+ .fk-hero[data-campaign-visual=true][data-image-fit=cover] .fk-hero-visual{padding:0}
+ .fk-hero[data-campaign-visual=true][data-image-fit=cover] .fk-hero-visual>.fk-photo{position:absolute;inset:0;height:100%;max-height:none}
+ .fk-hero[data-campaign-visual=true][data-image-fit=cover] .fk-hero-visual>.fk-photo picture{height:100%}
+ .fk-hero[data-campaign-visual=true][data-image-fit=cover] .fk-hero-visual>.fk-photo img{height:100%;aspect-ratio:auto;object-fit:cover}
+ .fk-hero[data-campaign-visual=true][data-image-fit=cover] .fk-photo-caption{bottom:20px;left:24px;right:24px;padding:10px 14px;background:#fbfaf7e6}
+}
 @media(prefers-reduced-motion:reduce){.tenant-site-fashion-kids *{scroll-behavior:auto!important;transition:none!important}}
 `;

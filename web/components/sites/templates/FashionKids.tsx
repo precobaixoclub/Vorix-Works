@@ -62,7 +62,7 @@ export function FashionKidsHero({site, block, basePath}: TemplateHeroProps) {
   const slide = slides[active], image = site.layoutConfig?.heroImageUrl || slide?.imageUrl || block.imageUrl;
   const mobileImage = site.layoutConfig?.heroMobileImageUrl || slide?.mobileImageUrl;
   const copy = slide ?? block, defaultCopy = !copy.title || copy.title === "Boas escolhas começam por aqui.";
-  return <section id={`secao-${block.id}`} className="fk-hero" data-campaign-visual={!!image || undefined} data-mobile-campaign-visual={!!mobileImage || undefined} aria-label="Coleção Bambilu Kids">
+  return <section id={`secao-${block.id}`} className="fk-hero" data-image-fit={block.style?.imageFit??"cover"} data-campaign-visual={!!image || undefined} data-mobile-campaign-visual={!!mobileImage || undefined} aria-label="Coleção Bambilu Kids">
     <div className="fk-hero-copy"><span className="fk-kicker">UM MUNDO DE POSSIBILIDADES</span>
       <h1>{defaultCopy ? <>Estilo para<br/>acompanhar<br/><em>cada fase.</em></> : copy.title}</h1>
       <p>{defaultCopy ? "Para os dias cheios de histórias. E todos os que ainda estão por vir." : copy.text}</p>

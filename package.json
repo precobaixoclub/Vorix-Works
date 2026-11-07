@@ -87,6 +87,7 @@
     "pdf-parse": "^1.1.1",
     "pg": "^8.22.0",
     "playwright-core": "^1.63.0",
+    "postcss": "^8.5.23",
     "prom-client": "^15.1.3",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",

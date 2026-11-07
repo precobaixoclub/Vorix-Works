@@ -1,3 +1,4 @@
+import {withoutImportedTemplate} from "./imported-template";
 import type {SiteSnapshot,SiteTemplateConfig,SiteBlock,TemplateSectionLayout,SiteLayoutConfig} from "./types";
 import {websiteTemplate} from "./template-registry";
 export const DEFAULT_SITE_LAYOUT:SiteLayoutConfig={heroVariant:"signature",productGallery:"split"};
@@ -13,7 +14,7 @@ function arrange(blocks:SiteBlock[],layout:TemplateSectionLayout[]){
  return [...ordered,...remaining.values()];
 }
 export function selectSiteTemplate(snapshot:SiteSnapshot,id:string):SiteSnapshot{
- const captured=captureTemplateConfig(snapshot),template=websiteTemplate(id),config=captured.templateConfigs?.[id];
+ const captured=withoutImportedTemplate(captureTemplateConfig(withoutImportedTemplate(snapshot))),template=websiteTemplate(id),config=captured.templateConfigs?.[id];
  const next:SiteSnapshot={...captured,activeTemplateId:id,theme:structuredClone(config?.themeConfig??template.defaultTheme),layoutConfig:structuredClone(config?.layoutConfig??DEFAULT_SITE_LAYOUT),content:config?{...captured.content,blocks:arrange(captured.content.blocks,config.sectionConfig.home),pages:captured.content.pages.map(page=>({...page,blocks:arrange(page.blocks,config.sectionConfig.pages[page.slug]??[])}))}:captured.content};
  return captureTemplateConfig(next);
 }

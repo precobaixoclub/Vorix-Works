@@ -21,6 +21,11 @@ import {processSiteFormLead,type SiteLeadDeps} from "../../../../application/com
 import {safePageUrl} from "../../../../application/sites/site-commerce-use-cases.js";
 import {utmSchema} from "../../../../domain/sites/site-commerce.js";
 import { normalizeContactPhone } from "../../../../domain/crm/contact-phone.js";
+import {randomUUID} from "node:crypto";
+import {readSiteTemplatePackage} from "../../../../infrastructure/sites/site-template-package-reader.js";
+import {signImportedAssets} from "../../../../application/sites/site-imported-template.js";
+import {TEMPLATE_PACKAGE_LIMITS} from "../../../../domain/sites/site-template-package.js";
+const MAX_IMPORTED_TEMPLATES=20;
 const siteSlugSchema=z.string().trim().toLowerCase().min(3,"Use pelo menos 3 caracteres.").max(80,"Use no máximo 80 caracteres.").regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/,"Use só letras minúsculas sem acento, números e hífen (ex.: minha-loja).");
 const RESERVED_SITE_SLUGS=["api","app","www","admin","mail","static"];
 export type SiteRouteDeps=SiteEngineDeps&{workspaceRepository:WorkspaceRepositoryPort;objectStorage:ObjectStoragePort;publicBaseDomain?:string;customDomainTarget?:string;siteLead?:SiteLeadDeps};
@@ -54,10 +59,38 @@ export async function registerSiteRoutes(app:FastifyInstance,deps:SiteRouteDeps)
  // Endereço público: muda na hora (não passa pelo rascunho), por isso exige permissão de publicar.
  app.put("/sites/:id/slug",{config:{readOnlyGuard:true}},async request=>guard(async()=>{const {site,context}=await owned(request,"site:publish");const {slug}=z.object({slug:siteSlugSchema}).strict().parse(request.body);if(RESERVED_SITE_SLUGS.includes(slug))throw new ValidationError("Esse endereço está reservado. Escolha outro.");if(slug===site.slug)return successEnvelope(presentSite(site,request),request.id);const changed=await deps.repository.changeSlug({id:site.id,tenantId:site.tenantId,slug,actorUserId:context.actorUserId});if(!changed)throw new NotFoundError();return successEnvelope(presentSite(changed,request),request.id);}));
  app.get("/sites/:id",async request=>guard(async()=>successEnvelope(presentSite((await owned(request)).site,request),request.id)));
- app.put("/sites/:id",{config:{readOnlyGuard:true}},async request=>guard(async()=>{const {site,context}=await owned(request,"site:manage");const raw=z.object({revision:z.number().int().positive(),draft:z.unknown()}).strict().parse(request.body);const draft=cleanSnapshot(raw.draft,context.tenantId,context.workspaceId);if(!hasPermission(request.zunoContext.principal!,"commerce:manage")){if(draft.commerceConfig&&stableSiteJson(draft.commerceConfig)!==stableSiteJson(site.draft.commerceConfig))requirePermission(request,"commerce:manage");draft.commerceConfig=site.draft.commerceConfig;}else if(stableSiteJson(draft.commerceConfig)!==stableSiteJson(site.draft.commerceConfig))await validateCommerce(site,draft);const saved=await deps.repository.saveDraft({id:site.id,tenantId:site.tenantId,revision:raw.revision,actorUserId:context.actorUserId,draft});if(!saved)throw new ConflictError("O site mudou. Atualize a tela antes de salvar.");return successEnvelope(presentSite(saved,request),request.id);}));
+ app.put("/sites/:id",{config:{readOnlyGuard:true}},async request=>guard(async()=>{const {site,context}=await owned(request,"site:manage");const raw=z.object({revision:z.number().int().positive(),draft:z.unknown()}).strict().parse(request.body);const draft=cleanSnapshot(raw.draft,context.tenantId,context.workspaceId);if(draft.theme.importedTemplateId&&draft.theme.importedTemplateId!==site.draft.theme.importedTemplateId&&!await deps.repository.importedTemplate({id:draft.theme.importedTemplateId,siteId:site.id,tenantId:site.tenantId}))throw new ValidationError("O modelo importado escolhido não existe mais. Importe o modelo de novo.");if(!hasPermission(request.zunoContext.principal!,"commerce:manage")){if(draft.commerceConfig&&stableSiteJson(draft.commerceConfig)!==stableSiteJson(site.draft.commerceConfig))requirePermission(request,"commerce:manage");draft.commerceConfig=site.draft.commerceConfig;}else if(stableSiteJson(draft.commerceConfig)!==stableSiteJson(site.draft.commerceConfig))await validateCommerce(site,draft);const saved=await deps.repository.saveDraft({id:site.id,tenantId:site.tenantId,revision:raw.revision,actorUserId:context.actorUserId,draft});if(!saved)throw new ConflictError("O site mudou. Atualize a tela antes de salvar.");return successEnvelope(presentSite(saved,request),request.id);}));
  app.get("/sites/:id/preview",async request=>guard(async()=>{const {site}=await owned(request);return successEnvelope(await publicSite(deps,{},site),request.id);}));
  app.post("/sites/:id/publish",{config:{readOnlyGuard:true}},async request=>guard(async()=>{const {site,context}=await owned(request,"site:publish",true);const raw=z.object({revision:z.number().int().positive(),unpublish:z.boolean().optional()}).strict().parse(request.body);if(!raw.unpublish&&stableSiteJson(site.draft.commerceConfig)!==stableSiteJson(site.published?.commerceConfig))requirePermission(request,"commerce:manage");if(!raw.unpublish)await validateCommerce(site,site.draft);return successEnvelope(presentSite(await publishSite(deps,{...context,...raw,id:site.id}),request),request.id);}));
  app.post("/sites/:id/images",{config:{readOnlyGuard:true}},async request=>guard(async()=>{const {context}=await owned(request,"site:manage");return successEnvelope(await uploadWorkspaceImage(request,deps.objectStorage,context,5_000_000,true),request.id);}));
+ // Importação de modelos externos (Pacote de Modelo Vorix). Validar não grava nada; importar só grava
+ // se não houver nenhum erro. A resposta sempre traz o relatório completo para a pessoa corrigir o pacote.
+ const packageUpload=async(request:FastifyRequest)=>{
+  const file=await request.file({limits:{fileSize:TEMPLATE_PACKAGE_LIMITS.zipBytes+1,files:1}});
+  if(!file)throw new ValidationError("Envie o arquivo .zip do modelo.");
+  if(!/\.zip$/i.test(file.filename??""))throw new ValidationError("Envie o modelo como arquivo .zip (veja a documentação do Pacote de Modelo Vorix).");
+  const body=await file.toBuffer().catch(()=>Buffer.alloc(TEMPLATE_PACKAGE_LIMITS.zipBytes+1));
+  return file.file.truncated?Buffer.alloc(TEMPLATE_PACKAGE_LIMITS.zipBytes+1):body;
+ };
+ app.post("/sites/:id/template-packages/validate",{config:{readOnlyGuard:true}},async request=>guard(async()=>{await owned(request,"site:manage");const {report}=await readSiteTemplatePackage(await packageUpload(request));return successEnvelope({report},request.id);}));
+ app.post("/sites/:id/template-packages",{config:{readOnlyGuard:true}},async request=>guard(async()=>{
+  const {site,context}=await owned(request,"site:manage");
+  if((await deps.repository.importedTemplates(site.id,site.tenantId)).length>=MAX_IMPORTED_TEMPLATES)throw new ValidationError(`Cada site guarda até ${MAX_IMPORTED_TEMPLATES} modelos importados. Remova um modelo que não usa e tente de novo.`);
+  const zip=await packageUpload(request);
+  const store=async(asset:{body:Buffer;contentType:string})=>(await deps.objectStorage.put({key:`assets/${site.tenantId}/${site.workspaceId}/products/${randomUUID()}.webp`,body:asset.body,contentType:asset.contentType})).url;
+  const {report,package:pkg}=await readSiteTemplatePackage(zip,store);
+  if(!report.ok||!pkg)return successEnvelope({imported:false,report},request.id);
+  const template=await deps.repository.saveImportedTemplate({site,package:pkg,report,actorUserId:context.actorUserId});
+  return successEnvelope({imported:true,report,template},request.id);
+ }));
+ app.get("/sites/:id/template-packages",async request=>guard(async()=>{const {site}=await owned(request);return successEnvelope((await deps.repository.importedTemplates(site.id,site.tenantId)).map(item=>({...item,previewUrl:item.previewUrl?signOwnedUrl(item.previewUrl,OBJECT_URL_TTL.preview):undefined})),request.id);}));
+ app.get("/sites/:id/template-packages/:templateId",async request=>guard(async()=>{const {site}=await owned(request);const record=await deps.repository.importedTemplate({id:(request.params as {templateId:string}).templateId,siteId:site.id,tenantId:site.tenantId});if(!record)throw new NotFoundError();const {package:pkg,report,...summary}=record;return successEnvelope({...summary,report,package:{...pkg,previewUrl:pkg.previewUrl?signOwnedUrl(pkg.previewUrl,OBJECT_URL_TTL.preview):undefined},signedPackage:signImportedAssets({css:pkg.css,sections:pkg.sections},pkg.assetUrls)},request.id);}));
+ app.delete("/sites/:id/template-packages/:templateId",async(request,reply)=>guard(async()=>{
+  const {site}=await owned(request,"site:manage");const templateId=(request.params as {templateId:string}).templateId;
+  if(site.draft.theme.importedTemplateId===templateId||site.published?.theme.importedTemplateId===templateId)throw new ConflictError("Este modelo está em uso no rascunho ou no site publicado. Escolha outro modelo e publique antes de removê-lo.");
+  if(!await deps.repository.removeImportedTemplate({id:templateId,siteId:site.id,tenantId:site.tenantId}))throw new NotFoundError();
+  reply.code(204);return null;
+ }));
  app.get("/sites/:id/domains",async request=>guard(async()=>{const {site}=await owned(request);return successEnvelope(await deps.repository.domains(site.id,site.tenantId),request.id);}));
  app.post("/sites/:id/domains",{config:{readOnlyGuard:true}},async request=>guard(async()=>{const {site}=await owned(request,"site:publish");const hostname=normalizeSiteHostname(z.object({hostname:z.string()}).strict().parse(request.body).hostname);if(deps.publicBaseDomain&&(hostname===deps.publicBaseDomain||hostname.endsWith(`.${deps.publicBaseDomain}`)))throw new ValidationError("Use o endereço padrão do site para subdomínios da plataforma.");const domain=await deps.repository.claimDomain({siteId:site.id,tenantId:site.tenantId,hostname});if(!domain)throw new ConflictError("Este domínio já está vinculado a outro site.");return successEnvelope(domain,request.id);}));
  app.post("/sites/:id/domains/:domainId/verify",async request=>guard(async()=>{const {site}=await owned(request,"site:publish");return successEnvelope(await verifySiteDomain(deps,{siteId:site.id,tenantId:site.tenantId,id:(request.params as {domainId:string}).domainId}),request.id);}));

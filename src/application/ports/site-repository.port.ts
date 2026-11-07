@@ -1,4 +1,6 @@
 import type { Site,SiteDomain,SiteSnapshot } from "../../domain/sites/site.model.js";
+import type { ImportedTemplatePackage,ImportedTemplateSummary,TemplateReport } from "../../domain/sites/site-template-package.js";
+export type ImportedTemplateRecord=ImportedTemplateSummary&{siteId:string;package:ImportedTemplatePackage;report:TemplateReport};
 export type SiteRepositoryPort={
  list(tenantId:string,workspaceId:string):Promise<Site[]>;
  get(id:string):Promise<Site|undefined>;
@@ -9,6 +11,11 @@ export type SiteRepositoryPort={
  /** Troca o endereço público (/s/<slug>). Endereço em uso por outro site = erro 23505 do banco. */
  changeSlug(input:{id:string;tenantId:string;slug:string;actorUserId?:string}):Promise<Site|undefined>;
  domains(siteId:string,tenantId:string):Promise<SiteDomain[]>;
+ /** Modelos importados (Pacote de Modelo Vorix) de um site, mais recentes primeiro. */
+ importedTemplates(siteId:string,tenantId:string):Promise<ImportedTemplateSummary[]>;
+ importedTemplate(input:{id:string;siteId:string;tenantId:string}):Promise<ImportedTemplateRecord|undefined>;
+ saveImportedTemplate(input:{site:Site;package:ImportedTemplatePackage;report:TemplateReport;actorUserId?:string}):Promise<ImportedTemplateSummary>;
+ removeImportedTemplate(input:{id:string;siteId:string;tenantId:string}):Promise<boolean>;
  claimDomain(input:{siteId:string;tenantId:string;hostname:string}):Promise<SiteDomain|undefined>;
  verifyDomain(input:{id:string;siteId:string;tenantId:string;challenge:string}):Promise<SiteDomain|undefined>;
  removeDomain(input:{id:string;siteId:string;tenantId:string}):Promise<void>;

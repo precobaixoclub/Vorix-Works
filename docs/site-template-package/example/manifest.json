@@ -1,0 +1,38 @@
+{
+  "format": "vorix-site-template",
+  "formatVersion": 1,
+  "name": "Atelier Exemplo",
+  "version": "1.0.0",
+  "author": "Equipe Vorix",
+  "description": "Modelo de referência: mostra todos os tipos de seção, campos editáveis e regras do pacote.",
+  "preview": "preview.png",
+  "theme": "theme.json",
+  "styles": "styles.css",
+  "navigation": [
+    { "label": "Início", "url": "/" },
+    { "label": "Produtos", "url": "#catalogo" },
+    { "label": "Sobre", "url": "/sobre" },
+    { "label": "Contato", "url": "#contato" }
+  ],
+  "home": [
+    { "type": "hero", "file": "sections/hero.html" },
+    { "type": "features", "file": "sections/features.html" },
+    { "type": "catalog", "title": "Peças da semana", "text": "Escolhidas a dedo, prontas para enviar." },
+    { "type": "image_text", "file": "sections/story.html" },
+    { "type": "stats", "file": "sections/stats.html" },
+    { "type": "testimonials", "file": "sections/testimonials.html" },
+    { "type": "faq", "file": "sections/faq.html" },
+    { "type": "cta", "file": "sections/cta.html" },
+    { "type": "contact", "title": "Vamos conversar?", "text": "Respondemos em até 1 dia útil." }
+  ],
+  "pages": [
+    {
+      "slug": "sobre",
+      "title": "Sobre o ateliê",
+      "sections": [
+        { "type": "image_text", "file": "sections/story.html", "title": "Feito à mão desde 2012" },
+        { "type": "text", "file": "sections/text.html" }
+      ]
+    }
+  ]
+}

@@ -4,10 +4,12 @@ import type {Pool} from "pg";
 import {randomUUID} from "node:crypto";
 import type {SiteRepositoryPort} from "../../../application/ports/site-repository.port.js";
 import type {Site,SiteDomain} from "../../../domain/sites/site.model.js";
+import type {ImportedTemplateSummary} from "../../../domain/sites/site-template-package.js";
 import { requireContactPhone } from "../../../domain/crm/contact-phone.js";
 type Row=Record<string,any>;
 const site=(row:Row):Site=>({id:row.id,tenantId:row.tenant_id,workspaceId:row.workspace_id,slug:row.slug,draft:row.draft,published:row.published??undefined,previousPublished:row.previous_published??undefined,updatedByUserId:row.updated_by_user_id??undefined,publishedByUserId:row.published_by_user_id??undefined,revision:row.revision,publishedAt:row.published_at?.toISOString(),updatedAt:row.updated_at.toISOString()});
 const domain=(row:Row):SiteDomain=>({id:row.id,siteId:row.site_id,tenantId:row.tenant_id,hostname:row.hostname,challenge:row.challenge,verifiedAt:row.verified_at?.toISOString(),expiresAt:row.expires_at.toISOString()});
+const importedSummary=(row:Row):ImportedTemplateSummary=>({id:row.id,name:row.name,version:row.version,author:row.package?.author??undefined,description:row.package?.description??undefined,previewUrl:row.package?.previewUrl??undefined,sections:Number(row.sections??0),pages:Number(row.pages??0),createdAt:row.created_at.toISOString()});
 export class PostgresSiteRepository implements SiteRepositoryPort{
  constructor(private readonly pool:Pool){}
  async list(tenantId:string,workspaceId:string){return(await this.pool.query("select * from tenant_sites where tenant_id=$1 and workspace_id=$2",[tenantId,workspaceId])).rows.map(site);}
@@ -30,6 +32,10 @@ export class PostgresSiteRepository implements SiteRepositoryPort{
   }catch(error){await client.query("rollback");throw error;}finally{client.release();}
  }
  async changeSlug(input:Parameters<SiteRepositoryPort["changeSlug"]>[0]){const {rows}=await this.pool.query("update tenant_sites set slug=$3,updated_by_user_id=coalesce($4,updated_by_user_id),updated_at=now() where id=$1 and tenant_id=$2 returning *",[input.id,input.tenantId,input.slug,input.actorUserId??null]);return rows[0]?site(rows[0]):undefined;}
+ async importedTemplates(siteId:string,tenantId:string){return(await this.pool.query("select id,site_id,name,version,created_at,package-'sections'-'css'-'home'-'pages' as package,jsonb_array_length(package->'sections') as sections,jsonb_array_length(package->'pages') as pages from site_imported_templates where site_id=$1 and tenant_id=$2 order by created_at desc",[siteId,tenantId])).rows.map(importedSummary);}
+ async importedTemplate(input:Parameters<SiteRepositoryPort["importedTemplate"]>[0]){const {rows}=await this.pool.query("select *,jsonb_array_length(package->'sections') as sections,jsonb_array_length(package->'pages') as pages from site_imported_templates where id=$1 and site_id=$2 and tenant_id=$3",[input.id,input.siteId,input.tenantId]);return rows[0]?{...importedSummary(rows[0]),siteId:rows[0].site_id,package:rows[0].package,report:rows[0].report}:undefined;}
+ async saveImportedTemplate(input:Parameters<SiteRepositoryPort["saveImportedTemplate"]>[0]){const {rows}=await this.pool.query("insert into site_imported_templates(id,tenant_id,workspace_id,site_id,name,version,package,report,created_by_user_id) values($1,$2,$3,$4,$5,$6,$7,$8,$9) returning *,jsonb_array_length(package->'sections') as sections,jsonb_array_length(package->'pages') as pages",["tpl-"+randomUUID(),input.site.tenantId,input.site.workspaceId,input.site.id,input.package.name,input.package.version,JSON.stringify(input.package),JSON.stringify(input.report),input.actorUserId??null]);return importedSummary(rows[0]);}
+ async removeImportedTemplate(input:Parameters<SiteRepositoryPort["removeImportedTemplate"]>[0]){return((await this.pool.query("delete from site_imported_templates where id=$1 and site_id=$2 and tenant_id=$3",[input.id,input.siteId,input.tenantId])).rowCount??0)>0;}
  async domains(siteId:string,tenantId:string){return(await this.pool.query("select * from site_domains where site_id=$1 and tenant_id=$2 order by hostname",[siteId,tenantId])).rows.map(domain);}
  async claimDomain(input:Parameters<SiteRepositoryPort["claimDomain"]>[0]){
   const {rows}=await this.pool.query(`insert into site_domains(id,site_id,tenant_id,hostname,challenge,expires_at) values($1,$2,$3,$4,$5,now()+interval '2 hours')

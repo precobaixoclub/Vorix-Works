@@ -1,0 +1,55 @@
+/* Atelier Exemplo — estilos do pacote.
+   Tudo aqui vale só dentro do site importado (o Vorix prefixa cada seletor automaticamente).
+   As cores do tema ficam disponíveis como variáveis: var(--site-primary), var(--site-bg),
+   var(--site-fg), var(--site-surface), var(--site-line), var(--site-heading-font)... */
+
+.at-eyebrow { display: inline-block; font-size: 12px; letter-spacing: .14em; text-transform: uppercase; color: var(--site-primary); margin-bottom: 12px; }
+.at-lead { font-size: 18px; line-height: 1.6; max-width: 46ch; opacity: .85; }
+.at-button { display: inline-flex; align-items: center; gap: 8px; padding: 14px 26px; border-radius: var(--site-button-radius); background: var(--site-primary); color: var(--site-on-primary); text-decoration: none; font-weight: 600; }
+.at-button--light { background: var(--site-bg); color: var(--site-primary); }
+.at-link { color: var(--site-primary); font-weight: 600; text-decoration: underline; text-underline-offset: 4px; }
+.at-visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+
+section[data-vorix-block] { padding: var(--site-space) 24px; }
+section[data-vorix-block] > * { max-width: var(--site-width); margin-left: auto; margin-right: auto; }
+section h1, section h2 { font-family: var(--site-heading-font); font-weight: var(--site-heading-weight); line-height: 1.1; }
+section h1 { font-size: clamp(40px, 6vw, 72px); margin: 0 0 20px; }
+section h2 { font-size: clamp(30px, 4vw, 46px); margin: 0 0 28px; }
+
+.at-hero { display: grid; grid-template-columns: 1.1fr 1fr; gap: 48px; align-items: center; max-width: var(--site-width); margin: 0 auto; }
+.at-hero__media { margin: 0; }
+.at-hero__media img { width: 100%; aspect-ratio: 4 / 5; object-fit: cover; border-radius: var(--site-radius); }
+
+.at-features__grid { list-style: none; padding: 0; display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; }
+.at-card { background: var(--site-surface); border-radius: var(--site-radius); padding: 24px; }
+.at-card img { width: 64px; height: 64px; object-fit: cover; border-radius: 50%; }
+.at-card h3 { margin: 16px 0 8px; }
+
+.at-story { display: grid; grid-template-columns: 1fr 1fr; gap: 48px; align-items: center; max-width: var(--site-width); margin: 0 auto; }
+.at-story img { width: 100%; border-radius: var(--site-radius); }
+
+.at-stats { background: var(--site-surface); }
+.at-stats__grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; text-align: center; margin: 0 auto; }
+.at-stat dt { font-family: var(--site-heading-font); font-size: 44px; color: var(--site-primary); }
+.at-stat dd { margin: 4px 0 0; }
+
+.at-testimonials__grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 24px; }
+.at-quote { margin: 0; padding: 28px; border: 1px solid var(--site-line); border-radius: var(--site-radius); }
+.at-quote blockquote { margin: 0 0 16px; font-size: 18px; line-height: 1.6; }
+
+.at-faq__item { border-bottom: 1px solid var(--site-line); padding: 18px 0; }
+.at-faq__item dt { font-weight: 600; }
+.at-faq__item dd { margin: 8px 0 0; opacity: .85; }
+
+.at-cta { background: var(--site-primary); color: var(--site-on-primary); text-align: center; }
+.at-cta p { max-width: 52ch; margin: 0 auto 24px; }
+
+/* Seções do Vorix (catálogo e contato) também podem ser ajustadas pelas classes documentadas. */
+.ts-catalog h2 { font-family: var(--site-heading-font); }
+
+@media (max-width: 700px) {
+  .at-hero, .at-story { grid-template-columns: 1fr; gap: 28px; }
+  .at-features__grid, .at-testimonials__grid { grid-template-columns: 1fr; }
+  .at-stats__grid { grid-template-columns: 1fr; }
+  .at-stat dt { font-size: 36px; }
+}

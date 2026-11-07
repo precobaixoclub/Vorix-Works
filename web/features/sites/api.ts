@@ -22,3 +22,10 @@ export const getCheckoutStatus=(site:TenantSite,draft=false)=>apiClient.get<Chec
 export const saveCommerceCredential=(site:TenantSite,provider:"MERCADO_PAGO"|"MELHOR_ENVIO",input:{accessToken?:string;publicKey?:string;webhookSecret?:string})=>apiClient.put<{connected:boolean}>(`/v1/sites/${q(site.id)}/commerce/credentials/${provider}?workspaceId=${q(site.workspaceId)}`,input);
 
 export const getSiteCommerceDraft=(site:TenantSite)=>apiClient.get<import("./types").SiteCommerceDraft>(`/v1/sites/${q(site.id)}/commerce-draft?workspaceId=${q(site.workspaceId)}`);
+// Pacote de Modelo Vorix: validar (não grava), importar (só sem erros), listar, detalhar e remover.
+const templatePackageForm=(file:File)=>{const data=new FormData();data.append("file",file);return data;};
+export const validateTemplatePackage=(site:TenantSite,file:File)=>apiClient.upload<{report:import("./imported-template").TemplateReport}>(`/v1/sites/${q(site.id)}/template-packages/validate?workspaceId=${q(site.workspaceId)}`,templatePackageForm(file));
+export const importTemplatePackage=(site:TenantSite,file:File)=>apiClient.upload<{imported:boolean;report:import("./imported-template").TemplateReport;template?:import("./imported-template").ImportedTemplateSummary}>(`/v1/sites/${q(site.id)}/template-packages?workspaceId=${q(site.workspaceId)}`,templatePackageForm(file));
+export const listImportedTemplates=(site:TenantSite)=>apiClient.get<import("./imported-template").ImportedTemplateSummary[]>(`/v1/sites/${q(site.id)}/template-packages?workspaceId=${q(site.workspaceId)}`);
+export const getImportedTemplate=(site:TenantSite,id:string)=>apiClient.get<import("./imported-template").ImportedTemplateDetail>(`/v1/sites/${q(site.id)}/template-packages/${q(id)}?workspaceId=${q(site.workspaceId)}`);
+export const removeImportedTemplate=(site:TenantSite,id:string)=>apiClient.delete<null>(`/v1/sites/${q(site.id)}/template-packages/${q(id)}?workspaceId=${q(site.workspaceId)}`);

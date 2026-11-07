@@ -1,0 +1,16 @@
+{
+  "primary": "#8a4b2a",
+  "secondary": "#d9a066",
+  "background": "#fbf7f2",
+  "foreground": "#2b211b",
+  "surface": "#f3ebe1",
+  "headerBackground": "#fbf7f2",
+  "footerBackground": "#2b211b",
+  "footerForeground": "#fbf7f2",
+  "bodyFont": "modern",
+  "headingFont": "editorial",
+  "buttonStyle": "pill",
+  "rounded": true,
+  "contentWidth": "standard",
+  "sectionSpacing": "comfortable"
+}

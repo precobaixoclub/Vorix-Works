@@ -15,6 +15,8 @@ import {ProductCard,ProductCardTitle,ProductCardMedia} from "./ProductCard";
 import {ProductGallery} from "./ProductGallery";
 import {PRODUCT_MEDIA_STYLES} from "./product-media-styles";
 import {premiumRenderer} from "./templates/PremiumTemplates";
+import {ImportedSection} from "./ImportedSection";
+import {importedSectionFor} from "@/features/sites/imported-template";
 import {PREMIUM_TEMPLATE_STYLES} from "./templates/premium-template-styles";
 import {siteStructuredData} from "@/features/sites/public-routing";
 import {newSiteBlock} from "@/features/sites/customization";
@@ -40,7 +42,7 @@ export function TenantSiteRenderer({site,basePath,path=[],preview=false,onNaviga
  useEffect(()=>{if(preview&&editing)setMenuOpen(!!editing.linkId&&editing.selector==="header");},[preview,editing?.linkId,editing?.selector]);
  const [menuOpen,setMenuOpen]=useState(false),[query,setQuery]=useState(""),[previewCategory,setPreviewCategory]=useState("");
  useEffect(()=>{if(!preview)setQuery(new URLSearchParams(window.location.search).get("busca")??"");},[preview]);
- const template=premiumRenderer(site.theme.template,site);
+ const template=site.importedTemplate?undefined:premiumRenderer(site.theme.template,site);
  const categoryPage=path.length===2&&path[0]==="categoria"?site.categories.find(category=>category.slug===path[1]):undefined;
  const product=path.length===2&&path[0]==="produto"?site.products.find(item=>item.slug===path[1]):undefined;
  const page=path.length===1?site.content.pages.find(item=>item.slug===path[0]):undefined;
@@ -58,12 +60,12 @@ export function TenantSiteRenderer({site,basePath,path=[],preview=false,onNaviga
   if(url.hash)setTimeout(()=>link.ownerDocument.getElementById(decodeURIComponent(url.hash.slice(1)))?.scrollIntoView({behavior:"smooth"}),40);
  }
  function searchCatalog(ownerDocument:Document){if(path.length){if(preview)onNavigate?.([]);else {window.location.assign(`${basePath||"/"}?busca=${encodeURIComponent(query)}#catalogo`);return;}}setTimeout(()=>ownerDocument.getElementById("catalogo")?.scrollIntoView({behavior:ownerDocument.defaultView?.matchMedia("(prefers-reduced-motion: reduce)").matches?"auto":"smooth"}),40);}
- const renderSection=(block:SiteBlock)=>{const view=<SiteSection block={block} site={site} basePath={basePath} preview={preview} query={query} previewCategory={previewCategory}/>;return preview?<div key={block.id} data-site-block={block.id}>{view}</div>:<Fragment key={block.id}>{view}</Fragment>;};
+ const renderSection=(block:SiteBlock)=>{const imported=importedSectionFor(site.importedTemplate,block);const view=imported?<ImportedSection block={block} section={imported} basePath={basePath}/>:<SiteSection block={block} site={site} basePath={basePath} preview={preview} query={query} previewCategory={previewCategory}/>;return preview?<div key={block.id} data-site-block={block.id}>{view}</div>:<Fragment key={block.id}>{view}</Fragment>;};
  const configuredFooterColumns=site.content.footerColumns?.length?site.content.footerColumns:[{id:"explore",title:"Explore",links:header.navigation.filter(link=>link.enabled)},{id:"contact",title:"Fale com a gente",links:[...(site.content.email?[{id:"email",label:site.content.email,url:`mailto:${site.content.email}`,enabled:true,newTab:false}]:[]),...(site.content.phone?[{id:"phone",label:site.content.phone,url:`tel:${site.content.phone}`,enabled:true,newTab:false}]:[]),...(site.content.contactForm&&site.content.blocks.some(block=>block.enabled&&block.type==="contact")?[{id:"form",label:"Entre em contato",url:"#contato",enabled:true,newTab:false}]:[])]}];
  const footerColumns=configuredFooterColumns.filter(column=>column.links.some(link=>link.enabled&&safeSiteHref(link.url)));
  if(fashion)(style as Record<string,string|number>)["--site-body-font"]='var(--font-sans), sans-serif';
- return <main style={style} className={`tenant-site tenant-site-${theme.template}${fashion?" tenant-site-fashion-kids":" tenant-site-standard"}`} onClickCapture={previewClick} data-testid="tenant-site">
-  <style>{TENANT_SITE_STYLES+PREMIUM_TEMPLATE_STYLES+STOREFRONT_STYLES+CHECKOUT_STYLES+PRODUCT_MEDIA_STYLES+COMMERCIAL_PRICING_STYLES+COLOR_CHOICE_STYLES+HEADER_ACTION_STYLES+STANDARD_STOREFRONT_STYLES+(fashion?FASHION_KIDS_STYLES:"")}</style><StorefrontProvider site={site} basePath={basePath} preview={preview} path={path}>{!preview?<script type="application/ld+json" dangerouslySetInnerHTML={{__html:siteStructuredData(site,path,canonicalBase??`https://vorixworks.com${basePath}`)}}/>:null}
+ return <main style={style} className={`tenant-site tenant-site-${theme.template}${fashion?" tenant-site-fashion-kids":" tenant-site-standard"}${site.importedTemplate?" tenant-site-imported":""}`} onClickCapture={previewClick} data-testid="tenant-site">
+  <style>{TENANT_SITE_STYLES+PREMIUM_TEMPLATE_STYLES+STOREFRONT_STYLES+CHECKOUT_STYLES+PRODUCT_MEDIA_STYLES+COMMERCIAL_PRICING_STYLES+COLOR_CHOICE_STYLES+HEADER_ACTION_STYLES+STANDARD_STOREFRONT_STYLES+(fashion?FASHION_KIDS_STYLES:"")}</style>{site.importedTemplate?<style data-imported-template={site.importedTemplate.id}>{site.importedTemplate.css}</style>:null}<StorefrontProvider site={site} basePath={basePath} preview={preview} path={path}>{!preview?<script type="application/ld+json" dangerouslySetInnerHTML={{__html:siteStructuredData(site,path,canonicalBase??`https://vorixworks.com${basePath}`)}}/>:null}
   {template?<template.Header site={site} basePath={basePath} query={query} onQuery={setQuery} onSearch={searchCatalog} menuOpen={menuOpen} onMenu={()=>setMenuOpen(!menuOpen)}/>:<>
   {header.announcement?.enabled&&header.announcement.text?<div className="ts-announcement">{safeSiteHref(header.announcement.url)?<a href={siteHref(header.announcement.url,basePath)}>{header.announcement.text}</a>:header.announcement.text}</div>:null}
   <header className={`ts-header ts-header-${theme.headerLayout??(theme.template==="catalog"?"center":"split")} ${header.sticky?"is-sticky":""}`}><div className="ts-container ts-header-row">

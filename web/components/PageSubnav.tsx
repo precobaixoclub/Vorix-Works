@@ -24,6 +24,7 @@ interface PageSubnavProps {
   children: React.ReactNode;
   /** Classes extras do container raiz. */
   className?: string;
+  layout?: 'sidebar' | 'horizontal';
 }
 
 /**
@@ -33,11 +34,12 @@ interface PageSubnavProps {
  * Desktop: coluna de navegação à esquerda + área de conteúdo à direita.
  * Mobile: faixa horizontal com scroll no topo + conteúdo abaixo.
  */
-export function PageSubnav({ items, value, onValueChange, children, className }: PageSubnavProps) {
+export function PageSubnav({ items, value, onValueChange, children, className, layout = 'sidebar' }: PageSubnavProps) {
+  const horizontal = layout === 'horizontal';
   return (
-    <div className={cn('flex flex-col gap-6 md:flex-row', className)}>
+    <div className={cn('flex flex-col', horizontal ? 'gap-4' : 'gap-6 md:flex-row', className)}>
       <nav
-        className="flex w-full flex-row gap-1 overflow-x-auto md:w-56 md:shrink-0 md:flex-col md:overflow-visible"
+        className={horizontal ? 'flex w-full flex-row gap-1 overflow-x-auto md:flex-wrap md:overflow-visible' : 'flex w-full flex-row gap-1 overflow-x-auto md:w-56 md:shrink-0 md:flex-col md:overflow-visible'}
         aria-label="Navegação da seção"
       >
         {items.map((item, index) => {
@@ -46,7 +48,7 @@ export function PageSubnav({ items, value, onValueChange, children, className }:
           const startsGroup = item.group !== undefined && item.group !== items[index - 1]?.group;
           return (
             <Fragment key={item.value}>
-              {startsGroup ? (
+              {startsGroup && !horizontal ? (
                 <p className={cn('hidden px-3 pb-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground md:block', index > 0 && 'md:pt-3')}>
                   {item.group}
                 </p>
@@ -56,7 +58,8 @@ export function PageSubnav({ items, value, onValueChange, children, className }:
                 onClick={() => onValueChange(item.value)}
                 aria-current={isActive ? 'page' : undefined}
                 className={cn(
-                  'flex shrink-0 items-center gap-2 whitespace-nowrap rounded-md px-3 py-2 text-sm transition-colors md:w-full',
+                  'flex shrink-0 items-center gap-2 whitespace-nowrap rounded-md px-3 py-2 text-sm transition-colors',
+                  !horizontal && 'md:w-full',
                   isActive
                     ? 'bg-muted font-medium text-foreground'
                     : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground',

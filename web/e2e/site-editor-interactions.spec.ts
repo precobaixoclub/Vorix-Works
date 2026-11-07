@@ -45,8 +45,31 @@ test("botão azul de imagem abre o seletor, troca e remove com prévia imediata"
 });
 
 test("prévia segue banner específico e os blocos de páginas internas",async({page,request},info)=>{
- const draft=selectSiteTemplate(scope.initialSiteSnapshot,"nexus"),hero=draft.content.blocks.find(block=>block.type==="hero")!;hero.slides=[{id:"a",enabled:true,title:"Primeiro banner",text:"Primeiro",imageAlt:""},{id:"b",enabled:true,title:"Segundo banner",text:"Segundo",imageAlt:""}];
+ const draft=selectSiteTemplate(structuredClone(scope.initialSiteSnapshot),"nexus"),hero=draft.content.blocks.find(block=>block.type==="hero")!;hero.slides=[{id:"a",enabled:true,title:"Primeiro banner",text:"Primeiro",imageAlt:""},{id:"b",enabled:true,title:"Segundo banner",text:"Segundo",imageAlt:""}];
  const site=(await(await request.get(endpoint(),{headers})).json()).data;await request.put(endpoint(),{headers,data:{revision:site.revision,draft}});await login(page,"banners");const summary=page.locator("summary").filter({hasText:/^Banner 2:/});await summary.click();await page.getByLabel("Título do banner 2",{exact:true}).fill("Editando a segunda campanha");await expect(frame(page).getByRole("heading",{name:"Editando a segunda campanha",exact:true})).toBeVisible();
  await page.getByRole("button",{name:"Adicionar imagem — Banner 2 para celular",exact:true}).focus();await expect(preview(page).locator("iframe")).toHaveCSS("width","390px");
  await section(page,"Páginas");await expect(frame(page).getByRole("heading",{name:"Nossa história",exact:true})).toBeVisible();await page.getByLabel("Título da seção",{exact:true}).fill("Conteúdo interno em tempo real");await expect(frame(page).locator("[data-site-preview-active]")).toContainText("Conteúdo interno em tempo real");await expect(preview(page)).toBeInViewport({ratio:0.8});await expect(frame(page).locator("[data-site-preview-active]")).toBeInViewport();await noOverflow(page);await page.screenshot({path:path.join(evidence,`${info.project.name}-page.png`),fullPage:true});
+});
+
+test("prévia ocupa a área disponível e permite ampliar sem alterar o rascunho",async({page,request},info)=>{
+ test.setTimeout(60000);
+ const site=(await(await request.get(endpoint(),{headers})).json()).data;
+ await request.put(endpoint(),{headers,data:{revision:site.revision,draft:selectSiteTemplate(scope.initialSiteSnapshot,"nexus")}});
+ await login(page,"banners");
+ const panel=preview(page),canvas=panel.getByTestId("site-preview-canvas"),zoom=panel.getByLabel("Zoom da prévia",{exact:true}),iframe=panel.locator("iframe");
+ await expect(iframe).toHaveAttribute("sandbox","allow-same-origin");
+ if(info.project.name==="desktop"){
+  const area=await panel.boundingBox(),visible=await canvas.boundingBox();expect(area!.width).toBeGreaterThan(700);expect(visible!.height).toBeGreaterThan(550);
+ }
+ const initial=(await(await request.get(endpoint(),{headers})).json()).data;
+ await panel.getByRole("button",{name:"Prévia em computador",exact:true}).click();await zoom.selectOption("100");await expect(iframe).toHaveCSS("width","1440px");await expect(iframe).toHaveCSS("transform","matrix(1, 0, 0, 1, 0, 0)");
+ expect(await canvas.evaluate(element=>element.scrollWidth>element.clientWidth)).toBe(true);
+ await canvas.evaluate(element=>{element.scrollLeft=200;});expect(await canvas.evaluate(element=>element.scrollLeft)).toBeGreaterThan(0);
+ await noOverflow(page);
+ await zoom.selectOption("fit");await expect.poll(()=>canvas.evaluate(element=>element.scrollLeft)).toBe(0);
+ await expect.poll(()=>canvas.evaluate(element=>element.scrollWidth-element.clientWidth)).toBeLessThanOrEqual(1);
+ const current=(await(await request.get(endpoint(),{headers})).json()).data;expect(current.revision).toBe(initial.revision);expect(current.draft).toEqual(initial.draft);
+ await page.getByLabel("Título do banner 1",{exact:true}).fill("Detalhes visíveis em uma prévia maior");await expect(frame(page).getByRole("heading",{name:"Detalhes visíveis em uma prévia maior",exact:true})).toBeVisible();await expect(panel).toContainText("Alterações não salvas");
+ await expect.poll(()=>frame(page).locator("[data-site-preview-active]").evaluate(element=>element.getBoundingClientRect().top-Math.max(0,element.ownerDocument.querySelector("header")?.getBoundingClientRect().bottom??0))).toBeGreaterThanOrEqual(16);
+ await noOverflow(page);await page.screenshot({path:path.join(evidence,`${info.project.name}-large-preview.png`)});
 });

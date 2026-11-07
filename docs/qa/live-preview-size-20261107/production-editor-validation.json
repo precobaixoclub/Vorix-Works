@@ -1,0 +1,58 @@
+{
+  "release": "e4041c3",
+  "at": "2026-11-07T14:38:37.439Z",
+  "method": "Published frontend with local fictional API fixtures; all production API requests intercepted",
+  "editor": [
+    {
+      "mode": "desktop",
+      "width": 1440,
+      "height": 1000,
+      "liveDraft": true,
+      "dirtyNotice": true,
+      "photoButton": true,
+      "fieldGuidance": true,
+      "followFooter": true,
+      "previewVisible": true,
+      "previewWidth": 814.8125,
+      "canvasHeight": 756.640625,
+      "zoomAndPan": true,
+      "guidedLinks": true,
+      "overflow": false
+    },
+    {
+      "mode": "wide",
+      "width": 1920,
+      "height": 1080,
+      "liveDraft": true,
+      "dirtyNotice": true,
+      "photoButton": true,
+      "fieldGuidance": true,
+      "followFooter": true,
+      "previewVisible": true,
+      "previewWidth": 1274.8125,
+      "canvasHeight": 836.640625,
+      "zoomAndPan": true,
+      "guidedLinks": true,
+      "overflow": false
+    },
+    {
+      "mode": "mobile",
+      "width": 390,
+      "height": 844,
+      "liveDraft": true,
+      "dirtyNotice": true,
+      "photoButton": true,
+      "fieldGuidance": true,
+      "followFooter": true,
+      "previewVisible": true,
+      "previewWidth": 368.40625,
+      "canvasHeight": 264,
+      "zoomAndPan": true,
+      "guidedLinks": true,
+      "overflow": false
+    }
+  ],
+  "pageErrors": [],
+  "productionWrites": 0,
+  "loginHydrationWait": "networkidle"
+}

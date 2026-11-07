@@ -25,4 +25,14 @@ Não há alterações no conteúdo das lojas, catálogo, regras comerciais, back
 
 ## Publicação
 
-Registro da publicação e das verificações finais será acrescentado após o deploy.
+Release `e4041c3` enviada à main e publicada pelo procedimento oficial com alvo `web`. Build Linux e TypeScript aprovados, `DEPLOY_DONE`, API pronta, site HTTP 200 e seis contêineres saudáveis. Os quatro arquivos de interface correspondem ao commit, a imagem em execução corresponde ao build e a configuração de ambiente foi preservada. Nenhum rollback necessário.
+
+A interface publicada passou pela conferência em 1440 × 1000, 1920 × 1080 e 390 × 844 px. A largura da prévia foi de aproximadamente 815 e 1275 px nas duas telas de computador, com área visível de 757 e 837 px de altura. Encaixe completo na janela, zoom em 100%, rolagem horizontal, retorno ao ajuste automático, acompanhamento do rodapé, alterações ao vivo, aviso de rascunho e links guiados aprovados. Sem overflow horizontal da página ou erros JavaScript.
+
+A conferência usa o JavaScript realmente publicado, com todas as chamadas de API interceptadas para uma base local fictícia. Nenhum dado real foi gravado. O teste aguarda o carregamento completo do login antes de preencher os campos. A leitura pública da Bambilu/CMKV, comparada desconsiderando apenas a assinatura e expiração dos links de mídia, permaneceu igual à anterior ao deploy.
+
+Evidências: [resultado no navegador](qa/live-preview-size-20261107/production-editor-validation.json), [verificação do host](qa/live-preview-size-20261107/production-host.json), [computador](qa/live-preview-size-20261107/production-editor-desktop.png), [tela ampla](qa/live-preview-size-20261107/production-editor-wide.png), [celular](qa/live-preview-size-20261107/production-editor-mobile.png) e [zoom em 100%](qa/live-preview-size-20261107/production-zoom-desktop.png).
+
+Recuperação: `/opt/zuno/deploy_backups/pre-e4041c3-20261107143059.tgz`, `/opt/zuno/deploy_backups/db-pre-e4041c3-20261107143059.sql.gz`, `/root/.env.zuno.pre-e4041c3-20261107143059` e imagem `zuno-zuno-web:rollback-20261107143059`. Pacote exato em `/opt/zuno/deploy_backups/release-e4041c3.tgz`, SHA-256 `e4b56e76ad6dbd1ea63d7360df49e1808d41e7168d61719c450f1409ffbbadc7`. Log: `/var/log/vorix-deploy-e4041c3-20261107143059.log`.
+
+O registro de produção é enviado em commit posterior de documentação. A aplicação publicada corresponde à release `e4041c3`.

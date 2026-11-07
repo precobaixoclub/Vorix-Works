@@ -1,0 +1,22 @@
+{
+  "release": "e4041c3",
+  "sourceFilesMatched": 4,
+  "healthyContainers": 6,
+  "containers": {
+    "marketplaces-worker": "healthy",
+    "social-provider-gateway": "healthy",
+    "vorix-worker": "healthy",
+    "zuno-api": "healthy",
+    "zuno-postgres": "healthy",
+    "zuno-web": "healthy"
+  },
+  "environmentPreserved": true,
+  "webImage": "sha256:e3efcc5e53bd7c1bc7c70da30f4fc0fcf5318d4aa454460e8b86720592e78797",
+  "runningImageMatchesBuild": true,
+  "ready": true,
+  "webStatus": 200,
+  "deployDone": true,
+  "deployLog": "/var/log/vorix-deploy-e4041c3-20261107143059.log",
+  "publicDataUnchanged": true,
+  "archiveSha256": "e4b56e76ad6dbd1ea63d7360df49e1808d41e7168d61719c450f1409ffbbadc7"
+}

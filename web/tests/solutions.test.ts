@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { SETTINGS_NAV, SOLUTION_NAVIGATION, buildRouteLabels, isBackstagePath } from "../components/workspace-navigation";
-import { SOLUTION_HOME_PATH, isRouteBlocked, resolveActiveSolution, routeOwner } from "../lib/solutions";
+import { SOLUTION_HOME_PATH, isRouteBlocked, resolveActiveSolution, routeOwner, rememberedSolution } from "../lib/solutions";
 
 const BASE = "/workspaces/ws-1";
 
@@ -46,6 +46,11 @@ describe("isRouteBlocked", () => {
 });
 
 describe("resolveActiveSolution", () => {
+  it("mantém Site nas configurações compartilhadas mesmo em uma conta com Conversas", () => {
+    expect(rememberedSolution("site")).toBe("site");
+    expect(resolveActiveSolution({owner:"core",available:["conversations","site","meetings"],remembered:rememberedSolution("site")})).toBe("site");
+    expect(rememberedSolution("outro-produto")).toBeUndefined();
+  });
   it("usa a solução dona da rota", () => {
     expect(resolveActiveSolution({ owner: "marketing", available: ["conversations", "marketing"] })).toBe("marketing");
     expect(resolveActiveSolution({ owner: "conversations", available: ["conversations", "marketing"] })).toBe("conversations");

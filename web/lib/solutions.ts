@@ -12,6 +12,10 @@
 
 export type SolutionKey = "conversations" | "meetings" | "marketing" | "site";
 
+export function rememberedSolution(value: string | null): SolutionKey | undefined {
+  return value === "site" || value === "conversations" || value === "meetings" || value === "marketing" ? value : undefined;
+}
+
 export type SolutionSummary = {
   key: SolutionKey;
   name: string;

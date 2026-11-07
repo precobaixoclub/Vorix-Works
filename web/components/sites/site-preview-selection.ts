@@ -1,3 +1,4 @@
+import {siteTextDef} from "@/features/sites/site-texts";
 import type {PublicTenantSite} from "@/features/sites/types";
 import {BLOCK_LABELS,resolvedHeader} from "@/features/sites/customization";
 import {FASHION_EDITORIAL_ID,isFashionKidsSite} from "@/features/sites/fashion-kids";
@@ -10,6 +11,8 @@ export function previewSelection(node:Element,site:PublicTenantSite,path:string[
  let field=closest(".ts-stat strong")?"value":closest("img,picture,.nexus-hero-art,.aura-hero-visual,.pulse-hero-visual,.ts-hero-media,.fk-hero-visual,.ts-hero-background-image,.nexus-grid")?"image":closest("h1,h2,h3,summary,.ts-person strong")?"title":closest("a,button")?"button":closest(".ts-eyebrow,.fk-kicker,.nexus-signal")?"eyebrow":closest("figcaption")?"caption":closest("p,blockquote,.ts-rich")?"text":undefined;
  const hit=closest("img,h1,h2,h3,p,blockquote,summary,a,button,figcaption,.ts-eyebrow,.fk-kicker,.ts-rich")??closest("[data-site-block],.fk-editorial,header,footer,section,.tenant-site")!;
  const select=(selection:Omit<SitePreviewSelection,"path">,element=hit):PreviewHit=>({element,selection:{...selection,path}});
+ const textKey=closest("[data-site-text]")?.dataset.siteText,text=textKey?siteTextDef(textKey):undefined;
+ if(text)return select({section:"textos",selector:`[data-site-text="${CSS.escape(text.key)}"]`,label:text.label,fieldLabel:text.label},closest("[data-site-text]")!);
  if(closest(".ts-announcement"))return select({section:"menu",selector:".ts-announcement,header",label:"Faixa de aviso",fieldLabel:"Texto da faixa de aviso"});
  const brand=closest(".premium-brand,.ts-brand,.fk-brand,.ts-footer-brand>strong,.ts-footer-brand>img");
  if(brand)return select({section:"geral",selector:closest("footer")?"footer":"header",label:field==="image"?"Logo":"Nome do site",fieldLabel:field==="image"?"Logo":"Nome do site",part:field==="image"?"image":"brand"},brand);

@@ -1,5 +1,7 @@
 "use client";
 import {Fragment, useRef, useState, type ReactNode} from "react";
+import {SiteText} from "../SiteText";
+import {siteText} from "@/features/sites/site-texts";
 import {ArrowDown, ArrowRight, ArrowUpRight, Menu, Search, ShoppingBag, X, Palette, Ruler, MessageCircle} from "lucide-react";
 import type {PublicTenantSite, SiteBlock, PublicSiteProduct} from "@/features/sites/types";
 import {resolvedHeader, safeSiteHref, siteHref} from "@/features/sites/customization";
@@ -36,7 +38,7 @@ export function FashionKidsHeader({site, basePath, query, onQuery, onSearch, men
     <header className={`fk-header ${header.sticky ? "is-sticky" : ""}`}>
       <div className="ts-container fk-header-main">
         <button type="button" className="fk-icon fk-menu-toggle" aria-label={menuOpen ? "Fechar menu" : "Abrir menu"} aria-expanded={menuOpen} aria-controls="fk-mobile-menu" onClick={onMenu}>{menuOpen ? <X/> : <Menu/>}</button>
-        <span className="fk-header-note">Pequenos momentos.<br/>Grandes descobertas.</span>
+        <span className="fk-header-note"><SiteText content={site.content} id="fk.headerNote"/></span>
         <a href={basePath || "/"} className="fk-brand" aria-label={`${site.content.name} — início`}><Brand site={site}/></a>
         <div className="fk-header-actions">
           {catalogEnabled ? <button type="button" ref={searchButton} className="fk-icon" aria-label="Buscar na coleção" aria-expanded={searchOpen} aria-controls="fk-search" onClick={() => {if(searchOpen)closeSearch();else {setSearchOpen(true);requestAnimationFrame(() => searchInput.current?.focus());}}}><Search/></button> : null}
@@ -46,7 +48,7 @@ export function FashionKidsHeader({site, basePath, query, onQuery, onSearch, men
       <nav className="fk-desktop-nav" aria-label="Navegação do site">{links.map(link => <a key={link.id} data-site-link={link.id} href={siteHref(link.url, basePath)} target={link.newTab ? "_blank" : undefined} rel={link.newTab ? "noopener noreferrer" : undefined}>{link.label}</a>)}</nav>
       {menuOpen ? <nav className="ts-container fk-mobile-nav" id="fk-mobile-menu" aria-label="Menu do celular" onKeyDown={event => {if(event.key === "Escape")onMenu();}}>{links.map(link => <a key={link.id} data-site-link={link.id} href={siteHref(link.url, basePath)} target={link.newTab ? "_blank" : undefined} rel={link.newTab ? "noopener noreferrer" : undefined} onClick={onMenu}>{link.label}<ArrowUpRight size={15}/></a>)}</nav> : null}
       {searchOpen ? <form className="ts-container fk-search" id="fk-search" role="search" onSubmit={event => {event.preventDefault();onSearch(event.currentTarget.ownerDocument);setSearchOpen(false);}} onKeyDown={event => {if(event.key === "Escape")closeSearch();}}>
-        <Search size={18}/><label className="fk-sr-only" htmlFor="fk-search-input">Buscar no site</label><input id="fk-search-input" ref={searchInput} value={query} onChange={event => onQuery(event.target.value)} placeholder="O que vamos descobrir hoje?" onKeyDown={event=>{if(event.key==="Enter"){event.preventDefault();onSearch(event.currentTarget.ownerDocument);setSearchOpen(false);}}}/><button type="button" className="fk-text-link" onClick={event=>{onSearch(event.currentTarget.ownerDocument);setSearchOpen(false);}}>Buscar<ArrowRight size={15}/></button><button type="button" className="fk-icon" aria-label="Fechar busca" onClick={closeSearch}><X/></button>
+        <Search size={18}/><label className="fk-sr-only" htmlFor="fk-search-input">Buscar no site</label><input id="fk-search-input" ref={searchInput} value={query} onChange={event => onQuery(event.target.value)} placeholder={siteText(site.content,"fk.searchPlaceholder")} onKeyDown={event=>{if(event.key==="Enter"){event.preventDefault();onSearch(event.currentTarget.ownerDocument);setSearchOpen(false);}}}/><button type="button" className="fk-text-link" onClick={event=>{onSearch(event.currentTarget.ownerDocument);setSearchOpen(false);}}>Buscar<ArrowRight size={15}/></button><button type="button" className="fk-icon" aria-label="Fechar busca" onClick={closeSearch}><X/></button>
       </form> : null}
     </header>
   </>;
@@ -68,10 +70,10 @@ export function FashionKidsHero({site, block, basePath}: TemplateHeroProps) {
       <h1>{defaultCopy ? <>Estilo para<br/>acompanhar<br/><em>cada fase.</em></> : copy.title}</h1>
       <p>{defaultCopy ? "Para os dias cheios de histórias. E todos os que ainda estão por vir." : copy.text}</p>
       <a href={siteHref(defaultCopy ? "#catalogo" : copy.buttonUrl || "#catalogo", basePath)} className="fk-text-link">{defaultCopy ? "Ver coleção" : copy.buttonLabel || "Ver coleção"}<ArrowRight size={18}/></a>
-      <span className="fk-hero-footnote"><span aria-hidden="true">✳</span> O bonito é crescer do seu jeito.</span>
+      <span className="fk-hero-footnote"><span aria-hidden="true">✳</span> <SiteText content={site.content} id="fk.heroFootnote"/></span>
     </div>
     <div className="fk-hero-visual"><FashionPhoto product={product} image={image} mobileImage={mobileImage} alt={slide?.imageAlt || block.imageAlt} intrinsic={!!(image || mobileImage)} priority/>
-      <a href={`${basePath}#catalogo`} className="fk-photo-caption"><span>{image ? "O universo Bambilu" : "Um olhar para a nossa coleção"}</span><ArrowDown size={18}/></a>
+      <a href={`${basePath}#catalogo`} className="fk-photo-caption">{image || site.content.texts?.["fk.heroCaption"]?.trim() ? <SiteText content={site.content} id="fk.heroCaption"/> : <span>Um olhar para a nossa coleção</span>}<ArrowDown size={18}/></a>
       {!site.layoutConfig?.heroImageUrl && slides.length > 1 ? <div className="fk-banner-controls" aria-label="Banners em destaque">{slides.map((s, index) => <button type="button" key={s.id} aria-label={`Mostrar banner ${index + 1}`} aria-pressed={active === index} onClick={() => setSelected(index)}>{index + 1}</button>)}</div> : null}
     </div>
   </section>;
@@ -85,8 +87,8 @@ export function FashionKidsProductCard({site, product, basePath}: TemplateCardPr
 }
 
 function FashionExplore({site, basePath}: {site: PublicTenantSite; basePath: string}) {
-  return <section className="ts-container fk-explore" aria-label="Explore a coleção"><span className="fk-kicker">ENCONTRE SEU JEITO</span><div>
-    {site.categories.length ? site.categories.slice(0, 5).map(c => <a key={c.id} href={`${basePath}/categoria/${c.slug}`}>{c.name}<ArrowUpRight size={17}/></a>) : <><a href={`${basePath}#em-destaque`}>Nossas escolhas<ArrowUpRight size={17}/></a><a href={`${basePath}#catalogo`}>Toda a coleção<ArrowUpRight size={17}/></a></>}
+  return <section className="ts-container fk-explore" aria-label="Explore a coleção"><span className="fk-kicker"><SiteText content={site.content} id="fk.exploreKicker"/></span><div>
+    {site.categories.length ? site.categories.slice(0, 5).map(c => <a key={c.id} href={`${basePath}/categoria/${c.slug}`}>{c.name}<ArrowUpRight size={17}/></a>) : <><a href={`${basePath}#em-destaque`}><SiteText content={site.content} id="fk.exploreFeatured"/><ArrowUpRight size={17}/></a><a href={`${basePath}#catalogo`}><SiteText content={site.content} id="fk.exploreAll"/><ArrowUpRight size={17}/></a></>}
   </div></section>;
 }
 
@@ -106,9 +108,9 @@ function FashionDetails({site, basePath}: {site: PublicTenantSite; basePath: str
   const contact = site.content.blocks.some(b => b.enabled && b.type === "contact") && !!(site.content.contactForm || site.content.phone || site.content.email || site.content.whatsapp);
   if(!colors && !sizes && !contact)return null;
   return <section className="ts-container fk-details" aria-label="Explore as possibilidades">
-    {colors ? <div><Palette size={21}/><h3>Suas cores, seu jeito</h3><p>Veja as opções de cada peça.</p></div> : null}
-    {sizes ? <div><Ruler size={21}/><h3>Uma escolha que combina</h3><p>Confira os tamanhos no produto.</p></div> : null}
-    {contact ? <a href={`${basePath}#contato`}><MessageCircle size={21}/><h3>Vamos conversar?</h3><p>Fale com a gente sobre suas escolhas.</p></a> : null}
+    {colors ? <div><Palette size={21}/><h3><SiteText content={site.content} id="fk.colorsTitle"/></h3><p><SiteText content={site.content} id="fk.colorsText"/></p></div> : null}
+    {sizes ? <div><Ruler size={21}/><h3><SiteText content={site.content} id="fk.sizesTitle"/></h3><p><SiteText content={site.content} id="fk.sizesText"/></p></div> : null}
+    {contact ? <a href={`${basePath}#contato`}><MessageCircle size={21}/><h3><SiteText content={site.content} id="fk.contactTitle"/></h3><p><SiteText content={site.content} id="fk.contactText"/></p></a> : null}
   </section>;
 }
 
@@ -121,7 +123,7 @@ export function FashionKidsHome({site, basePath, renderSection}: {site: PublicTe
     if(block === editorial && firstCatalog)return null;
     if(block === firstCatalog)return <Fragment key={block.id}>
       <FashionExplore site={site} basePath={basePath}/>
-      {featured.length ? <section className="ts-container fk-featured" id="em-destaque"><div className="fk-section-heading"><div><span className="fk-kicker">ESCOLHAS BAMBILU</span><h2>Pequenos favoritos.</h2></div><a className="fk-text-link" href={`${basePath}#catalogo`}>Ver tudo<ArrowRight size={16}/></a></div><div className="fk-featured-grid">{featured.map((product, index) => <FashionKidsProductCard key={product.id} product={product} site={site} basePath={basePath} index={index}/>)}</div></section> : null}
+      {featured.length ? <section className="ts-container fk-featured" id="em-destaque"><div className="fk-section-heading"><div><span className="fk-kicker"><SiteText content={site.content} id="fk.featuredKicker"/></span><h2><SiteText content={site.content} id="fk.featuredTitle"/></h2></div><a className="fk-text-link" href={`${basePath}#catalogo`}><SiteText content={site.content} id="fk.featuredLink"/><ArrowRight size={16}/></a></div><div className="fk-featured-grid">{featured.map((product, index) => <FashionKidsProductCard key={product.id} product={product} site={site} basePath={basePath} index={index}/>)}</div></section> : null}
       {showEditorial?<FashionEditorial site={site} basePath={basePath}/>:null}
       {renderSection({...block, title: block.title === "Nosso catálogo" ? "Encontre a sua próxima escolha." : block.title, eyebrow: block.eyebrow || "TODA A COLEÇÃO"})}
       <FashionDetails site={site} basePath={basePath}/>

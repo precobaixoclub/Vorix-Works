@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import useSWR from "swr";
 import { apiClient } from "@/lib/api-client";
-import { resolveActiveSolution, routeOwner, type RouteOwner, type SolutionKey, type SolutionSummary } from "@/lib/solutions";
+import { rememberedSolution, resolveActiveSolution, routeOwner, type RouteOwner, type SolutionKey, type SolutionSummary } from "@/lib/solutions";
 
 const REMEMBERED_SOLUTION_KEY = "vorix:active-solution";
 const FALLBACK_SOLUTIONS: SolutionSummary[] = [{ key: "conversations", name: "Vorix Conversas", internal: false }];
@@ -26,7 +26,7 @@ export function useSolutions() {
 function readRemembered(): SolutionKey | undefined {
   try {
     const value = window.sessionStorage.getItem(REMEMBERED_SOLUTION_KEY);
-    return value === "conversations" || value === "meetings" || value === "marketing" ? value : undefined;
+    return rememberedSolution(value);
   } catch {
     return undefined;
   }

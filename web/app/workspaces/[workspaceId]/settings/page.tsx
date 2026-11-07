@@ -26,9 +26,9 @@ export default function SettingsPage() {
   const router = useRouter();
   const { state } = useAuth();
   const pathname = usePathname();
-  const { active, available } = useActiveSolution(pathname, `/workspaces/${workspace.id}`);
-  const showMarketing = active === "marketing" && available.includes("marketing");
-  const showConversations = active === "conversations" && available.includes("conversations");
+  const { active, available, settled, isLoading: solutionLoading } = useActiveSolution(pathname, `/workspaces/${workspace.id}`);
+  const showMarketing = settled && !solutionLoading && active === "marketing" && available.includes("marketing");
+  const showConversations = settled && !solutionLoading && active === "conversations" && available.includes("conversations");
   const [name, setName] = useState(workspace.name);
   const [kind, setKind] = useState(workspace.kind ?? "");
   const [timezone, setTimezone] = useState(workspace.settings.timezone ?? "America/Sao_Paulo");

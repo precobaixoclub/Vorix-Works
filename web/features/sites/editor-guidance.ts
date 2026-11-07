@@ -18,6 +18,7 @@ export const SITE_TEXT_GUIDANCE = {
  announcement: {recommended:"até 80",recommendedMax:80,max:200},
  footer: {recommended:"até 240",recommendedMax:240,max:4000},
  footerNote: {recommended:"até 100",recommendedMax:100,max:300},
+ templateText: {recommended:"até 60",recommendedMax:60,max:300,hint:"Em branco, o site usa o texto padrão do modelo (mostrado no campo)."},
  columnTitle: {recommended:"até 30",recommendedMax:30,max:100},
  itemTitle: {recommended:"até 60",recommendedMax:60,max:200},
  personName: {recommended:"até 60",recommendedMax:60,max:200},

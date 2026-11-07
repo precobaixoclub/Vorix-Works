@@ -1,15 +1,15 @@
 import type { Metadata, Viewport } from "next";
-import { IBM_Plex_Mono, Instrument_Sans, Inter } from "next/font/google";
+import localFont from "next/font/local";
 import { AuthProvider } from "@/contexts/auth-context";
 import { Providers } from "./providers";
 import "./globals.css";
 
-const inter = Inter({ subsets: ["latin"], variable: "--font-sans" });
+const inter = localFont({ src: "./fonts/inter.woff2", weight: "100 900", display: "swap", variable: "--font-sans" });
 // Redesign "SaaS moderno + IA-first" — Instrument Sans para títulos (mais carácter que o Inter
 // sem trocar a personalidade da UI) e IBM Plex Mono para metadado técnico (versão, modelo,
 // timestamps) — nunca usados no corpo de texto, só em `font-display`/`font-mono`.
-const instrumentSans = Instrument_Sans({ subsets: ["latin"], weight: ["500", "600", "700"], variable: "--font-display" });
-const plexMono = IBM_Plex_Mono({ subsets: ["latin"], weight: ["400", "500"], variable: "--font-mono" });
+const instrumentSans = localFont({ src: "./fonts/instrument-sans.woff2", weight: "400 700", display: "swap", variable: "--font-display" });
+const plexMono = localFont({ src: [{path:"./fonts/ibm-plex-mono-400.woff2",weight:"400"},{path:"./fonts/ibm-plex-mono-500.woff2",weight:"500"}], display:"swap", variable:"--font-mono" });
 
 // No celular o teclado encolhe a área visível (o campo de mensagem fica acima dele) e a página
 // usa a tela inteira, respeitando o notch via `env(safe-area-inset-*)`.

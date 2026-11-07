@@ -33,6 +33,8 @@ export const siteContentSchema=z.object({
  header:z.object({navigation:z.array(link).max(20).default([]),announcement:z.object({enabled:z.boolean(),text:z.string().max(200),url:safeLink.optional()}).strict().optional(),showSearch:z.boolean().default(false),sticky:z.boolean().default(false),buttonLabel:z.string().max(80).optional(),buttonUrl:safeLink.optional()}).strict().optional(),
  footerColumns:z.array(z.object({id:z.string().max(100),title:z.string().max(100),links:z.array(link).max(12)}).strict()).max(4).optional(),
  footerNote:z.string().max(300).optional(),
+ // Textos fixos dos modelos trocados pela pessoa (web/features/sites/site-texts.ts); vazio = padrão do modelo.
+ texts:z.record(z.string().regex(/^[a-z][a-zA-Z0-9.]{1,59}$/),z.string().max(300)).refine(value=>Object.keys(value).length<=120,"Textos demais.").optional(),
 }).strict().superRefine((value,ctx)=>{
  const ids=value.blocks.map(block=>block.id);if(new Set(ids).size!==ids.length)ctx.addIssue({code:"custom",message:"Cada seção precisa de um identificador diferente.",path:["blocks"]});
  if(new Set(value.pages.map(page=>page.slug)).size!==value.pages.length)ctx.addIssue({code:"custom",message:"Cada página precisa de um endereço diferente.",path:["pages"]});

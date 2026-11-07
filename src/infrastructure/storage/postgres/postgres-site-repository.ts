@@ -1,3 +1,4 @@
+import {publishSiteCommerce} from "./site-commerce-publication.js";
 import {contactNameForInput} from "../../../shared/utils/contact-presentation.js";
 import type {Pool} from "pg";
 import {randomUUID} from "node:crypto";
@@ -19,6 +20,9 @@ export class PostgresSiteRepository implements SiteRepositoryPort{
  async saveDraft(input:Parameters<SiteRepositoryPort["saveDraft"]>[0]){const {rows}=await this.pool.query("update tenant_sites set draft=$4,updated_by_user_id=coalesce($5,updated_by_user_id),revision=revision+1,updated_at=now() where id=$1 and tenant_id=$2 and revision=$3 returning *",[input.id,input.tenantId,input.revision,JSON.stringify(input.draft),input.actorUserId??null]);return rows[0]?site(rows[0]):undefined;}
  async publish(input:Parameters<SiteRepositoryPort["publish"]>[0]){
   const client=await this.pool.connect();try{await client.query("begin");
+   const selected=(await client.query("select * from tenant_sites where id=$1 and tenant_id=$2 and revision=$3 for update",[input.id,input.tenantId,input.revision])).rows[0];
+   if(!selected){await client.query("rollback");return undefined;}
+   if(!input.unpublish){const draft=await publishSiteCommerce(client,selected as Parameters<typeof publishSiteCommerce>[1],input.actorUserId);await client.query("update tenant_sites set draft=$2 where id=$1",[input.id,JSON.stringify(draft)]);}
    const {rows}=await client.query(`update tenant_sites set previous_published=case when published is not null and (published is distinct from draft or ${input.unpublish?"true":"false"}) then published else previous_published end,published_by_user_id=$4,updated_by_user_id=$4,published=${input.unpublish?"null":"draft"},published_at=${input.unpublish?"null":"now()"},revision=revision+1,updated_at=now() where id=$1 and tenant_id=$2 and revision=$3 returning *`,[input.id,input.tenantId,input.revision,input.actorUserId]);
    if(!rows[0]){await client.query("rollback");return undefined;}
    await client.query("insert into site_publication_events(id,site_id,tenant_id,revision,actor_user_id,event_type) values($1,$2,$3,$4,$5,$6)",["site-event-"+randomUUID(),input.id,input.tenantId,rows[0].revision,input.actorUserId,input.unpublish?"unpublished":"published"]);

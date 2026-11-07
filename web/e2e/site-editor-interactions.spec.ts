@@ -12,16 +12,16 @@ const frame=(page:Page)=>preview(page).frameLocator("iframe");
 async function section(page:Page,name:string){await page.getByRole("navigation",{name:"Navegação da seção"}).getByRole("button",{name,exact:true}).click();}
 async function noOverflow(page:Page){expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);}
 
-test("edição ao vivo acompanha os campos nos seis modelos sem salvar nem publicar",async({page,request},info)=>{
+test("edição ao vivo acompanha os campos nos seis modelos salvando automaticamente sem publicar",async({page,request},info)=>{
  test.setTimeout(180000);const errors:string[]=[];page.on("pageerror",error=>errors.push(error.message));
  for(const id of ["nexus","aura","pulse","catalog","showcase","studio"]){
   const site=(await(await request.get(endpoint(),{headers})).json()).data;expect((await request.put(endpoint(),{headers,data:{revision:site.revision,draft:selectSiteTemplate(scope.initialSiteSnapshot,id)}})).ok()).toBe(true);
   const before=(await(await request.get(`${api}/v1/public/sites/${scope.slug}`)).json()).data;
   if(id==="nexus")await login(page);else await page.goto(`/workspaces/${scope.workspaceId}/site?section=geral`);
-  const name=`Marca ${id} ao vivo`;await page.getByLabel("Nome do site",{exact:true}).fill(name);await expect(preview(page)).toBeVisible();await expect(frame(page).getByRole("link",{name:`${name} — início`,exact:true})).toBeVisible();await expect(preview(page)).toContainText("Alterações não salvas");
+  const name=`Marca ${id} ao vivo`;await page.getByLabel("Nome do site",{exact:true}).fill(name);await expect(preview(page)).toBeVisible();await expect(frame(page).getByRole("link",{name:`${name} — início`,exact:true})).toBeVisible();await expect(preview(page)).toContainText("Aguardando salvamento automático");
   await section(page,"Rodapé");const footer=page.getByLabel("Texto do rodapé",{exact:true});await footer.fill(`Mensagem em tempo real ${id}`);await expect(frame(page).locator("[data-site-preview-active]")).toContainText(`Mensagem em tempo real ${id}`);await expect.poll(()=>frame(page).locator("body").evaluate(element=>element.ownerDocument.defaultView!.scrollY)).toBeGreaterThan(100);await expect(footer).toBeFocused();await noOverflow(page);
   await preview(page).getByRole("button",{name:"Acompanhar edição",exact:true}).click();await section(page,"Sua marca");await page.getByLabel("Nome do site",{exact:true}).fill(name+" livre");await expect(frame(page).locator("[data-site-preview-active]")).toHaveCount(0);await preview(page).getByRole("button",{name:"Acompanhar edição",exact:true}).click();await expect.poll(()=>frame(page).locator("body").evaluate(element=>element.ownerDocument.defaultView!.scrollY)).toBe(0);
-  expect((await(await request.get(`${api}/v1/public/sites/${scope.slug}`)).json()).data.content).toEqual(before.content);expect((await(await request.get(endpoint(),{headers})).json()).data.draft.content.name).toBe(scope.initialSiteSnapshot.content.name);
+  expect((await(await request.get(`${api}/v1/public/sites/${scope.slug}`)).json()).data.content).toEqual(before.content);await expect.poll(async()=>(await(await request.get(endpoint(),{headers})).json()).data.draft.content.name).toBe(name+" livre");await expect(page.getByText("Rascunho salvo automaticamente",{exact:true})).toBeVisible();
  }
  await page.screenshot({path:path.join(evidence,`${info.project.name}-live.png`),fullPage:true});expect(errors).toEqual([]);
 });
@@ -70,7 +70,7 @@ test("prévia ocupa a área disponível e permite ampliar sem alterar o rascunho
  await zoom.selectOption("fit");await expect.poll(()=>canvas.evaluate(element=>element.scrollLeft)).toBe(0);
  await expect.poll(()=>canvas.evaluate(element=>element.scrollWidth-element.clientWidth)).toBeLessThanOrEqual(1);
  const current=(await(await request.get(endpoint(),{headers})).json()).data;expect(current.revision).toBe(initial.revision);expect(current.draft).toEqual(initial.draft);
- await page.getByLabel("Título do banner 1",{exact:true}).fill("Detalhes visíveis em uma prévia maior");await expect(frame(page).getByRole("heading",{name:"Detalhes visíveis em uma prévia maior",exact:true})).toBeVisible();await expect(panel).toContainText("Alterações não salvas");
+ await page.getByLabel("Título do banner 1",{exact:true}).fill("Detalhes visíveis em uma prévia maior");await expect(frame(page).getByRole("heading",{name:"Detalhes visíveis em uma prévia maior",exact:true})).toBeVisible();await expect(panel).toContainText("Aguardando salvamento automático");
  await expect.poll(()=>frame(page).locator("[data-site-preview-active]").evaluate(element=>element.getBoundingClientRect().top-Math.max(0,element.ownerDocument.querySelector("header")?.getBoundingClientRect().bottom??0))).toBeGreaterThanOrEqual(16);
  await noOverflow(page);await page.screenshot({path:path.join(evidence,`${info.project.name}-large-preview.png`)});
 });

@@ -197,7 +197,7 @@ export async function registerCommerceRoutes(app:FastifyInstance,deps:CommerceRo
  }));
  const ownedSite=async(request:FastifyRequest,permission:Permission)=>{const scope=await scoped(request,permission);return {scope,site:await mustSite(deps,{id:(request.params as {id:string}).id,tenantId:scope.tenantId,workspaceId:scope.workspaceId})};};
  app.get("/sites/:id/commerce/checkout-status",async request=>guard(async()=>{
-  const {site}=await ownedSite(request,"site:read");const {settings}=await getSiteCommerceSettings(deps,site);
+  const {site}=await ownedSite(request,"site:read");const draft=(request.query as {draft?:string}).draft==="1";if(draft)requirePermission(request,"commerce:read");const settings=draft&&site.draft.commerceConfig?site.draft.commerceConfig.settings:(await getSiteCommerceSettings(deps,site)).settings;
   return successEnvelope({...await siteCheckoutStatus(deps,site,settings),credentials:await commerceCredentialStatus(deps,site),sandboxAllowed:sandboxAllowedFor(deps,site.tenantId)},request.id);
  }));
  app.put("/sites/:id/commerce/credentials/:provider",{config:{readOnlyGuard:true}},async request=>guard(async()=>{

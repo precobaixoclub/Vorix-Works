@@ -1,0 +1,13 @@
+"use client";
+import {useId} from "react";
+import {SOCIAL_NETWORKS,socialNetwork} from "@/features/sites/social-networks";
+import {normalizeExternalSiteLink} from "@/features/sites/editor-links";
+import type {SiteContent} from "@/features/sites/types";
+import {Button} from "@/components/Button";
+import {TextField} from "./SiteEditorFields";
+import {SocialNetworkIcon} from "./SocialNetworkIcon";
+
+export function SiteSocialNetworksEditor({value,onChange}:{value:SiteContent["socials"];onChange:(value:SiteContent["socials"])=>void}){
+ const id=useId(),patch=(index:number,change:Partial<SiteContent["socials"][number]>)=>onChange(value.map((item,i)=>i===index?{...item,...change}:item));
+ return <div className="space-y-3" data-site-preview-selector="footer .ts-socials"><h3 className="text-sm font-semibold">Redes sociais no rodapé</h3><p className="text-xs text-muted-foreground">Escolha a rede e cole o link do seu perfil. O ícone aparecerá no rodapé e abrirá o perfil em outra aba.</p>{value.map((link,index)=>{const network=socialNetwork(link);return <div key={index} className="space-y-3 rounded-lg border border-border/60 p-3"><label htmlFor={`${id}-${index}`} className="flex items-center gap-2 text-sm font-medium"><SocialNetworkIcon network={network}/>Rede social {index+1}</label><select id={`${id}-${index}`} className="h-10 w-full rounded-md border border-border bg-background px-3 text-sm" value={network} onChange={event=>patch(index,{label:SOCIAL_NETWORKS.find(item=>item.id===event.target.value)?.label??"Outra rede",url:""})}>{SOCIAL_NETWORKS.map(item=><option key={item.id} value={item.id}>{item.label}</option>)}<option value="other">Outra rede ou site</option></select>{network==="other"?<TextField guidance="socialName" label={`Nome da rede ${index+1}`} value={link.label} onChange={label=>patch(index,{label})}/>:null}<TextField guidance="link" label={`Link do perfil ${index+1}`} value={link.url} placeholder={`https://${SOCIAL_NETWORKS.find(item=>item.id===network)?.host??"exemplo.com"}/seuperfil`} onChange={url=>patch(index,{url})}/>{link.url&&!/^https:\/\/[^\s/]+\.[^\s]+$/i.test(link.url)?<p className="text-xs text-warning">Cole o endereço completo do perfil, começando com https://.</p>:null}{link.url&&!/^https?:\/\//i.test(link.url)&&link.url.includes(".")?<Button size="sm" variant="secondary" onClick={()=>patch(index,{url:normalizeExternalSiteLink(link.url)})}>Completar endereço com https://</Button>:null}<Button size="sm" variant="ghost" onClick={()=>onChange(value.filter((_,i)=>i!==index))}>Remover rede social</Button></div>;})}<Button variant="secondary" disabled={value.length>=10} onClick={()=>onChange([...value,{label:"Instagram",url:""}])}>Adicionar rede social</Button></div>;
+}

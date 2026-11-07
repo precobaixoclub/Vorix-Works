@@ -1,3 +1,4 @@
+import {siteCommerceDraftSchema} from "./site-commerce-draft.js";
 import { z } from "zod";
 import {SITE_TEMPLATE_IDS,siteTemplate} from "./site-template-registry.js";
 const text=z.string().trim().max(4000);
@@ -43,7 +44,7 @@ export type SiteTheme=z.infer<typeof siteThemeSchema>;
 const sectionLayout=z.object({id:z.string().max(100),enabled:z.boolean(),style:siteBlockSchema.shape.style}).strict();
 export const siteLayoutSchema=z.object({heroVariant:z.enum(["signature","compact"]).default("signature"),productGallery:z.enum(["split","stacked"]).default("split"),heroImageUrl:image.optional(),heroMobileImageUrl:image.optional(),featuredProductId:z.string().max(160).optional()}).strict();
 export const siteTemplateConfigSchema=z.object({templateVersion:z.number().int().positive(),themeConfig:siteThemeSchema,sectionConfig:z.object({home:z.array(sectionLayout).max(40),pages:z.record(z.string().max(120),z.array(sectionLayout).max(30)).default({})}).strict(),layoutConfig:siteLayoutSchema}).strict();
-export const siteSnapshotSchema=z.object({content:siteContentSchema,theme:siteThemeSchema,activeTemplateId:z.enum(SITE_TEMPLATE_IDS).optional(),templateConfigs:z.record(z.string().max(80),siteTemplateConfigSchema).optional(),layoutConfig:siteLayoutSchema.optional()}).strict().superRefine((value,ctx)=>{
+export const siteSnapshotSchema=z.object({commerceConfig:siteCommerceDraftSchema.optional(),content:siteContentSchema,theme:siteThemeSchema,activeTemplateId:z.enum(SITE_TEMPLATE_IDS).optional(),templateConfigs:z.record(z.string().max(80),siteTemplateConfigSchema).optional(),layoutConfig:siteLayoutSchema.optional()}).strict().superRefine((value,ctx)=>{
  if(value.activeTemplateId&&value.activeTemplateId!==value.theme.template)ctx.addIssue({code:"custom",path:["activeTemplateId"],message:"O modelo selecionado não corresponde à aparência do rascunho."});
  if(Object.keys(value.templateConfigs??{}).length>50)ctx.addIssue({code:"custom",message:"Limite de modelos configurados excedido."});
  for(const [id,config] of Object.entries(value.templateConfigs??{})){

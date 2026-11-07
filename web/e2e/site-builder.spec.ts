@@ -29,7 +29,7 @@ async function login(page:Page,section="geral"){
 async function section(page:Page,name:string){await page.getByRole("navigation",{name:"Navegação da seção"}).getByRole("button",{name,exact:true}).click();}
 async function preview(page:Page){await page.getByRole("button",{name:"Pré-visualizar",exact:true}).click();return page.getByRole("dialog",{name:"Prévia do seu site"}).frameLocator('iframe[title="Prévia do seu site"]');}
 async function closePreview(page:Page){await page.keyboard.press("Escape");await expect(page.getByRole("dialog",{name:"Prévia do seu site"})).toHaveCount(0);}
-async function save(page:Page){await page.getByRole("button",{name:"Salvar rascunho",exact:true}).click();await expect(page.getByText("Rascunho salvo",{exact:true})).toBeVisible();}
+async function save(page:Page){await expect(page.getByText("Rascunho salvo automaticamente",{exact:true})).toBeVisible();}
 async function publish(page:Page){await page.getByRole("button",{name:"Publicar site",exact:true}).click();await page.getByRole("alertdialog").getByRole("button",{name:/^(Publicar agora|Publicar este modelo)$/}).click();await expect(page.getByRole("alertdialog")).toHaveCount(0);}
 async function proof(page:Page,name:string,project:string){const dir=path.resolve("../tmp/site-builder-browser/evidence");await mkdir(dir,{recursive:true});await page.evaluate(async()=>{for(let y=0;y<document.documentElement.scrollHeight;y+=innerHeight){window.scrollTo(0,y);await new Promise(ok=>setTimeout(ok,70));}window.scrollTo(0,0);});await page.screenshot({path:path.join(dir,`${project}-${name}.png`),fullPage:true});}
 

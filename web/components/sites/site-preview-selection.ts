@@ -20,7 +20,9 @@ export function previewSelection(node:Element,site:PublicTenantSite,path:string[
  }
  const contact=closest("#contato,.ts-contact,footer");
  if(contact){
+  if(!closest("footer")&&field==="title"){const blockId=closest("[data-site-block]")?.dataset.siteBlock;return select({section:"contato",selector:"#contato",label:"Título do contato",blockId,part:"title",fieldLabel:"Título da seção"});}
   if(closest("form"))return select({section:"contato",selector:"#contato",label:"Formulário de contato",fieldLabel:"Permitir formulário de contato"});
+  const social=closest("[data-site-social-index]");if(social)return select({section:"contato",selector:"footer .ts-socials",label:"Redes sociais",fieldLabel:`Link do perfil ${Number(social.dataset.siteSocialIndex)+1}`});
   const link=closest("a"),href=link?.getAttribute("href")??"";
   if(closest("address,.ts-socials")||/^(mailto:|tel:|https:\/\/wa\.me\/)/.test(href))return select({section:"contato",selector:closest("footer")?"footer":"#contato",label:"Contato e redes sociais",fieldLabel:href.startsWith("mailto:")?"E-mail de contato":href.startsWith("tel:")?"Telefone":href.includes("wa.me/")?"WhatsApp (país, DDD e número)":closest("address")?"Endereço":undefined});
   if(closest("footer")){

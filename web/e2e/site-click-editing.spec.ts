@@ -10,7 +10,7 @@ const preview=(page:Page)=>page.getByRole("region",{name:"Prévia ao vivo",exact
 const frame=(page:Page)=>preview(page).frameLocator("iframe");
 async function section(page:Page,name:string){await page.getByRole("navigation",{name:"Navegação da seção"}).getByRole("button",{name,exact:true}).click();}
 
-test("clique na prévia abre os campos nos seis modelos sem salvar nem publicar",async({page,request},info)=>{
+test("clique na prévia abre os campos nos seis modelos com salvamento automático, sem publicar",async({page,request},info)=>{
  test.setTimeout(180000);const errors:string[]=[];page.on("pageerror",error=>errors.push(error.message));
  for(const template of ["nexus","aura","pulse","catalog","showcase","studio"]){
   const site=(await(await request.get(endpoint(),{headers})).json()).data;expect((await request.put(endpoint(),{headers,data:{revision:site.revision,draft:selectSiteTemplate(structuredClone(scope.initialSiteSnapshot),template)}})).ok()).toBe(true);
@@ -21,7 +21,7 @@ test("clique na prévia abre os campos nos seis modelos sem salvar nem publicar"
   await frame(page).locator("[data-site-block=hero] h1").click();await expect(page.getByLabel("Título do banner 1",{exact:true})).toBeFocused();await expect(preview(page)).toContainText("Prévia atualizada");
   await page.getByLabel("Título do banner 1",{exact:true}).fill(`Edição por clique ${template}`);await expect(frame(page).getByRole("heading",{name:`Edição por clique ${template}`,exact:true})).toBeVisible();
   await frame(page).locator(".ts-footer-brand p").click();await expect(page.getByLabel("Texto do rodapé",{exact:true})).toBeFocused();
-  const current=(await(await request.get(endpoint(),{headers})).json()).data;expect(current.draft).toEqual(saved.draft);expect(current.revision).toBe(saved.revision);expect((await(await request.get(`${api}/v1/public/sites/${scope.slug}`)).json()).data.content).toEqual(before.content);
+  await expect.poll(async()=>(await(await request.get(endpoint(),{headers})).json()).data.draft.content.blocks.find((block:any)=>block.id==="hero").slides[0].title).toBe(`Edição por clique ${template}`);expect((await(await request.get(`${api}/v1/public/sites/${scope.slug}`)).json()).data.content).toEqual(before.content);await expect(page.getByText("Rascunho salvo automaticamente",{exact:true})).toBeVisible();
  }
  expect(errors).toEqual([]);expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);await page.screenshot({path:`../tmp/site-click-editing/${info.project.name}-selection.png`});
 });

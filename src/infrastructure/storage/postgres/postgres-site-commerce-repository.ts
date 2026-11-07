@@ -17,7 +17,9 @@ export class PostgresSiteCommerceRepository implements SiteCommerceRepositoryPor
  async setCartCoupon(cartId:string,code:string|undefined){await this.pool.query("update site_carts set coupon_code=$2,updated_at=now() where id=$1 and status='ACTIVE'",[cartId,code??null]);}
  async getSettings(siteId:string){const {rows}=await this.pool.query("select settings from site_commerce_settings where site_id=$1",[siteId]);return rows[0]?siteCommerceSettingsSchema.parse(rows[0].settings):undefined;}
  async saveSettings(input:{siteId:string;tenantId:string;workspaceId:string;settings:SiteCommerceSettings;actorUserId:string}){
-  await this.pool.query("insert into site_commerce_settings(site_id,tenant_id,workspace_id,settings,updated_by_user_id) values($1,$2,$3,$4,$5) on conflict(site_id) do update set settings=excluded.settings,updated_by_user_id=excluded.updated_by_user_id,updated_at=now()",[input.siteId,input.tenantId,input.workspaceId,JSON.stringify(input.settings),input.actorUserId]);
+  const client=await this.pool.connect();try{await client.query("begin");await client.query("select pg_advisory_xact_lock(hashtext($1))",[`site-commerce:${input.siteId}`]);
+  await client.query("insert into site_commerce_settings(site_id,tenant_id,workspace_id,settings,updated_by_user_id) values($1,$2,$3,$4,$5) on conflict(site_id) do update set settings=excluded.settings,updated_by_user_id=excluded.updated_by_user_id,updated_at=now()",[input.siteId,input.tenantId,input.workspaceId,JSON.stringify(input.settings),input.actorUserId]);
+  await client.query("commit");}catch(error){await client.query("rollback");throw error;}finally{client.release();}
   return input.settings;
  }
  async createIntent(input:CreateSalesIntentInput){

@@ -5,7 +5,7 @@ export function TextGuidance({id,value,guidance}:{id:string;value:string;guidanc
  return <div id={id} className="mt-1.5 space-y-1 text-xs leading-relaxed text-muted-foreground">
   <p>Recomendado: {rule.recommended} caracteres.{rule.max!==undefined?` Limite: ${rule.max} caracteres.`:""}</p>
   {rule.hint?<p>{rule.hint}</p>:null}
-  <p className={overLimit?"font-medium text-destructive":"tabular-nums"} aria-live="polite" aria-atomic="true">{value.length} caracteres{overLimit?` · Acima do limite de ${rule.max}. Reduza o texto antes de salvar.`:value.length>rule.recommendedMax?" · Acima do recomendado; confira a prévia.":""}</p>
+  <p className={overLimit?"font-medium text-destructive":"tabular-nums"} aria-live="polite" aria-atomic="true">{value.length} caracteres{overLimit?` · Acima do limite de ${rule.max}. Reduza o texto para permitir o salvamento automático.`:value.length>rule.recommendedMax?" · Acima do recomendado; confira a prévia.":""}</p>
  </div>;
 }
 

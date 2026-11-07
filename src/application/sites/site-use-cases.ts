@@ -36,11 +36,11 @@ export function isPublicCatalogProduct(product:Product,metadata:CatalogMetadata)
  return product.active&&!!product.details?.siteVisible&&product.details.catalogVisible&&!(product.details.type==="REAL_ESTATE"&&product.details.realEstate&&["sold","rented","inactive"].includes(product.details.realEstate.status))&&visibleCategory(metadata,product.categoryId);
 }
 export type SiteCommerceContext={settings:SiteCommerceSettings;hasWhatsapp:boolean;contactForm:boolean;checkoutReady:boolean;rules?:CommercialRule[];now?:Date};
-export async function commerceContext(deps:Pick<SiteEngineDeps,"commerceRepository"|"checkoutStatus"|"commercialRules"|"now">,site:Site,snapshot:SiteSnapshot):Promise<SiteCommerceContext>{
+export async function commerceContext(deps:Pick<SiteEngineDeps,"commerceRepository"|"checkoutStatus"|"commercialRules"|"now">,site:Site,snapshot:SiteSnapshot,preview=false):Promise<SiteCommerceContext>{
  const hasWhatsapp=!!snapshot.content.whatsapp;
- const settings=await deps.commerceRepository?.getSettings(site.id)??defaultSiteCommerceSettings(hasWhatsapp);
+ const settings=preview&&snapshot.commerceConfig?snapshot.commerceConfig.settings:await deps.commerceRepository?.getSettings(site.id)??defaultSiteCommerceSettings(hasWhatsapp);
  const checkoutReady=deps.checkoutStatus?(await deps.checkoutStatus(site,settings).catch(()=>({ready:false}))).ready:false;
- return {settings,hasWhatsapp,contactForm:snapshot.content.contactForm,checkoutReady,rules:await deps.commercialRules?.list({tenantId:site.tenantId,workspaceId:site.workspaceId,siteId:site.id})??[],now:deps.now?.()??new Date()};
+ return {settings,hasWhatsapp,contactForm:snapshot.content.contactForm,checkoutReady,rules:preview&&snapshot.commerceConfig?snapshot.commerceConfig.rules.map(({id,definition})=>({...definition,id,tenantId:site.tenantId,workspaceId:site.workspaceId,siteId:site.id,revision:1,createdAt:"",updatedAt:""})):await deps.commercialRules?.list({tenantId:site.tenantId,workspaceId:site.workspaceId,siteId:site.id})??[],now:deps.now?.()??new Date()};
 }
 export async function presentPublicProduct(deps:Pick<SiteEngineDeps,"salesCatalogRepository">,product:Product,metadata:CatalogMetadata,commerce:SiteCommerceContext){
   const variants=(await deps.salesCatalogRepository.listVariants(product.id)).filter(variant=>variant.active&&(!product.details?.options.length||(Object.keys(variant.optionValues??{}).length===product.details.options.length&&product.details.options.every(option=>option.values.includes(variant.optionValues?.[option.key]??"")))));
@@ -78,7 +78,7 @@ export async function publicSite(deps:SiteEngineDeps,lookup:{slug?:string;hostna
  if(preview){if(!await deps.hasAccess(preview.tenantId))throw Error("SITE_NOT_FOUND: site não encontrado.");site=preview;snapshot=preview.draft;}
  else ({site,snapshot}=await resolvePublishedSite(deps,lookup));
  const metadata=await deps.productEngineRepository.metadata(site);
- const commerce=await commerceContext(deps,site,snapshot);
+ const commerce=await commerceContext(deps,site,snapshot,!!preview);
  const visibleCategoryIds=metadata.categories.filter(category=>category.active&&category.siteVisible&&visibleCategory(metadata,category.id)).map(category=>category.id);
  let products:Product[],catalogTotal:number,slugs:{id:string;slug:string}[]|undefined;
  if(deps.productRepository.listPublicCatalog){

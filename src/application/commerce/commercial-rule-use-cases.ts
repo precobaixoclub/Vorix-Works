@@ -11,8 +11,7 @@ export function categoryAncestors(categoryId:string|undefined,categories:{id:str
 export function pricingLine(product:Product,variantId:string|undefined,quantity:number,price:number,categories:{id:string;parentId?:string}[]):RuleLine{
  return {key:JSON.stringify([product.id,variantId??""]),productId:product.id,variantId,categoryIds:categoryAncestors(product.categoryId,categories),collection:product.details?.apparel?.collection,quantity,unitPriceCents:price,currency:product.currency};
 }
-export async function saveCommercialRule(deps:SiteEngineDeps,scope:RuleScope,input:unknown,actor:string,update?:{id:string;revision:number}){
- if(!deps.commercialRules)throw Error("SITE_VALIDATION: regras comerciais indisponíveis.");
+export async function validateCommercialRuleInput(deps:SiteEngineDeps,scope:RuleScope,input:unknown){
  const definition=commercialRuleSchema.parse(input);
  const metadata=await deps.productEngineRepository.metadata(scope);
  if(definition.scope.type==="PRODUCTS")for(const id of definition.scope.ids){const product=await deps.productRepository.getById(id);if(!product||product.tenantId!==scope.tenantId||product.workspaceId!==scope.workspaceId)throw Error("SITE_VALIDATION: produto fora desta loja.");}
@@ -21,6 +20,11 @@ export async function saveCommercialRule(deps:SiteEngineDeps,scope:RuleScope,inp
   const products=await deps.productRepository.listByWorkspace(scope),collections=new Set(products.map(product=>product.details?.apparel?.collection).filter(Boolean));
   if(definition.scope.ids.some(id=>!collections.has(id)))throw Error("SITE_VALIDATION: coleção não encontrada nesta loja.");
  }
+ return definition;
+}
+export async function saveCommercialRule(deps:SiteEngineDeps,scope:RuleScope,input:unknown,actor:string,update?:{id:string;revision:number}){
+ if(!deps.commercialRules)throw Error("SITE_VALIDATION: regras comerciais indisponíveis.");
+ const definition=await validateCommercialRuleInput(deps,scope,input);
  const saved=await deps.commercialRules.save(scope,definition,actor,update);
  if(!saved)throw Error("SITE_VALIDATION: a regra mudou ou foi excluída. Atualize a tela antes de salvar.");return saved;
 }

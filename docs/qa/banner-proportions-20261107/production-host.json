@@ -1,0 +1,20 @@
+{
+  "release": "bd34dcc",
+  "sourceFilesMatched": 2,
+  "healthyContainers": 6,
+  "environmentPreserved": true,
+  "catalogPreserved": true,
+  "latestPublicationPreserved": true,
+  "concurrentPublication": {
+    "changedPaths": [
+      ".layoutConfig.heroImageUrl",
+      ".publishedAt"
+    ],
+    "beforePublishedAt": "2026-11-07T13:40:06.858Z",
+    "afterPublishedAt": "2026-11-07T13:41:12.041Z",
+    "catalogPreserved": true
+  },
+  "ready": true,
+  "webImage": "sha256:ee2869e85ad54833847db5503aba8d565b601178e16f949161402565fc768aef",
+  "deployLog": "/var/log/vorix-deploy-bd34dcc-20261107134137.log"
+}

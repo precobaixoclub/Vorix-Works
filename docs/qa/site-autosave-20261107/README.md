@@ -31,3 +31,11 @@ O resultado do deploy e da verificação do frontend publicado será registrado 
 - Build de produção local aprovado com fontes incluídas no repositório. A tentativa anterior em produção foi revertida pelo procedimento oficial após falha no carregamento de fontes do Google durante o build; a fonte local elimina essa dependência na compilação. Licenças e origem estão em web/app/fonts.
 
 Referências do guia: [Registro.br](https://registro.br/tecnologia/caracteristicas-tecnicas/), [Hostinger](https://support.hostinger.com/pt/articles/1583664-como-adicionar-e-remover-registros-txt-na-hostinger), [GoDaddy](https://www.godaddy.com/pt-br/help/adicionar-um-registro-txt-19232), [Cloudflare](https://developers.cloudflare.com/dns/manage-dns-records/how-to/create-dns-records/). Carregamento de fontes locais: [Next.js](https://nextjs.org/docs/app/getting-started/fonts#local-fonts).
+
+## Implantação concluída
+
+Versão funcional `ff23c474`, implantada pelo procedimento oficial com alvo `all`. Build de todos os serviços, migrations e checagens finais aprovados. Os 43 arquivos de origem conferidos no servidor correspondem ao commit; os seis containers estão saudáveis, a API está pronta, o frontend responde 200 e o arquivo de ambiente foi preservado. O conteúdo público da Bambilu permaneceu igual à leitura anterior ao deploy.
+
+O frontend publicado foi validado em 1440 × 1000, 1920 × 1080 e 390 × 844 com todas as chamadas de API interceptadas para banco e usuários fictícios locais: autosave, ausência de botões manuais de salvar, título de contato, seleção e ícone de rede social, regras/modo em rascunho, layout com prévia e restauração aprovados. Nenhum erro de JavaScript e nenhuma escrita na API de produção. A interceptação desfaz o endereço temporário de mídia ao enviar os dados, preservando a validação de propriedade das imagens do fixture.
+
+Os backups de código, banco, configuração e imagens de rollback foram preservados. Após a implantação, a remoção apenas do cache de build Docker sem uso liberou 5,957 GB; o servidor ficou com 9.223 MB disponíveis. Evidências: `production-host.json`, `production-editor-validation.json` e capturas `production-*.png`.

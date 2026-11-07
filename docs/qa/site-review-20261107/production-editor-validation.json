@@ -1,0 +1,55 @@
+{
+  "release": "edc990ad",
+  "at": "2026-11-07T23:13:36.765Z",
+  "method": "Published frontend with local fictional API fixtures; all production API requests intercepted",
+  "editor": [
+    {
+      "mode": "desktop",
+      "width": 1440,
+      "height": 1000,
+      "automaticSaving": true,
+      "noManualSaveButtons": true,
+      "contactTitleEditable": true,
+      "socialNetworkSelection": true,
+      "clickableSocialIcon": true,
+      "commercialDraftOnly": true,
+      "sameLayoutWithPreview": true,
+      "productionRestoration": true,
+      "publicContentUnchanged": true,
+      "overflow": false
+    },
+    {
+      "mode": "wide",
+      "width": 1920,
+      "height": 1080,
+      "automaticSaving": true,
+      "noManualSaveButtons": true,
+      "contactTitleEditable": true,
+      "socialNetworkSelection": true,
+      "clickableSocialIcon": true,
+      "commercialDraftOnly": true,
+      "sameLayoutWithPreview": true,
+      "productionRestoration": true,
+      "publicContentUnchanged": true,
+      "overflow": false
+    },
+    {
+      "mode": "mobile",
+      "width": 390,
+      "height": 844,
+      "automaticSaving": true,
+      "noManualSaveButtons": true,
+      "contactTitleEditable": true,
+      "socialNetworkSelection": true,
+      "clickableSocialIcon": true,
+      "commercialDraftOnly": true,
+      "sameLayoutWithPreview": true,
+      "productionRestoration": true,
+      "publicContentUnchanged": true,
+      "overflow": false
+    }
+  ],
+  "pageErrors": [],
+  "productionWrites": 0,
+  "historicalPublicationRestored": true
+}

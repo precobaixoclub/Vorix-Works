@@ -1,0 +1,44 @@
+{
+  "release": "edc990ad",
+  "sourceFilesMatched": 45,
+  "healthyContainers": 6,
+  "containers": {
+    "marketplaces-worker": "healthy",
+    "social-provider-gateway": "healthy",
+    "vorix-worker": "healthy",
+    "zuno-api": "healthy",
+    "zuno-postgres": "healthy",
+    "zuno-web": "healthy"
+  },
+  "environmentPreserved": true,
+  "webImage": "sha256:a0af94061a67604c1407973125f91e931b08dbc61677151f834f0cbf6aca8d7a",
+  "applicationImages": {
+    "zuno-api": {
+      "runningImage": "sha256:efdc7791f0ff602b781455a3531b0016815266a315c6cac9a104ffa555f8cae2",
+      "matchesBuild": true
+    },
+    "vorix-worker": {
+      "runningImage": "sha256:d97368ee9163f43e4097b0f93eb85256f05cc441732ce6702569a5cdf1ec99d3",
+      "matchesBuild": true
+    },
+    "marketplaces-worker": {
+      "runningImage": "sha256:fb17ef32142782ba5780179b872695b9a45f89816b010cf15574a222a5acd986",
+      "matchesBuild": true
+    },
+    "social-provider-gateway": {
+      "runningImage": "sha256:206911bf18a9576fe7fb11873496dce42b620fc41184f77e48ae63a3f3a12e0b",
+      "matchesBuild": true
+    },
+    "zuno-web": {
+      "runningImage": "sha256:a0af94061a67604c1407973125f91e931b08dbc61677151f834f0cbf6aca8d7a",
+      "matchesBuild": true
+    }
+  },
+  "runningImageMatchesBuild": true,
+  "ready": true,
+  "webStatus": 200,
+  "deployDone": true,
+  "deployLog": "/var/log/vorix-deploy-edc990ad-20261107225705.log",
+  "publicDataUnchanged": true,
+  "archiveSha256": "94bec27638e786774c99b17effc077356892e7e41c647a29714aadc6026a6c99"
+}

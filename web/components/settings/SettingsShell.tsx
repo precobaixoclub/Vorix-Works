@@ -1,6 +1,7 @@
 "use client";
 
 import { usePathname, useRouter } from "next/navigation";
+import { useEffect } from "react";
 import { Boxes, CreditCard, Globe, Headset, Mic, Palette, PlugZap, Scale, Settings, ShoppingBag, SlidersHorizontal, Store, Target, UsersRound, Workflow } from "lucide-react";
 import { PageHeader } from "@/components/PageHeader";
 import { PageSubnav } from "@/components/PageSubnav";
@@ -60,6 +61,12 @@ export function SettingsShell({
   const { active: activeSolution, available, isLoading: solutionsLoading, settled } = useActiveSolution(pathname, `/workspaces/${workspace.id}`);
   // Enquanto não se sabe a solução ativa, só a Conta aparece (nada de mostrar as opções de outra solução por um instante).
   const sections = settingsSectionsFor(solutionsLoading || !settled ? undefined : activeSolution, available);
+  const selected = SETTINGS_SECTIONS.find(section => section.value === (activeFromPath(pathname) ?? active));
+  const contextReady = !solutionsLoading && settled;
+  const allowed = !selected?.solutions || (contextReady && selected.solutions.includes(activeSolution) && available.includes(activeSolution));
+  useEffect(() => {
+    if (contextReady && !allowed) router.replace(`/workspaces/${workspace.id}/settings`);
+  }, [contextReady, allowed, router, workspace.id]);
 
   function navigate(value: string) {
     const item = sections.find((section) => section.value === value);
@@ -79,7 +86,7 @@ export function SettingsShell({
         value={activeFromPath(pathname) ?? active}
         onValueChange={navigate}
       >
-        {children}
+        {allowed ? children : <p role="status" className="text-sm text-muted-foreground">Abrindo as configurações do produto atual...</p>}
       </PageSubnav>
     </main>
   );

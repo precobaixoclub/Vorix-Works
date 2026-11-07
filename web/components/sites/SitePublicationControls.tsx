@@ -9,7 +9,7 @@ export function SitePublicationControls({site,canPublish,onPrevious,onUnpublish}
  const [confirm,setConfirm]=useState<"previous"|"unpublish">(),[busy,setBusy]=useState(false);
  const run=async(action:()=>Promise<void>)=>{setBusy(true);try{await action();setConfirm(undefined);}finally{setBusy(false);}};
  if(!site.published&&!site.previousPublished)return null;
- return <div className="space-y-3 border-t border-border/60 pt-5">
+ return <details className="space-y-3 border-t border-border/60 pt-5"><summary className="cursor-pointer text-sm font-medium">Opções avançadas de publicação</summary>
   <div><h3 className="text-sm font-semibold">Publicação</h3><p className="text-xs leading-relaxed text-muted-foreground">Use só quando precisar: voltar à versão publicada antes da atual ou tirar o site do ar temporariamente.</p></div>
   <div className="flex flex-wrap gap-2">
    {site.previousPublished?<Button size="sm" variant="secondary" disabled={!canPublish||busy} onClick={()=>setConfirm("previous")}>Voltar à publicação anterior</Button>:null}
@@ -18,5 +18,5 @@ export function SitePublicationControls({site,canPublish,onPrevious,onUnpublish}
   {!canPublish?<p className="text-xs text-muted-foreground">Somente o dono ou um administrador pode usar estas opções.</p>:null}
   <ConfirmDialog open={confirm==="previous"} title="Voltar à publicação anterior?" description="A versão publicada antes da atual vira o seu rascunho. Confira na prévia e clique em Publicar para colocá-la no ar." confirmLabel="Carregar no rascunho" busy={busy} onCancel={()=>setConfirm(undefined)} onConfirm={()=>run(onPrevious)}/>
   <ConfirmDialog open={confirm==="unpublish"} title="Retirar o site do ar?" description="Os visitantes deixam de ver o site até você publicar de novo. O conteúdo, o rascunho e os produtos continuam guardados." confirmLabel="Retirar do ar" variant="danger" busy={busy} onCancel={()=>setConfirm(undefined)} onConfirm={()=>run(onUnpublish)}/>
- </div>;
+ </details>;
 }

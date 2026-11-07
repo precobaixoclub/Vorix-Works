@@ -18,7 +18,7 @@ test.beforeEach(async({request})=>{const site=(await(await request.get(endpoint(
 test.afterEach(async({request})=>{
  const site=(await(await request.get(endpoint(),{headers})).json()).data;
  const live=(await(await request.get(`${api}/v1/sites/${scope.siteId}/commerce-draft?workspaceId=${scope.workspaceId}`,{headers})).json()).data;
- const draft={...structuredClone(scope.initialSiteSnapshot),commerceConfig:{...originalCommerce,baseVersion:live.baseVersion}};
+ const draft={...structuredClone(scope.initialSiteSnapshot),siteSlug:scope.slug,commerceConfig:{...originalCommerce,baseVersion:live.baseVersion}};
  const response=await request.put(endpoint(),{headers,data:{revision:site.revision,draft}});expect(response.ok()).toBe(true);
  const saved=(await response.json()).data;expect((await request.post(`${api}/v1/sites/${scope.siteId}/publish?workspaceId=${scope.workspaceId}`,{headers,data:{revision:saved.revision}})).ok()).toBe(true);
 });
@@ -52,4 +52,36 @@ test("regras e modo de venda compartilham o editor e aguardam publicação",asyn
  await section(page,"Regras Comerciais");await expect(region(page)).toBeVisible();await page.getByRole("button",{name:"Criar regra",exact:true}).click();const dialog=page.getByRole("dialog");await dialog.getByLabel("Nome da regra",{exact:true}).fill(ruleName);await dialog.getByLabel("Regra ativa",{exact:true}).check();await dialog.getByRole("button",{name:"Concluir edição",exact:true}).click();await saved(page);expect((await(await request.get(rules(),{headers})).json()).data).toEqual(existing);
  await page.reload();await expect(page.getByTestId("commercial-rule-row").filter({hasText:ruleName})).toBeVisible();await expect(region(page)).toBeVisible();expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);await page.screenshot({path:`../tmp/site-autosave/${info.project.name}-rules.png`});
  await publish(page);expect((await(await request.get(commerce(),{headers})).json()).data.settings.mode).toBe(mode);expect((await(await request.get(rules(),{headers})).json()).data.some((rule:any)=>rule.name===ruleName)).toBe(true);
+});
+
+test("endereço e domínio têm edição automática, instruções e publicação explícita",async({page,request},info)=>{
+ await page.route(/\/v1\/sites\?workspaceId=/,async route=>{const response=await route.fetch();const body=await response.json();body.data.customDomainTarget="203.0.113.10";await route.fulfill({response,json:body});});
+ await login(page);await section(page,"Endereço e domínio");
+ const nextSlug=`loja-${info.project.name}-nova`;await page.getByLabel("Endereço",{exact:true}).fill(nextSlug);await page.getByLabel("Endereço",{exact:true}).press("Tab");await saved(page);
+ const staged=(await(await request.get(endpoint(),{headers})).json()).data;expect(staged.slug).toBe(scope.slug);expect(staged.draft.siteSlug).toBe(nextSlug);expect((await request.get(`${api}/v1/public/sites/${nextSlug}`)).status()).toBe(404);
+ await page.reload();await expect(page.getByLabel("Endereço",{exact:true})).toHaveValue(nextSlug);await expect(page.getByText(/endereço só muda ao publicar/)).toBeVisible();
+ await page.getByLabel("Seu domínio",{exact:true}).fill(`${info.project.name}.loja-fixture-exemplo.com.br`);await page.getByRole("button",{name:"Gerar instruções",exact:true}).click();await expect(page.getByText("203.0.113.10",{exact:true})).toBeVisible();await page.locator("summary").filter({hasText:"Onde criar os registros"}).click();expect(await page.getByRole("link",{name:"Abrir orientação oficial do provedor",exact:true}).count()).toBe(4);
+ await publish(page);expect((await(await request.get(endpoint(),{headers})).json()).data.slug).toBe(nextSlug);expect((await request.get(`${api}/v1/public/sites/${nextSlug}`)).ok()).toBe(true);
+ if(scope.slug==="bambilu-kids"){const current=(await(await request.get(endpoint(),{headers})).json()).data;expect(current.draft.theme.storefrontVariant).toBe("fashion-kids");await expect(frame(page).locator(".tenant-site-fashion-kids")).toBeVisible();}
+ expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);await page.screenshot({path:`../tmp/site-autosave/${info.project.name}-address.png`});
+});
+
+test("configurações mantêm somente o produto ativo, inclusive após recarregar",async({page},info)=>{
+ await page.route("**/v1/solutions",route=>route.fulfill({json:{ok:true,data:{solutions:["site","conversations","meetings","marketing"].map(key=>({key,name:`Vorix ${key}`,internal:false}))}}}));
+ await login(page);
+ for(const solution of ["site","conversations","meetings","marketing"]){
+  await page.evaluate(value=>sessionStorage.setItem("vorix:active-solution",value),solution);await page.goto(`/workspaces/${scope.workspaceId}/settings`);const nav=page.getByRole("navigation",{name:"Navegação da seção",exact:true});
+  await expect(nav.getByRole("button",{name:"Geral",exact:true})).toBeVisible();await expect(nav.getByRole("button",{name:solution==="site"?"Endereço e domínio":solution==="conversations"?"Atendimento":solution==="meetings"?"Contas de gravação":"Marca",exact:true})).toHaveCount(1);
+  await expect(nav.getByRole("button",{name:solution==="site"?"Atendimento":"Endereço e domínio",exact:true})).toHaveCount(0);await expect(page.getByText("Contato automático (CRM)",{exact:true})).toHaveCount(solution==="conversations"?1:0);
+ }
+ await page.evaluate(()=>sessionStorage.setItem("vorix:active-solution","site"));await page.goto(`/workspaces/${scope.workspaceId}/settings/attendance`);await page.waitForURL(new RegExp(`/workspaces/${scope.workspaceId}/settings$`));await expect(page.getByRole("navigation",{name:"Navegação da seção"}).getByRole("button",{name:"Atendimento",exact:true})).toHaveCount(0);
+ expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);await page.screenshot({path:`../tmp/site-autosave/${info.project.name}-settings.png`});
+});
+
+test("textos do modelo e do formulário abrem pelo clique e aparecem na prévia",async({page,request},info)=>{
+ await login(page);await region(page).getByRole("button",{name:"Prévia em computador",exact:true}).click();await frame(page).locator('[data-site-text="fk.headerNote"]').click();await expect(page.getByLabel("Frase do cabeçalho",{exact:true})).toBeFocused();await page.getByLabel("Frase do cabeçalho",{exact:true}).fill("Peças feitas para você");await expect(frame(page).getByText("Peças feitas para você",{exact:true})).toBeVisible();
+ if(info.project.name==="mobile")await region(page).getByRole("button",{name:"Prévia em celular",exact:true}).click();await frame(page).locator('[data-site-text="form.name"]').first().click();await expect(page.getByLabel("Formulário: campo nome",{exact:true})).toBeFocused();await page.getByLabel("Formulário: campo nome",{exact:true}).fill("Sua identificação");await expect(frame(page).getByRole("textbox",{name:"Sua identificação",exact:true})).toBeVisible();
+ await page.getByLabel("Formulário: botão enviar",{exact:true}).fill("Quero conversar");await expect(frame(page).getByRole("button",{name:"Quero conversar",exact:true})).toBeDisabled();await saved(page);
+ const current=(await(await request.get(endpoint(),{headers})).json()).data;expect(current.draft.content.texts["form.submit"]).toBe("Quero conversar");expect((await(await request.get(`${api}/v1/public/sites/${scope.slug}`)).json()).data.content.texts?.["form.submit"]).not.toBe("Quero conversar");
+ await page.screenshot({path:`../tmp/site-autosave/${info.project.name}-editable-texts.png`});
 });

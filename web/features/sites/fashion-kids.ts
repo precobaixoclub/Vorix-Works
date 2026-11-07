@@ -6,8 +6,8 @@ export function fashionEditorialDefaults():SiteBlock {
 }
 
 /** Presentation only: the published catalog and commerce settings remain authoritative. */
-export function isFashionKidsSite(site: Pick<PublicTenantSite, "slug"> & {theme: Pick<SiteTheme, "template">}) {
-  return site.slug === "bambilu-kids" && site.theme.template === "nexus";
+export function isFashionKidsSite(site: Pick<PublicTenantSite, "slug"> & {theme: Pick<SiteTheme, "template"|"storefrontVariant">}) {
+  return (site.slug === "bambilu-kids" || site.theme.storefrontVariant === "fashion-kids") && site.theme.template === "nexus";
 }
 
 export function fashionKidsTheme(theme: SiteTheme): SiteTheme {

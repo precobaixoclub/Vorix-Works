@@ -1,8 +1,19 @@
 import { describe, expect, it } from "vitest";
 import { SETTINGS_NAV, SOLUTION_NAVIGATION, buildRouteLabels, isBackstagePath } from "../components/workspace-navigation";
 import { SOLUTION_HOME_PATH, isRouteBlocked, resolveActiveSolution, routeOwner, rememberedSolution } from "../lib/solutions";
+import {settingsSectionsFor} from "../components/settings/SettingsShell";
 
 const BASE = "/workspaces/ws-1";
+describe("configurações do produto em uso",()=>{
+ const available=["site","conversations","meetings","marketing"] as const;
+ it("mostra somente opções da solução ativa e da conta compartilhada",()=>{
+  for(const active of available){const sections=settingsSectionsFor(active,available);expect(sections.some(section=>section.value==="general")).toBe(true);expect(sections.every(section=>!section.solutions||section.solutions.includes(active))).toBe(true);}
+  const site=settingsSectionsFor("site",available).map(section=>section.value);expect(site).toContain("site-address");expect(site).not.toContain("attendance");expect(site).not.toContain("meetings-recorder");
+ });
+ it("não mostra opções específicas antes de resolver o contexto ou sem acesso",()=>{
+  expect(settingsSectionsFor(undefined,available).every(section=>!section.solutions)).toBe(true);expect(settingsSectionsFor("site",["conversations"]).every(section=>!section.solutions)).toBe(true);
+ });
+});
 
 describe("routeOwner", () => {
   it("Site e o endereço antigo de Commerce pertencem ao mesmo produto", () => {

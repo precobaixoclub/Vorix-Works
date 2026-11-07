@@ -70,3 +70,12 @@ test("restaurar uma publicação recupera regras e modo de venda como rascunho a
  await s.publish(staged);const restored=await publicSite(s.deps,{slug:s.site.slug});assert.equal(restored.products.find(p=>p.id===s.product.id).priceCents,9000);assert.equal(restored.commerce.mode,"WHATSAPP_CART");
  const rules=await s.deps.commercialRules.list({...s.scope,siteId:s.site.id});assert.equal(rules[0].revision,3);
 });
+test("endereço fica no rascunho; conflito de endereço reverte também a publicação comercial",async()=>{
+ const s=await store(),newSlug="novo-"+randomUUID().slice(0,8);
+ const staged=await s.deps.repository.saveDraft({id:s.site.id,tenantId:s.tenantId,revision:s.site.revision,draft:{...s.site.draft,siteSlug:newSlug}});
+ assert.ok(await s.deps.repository.findPublic({slug:s.site.slug}));assert.equal(await s.deps.repository.findPublic({slug:newSlug}),undefined);
+ const published=await s.publish(staged);assert.equal(published.slug,newSlug);assert.equal(published.previousPublished.siteSlug,s.site.slug);assert.equal(await s.deps.repository.findPublic({slug:s.site.slug}),undefined);
+ const other=await store(),conflicting=await s.deps.repository.saveDraft({id:s.site.id,tenantId:s.tenantId,revision:published.revision,draft:{...published.draft,siteSlug:other.site.slug,commerceConfig:s.config}});
+ await assert.rejects(()=>s.publish(conflicting),error=>error.code==="23505");
+ assert.equal((await s.deps.repository.get(s.site.id)).slug,newSlug);assert.equal((await s.deps.commercialRules.list({...s.scope,siteId:s.site.id})).length,0);assert.equal(await s.deps.commerceRepository.getSettings(s.site.id),undefined);
+});

@@ -19,6 +19,9 @@ export function selectSiteTemplate(snapshot:SiteSnapshot,id:string):SiteSnapshot
  return captureTemplateConfig(next);
 }
 export function resetSiteTemplateAppearance(snapshot:SiteSnapshot){const id=snapshot.theme.template;return captureTemplateConfig({...snapshot,theme:structuredClone(websiteTemplate(id).defaultTheme),layoutConfig:{...DEFAULT_SITE_LAYOUT}});}
-export function restoreSiteSnapshot(restored:SiteSnapshot,current:SiteSnapshot):SiteSnapshot{
- return captureTemplateConfig({...structuredClone(restored),templateConfigs:{...restored.templateConfigs,...current.templateConfigs}});
+export function restoreSiteSnapshot(restored:SiteSnapshot,current:SiteSnapshot,commerceVersion?:string):SiteSnapshot{
+ const snapshot=structuredClone(restored);
+ // Restore the historical conditions, while checking concurrency against today's production.
+ if(snapshot.commerceConfig&&commerceVersion)snapshot.commerceConfig.baseVersion=commerceVersion;
+ return captureTemplateConfig({...snapshot,templateConfigs:{...restored.templateConfigs,...current.templateConfigs}});
 }

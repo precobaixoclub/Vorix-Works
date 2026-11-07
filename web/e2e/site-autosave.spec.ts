@@ -1,5 +1,24 @@
 import {test,expect,type Page} from "@playwright/test";
 import {mkdir} from "node:fs/promises";
+
+test("publicação anterior restaura as condições antigas com a revisão comercial atual",async({page,request},info)=>{
+ const current=(await(await request.get(endpoint(),{headers})).json()).data;
+ const baseline=(await(await request.get(`${api}/v1/sites/${scope.siteId}/commerce-draft?workspaceId=${scope.workspaceId}`,{headers})).json()).data;
+ expect(baseline.rules.length).toBeGreaterThan(0);
+ const firstDraft={...current.draft,content:{...current.draft.content,name:"Primeira publicação"},commerceConfig:{...baseline,settings:{...baseline.settings,mode:"SHOWCASE"},rules:baseline.rules.map((rule:any)=>({...rule,definition:{...rule.definition,name:"Condição anterior"}}))}};
+ const firstSaved=(await(await request.put(endpoint(),{headers,data:{revision:current.revision,draft:firstDraft}})).json()).data;
+ const firstResponse=await request.post(`${api}/v1/sites/${scope.siteId}/publish?workspaceId=${scope.workspaceId}`,{headers,data:{revision:firstSaved.revision}});expect(firstResponse.ok()).toBe(true);const first=(await firstResponse.json()).data;
+ const secondDraft={...first.draft,content:{...first.draft.content,name:"Segunda publicação"},commerceConfig:{...first.draft.commerceConfig,settings:{...first.draft.commerceConfig.settings,mode:"WHATSAPP_CART"},rules:first.draft.commerceConfig.rules.map((rule:any)=>({...rule,definition:{...rule.definition,name:"Condição atual"}}))}};
+ const secondSaved=(await(await request.put(endpoint(),{headers,data:{revision:first.revision,draft:secondDraft}})).json()).data;
+ const secondResponse=await request.post(`${api}/v1/sites/${scope.siteId}/publish?workspaceId=${scope.workspaceId}`,{headers,data:{revision:secondSaved.revision}});expect(secondResponse.ok()).toBe(true);const second=(await secondResponse.json()).data;
+ expect(second.published.commerceConfig.baseVersion).not.toBe(first.published.commerceConfig.baseVersion);
+ await login(page);await section(page,"Endereço e domínio");await page.getByText("Opções avançadas de publicação",{exact:true}).click();await page.getByRole("button",{name:"Voltar à publicação anterior",exact:true}).click();await page.getByRole("alertdialog").getByRole("button",{name:"Carregar no rascunho",exact:true}).click();await expect(page.getByRole("alertdialog")).toHaveCount(0);await saved(page);
+ const staged=(await(await request.get(endpoint(),{headers})).json()).data;
+ expect(staged.draft.content.name).toBe("Primeira publicação");expect(staged.draft.commerceConfig.settings.mode).toBe("SHOWCASE");expect(staged.draft.commerceConfig.rules[0].definition.name).toBe("Condição anterior");expect(staged.draft.commerceConfig.baseVersion).toBe(second.published.commerceConfig.baseVersion);
+ expect((await(await request.get(commerce(),{headers})).json()).data.settings.mode).toBe("WHATSAPP_CART");
+ await publish(page);expect((await(await request.get(commerce(),{headers})).json()).data.settings.mode).toBe("SHOWCASE");expect((await(await request.get(rules(),{headers})).json()).data[0].name).toBe("Condição anterior");expect((await(await request.get(`${api}/v1/public/sites/${scope.slug}`)).json()).data.content.name).toBe("Primeira publicação");
+ await page.screenshot({path:`../tmp/site-autosave/${info.project.name}-previous-publication.png`});
+});
 const api="http://127.0.0.1:3390";
 let scope:any,headers:Record<string,string>,originalCommerce:any;
 const endpoint=()=>`${api}/v1/sites/${scope.siteId}?workspaceId=${scope.workspaceId}`;

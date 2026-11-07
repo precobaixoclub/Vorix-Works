@@ -28,6 +28,7 @@ export default function SettingsPage() {
   const pathname = usePathname();
   const { active, available } = useActiveSolution(pathname, `/workspaces/${workspace.id}`);
   const showMarketing = active === "marketing" && available.includes("marketing");
+  const showConversations = active === "conversations" && available.includes("conversations");
   const [name, setName] = useState(workspace.name);
   const [kind, setKind] = useState(workspace.kind ?? "");
   const [timezone, setTimezone] = useState(workspace.settings.timezone ?? "America/Sao_Paulo");
@@ -77,7 +78,7 @@ export default function SettingsPage() {
   }
 
   return (
-    <SettingsShell active="general" title="Configurações" description="Tudo exatamente onde você espera: conta, equipe, integrações, cobrança e as preferências de cada solução.">
+    <SettingsShell active="general" title="Configurações" description="Conta, equipe e cobrança, mais as opções do produto Vorix que você está usando agora.">
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1.35fr)_minmax(300px,0.8fr)]">
         <Card>
           <CardHeader>
@@ -139,6 +140,7 @@ export default function SettingsPage() {
             </CardBody>
           </Card>
 
+          {showConversations ? (
           <Card>
             <CardHeader>
               <div>
@@ -155,6 +157,7 @@ export default function SettingsPage() {
               </label>
             </CardBody>
           </Card>
+          ) : null}
 
           {showMarketing ? (
           <Card>

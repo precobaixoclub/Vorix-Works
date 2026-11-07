@@ -6,6 +6,8 @@ export type SiteRepositoryPort={
  create(input:{tenantId:string;workspaceId:string;slug:string;draft:SiteSnapshot}):Promise<Site>;
  saveDraft(input:{id:string;tenantId:string;revision:number;draft:SiteSnapshot;actorUserId?:string}):Promise<Site|undefined>;
  publish(input:{id:string;tenantId:string;revision:number;actorUserId:string;unpublish?:boolean}):Promise<Site|undefined>;
+ /** Troca o endereço público (/s/<slug>). Endereço em uso por outro site = erro 23505 do banco. */
+ changeSlug(input:{id:string;tenantId:string;slug:string;actorUserId?:string}):Promise<Site|undefined>;
  domains(siteId:string,tenantId:string):Promise<SiteDomain[]>;
  claimDomain(input:{siteId:string;tenantId:string;hostname:string}):Promise<SiteDomain|undefined>;
  verifyDomain(input:{id:string;siteId:string;tenantId:string;challenge:string}):Promise<SiteDomain|undefined>;

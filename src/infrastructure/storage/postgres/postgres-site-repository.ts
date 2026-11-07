@@ -13,7 +13,7 @@ export class PostgresSiteRepository implements SiteRepositoryPort{
  async list(tenantId:string,workspaceId:string){return(await this.pool.query("select * from tenant_sites where tenant_id=$1 and workspace_id=$2",[tenantId,workspaceId])).rows.map(site);}
  async get(id:string){const {rows}=await this.pool.query("select * from tenant_sites where id=$1",[id]);return rows[0]?site(rows[0]):undefined;}
  async findPublic(input:{slug?:string;hostname?:string}){
-  const {rows}=input.hostname?await this.pool.query("select s.* from tenant_sites s join site_domains d on d.site_id=s.id and d.tenant_id=s.tenant_id where d.hostname=$1 and d.verified_at is not null and d.expires_at>now() and s.published is not null",[input.hostname]):await this.pool.query("select * from tenant_sites where slug=$1 and published is not null",[input.slug]);
+  const {rows}=input.hostname?await this.pool.query("select s.* from tenant_sites s join site_domains d on d.site_id=s.id and d.tenant_id=s.tenant_id where d.hostname=$1 and d.verified_at is not null and s.published is not null",[input.hostname]):await this.pool.query("select * from tenant_sites where slug=$1 and published is not null",[input.slug]);
   return rows[0]?site(rows[0]):undefined;
  }
  async create(input:Parameters<SiteRepositoryPort["create"]>[0]){return site((await this.pool.query("insert into tenant_sites(id,tenant_id,workspace_id,slug,draft) values($1,$2,$3,$4,$5) returning *",["site-"+randomUUID(),input.tenantId,input.workspaceId,input.slug,JSON.stringify(input.draft)])).rows[0]);}
@@ -29,6 +29,7 @@ export class PostgresSiteRepository implements SiteRepositoryPort{
    await client.query("commit");return site(rows[0]);
   }catch(error){await client.query("rollback");throw error;}finally{client.release();}
  }
+ async changeSlug(input:Parameters<SiteRepositoryPort["changeSlug"]>[0]){const {rows}=await this.pool.query("update tenant_sites set slug=$3,updated_by_user_id=coalesce($4,updated_by_user_id),updated_at=now() where id=$1 and tenant_id=$2 returning *",[input.id,input.tenantId,input.slug,input.actorUserId??null]);return rows[0]?site(rows[0]):undefined;}
  async domains(siteId:string,tenantId:string){return(await this.pool.query("select * from site_domains where site_id=$1 and tenant_id=$2 order by hostname",[siteId,tenantId])).rows.map(domain);}
  async claimDomain(input:Parameters<SiteRepositoryPort["claimDomain"]>[0]){
   const {rows}=await this.pool.query(`insert into site_domains(id,site_id,tenant_id,hostname,challenge,expires_at) values($1,$2,$3,$4,$5,now()+interval '2 hours')

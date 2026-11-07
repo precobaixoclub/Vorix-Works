@@ -21,7 +21,9 @@ import {processSiteFormLead,type SiteLeadDeps} from "../../../../application/com
 import {safePageUrl} from "../../../../application/sites/site-commerce-use-cases.js";
 import {utmSchema} from "../../../../domain/sites/site-commerce.js";
 import { normalizeContactPhone } from "../../../../domain/crm/contact-phone.js";
-export type SiteRouteDeps=SiteEngineDeps&{workspaceRepository:WorkspaceRepositoryPort;objectStorage:ObjectStoragePort;publicBaseDomain?:string;siteLead?:SiteLeadDeps};
+const siteSlugSchema=z.string().trim().toLowerCase().min(3,"Use pelo menos 3 caracteres.").max(80,"Use no máximo 80 caracteres.").regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/,"Use só letras minúsculas sem acento, números e hífen (ex.: minha-loja).");
+const RESERVED_SITE_SLUGS=["api","app","www","admin","mail","static"];
+export type SiteRouteDeps=SiteEngineDeps&{workspaceRepository:WorkspaceRepositoryPort;objectStorage:ObjectStoragePort;publicBaseDomain?:string;customDomainTarget?:string;siteLead?:SiteLeadDeps};
 const id=z.string().min(1).max(160);
 export async function registerSiteRoutes(app:FastifyInstance,deps:SiteRouteDeps):Promise<void>{
  const guard=async<T>(run:()=>Promise<T>)=>{try{return await run();}catch(error){
@@ -42,13 +44,15 @@ export async function registerSiteRoutes(app:FastifyInstance,deps:SiteRouteDeps)
  };
  const validateCommerce=async(site:Site,draft:SiteSnapshot)=>{if(!draft.commerceConfig)return;for(const rule of draft.commerceConfig.rules)await validateCommercialRuleInput(deps,{tenantId:site.tenantId,workspaceId:site.workspaceId,siteId:site.id},rule.definition);};
  app.get("/sites/:id/commerce-draft",async request=>guard(async()=>{const {site}=await owned(request,"commerce:read");const settings=await deps.commerceRepository?.getSettings(site.id)??defaultSiteCommerceSettings(!!(site.published??site.draft).content.whatsapp);const rules=await deps.commercialRules?.list({tenantId:site.tenantId,workspaceId:site.workspaceId,siteId:site.id})??[];return successEnvelope({settings,rules:rules.map(({id,tenantId,workspaceId,siteId,revision,createdAt,updatedAt,...definition})=>({id,definition})),baseVersion:siteCommerceVersion(settings,rules)},request.id);}));
- app.get("/sites",async request=>guard(async()=>{const context=await scope(request);return successEnvelope({sites:(await deps.repository.list(context.tenantId,context.workspaceId)).map(site=>presentSite(site,request)),publicBaseDomain:deps.publicBaseDomain??null},request.id);}));
+ app.get("/sites",async request=>guard(async()=>{const context=await scope(request);return successEnvelope({sites:(await deps.repository.list(context.tenantId,context.workspaceId)).map(site=>presentSite(site,request)),publicBaseDomain:deps.publicBaseDomain??null,customDomainTarget:deps.customDomainTarget??null},request.id);}));
  app.post("/sites",{config:{readOnlyGuard:true}},async request=>guard(async()=>{
-  const context=await scope(request,"site:manage");const raw=z.object({slug:z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/).min(3).max(80),draft:z.unknown()}).strict().parse(request.body);
+  const context=await scope(request,"site:manage");const raw=z.object({slug:siteSlugSchema,draft:z.unknown()}).strict().parse(request.body);
   if((raw.draft as SiteSnapshot)?.commerceConfig)requirePermission(request,"commerce:manage");
-  if(["api","app","www","admin","mail","static"].includes(raw.slug))throw new ValidationError("Esse endereço está reservado. Escolha outro.");
+  if(RESERVED_SITE_SLUGS.includes(raw.slug))throw new ValidationError("Esse endereço está reservado. Escolha outro.");
   return successEnvelope(presentSite(await deps.repository.create({...context,slug:raw.slug,draft:cleanSnapshot(raw.draft,context.tenantId,context.workspaceId)}),request),request.id);
  }));
+ // Endereço público: muda na hora (não passa pelo rascunho), por isso exige permissão de publicar.
+ app.put("/sites/:id/slug",{config:{readOnlyGuard:true}},async request=>guard(async()=>{const {site,context}=await owned(request,"site:publish");const {slug}=z.object({slug:siteSlugSchema}).strict().parse(request.body);if(RESERVED_SITE_SLUGS.includes(slug))throw new ValidationError("Esse endereço está reservado. Escolha outro.");if(slug===site.slug)return successEnvelope(presentSite(site,request),request.id);const changed=await deps.repository.changeSlug({id:site.id,tenantId:site.tenantId,slug,actorUserId:context.actorUserId});if(!changed)throw new NotFoundError();return successEnvelope(presentSite(changed,request),request.id);}));
  app.get("/sites/:id",async request=>guard(async()=>successEnvelope(presentSite((await owned(request)).site,request),request.id)));
  app.put("/sites/:id",{config:{readOnlyGuard:true}},async request=>guard(async()=>{const {site,context}=await owned(request,"site:manage");const raw=z.object({revision:z.number().int().positive(),draft:z.unknown()}).strict().parse(request.body);const draft=cleanSnapshot(raw.draft,context.tenantId,context.workspaceId);if(!hasPermission(request.zunoContext.principal!,"commerce:manage")){if(draft.commerceConfig&&stableSiteJson(draft.commerceConfig)!==stableSiteJson(site.draft.commerceConfig))requirePermission(request,"commerce:manage");draft.commerceConfig=site.draft.commerceConfig;}else if(stableSiteJson(draft.commerceConfig)!==stableSiteJson(site.draft.commerceConfig))await validateCommerce(site,draft);const saved=await deps.repository.saveDraft({id:site.id,tenantId:site.tenantId,revision:raw.revision,actorUserId:context.actorUserId,draft});if(!saved)throw new ConflictError("O site mudou. Atualize a tela antes de salvar.");return successEnvelope(presentSite(saved,request),request.id);}));
  app.get("/sites/:id/preview",async request=>guard(async()=>{const {site}=await owned(request);return successEnvelope(await publicSite(deps,{},site),request.id);}));

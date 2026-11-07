@@ -1,30 +1,45 @@
 "use client";
 
 import { usePathname, useRouter } from "next/navigation";
-import { Boxes, CreditCard, Headset, Palette, PlugZap, Scale, Settings, Target, UsersRound, Workflow } from "lucide-react";
+import { Boxes, CreditCard, Globe, Headset, Mic, Palette, PlugZap, Scale, Settings, ShoppingBag, SlidersHorizontal, Store, Target, UsersRound, Workflow } from "lucide-react";
 import { PageHeader } from "@/components/PageHeader";
 import { PageSubnav } from "@/components/PageSubnav";
 import { useCurrentWorkspace } from "@/contexts/workspace-context";
 import { useActiveSolution } from "@/features/solutions/hooks";
 import type { SolutionKey } from "@/lib/solutions";
 
-// Três escopos, nunca misturados: "Conta" é do Core (vale para qualquer solução); cada solução
-// tem o próprio grupo, que só aparece quando essa solução está ativa.
+// "Conta" é do Core e aparece sempre. O resto pertence a UMA solução (ou a algumas) e só aparece
+// quando ela é a solução ativa: no Vorix Site não aparecem atendimento, metas ou automações do
+// Conversas, e assim por diante.
 const GLOBAL_GROUP = "Conta";
-const SETTINGS_SECTIONS: ReadonlyArray<{ value: string; label: string; href: string; icon: typeof Settings; group: string; solution?: SolutionKey }> = [
-  { value: "general", label: "Geral", href: "/settings", icon: Settings, group: GLOBAL_GROUP },
-  { value: "users", label: "Usuários", href: "/settings/users", icon: UsersRound, group: GLOBAL_GROUP },
-  { value: "teams", label: "Equipes", href: "/settings/teams", icon: UsersRound, group: GLOBAL_GROUP },
-  { value: "integrations", label: "Integrações", href: "/connections", icon: PlugZap, group: GLOBAL_GROUP },
-  { value: "marketplaces", label: "Marketplaces", href: "/settings/marketplaces", icon: Boxes, group: GLOBAL_GROUP },
-  { value: "billing", label: "Plano e cobrança", href: "/settings/plano", icon: CreditCard, group: GLOBAL_GROUP },
-  { value: "attendance", label: "Atendimento", href: "/settings/attendance", icon: Headset, group: "Vorix Conversas", solution: "conversations" },
-  { value: "products", label: "Produtos", href: "/products", icon: Boxes, group: "Vorix Conversas", solution: "conversations" },
-  { value: "commercial", label: "Regras comerciais", href: "/settings/commercial", icon: Scale, group: "Vorix Conversas", solution: "conversations" },
-  { value: "goals", label: "Metas", href: "/settings/goals", icon: Target, group: "Vorix Conversas", solution: "conversations" },
-  { value: "automations", label: "Automações", href: "/settings/automations", icon: Workflow, group: "Vorix Conversas", solution: "conversations" },
-  { value: "brand", label: "Marca", href: "/knowledge", icon: Palette, group: "Vorix Marketing", solution: "marketing" },
+const SOLUTION_GROUP: Record<SolutionKey, string> = { site: "Vorix Site", conversations: "Vorix Conversas", meetings: "Vorix Meetings", marketing: "Vorix Marketing" };
+type SettingsSection = { value: string; label: string; href: string; icon: typeof Settings; solutions?: readonly SolutionKey[] };
+export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
+  { value: "general", label: "Geral", href: "/settings", icon: Settings },
+  { value: "users", label: "Usuários", href: "/settings/users", icon: UsersRound },
+  { value: "teams", label: "Equipes", href: "/settings/teams", icon: UsersRound },
+  { value: "billing", label: "Plano e cobrança", href: "/settings/plano", icon: CreditCard },
+  { value: "site-address", label: "Endereço e domínio", href: "/site?section=dominio", icon: Globe, solutions: ["site"] },
+  { value: "site-selling", label: "Como vender pelo site", href: "/site?section=loja", icon: ShoppingBag, solutions: ["site"] },
+  { value: "site-products", label: "Produtos", href: "/site/products", icon: Boxes, solutions: ["site"] },
+  { value: "integrations", label: "Integrações", href: "/connections", icon: PlugZap, solutions: ["conversations", "marketing"] },
+  { value: "attendance", label: "Atendimento", href: "/settings/attendance", icon: Headset, solutions: ["conversations"] },
+  { value: "products", label: "Produtos", href: "/products", icon: Boxes, solutions: ["conversations"] },
+  { value: "commercial", label: "Regras comerciais", href: "/settings/commercial", icon: Scale, solutions: ["conversations"] },
+  { value: "goals", label: "Metas", href: "/settings/goals", icon: Target, solutions: ["conversations"] },
+  { value: "automations", label: "Automações", href: "/settings/automations", icon: Workflow, solutions: ["conversations"] },
+  { value: "marketplaces", label: "Marketplaces", href: "/settings/marketplaces", icon: Store, solutions: ["site", "conversations"] },
+  { value: "meetings-preferences", label: "Preferências", href: "/meetings/settings", icon: SlidersHorizontal, solutions: ["meetings"] },
+  { value: "meetings-integrations", label: "Agendas conectadas", href: "/meetings/integrations", icon: PlugZap, solutions: ["meetings"] },
+  { value: "meetings-recorder", label: "Contas de gravação", href: "/meetings/recorder-accounts", icon: Mic, solutions: ["meetings"] },
+  { value: "brand", label: "Marca", href: "/knowledge", icon: Palette, solutions: ["marketing"] },
 ];
+
+/** Seções visíveis: a Conta sempre; as de solução só para a solução ativa (e contratada). */
+export function settingsSectionsFor(active: SolutionKey | undefined, available: readonly SolutionKey[]) {
+  return SETTINGS_SECTIONS.filter(({ solutions }) => !solutions || (active !== undefined && solutions.includes(active) && available.includes(active)))
+    .map((section) => ({ ...section, group: section.solutions ? SOLUTION_GROUP[active!] : GLOBAL_GROUP }));
+}
 
 export function SettingsShell({
   active,
@@ -42,11 +57,9 @@ export function SettingsShell({
   const workspace = useCurrentWorkspace();
   const router = useRouter();
   const pathname = usePathname();
-  const { active: activeSolution, available, isLoading: solutionsLoading } = useActiveSolution(pathname, `/workspaces/${workspace.id}`);
-  // Enquanto as soluções carregam, o grupo do Conversas (solução padrão) já aparece; o do Marketing não.
-  const sections = SETTINGS_SECTIONS.filter(({ solution }) =>
-    !solution || (solution === activeSolution && (available.includes(solution) || (solutionsLoading && solution === "conversations"))),
-  );
+  const { active: activeSolution, available, isLoading: solutionsLoading, settled } = useActiveSolution(pathname, `/workspaces/${workspace.id}`);
+  // Enquanto não se sabe a solução ativa, só a Conta aparece (nada de mostrar as opções de outra solução por um instante).
+  const sections = settingsSectionsFor(solutionsLoading || !settled ? undefined : activeSolution, available);
 
   function navigate(value: string) {
     const item = sections.find((section) => section.value === value);
@@ -82,6 +95,7 @@ function activeFromPath(pathname: string): string | undefined {
   if (pathname.endsWith("/settings/goals")) return "goals";
   if (pathname.endsWith("/settings/attendance")) return "attendance";
   if (pathname.endsWith("/settings/plano")) return "billing";
+  if (pathname.endsWith("/settings/marketplaces")) return "marketplaces";
   if (pathname.endsWith("/settings")) return "general";
   return undefined;
 }

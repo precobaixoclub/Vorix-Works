@@ -34,13 +34,16 @@ function readRemembered(): SolutionKey | undefined {
 
 /** Solução ativa (a da navegação exibida) a partir da rota atual. Em telas do Core vale a última
  * solução visitada nesta aba. */
-export function useActiveSolution(pathname: string, workspaceBase: string): { owner: RouteOwner; active: SolutionKey; available: SolutionKey[]; solutions: SolutionSummary[]; isLoading: boolean } {
+export function useActiveSolution(pathname: string, workspaceBase: string): { owner: RouteOwner; active: SolutionKey; available: SolutionKey[]; solutions: SolutionSummary[]; isLoading: boolean; settled: boolean } {
   const { solutions, available, isLoading } = useSolutions();
   const owner = routeOwner(pathname, workspaceBase);
   const [remembered, setRemembered] = useState<SolutionKey | undefined>(undefined);
+  // `false` até ler a solução lembrada nesta aba: antes disso, numa tela do Core, a ativa ainda é um palpite.
+  const [settled, setSettled] = useState(false);
 
   useEffect(() => {
     setRemembered(readRemembered());
+    setSettled(true);
   }, []);
 
   useEffect(() => {
@@ -53,5 +56,5 @@ export function useActiveSolution(pathname: string, workspaceBase: string): { ow
     }
   }, [owner]);
 
-  return { owner, active: resolveActiveSolution({ owner, available, remembered }), available, solutions, isLoading };
+  return { owner, active: resolveActiveSolution({ owner, available, remembered }), available, solutions, isLoading, settled: settled || owner !== "core" };
 }

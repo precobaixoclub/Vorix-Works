@@ -18,6 +18,21 @@ function browser(url: string, { blocked = false, popup }: { blocked?: boolean; p
 afterEach(() => vi.unstubAllGlobals());
 
 describe("vitrine — visitante anônimo", () => {
+  it("finalização registrada abre o WhatsApp diretamente, sem etapa de cadastro", async () => {
+    const popup={location:{href:""},closed:false,opener:{},close:vi.fn()};
+    browser("https://loja.test/s/minha-loja",{popup});
+    await openWhatsapp(async()=>({reference:"VX-A8F2KM",finalized:true,selectionPath:"/selecao/registro",redirectPath:"/i/VX-A8F2KM",whatsappUrl:"https://wa.me/5511999999999?text=Carrinho"}),"/s/minha-loja");
+    expect(popup.location.href).toBe("https://wa.me/5511999999999?text=Carrinho");
+    expect(popup.opener).toBeNull();
+  });
+  it("abre a seleção com fotos antes do WhatsApp, inclusive para loja sem número", async () => {
+    const popup = { location: { href: "" }, closed: false, opener: {}, close: vi.fn() };
+    browser("https://loja.test/s/minha-loja", { popup });
+    const path=`/selecao/${"a".repeat(64)}`;
+    await openWhatsapp(async () => ({ reference:"VX-A8F2KM",received:true as const,selectionPath:path }), "/s/minha-loja");
+    expect(popup.location.href).toBe(`https://loja.test${path}`);
+    expect(popup.close).not.toHaveBeenCalled();
+  });
   it("mantém o mesmo identificador anônimo por site e separa sites diferentes", () => {
     browser("https://loja.test/");
     const first = visitorSessionId("loja-a");

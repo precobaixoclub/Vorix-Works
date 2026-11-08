@@ -112,24 +112,27 @@ export const SALES_INTENT_TYPES=["PRODUCT_WHATSAPP","CART_WHATSAPP","CONTACT_FOR
 export type SalesIntentType=(typeof SALES_INTENT_TYPES)[number];
 export type SalesIntentStatus="OPEN"|"CONVERTING"|"CONVERTED"|"EXPIRED";
 export type SalesIntentItem={productId:string;variantId?:string;name:string;variantLabel?:string;sku?:string;imageUrl?:string;quantity:number;unitPriceCents:number;totalCents?:number;pricing?:{originalUnitPriceCents:number;discountCents:number;appliedRules:import("../commerce/commercial-rules.js").AppliedCommercialRule[]};currency:string;specifications?:{label:string;value:string}[]};
-export type SalesIntentSnapshot={items:SalesIntentItem[];subtotalCents:number;currency:string;siteName?:string};
+export type SalesIntentSnapshot={couponCode?:string;items:SalesIntentItem[];subtotalCents:number;currency:string;siteName?:string};
 export type Utm={source?:string;medium?:string;campaign?:string;content?:string;term?:string};
 export type SalesIntent={
  id:string;tenantId:string;workspaceId:string;siteId:string;reference:string;type:SalesIntentType;status:SalesIntentStatus;source:"SITE";
  productId?:string;variantId?:string;quantity?:number;snapshot:SalesIntentSnapshot;pageUrl?:string;utm:Utm;anonymousSessionId?:string;
  clickCount:number;contactId?:string;conversationId?:string;attendanceId?:string;dealId?:string;conversionError?:string;
+ selectionToken?:string;selectionRevision?:number;selectionSubmittedAt?:string;selectionCustomer?:{name:string;phone:string};
+ selectionHistory?:{revision:number;at:string;snapshot:SalesIntentSnapshot}[];selectionLockedUntil?:string;selectionSyncError?:string;selectionDealItemIds?:string[];
  createdAt:string;expiresAt:string;convertedAt?:string;
 };
 export const utmSchema=z.object({source:z.string().trim().max(120).optional(),medium:z.string().trim().max(120).optional(),campaign:z.string().trim().max(200).optional(),content:z.string().trim().max(200).optional(),term:z.string().trim().max(200).optional()}).strict();
 
 const money=(cents:number,currency:string)=>new Intl.NumberFormat("pt-BR",{style:"currency",currency}).format(cents/100);
 /** Mensagem pré-preenchida do WhatsApp. A referência vai sempre na última linha, isolada. */
-export function salesIntentWhatsappMessage(intent:Pick<SalesIntent,"type"|"reference"|"snapshot">):string{
+export function salesIntentWhatsappMessage(intent:Pick<SalesIntent,"type"|"reference"|"snapshot">,selectionUrl?:string):string{
+ const link=selectionUrl?`\n\nVer pedido com fotos e revisar itens:\n${selectionUrl}`:"";
  const items=intent.snapshot.items;const describe=(item:SalesIntentItem)=>`${item.name}${item.variantLabel?` (${item.variantLabel})`:""}`;
- if(intent.type==="CART_WHATSAPP"){
+ if(intent.type==="CART_WHATSAPP"||items.length>1){
   const lines=items.map(item=>`• ${item.quantity}x ${describe(item)} — ${money(item.totalCents??item.unitPriceCents*item.quantity,item.currency)}`);
-  return `Olá! Gostaria de comprar estes itens:\n${lines.join("\n")}\nTotal estimado: ${money(intent.snapshot.subtotalCents,intent.snapshot.currency)}\n\nRef: ${intent.reference}`;
+  return `Olá! Gostaria de comprar estes itens:\n${lines.join("\n")}\nTotal estimado: ${money(intent.snapshot.subtotalCents,intent.snapshot.currency)}${link}\n\nRef: ${intent.reference}`;
  }
  const item=items[0];
- return `Olá! Tenho interesse em ${item?describe(item):"um produto do site"}${item&&item.quantity>1?`, quantidade ${item.quantity}`:""}.\n\nRef: ${intent.reference}`;
+ return `Olá! Tenho interesse em ${item?describe(item):"um produto do site"}${item&&item.quantity>1?`, quantidade ${item.quantity}`:""}.${item?`\nQuantidade: ${item.quantity}\nValor estimado: ${money(item.totalCents??item.unitPriceCents*item.quantity,item.currency)}`:""}${link}\n\nRef: ${intent.reference}`;
 }

@@ -1,4 +1,5 @@
 "use client";
+import {SiteSelectionRequests} from "@/components/sites/SiteSelectionRequests";
 import {contactLabel} from "@/features/crm/contact-presentation";
 import {useEffect,useState} from "react";
 import {useRouter,useSearchParams} from "next/navigation";
@@ -29,11 +30,15 @@ export default function OrdersPage(){
  const {data,error,isLoading,mutate}=useSWR(can("order:read")?["commerce-orders",workspace.id,JSON.stringify(filter)]:null,()=>listCommerceOrders(workspace.id,filter));
  const openId=params.get("pedido")??undefined;
  const open=(id?:string)=>router.replace(id?`?pedido=${encodeURIComponent(id)}`:"?",{scroll:false});
- if(!can("order:read"))return <><PageHeader title="Pedidos"/><Card><CardBody className="text-sm text-muted-foreground">Seu perfil não tem acesso aos pedidos da loja. Peça a um administrador.</CardBody></Card></>;
+ const requestTab=params.get("tipo")==="whatsapp"||!params.has("tipo")&&can("commerce:read")&&(!can("order:read")||!isLoading&&data?.total===0);
+ const tabs=<nav aria-label="Tipos de pedido" className="flex flex-wrap gap-2 border-b border-border/60 pb-3"><Button variant={!requestTab?"primary":"secondary"} onClick={()=>router.replace("?tipo=compras",{scroll:false})}>Compras e entregas</Button>{can("commerce:read")?<Button variant={requestTab?"primary":"secondary"} onClick={()=>router.replace("?tipo=whatsapp",{scroll:false})}>Solicitações WhatsApp</Button>:null}</nav>;
+ if(requestTab&&can("commerce:read"))return <div className="space-y-5"><PageHeader title="Pedidos" description="Do primeiro interesse ao atendimento: produtos, contato e oportunidade no mesmo lugar."/>{tabs}<SiteSelectionRequests workspaceId={workspace.id}/></div>;
+ if(!can("order:read"))return <><PageHeader title="Pedidos"/>{tabs}<Card><CardBody className="text-sm text-muted-foreground">Seu perfil não tem acesso aos pedidos da loja. Peça a um administrador.</CardBody></Card></>;
  const select=(id:string,label:string,value:string,onChange:(value:string)=>void,options:Record<string,string>)=><div className="min-w-0"><Label htmlFor={id}>{label}</Label><select id={id} className="mt-1 h-10 w-full min-w-0 rounded-md border border-border bg-background px-3 text-sm" value={value} onChange={event=>onChange(event.target.value)}>{Object.entries(options).map(([key,text])=><option key={key} value={key}>{text}</option>)}</select></div>;
  const filtered=!!(term||status||payment||shipping||period||source);
  return <div className="min-w-0 space-y-5">
   <PageHeader title="Pedidos" description="Compras do site e dos marketplaces em um só lugar: pagamento, entrega, devoluções e histórico de cada pedido."/>
+  {tabs}
   <Card><CardBody className="grid min-w-0 gap-3 sm:grid-cols-2 lg:grid-cols-5">
    <div className="min-w-0 sm:col-span-2 lg:col-span-5"><ChannelFilter value={source} onChange={setSource}/></div>
    <div className="min-w-0 sm:col-span-2 lg:col-span-1"><Label htmlFor="orders-search">Buscar</Label><Input id="orders-search" value={search} placeholder="Nº do pedido, nome ou e-mail" onChange={event=>setSearch(event.target.value)}/></div>

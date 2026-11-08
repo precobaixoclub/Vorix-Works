@@ -33,20 +33,20 @@ async function call<T>(slug:string,action:string,body:Record<string,unknown>):Pr
  if(!response.ok)throw Object.assign(Error(data?.error?.message||"Não foi possível concluir agora. Tente novamente."),{status:response.status});
  return data.data as T;
 }
-export type WhatsappIntent={reference:string;redirectPath:string;whatsappUrl:string};
+export type WhatsappIntent={finalized?:boolean;selectionPath?:string;reference:string;redirectPath:string;whatsappUrl:string};
 /** Pedido registrado sem WhatsApp no site: não há para onde redirecionar. */
-export type ReceivedIntent={reference:string;received:true};
+export type ReceivedIntent={selectionPath?:string;reference:string;received:true};
 /** Abre a aba antes do await (senão o navegador bloqueia como pop-up) e redireciona quando a intenção existe. */
 export async function openWhatsapp<T extends WhatsappIntent|ReceivedIntent>(start:()=>Promise<T>,basePath:string):Promise<T>{
  const popup=window.open("","_blank");
  try{
   const intent=await start();
-  if("received" in intent){popup?.close();return intent;}const target=new URL(`${basePath}/i/${encodeURIComponent(intent.reference)}`,window.location.href).href;
+  if("received" in intent&&!intent.selectionPath){popup?.close();return intent;}const target=new URL(("finalized" in intent&&intent.finalized?intent.whatsappUrl:undefined)||intent.selectionPath||`${basePath}/i/${encodeURIComponent(intent.reference)}`,window.location.href).href;
   if(popup&&!popup.closed){popup.opener=null;popup.location.href=target;}else window.location.assign(target);
   return intent;
  }catch(error){popup?.close();throw error;}
 }
-export const startProductWhatsapp=(slug:string,input:{productId:string;variantId?:string;quantity?:number})=>call<WhatsappIntent>(slug,"whatsapp-intents",{...input,requestKey:crypto.randomUUID(),...visitorContext(slug)});
+export const startProductWhatsapp=(slug:string,input:{productId:string;variantId?:string;quantity?:number})=>call<WhatsappIntent>(slug,"whatsapp-intents",{...input,requestKey:crypto.randomUUID(),finalize:true,...visitorContext(slug)});
 export const applyCartCoupon=(slug:string,code?:string)=>call<PublicCart>(slug,"cart-coupon",{token:cartToken(slug),code});
 export const fetchCart=(slug:string)=>call<PublicCart>(slug,"cart",{token:cartToken(slug)});
 export async function setCartItem(slug:string,input:{productId:string;variantId?:string;quantity:number}){
@@ -56,7 +56,7 @@ export async function setCartItem(slug:string,input:{productId:string;variantId?
 }
 export async function checkoutCart(slug:string,requestKey:string,customer?:{name:string;phone:string}){
  const token=cartToken(slug);if(!token)throw Error("Seu carrinho está vazio.");
- return call<WhatsappIntent|ReceivedIntent>(slug,"checkout",{token,requestKey,...(customer?{customer}:{}),...visitorContext(slug)});
+ return call<WhatsappIntent|ReceivedIntent>(slug,"checkout",{token,requestKey,review:true,finalize:true,...(customer?{customer}:{}),...visitorContext(slug)});
 }
 export function trackSiteEvent(slug:string,type:"SITE_VIEW"|"PRODUCT_VIEW",productId?:string){
  const device=window.matchMedia("(max-width: 600px)").matches?"mobile":window.matchMedia("(max-width: 1024px)").matches?"tablet":"desktop";

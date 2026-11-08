@@ -10,6 +10,7 @@ const intent=(row:Row):SalesIntent=>({id:row.id,tenantId:row.tenant_id,workspace
  productId:row.product_id??undefined,variantId:row.variant_id??undefined,quantity:row.quantity===null?undefined:Number(row.quantity),snapshot:row.snapshot,pageUrl:row.page_url??undefined,
  utm:Object.fromEntries(Object.entries({source:row.utm_source,medium:row.utm_medium,campaign:row.utm_campaign,content:row.utm_content,term:row.utm_term}).filter(([,value])=>value!==null&&value!==undefined)),
  anonymousSessionId:row.anonymous_session_id??undefined,clickCount:Number(row.click_count),contactId:row.contact_id??undefined,conversationId:row.conversation_id??undefined,attendanceId:row.attendance_id??undefined,dealId:row.deal_id??undefined,conversionError:row.conversion_error??undefined,
+ selectionDealItemIds:row.selection_deal_item_ids??[],selectionToken:row.selection_token,selectionRevision:Number(row.selection_revision??1),selectionSubmittedAt:iso(row.selection_submitted_at),selectionCustomer:row.selection_customer??undefined,selectionHistory:row.selection_history??[],selectionLockedUntil:iso(row.selection_locked_until),selectionSyncError:row.selection_sync_error??undefined,
  createdAt:iso(row.created_at)!,expiresAt:iso(row.expires_at)!,convertedAt:iso(row.converted_at)});
 const cart=(row:Row):SiteCart=>({couponCode:row.coupon_code??undefined,id:row.id,tenantId:row.tenant_id,workspaceId:row.workspace_id,siteId:row.site_id,status:row.status,salesIntentId:row.sales_intent_id??undefined,expiresAt:iso(row.expires_at)!,updatedAt:iso(row.updated_at)!});
 export class PostgresSiteCommerceRepository implements SiteCommerceRepositoryPort{
@@ -30,17 +31,31 @@ export class PostgresSiteCommerceRepository implements SiteCommerceRepositoryPor
   if(rows[0])return {intent:intent(rows[0]),created:true};
   const existing=await this.pool.query("select * from sales_intents where site_id=$1 and request_key=$2",[input.siteId,input.requestKey]);return {intent:intent(existing.rows[0]),created:false};
  }
+ async getSelection(token:string){const {rows}=await this.pool.query("select * from sales_intents where selection_token=$1",[token]);return rows[0]?intent(rows[0]):undefined;}
+ async claimSelection(input:{id:string;revision:number}){
+  const result=await this.pool.query("update sales_intents set selection_locked_until=now()+interval '5 minutes' where id=$1 and selection_revision=$2 and status<>'CONVERTING' and (selection_locked_until is null or selection_locked_until<now())",[input.id,input.revision]);return result.rowCount===1;
+ }
+ async saveSelection(input:{id:string;revision:number;snapshot:SalesIntent["snapshot"];customer?:{name:string;phone:string}}){
+  const {rows}=await this.pool.query(`update sales_intents set
+   selection_history=selection_history||jsonb_build_array(jsonb_build_object('revision',selection_revision,'at',now(),'snapshot',snapshot)),
+   snapshot=$3,selection_customer=coalesce($4,selection_customer),selection_revision=selection_revision+1,
+   selection_submitted_at=coalesce(selection_submitted_at,now()),selection_sync_error='pending'
+   where id=$1 and selection_revision=$2 and selection_locked_until>now() and not exists(select 1 from deals d where d.id=sales_intents.deal_id and d.status<>'open') returning *`,[input.id,input.revision,JSON.stringify(input.snapshot),input.customer?JSON.stringify(input.customer):null]);
+  if(!rows[0])throw Error("SITE_VALIDATION: esta seleção mudou. Atualize a página para continuar.");return intent(rows[0]);
+ }
+ async finishSelection(id:string,error?:string){await this.pool.query("update sales_intents set selection_locked_until=null,selection_sync_error=$2 where id=$1",[id,error?.slice(0,500)??null]);}
+ async setSelectionDealItems(id:string,itemIds:string[]){await this.pool.query("update sales_intents set selection_deal_item_ids=$2 where id=$1",[id,itemIds]);}
  async getIntent(id:string){const {rows}=await this.pool.query("select * from sales_intents where id=$1",[id]);return rows[0]?intent(rows[0]):undefined;}
  async findIntentByRequestKey(input:{siteId:string;requestKey:string}){const {rows}=await this.pool.query("select * from sales_intents where site_id=$1 and request_key=$2",[input.siteId,input.requestKey]);return rows[0]?intent(rows[0]):undefined;}
  async getIntentByReference(reference:string){const {rows}=await this.pool.query("select * from sales_intents where reference=$1",[reference]);return rows[0]?intent(rows[0]):undefined;}
  async recordIntentClick(id:string){await this.pool.query("update sales_intents set click_count=click_count+1,last_clicked_at=now() where id=$1",[id]);}
  async claimIntent(input:{id:string;staleBefore:string}){
-  const {rows}=await this.pool.query("update sales_intents set status='CONVERTING',claimed_at=now() where id=$1 and (status='OPEN' or (status='CONVERTING' and claimed_at<$2)) returning *",[input.id,input.staleBefore]);
+  const {rows}=await this.pool.query("update sales_intents set status='CONVERTING',claimed_at=now() where id=$1 and (selection_locked_until is null or selection_locked_until<now()) and (status='OPEN' or (status='CONVERTED' and conversation_id is null) or (status='CONVERTING' and claimed_at<$2)) returning *",[input.id,input.staleBefore]);
   return rows[0]?intent(rows[0]):undefined;
  }
  async updateIntentLinks(id:string,links:SalesIntentLinks){await this.pool.query("update sales_intents set contact_id=coalesce($2,contact_id),conversation_id=coalesce($3,conversation_id),attendance_id=coalesce($4,attendance_id),deal_id=coalesce($5,deal_id) where id=$1",[id,links.contactId??null,links.conversationId??null,links.attendanceId??null,links.dealId??null]);}
  async completeIntent(id:string,links:SalesIntentLinks){
-  const {rows}=await this.pool.query("update sales_intents set status='CONVERTED',converted_at=coalesce(converted_at,now()),conversion_error=null,contact_id=coalesce($2,contact_id),conversation_id=coalesce($3,conversation_id),attendance_id=coalesce($4,attendance_id),deal_id=coalesce($5,deal_id) where id=$1 and status in ('CONVERTING','CONVERTED') returning *",[id,links.contactId??null,links.conversationId??null,links.attendanceId??null,links.dealId??null]);
+  const {rows}=await this.pool.query("update sales_intents set status='CONVERTED',converted_at=coalesce(converted_at,now()),conversion_error=null,contact_id=coalesce($2,contact_id),conversation_id=coalesce($3,conversation_id),attendance_id=coalesce($4,attendance_id),deal_id=coalesce($5,deal_id) where id=$1 and status in ('OPEN','CONVERTING','CONVERTED') returning *",[id,links.contactId??null,links.conversationId??null,links.attendanceId??null,links.dealId??null]);
   return rows[0]?intent(rows[0]):undefined;
  }
  async releaseIntent(id:string,error:string){await this.pool.query("update sales_intents set status='OPEN',claimed_at=null,conversion_error=$2 where id=$1 and status='CONVERTING'",[id,error.slice(0,500)]);}

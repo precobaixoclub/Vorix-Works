@@ -32,15 +32,10 @@ function CartLauncher(){
  return <button type="button" className="sc-cart-launcher" onClick={store.openCart} aria-label={`Abrir carrinho, ${count} ${count===1?"item":"itens"}`} aria-haspopup="dialog"><ShoppingBag size={20} aria-hidden="true"/><span className="sc-cart-count" aria-hidden="true">{count}</span></button>;
 }
 
-const CUSTOMER_INPUT={minHeight:44,border:"1px solid var(--site-line)",borderRadius:"calc(var(--site-radius)*.6)",padding:"8px 12px",font:"inherit",background:"var(--site-bg)",color:"var(--site-fg)",width:"100%"};
 function CartDrawer(){
  const store=useStorefront()!;const {cart,cartOpen,closeCart,site}=store;
  const panel=useRef<HTMLDivElement>(null),returnFocus=useRef<Element|null>(null);
  const [busyLine,setBusyLine]=useState<string>(),[error,setError]=useState<string>(),[checkingOut,setCheckingOut]=useState(false),[requestKey,setRequestKey]=useState(()=>crypto.randomUUID());
- // Loja que registra o pedido no Vorix pede nome e WhatsApp; ficam lembrados neste navegador para a próxima compra.
- const collectCustomer=!!site.commerce?.collectCustomer;
- const [customer,setCustomer]=useState(()=>{try{return JSON.parse(localStorage.getItem(`vx_customer:${site.slug}`)??"null")??{name:"",phone:""};}catch{return {name:"",phone:""};}});
- const [received,setReceived]=useState<string>();
  useEffect(()=>{
   if(!cartOpen)return;returnFocus.current=document.activeElement;
   const node=panel.current;node?.querySelector<HTMLElement>("[data-autofocus]")?.focus();
@@ -55,7 +50,6 @@ function CartDrawer(){
   return()=>{document.removeEventListener("keydown",onKey);document.body.style.overflow=overflow;(returnFocus.current as HTMLElement|null)?.focus?.();};
  },[cartOpen,closeCart]);
  if(!cartOpen)return null;
- if(received)return <div className="sc-drawer-layer"><div className="sc-drawer-backdrop" onClick={()=>{setReceived(undefined);closeCart();}} aria-hidden="true"/><div ref={panel} className="sc-drawer" role="dialog" aria-modal="true" aria-labelledby="sc-cart-title"><header className="sc-drawer-header"><h2 id="sc-cart-title">Pedido enviado</h2><button type="button" className="sc-icon-button" onClick={()=>{setReceived(undefined);closeCart();}} aria-label="Fechar" data-autofocus><X size={20}/></button></header><div className="sc-drawer-empty"><MessageCircle size={32} aria-hidden="true"/><p>Recebemos seu pedido <strong>{received}</strong>. Nossa equipe vai falar com você pelo WhatsApp para confirmar os itens, a entrega e o pagamento.</p><button type="button" className="ts-button sc-full" onClick={()=>{setReceived(undefined);closeCart();}}>Continuar navegando</button></div></div></div>;
  const items=cart?.items??[];
  // Fase 2: no modo híbrido o carrinho pode ter itens de compra online e itens de WhatsApp.
  const checkoutItems=items.filter(item=>item.channel==="checkout"),whatsappItems=items.filter(item=>item.channel!=="checkout");
@@ -66,12 +60,10 @@ function CartDrawer(){
  }
  async function finish(){
   setCheckingOut(true);setError(undefined);
-  if(collectCustomer&&(customer.name.trim().length<2||customer.phone.replace(/\D/g,"").length<10)){setError("Informe seu nome e seu WhatsApp com DDD para finalizar o pedido.");setCheckingOut(false);return;}
   try{
-   if(collectCustomer)try{localStorage.setItem(`vx_customer:${site.slug}`,JSON.stringify(customer));}catch{}
-   const intent=await openWhatsapp(()=>checkoutCart(site.slug,requestKey,collectCustomer?{name:customer.name.trim(),phone:customer.phone.trim()}:undefined),store.basePath);
+   await openWhatsapp(()=>checkoutCart(site.slug,requestKey),store.basePath);
    setRequestKey(crypto.randomUUID());
-   if("received" in intent)setReceived(intent.reference);else closeCart();
+   closeCart();
    if(checkoutItems.length)await store.refreshCart();else store.resetCart();
   }
   catch(caught){setError(caught instanceof Error?caught.message:"Não foi possível abrir o WhatsApp.");}
@@ -90,10 +82,9 @@ function CartDrawer(){
     <footer className="sc-drawer-footer"><CartCommercialInfo cart={cart!}/>{site.commerce?.couponsAvailable||cart?.couponCode?<CartCoupon slug={site.slug} cart={cart!} onRefresh={store.refreshCart}/>:null}
      <p className="sc-subtotal" aria-live="polite"><span>Total estimado</span><strong>{formatCurrencyCents(cart!.subtotalCents,cart!.currency)}</strong></p>
      {checkoutItems.length?<small>Frete e pagamento você escolhe na próxima etapa.</small>:<small>Você confirma os itens, a entrega e o pagamento direto com a nossa equipe no WhatsApp.</small>}
-     {collectCustomer&&whatsappItems.length?<div className="sc-customer" style={{display:"grid",gap:8}}><label style={{display:"grid",gap:4,fontSize:13}}>Seu nome<input style={CUSTOMER_INPUT} autoComplete="name" value={customer.name} maxLength={160} onChange={event=>setCustomer({...customer,name:event.target.value})}/></label><label style={{display:"grid",gap:4,fontSize:13}}>Seu WhatsApp (com DDD)<input style={CUSTOMER_INPUT} type="tel" inputMode="tel" autoComplete="tel" placeholder="(11) 91234-5678" value={customer.phone} maxLength={40} onChange={event=>setCustomer({...customer,phone:event.target.value})}/></label></div>:null}
      {error?<p role="alert" className="sc-error">{error}</p>:null}
      {checkoutItems.length?<a className={`ts-button sc-full ${blockedCheckout?"is-disabled":""}`} aria-disabled={blockedCheckout} href={blockedCheckout?undefined:`${store.basePath}/checkout`} onClick={()=>closeCart()}><CreditCard size={18} aria-hidden="true"/>{whatsappItems.length?`Finalizar compra (${checkoutItems.reduce((n,item)=>n+item.quantity,0)} itens)`:"Finalizar compra"}</a>:null}
-     {whatsappItems.length?<button type="button" className={`ts-button sc-full ${checkoutItems.length?"ts-button-secondary":""}`} disabled={checkingOut||blocked} onClick={finish}><MessageCircle size={18} aria-hidden="true"/>{checkingOut?(site.commerce?.whatsappEnabled?"Abrindo o WhatsApp...":"Enviando pedido..."):!site.commerce?.whatsappEnabled?"Enviar pedido":checkoutItems.length?"Itens sob consulta: finalizar pelo WhatsApp":"Finalizar pelo WhatsApp"}</button>:null}
+     {whatsappItems.length?<button type="button" className={`ts-button sc-full ${checkoutItems.length?"ts-button-secondary":""}`} disabled={checkingOut||blocked} onClick={finish}><MessageCircle size={18} aria-hidden="true"/>{checkingOut?(site.commerce?.whatsappEnabled?"Preparando sua sele??o...":"Enviando pedido..."):!site.commerce?.whatsappEnabled?"Enviar pedido":checkoutItems.length?"Itens sob consulta: finalizar pelo WhatsApp":"Finalizar pelo WhatsApp"}</button>:null}
      <button type="button" className="ts-button ts-button-secondary sc-full" onClick={closeCart}>Continuar navegando</button>
     </footer>
    </>}
@@ -149,7 +140,7 @@ export function ProductCommerceActions({product,variantId,complete,onInterest}:{
   :canCart
   ?<button type="button" className="ts-button sc-grow" disabled={preview||!!busy} title={disabledTitle} onClick={addToCart}><ShoppingBag size={18} aria-hidden="true"/>{busy==="cart"?"Adicionando...":"Adicionar ao carrinho"}</button>
   :canWhatsapp&&(complete||!product.options.length||optionOut)
-   ?<button type="button" className="ts-button sc-grow" disabled={preview||!!busy||needsOptions} title={disabledTitle} onClick={talk}><MessageCircle size={18} aria-hidden="true"/>{busy==="whatsapp"?"Abrindo o WhatsApp...":whatsappLabel}</button>
+   ?<button type="button" className="ts-button sc-grow" disabled={preview||!!busy||needsOptions} title={disabledTitle} onClick={talk}><MessageCircle size={18} aria-hidden="true"/>{busy==="whatsapp"?"Preparando sua sele??o...":whatsappLabel}</button>
    :commerce.saleMode==="SHOW_ONLY"&&canInquiry
     ?<button type="button" className="ts-button sc-grow" onClick={onInterest}>{commerce.ctaLabel}</button>
     :null;

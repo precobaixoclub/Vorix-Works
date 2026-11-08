@@ -11,7 +11,9 @@ import {siteContentSchema,siteThemeSchema} from "../dist/domain/sites/site.model
 import {publishSite,publicSite} from "../dist/application/sites/site-use-cases.js";
 import {generateVariantGrid} from "../dist/application/sales/catalog-use-cases.js";
 import {resolveProductCommerce,defaultSiteCommerceSettings,siteCommerceSettingsSchema,extractSalesIntentReference,newSalesIntentReference,salesIntentWhatsappMessage} from "../dist/domain/sites/site-commerce.js";
-import {startProductWhatsapp,resolveSalesIntentRedirect,setPublicCartItem,getPublicCart,checkoutPublicCartToWhatsapp,saveSiteCommerceSettings,recordPublicSiteEvent} from "../dist/application/sites/site-commerce-use-cases.js";
+import {startProductWhatsapp,resolveSalesIntentRedirect,setPublicCartItem,setPublicCartCoupon,getPublicCart,checkoutPublicCartToWhatsapp,saveSiteCommerceSettings,recordPublicSiteEvent} from "../dist/application/sites/site-commerce-use-cases.js";
+import {addDealItem} from "../dist/application/sales/deal-commercial-use-cases.js";
+import {commercialRuleSchema} from "../dist/domain/commerce/commercial-rules.js";
 import {convertSalesIntentFromInbound,attachAttendanceToConvertedIntent,processSiteFormLead,processSiteCartLead} from "../dist/application/commercial-bridge/site-lead-use-cases.js";
 import {searchConversationProducts,sendProductToConversation,addProductToConversationOpportunity} from "../dist/application/commercial-bridge/conversation-product-use-cases.js";
 import {getSharedProduct} from "../dist/application/commercial-bridge/public-product-use-cases.js";
@@ -23,6 +25,7 @@ import {registerInboundMessage,applyInboundServiceRules} from "../dist/applicati
 import {createTeam} from "../dist/application/identity/team-use-cases.js";
 import {registerSiteCommerceRoutes} from "../dist/interfaces/api/routes/v1/site-commerce.route.js";
 import {PostgresSiteCommerceRepository} from "../dist/infrastructure/storage/postgres/postgres-site-commerce-repository.js";
+import {getPublicSelection,submitPublicSelection} from "../dist/application/sites/site-selection-use-cases.js";
 import {PostgresMessagingConnectionRepository} from "../dist/infrastructure/storage/postgres/postgres-messaging-connection-repository.js";
 import {PostgresInboxContactRepository} from "../dist/infrastructure/storage/postgres/postgres-inbox-contact-repository.js";
 import {PostgresInboxConversationRepository} from "../dist/infrastructure/storage/postgres/postgres-inbox-conversation-repository.js";
@@ -76,6 +79,138 @@ async function commerce({whatsapp=WHATSAPP}={}){
 }
 const dealsOf=c=>count("select count(*) n from deals where workspace_id=$1",[c.workspaceId]);
 const contactsOf=c=>count("select count(*) n from contacts where workspace_id=$1",[c.workspaceId]);
+const selectionDeps=c=>({...c.siteDeps,registerCartLead:input=>processSiteCartLead(c.siteLead,input),selectionDealOpen:async id=>(await c.d.dealRepository.getById(id))?.status==="open"});
+const selectionLines=view=>view.snapshot.items.map(({productId,variantId,quantity})=>({productId,variantId,quantity}));
+
+test("finalizar WhatsApp sem cadastro registra oportunidade, identifica o contato pela mensagem e não duplica no reenvio",async()=>{
+ const c=await commerce(),deps=selectionDeps(c);
+ await saveSiteCommerceSettings(deps,{site:c.site,settings:{mode:"WHATSAPP_CART",cartLead:true},actorUserId:c.actor.userId});
+ const cart=await setPublicCartItem(deps,{lookup:c.lookup,productId:c.productA.id,quantity:2});
+ const app=Fastify();registerErrorHandler(app);await registerSiteCommerceRoutes(app,{...deps,workspaceRepository:c.workspaceRepository});
+ const payload={token:cart.token,requestKey:randomUUID(),finalize:true};
+ const response=await app.inject({method:"POST",url:`/public/sites/${c.site.slug}/cart/checkout`,payload});
+ assert.equal(response.statusCode,200,response.body);const result=response.json().data;
+ assert.equal(result.finalized,true);assert.match(result.whatsappUrl,/^https:\/\/wa.me\//);assert.ok(decodeURIComponent(result.whatsappUrl).includes(result.selectionPath));
+ const intent=await c.commerceRepository.getIntentByReference(result.reference);
+ assert.ok(intent.selectionSubmittedAt);assert.ok(intent.dealId);assert.equal(intent.contactId,undefined);assert.equal(intent.selectionCustomer,undefined);
+ assert.equal(await contactsOf(c),0);assert.equal(await dealsOf(c),1);
+ const repeated=await app.inject({method:"POST",url:`/public/sites/${c.site.slug}/cart/checkout`,payload});assert.equal(repeated.statusCode,200);assert.equal(repeated.json().data.reference,result.reference);assert.equal(await dealsOf(c),1);
+ const inbound=await c.inbound(new URL(result.whatsappUrl).searchParams.get("text"));
+ assert.equal(inbound.result.dealId,intent.dealId);assert.equal(await contactsOf(c),1);assert.equal(await dealsOf(c),1);
+ const linked=await c.commerceRepository.getIntent(intent.id);assert.ok(linked.contactId);assert.equal((await c.d.dealRepository.getById(intent.dealId)).contactId,linked.contactId);
+ await app.close();
+});
+
+test("finalização direta do produto e edição da seleção dispensam nome e telefone",async()=>{
+ const c=await commerce(),deps=selectionDeps(c),app=Fastify();registerErrorHandler(app);await registerSiteCommerceRoutes(app,{...deps,workspaceRepository:c.workspaceRepository});
+ const response=await app.inject({method:"POST",url:`/public/sites/${c.site.slug}/whatsapp-intents`,payload:{productId:c.productA.id,requestKey:randomUUID(),finalize:true}});
+ assert.equal(response.statusCode,200,response.body);const result=response.json().data;
+ assert.equal(result.finalized,true);const token=result.selectionPath.split("/").at(-1),view=await getPublicSelection(deps,token);
+ const edited=await submitPublicSelection(deps,{token,revision:view.revision,items:[{productId:c.productA.id,quantity:3}]});
+ assert.equal(edited.syncPending,false);assert.equal(edited.snapshot.items[0].quantity,3);assert.equal(await contactsOf(c),0);assert.equal(await dealsOf(c),1);
+ await app.close();
+});
+
+test("seleção visual: confirmação cria contato e oportunidade antes do WhatsApp, link não revela dados pessoais e mensagem posterior reutiliza o negócio",async()=>{
+ const c=await commerce(),deps=selectionDeps(c);
+ const result=await startProductWhatsapp(deps,{lookup:c.lookup,productId:c.productA.id,requestKey:randomUUID(),sessionId:"selection-browser"});
+ assert.match(result.selectionPath,/^\/selecao\/[a-f0-9]{64}$/);
+ const token=result.selectionPath.split("/").at(-1),view=await getPublicSelection(deps,token);
+ assert.equal(view.snapshot.items[0].name,c.productA.name);assert.equal(view.submittedAt,undefined);assert.equal(await contactsOf(c),0);
+ const confirmed=await submitPublicSelection(deps,{token,revision:view.revision,items:selectionLines(view),customer:{name:"Ana da seleção",phone:"(11) 97777-6666"}});
+ assert.ok(confirmed.submittedAt);assert.equal(confirmed.syncPending,false);assert.equal(confirmed.revision,2);
+ const intent=await c.commerceRepository.getIntentByReference(result.reference);
+ assert.ok(intent.contactId);assert.ok(intent.dealId);assert.equal(await contactsOf(c),1);assert.equal(await dealsOf(c),1);
+ assert.equal(intent.status,"CONVERTED");
+ assert.equal(await count("select count(*) n from site_analytics_identities where site_id=$1 and contact_id=$2",[c.site.id,intent.contactId]),1);
+ const json=JSON.stringify(confirmed);for(const privateValue of [c.tenantId,c.workspaceId,intent.contactId,intent.dealId,"Ana da seleção","97777"]){assert.equal(json.includes(privateValue),false,`não expõe ${privateValue}`);}
+ assert.match(decodeURIComponent(confirmed.whatsappUrl),/Ver pedido com fotos/);
+ assert.match(decodeURIComponent(confirmed.whatsappUrl),new RegExp(token));
+ const inbound=await c.inbound(`Ref: ${result.reference}`,{phone:"+5511977776666"});
+ assert.equal(inbound.result.dealId,intent.dealId);assert.equal(await contactsOf(c),1);assert.equal(await dealsOf(c),1);
+ assert.equal(await count("select count(*) n from site_events where sales_intent_id=$1 and type='SALES_INTENT_CONVERTED'",[intent.id]),1);
+});
+
+test("seleção: edições preservam itens acrescentados pelo vendedor, inclusive do mesmo produto",async()=>{
+ const c=await commerce(),deps=selectionDeps(c);
+ const result=await startProductWhatsapp(deps,{lookup:c.lookup,productId:c.productA.id,requestKey:randomUUID()}),token=result.selectionPath.split("/").at(-1);
+ await submitPublicSelection(deps,{token,revision:1,items:[{productId:c.productA.id,quantity:1}],customer:{name:"Cliente",phone:"+5511966663333"}});
+ const intent=await c.commerceRepository.getIntentByReference(result.reference);
+ const extra=await addDealItem(c.d,c.actor,{workspaceId:c.workspaceId,dealId:intent.dealId,productId:c.productA.id,quantity:1});
+ await submitPublicSelection(deps,{token,revision:2,items:[{productId:c.productB.id,variantId:c.variantM.id,quantity:2}]});
+ const items=await c.d.dealItemRepository.listByDeal(intent.dealId);
+ assert.equal(items.length,2);assert.equal(items.find(item=>item.id===extra.id).quantity,1);assert.ok(items.some(item=>item.productId===c.productB.id));
+});
+
+test("seleção: cupom do carrinho é preservado na confirmação e recalculado ao editar; loja sem WhatsApp registra normalmente",async()=>{
+ const c=await commerce({whatsapp:""});
+ await saveSiteCommerceSettings(c.siteDeps,{site:c.site,settings:{mode:"WHATSAPP_CART",cartLead:true},actorUserId:c.actor.userId});
+ const rule={...commercialRuleSchema.parse({name:"Cupom de teste",active:true,channels:["WHATSAPP"],scope:{type:"STORE"},trigger:{type:"QUANTITY",count:"ELIGIBLE",minimum:1},benefit:{type:"PERCENT",basisPoints:1000},couponCode:"BEMVINDO"}),id:"coupon-selection",tenantId:c.tenantId,workspaceId:c.workspaceId,siteId:c.site.id,revision:1};
+ const deps={...selectionDeps(c),commercialRules:{list:async()=>[rule]}};
+ const cart=await setPublicCartItem(deps,{lookup:c.lookup,productId:c.productA.id,quantity:2});
+ await setPublicCartCoupon(deps,{lookup:c.lookup,token:cart.token,code:"BEMVINDO"});
+ const result=await checkoutPublicCartToWhatsapp(deps,{lookup:c.lookup,token:cart.token,requestKey:randomUUID(),review:true}),token=result.selectionPath.split("/").at(-1);
+ const view=await getPublicSelection(deps,token);assert.equal(view.snapshot.subtotalCents,10782);
+ const submitted=await submitPublicSelection(deps,{token,revision:1,items:selectionLines(view),customer:{name:"Cliente sem WhatsApp da loja",phone:"+5511955551111"}});
+ assert.equal(submitted.syncPending,false);assert.equal(submitted.whatsappUrl,undefined);assert.equal(submitted.snapshot.subtotalCents,10782);
+ const edited=await submitPublicSelection(deps,{token,revision:2,items:[{productId:c.productA.id,quantity:3}]});
+ assert.equal(edited.snapshot.subtotalCents,16173);assert.equal(await dealsOf(c),1);
+});
+
+test("seleção editável: troca itens na mesma oportunidade, preserva revisões e impede sobrescrita concorrente",async()=>{
+ const c=await commerce(),deps=selectionDeps(c);
+ const result=await startProductWhatsapp(deps,{lookup:c.lookup,productId:c.productA.id,requestKey:randomUUID()});
+ const token=result.selectionPath.split("/").at(-1);
+ await submitPublicSelection(deps,{token,revision:1,items:[{productId:c.productA.id,quantity:1}],customer:{name:"Cliente edição",phone:"+5511955553333"}});
+ const first=await c.commerceRepository.getIntentByReference(result.reference);
+ const updated=await submitPublicSelection(deps,{token,revision:2,items:[{productId:c.productB.id,variantId:c.variantM.id,quantity:2}]});
+ assert.equal(updated.syncPending,false);assert.equal(updated.snapshot.subtotalCents,31980);assert.equal(updated.revision,3);
+ const same=await c.commerceRepository.getIntentByReference(result.reference);assert.equal(same.dealId,first.dealId);assert.equal(await dealsOf(c),1);
+ assert.equal(same.selectionHistory[1].snapshot.items[0].productId,c.productA.id);
+ const lines=await c.d.dealItemRepository.listByDeal(same.dealId);assert.equal(lines.length,1);assert.equal(lines[0].variantId,c.variantM.id);assert.equal(Number(lines[0].quantity),2);
+ assert.equal((await c.d.dealRepository.getById(same.dealId)).valueCents,31980);
+ const attempts=await Promise.allSettled([1,3].map(quantity=>submitPublicSelection(deps,{token,revision:3,items:[{productId:c.productB.id,variantId:c.variantM.id,quantity}]})));
+ assert.equal(attempts.filter(item=>item.status==="fulfilled").length,1);assert.equal((await getPublicSelection(deps,token)).revision,4);
+ assert.equal(await count("select count(*) n from product_stock_movements where product_id=$1 and kind='RESERVATION'",[c.productB.id]).catch(()=>0),0);
+});
+
+test("seleção: falha após criar oportunidade mantém pedido e permite reparar sem duplicar contato, negócio ou itens",async()=>{
+ const c=await commerce(),deps=selectionDeps(c);
+ const result=await startProductWhatsapp(deps,{lookup:c.lookup,productId:c.productA.id,requestKey:randomUUID()}),token=result.selectionPath.split("/").at(-1);
+ const failed=await submitPublicSelection({...deps,registerCartLead:async input=>{await processSiteCartLead(c.siteLead,input);throw Error("CRM temporariamente indisponível");}},{token,revision:1,items:[{productId:c.productA.id,quantity:2}],customer:{name:"Cliente recuperação",phone:"+5511944443333"}});
+ assert.equal(failed.syncPending,true);assert.equal(failed.snapshot.items[0].quantity,2);assert.ok(failed.submittedAt);
+ const repaired=await submitPublicSelection(deps,{token,revision:failed.revision,items:selectionLines(failed)});
+ assert.equal(repaired.syncPending,false);assert.equal(await contactsOf(c),1);assert.equal(await dealsOf(c),1);
+ const intent=await c.commerceRepository.getIntentByReference(result.reference);assert.equal((await c.d.dealItemRepository.listByDeal(intent.dealId)).length,1);
+});
+
+test("seleção: carrinho híbrido envia só itens assistidos; compra online continua no carrinho, sem reservas pela solicitação",async()=>{
+ const c=await commerce();await saveSiteCommerceSettings(c.siteDeps,{site:c.site,settings:{mode:"HYBRID",cartLead:true},actorUserId:c.actor.userId});
+ await c.d.productRepository.update(c.productB.id,{details:visible({type:"APPAREL",saleMode:"WHATSAPP_CART",options:[{key:"size",name:"Tamanho",values:["P","M","G"]}]})});
+ const deps={...selectionDeps(c),checkoutStatus:async()=>({ready:true,missing:[]})};
+ const cart=await setPublicCartItem(deps,{lookup:c.lookup,productId:c.productA.id,quantity:1});
+ await setPublicCartItem(deps,{lookup:c.lookup,token:cart.token,productId:c.productB.id,variantId:c.variantM.id,quantity:1});
+ const result=await checkoutPublicCartToWhatsapp(deps,{lookup:c.lookup,token:cart.token,requestKey:randomUUID(),review:true});
+ const view=await getPublicSelection(deps,result.selectionPath.split("/").at(-1));assert.equal(view.snapshot.items.length,1);assert.equal(view.snapshot.items[0].productId,c.productB.id);
+ const remaining=await getPublicCart(deps,{lookup:c.lookup,token:cart.token});assert.equal(remaining.items.length,1);assert.equal(remaining.items[0].productId,c.productA.id);assert.equal(remaining.items[0].channel,"checkout");
+ assert.equal(await dealsOf(c),0);
+});
+
+test("seleção: token, preço e tenant adulterados são recusados; oportunidade encerrada e prazo vencido bloqueiam edição",async()=>{
+ const c=await commerce(),other=await commerce(),deps=selectionDeps(c);
+ const result=await startProductWhatsapp(deps,{lookup:c.lookup,productId:c.productA.id,requestKey:randomUUID()}),token=result.selectionPath.split("/").at(-1);
+ await assert.rejects(getPublicSelection(deps,"a".repeat(64)),/SITE_NOT_FOUND/);
+ await assert.rejects(submitPublicSelection(deps,{token,revision:1,items:[{productId:other.productA.id,quantity:1}],customer:{name:"Cliente",phone:"+5511944443333"}}),/SITE_NOT_FOUND/);
+ const app=Fastify();registerErrorHandler(app);await registerSiteCommerceRoutes(app,{...deps,workspaceRepository:c.workspaceRepository});
+ const response=await app.inject({method:"POST",url:`/public/site-selections/${token}`,payload:{revision:1,items:[{productId:c.productA.id,quantity:1,unitPriceCents:1}],customer:{name:"Cliente",phone:"+5511944443333"}}});assert.equal(response.statusCode,400);
+ const get=await app.inject({method:"GET",url:`/public/site-selections/${token}`});assert.equal(get.statusCode,200);assert.equal(get.headers["cache-control"],"no-store");
+ const confirmed=await submitPublicSelection(deps,{token,revision:1,items:[{productId:c.productA.id,quantity:1}],customer:{name:"Cliente",phone:"+5511944443333"}});
+ const intent=await c.commerceRepository.getIntentByReference(result.reference);await db.pool.query("update deals set status='won' where id=$1",[intent.dealId]);
+ assert.equal((await getPublicSelection(deps,token)).editable,false);
+ await assert.rejects(submitPublicSelection(deps,{token,revision:confirmed.revision,items:[{productId:c.productA.id,quantity:2}]}),/SITE_VALIDATION/);
+ const expired=await getPublicSelection({...deps,now:()=>new Date(Date.now()+15*86400000)},token);assert.equal(expired.editable,false);assert.equal(expired.snapshot.items[0].quantity,1);
+ await app.close();
+});
 
 test("modo comercial: vitrine, WhatsApp, carrinho, híbrido, override por produto, sem estoque e checkout ainda indisponível",()=>{
  const settings=mode=>siteCommerceSettingsSchema.parse({mode});
@@ -210,7 +345,7 @@ test("E2E 52 — carrinho com variação vira uma oportunidade com todos os iten
  const requestKey=randomUUID();
  const checkout=await checkoutPublicCartToWhatsapp(c.siteDeps,{lookup:c.lookup,token,requestKey,sessionId:"sess-carrinho",utm:{source:"meta",campaign:"black"}});
  assert.equal((await checkoutPublicCartToWhatsapp(c.siteDeps,{lookup:c.lookup,token,requestKey})).reference,checkout.reference,"finalizar de novo devolve a mesma intenção");
- const text=decodeURIComponent(checkout.whatsappUrl);assert.match(text,/• 2x Camiseta Basic Preta — R\$\s?119,80/);assert.match(text,/• 1x Calça Jeans \(Tamanho: M\) — R\$\s?159,90/);assert.match(text,/Total estimado: R\$\s?279,70\s+Ref: VX-/);
+ const text=decodeURIComponent(checkout.whatsappUrl);assert.match(text,/• 2x Camiseta Basic Preta — R\$\s?119,80/);assert.match(text,/• 1x Calça Jeans \(Tamanho: M\) — R\$\s?159,90/);assert.match(text,/Total estimado: R\$\s?279,70[\s\S]+https:\/\/vorixworks.com\/selecao\/[a-f0-9]{64}[\s\S]+Ref: VX-/);
  const fresh=await setPublicCartItem(c.siteDeps,{lookup:c.lookup,token,productId:c.productA.id,quantity:1});assert.notEqual(fresh.token,token,"carrinho finalizado não é reaproveitado");
  const {result}=await c.inbound(`Olá! Gostaria de comprar estes itens.\nRef: ${checkout.reference}`,{phone:"+5511955554444"});
  assert.equal(result.status,"converted");

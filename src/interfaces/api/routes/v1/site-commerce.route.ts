@@ -1,3 +1,4 @@
+import {finalizeSelectionForWhatsapp,getPublicSelection,submitPublicSelection} from "../../../../application/sites/site-selection-use-cases.js";
 import {saveCommercialRule} from "../../../../application/commerce/commercial-rule-use-cases.js";
 import type {FastifyInstance,FastifyRequest} from "fastify";
 import {z} from "zod";
@@ -30,8 +31,10 @@ export async function registerSiteCommerceRoutes(app:FastifyInstance,deps:SiteCo
  const lookup=(request:FastifyRequest)=>({slug:slugParam.parse(request.params).slug});
  // Vitrine pública ------------------------------------------------------------------------------
  app.post("/public/sites/:slug/whatsapp-intents",async request=>guard(async()=>{
-  const body=z.object({productId:id,variantId:id.optional(),quantity:z.number().int().min(1).max(999).optional(),requestKey:z.string().uuid(),...visitor}).strict().parse(request.body);
-  return successEnvelope(await startProductWhatsapp(deps,{...body,lookup:lookup(request)}),request.id);
+  const body=z.object({productId:id,variantId:id.optional(),quantity:z.number().int().min(1).max(999).optional(),requestKey:z.string().uuid(),finalize:z.boolean().optional(),...visitor}).strict().parse(request.body);
+  const result=await startProductWhatsapp(deps,{...body,lookup:lookup(request)});
+  if(body.finalize){const selection=await finalizeSelectionForWhatsapp(deps,result.reference);return successEnvelope({...result,finalized:true,whatsappUrl:selection.whatsappUrl},request.id);}
+  return successEnvelope(result,request.id);
  }));
  app.post("/public/sites/:slug/cart",async request=>guard(async()=>{
   const body=z.object({token:cartToken.optional()}).strict().parse(request.body??{});
@@ -46,10 +49,12 @@ export async function registerSiteCommerceRoutes(app:FastifyInstance,deps:SiteCo
   return successEnvelope(await setPublicCartCoupon(deps,{...body,lookup:lookup(request)}),request.id);
  }));
  app.post("/public/sites/:slug/cart/checkout",async request=>guard(async()=>{
-  const body=z.object({token:cartToken,requestKey:z.string().uuid(),customer:z.object({name:z.string().trim().min(2).max(160),phone:z.string().trim().min(8).max(40)}).strict().optional(),...visitor}).strict().parse(request.body);
+  const body=z.object({token:cartToken,requestKey:z.string().uuid(),review:z.boolean().optional(),finalize:z.boolean().optional(),customer:z.object({name:z.string().trim().min(2).max(160),phone:z.string().trim().min(8).max(40)}).strict().optional(),...visitor}).strict().parse(request.body);
   const phone=body.customer?normalizeContactPhone(body.customer.phone):undefined;
   if(body.customer&&!phone)throw new ValidationError("Informe um WhatsApp válido com DDD.");
-  return successEnvelope(await checkoutPublicCartToWhatsapp(deps,{...body,customer:body.customer&&phone?{name:body.customer.name,phone}:undefined,lookup:lookup(request)}),request.id);
+  const result=await checkoutPublicCartToWhatsapp(deps,{...body,review:body.review||body.finalize,customer:body.customer&&phone?{name:body.customer.name,phone}:undefined,lookup:lookup(request)});
+  if(body.finalize&&"whatsappUrl" in result){const selection=await finalizeSelectionForWhatsapp(deps,result.reference);return successEnvelope({...result,finalized:true,whatsappUrl:selection.whatsappUrl},request.id);}
+  return successEnvelope(result,request.id);
  }));
  app.post("/public/sites/:slug/events",async(request,reply)=>guard(async()=>{
   const body=z.object({type:z.enum(["SITE_VIEW","PRODUCT_VIEW"]),productId:id.optional(),...visitor,...analyticsEventContextSchema.shape}).strict().parse(request.body);
@@ -60,6 +65,17 @@ export async function registerSiteCommerceRoutes(app:FastifyInstance,deps:SiteCo
   return successEnvelope(await resolveSalesIntentRedirect(deps,reference),request.id);
  }));
  // Administração --------------------------------------------------------------------------------
+ app.get("/public/site-selections/:token",async(request,reply)=>guard(async()=>{
+  reply.header("Cache-Control","no-store").header("Referrer-Policy","no-referrer");
+  const token=z.object({token:z.string().regex(/^[a-f0-9]{64}$/)}).parse(request.params).token;
+  return successEnvelope(await getPublicSelection(deps,token),request.id);
+ }));
+ app.post("/public/site-selections/:token",async(request,reply)=>guard(async()=>{
+  reply.header("Cache-Control","no-store");
+  const token=z.object({token:z.string().regex(/^[a-f0-9]{64}$/)}).parse(request.params).token;
+  const body=z.object({revision:z.number().int().positive(),items:z.array(z.object({productId:id,variantId:id.optional(),quantity:z.number().int().min(1).max(99)}).strict()).min(1).max(50),customer:z.object({name:z.string().trim().min(2).max(160),phone:z.string().trim().min(8).max(40)}).strict().optional()}).strict().parse(request.body);
+  return successEnvelope(await submitPublicSelection(deps,{...body,token}),request.id);
+ }));
  const owned=async(request:FastifyRequest,permission:Permission)=>{
   const principal=requirePermission(request,permission);const workspaceId=z.object({workspaceId:id}).parse(request.query).workspaceId;
   await assertWorkspaceBelongsToTenant(deps.workspaceRepository,{tenantId:principal.tenantId,workspaceId});
@@ -92,6 +108,14 @@ export async function registerSiteCommerceRoutes(app:FastifyInstance,deps:SiteCo
   const body=z.object({settings:z.unknown()}).strict().parse(request.body);
   const settings=await saveSiteCommerceSettings(deps,{site,settings:body.settings,actorUserId:principal.userId});
   return successEnvelope({...(await getSiteCommerceSettings(deps,site)),settings},request.id);
+ }));
+ app.get("/site-sales-intents",async request=>guard(async()=>{
+  const principal=requirePermission(request,"commerce:read");
+  const {workspaceId,limit}=z.object({workspaceId:id,limit:z.coerce.number().int().min(1).max(200).default(100)}).parse(request.query);
+  await assertWorkspaceBelongsToTenant(deps.workspaceRepository,{tenantId:principal.tenantId,workspaceId});
+  if(!await deps.hasAccess(principal.tenantId))throw new ForbiddenError("Vorix Site não está habilitado nesta conta.");
+  const visibility=deps.access?await commerceVisibility(deps.access,{...principal,isAccountOwner:(principal as {isAccountOwner?:boolean}).isAccountOwner??false}):{global:hasPermission(principal,"deal:view_all"),teamIds:[],ownerUserIds:[principal.userId]};
+  return successEnvelope(await listSiteSalesIntents(deps,{tenantId:principal.tenantId,workspaceId,limit,visibility}),request.id);
  }));
  app.get("/sites/:id/sales-intents",async request=>guard(async()=>{
   const {site}=await owned(request,"commerce:read");

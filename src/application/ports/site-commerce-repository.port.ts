@@ -12,6 +12,11 @@ export type SiteCommerceRepositoryPort={
  saveSettings(input:{siteId:string;tenantId:string;workspaceId:string;settings:SiteCommerceSettings;actorUserId:string}):Promise<SiteCommerceSettings>;
  /** Idempotente por (siteId, requestKey): duplo clique/retry devolve a mesma intenção. */
  createIntent(input:CreateSalesIntentInput):Promise<{intent:SalesIntent;created:boolean}>;
+ getSelection(token:string):Promise<SalesIntent|undefined>;
+ claimSelection(input:{id:string;revision:number}):Promise<boolean>;
+ saveSelection(input:{id:string;revision:number;snapshot:SalesIntentSnapshot;customer?:{name:string;phone:string}}):Promise<SalesIntent>;
+ finishSelection(id:string,error?:string):Promise<void>;
+ setSelectionDealItems(id:string,itemIds:string[]):Promise<void>;
  getIntent(id:string):Promise<SalesIntent|undefined>;
  findIntentByRequestKey(input:{siteId:string;requestKey:string}):Promise<SalesIntent|undefined>;
  getIntentByReference(reference:string):Promise<SalesIntent|undefined>;

@@ -114,7 +114,7 @@ test("Fase 2 E2E — visitante compra: CEP, entrega, pagamento de teste, pedido,
  await admin.screenshot({path:path.join(evidence,"admin-pedidos-390.png"),fullPage:true});
 });
 
-test("Fase 1 no modo híbrido: carrinho do WhatsApp → oportunidade com itens, sem duplicar; clique sem mensagem não cria nada",async({page,request})=>{
+test("modo híbrido: seleção confirmada cria oportunidade antes do WhatsApp; mensagem reutiliza os mesmos itens",async({page,request})=>{
  await page.setViewportSize({width:390,height:844});
  const before=await(await request.get(api+"/fixture-only/crm-counts")).json();
  await page.goto(`/s/${scope.slug}/produto/pulverizador-fixture?utm_source=google&utm_medium=cpc&utm_campaign=busca`);
@@ -125,7 +125,7 @@ test("Fase 1 no modo híbrido: carrinho do WhatsApp → oportunidade com itens, 
  expect(text).toMatch(/2x Pulverizador de fixture/);
  const reference=/Ref: (VX-[A-Z0-9]{6})/.exec(text)?.[1];expect(reference).toBeTruthy();
  const afterClick=await(await request.get(api+"/fixture-only/crm-counts")).json();
- expect(afterClick.deals).toBe(before.deals);expect(afterClick.intents).toBe(before.intents+1);
+ expect(afterClick.deals).toBe(before.deals+1);expect(afterClick.intents).toBe(before.intents+1);
  const inbound=await(await request.post(api+"/fixture-only/whatsapp-inbound",{data:{body:text}})).json();
  expect(inbound.result.status).toBe("converted");expect(inbound.deal.origin).toBe("site");
  expect(inbound.items.map((item:{name:string;quantity:number})=>`${item.quantity}x ${item.name}`)).toEqual(["2x Pulverizador de fixture"]);

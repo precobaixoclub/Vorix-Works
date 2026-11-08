@@ -11,8 +11,9 @@ import type {TeamMembershipRepositoryPort} from "../ports/team-repository.port.j
 import type {DealUseCaseDeps} from "../crm/deal-use-cases.js";
 import {createDeal} from "../crm/deal-use-cases.js";
 import {ensureDefaultPipeline,type PipelineUseCaseDeps} from "../crm/pipeline-use-cases.js";
-import {updateDealCommercialTerms,addDealItem} from "../sales/deal-commercial-use-cases.js";
+import {updateDealCommercialTerms,addDealItem,updateDealItem,removeDealItem} from "../sales/deal-commercial-use-cases.js";
 import type {SalesEngineDeps} from "../sales/sales-context.js";
+import {listManagerUserIds} from "../sales/sales-context.js";
 import {notifyBestEffort,type NotificationUseCaseDeps} from "../notification/notification-use-cases.js";
 import {routeUnassignedConversationToTeam,type InboxUseCaseDeps} from "../inbox/inbox-use-cases.js";
 import {ensureOpenAttendanceSafely} from "../inbox/attendance-tracking.js";
@@ -52,24 +53,47 @@ function dealTitle(intent:Pick<SalesIntent,"snapshot"|"type">){
  return (items.length>1?`Site: ${label} + ${items.length-1} item(ns)`:`Site: ${label}`).slice(0,200);
 }
 /** Cria a oportunidade já com os itens da intenção (preço que o visitante viu). Idempotente via `intent.dealId`. */
-async function ensureOpportunity(deps:SiteLeadDeps,intent:SalesIntent,input:{contactId?:string;ownerUserId?:string;teamId?:string}):Promise<string>{
- if(intent.dealId)return intent.dealId;
+async function ensureOpportunity(deps:SiteLeadDeps,intent:SalesIntent,input:{contactId?:string;ownerUserId?:string;teamId?:string;reconcile?:boolean}):Promise<string>{
+ if(intent.dealId&&!input.reconcile){
+  const existing=await deps.sales.dealRepository.getById(intent.dealId);
+  if(existing&&existing.tenantId===intent.tenantId&&existing.workspaceId===intent.workspaceId&&input.contactId&&!existing.contactId)await deps.sales.dealRepository.update(existing.id,{contactId:input.contactId});
+  return intent.dealId;
+ }
  const {pipeline,stages}=await ensureDefaultPipeline(deps.crm,intent.tenantId,intent.workspaceId);
  const stage=[...stages].filter(item=>!item.isWon&&!item.isLost).sort((a,b)=>a.position-b.position)[0];
  if(!stage)throw Error("SITE_LEAD_NO_STAGE: o funil padrão não tem etapa em andamento.");
- const deal=await createDeal(deps.crm,{tenantId:intent.tenantId,workspaceId:intent.workspaceId,pipelineId:pipeline.id,stageId:stage.id,contactId:input.contactId,title:dealTitle(intent),valueCents:0,currency:intent.snapshot.currency||"BRL",ownerUserId:input.ownerUserId,teamId:input.teamId,origin:SITE_LEAD_ORIGIN});
+ const deal=intent.dealId?await deps.sales.dealRepository.getById(intent.dealId):await createDeal(deps.crm,{tenantId:intent.tenantId,workspaceId:intent.workspaceId,pipelineId:pipeline.id,stageId:stage.id,contactId:input.contactId,title:dealTitle(intent),valueCents:0,currency:intent.snapshot.currency||"BRL",ownerUserId:input.ownerUserId,teamId:input.teamId,origin:SITE_LEAD_ORIGIN});
  // Grava o vínculo antes dos itens: numa retomada, a oportunidade nunca é criada duas vezes.
+ if(!deal||deal.tenantId!==intent.tenantId||deal.workspaceId!==intent.workspaceId||deal.status!=="open")throw Error("SITE_VALIDATION: oportunidade encerrada.");
  await deps.commerceRepository.updateIntentLinks(intent.id,{dealId:deal.id});
+ const existing=await deps.sales.dealItemRepository.listByDeal(deal.id);
+ const matches=(line:(typeof existing)[number],item:SalesIntent["snapshot"]["items"][number])=>line.productId===item.productId&&(line.variantId??"")===(item.variantId??"")||!line.productId&&line.productNameSnapshot===`${item.name}${item.variantLabel?` (${item.variantLabel})`:""}`;
+ // Identifica apenas os itens desta seleção. Acréscimos do vendedor ficam no negócio.
+ const owned=new Set(intent.selectionDealItemIds??[]);
+ if(!owned.size){
+  const previous=intent.selectionHistory?.at(-1)?.snapshot??intent.snapshot;
+  for(const item of previous.items){const line=existing.find(line=>!owned.has(line.id)&&matches(line,item));if(line)owned.add(line.id);}
+ }
+ const remaining=new Set([...owned].filter(id=>existing.some(item=>item.id===id))),nextOwned:string[]=[];
  for(const item of intent.snapshot.items){
-  try{await addDealItem(deps.sales,systemActor(intent.tenantId),{workspaceId:intent.workspaceId,dealId:deal.id,productId:item.productId,variantId:item.variantId,quantity:item.quantity,proposedUnitPriceCents:item.unitPriceCents});}
+  const matched=existing.find(line=>remaining.has(line.id)&&matches(line,item));
+  if(matched){remaining.delete(matched.id);nextOwned.push(matched.id);await updateDealItem(deps.sales,systemActor(intent.tenantId),{workspaceId:intent.workspaceId,dealId:deal.id,itemId:matched.id,quantity:item.quantity,proposedUnitPriceCents:item.unitPriceCents});continue;}
+  let added;
+  try{added=await addDealItem(deps.sales,systemActor(intent.tenantId),{workspaceId:intent.workspaceId,dealId:deal.id,productId:item.productId,variantId:item.variantId,quantity:item.quantity,proposedUnitPriceCents:item.unitPriceCents});}
   catch(error){
+   if(!/^PRODUCT_(NOT_FOUND|VARIANT_NOT_FOUND|INACTIVE|VARIANT_REQUIRED|VALIDATION):/.test(errorText(error)))throw error;
    // Produto mudou/desativou desde o clique: preserva o item como avulso com o preço visto.
    deps.log?.("site_lead_item_fallback",{intentId:intent.id,productId:item.productId,error:errorText(error)});
-   await addDealItem(deps.sales,systemActor(intent.tenantId),{workspaceId:intent.workspaceId,dealId:deal.id,name:`${item.name}${item.variantLabel?` (${item.variantLabel})`:""}`,listPriceCents:item.unitPriceCents,quantity:item.quantity});
+   added=await addDealItem(deps.sales,systemActor(intent.tenantId),{workspaceId:intent.workspaceId,dealId:deal.id,name:`${item.name}${item.variantLabel?` (${item.variantLabel})`:""}`,listPriceCents:item.unitPriceCents,quantity:item.quantity});
   }
+  nextOwned.push(added.id);owned.add(added.id);
+  await deps.commerceRepository.setSelectionDealItems(intent.id,[...owned]);
  }
+ if(input.reconcile)for(const itemId of remaining)await removeDealItem(deps.sales,systemActor(intent.tenantId),{workspaceId:intent.workspaceId,dealId:deal.id,itemId});
+ await deps.commerceRepository.setSelectionDealItems(intent.id,nextOwned);
+ if(input.reconcile)await deps.sales.dealRepository.update(deal.id,{title:dealTitle(intent)});
  const residualDiscount=intent.snapshot.items.reduce((sum,item)=>sum+Math.max(0,item.unitPriceCents*item.quantity-(item.totalCents??item.unitPriceCents*item.quantity)),0);
- if(residualDiscount)await updateDealCommercialTerms(deps.sales,systemActor(intent.tenantId),{workspaceId:intent.workspaceId,dealId:deal.id,discountCents:residualDiscount});
+ if(residualDiscount||input.reconcile)await updateDealCommercialTerms(deps.sales,systemActor(intent.tenantId),{workspaceId:intent.workspaceId,dealId:deal.id,discountCents:residualDiscount});
  return deal.id;
 }
 async function notifyLead(deps:SiteLeadDeps,input:{intent:SalesIntent;settings:SiteCommerceSettings;customer:string;assigneeUserId?:string;conversationId?:string;dealId?:string}){
@@ -77,9 +101,10 @@ async function notifyLead(deps:SiteLeadDeps,input:{intent:SalesIntent;settings:S
  const recipients=new Set<string>();
  if(input.assigneeUserId)recipients.add(input.assigneeUserId);
  else if(input.settings.teamId&&deps.teamMembershipRepository)for(const member of await deps.teamMembershipRepository.listByTeam(input.settings.teamId).catch(()=>[]))recipients.add(member.userId);
+ else for(const userId of await listManagerUserIds(deps.sales,input.intent.tenantId).catch(()=>[]))recipients.add(userId);
  const items=input.intent.snapshot.items;
  const what=items.length>1?`carrinho com ${items.length} itens`:items[0]?`${items[0].name}${items[0].variantLabel?` (${items[0].variantLabel})`:""}`:"contato pelo formulário";
- const sourceUrl=input.conversationId?`/workspaces/${input.intent.workspaceId}/conversas?conversation=${input.conversationId}`:input.dealId?`/workspaces/${input.intent.workspaceId}/crm/oportunidades?deal=${input.dealId}`:undefined;
+ const sourceUrl=input.conversationId?`/workspaces/${input.intent.workspaceId}/conversas?conversation=${input.conversationId}`:input.dealId?`/workspaces/${input.intent.workspaceId}/site/oportunidades?dealId=${input.dealId}`:undefined;
  for(const userId of recipients)notifyBestEffort(deps.notification,{tenantId:input.intent.tenantId,workspaceId:input.intent.workspaceId,userId,title:"Novo interesse recebido pelo site",body:`${input.customer} · ${what} · origem: Site${input.assigneeUserId?"":" · aguardando responsável"}`,sourceType:"site_lead",sourceId:input.intent.id,sourceUrl});
 }
 
@@ -96,7 +121,8 @@ export async function convertSalesIntentFromInbound(deps:SiteLeadDeps,input:{ten
  const found=await deps.commerceRepository.getIntentByReference(reference);
  // Referência de outro tenant/workspace é tratada como inexistente (nunca vaza nem converte).
  if(!found||found.tenantId!==input.tenantId||found.workspaceId!==input.workspaceId)return {status:"ignored",reason:"unknown_reference"};
- if(found.status==="CONVERTED")return {status:"already_converted",intentId:found.id,dealId:found.dealId};
+ if(found.selectionCustomer&&normalizePhoneNumber(found.selectionCustomer.phone)!==normalizePhoneNumber(input.inboxContact.phoneNormalized))return {status:"ignored",reason:"different_customer"};
+ if(found.status==="CONVERTED"&&found.conversationId)return {status:"already_converted",intentId:found.id,dealId:found.dealId};
  const now=deps.now?.()??new Date();
  if(Date.parse(found.expiresAt)<=now.getTime())return {status:"ignored",reason:"expired",intentId:found.id};
  const intent=await deps.commerceRepository.claimIntent({id:found.id,staleBefore:new Date(now.getTime()-STALE_CLAIM_MS).toISOString()});
@@ -113,10 +139,10 @@ export async function convertSalesIntentFromInbound(deps:SiteLeadDeps,input:{ten
   await deps.commerceRepository.updateIntentLinks(intent.id,{contactId,conversationId:conversation.id});
   const attendance=await deps.inbox?.attendanceRepository?.getOpenByConversation(conversation.id).catch(()=>undefined);
   const teamId=conversation.currentTeamId??settings.teamId;
-  const dealId=settings.createOpportunityFromWhatsapp?await ensureOpportunity(deps,{...intent,contactId},{contactId,ownerUserId:conversation.assignedUserId,teamId}):undefined;
+  const dealId=intent.dealId||settings.createOpportunityFromWhatsapp?await ensureOpportunity(deps,{...intent,contactId},{contactId,ownerUserId:conversation.assignedUserId,teamId}):undefined;
   const completed=await deps.commerceRepository.completeIntent(intent.id,{contactId,conversationId:conversation.id,attendanceId:attendance?.id,dealId});
   if(intent.anonymousSessionId&&contactId)await deps.commerceRepository.attachContactToSession({siteId:intent.siteId,anonymousSessionId:intent.anonymousSessionId,contactId}).catch(()=>undefined);
-  await deps.commerceRepository.recordEvent({tenantId:intent.tenantId,workspaceId:intent.workspaceId,siteId:intent.siteId,type:"SALES_INTENT_CONVERTED",anonymousSessionId:intent.anonymousSessionId,contactId,salesIntentId:intent.id,productId:intent.productId,variantId:intent.variantId,utm:intent.utm}).catch(()=>undefined);
+  await deps.commerceRepository.recordEvent({tenantId:intent.tenantId,workspaceId:intent.workspaceId,siteId:intent.siteId,type:"SALES_INTENT_CONVERTED",eventKey:`intent-converted:${intent.id}`,anonymousSessionId:intent.anonymousSessionId,contactId,salesIntentId:intent.id,productId:intent.productId,variantId:intent.variantId,utm:intent.utm}).catch(()=>undefined);
   await notifyLead(deps,{intent,settings,customer:input.inboxContact.name||input.inboxContact.phoneNormalized||"Cliente",assigneeUserId:conversation.assignedUserId,conversationId:conversation.id,dealId});
   deps.log?.("SalesIntentConverted",{intentId:intent.id,type:intent.type,siteId:intent.siteId,hasDeal:!!dealId});
   return {status:"converted",intentId:completed?.id??intent.id,dealId,assignedUserId:conversation.assignedUserId};
@@ -137,12 +163,13 @@ export async function attachAttendanceToConvertedIntent(deps:SiteLeadDeps,input:
  * mesmo sem WhatsApp conectado. Se a mensagem com a referência chegar depois, a conversão só
  * vincula a conversa a este mesmo contato e oportunidade (idempotente via intent.contactId/dealId).
  */
-export async function processSiteCartLead(deps:SiteLeadDeps,input:{intentId:string;contactId:string;customer:string}):Promise<{dealId?:string}>{
+export async function processSiteCartLead(deps:SiteLeadDeps,input:{intentId:string;contactId?:string;customer:string;reconcile?:boolean}):Promise<{dealId?:string}>{
  const intent=await deps.commerceRepository.getIntent(input.intentId);if(!intent)return {};
  const settings=await settingsFor(deps,intent.siteId);
  await deps.commerceRepository.updateIntentLinks(intent.id,{contactId:input.contactId});
- const ownerUserId=settings.teamId&&deps.inbox?.teamRepository&&deps.inbox.teamMembershipRepository?(await resolveNextTeamMember({teamRepository:deps.inbox.teamRepository,teamMembershipRepository:deps.inbox.teamMembershipRepository},{teamId:settings.teamId}).catch(()=>undefined))?.userId:undefined;
- const dealId=await ensureOpportunity(deps,{...intent,contactId:input.contactId},{contactId:input.contactId,ownerUserId,teamId:settings.teamId});
+ const existingDeal=intent.dealId?await deps.sales.dealRepository.getById(intent.dealId):undefined;
+ const ownerUserId=existingDeal?.ownerUserId??(!intent.dealId&&settings.teamId&&deps.inbox?.teamRepository&&deps.inbox.teamMembershipRepository?(await resolveNextTeamMember({teamRepository:deps.inbox.teamRepository,teamMembershipRepository:deps.inbox.teamMembershipRepository},{teamId:settings.teamId}).catch(()=>undefined))?.userId:undefined);
+ const dealId=await ensureOpportunity(deps,{...intent,contactId:input.contactId},{contactId:input.contactId,ownerUserId,teamId:settings.teamId,reconcile:input.reconcile});
  await notifyLead(deps,{intent,settings,customer:input.customer,assigneeUserId:ownerUserId,dealId});
  deps.log?.("SiteCartLeadCreated",{intentId:intent.id,siteId:intent.siteId,dealId});
  return {dealId};

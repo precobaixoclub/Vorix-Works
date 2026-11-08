@@ -1,3 +1,4 @@
+import {selectionUrl} from "./site-selection-links.js";
 import {evaluateCommercialRules,pricingFingerprint,pricingLine} from "../commerce/commercial-rule-use-cases.js";
 import type {AppliedCommercialRule,RuleProgress} from "../../domain/commerce/commercial-rules.js";
 import {createHash,randomBytes} from "node:crypto";
@@ -6,11 +7,12 @@ import type {Product} from "../../domain/crm/crm.model.js";
 import {SALES_INTENT_TTL_MS,extractSalesIntentReference,isSalesIntentReference,newSalesIntentReference,salesIntentWhatsappMessage,siteCommerceSettingsSchema,type SalesIntent,type SalesIntentItem,type SalesIntentType,type SiteCommerceSettings,type Utm} from "../../domain/sites/site-commerce.js";
 import type {CreateSalesIntentInput,SiteCartItemSnapshot,SiteCommerceRepositoryPort,SiteEventInput} from "../ports/site-commerce-repository.port.js";
 import {commerceContext,isPublicCatalogProduct,presentPublicProduct,resolvePublishedSite,type PublicSiteProduct,type SiteCommerceContext,type SiteEngineDeps} from "./site-use-cases.js";
-import {signOwnedUrl,OBJECT_URL_TTL} from "../../shared/utils/object-url-signing.js";
+import {signOwnedUrl,stripObjectUrlSignature,OBJECT_URL_TTL} from "../../shared/utils/object-url-signing.js";
 
 export type SiteCommerceDeps=SiteEngineDeps&{commerceRepository:SiteCommerceRepositoryPort;
  /** Registra o pedido do carrinho no CRM (contato já criado → oportunidade com os itens). Vem da ponte Site→CRM. */
- registerCartLead?:(input:{intentId:string;contactId:string;customer:string})=>Promise<{dealId?:string}>;
+ registerCartLead?:(input:{intentId:string;contactId?:string;customer:string;reconcile?:boolean})=>Promise<{dealId?:string}>;
+selectionDealOpen?:(dealId:string,tenantId:string,workspaceId:string)=>Promise<boolean>;
 teamBelongsToWorkspace?:(input:{tenantId:string;workspaceId:string;teamId:string})=>Promise<boolean>;now?:()=>Date;log?:(event:string,data:Record<string,unknown>)=>void};
 export type PublicLookup={slug?:string;hostname?:string};
 export type VisitorContext={sessionId?:string;pageUrl?:string;utm?:Utm;eventKey?:string;referrer?:string;device?:"mobile"|"tablet"|"desktop"|"unknown"};
@@ -44,7 +46,7 @@ export function availableQuantity(resolved:Resolved){return resolved.variant?res
 export function itemSnapshot(resolved:Resolved,quantity:number):SalesIntentItem{
  const {product,presented,variant}=resolved;
  const specifications=Object.entries(presented.attributes).slice(0,12).map(([key,value])=>({label:presented.attributeLabels[key]??key,value:typeof value==="boolean"?(value?"Sim":"Não"):String(value)}));
- return {productId:product.id,variantId:variant?.id,name:product.name,variantLabel:variantLabel(resolved),sku:variant?.sku??product.code,imageUrl:canonicalImage(product),quantity,unitPriceCents:variant?.originalPriceCents??variant?.priceCents??product.priceCents,currency:product.currency,...(specifications.length?{specifications}:{})};
+ return {productId:product.id,variantId:variant?.id,name:product.name,variantLabel:variantLabel(resolved),sku:variant?.sku??product.code,imageUrl:variant?.imageUrl?stripObjectUrlSignature(variant.imageUrl):canonicalImage(product),quantity,unitPriceCents:variant?.originalPriceCents??variant?.priceCents??product.priceCents,currency:product.currency,...(specifications.length?{specifications}:{})};
 }
 /** Guarda a URL canônica (sem assinatura) para a imagem continuar válida no histórico. */
 function canonicalImage(product:Product){return product.imageUrls[0];}
@@ -57,9 +59,9 @@ async function createIntent(deps:SiteCommerceDeps,input:Omit<CreateSalesIntentIn
   catch(error){if((error as {code?:string})?.code==="23505"&&attempt<4&&String((error as {constraint?:string}).constraint??"").includes("reference"))continue;throw error;}
  }
 }
-function whatsappUrl(number:string,intent:Pick<SalesIntent,"type"|"reference"|"snapshot">){return `https://wa.me/${number}?text=${encodeURIComponent(salesIntentWhatsappMessage(intent))}`;}
-function intentResult(intent:SalesIntent,number:string){
- return {reference:intent.reference,redirectPath:`/i/${intent.reference}`,whatsappUrl:whatsappUrl(number,intent)};
+function whatsappUrl(number:string,intent:Pick<SalesIntent,"type"|"reference"|"snapshot"|"selectionToken">){return `https://wa.me/${number}?text=${encodeURIComponent(salesIntentWhatsappMessage(intent,intent.selectionToken?selectionUrl(intent.selectionToken):undefined))}`;}
+export function intentResult(intent:SalesIntent,number:string){
+ return {reference:intent.reference,selectionPath:intent.selectionToken?`/selecao/${intent.selectionToken}`:undefined,redirectPath:`/i/${intent.reference}`,whatsappUrl:whatsappUrl(number,intent)};
 }
 
 /** Visitante clicou em "Falar no WhatsApp" num produto. Cria só a intenção — nunca contato ou oportunidade. */
@@ -170,13 +172,13 @@ export async function setPublicCartItem(deps:SiteCommerceDeps,input:{lookup:Publ
  return {...(await presentCart(deps,context,cart,token)).view,token};
 }
 /** "Finalizar pelo WhatsApp": congela o carrinho numa intenção CART_WHATSAPP. Repetir devolve a mesma intenção. */
-export async function checkoutPublicCartToWhatsapp(deps:SiteCommerceDeps,input:{lookup:PublicLookup;token:string;requestKey:string;customer?:{name:string;phone:string}}&VisitorContext){
+export async function checkoutPublicCartToWhatsapp(deps:SiteCommerceDeps,input:{lookup:PublicLookup;token:string;requestKey:string;customer?:{name:string;phone:string};review?:boolean}&VisitorContext){
  const context=await publicContext(deps,input.lookup);const number=context.snapshot.content.whatsapp;
  const cartLead=context.commerce.settings.cartLead;
  if(!number&&!cartLead)throw Error("SITE_VALIDATION: o WhatsApp da empresa não está configurado.");
- if(cartLead&&!input.customer)throw Error("SITE_VALIDATION: informe seu nome e WhatsApp para finalizar o pedido.");
+ if(cartLead&&!input.customer&&!input.review)throw Error("SITE_VALIDATION: informe seu nome e WhatsApp para finalizar o pedido.");
  // Sem número no site, o pedido fica registrado no Vorix e a equipe entra em contato.
- const result=(intent:SalesIntent)=>number?intentResult(intent,number):{reference:intent.reference,received:true as const};
+ const result=(intent:SalesIntent)=>number?intentResult(intent,number):{reference:intent.reference,selectionPath:intent.selectionToken?`/selecao/${intent.selectionToken}`:undefined,received:true as const};
  const cart=await deps.commerceRepository.getCart({siteId:context.site.id,tokenHash:hashToken(input.token)});
  if(!cart)throw Error("SITE_NOT_FOUND: carrinho não encontrado.");
  const repeated=await deps.commerceRepository.findIntentByRequestKey({siteId:context.site.id,requestKey:input.requestKey});
@@ -195,12 +197,12 @@ export async function checkoutPublicCartToWhatsapp(deps:SiteCommerceDeps,input:{
  const items=lines.map(line=>({...itemSnapshot(line.resolved!,line.quantity),unitPriceCents:line.unitPriceCents,totalCents:line.totalCents,pricing:{originalUnitPriceCents:line.originalUnitPriceCents,discountCents:line.discountCents,appliedRules:line.appliedRules}}));
  const currencies=new Set(items.map(item=>item.currency));if(currencies.size>1)throw Error("SITE_VALIDATION: o carrinho tem produtos em moedas diferentes.");
  const utm=cleanUtm(input.utm),pageUrl=safePageUrl(input.pageUrl);
- const {intent,created}=await createIntent(deps,{tenantId:cart.tenantId,workspaceId:cart.workspaceId,siteId:cart.siteId,type:"CART_WHATSAPP",snapshot:{items,subtotalCents:items.reduce((sum,item)=>sum+item.totalCents,0),currency:items[0].currency,siteName:context.snapshot.content.name},pageUrl,utm,anonymousSessionId:input.sessionId,requestKey:input.requestKey});
+ const {intent,created}=await createIntent(deps,{tenantId:cart.tenantId,workspaceId:cart.workspaceId,siteId:cart.siteId,type:"CART_WHATSAPP",snapshot:{couponCode:cart.couponCode,items,subtotalCents:items.reduce((sum,item)=>sum+item.totalCents,0),currency:items[0].currency,siteName:context.snapshot.content.name},pageUrl,utm,anonymousSessionId:input.sessionId,requestKey:input.requestKey});
  if(lines.length===allLines.length)await deps.commerceRepository.checkoutCart({cartId:cart.id,salesIntentId:intent.id});
  else for(const line of lines)await deps.commerceRepository.removeCartItem({cartId:cart.id,productId:line.productId,variantId:line.variantId});
  const base={tenantId:intent.tenantId,workspaceId:intent.workspaceId,siteId:intent.siteId,anonymousSessionId:input.sessionId,cartId:cart.id,salesIntentId:intent.id,pageUrl,utm};
  if(created){emit(deps,{...base,type:"CART_WHATSAPP_START"});emit(deps,{...base,type:"SALES_INTENT_CREATED"});deps.log?.("WhatsAppCartStarted",{intentId:intent.id,siteId:intent.siteId,lines:items.length});}
- if(created&&cartLead&&input.customer){
+ if(created&&cartLead&&input.customer&&!input.review){
   // Mesmo padrão do formulário: falha no CRM nunca perde o pedido do visitante; o erro fica no log.
   try{
    const list=items.map(item=>`${item.quantity}x ${item.name}${item.variantLabel?` (${item.variantLabel})`:""}`).join("\n");
@@ -222,6 +224,6 @@ export async function saveSiteCommerceSettings(deps:SiteCommerceDeps,input:{site
  return deps.commerceRepository.saveSettings({siteId:input.site.id,tenantId:input.site.tenantId,workspaceId:input.site.workspaceId,settings,actorUserId:input.actorUserId});
 }
 export async function listSiteSalesIntents(deps:SiteCommerceDeps,input:{tenantId:string;workspaceId:string;siteId?:string;limit?:number;visibility?:{global:boolean;teamIds:readonly string[];ownerUserIds:readonly string[]}}){
- return (await deps.commerceRepository.listIntents({...input,limit:Math.min(200,Math.max(1,input.limit??50))})).map(intent=>({...intent,anonymousSessionId:undefined,snapshot:{...intent.snapshot,items:intent.snapshot.items.map(presentIntentItem)}}));
+ return (await deps.commerceRepository.listIntents({...input,limit:Math.min(200,Math.max(1,input.limit??50))})).map(intent=>({...intent,customerName:intent.selectionCustomer?.name,anonymousSessionId:undefined,selectionToken:undefined,selectionCustomer:undefined,selectionHistory:undefined,selectionPath:intent.selectionToken?`/selecao/${intent.selectionToken}`:undefined,snapshot:{...intent.snapshot,items:intent.snapshot.items.map(presentIntentItem)}}));
 }
 export type {PublicSiteProduct,SalesIntentType};

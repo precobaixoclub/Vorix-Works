@@ -560,6 +560,7 @@ export async function registerV1Routes(app: FastifyInstance): Promise<void> {
         teamBelongsToWorkspace: async ({ tenantId, workspaceId, teamId }) => { const team = await identity.teamRepository.getById(teamId); return !!team && team.tenantId === tenantId && team.workspaceId === workspaceId; },
         log: siteLead.log,
         registerCartLead: (input) => processSiteCartLead(siteLead, input),
+        selectionDealOpen: async (dealId,tenantId,workspaceId) => {const deal=await identity.dealRepository.getById(dealId);return !!deal&&deal.tenantId===tenantId&&deal.workspaceId===workspaceId&&deal.status==="open";},
         access: { teamMembershipRepository: identity.teamMembershipRepository },
       });
       await registerCommerceRoutes(app, {

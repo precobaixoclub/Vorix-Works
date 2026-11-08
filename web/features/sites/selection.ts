@@ -1,0 +1,3 @@
+import type {PublicSiteProduct} from "./types";
+export type SelectionItem={productId:string;variantId?:string;name:string;variantLabel?:string;sku?:string;imageUrl?:string;quantity:number;unitPriceCents:number;totalCents?:number;currency:string;specifications?:{label:string;value:string}[]};
+export type PublicSelection={reference:string;revision:number;siteName:string;siteSlug:string;logoUrl?:string;createdAt:string;expiresAt:string;submittedAt?:string;editable:boolean;syncPending:boolean;snapshot:{items:SelectionItem[];subtotalCents:number;currency:string};products:PublicSiteProduct[];history:{revision:number;at:string}[];whatsappUrl?:string};

@@ -1,0 +1,57 @@
+{
+  "release": "7991098811e0840dd48d46e51dfce9db72315443",
+  "sourceFilesMatched": 33,
+  "healthyContainers": 6,
+  "containers": {
+    "zuno-api": "healthy",
+    "vorix-worker": "healthy",
+    "marketplaces-worker": "healthy",
+    "social-provider-gateway": "healthy",
+    "zuno-web": "healthy",
+    "zuno-postgres": "healthy"
+  },
+  "applicationImages": {
+    "zuno-api": {
+      "runningImage": "sha256:8d93358cbebd44bca1ae85a28efdd7a724aebf38cfdd8254bf8a872de1aeb12b",
+      "matchesBuild": true
+    },
+    "vorix-worker": {
+      "runningImage": "sha256:58aa4d6b9c21bebabed5d570947f6488260a2fa724f0055d32542334a4bdf635",
+      "matchesBuild": true
+    },
+    "marketplaces-worker": {
+      "runningImage": "sha256:eaac9fb442dff80eda39d3b6105515764deb0d27d204669419a49c0228ec539b",
+      "matchesBuild": true
+    },
+    "social-provider-gateway": {
+      "runningImage": "sha256:396f5224f5272066d719891ed99f1d0051f2fd63eb245706b514e2f77c742e3e",
+      "matchesBuild": true
+    },
+    "zuno-web": {
+      "runningImage": "sha256:3833cd81530d9130daebb4d9ea69a4d6479acd58f619866dc9afc46f61dd96dd",
+      "matchesBuild": true
+    }
+  },
+  "environmentPreserved": true,
+  "ready": true,
+  "readinessStatus": "degraded",
+  "webStatus": 200,
+  "migration": "0194_site_selections",
+  "migrationApplied": true,
+  "migrationsSummary": "[migrate] 195 aplicada(s), 0 pendente(s).",
+  "deployDone": true,
+  "deployLog": "/var/log/vorix-deploy-79910988-20261108225451.log",
+  "gateLog": "/tmp/selections-gate-79910988-final.log",
+  "archiveSha256": "198ec30a36d319fae5568472e1cc0a8c77bd586a6ad47e0809814d8b527c2d55",
+  "backups": {
+    "code": "/opt/zuno/deploy_backups/pre-79910988-20261108225451.tgz",
+    "database": "/opt/zuno/deploy_backups/db-pre-79910988-20261108225451.sql.gz",
+    "environment": "/root/.env.zuno.pre-79910988-20261108225451",
+    "release": "/opt/zuno/deploy_backups/release-79910988.tgz"
+  },
+  "publicDataUnchanged": true,
+  "backendLinuxTestsPassed": 115,
+  "frontendTestsPassed": 306,
+  "unusedBuildCacheReclaimed": "5.96GB",
+  "diskAvailableMiBAfterCleanup": 9658
+}

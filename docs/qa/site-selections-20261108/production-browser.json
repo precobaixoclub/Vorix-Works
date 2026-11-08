@@ -1,0 +1,14 @@
+{
+  "publishedWeb": true,
+  "viewports": [
+    1440,
+    390
+  ],
+  "noNameOrPhone": true,
+  "singleClickOpensWhatsapp": true,
+  "requestContainsCustomer": false,
+  "horizontalOverflow": false,
+  "javascriptErrors": [],
+  "productionWrites": 0,
+  "fixtureApiIntercepted": true
+}

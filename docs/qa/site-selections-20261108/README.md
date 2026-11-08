@@ -1,5 +1,7 @@
 # Seleções do site, WhatsApp e CRM — 08/11/2026
 
+Publicado em produção na release `79910988`. [Resultado, evidências e recuperação](../../production-site-selections-deploy-20261108.md).
+
 O cliente finaliza pelo WhatsApp com um clique, sem preencher nome e telefone nem passar por formulário intermediário. A seleção e a oportunidade aberta são registradas antes de abrir o WhatsApp com a mensagem pronta. O link na mensagem permite consultar fotos, opções e valores e editar a mesma seleção. O checkout online mantém seu fluxo de pagamento, reserva e entrega.
 
 ## Experiência

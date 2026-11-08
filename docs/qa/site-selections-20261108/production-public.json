@@ -1,0 +1,9 @@
+{
+  "site": "cmkv-wears",
+  "status": 200,
+  "products": 24,
+  "publicContentPreserved": true,
+  "normalizedBeforeSha256": "c81ebcc8fbb0e99d516b41c998adad3c98d82a1d334f0abc5deea85ea25046ed",
+  "normalizedAfterSha256": "c81ebcc8fbb0e99d516b41c998adad3c98d82a1d334f0abc5deea85ea25046ed",
+  "normalization": "Only temporary exp/sig query parameters are removed from object URLs. API envelope metadata is excluded."
+}

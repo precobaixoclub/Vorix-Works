@@ -30,6 +30,7 @@ import { registerBillingWebhookRoutes } from "./routes/billing-webhook.route.js"
 import { successEnvelope } from "./http/response-envelope.js";
 import { registerUploadedObjectRoutes } from "./routes/uploads.route.js";
 import { createObjectKeyReadAuthorizer, registerSignedObjectUrlResponses } from "./object-url-access.js";
+import { migrateInlineWorkspaceLogos } from "../../infrastructure/storage/postgres/inline-workspace-logo-migration.js";
 import { attachProvisioningStreamProxy } from "./meetings-provisioning-stream.js";
 
 export type BuildAppOptions = {
@@ -89,6 +90,12 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     app.addHook("onClose", async () => {
       await identityPool.end();
     });
+    // Background, once per boot: moves legacy inline (base64) workspace logos to object storage.
+    if (config.objectStorage.enabled) {
+      app.addHook("onReady", async () => {
+        void migrateInlineWorkspaceLogos(identityPool, container.objectStorage, (message, details) => app.log.info(details ?? {}, message)).catch((error) => app.log.warn({ error: error instanceof Error ? error.message : "erro" }, "migração de logos inline falhou"));
+      });
+    }
   }
 
   registerDiPlugin(app, container, config);

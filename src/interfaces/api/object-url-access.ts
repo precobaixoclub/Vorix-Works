@@ -15,14 +15,27 @@ export type ObjectKeyReadAuthorizer = (principal: AuthPrincipal, objectKey: stri
  */
 export function createObjectKeyReadAuthorizer(deps: { workspaceRepository: WorkspaceRepositoryPort; qaTenantIds: readonly string[] }): ObjectKeyReadAuthorizer {
   const qaTenants = new Set(deps.qaTenantIds);
+  // A workspace never changes tenant, so its owner is cached. Without this, every image key in a
+  // JSON response (hundreds on a catalog screen) cost one full workspace read from Postgres.
+  const workspaceTenants = new Map<string, Promise<string | undefined>>();
+  const tenantOf = (workspaceId: string) => {
+    let pending = workspaceTenants.get(workspaceId);
+    if (!pending) {
+      pending = deps.workspaceRepository.getById(workspaceId).then((workspace) => workspace?.tenantId, () => undefined);
+      // Unknown or failed lookups are not cached: the workspace may be created right after.
+      void pending.then((tenantId) => { if (!tenantId) workspaceTenants.delete(workspaceId); });
+      if (workspaceTenants.size >= 5_000) workspaceTenants.delete(workspaceTenants.keys().next().value!);
+      workspaceTenants.set(workspaceId, pending);
+    }
+    return pending;
+  };
   return async (principal, objectKey) => {
     const owner = classifyObjectKeyOwner(objectKey);
     if (!owner) return false;
     if (owner.kind === "system_qa") return qaTenants.has(principal.tenantId);
     if (owner.tenantId !== principal.tenantId) return false;
     if (owner.kind === "tenant") return true;
-    const workspace = await deps.workspaceRepository.getById(owner.workspaceId).catch(() => undefined);
-    return Boolean(workspace && workspace.tenantId === principal.tenantId);
+    return (await tenantOf(owner.workspaceId)) === principal.tenantId;
   };
 }
 

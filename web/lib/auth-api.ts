@@ -48,6 +48,9 @@ export type RefreshResult = { accessToken: string; expiresIn: number; tenantId: 
 
 export async function apiRefresh(): Promise<RefreshResult> {
   const csrfToken = readCsrfCookie();
+  // Without the CSRF cookie (set together with the session cookie) the API always rejects the
+  // refresh: skip the request. Store visitors and anyone signed out never hit the API for this.
+  if (!csrfToken) throw new ApiError("UNAUTHENTICATED", "Sessão não encontrada.", 401, false);
   const response = await fetch(`${getApiBaseUrl()}/v1/auth/refresh`, {
     method: "POST",
     credentials: "include",

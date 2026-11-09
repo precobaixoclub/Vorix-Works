@@ -6,7 +6,7 @@ import { Button } from "@/components/Button";
 import { Input, Label } from "@/components/Field";
 import { Modal } from "@/components/Modal";
 import { useMyAccess } from "@/features/auth/access";
-import { activateWorkspace, deactivateWorkspace, updateWorkspace } from "../api";
+import { activateWorkspace, deactivateWorkspace, updateWorkspace, uploadWorkspaceLogo } from "../api";
 import type { Workspace } from "../types";
 import { WorkspacePlanHelp } from "./WorkspacePlanHelp";
 
@@ -42,29 +42,33 @@ export function EditWorkspaceModal({
     await mutate((key) => Array.isArray(key) && key[0] === "workspaces", (current: Workspace[] | undefined) => current?.map(item => item.id === updated.id ? updated : item), { revalidate: true, throwOnError: false });
   }
 
-  function handleLogoChange(file: File | undefined) {
+  const [uploadingLogo, setUploadingLogo] = useState(false);
+
+  async function handleLogoChange(file: File | undefined) {
     if (!file) return;
-    if (!file.type.startsWith("image/")) {
+    if (!["image/png", "image/jpeg", "image/webp", "image/svg+xml"].includes(file.type)) {
       setError("Envie uma imagem em PNG, JPG, WebP ou SVG.");
       return;
     }
-    if (file.size > 1_000_000) {
-      setError("A logo precisa ter até 1 MB.");
+    if (file.size > 2_000_000) {
+      setError("A logo precisa ter até 2 MB.");
       return;
     }
-
-    const reader = new FileReader();
-    reader.onload = () => {
-      setLogoUrl(typeof reader.result === "string" ? reader.result : "");
-      setError(undefined);
-    };
-    reader.onerror = () => setError("Não foi possível carregar a logo.");
-    reader.readAsDataURL(file);
+    // A imagem vai para o storage (otimizada); o espaço guarda só a URL ao salvar.
+    setUploadingLogo(true);
+    setError(undefined);
+    try {
+      setLogoUrl(await uploadWorkspaceLogo(workspace.id, file));
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Não foi possível carregar a logo.");
+    } finally {
+      setUploadingLogo(false);
+    }
   }
 
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
-    if (submitting) return;
+    if (submitting || uploadingLogo) return;
     if (!trimmedName) {
       setError("Nome é obrigatório.");
       return;
@@ -123,17 +127,17 @@ export function EditWorkspaceModal({
             <div className="min-w-0 flex-1">
               <p className="text-sm font-semibold text-ink">Logo do espaço</p>
               <p className="mt-1 text-xs leading-relaxed text-ink-muted">
-                Ideal: imagem quadrada 512 x 512 px, fundo transparente, até 1 MB.
+                Ideal: imagem quadrada 512 x 512 px, fundo transparente, até 2 MB.
               </p>
               <div className="mt-3 flex flex-wrap gap-2">
                 <label className="inline-flex min-h-9 cursor-pointer items-center justify-center rounded-lg border border-border bg-surface-raised px-3 py-2 text-sm font-medium text-ink hover:bg-surface-sunken">
-                  Escolher logo
+                  {uploadingLogo ? "Enviando..." : "Escolher logo"}
                   <input
                     type="file"
                     accept="image/png,image/jpeg,image/webp,image/svg+xml"
                     className="sr-only"
-                    disabled={submitting || !canEdit}
-                    onChange={(event) => handleLogoChange(event.target.files?.[0])}
+                    disabled={submitting || uploadingLogo || !canEdit}
+                    onChange={(event) => { void handleLogoChange(event.target.files?.[0]); event.target.value = ""; }}
                   />
                 </label>
                 {logoUrl ? (
@@ -167,7 +171,7 @@ export function EditWorkspaceModal({
           <Button type="button" variant="secondary" className="w-full sm:w-auto" disabled={submitting} onClick={onClose}>
             Cancelar
           </Button>
-          <Button type="submit" className="w-full sm:w-auto" disabled={submitting || !trimmedName || unchanged}>
+          <Button type="submit" className="w-full sm:w-auto" disabled={submitting || uploadingLogo || !trimmedName || unchanged}>
             {submitting ? "Salvando..." : "Salvar alterações"}
           </Button>
         </div>

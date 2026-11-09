@@ -23,6 +23,8 @@ export type UpdateProductVariantInput = Partial<Pick<ProductVariant, "name" | "c
 
 export type SalesCatalogRepositoryPort = {
   listVariants(productId: string): Promise<ProductVariant[]>;
+  /** Same as `listVariants`, for many products in ONE query (public catalog pages). */
+  listVariantsForProducts?(productIds: readonly string[]): Promise<Map<string, ProductVariant[]>>;
   getVariant(id: string): Promise<ProductVariant | undefined>;
   createVariant(input: CreateProductVariantInput): Promise<ProductVariant>;
   createVariantGrid(input: CreateProductVariantInput[]): Promise<ProductVariant[]>;

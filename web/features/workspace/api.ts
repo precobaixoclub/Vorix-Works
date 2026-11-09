@@ -20,6 +20,13 @@ export async function createWorkspace(input: { name: string; kind?: string }): P
   return apiClient.post<Workspace>("/v1/workspaces", input);
 }
 
+/** Envia a logo para o storage; o espaço guarda só a URL (nunca a imagem embutida). */
+export async function uploadWorkspaceLogo(id: string, file: File): Promise<string> {
+  const data = new FormData();
+  data.append("file", file);
+  return (await apiClient.upload<{ url: string }>(`/v1/workspaces/${encodeURIComponent(id)}/logo`, data)).url;
+}
+
 export async function updateWorkspace(id: string, patch: { name?: string; kind?: string; settings?: Partial<WorkspaceSettings> }): Promise<Workspace> {
   return apiClient.patch<Workspace>(`/v1/workspaces/${id}`, patch);
 }

@@ -1,15 +1,24 @@
 import "server-only";
+import {cache} from "react";
 import type {Metadata} from "next";
 import {getApiBaseUrl} from "@/lib/api-error";
 import type {PublicTenantSite} from "./types";
-export async function fetchTenantSite(lookup:{slug?:string;hostname?:string},options:{path?:string[];sitemap?:boolean}={}):Promise<PublicTenantSite|null>{
+/** Cache tag shared by the site payload and every page rendered from it; publishing expires it. */
+export function publicSiteTag(lookup:{slug?:string;hostname?:string}){return lookup.hostname?`tenant-site:host:${lookup.hostname.toLowerCase()}`:`tenant-site:slug:${lookup.slug??""}`;}
+/** Seconds a rendered public page/site payload may be reused before the next visit refreshes it. */
+export const PUBLIC_SITE_REVALIDATE_SECONDS=15;
+/** Page and metadata share one API call per render (a fetch with `signal` is not deduplicated by Next). */
+export function fetchTenantSite(lookup:{slug?:string;hostname?:string},options:{path?:string[];sitemap?:boolean}={}):Promise<PublicTenantSite|null>{return loadTenantSite(lookup.slug,lookup.hostname,options.path?.join("/")??"",!!options.sitemap);}
+// `cache` compares arguments by identity, so the memoized loader takes primitives only.
+const loadTenantSite=cache(async(slug:string|undefined,hostname:string|undefined,joinedPath:string,sitemap:boolean):Promise<PublicTenantSite|null>=>{
+ const lookup={slug,hostname},options={path:joinedPath?joinedPath.split("/"):[],sitemap};
  // O caminho da página vai junto: o servidor inclui o produto/categoria da URL (catálogo é paginado).
  const extra=[options.path?.length?`path=${encodeURIComponent(options.path.join("/"))}`:"",options.sitemap?"sitemap=1":""].filter(Boolean).join("&");
  const path=(lookup.hostname?`/v1/public/sites/resolve?hostname=${encodeURIComponent(lookup.hostname)}`:`/v1/public/sites/${encodeURIComponent(lookup.slug??"")}`)+(extra?(lookup.hostname?"&":"?")+extra:"");
- const response=await fetch(getApiBaseUrl()+path,{cache:"no-store",signal:AbortSignal.timeout(15000)});
+ const response=await fetch(getApiBaseUrl()+path,{next:{revalidate:PUBLIC_SITE_REVALIDATE_SECONDS,tags:[publicSiteTag(lookup)]},signal:AbortSignal.timeout(15000)});
  if(response.status===404)return null;if(!response.ok)throw Error(`Não foi possível carregar este site (HTTP ${response.status}).`);
  const envelope=await response.json();return envelope.data;
-}
+});
 export function tenantSiteMetadata(site:PublicTenantSite|null,path:string[]=[],base?:string):Metadata{
  if(!site)return {title:"Site indisponível",robots:{index:false,follow:false}};
  const product=path.length===2&&path[0]==="produto"?site.products.find(item=>item.slug===path[1]):undefined;

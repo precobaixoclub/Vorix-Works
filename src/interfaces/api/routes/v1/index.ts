@@ -216,6 +216,7 @@ export async function registerV1Routes(app: FastifyInstance): Promise<void> {
     workspaceRepository: app.zunoContainer.workspaceRepository,
     platformBillingRepository: app.zunoContainer.identity?.platformBillingRepository,
     creativeEngineEntitlementRepository: app.zunoContainer.creativeEngineEntitlementRepository,
+    objectStorage: app.zunoContainer.objectStorage,
   });
   await registerAuthRoutes(app, {
     identity: app.zunoContainer.identity,

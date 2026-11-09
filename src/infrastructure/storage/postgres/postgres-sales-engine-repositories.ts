@@ -62,6 +62,14 @@ export class PostgresSalesCatalogRepository implements SalesCatalogRepositoryPor
     return result.rows.map(toVariant);
   }
 
+  async listVariantsForProducts(productIds: readonly string[]): Promise<Map<string, ProductVariant[]>> {
+    const byProduct = new Map<string, ProductVariant[]>(productIds.map((id) => [id, []]));
+    if (!productIds.length) return byProduct;
+    const result = await this.pool.query<VariantRow>("select * from product_variants where product_id = any($1::text[]) order by product_id, position, name", [[...productIds]]);
+    for (const row of result.rows) byProduct.get(row.product_id)?.push(toVariant(row));
+    return byProduct;
+  }
+
   async getVariant(id: string): Promise<ProductVariant | undefined> {
     const result = await this.pool.query<VariantRow>("select * from product_variants where id = $1", [id]);
     return result.rows[0] ? toVariant(result.rows[0]) : undefined;

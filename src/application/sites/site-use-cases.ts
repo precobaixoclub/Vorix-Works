@@ -43,12 +43,16 @@ export async function commerceContext(deps:Pick<SiteEngineDeps,"commerceReposito
  const checkoutReady=deps.checkoutStatus?(await deps.checkoutStatus(site,settings).catch(()=>({ready:false}))).ready:false;
  return {settings,hasWhatsapp,contactForm:snapshot.content.contactForm,checkoutReady,rules:preview&&snapshot.commerceConfig?snapshot.commerceConfig.rules.map(({id,definition})=>({...definition,id,tenantId:site.tenantId,workspaceId:site.workspaceId,siteId:site.id,revision:1,createdAt:"",updatedAt:""})):await deps.commercialRules?.list({tenantId:site.tenantId,workspaceId:site.workspaceId,siteId:site.id})??[],now:deps.now?.()??new Date()};
 }
-export async function presentPublicProduct(deps:Pick<SiteEngineDeps,"salesCatalogRepository">,product:Product,metadata:CatalogMetadata,commerce:SiteCommerceContext){
-  const variants=(await deps.salesCatalogRepository.listVariants(product.id)).filter(variant=>variant.active&&(!product.details?.options.length||(Object.keys(variant.optionValues??{}).length===product.details.options.length&&product.details.options.every(option=>option.values.includes(variant.optionValues?.[option.key]??"")))));
+export async function presentPublicProduct(deps:Pick<SiteEngineDeps,"salesCatalogRepository">,product:Product,metadata:CatalogMetadata,commerce:SiteCommerceContext,preloadedVariants?:Awaited<ReturnType<SiteEngineDeps["salesCatalogRepository"]["listVariants"]>>){
+  const variants=(preloadedVariants??await deps.salesCatalogRepository.listVariants(product.id)).filter(variant=>variant.active&&(!product.details?.options.length||(Object.keys(variant.optionValues??{}).length===product.details.options.length&&product.details.options.every(option=>option.values.includes(variant.optionValues?.[option.key]??"")))));
   const details=product.details!;
   const availableQuantity=product.trackStock?(details.options.length?variants.reduce((n,item)=>n+Math.max(0,(item.stockQuantity??0)-(item.reservedQuantity??0)),0):Math.max(0,product.stockQuantity-(product.reservedQuantity??0))):undefined;
   const resolvedCommerce=resolveProductCommerce({settings:commerce.settings,hasWhatsapp:commerce.hasWhatsapp,contactForm:commerce.contactForm,checkoutReady:commerce.checkoutReady,product:{type:details.type,itemType:product.itemType,saleMode:details.saleMode,trackStock:product.trackStock,availableQuantity,priceCents:product.priceCents}});
-  const effectiveUnit=(price:number,variantId?:string)=>{const item=evaluateCommercialRules({lines:[pricingLine(product,variantId,1,price,metadata.categories)],rules:commerce.rules??[],channel:resolvedCommerce.allowedActions.includes("buy_now")?"CHECKOUT":"WHATSAPP",now:commerce.now}).items[0];return item.appliedRules.some(rule=>rule.benefit.type==="FIXED")?price:item.totalCents;};
+  // Rules match product, category, collection and currency — never the variant — so the unit price
+  // depends only on the list price: evaluate once per distinct price instead of once per variant.
+  const unitByPrice=new Map<number,number>();
+  const effectiveUnit=(price:number,variantId?:string)=>{const known=unitByPrice.get(price);if(known!==undefined)return known;const value=evaluateUnit(price,variantId);unitByPrice.set(price,value);return value;};
+  const evaluateUnit=(price:number,variantId?:string)=>{const item=evaluateCommercialRules({lines:[pricingLine(product,variantId,1,price,metadata.categories)],rules:commerce.rules??[],channel:resolvedCommerce.allowedActions.includes("buy_now")?"CHECKOUT":"WHATSAPP",now:commerce.now}).items[0];return item.appliedRules.some(rule=>rule.benefit.type==="FIXED")?price:item.totalCents;};
   return {id:product.id,name:product.name,description:product.description,sku:product.code,slug:details.slug??product.id,type:details.type,categoryId:product.categoryId,brandId:product.brandId,priceCents:effectiveUnit(product.priceCents),originalPriceCents:product.priceCents,currency:product.currency,unit:product.unit,
    imageUrls:product.imageUrls.map(url=>signOwnedUrl(url,OBJECT_URL_TTL.preview)),media:details.media.map(item=>({...item,url:signOwnedUrl(item.url,OBJECT_URL_TTL.preview)})),attributes:details.attributes,attributeLabels:Object.fromEntries(metadata.attributes.filter(item=>item.active).map(item=>[item.key,item.unit?`${item.label} (${item.unit})`:item.label])),apparel:details.type==="APPAREL"?details.apparel:undefined,vehicle:details.type==="VEHICLE"?publicVehicleDetails(details.vehicle):undefined,realEstate:details.type==="REAL_ESTATE"?publicRealEstateDetails(details.realEstate):undefined,billingType:product.billingType,options:details.options.map(option=>option.images?{...option,images:Object.fromEntries(Object.entries(option.images).map(([value,url])=>[value,signOwnedUrl(url,OBJECT_URL_TTL.preview)]))}:option),specs:details.specs,seo:details.seo,
    availableQuantity,
@@ -60,6 +64,11 @@ export async function presentPublicProduct(deps:Pick<SiteEngineDeps,"salesCatalo
   };
 }
 export type PublicSiteProduct=Awaited<ReturnType<typeof presentPublicProduct>>;
+/** Presents many products with their variants loaded in ONE query (instead of one per product). */
+export async function presentPublicProducts(deps:Pick<SiteEngineDeps,"salesCatalogRepository">,products:readonly Product[],metadata:CatalogMetadata,commerce:SiteCommerceContext){
+ const batch=deps.salesCatalogRepository.listVariantsForProducts&&products.length>1?await deps.salesCatalogRepository.listVariantsForProducts(products.map(product=>product.id)):undefined;
+ return Promise.all(products.map(product=>presentPublicProduct(deps,product,metadata,commerce,batch?.get(product.id))));
+}
 /** Resolve o site publicado por slug, subdomínio da plataforma ou domínio próprio. */
 export async function resolvePublishedSite(deps:Pick<SiteEngineDeps,"repository"|"hasAccess"|"publicBaseDomain">,lookup:{slug?:string;hostname?:string}):Promise<{site:Site;snapshot:SiteSnapshot}>{
  if(lookup.hostname&&deps.publicBaseDomain&&lookup.hostname.endsWith(`.${deps.publicBaseDomain}`)){
@@ -103,7 +112,8 @@ export async function publicSite(deps:SiteEngineDeps,lookup:{slug?:string;hostna
   products=(await deps.productRepository.listByWorkspace({...site,activeOnly:true})).filter(product=>isPublicCatalogProduct(product,metadata));catalogTotal=products.length;
   if(options.includeSlugs)slugs=products.map(product=>({id:product.id,slug:product.details?.slug??product.id}));
  }
- const catalog=await Promise.all(products.filter(product=>isPublicCatalogProduct(product,metadata)).map(product=>presentPublicProduct(deps,product,metadata,commerce)));
+ const visible=products.filter(product=>isPublicCatalogProduct(product,metadata));
+ const catalog=await presentPublicProducts(deps,visible,metadata,commerce);
  const ids=new Set(catalog.map(product=>product.id));
  const ownedImages=new Set(siteImageUrls(snapshot));
  const signed=<T>(value:T):T=>JSON.parse(JSON.stringify(value,(_key,value)=>typeof value==="string"&&ownedImages.has(value)?signOwnedUrl(value,OBJECT_URL_TTL.preview):value));
@@ -133,5 +143,5 @@ export async function publicCatalogPage(deps:SiteEngineDeps,lookup:{slug?:string
   return {products:await Promise.all(all.slice(query.offset,query.offset+query.limit).map(product=>presentPublicProduct(deps,product,metadata,commerce))),total:all.length};
  }
  const page=await deps.productRepository.listPublicCatalog({tenantId:site.tenantId,workspaceId:site.workspaceId,visibleCategoryIds,search:query.search,categoryIds:category?descendants(metadata,category.id):undefined,brandId:query.brand,ids:query.ids,sort:query.sort,offset:query.offset,limit:query.limit});
- return {products:await Promise.all(page.products.filter(product=>isPublicCatalogProduct(product,metadata)).map(product=>presentPublicProduct(deps,product,metadata,commerce))),total:page.total};
+ return {products:await presentPublicProducts(deps,page.products.filter(product=>isPublicCatalogProduct(product,metadata)),metadata,commerce),total:page.total};
 }

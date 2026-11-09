@@ -65,12 +65,12 @@ export function FashionKidsHero({site, block, basePath}: TemplateHeroProps) {
   const slide = slides[active], image = site.layoutConfig?.heroImageUrl || slide?.imageUrl || block.imageUrl;
   const mobileImage = site.layoutConfig?.heroMobileImageUrl || slide?.mobileImageUrl;
   const copy = slide ?? block, defaultCopy = !copy.title || copy.title === "Boas escolhas começam por aqui.";
-  return <section id={`secao-${block.id}`} className="fk-hero" data-site-active-slide={slide?.id} data-image-fit={block.style?.imageFit??"cover"} data-campaign-visual={!!image || undefined} data-mobile-campaign-visual={!!mobileImage || undefined} aria-label="Coleção Bambilu Kids">
+  return <section id={`secao-${block.id}`} className="fk-hero" data-site-active-slide={slide?.id} data-image-fit={block.style?.imageFit??"cover"} data-campaign-visual={!!image || undefined} data-mobile-campaign-visual={!!mobileImage || undefined} aria-label={`Coleção ${site.content.name}`}>
     <div className="fk-hero-copy"><span className="fk-kicker">{block.eyebrow||"UM MUNDO DE POSSIBILIDADES"}</span>
       <h1>{defaultCopy ? <>Estilo para<br/>acompanhar<br/><em>cada fase.</em></> : copy.title}</h1>
       <p>{defaultCopy ? "Para os dias cheios de histórias. E todos os que ainda estão por vir." : copy.text}</p>
       <a href={siteHref(defaultCopy ? "#catalogo" : copy.buttonUrl || "#catalogo", basePath)} className="fk-text-link">{defaultCopy ? "Ver coleção" : copy.buttonLabel || "Ver coleção"}<ArrowRight size={18}/></a>
-      <span className="fk-hero-footnote"><span aria-hidden="true">✳</span> <SiteText content={site.content} id="fk.heroFootnote"/></span>
+      <span className="fk-hero-footnote"><span className="fk-hero-footnote-mark" aria-hidden="true">✳</span> <SiteText content={site.content} id="fk.heroFootnote"/></span>
     </div>
     <div className="fk-hero-visual"><FashionPhoto product={product} image={image} mobileImage={mobileImage} alt={slide?.imageAlt || block.imageAlt} intrinsic={!!(image || mobileImage)} priority/>
       <a href={`${basePath}#catalogo`} className="fk-photo-caption">{image || site.content.texts?.["fk.heroCaption"]?.trim() ? <SiteText content={site.content} id="fk.heroCaption"/> : <span>Um olhar para a nossa coleção</span>}<ArrowDown size={18}/></a>

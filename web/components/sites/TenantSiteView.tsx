@@ -31,6 +31,7 @@ import {ProductColorChoices,COLOR_CHOICE_STYLES} from "./ProductColorChoices";
 import {FashionKidsHome} from "./templates/FashionKids";
 import {FASHION_KIDS_STYLES} from "./templates/fashion-kids-styles";
 import {STANDARD_STOREFRONT_STYLES} from "./templates/standard-storefront-styles";
+import {MOBILE_USABILITY_STYLES} from "./templates/mobile-usability-styles";
 import {PreviewEditingContext,useEditingSlide} from "./SiteEditorContext";
 import {SiteHeaderSearch,SiteHeaderCart,HEADER_ACTION_STYLES} from "./SiteHeaderActions";
 
@@ -67,7 +68,7 @@ export function TenantSiteRenderer({site,basePath,path=[],preview=false,onNaviga
  const footerColumns=configuredFooterColumns.filter(column=>column.links.some(link=>link.enabled&&safeSiteHref(link.url)));
  if(fashion)(style as Record<string,string|number>)["--site-body-font"]='var(--font-sans), sans-serif';
  return <main style={style} className={`tenant-site tenant-site-${theme.template}${fashion?" tenant-site-fashion-kids":" tenant-site-standard"}${site.importedTemplate?" tenant-site-imported":""}`} onClickCapture={previewClick} data-testid="tenant-site">
-  <style>{TENANT_SITE_STYLES+PREMIUM_TEMPLATE_STYLES+STOREFRONT_STYLES+CHECKOUT_STYLES+PRODUCT_MEDIA_STYLES+COMMERCIAL_PRICING_STYLES+COLOR_CHOICE_STYLES+HEADER_ACTION_STYLES+STANDARD_STOREFRONT_STYLES+(fashion?FASHION_KIDS_STYLES:"")}</style>{site.importedTemplate?<style data-imported-template={site.importedTemplate.id}>{site.importedTemplate.css}</style>:null}<StorefrontProvider site={site} basePath={basePath} preview={preview} path={path}>{!preview?<script type="application/ld+json" dangerouslySetInnerHTML={{__html:siteStructuredData(site,path,canonicalBase??`https://vorixworks.com${basePath}`)}}/>:null}
+  <style>{TENANT_SITE_STYLES+PREMIUM_TEMPLATE_STYLES+STOREFRONT_STYLES+CHECKOUT_STYLES+PRODUCT_MEDIA_STYLES+COMMERCIAL_PRICING_STYLES+COLOR_CHOICE_STYLES+HEADER_ACTION_STYLES+STANDARD_STOREFRONT_STYLES+(fashion?FASHION_KIDS_STYLES:"")+MOBILE_USABILITY_STYLES}</style>{site.importedTemplate?<style data-imported-template={site.importedTemplate.id}>{site.importedTemplate.css}</style>:null}<StorefrontProvider site={site} basePath={basePath} preview={preview} path={path}>{!preview?<script type="application/ld+json" dangerouslySetInnerHTML={{__html:siteStructuredData(site,path,canonicalBase??`https://vorixworks.com${basePath}`)}}/>:null}
   {template?<template.Header site={site} basePath={basePath} query={query} onQuery={setQuery} onSearch={searchCatalog} menuOpen={menuOpen} onMenu={()=>setMenuOpen(!menuOpen)}/>:<>
   {header.announcement?.enabled&&header.announcement.text?<div className="ts-announcement">{safeSiteHref(header.announcement.url)?<a href={siteHref(header.announcement.url,basePath)}>{header.announcement.text}</a>:header.announcement.text}</div>:null}
   <header className={`ts-header ts-header-${theme.headerLayout??(theme.template==="catalog"?"center":"split")} ${header.sticky?"is-sticky":""}`}><div className="ts-container ts-header-row">

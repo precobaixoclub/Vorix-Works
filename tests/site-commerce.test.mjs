@@ -84,6 +84,9 @@ const selectionLines=view=>view.snapshot.items.map(({productId,variantId,quantit
 
 test("finalizar WhatsApp sem cadastro registra oportunidade, identifica o contato pela mensagem e não duplica no reenvio",async()=>{
  const c=await commerce(),deps=selectionDeps(c);
+ await db.pool.query("insert into users(id,email,password_hash,name,status,created_at,updated_at) values($1,$2,'x','Responsável inicial','active',now(),now())",[c.actor.userId,`${c.actor.userId}@default-team.test`]);
+ await db.pool.query("insert into tenant_members(id,user_id,tenant_id,role,created_at,updated_at) values($1,$2,$3,'owner',now(),now())",[`membership-${c.actor.userId}`,c.actor.userId,c.tenantId]);
+ const defaultTeam=await c.inbox.teamRepository.getDefaultForWorkspace(c.scope);
  await saveSiteCommerceSettings(deps,{site:c.site,settings:{mode:"WHATSAPP_CART",cartLead:true},actorUserId:c.actor.userId});
  const cart=await setPublicCartItem(deps,{lookup:c.lookup,productId:c.productA.id,quantity:2});
  const app=Fastify();registerErrorHandler(app);await registerSiteCommerceRoutes(app,{...deps,workspaceRepository:c.workspaceRepository});
@@ -94,9 +97,12 @@ test("finalizar WhatsApp sem cadastro registra oportunidade, identifica o contat
  const intent=await c.commerceRepository.getIntentByReference(result.reference);
  assert.ok(intent.selectionSubmittedAt);assert.ok(intent.dealId);assert.equal(intent.contactId,undefined);assert.equal(intent.selectionCustomer,undefined);
  assert.equal(await contactsOf(c),0);assert.equal(await dealsOf(c),1);
+ const assigned=await c.d.dealRepository.getById(intent.dealId);
+ assert.equal(assigned.ownerUserId,c.actor.userId);assert.equal(assigned.teamId,defaultTeam.id);
  const repeated=await app.inject({method:"POST",url:`/public/sites/${c.site.slug}/cart/checkout`,payload});assert.equal(repeated.statusCode,200);assert.equal(repeated.json().data.reference,result.reference);assert.equal(await dealsOf(c),1);
  const inbound=await c.inbound(new URL(result.whatsappUrl).searchParams.get("text"));
  assert.equal(inbound.result.dealId,intent.dealId);assert.equal(await contactsOf(c),1);assert.equal(await dealsOf(c),1);
+ assert.equal(inbound.conversation.currentTeamId,defaultTeam.id);assert.equal(inbound.conversation.assignedUserId,c.actor.userId);
  const linked=await c.commerceRepository.getIntent(intent.id);assert.ok(linked.contactId);assert.equal((await c.d.dealRepository.getById(intent.dealId)).contactId,linked.contactId);
  await app.close();
 });

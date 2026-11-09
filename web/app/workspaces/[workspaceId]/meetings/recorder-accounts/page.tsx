@@ -128,6 +128,7 @@ export default function RecorderAccountsPage() {
                 ) : (
                   data.accounts.map((account) => {
                     const busy = account.status === "busy";
+                    const offline = data.recorderOnline === false || data.selfServiceAvailable === false;
                     return (
                       <TableRow key={account.id} data-testid="recorder-account-row">
                         <TableCell className="max-w-[280px]">
@@ -150,7 +151,7 @@ export default function RecorderAccountsPage() {
                         <TableCell className="text-right">
                           <div className="flex flex-wrap justify-end gap-1.5">
                             <Button size="sm" variant="secondary" disabled={busy || !account.connected || busyId === account.id} title={busy ? "A conta está gravando agora" : !account.connected ? "Conecte a conta antes de testar" : undefined} onClick={() => run(account, () => testRecorderAccount(account.id), "Teste solicitado")}>Testar</Button>
-                            <Button size="sm" variant="secondary" disabled={busy || busyId === account.id} title={busy ? "A conta está gravando agora" : undefined} onClick={() => setConnecting({ mode: "reconnect", account })}>Reconectar</Button>
+                            <Button size="sm" variant="secondary" disabled={busy || offline || busyId === account.id} title={busy ? "A conta está gravando agora" : offline ? "O serviço de gravação está desligado neste ambiente" : undefined} onClick={() => setConnecting({ mode: "reconnect", account })}>Reconectar</Button>
                             <Button size="sm" variant="secondary" disabled={busy || account.status === "disabled" || busyId === account.id} title={busy ? "A conta está gravando agora" : undefined} onClick={() => run(account, () => disableRecorderAccount(account.id), "Conta desativada")}>Desativar</Button>
                             <Button size="sm" variant="secondary" disabled={busy || busyId === account.id} title={busy ? "A conta está gravando agora" : undefined} onClick={() => setRemoving(account)}>Remover</Button>
                           </div>

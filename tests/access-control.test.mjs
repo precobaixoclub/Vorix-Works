@@ -184,7 +184,9 @@ test("equipes: escopo por participação, configuração só nas equipes gerenci
   await deps.teamMembershipRepository.add({ teamId: sdr.id, userId: anaId, role: "editor", attendanceLevel: "N1" });
 
   const maria = await contextOf(mariaId);
-  assert.deepEqual([...maria.managedTeamIds].sort(), [comercial.id, sdr.id].sort());
+  // Maria é a primeira usuária da conta: responde também pela equipe padrão (0195).
+  const padrao = await deps.teamRepository.getDefaultForWorkspace({ tenantId, workspaceId: workspace.id });
+  assert.deepEqual([...maria.managedTeamIds].sort(), [padrao.id, comercial.id, sdr.id].sort());
   assert.ok(canConfigureTeam(maria, "inbox:configure_kanban", "inbox", comercial.id));
   assert.ok(!canConfigureTeam(maria, "inbox:configure_kanban", "inbox", suporte.id), "não configura equipe que não gerencia");
   assert.ok(!canConfigureTeam(maria, "pipeline:configure", "deal", undefined), "funil da empresa toda exige escopo global");
@@ -211,7 +213,7 @@ test("equipes: escopo por participação, configuração só nas equipes gerenci
   // Dashboard: Maria vê Comercial, SDR e consolidado; não vê Suporte nem a empresa; Carlos só a si.
   const mariaActor = { tenantId, userId: mariaId, role: "admin", permissions: maria.permissions };
   assert.deepEqual(await resolveReportSubject(deps, mariaActor, { teamId: comercial.id }), { teamId: comercial.id });
-  assert.deepEqual([...(await resolveReportSubject(deps, mariaActor, { teamId: "mine" })).teamIds].sort(), [comercial.id, sdr.id].sort());
+  assert.deepEqual([...(await resolveReportSubject(deps, mariaActor, { teamId: "mine" })).teamIds].sort(), [padrao.id, comercial.id, sdr.id].sort());
   await assert.rejects(resolveReportSubject(deps, mariaActor, { teamId: suporte.id }), /SALES_REPORT_FORBIDDEN/);
   const carlosActor = { tenantId, userId: carlosId, role: "editor", permissions: carlos.permissions };
   assert.deepEqual(await resolveReportSubject(deps, carlosActor, {}), { userId: carlosId });

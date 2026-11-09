@@ -21,6 +21,7 @@ const UPDATE_BODY_SCHEMA = {
     workspaceId: { type: "string", minLength: 1 },
     name: { type: "string", minLength: 1, maxLength: 200 },
     roundRobinEnabled: { type: "boolean" },
+    isDefault: { type: "boolean", const: true },
     timezone: { type: "string", minLength: 1, maxLength: 100 },
   },
 } as const;
@@ -53,6 +54,7 @@ function translateTeamError(error: unknown): never {
   if (error instanceof Error && (error.message.startsWith("TEAM_NOT_FOUND") || error.message.startsWith("TEAM_MEMBER_NOT_FOUND"))) throw new NotFoundError(error.message);
   // Bloco "roteamento por equipe" — achado de revisão (ver `PostgresTeamRepository.delete`).
   if (error instanceof Error && error.message.startsWith("TEAM_LINKED_TO_CHANNEL_ROUTING")) throw new ConflictError(error.message);
+  if (error instanceof Error && error.message.startsWith("TEAM_DEFAULT_")) throw new ConflictError(error.message);
   throw error;
 }
 
@@ -90,19 +92,20 @@ export async function registerTeamsRoutes(app: FastifyInstance, deps: TeamsRoute
   app.patch("/teams/:id", { schema: { params: ID_PARAMS_SCHEMA, body: UPDATE_BODY_SCHEMA } }, async (request) => {
     const principal = requirePermission(request, "team:manage");
     const { id } = request.params as { id: string };
-    const { workspaceId, name, roundRobinEnabled, timezone } = request.body as { workspaceId: string; name: string; roundRobinEnabled?: boolean; timezone?: string };
+    const { workspaceId, name, roundRobinEnabled, timezone, isDefault } = request.body as { workspaceId: string; name: string; roundRobinEnabled?: boolean; timezone?: string; isDefault?: true };
     try {
-      const team = await updateTeam(deps, { teamId: id, tenantId: principal.tenantId, workspaceId, name, roundRobinEnabled, timezone });
+      const team = await updateTeam(deps, { teamId: id, tenantId: principal.tenantId, workspaceId, name, roundRobinEnabled, timezone, isDefault });
       return successEnvelope(team, request.id);
     } catch (error) {
       translateTeamError(error);
     }
   });
 
-  app.delete("/teams/:id", { schema: { params: ID_PARAMS_SCHEMA, body: WORKSPACE_QUERY_SCHEMA } }, async (request, reply) => {
+  app.delete("/teams/:id", { schema: { params: ID_PARAMS_SCHEMA } }, async (request, reply) => {
     const principal = requirePermission(request, "team:manage");
     const { id } = request.params as { id: string };
-    const { workspaceId } = request.body as { workspaceId: string };
+    const workspaceId = (request.query as { workspaceId?: string }).workspaceId ?? (request.body as { workspaceId?: string } | undefined)?.workspaceId;
+    if (!workspaceId) throw new NotFoundError("TEAM_NOT_FOUND: informe o workspace.");
     try {
       await deleteTeam(deps, { teamId: id, tenantId: principal.tenantId, workspaceId });
       reply.code(204);
@@ -165,11 +168,12 @@ export async function registerTeamsRoutes(app: FastifyInstance, deps: TeamsRoute
   });
 
   app.delete("/teams/:id/members/:userId", {
-    schema: { params: { type: "object", required: ["id", "userId"], properties: { id: { type: "string" }, userId: { type: "string" } } }, body: WORKSPACE_QUERY_SCHEMA },
+    schema: { params: { type: "object", required: ["id", "userId"], properties: { id: { type: "string" }, userId: { type: "string" } } } },
   }, async (request, reply) => {
     const principal = requirePermission(request, "team:manage");
     const { id, userId } = request.params as { id: string; userId: string };
-    const { workspaceId } = request.body as { workspaceId: string };
+    const workspaceId = (request.query as { workspaceId?: string }).workspaceId ?? (request.body as { workspaceId?: string } | undefined)?.workspaceId;
+    if (!workspaceId) throw new NotFoundError("TEAM_NOT_FOUND: informe o workspace.");
     try {
       const before = await deps.teamMembershipRepository.getByTeamAndUser(id, userId);
       const actor = await guardTeamChange(deps, principal, { userId, changesManager: before ? isTeamManagerRole(before.role) : false });

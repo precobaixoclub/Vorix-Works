@@ -57,6 +57,8 @@ function translateInviteError(error: unknown): never {
   if (error instanceof Error) {
     // Perfis e permissões (0173) — proteções de acesso.
     if (error.message.startsWith("ACCESS_LAST_OWNER")) throw new ConflictError(error.message);
+    // Equipe padrão (0195): o único responsável N1 não pode sair sem substituto.
+    if (error.message.startsWith("TEAM_DEFAULT_")) throw new ConflictError(error.message.replace(/^[A-Z_]+: /, ""));
     if (error.message.startsWith("ACCESS_PERMISSION_UNKNOWN")) throw new ValidationError(error.message);
     if (error.message.startsWith("ACCESS_")) throw new ForbiddenError(error.message.replace(/^[A-Z_]+: /, ""));
     if (error.message.startsWith("USAGE_LIMIT_REACHED")) throw new ConflictError("Limite de usuários atingido. Ajuste a quantidade em Plano e cobrança antes de cadastrar outro usuário.");

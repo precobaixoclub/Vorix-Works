@@ -78,7 +78,9 @@ export async function deleteTestTenants(client, manifest, { execute = false, bac
         } catch (error) {
           await client.query('rollback to savepoint tenant_delete');
           await client.query('release savepoint tenant_delete');
-          if (error.code !== '23503') throw error;
+          // Default-team guards (0195) behave like dependencies: deleting the workspace cascades
+          // its teams, after which teams/tenant_members delete normally on the next pass.
+          if (error.code !== '23503' && !String(error.message).startsWith('TEAM_DEFAULT_')) throw error;
           retry.push(table); blockers.push({ table, detail: error.detail, constraint: error.constraint });
         }
       }

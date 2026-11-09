@@ -2070,9 +2070,9 @@ async function maybeRouteNewConversationToTeam(deps: InboxUseCaseDeps, conversat
  * atendimento para auditar/testar a distribuição (`queue` = ficou sem equipe nem responsável;
  * `team_queue` = caiu na equipe, sem agente elegível). */
 async function routeConversationByChannel(deps: InboxUseCaseDeps, conversation: InboxConversation): Promise<{ conversation: InboxConversation; rule: InboxDistributionRule }> {
-  if (!deps.channelRoutingRepository) return { conversation, rule: "queue" };
   try {
-    const teamId = await deps.channelRoutingRepository.resolveTeamForNewConversation(conversation.connectionId);
+    const teamId = await deps.channelRoutingRepository?.resolveTeamForNewConversation(conversation.connectionId)
+      ?? (await deps.teamRepository?.getDefaultForWorkspace?.({ tenantId: conversation.tenantId, workspaceId: conversation.workspaceId }))?.id;
     if (!teamId) return { conversation, rule: "queue" };
     let updated = await deps.conversationRepository.setTeam(conversation.id, teamId);
     let rule: InboxDistributionRule = "team_queue";

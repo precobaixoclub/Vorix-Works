@@ -445,6 +445,7 @@ export type TenantMembership = {
  * (rodízio de atendimento); times criados só pra RBAC do CRM (uso original desta entidade) nunca
  * precisam preenchê-los, os defaults já bastam. */
 export type Team = {
+  isDefault?: boolean;
   id: string;
   tenantId: string;
   workspaceId: string;

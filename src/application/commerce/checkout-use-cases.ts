@@ -314,10 +314,10 @@ async function afterPaid(deps:CheckoutDeps,order:Order){
    if(dealId)await deps.orders.update(order.id,{crmDealId:dealId,contactId},{type:"crm_opportunity_won",actorType:"system",data:{dealId}});
   }else if(!order.contactId)await deps.orders.update(order.id,{contactId},{type:"contact_linked",actorType:"system",data:{contactId}});
  }
- // Aviso para a equipe do site (mesma infraestrutura de notificações).
- if(deps.notification?.notificationRepository&&context?.teamId&&deps.teamMembershipRepository)
-  for(const member of await deps.teamMembershipRepository.listByTeam(context.teamId).catch(()=>[]))
-   notifyBestEffort(deps.notification,{tenantId:order.tenantId,workspaceId:order.workspaceId,userId:member.userId,title:`Novo pedido pago #${order.number}`,body:`${order.customer.name} · ${(order.totalCents/100).toLocaleString("pt-BR",{style:"currency",currency:order.currency})} · ${order.delivery.label}`,sourceType:"commerce_order_paid",sourceId:order.id,sourceUrl:`/workspaces/${order.workspaceId}/site/pedidos?pedido=${order.id}`});
+ const teamId=order.teamId??context?.teamId;
+ const recipients=order.ownerUserId?[order.ownerUserId]:teamId&&deps.teamMembershipRepository?(await deps.teamMembershipRepository.listByTeam(teamId).catch(()=>[])).map(member=>member.userId):[];
+ if(deps.notification?.notificationRepository)for(const userId of recipients)
+   notifyBestEffort(deps.notification,{tenantId:order.tenantId,workspaceId:order.workspaceId,userId,title:`Novo pedido pago #${order.number}`,body:`${order.customer.name} · ${(order.totalCents/100).toLocaleString("pt-BR",{style:"currency",currency:order.currency})} · ${order.delivery.label}`,sourceType:"commerce_order_paid",sourceId:order.id,sourceUrl:`/workspaces/${order.workspaceId}/site/pedidos?pedido=${order.id}`});
 }
 async function refundPayment(deps:CheckoutDeps,order:Order,payment:Payment,reason:string){
  if(!payment.providerPaymentId)return;

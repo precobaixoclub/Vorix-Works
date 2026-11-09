@@ -110,6 +110,20 @@ export default function TeamsPage() {
     }
   }
 
+  async function handleSetDefault(team: Team) {
+    if (!canManage) return;
+    setBusy(true);
+    setActionError(undefined);
+    try {
+      await updateTeam(team.id, workspace.id, team.name, { isDefault: true });
+      await mutate();
+    } catch (cause) {
+      setActionError(cause instanceof Error ? cause.message : "Não foi possível definir a equipe padrão.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function handleAddMember() {
     if (!canManage || pickerUnavailable || !selectedTeamId || !memberOptions.some((person) => person.id === memberUserId)) return;
     setBusy(true);
@@ -162,6 +176,10 @@ export default function TeamsPage() {
       actions={<GuardedButton onClick={() => setCreateOpen(true)} allowed={canManage} blockedReason={RBAC_COPY.manageTenant}>Nova equipe</GuardedButton>}
     >
       {actionError ? <p className="mb-4 rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">{actionError}</p> : null}
+      <div className="mb-5 rounded-xl border border-primary/20 bg-primary/5 p-4 text-sm">
+        <p className="font-semibold">Todo novo pedido tem um responsável</p>
+        <p className="mt-1 text-xs leading-relaxed text-muted-foreground">Pedidos e oportunidades sem uma equipe específica vão para a equipe padrão. No início, ela atende com o primeiro usuário da conta. Ao contratar mais pessoas, adicione os membros e configure o principal ou o rodízio. Novos usuários só entram na distribuição quando você os adicionar à equipe.</p>
+      </div>
 
       <div className="grid items-start gap-5 xl:grid-cols-[240px_minmax(0,1fr)]">
         <Card>
@@ -186,13 +204,13 @@ export default function TeamsPage() {
                 )}
               >
                 <button type="button" aria-pressed={selectedTeamId === team.id} onClick={() => { setSelectedTeamId(team.id); setMemberUserId(""); }} className="min-w-0 flex-1 rounded-md px-2 py-2 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-                  <span className="block truncate text-sm font-medium">{team.name}</span>
+                  <span className="block truncate text-sm font-medium">{team.name}{team.isDefault ? <span className="ml-2 text-xs text-primary">Padrão</span> : null}</span>
                   <span className="block text-xs text-muted-foreground">
                     {counts.get(team.id) ?? "Selecione para ver"} membros
                     {team.roundRobinEnabled ? " · Rodízio ativo" : ""}
                   </span>
                 </button>
-                <GuardedButton variant="ghost" className="h-8 w-8 shrink-0 p-0 text-muted-foreground" aria-label={`Excluir equipe ${team.name}`} onClick={() => setPendingDelete(team.id)} allowed={canManage} blockedReason={RBAC_COPY.manageTenant} disabled={busy}>
+                <GuardedButton variant="ghost" className="h-8 w-8 shrink-0 p-0 text-muted-foreground" aria-label={`Excluir equipe ${team.name}`} title={team.isDefault ? "Defina outra equipe como padrão antes de excluir." : undefined} onClick={() => setPendingDelete(team.id)} allowed={canManage} blockedReason={RBAC_COPY.manageTenant} disabled={busy || team.isDefault}>
                   <Trash2 className="h-4 w-4" />
                 </GuardedButton>
               </div>
@@ -220,9 +238,14 @@ export default function TeamsPage() {
               <p className="text-sm text-muted-foreground">Selecione uma equipe para ver seus membros.</p>
             ) : (
               <>
+                {selectedTeam.isDefault ? (
+                  <p className="rounded-lg bg-primary/5 px-3 py-2 text-xs text-primary">Equipe padrão: recebe novos pedidos e oportunidades que não têm outra equipe configurada.</p>
+                ) : (
+                  <GuardedButton variant="secondary" onClick={() => handleSetDefault(selectedTeam)} allowed={canManage} blockedReason={RBAC_COPY.manageTenant} disabled={busy}>Definir como equipe padrão</GuardedButton>
+                )}
                 {!selectedTeam.roundRobinEnabled ? (
                   <p className="rounded-lg bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
-                    Rodízio desligado — toda conversa nova desta equipe vai sempre para o membro principal (⭐) de cada nível.
+                    Rodízio desligado — novos pedidos, oportunidades e conversas desta equipe vão para o membro principal (⭐). Pedidos e oportunidades usam o nível N1.
                   </p>
                 ) : null}
                 <div className="space-y-4 rounded-xl border border-border bg-muted/20 p-4">

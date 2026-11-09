@@ -1,6 +1,7 @@
 export type TenantRole = "owner" | "admin" | "editor" | "viewer";
 
 export type Team = {
+  isDefault?: boolean;
   id: string;
   tenantId: string;
   workspaceId: string;

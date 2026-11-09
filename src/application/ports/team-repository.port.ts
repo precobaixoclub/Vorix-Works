@@ -1,11 +1,12 @@
 import type { Team, TeamMembership, TenantRole } from "../../domain/identity/identity.model.js";
 
 export type CreateTeamInput = { tenantId: string; workspaceId: string; name: string };
-export type UpdateTeamInput = { name?: string; roundRobinEnabled?: boolean; timezone?: string };
+export type UpdateTeamInput = { name?: string; roundRobinEnabled?: boolean; timezone?: string; isDefault?: true };
 
 export type TeamRepositoryPort = {
   create(input: CreateTeamInput): Promise<Team>;
   getById(id: string): Promise<Team | undefined>;
+  getDefaultForWorkspace?(input: { tenantId: string; workspaceId: string }): Promise<Team | undefined>;
   listByWorkspace(input: { tenantId: string; workspaceId: string }): Promise<Team[]>;
   update(id: string, input: UpdateTeamInput): Promise<Team>;
   delete(id: string): Promise<void>;

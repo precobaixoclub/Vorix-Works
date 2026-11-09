@@ -9,7 +9,7 @@ type Row=Record<string,any>;
 const iso=(value:unknown)=>value instanceof Date?value.toISOString():value?String(value):undefined;
 const num=(value:unknown)=>Number(value??0);
 function mapOrder(row:Row,items:Row[]):Order{
- return {id:row.id,tenantId:row.tenant_id,workspaceId:row.workspace_id,siteId:row.site_id??undefined,number:row.number,source:row.source,status:row.status,paymentStatus:row.payment_status,shippingStatus:row.shipping_status,stockState:row.stock_state,
+ return {ownerUserId:row.owner_user_id??undefined,teamId:row.team_id??undefined,id:row.id,tenantId:row.tenant_id,workspaceId:row.workspace_id,siteId:row.site_id??undefined,number:row.number,source:row.source,status:row.status,paymentStatus:row.payment_status,shippingStatus:row.shipping_status,stockState:row.stock_state,
   customerDisplayName:contactLabel(row.canonical_contact??row.customer),contactId:row.contact_id??undefined,customer:row.customer,shippingAddress:row.shipping_address??undefined,delivery:row.delivery,
   subtotalCents:num(row.subtotal_cents),discountCents:num(row.discount_cents),shippingCents:num(row.shipping_cents),totalCents:num(row.total_cents),currency:row.currency,
   crmDealId:row.crm_deal_id??undefined,salesIntentId:row.sales_intent_id??undefined,cartId:row.cart_id??undefined,anonymousSessionId:row.anonymous_session_id??undefined,utm:row.utm??{},
@@ -68,7 +68,7 @@ export class PostgresCommerceOrderRepository implements CommerceOrderRepositoryP
   if(filter.from)add("created_at>=?",filter.from);if(filter.to)add("created_at<?",filter.to);
   if(filter.visibility&&!filter.visibility.global){
    params.push([...filter.visibility.teamIds],[...filter.visibility.ownerUserIds]);const teams=`$${params.length-1}::text[]`,owners=`$${params.length}::text[]`;
-   where.push(`(exists(select 1 from site_commerce_settings s where s.site_id=commerce_orders.site_id and s.tenant_id=commerce_orders.tenant_id and s.workspace_id=commerce_orders.workspace_id and s.settings->>'teamId'=any(${teams})) or exists(select 1 from deals d where d.id=commerce_orders.crm_deal_id and d.tenant_id=commerce_orders.tenant_id and d.workspace_id=commerce_orders.workspace_id and (d.team_id=any(${teams}) or d.owner_user_id=any(${owners}))))`);
+   where.push(`(commerce_orders.owner_user_id=any(${owners}) or commerce_orders.team_id=any(${teams}) or exists(select 1 from site_commerce_settings s where s.site_id=commerce_orders.site_id and s.tenant_id=commerce_orders.tenant_id and s.workspace_id=commerce_orders.workspace_id and s.settings->>'teamId'=any(${teams})) or exists(select 1 from deals d where d.id=commerce_orders.crm_deal_id and d.tenant_id=commerce_orders.tenant_id and d.workspace_id=commerce_orders.workspace_id and (d.team_id=any(${teams}) or d.owner_user_id=any(${owners}))))`);
   }
   if(filter.search){const term=filter.search.trim();params.push(term);const p=`$${params.length}`;where.push(/^\d+$/.test(term)?`(number::text=${p} or customer->>'phone' like '%'||${p}||'%')`:`(customer->>'name' ilike '%'||${p}||'%' or customer->>'email' ilike '%'||${p}||'%')`);}
   const clause=where.join(" and ");
@@ -241,7 +241,7 @@ export class PostgresCommerceOrderRepository implements CommerceOrderRepositoryP
    left join site_commerce_settings s on s.site_id=o.site_id
    left join deals d on d.id=o.crm_deal_id and d.tenant_id=o.tenant_id
    where o.tenant_id=$1 and o.workspace_id=$2 and o.created_at>=$3 and o.created_at<$4
-    and ($5::boolean or s.settings->>'teamId'=any($6::text[]) or d.owner_user_id=any($7::text[]) or d.team_id=any($6::text[]))
+    and ($5::boolean or o.owner_user_id=any($7::text[]) or o.team_id=any($6::text[]) or s.settings->>'teamId'=any($6::text[]) or d.owner_user_id=any($7::text[]) or d.team_id=any($6::text[]))
    group by o.source order by o.source`,[input.tenantId,input.workspaceId,input.from,input.to,input.global,[...input.teamIds],[...input.ownerUserIds]]);
   return rows.map(row=>{const revenueCents=Number(row.gross_cents)-Number(row.refunds_cents);
    return {source:row.source,orders:row.orders,sales:row.sales,revenueCents,refundsCents:Number(row.refunds_cents),averageTicketCents:row.sales?Math.round(Number(row.gross_cents)/row.sales):0,cancellations:row.cancellations,returns:row.returns};});

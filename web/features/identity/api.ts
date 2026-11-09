@@ -10,7 +10,7 @@ export function createTeam(workspaceId: string, name: string): Promise<Team> {
   return apiClient.post<Team>("/v1/teams", { workspaceId, name });
 }
 
-export function updateTeam(teamId: string, workspaceId: string, name: string, options?: { roundRobinEnabled?: boolean; timezone?: string }): Promise<Team> {
+export function updateTeam(teamId: string, workspaceId: string, name: string, options?: { roundRobinEnabled?: boolean; timezone?: string; isDefault?: true }): Promise<Team> {
   return apiClient.patch<Team>(`/v1/teams/${encodeURIComponent(teamId)}`, { workspaceId, name, ...options });
 }
 

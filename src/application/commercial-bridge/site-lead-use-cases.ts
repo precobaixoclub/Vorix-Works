@@ -98,6 +98,10 @@ async function ensureOpportunity(deps:SiteLeadDeps,intent:SalesIntent,input:{con
 }
 async function notifyLead(deps:SiteLeadDeps,input:{intent:SalesIntent;settings:SiteCommerceSettings;customer:string;assigneeUserId?:string;conversationId?:string;dealId?:string}){
  if(!deps.notification?.notificationRepository||!input.settings.notifyTeam)return;
+ if(!input.assigneeUserId&&input.dealId){
+  const deal=await deps.sales.dealRepository.getById(input.dealId);
+  if(deal?.tenantId===input.intent.tenantId&&deal.workspaceId===input.intent.workspaceId)input={...input,assigneeUserId:deal.ownerUserId};
+ }
  const recipients=new Set<string>();
  if(input.assigneeUserId)recipients.add(input.assigneeUserId);
  else if(input.settings.teamId&&deps.teamMembershipRepository)for(const member of await deps.teamMembershipRepository.listByTeam(input.settings.teamId).catch(()=>[]))recipients.add(member.userId);

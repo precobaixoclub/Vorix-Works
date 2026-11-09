@@ -25,11 +25,11 @@ export async function mustTeamBelongToTenantAndWorkspace(deps: TeamUseCaseDeps, 
   return team;
 }
 
-export type UpdateTeamInput = { teamId: string; tenantId: string; workspaceId: string; name?: string; roundRobinEnabled?: boolean; timezone?: string };
+export type UpdateTeamInput = { teamId: string; tenantId: string; workspaceId: string; name?: string; roundRobinEnabled?: boolean; timezone?: string; isDefault?: true };
 
 export async function updateTeam(deps: TeamUseCaseDeps, input: UpdateTeamInput): Promise<Team> {
   await mustTeamBelongToTenantAndWorkspace(deps, input.teamId, input.tenantId, input.workspaceId);
-  return deps.teamRepository.update(input.teamId, { name: input.name, roundRobinEnabled: input.roundRobinEnabled, timezone: input.timezone });
+  return deps.teamRepository.update(input.teamId, { name: input.name, roundRobinEnabled: input.roundRobinEnabled, timezone: input.timezone, isDefault: input.isDefault });
 }
 
 export async function deleteTeam(deps: TeamUseCaseDeps, input: { teamId: string; tenantId: string; workspaceId: string }): Promise<void> {

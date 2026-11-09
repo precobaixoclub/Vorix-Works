@@ -88,9 +88,14 @@ test("signupPublicTransactional: cria User + Membership + Workspace + tenant_bil
   assert.equal(pipelines.rows.length, 1);
   assert.equal(pipelines.rows[0].is_default, true);
   const stages = await db.pool.query("select name, is_won, is_lost from pipeline_stages where pipeline_id = $1 order by position asc", [pipelines.rows[0].id]);
-  assert.equal(stages.rows.length, 6, "6 etapas padrão (Novo, Contato Feito, Proposta Enviada, Negociação, Ganho, Perdido)");
+  assert.equal(stages.rows.length, 7, "7 etapas padrão, incluindo Aguardando faturamento");
   assert.equal(stages.rows.at(-2).is_won, true);
   assert.equal(stages.rows.at(-1).is_lost, true);
+  const defaultTeam = await db.pool.query("select t.id,t.round_robin_enabled,m.user_id,m.is_principal_for_level from teams t join team_memberships m on m.team_id=t.id where t.tenant_id=$1 and t.workspace_id=$2 and t.is_default",[result.tenantId,workspaces.rows[0].id]);
+  assert.equal(defaultTeam.rows.length,1);
+  assert.equal(defaultTeam.rows[0].user_id,result.user.id);
+  assert.equal(defaultTeam.rows[0].is_principal_for_level,true);
+  assert.equal(defaultTeam.rows[0].round_robin_enabled,false);
 });
 
 test("signupPublicTransactional: falha depois de User/Membership/Workspace gravados desfaz TUDO (não deixa tenant órfão)", async () => {

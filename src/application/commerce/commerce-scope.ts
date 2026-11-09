@@ -22,6 +22,7 @@ export async function commerceVisibility(deps:Pick<AccessControlDeps,"teamMember
  */
 export async function orderInScope(visibility:CommerceVisibility,order:Order,lookup:{siteTeamId(siteId:string):Promise<string|undefined>;deal(id:string):Promise<{ownerUserId?:string;teamId?:string}|undefined>}):Promise<boolean>{
  if(visibility.global)return true;
+ if(order.ownerUserId&&visibility.ownerUserIds.includes(order.ownerUserId)||order.teamId&&visibility.teamIds.includes(order.teamId))return true;
  const siteTeam=order.siteId?await lookup.siteTeamId(order.siteId):undefined;
  if(siteTeam&&visibility.teamIds.includes(siteTeam))return true;
  const deal=order.crmDealId?await lookup.deal(order.crmDealId):undefined;

@@ -9,7 +9,6 @@ import type {
 } from "../../../application/ports/team-repository.port.js";
 import type { Team, TeamMembership } from "../../../domain/identity/identity.model.js";
 import { DEFAULT_ATTENDANCE_LEVEL, normalizeAttendanceLevel } from "../../../domain/identity/identity.model.js";
-import { withIdentityLock } from "./identity-advisory-lock.js";
 
 const idGenerator = () => `team-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 const membershipIdGenerator = () => `teammember-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
@@ -22,6 +21,7 @@ function isForeignKeyViolation(error: unknown): boolean {
 }
 
 type TeamRow = {
+  is_default: boolean;
   id: string; tenant_id: string; workspace_id: string; name: string;
   round_robin_enabled: boolean; last_assigned_index_by_level: Record<string, number>; timezone: string;
   created_at: Date; updated_at: Date;
@@ -48,6 +48,11 @@ export class PostgresTeamRepository implements TeamRepositoryPort {
     return result.rows[0] ? this.toDomain(result.rows[0]) : undefined;
   }
 
+  async getDefaultForWorkspace(input: { tenantId: string; workspaceId: string }): Promise<Team | undefined> {
+    const result = await this.pool.query<TeamRow>("select * from teams where tenant_id=$1 and workspace_id=$2 and is_default", [input.tenantId, input.workspaceId]);
+    return result.rows[0] ? this.toDomain(result.rows[0]) : undefined;
+  }
+
   async listByWorkspace(input: { tenantId: string; workspaceId: string }): Promise<Team[]> {
     const result = await this.pool.query<TeamRow>(
       "select * from teams where tenant_id = $1 and workspace_id = $2 order by name asc",
@@ -57,7 +62,11 @@ export class PostgresTeamRepository implements TeamRepositoryPort {
   }
 
   async update(id: string, input: UpdateTeamInput): Promise<Team> {
-    const result = await this.pool.query<TeamRow>(
+    const client = await this.pool.connect();
+    try {
+    await client.query("begin");
+    if (input.isDefault) await client.query("select set_workspace_default_team($1)", [id]);
+    const result = await client.query<TeamRow>(
       `update teams set
          name = coalesce($2, name),
          round_robin_enabled = coalesce($3, round_robin_enabled),
@@ -68,7 +77,14 @@ export class PostgresTeamRepository implements TeamRepositoryPort {
       [id, input.name ?? null, input.roundRobinEnabled ?? null, input.timezone ?? null],
     );
     if (!result.rows[0]) throw new Error(`TEAM_NOT_FOUND: equipe "${id}" não existe.`);
+    await client.query("commit");
     return this.toDomain(result.rows[0]);
+    } catch (error) {
+      await client.query("rollback").catch(() => undefined);
+      throw error;
+    } finally {
+      client.release();
+    }
   }
 
   /**
@@ -92,47 +108,15 @@ export class PostgresTeamRepository implements TeamRepositoryPort {
   }
 
   async selectNextMemberForLevel(teamId: string, level: string): Promise<{ userId: string; usedRoundRobin: boolean } | undefined> {
-    const normalizedLevel = normalizeAttendanceLevel(level);
-    return withIdentityLock(this.pool, `team-roundrobin:${teamId}:${normalizedLevel}`, async (client) => {
-      const teamResult = await client.query<Pick<TeamRow, "round_robin_enabled" | "last_assigned_index_by_level">>(
-        "select round_robin_enabled, last_assigned_index_by_level from teams where id = $1",
-        [teamId],
-      );
-      const team = teamResult.rows[0];
-      if (!team) return undefined;
-
-      const membersResult = await client.query<TeamMembershipRow>(
-        `select m.* from team_memberships m
-         join teams t on t.id = m.team_id
-         join tenant_members tm on tm.user_id = m.user_id and tm.tenant_id = t.tenant_id and tm.status = 'active'
-         where m.team_id = $1 and m.attendance_level = $2 order by m.created_at asc`,
-        [teamId, normalizedLevel],
-      );
-      const members = membersResult.rows;
-      if (members.length === 0) return undefined;
-
-      const principal = members.find((member) => member.is_principal_for_level) ?? members[0];
-
-      if (!team.round_robin_enabled) return { userId: principal.user_id, usedRoundRobin: false };
-
-      const eligible = members.filter((member) => member.participates_in_round_robin);
-      if (eligible.length === 0) return { userId: principal.user_id, usedRoundRobin: false };
-
-      const pointerMap = team.last_assigned_index_by_level ?? {};
-      const pointer = pointerMap[normalizedLevel] ?? 0;
-      const index = pointer % eligible.length;
-      const selected = eligible[index];
-
-      const nextPointerMap = { ...pointerMap, [normalizedLevel]: index + 1 };
-      await client.query("update teams set last_assigned_index_by_level = $2, updated_at = now() where id = $1", [teamId, JSON.stringify(nextPointerMap)]);
-      await client.query("update team_memberships set last_assigned_at = now() where team_id = $1 and user_id = $2", [teamId, selected.user_id]);
-
-      return { userId: selected.user_id, usedRoundRobin: true };
-    });
+    const { rows } = await this.pool.query<{ user_id: string; used_round_robin: boolean }>(
+      "select * from next_team_member($1,$2)", [teamId, normalizeAttendanceLevel(level)],
+    );
+    return rows[0] ? { userId: rows[0].user_id, usedRoundRobin: rows[0].used_round_robin } : undefined;
   }
 
   private toDomain(row: TeamRow): Team {
     return {
+      isDefault: row.is_default,
       id: row.id,
       tenantId: row.tenant_id,
       workspaceId: row.workspace_id,

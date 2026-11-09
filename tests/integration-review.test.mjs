@@ -33,7 +33,7 @@ import { PostgresInboxContactRepository } from "../dist/infrastructure/storage/p
 import { PostgresCommercialMetricsRepository } from "../dist/infrastructure/storage/postgres/postgres-commercial-metrics-repository.js";
 import { AccessResolver } from "../dist/application/identity/access-resolver.js";
 
-let db, deps, ctx, manager, shared, teamA, teamB, entities;
+let db, deps, ctx, manager, shared, teamA, teamB, entities, defaultTeam;
 before(async () => {
   db = await startTestPostgres();
   await applyMigrations(db.pool, join(process.cwd(), "db/migrations"));
@@ -55,6 +55,8 @@ before(async () => {
   shared = await users.create({ email: "shared@review.test", name: "Shared", passwordHash: "x" });
   for (const user of [manager, shared]) await deps.membershipRepository.create({ userId: user.id, tenantId: ctx.tenantId, role: user === manager ? "admin" : "editor" });
   const teams = new PostgresTeamRepository(db.pool);
+  // O primeiro usuário (manager) responde pela equipe padrão criada automaticamente (0195).
+  defaultTeam = await teams.getDefaultForWorkspace(ctx);
   teamA = await teams.create({ ...ctx, name: "A" });
   teamB = await teams.create({ ...ctx, name: "B" });
   for (const [user, team] of [[manager, teamA], [shared, teamA], [shared, teamB]]) await deps.teamMembershipRepository.add({ teamId: team.id, userId: user.id, role: user === manager ? "admin" : "editor" });
@@ -79,7 +81,7 @@ test("legacy all setting cannot override individual permissions; team membership
   const foreignWorkspace = await deps.workspaceRepository.create({ tenantId: "foreign", name: "Foreign" });
   const foreignTeam = await new PostgresTeamRepository(db.pool).create({ tenantId: "foreign", workspaceId: foreignWorkspace.id, name: "Foreign" });
   await deps.teamMembershipRepository.add({ teamId: foreignTeam.id, userId: manager.id, role: "admin" });
-  assert.deepEqual((await deps.teamMembershipRepository.listByUser(manager.id, ctx.tenantId)).map(m => m.teamId), [teamA.id]);
+  assert.deepEqual((await deps.teamMembershipRepository.listByUser(manager.id, ctx.tenantId)).map(m => m.teamId).sort(), [defaultTeam.id, teamA.id].sort());
 });
 
 test("collections: shared colleague does not expose the other team's deals, contacts, tasks or proposals", async () => {
@@ -89,7 +91,7 @@ test("collections: shared colleague does not expose the other team's deals, cont
     assert.deepEqual(records.map(r => r.id), [entities.a[kind].id], kind);
   }
   const report = await resolveReportSubject(deps, actor(), { userId: shared.id });
-  assert.deepEqual(report.teamIds, [teamA.id]);
+  assert.deepEqual([...report.teamIds].sort(), [defaultTeam.id, teamA.id].sort());
 });
 
 test("direct URLs and related IDs: history, delivery, tracking, ownership and tenant are guarded", async () => {
@@ -293,7 +295,7 @@ test("a manager retains their own operational opportunities without gaining acce
   await deps.teamMembershipRepository.add({ teamId: teamB.id, userId: manager.id, role: "editor" });
   const own = await deps.dealRepository.create({ ...ctx, pipelineId: entities.b.deals.pipelineId, stageId: entities.b.deals.stageId, title: "Own operational sale", ownerUserId: manager.id, teamId: teamB.id });
   const scope = await crmScope(deps, actor());
-  assert.deepEqual(scope.teamIdsIn, [teamA.id]);
+  assert.deepEqual([...scope.teamIdsIn].sort(), [defaultTeam.id, teamA.id].sort());
   const records = await deps.dealRepository.listByWorkspace({ ...ctx, ...scope });
   assert.ok(records.some(record => record.id === own.id));
   assert.ok(!records.some(record => record.id === entities.b.deals.id));

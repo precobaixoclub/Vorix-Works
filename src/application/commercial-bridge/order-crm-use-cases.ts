@@ -35,7 +35,7 @@ export async function createWonOpportunityForOrder(deps:OrderCrmDeps,order:Order
  if(!deps.crm||!deps.sales)return undefined;
  const {pipeline,stages}=await ensureDefaultPipeline(deps.crm,order.tenantId,order.workspaceId);
  const stage=[...stages].filter(item=>!item.isWon&&!item.isLost).sort((a,b)=>a.position-b.position)[0];
- const deal=await createDeal(deps.crm,{tenantId:order.tenantId,workspaceId:order.workspaceId,pipelineId:pipeline.id,stageId:stage.id,contactId,title:`Pedido #${order.number} — loja online`,valueCents:0,currency:order.currency,origin:"site_checkout",customFields:{commerceOrderId:order.id,commerceOrderNumber:order.number}});
+ const deal=await createDeal(deps.crm,{tenantId:order.tenantId,workspaceId:order.workspaceId,pipelineId:pipeline.id,stageId:stage.id,contactId,ownerUserId:order.ownerUserId,teamId:order.teamId,title:`Pedido #${order.number} — loja online`,valueCents:0,currency:order.currency,origin:"site_checkout",customFields:{commerceOrderId:order.id,commerceOrderNumber:order.number}});
  const actor=systemActor(order.tenantId);
  for(const item of order.items){
   try{await addDealItem(deps.sales,actor,{workspaceId:order.workspaceId,dealId:deal.id,productId:item.productId,variantId:item.variantId,quantity:item.quantity,proposedUnitPriceCents:item.unitPriceCents});}

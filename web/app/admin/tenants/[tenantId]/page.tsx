@@ -16,7 +16,8 @@ import {
   setTenantMultiplier,
 } from "@/features/platform-admin/api";
 import { useTenantDetail } from "@/features/platform-admin/hooks";
-import { TenantContractPanel } from "@/components/admin/TenantContractPanel";
+import { StatsGrid } from "@/components/StatsGrid";
+import { TenantContractPanel, type TenantContractTab } from "@/components/admin/TenantContractPanel";
 
 /**
  * Detalhe de um tenant (`/admin/tenants/[tenantId]`) — Sprint 25. Tudo o que o admin manual
@@ -35,6 +36,7 @@ export default function AdminTenantDetailPage() {
   const tenantId = decodeURIComponent(params.tenantId);
   const { data, error, isLoading, mutate } = useTenantDetail(tenantId);
   const [busy, setBusy] = useState(false);
+  const [tab, setTab] = useState<TenantTab>("contract");
 
   async function run(action: () => Promise<unknown>) {
     setBusy(true);
@@ -75,186 +77,159 @@ export default function AdminTenantDetailPage() {
 
   const { overview, planName, workspaces, members, recentCreditEntries, usageHistory } = data;
   const { billing, currentUsage } = overview;
+  const activeMembers = members.filter((member) => member.status !== "disabled").length;
+  const activeWorkspaces = workspaces.filter((workspace) => workspace.status === "active").length;
+  const statusLabel = STATUS_LABEL[billing.subscriptionStatus] ?? billing.subscriptionStatus;
 
   return (
     <div className="mx-auto max-w-6xl px-3 py-5 sm:px-6 sm:py-8">
       <div className="mb-4 text-sm">
         <Link href="/admin/tenants" className="text-primary hover:underline">
-          ← Todas as contas
+          ← Clientes
         </Link>
       </div>
-      <PageHeader
-        title={overview.displayName ?? tenantId}
-        description={`Plano ${planName} · status ${billing.subscriptionStatus} · ${formatProfitPercent(billing.priceMultiplier)}% de lucro sobre o custo`}
-      />
+      <PageHeader title={overview.displayName ?? tenantId} description={`Plano ${planName} · ${statusLabel}`} />
 
-      <TenantContractPanel tenantId={tenantId} onChanged={() => mutate()} />
+      <StatsGrid className="mb-6">
+        <MetricCard label="Plano" value={planName} hint={statusLabel} />
+        <MetricCard label="Usuários ativos" value={formatNumber(activeMembers)} hint={`${formatNumber(members.length)} no total`} />
+        <MetricCard label="Espaços ativos" value={formatNumber(activeWorkspaces)} hint={`${formatNumber(workspaces.length)} no total`} />
+        <MetricCard label="Créditos de IA no mês" value={formatNumber(overview.totalCreditsUsedThisMonth)} hint={`Cota mensal: ${formatQuota(billing.monthlyCreditsQuota)}`} />
+      </StatsGrid>
 
-      <h2 className="mb-3 text-lg font-semibold">Uso de IA e créditos</h2>
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-        <MetricCard label="Créditos usados no mês" value={formatNumber(overview.totalCreditsUsedThisMonth)} hint={`Cota mensal: ${formatQuota(billing.monthlyCreditsQuota)}`} />
-        <MetricCard label="Créditos extras" value={formatNumber(billing.creditsExtra)} hint="Somam à cota do plano" />
-        <MetricCard
-          label="Margem estimada de IA"
-          value={formatUsd(overview.currentProfitUsd)}
-          hint={`${formatUsd(currentUsage.customerPriceUsd)} receita · ${formatUsd(currentUsage.providerCostUsd)} custo`}
-          highlight
-        />
-      </div>
+      <nav aria-label="Seções do cliente" className="mb-5 flex gap-1 overflow-x-auto border-b border-border">
+        {TABS.map(([key, label]) => (
+          <button key={key} type="button" onClick={() => setTab(key)} aria-current={tab === key ? "page" : undefined}
+            className={`-mb-px shrink-0 border-b-2 px-3 py-2 text-sm transition-colors ${tab === key ? "border-primary font-medium text-foreground" : "border-transparent text-muted-foreground hover:text-foreground"}`}>
+            {label}
+          </button>
+        ))}
+      </nav>
 
-      <div className="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <div className="text-base font-semibold text-foreground">Ajustar créditos manualmente</div>
-          </CardHeader>
-          <CardBody>
-            <CreditsForm
-              busy={busy}
-              onSubmit={(delta, reason) => run(() => adjustTenantCredits(tenantId, delta, reason))}
-            />
-            <p className="mt-3 text-xs text-muted-foreground">
-              Positivo credita, negativo debita. Use ao liberar tokens após um pagamento manual (Pix, boleto, etc.).
-            </p>
-          </CardBody>
-        </Card>
+      {tab === "contract" || tab === "access" || tab === "history" ? <TenantContractPanel tenantId={tenantId} tab={tab} onChanged={() => mutate()} /> : null}
 
-        <Card>
-          <CardHeader>
-            <div className="text-base font-semibold text-foreground">Percentual de lucro</div>
-          </CardHeader>
-          <CardBody>
-            <ProfitPercentForm
-              current={billing.priceMultiplier}
-              busy={busy}
-              onSubmit={(multiplier) => run(() => setTenantMultiplier(tenantId, multiplier))}
-            />
-            <p className="mt-3 text-xs text-muted-foreground">
-              Quanto cobramos de lucro em cima do custo real dos provedores para este cliente. Padrão da plataforma é 100%
-              (cobramos o dobro do custo) — para uma conta interna própria, use 0% (fica só no custo, sem margem).
-            </p>
-          </CardBody>
-        </Card>
-      </div>
+      {tab === "credits" ? (
+        <div className="space-y-6">
+          <StatsGrid>
+            <MetricCard label="Créditos usados no mês" value={formatNumber(overview.totalCreditsUsedThisMonth)} hint={`Cota mensal: ${formatQuota(billing.monthlyCreditsQuota)}`} />
+            <MetricCard label="Créditos extras" value={formatNumber(billing.creditsExtra)} hint="Somam à cota do plano" />
+            <MetricCard label="Margem estimada de IA" value={formatUsd(overview.currentProfitUsd)} hint={`${formatUsd(currentUsage.customerPriceUsd)} receita · ${formatUsd(currentUsage.providerCostUsd)} custo`} />
+          </StatsGrid>
 
-      <h2 className="mt-8 text-lg font-semibold">Pessoas e espaços de trabalho</h2>
-      <div className="mt-3 grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <div className="text-base font-semibold text-foreground">Espaços desta conta</div>
-          </CardHeader>
-          <CardBody className="p-0">
-            {workspaces.length === 0 ? (
-              <div className="px-5 py-4 text-sm text-muted-foreground">Nenhum workspace.</div>
-            ) : (
-              <ul className="divide-y divide-border">
-                {workspaces.map((ws) => (
-                  <li key={ws.id} className="flex items-center justify-between px-5 py-2 text-sm">
-                    <span>{ws.name}</span>
-                    <span className="text-xs text-muted-foreground">{ws.status}</span>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </CardBody>
-        </Card>
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+            <Card>
+              <CardHeader><div className="text-base font-semibold text-foreground">Dar ou tirar créditos</div></CardHeader>
+              <CardBody>
+                <CreditsForm busy={busy} onSubmit={(delta, reason) => run(() => adjustTenantCredits(tenantId, delta, reason))} />
+                <p className="mt-3 text-xs text-muted-foreground">Positivo dá créditos, negativo tira. Use ao liberar créditos depois de um pagamento manual (Pix, boleto etc.).</p>
+              </CardBody>
+            </Card>
+            <Card>
+              <CardHeader><div className="text-base font-semibold text-foreground">Lucro sobre o custo da IA</div></CardHeader>
+              <CardBody>
+                <ProfitPercentForm current={billing.priceMultiplier} busy={busy} onSubmit={(multiplier) => run(() => setTenantMultiplier(tenantId, multiplier))} />
+                <p className="mt-3 text-xs text-muted-foreground">Quanto cobramos em cima do custo real dos provedores de IA para este cliente. O padrão é 100% (o dobro do custo); para uma conta interna, use 0%.</p>
+              </CardBody>
+            </Card>
+          </div>
 
-        <Card>
-          <CardHeader>
-            <div className="text-base font-semibold text-foreground">Membros</div>
-          </CardHeader>
-          <CardBody className="p-0">
-            {members.length === 0 ? (
-              <div className="px-5 py-4 text-sm text-muted-foreground">Nenhum membro.</div>
-            ) : (
-              <ul className="divide-y divide-border">
-                {members.map((m) => (
-                  <li key={m.userId} className="flex items-center justify-between gap-3 px-5 py-2 text-sm">
-                    <div>
-                      <div className="font-medium">{m.name}</div>
-                      <div className="text-xs text-muted-foreground">{m.email}</div>
-                    </div>
-                    <span className="text-xs uppercase tracking-wide text-muted-foreground">{m.role}</span>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </CardBody>
-        </Card>
-      </div>
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+            <Card>
+              <CardHeader><div className="text-base font-semibold text-foreground">Movimentações de créditos (últimas 25)</div></CardHeader>
+              <CardBody className="p-0">
+                {recentCreditEntries.length === 0 ? (
+                  <div className="px-5 py-4 text-sm text-muted-foreground">Sem movimentações.</div>
+                ) : (
+                  <Table>
+                    <TableHeader><TableRow><TableHead>Quando</TableHead><TableHead>Motivo</TableHead><TableHead className="text-right">Créditos</TableHead></TableRow></TableHeader>
+                    <TableBody>
+                      {recentCreditEntries.map((entry) => (
+                        <TableRow key={entry.id}>
+                          <TableCell className="text-xs text-muted-foreground">{formatDate(entry.occurredAt)}</TableCell>
+                          <TableCell className="text-xs">{entry.reason}</TableCell>
+                          <TableCell className={`text-right font-semibold tabular-nums ${entry.deltaCredits >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-destructive"}`}>{entry.deltaCredits >= 0 ? "+" : ""}{formatNumber(entry.deltaCredits)}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                )}
+              </CardBody>
+            </Card>
+            <Card>
+              <CardHeader><div className="text-base font-semibold text-foreground">Consumo dos últimos 6 meses</div></CardHeader>
+              <CardBody className="p-0">
+                {usageHistory.length === 0 ? (
+                  <div className="px-5 py-4 text-sm text-muted-foreground">Ainda sem histórico.</div>
+                ) : (
+                  <Table>
+                    <TableHeader><TableRow><TableHead>Período</TableHead><TableHead className="text-right">Tokens</TableHead><TableHead className="text-right">Receita</TableHead><TableHead className="text-right">Lucro</TableHead></TableRow></TableHeader>
+                    <TableBody>
+                      {usageHistory.map((row) => (
+                        <TableRow key={row.period}>
+                          <TableCell>{row.period}</TableCell>
+                          <TableCell className="text-right tabular-nums text-muted-foreground">{formatNumber(row.inputTokens + row.outputTokens)}</TableCell>
+                          <TableCell className="text-right tabular-nums">{formatUsd(row.customerPriceUsd)}</TableCell>
+                          <TableCell className="text-right font-semibold tabular-nums text-emerald-600 dark:text-emerald-400">{formatUsd(row.customerPriceUsd - row.providerCostUsd)}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                )}
+              </CardBody>
+            </Card>
+          </div>
+        </div>
+      ) : null}
 
-      <div className="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <div className="text-base font-semibold text-foreground">Histórico de créditos (últimos 25)</div>
-          </CardHeader>
-          <CardBody className="p-0">
-            {recentCreditEntries.length === 0 ? (
-              <div className="px-5 py-4 text-sm text-muted-foreground">Sem movimentações.</div>
-            ) : (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Quando</TableHead>
-                    <TableHead>Motivo</TableHead>
-                    <TableHead className="text-right">Δ tokens</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {recentCreditEntries.map((entry) => (
-                    <TableRow key={entry.id}>
-                      <TableCell className="text-xs text-muted-foreground">{formatDate(entry.occurredAt)}</TableCell>
-                      <TableCell className="text-xs">{entry.reason}</TableCell>
-                      <TableCell className={`text-right font-semibold tabular-nums ${entry.deltaCredits >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-destructive"}`}>
-                        {entry.deltaCredits >= 0 ? "+" : ""}
-                        {formatNumber(entry.deltaCredits)}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            )}
-          </CardBody>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <div className="text-base font-semibold text-foreground">Consumo — últimos 6 meses</div>
-          </CardHeader>
-          <CardBody className="p-0">
-            {usageHistory.length === 0 ? (
-              <div className="px-5 py-4 text-sm text-muted-foreground">Ainda sem histórico.</div>
-            ) : (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Período</TableHead>
-                    <TableHead className="text-right">Tokens</TableHead>
-                    <TableHead className="text-right">Receita</TableHead>
-                    <TableHead className="text-right">Lucro</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {usageHistory.map((row) => (
-                    <TableRow key={row.period}>
-                      <TableCell>{row.period}</TableCell>
-                      <TableCell className="text-right tabular-nums text-muted-foreground">{formatNumber(row.inputTokens + row.outputTokens)}</TableCell>
-                      <TableCell className="text-right tabular-nums">{formatUsd(row.customerPriceUsd)}</TableCell>
-                      <TableCell className="text-right font-semibold tabular-nums text-emerald-600 dark:text-emerald-400">
-                        {formatUsd(row.customerPriceUsd - row.providerCostUsd)}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            )}
-          </CardBody>
-        </Card>
-      </div>
-
-
+      {tab === "people" ? (
+        <div className="space-y-4">
+          <p className="text-sm text-muted-foreground">Somente consulta. Quem acessa quais espaços é definido pelo próprio cliente em Configurações → Usuários.</p>
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+            <Card>
+              <CardHeader><div className="text-base font-semibold text-foreground">Usuários</div></CardHeader>
+              <CardBody className="p-0">
+                {members.length === 0 ? <div className="px-5 py-4 text-sm text-muted-foreground">Nenhum usuário.</div> : (
+                  <ul className="divide-y divide-border">
+                    {members.map((member) => (
+                      <li key={member.userId} className="flex items-center justify-between gap-3 px-5 py-2 text-sm">
+                        <div className="min-w-0">
+                          <div className="truncate font-medium">{member.name}</div>
+                          <div className="truncate text-xs text-muted-foreground">{member.email}</div>
+                        </div>
+                        <span className="shrink-0 text-xs text-muted-foreground">{ROLE_LABEL[member.role] ?? member.role}{member.isAccountOwner ? " · principal" : ""}{member.status === "disabled" ? " · desativado" : ""}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </CardBody>
+            </Card>
+            <Card>
+              <CardHeader><div className="text-base font-semibold text-foreground">Espaços de trabalho</div></CardHeader>
+              <CardBody className="p-0">
+                {workspaces.length === 0 ? <div className="px-5 py-4 text-sm text-muted-foreground">Nenhum espaço.</div> : (
+                  <ul className="divide-y divide-border">
+                    {workspaces.map((workspace) => (
+                      <li key={workspace.id} className="flex items-center justify-between gap-3 px-5 py-2 text-sm">
+                        <span className="truncate">{workspace.name}</span>
+                        <span className="shrink-0 text-xs text-muted-foreground">{WORKSPACE_STATUS_LABEL[workspace.status] ?? workspace.status}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </CardBody>
+            </Card>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
+
+type TenantTab = TenantContractTab | "credits" | "people";
+const TABS: [TenantTab, string][] = [["contract", "Plano e cobrança"], ["access", "Acessos e limites"], ["credits", "Créditos de IA"], ["people", "Usuários e espaços"], ["history", "Histórico"]];
+const STATUS_LABEL: Record<string, string> = { trial: "Em teste grátis", active: "Ativo", past_due: "Pagamento atrasado", cancelled: "Cancelado", expired: "Expirado", suspended: "Suspenso", trial_expired: "Teste grátis encerrado" };
+const ROLE_LABEL: Record<string, string> = { owner: "Administrador", admin: "Gerente", editor: "Atendente", viewer: "Visualizador" };
+const WORKSPACE_STATUS_LABEL: Record<string, string> = { active: "Ativo", inactive: "Inativo", archived: "Arquivado" };
 
 function CreditsForm({ busy, onSubmit }: { busy: boolean; onSubmit: (delta: number, reason: string) => void }) {
   const [delta, setDelta] = useState<string>("");
@@ -349,9 +324,9 @@ function ProfitPercentForm({
   );
 }
 
-function MetricCard({ label, value, hint, highlight }: { label: string; value: string; hint?: string; highlight?: boolean }) {
+function MetricCard({ label, value, hint }: { label: string; value: string; hint?: string }) {
   return (
-    <Card className={highlight ? "border-primary/40 bg-primary/5" : undefined}>
+    <Card>
       <div className="px-5 py-4">
         <div className="text-xs uppercase tracking-wider text-muted-foreground">{label}</div>
         <div className="mt-1 text-2xl font-semibold tabular-nums text-foreground">{value}</div>

@@ -13,17 +13,16 @@ import { TenantAccessEditor } from "./TenantAccessEditor";
 import type { CapacityPreviewResult } from "@/features/billing/types";
 import { accessLabels, date, describeChange, money, quota, selectClass, type Contract } from "./tenant-contract-model";
 
-export function TenantContractPanel({ tenantId, onChanged }: { tenantId: string; onChanged: () => Promise<unknown> }) {
+export type TenantContractTab = "contract" | "access" | "history";
+
+/** Conteúdo das abas de contrato do cliente; o menu de abas fica na página do cliente. */
+export function TenantContractPanel({ tenantId, tab, onChanged }: { tenantId: string; tab: TenantContractTab; onChanged: () => Promise<unknown> }) {
   const path = `/v1/admin/tenants/${encodeURIComponent(tenantId)}`;
   const { data, error, mutate } = useSWR(["admin-contract", tenantId], () => apiClient.get<Contract>(`${path}/contract`));
-  const [tab, setTab] = useState("contract");
   const refresh = async () => { await Promise.all([mutate(), onChanged()]); };
   if (error) return <ErrorState error={error} onRetry={() => mutate()} />;
   if (!data) return <p className="py-8 text-sm text-muted-foreground">Carregando contrato e permissões…</p>;
-  return <section className="my-6 space-y-5" aria-label="Gestão da conta">
-    <nav aria-label="Seções do contrato" className="flex flex-wrap gap-2 border-b border-border pb-3">
-      {[["contract", "Contrato e cobrança"], ["access", "Acessos e limites"], ["history", "Histórico de alterações"]].map(([key, name]) => <Button key={key} variant={tab === key ? "primary" : "secondary"} onClick={() => setTab(key)} aria-pressed={tab === key}>{name}</Button>)}
-    </nav>
+  return <section className="space-y-5">
     {tab === "contract" && <>
       <div className="grid gap-4 md:grid-cols-3">
         <Fact title="Plano contratado" value={data.planName} detail={data.contract.virtual ? "Concessão administrativa, sem assinatura de pagamento" : `Versão ${data.contract.planVersionId}`} />

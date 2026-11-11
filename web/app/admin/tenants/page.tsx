@@ -51,7 +51,7 @@ export default function AdminTenantsPage() {
 
   return (
     <div className="mx-auto max-w-6xl px-3 py-5 sm:px-6 sm:py-8">
-      <PageHeader title="Contas e contratos" description="Gerencie plano, adicionais, acessos, limites e créditos de cada cliente." />
+      <PageHeader title="Clientes" description="Abra um cliente para ver e ajustar o plano, os limites e os créditos de IA." />
 
 
       <Card className="mb-4">

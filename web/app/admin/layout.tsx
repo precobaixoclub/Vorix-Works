@@ -4,12 +4,13 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import type { ReactNode } from "react";
 import { RequirePlatformAdmin } from "@/components/RequirePlatformAdmin";
+import { ADMIN_NAVIGATION, ADMIN_SETTINGS_HREF, isAdminSettingsPage } from "@/components/admin/admin-navigation";
 import { useAuth } from "@/contexts/auth-context";
 
 /**
  * Layout do painel administrativo — Sprint 25. Só monta o shell quando o usuário é
- * `isPlatformAdmin === true`. Sidebar mostra as duas seções principais (Dashboard geral e
- * Contas de clientes); os detalhes de tenant são páginas dinâmicas sob `/admin/tenants/[id]`.
+ * `isPlatformAdmin === true`. A sidebar tem só três destinos (`admin-navigation.ts`): Visão geral,
+ * Clientes e Configurações; cada tela de configuração ganha o atalho "← Configurações".
  * O botão de "Voltar ao Vorix" é útil porque o admin também tem workspaces próprios.
  */
 export default function AdminLayout({ children }: { children: ReactNode }) {
@@ -20,22 +21,14 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
   );
 }
 
-const navigationGroups = [
-  { label: "Gestão", links: [["/admin", "Visão geral"], ["/admin/tenants", "Contas e contratos"], ["/admin/growth", "Aquisição e conversão"]] },
-  { label: "Produtos", links: [["/admin/site", "Sites e modelos"], ["/admin/meetings-bots", "Contas de gravação"], ["/admin/meetings-transcription", "Transcrição de reuniões"], ["/admin/social-providers", "Integrações sociais"]] },
-  { label: "Plataforma", links: [["/admin/ai-providers", "Provedores de IA"], ["/admin/settings", "Gateway e extração de IA"], ["/admin/billing-provider", "Provedor de cobrança"]] },
-];
-
 function AdminShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const { state, logout } = useAuth();
   const user = state.status === "authenticated" ? state.user : null;
 
-  const isActive = (href: string) => {
-    if (href === "/admin") return pathname === "/admin";
-    return pathname?.startsWith(href);
-  };
+  const current = pathname ?? "";
+  const navLinks = ADMIN_NAVIGATION.map((item) => <SidebarLink key={item.href} href={item.href} active={item.matches(current)}>{item.label}</SidebarLink>);
 
   return (
     <div className="flex min-h-dvh min-w-0 flex-col bg-surface-sunken text-ink md:flex-row">
@@ -65,14 +58,14 @@ function AdminShell({ children }: { children: ReactNode }) {
           <div className="truncate font-medium text-ink">{user?.name ?? "—"}</div>
           <div className="truncate text-ink-muted">{user?.email}</div>
         </div>
-        <nav className="space-y-3 text-xs">{navigationGroups.map(group => <div key={group.label}><div className="mb-1 text-[10px] uppercase tracking-wider text-ink-muted">{group.label}</div><div className="grid grid-cols-2 gap-1">{group.links.map(([href, label]) => <SidebarLink key={href} href={href} active={!!isActive(href)}>{label}</SidebarLink>)}</div></div>)}</nav>
+        <nav aria-label="Admin" className="grid grid-cols-3 gap-1 text-xs">{navLinks}</nav>
       </div>
       <aside className="hidden w-60 shrink-0 border-r border-border bg-surface-raised p-4 md:block">
         <div className="mb-6">
           <div className="text-[11px] uppercase tracking-wider text-ink-muted">Painel</div>
           <div className="text-base font-semibold text-ink">Admin da Plataforma</div>
         </div>
-        <nav className="space-y-5 text-sm">{navigationGroups.map(group => <div key={group.label}><div className="mb-2 px-2.5 text-[10px] uppercase tracking-wider text-ink-muted">{group.label}</div><div className="flex flex-col gap-1">{group.links.map(([href, label]) => <SidebarLink key={href} href={href} active={!!isActive(href)}>{label}</SidebarLink>)}</div></div>)}</nav>
+        <nav aria-label="Admin" className="flex flex-col gap-1 text-sm">{navLinks}</nav>
         <div className="mt-8 border-t border-border pt-4 text-xs text-ink-muted">
           <div className="mb-3">
             Logado como
@@ -94,7 +87,10 @@ function AdminShell({ children }: { children: ReactNode }) {
           </button>
         </div>
       </aside>
-      <main className="min-w-0 flex-1 overflow-x-hidden">{children}</main>
+      <main className="min-w-0 flex-1 overflow-x-hidden">
+        {isAdminSettingsPage(current) ? <div className="mx-auto max-w-6xl px-3 pt-5 text-sm sm:px-6 sm:pt-8"><Link href={ADMIN_SETTINGS_HREF} className="text-primary hover:underline">← Configurações</Link></div> : null}
+        {children}
+      </main>
     </div>
   );
 }

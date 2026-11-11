@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { Card, CardBody, CardHeader } from "@/components/Card";
 import { ErrorState } from "@/components/ErrorState";
 import { PageHeader } from "@/components/PageHeader";
@@ -20,7 +21,8 @@ export default function GrowthDashboardPage() {
 
   return (
     <div className="mx-auto max-w-6xl px-3 py-5 sm:px-6 sm:py-8">
-      <PageHeader title="Growth Dashboard" description="Funil de aquisição, trial e receita recorrente — consolidado de todos os tenants." />
+      <div className="mb-4 text-sm"><Link href="/admin" className="text-primary hover:underline">← Visão geral</Link></div>
+      <PageHeader title="Aquisição e conversão" description="Funil de aquisição, teste grátis e receita recorrente de todos os clientes." />
 
       <ScreenGuide
         title="Para que serve"

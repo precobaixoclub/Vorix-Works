@@ -28,7 +28,7 @@ export default function AdminDashboardPage() {
         description="Contas da plataforma e uso de inteligência artificial no mês corrente."
       />
 
-<div className="mb-6 flex flex-wrap gap-3"><Link href="/admin/tenants" className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground">Gerenciar contas e contratos</Link><Link href="/admin/billing-provider" className="rounded-lg border border-border px-4 py-2 text-sm">Configurar cobrança</Link></div>
+<div className="mb-6 flex flex-wrap gap-3"><Link href="/admin/tenants" className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground">Ver clientes</Link><Link href="/admin/growth" className="rounded-lg border border-border px-4 py-2 text-sm">Aquisição e conversão</Link></div>
 
       {isLoading ? (
         <div className="flex items-center gap-2 py-14 text-sm text-muted-foreground">

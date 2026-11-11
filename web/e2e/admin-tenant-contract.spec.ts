@@ -55,7 +55,7 @@ test("admin altera recursos, limites e soluções com um único motivo e um úni
   await expect(page.getByText("Nenhuma alteração pendente.")).toBeVisible();
   await page.reload(); await page.getByRole("button", { name: "Acessos e limites", exact: true }).click();
   await expect(page.locator("#feature-proposals")).toHaveValue("blocked"); await expect(page.getByLabel("Limite de Espaços ativos")).toHaveValue("3");
-    await page.getByRole("button", { name: "Histórico de alterações" }).click(); await expect(page.getByText("Negociação comercial autorizada", { exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "Histórico", exact: true }).click(); await expect(page.getByText("Negociação comercial autorizada", { exact: true })).toBeVisible();
   await page.screenshot({ path: info.outputPath("admin-history.png"), fullPage: true });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 });

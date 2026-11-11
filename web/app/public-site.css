@@ -1,9 +1,11 @@
 .public-site,.public-header,.public-footer,.public-product-menu,.public-drawer {
   --public-bg: #080b11; --public-surface: #0f141e; --public-raised: #151c28;
   --public-border: #26303d; --public-text: #f3f6fa; --public-muted: #a3afc0;
-  --public-green: #addb46; --public-violet: #b7a0ff; --public-blue: #75aeff;
-  --public-green-ink: #131b05; --public-glow: #addb4620; --public-danger: #ff6b5e;
+  --public-green: #a86aff; --public-violet: #b7a0ff; --public-blue: #75aeff;
+  --public-green-ink: #fff; --public-glow: #9a40ff26; --public-danger: #ff6b5e;
   --public-accent: var(--public-green);
+  /* Marca = roxo do CTA da home; o nome "green" ficou por compatibilidade. Fundo sólido usa o degradê. */
+  --public-cta: linear-gradient(125deg,#8025f2,#a033ff); --public-cta-hover: linear-gradient(125deg,#9235ff,#a94bff);
   color: var(--public-text); font-family: var(--font-sans), sans-serif;
 }
 .public-site { background: var(--public-bg); overflow: clip; }
@@ -14,7 +16,7 @@
 .public-site [id] { scroll-margin-top: 105px; }
 .public-site :focus-visible,.public-header :focus-visible,.public-footer :focus-visible,.public-product-menu :focus-visible,.public-drawer :focus-visible { outline: 2px solid var(--public-green); outline-offset: 5px; }
 .public-visually-hidden { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
-.public-skip { position: absolute; left: 20px; top: -80px; padding: 14px; color: var(--public-green-ink); background: var(--public-green); z-index: 80; }
+.public-skip { position: absolute; left: 20px; top: -80px; padding: 14px; color: var(--public-green-ink); background: var(--public-cta); z-index: 80; }
 .public-skip:focus { top: 8px; }
 .public-header { position: sticky; top: 0; z-index: 50; background: var(--public-bg); border-bottom: 1px solid var(--public-border); }
 @supports (backdrop-filter: blur(16px)) { .public-header { background: color-mix(in srgb,var(--public-bg) 88%,transparent); backdrop-filter: blur(16px); } }
@@ -28,8 +30,8 @@
 .public-nav-trigger { display: flex; align-items: center; gap: 5px; border: 0; cursor: pointer; background: transparent; font: inherit; padding: 10px 0; }
 .public-header-actions { display: flex; align-items: center; gap: 23px; font-size: 13px; }
 .public-button { display: inline-flex; align-items: center; justify-content: center; gap: 12px; min-height: 49px; padding: 0 22px; border: 1px solid var(--public-border); border-radius: 9px; font-size: 13px; font-weight: 600; text-decoration: none; line-height: 1.3; transition: background .2s,border-color .2s,transform .2s; }
-.public-button.primary { color: var(--public-green-ink); background: var(--public-green); border-color: var(--public-green); box-shadow: 0 3px 25px var(--public-glow); }
-.public-button.primary:hover { background: color-mix(in srgb,var(--public-green) 85%,white); transform: translateY(-2px); }
+.public-button.primary { color: var(--public-green-ink); background: var(--public-cta); border-color: #9d3cfa; box-shadow: 0 4px 22px var(--public-glow); }
+.public-button.primary:hover { background: var(--public-cta-hover); transform: translateY(-2px); }
 .public-button.secondary { color: var(--public-text); background: color-mix(in srgb,var(--public-raised) 60%,transparent); }
 .public-button.secondary:hover { background: var(--public-raised); border-color: var(--public-muted); transform: translateY(-2px); }
 .public-button.small { min-height: 40px; padding-inline: 16px; font-size: 12px; }
@@ -60,7 +62,7 @@
 .public-hero-grid { position: absolute; z-index: -1; inset: 0; opacity: .18; background-image: linear-gradient(var(--public-border) 1px,transparent 1px),linear-gradient(90deg,var(--public-border) 1px,transparent 1px); background-size: 64px 64px; mask-image: linear-gradient(90deg,transparent 25%,black); }
 .public-hero-content { display: grid; grid-template-columns: .95fr 1.05fr; gap: 54px; align-items: center; padding-block: 79px 63px; }
 .public-hero-copy h1 { font-size: clamp(45px,4.5vw,62px); font-weight: 600; line-height: 1.065; letter-spacing: -.045em; margin-top: 24px; }
-.public-gradient-text { color: var(--public-green); background: linear-gradient(100deg,var(--public-green),#d7f398 65%,var(--public-blue)); background-clip: text; -webkit-text-fill-color: transparent; }
+.public-gradient-text { color: var(--public-green); background: linear-gradient(100deg,var(--public-green),#dcc2ff 65%,var(--public-blue)); background-clip: text; -webkit-text-fill-color: transparent; }
 .public-hero-copy > p { max-width: 470px; color: var(--public-muted); font-size: 15px; line-height: 1.85; margin-top: 23px; }
 .public-hero-copy .public-button-row { margin-top: 29px; }
 .public-hero-footnote { display: flex; align-items: center; gap: 8px; color: var(--public-muted); margin-top: 22px; font-size: 11px; }
@@ -267,8 +269,8 @@
 .public-final-cta p { color: var(--public-muted); font-size: 14px; line-height: 1.8; max-width: 425px; margin-top: 16px; }
 .public-final-cta .public-button-row { margin-top: 27px; }
 .public-final-landscape { position: absolute; inset: 0; z-index: -1; overflow: hidden; }
-.public-final-landscape > div { position: absolute; right: -100px; bottom: -220px; width: 750px; height: 500px; border: 1px solid #addb4633; border-radius: 50%; transform: perspective(650px) rotateX(55deg) rotate(-18deg); box-shadow: 0 0 110px var(--public-glow) inset; background-image: linear-gradient(var(--public-border) 1px,transparent 1px),linear-gradient(90deg,var(--public-border) 1px,transparent 1px); background-size: 50px 50px; }
-.public-final-landscape > span { position: absolute; right: 100px; top: 22px; font-size: 240px; font-weight: 700; line-height: 1.4; color: #addb4610; letter-spacing: -.16em; text-shadow: 0 0 60px var(--public-glow); transform: rotate(-12deg); }
+.public-final-landscape > div { position: absolute; right: -100px; bottom: -220px; width: 750px; height: 500px; border: 1px solid #a86aff33; border-radius: 50%; transform: perspective(650px) rotateX(55deg) rotate(-18deg); box-shadow: 0 0 110px var(--public-glow) inset; background-image: linear-gradient(var(--public-border) 1px,transparent 1px),linear-gradient(90deg,var(--public-border) 1px,transparent 1px); background-size: 50px 50px; }
+.public-final-landscape > span { position: absolute; right: 100px; top: 22px; font-size: 240px; font-weight: 700; line-height: 1.4; color: #a86aff10; letter-spacing: -.16em; text-shadow: 0 0 60px var(--public-glow); transform: rotate(-12deg); }
 .public-final-landscape > span > span { color: #75aeff20; }
 .public-footer { background: var(--public-bg); border-top: 1px solid var(--public-border); padding-top: 54px; }
 .public-footer-grid { display: grid; grid-template-columns: 1.6fr repeat(4,1fr); gap: 30px; padding-bottom: 50px; }

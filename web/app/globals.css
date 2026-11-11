@@ -12,7 +12,7 @@
 
 @theme inline {
   /* SaaS Panel Design System — nomes canônicos (`references/01-fundacoes-cores.md`). Marca da
-   * Vorix (verde-limão #ADDB46/#4F6B1A) no lugar do verde padrão do pacote — ver `:root`/`.dark`
+   * Vorix (roxo do CTA da home, #7E20E9/#9E3DFF) no lugar do verde padrão do pacote — ver `:root`/`.dark`
    * abaixo pro valor cru de cada `--primary`/`--background`/etc. */
   --color-primary: hsl(var(--primary));
   --color-primary-glow: hsl(var(--primary-glow));
@@ -114,13 +114,13 @@
 }
 
 :root {
-  /* Marca — mesmo verde-limão do logo (`Logo.tsx`), convertido pra HSL. `--primary` é o tom
-   * escurecido (legível como texto no claro); `--primary-glow` é o tom vívido do escuro, usado só
-   * pra acento SÓLIDO no dark (`dark:bg-primary-glow`/`dark:text-primary-glow`) — um verde de 26%
-   * de luminosidade some no fundo escuro, exatamente o problema que `--primary-glow` resolve.
-   * Fills translúcidos (`bg-primary/10`) continuam usando `--primary` nos dois temas. */
-  --primary: 81 61% 26%;
-  --primary-glow: 77 66% 61%;
+  /* Marca — o roxo do CTA da home (`home.css`, degradê #8025f2 → #a033ff). `--primary` é o tom
+   * mais fechado (texto branco 6.4:1, legível como texto no claro); `--primary-glow` é o tom vívido,
+   * usado pra acento SÓLIDO no dark (`dark:bg-primary-glow`/`dark:text-primary-glow`).
+   * Fills translúcidos (`bg-primary/10`) continuam usando `--primary` nos dois temas.
+   * Verde agora é só semântico (`--success`, emerald) — nunca marca. */
+  --primary: 268 82% 52%;
+  --primary-glow: 270 100% 62%;
   --primary-foreground: 0 0% 100%;
   --ai: 258 86% 58%;
   --ai-glow: 210 100% 64%;
@@ -154,13 +154,13 @@
 
   --border: 240 10% 90%;
   --input: 240 10% 90%;
-  --ring: 81 61% 26%;
+  --ring: 268 82% 52%;
 
   /* Vorix pré-existentes, sem equivalente 1:1 no vocabulário do design system. */
   --ink-faint: 240 5% 63%;
-  --brand: 79 67% 57%;
-  --accent-hover: 82 62% 21%;
-  --accent-soft: 78 59% 91%;
+  --brand: 270 100% 62%;
+  --accent-hover: 268 80% 42%;
+  --accent-soft: 270 100% 96%;
 
   /* Paleta de gráficos (claro) — chart-1 segue a marca (`--primary`); 2-6 são os tons 500 padrão
    * do vocabulário fechado (emerald/sky/violet/amber/rose), mesmas cores usadas em `HubAccent`. */
@@ -185,10 +185,11 @@
 }
 
 .dark {
-  /* Verde Vorix sólido (mesmo do site/CTA) com tinta escura — CTA primário, ativo, positivo. */
-  --primary: 79 67% 57%;
-  --primary-glow: 79 70% 64%;
-  --primary-foreground: 81 69% 6%;
+  /* Roxo Vorix sólido (mesmo do CTA da home) com texto branco (4.6:1) — CTA primário, ativo, foco.
+   * `--primary-glow` é o lilás claro pra texto/ícone de acento sobre o fundo escuro (7.7:1). */
+  --primary: 270 100% 62%;
+  --primary-glow: 270 100% 78%;
+  --primary-foreground: 0 0% 100%;
   /* IA e Meetings: violeta → azul elétrico (mesmos tons do site). */
   --ai: 254 100% 81%;
   --ai-glow: 215 100% 73%;
@@ -233,12 +234,12 @@
   /* Bordas finas e discretas. */
   --border: 215 23% 19%;
   --input: 215 22% 22%;
-  --ring: 79 67% 57%;
+  --ring: 270 100% 62%;
 
   --ink-faint: 216 12% 50%;
-  --brand: 79 67% 57%;
-  --accent-hover: 79 70% 64%;
-  --accent-soft: 80 40% 13%;
+  --brand: 270 100% 62%;
+  --accent-hover: 270 100% 70%;
+  --accent-soft: 270 45% 15%;
 
   --solution-accent: var(--primary);
   --solution-accent-foreground: var(--primary-foreground);
@@ -252,10 +253,10 @@
   --chart-6: 351 95% 71%;
 }
 
-/* Sotaque por solução — mesma marca, só o acento muda (Conversas verde · Meetings violeta/azul). */
+/* Sotaque por solução — mesma marca, só o acento muda (Conversas roxo da marca · Meetings violeta/azul). */
 [data-solution="meetings"] {
   /* No Meetings o CTA primário, o foco e o ativo seguem o violeta (sucesso continua verde em
-   * --success; a marca Vorix — logo — continua verde). */
+   * --success). */
   --primary: var(--meetings);
   --primary-glow: var(--ai-glow);
   --primary-foreground: 0 0% 100%;

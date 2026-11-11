@@ -43,7 +43,7 @@ export default function EmpresaPage() {
 
       <section className="border-b border-white/10">
         <div className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:py-24">
-          <p className="font-mono text-sm font-semibold uppercase tracking-[0.28em] text-[#addb46]">Vorix</p>
+          <p className="font-mono text-sm font-semibold uppercase tracking-[0.28em] text-[#a86aff]">Vorix</p>
           <h1 className="mt-5 max-w-4xl font-display text-4xl font-semibold sm:text-5xl lg:text-6xl">
             Existimos para eliminar rupturas entre atender, negociar e vender.
           </h1>
@@ -52,7 +52,7 @@ export default function EmpresaPage() {
           </p>
           <div className="mt-8 flex flex-wrap gap-3">
             <Link href="/signup">
-              <Button className="bg-[#addb46] px-5 py-3 text-[#071009] hover:bg-[#c7f45b]">Testar por 7 dias</Button>
+              <Button className="bg-[#8025f2] px-5 py-3 text-white hover:bg-[#9235ff]">Testar por 7 dias</Button>
             </Link>
             <Link href="/#produto">
               <Button variant="secondary" className="border-white/20 bg-white/5 px-5 py-3 text-white hover:bg-white/10">Ver produto</Button>
@@ -64,7 +64,7 @@ export default function EmpresaPage() {
       <section className="border-b border-white/10 bg-[#0a0f18]">
         <div className="mx-auto grid max-w-7xl gap-8 px-4 py-16 sm:px-6 lg:grid-cols-[0.75fr_1.25fr] lg:py-20">
           <div>
-            <p className="font-mono text-sm font-semibold uppercase tracking-[0.24em] text-[#addb46]">Nossa missão</p>
+            <p className="font-mono text-sm font-semibold uppercase tracking-[0.24em] text-[#a86aff]">Nossa missão</p>
           </div>
           <div>
             <p className="font-display text-3xl font-semibold leading-tight text-white sm:text-4xl">
@@ -95,7 +95,7 @@ export default function EmpresaPage() {
       <section className="bg-[#0b1019]">
         <div className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:py-20">
           <div className="max-w-3xl">
-            <p className="font-mono text-sm font-semibold uppercase tracking-[0.24em] text-[#addb46]">Princípios</p>
+            <p className="font-mono text-sm font-semibold uppercase tracking-[0.24em] text-[#a86aff]">Princípios</p>
             <h2 className="mt-4 font-display text-3xl font-semibold text-white sm:text-4xl">O que guia o produto.</h2>
           </div>
           <div className="mt-10 grid gap-4 md:grid-cols-2">
@@ -111,11 +111,11 @@ export default function EmpresaPage() {
 
       <section className="border-y border-white/10 bg-[#070b12]">
         <div className="mx-auto max-w-4xl px-4 py-16 text-center sm:px-6 lg:py-20">
-          <p className="font-mono text-sm font-semibold uppercase tracking-[0.28em] text-[#addb46]">Vorix</p>
+          <p className="font-mono text-sm font-semibold uppercase tracking-[0.28em] text-[#a86aff]">Vorix</p>
           <h2 className="mt-3 font-display text-3xl font-semibold text-white sm:text-4xl">Transforme contexto em ação.</h2>
           <p className="mx-auto mt-3 max-w-2xl text-slate-300">Atenda. Negocie. Venda. Tudo conectado.</p>
           <Link href="/signup">
-            <Button className="mt-7 bg-[#addb46] px-6 py-3 text-[#071009] hover:bg-[#c7f45b]">
+            <Button className="mt-7 bg-[#8025f2] px-6 py-3 text-white hover:bg-[#9235ff]">
               Testar por 7 dias <ArrowRight className="ml-2 h-4 w-4" />
             </Button>
           </Link>
@@ -130,7 +130,7 @@ export default function EmpresaPage() {
 function InstitutionBlock({ eyebrow, title, body }: { eyebrow: string; title: string; body: string }) {
   return (
     <article className="rounded-2xl border border-white/10 bg-[#101827] p-6">
-      <p className="font-mono text-xs font-semibold uppercase tracking-[0.22em] text-[#addb46]">{eyebrow}</p>
+      <p className="font-mono text-xs font-semibold uppercase tracking-[0.22em] text-[#a86aff]">{eyebrow}</p>
       <h2 className="mt-4 font-display text-2xl font-semibold text-white sm:text-3xl">{title}</h2>
       <p className="mt-4 text-base leading-7 text-slate-300">{body}</p>
     </article>

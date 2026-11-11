@@ -2,7 +2,7 @@ import type { SVGProps } from "react";
 
 /**
  * Marca Vorix — as duas hastes diagonais do topo (o "V") usam a cor de marca fixa
- * (`--color-brand`, o lima #ADDB46 do arquivo original); as demais letras herdam `currentColor`
+ * (`--color-brand`, o roxo da marca, mesmo do CTA da home); as demais letras herdam `currentColor`
  * para acompanhar `text-ink` automaticamente entre os temas claro/escuro.
  */
 export function Logo({ className, ...props }: SVGProps<SVGSVGElement>) {

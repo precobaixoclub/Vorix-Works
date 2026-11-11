@@ -184,7 +184,7 @@ export default function AdminSettingsPage() {
           </Card>
 
           {error && <div className="rounded-md border border-destructive/40 bg-destructive/10 px-4 py-2 text-sm text-destructive">{error}</div>}
-          {success && <div className="rounded-md border border-primary/40 bg-primary/10 px-4 py-2 text-sm text-primary">{success}</div>}
+          {success && <div className="rounded-md border border-success/40 bg-success-bg px-4 py-2 text-sm text-success">{success}</div>}
 
           <div className="flex justify-end gap-2">
             <Button type="button" variant="secondary" onClick={() => void load()} disabled={saving}>

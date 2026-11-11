@@ -8,7 +8,7 @@ export function usePreviewClickEditing(mount:HTMLElement|null,enabled:boolean,si
  useEffect(()=>{
   if(!mount||!enabled||!onSelect)return;
   const doc=mount.ownerDocument,root=mount;root.dataset.siteClickEditing="true";
-  const style=doc.createElement("style");style.textContent='[data-site-click-editing="true"]{cursor:pointer}[data-site-click-editing="true"] *{cursor:pointer!important}[data-site-click-editing="true"] iframe{pointer-events:none}[data-site-preview-hover]{outline:2px dashed #65a30d!important;outline-offset:-2px!important}';doc.head.append(style);
+  const style=doc.createElement("style");style.textContent='[data-site-click-editing="true"]{cursor:pointer}[data-site-click-editing="true"] *{cursor:pointer!important}[data-site-click-editing="true"] iframe{pointer-events:none}[data-site-preview-hover]{outline:2px dashed #7e20e9!important;outline-offset:-2px!important}';doc.head.append(style);
   const label=doc.createElement("div");label.setAttribute("aria-hidden","true");label.style.cssText="position:fixed;z-index:2147483647;pointer-events:none;background:#26382f;color:#fff;padding:7px 10px;border-radius:5px;font:500 13px/1.4 sans-serif;max-width:300px;display:none;box-shadow:0 2px 10px #0003";doc.body.append(label);
   let hovered:HTMLElement|undefined;
   const clear=()=>{hovered?.removeAttribute("data-site-preview-hover");hovered=undefined;label.style.display="none";};

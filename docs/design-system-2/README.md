@@ -28,7 +28,7 @@ Todas as cores são triplets HSL (`H S% L%`) → funcionam com `/opacity` (`bg-s
 | `surface-3` / `popover` / `surface-elevated` | menus, modais, popovers |
 | `border` | divisória padrão (use `/70` em cards) |
 | `foreground` · `text-secondary` · `muted-foreground` · `text-disabled` | hierarquia de texto |
-| `primary` | CTA principal. **Verde** (`#addb46`) em Conversas, **violeta** em Meetings |
+| `primary` | CTA principal. **Roxo** da marca (`#7e20e9` claro · `#9e3dff` escuro, o CTA da home) em Conversas, **violeta** em Meetings. Verde é só semântico (`success`) |
 | `solution` | acento da solução ativa (item ativo, dot do switcher, foco) |
 | `ai` · `ai-glow` | exclusivo de IA (violeta → azul). Nunca para CTA comum |
 | `success` · `warning` · `destructive` · `info` | estados semânticos |

@@ -25,8 +25,12 @@ export const OBJECT_URL_TTL = {
   preview: 60 * 60,
   /** Plataformas externas de publicação baixando a mídia (Instagram/TikTok/Meta Ads). */
   externalPublication: 24 * 60 * 60,
+  /** Published storefront pages: their HTML is cached (ISR, served stale up to 2 days), so photos must
+   * outlive it. Day-aligned expiry keeps the same URL all day, letting browsers reuse the image. */
+  publicSite: 5 * 24 * 60 * 60,
 } as const;
 
+const DAY_SECONDS = 24 * 60 * 60;
 /** Teto absoluto aceito na verificação (nenhuma assinatura vale mais que isto). */
 export const OBJECT_URL_MAX_TTL_SECONDS = 7 * 24 * 60 * 60;
 
@@ -100,7 +104,8 @@ export function parseOwnedObjectUrl(rawUrl: string, publicBaseUrl?: string): { k
 export function signObjectKey(objectKey: string, ttlSeconds: number): string | undefined {
   if (!active) return undefined;
   const ttl = Math.max(60, Math.min(ttlSeconds, OBJECT_URL_MAX_TTL_SECONDS - 15 * 60));
-  const bucket = Math.min(15 * 60, Math.floor(ttl / 4));
+  // Long-lived links are aligned to the day (stable URL, cacheable); short ones to <= 15 minutes.
+  const bucket = ttl >= 2 * DAY_SECONDS && ttl + DAY_SECONDS <= OBJECT_URL_MAX_TTL_SECONDS ? DAY_SECONDS : Math.min(15 * 60, Math.floor(ttl / 4));
   const nowSeconds = Math.floor(active.now() / 1000);
   const exp = Math.ceil((nowSeconds + ttl) / bucket) * bucket;
   const url = new URL(encodeKey(objectKey), active.publicBaseUrl);
@@ -141,6 +146,12 @@ export function verifyObjectSignature(objectKey: string, exp: string | undefined
   if (Number(exp) <= nowSeconds) return "EXPIRED";
   if (Number(exp) - nowSeconds > OBJECT_URL_MAX_TTL_SECONDS) return "INVALID";
   return "VALID";
+}
+
+/** Seconds until a (verified) signature expires, by the same clock used to verify it. */
+export function objectSignatureSecondsLeft(exp: string | undefined): number {
+  if (!active || !exp || !/^\d{1,12}$/.test(exp)) return 0;
+  return Math.max(0, Number(exp) - Math.floor(active.now() / 1000));
 }
 
 /** Dono de uma chave pelo layout do storage (ver produtores em `objectStorage.put`). */

@@ -12,6 +12,9 @@ const nextConfig = {
   // Deploy em container (ver Dockerfile em web/) — gera .next/standalone, uma imagem de runtime
   // muito mais leve (só o necessário para rodar, sem todo node_modules de build/dev).
   output: "standalone",
+  // Public store pages are cached (ISR) and may be served stale while they refresh. They carry
+  // signed photo URLs valid for 5 days, so a stale page is never older than 2 days.
+  expireTime: 2 * 24 * 60 * 60,
   // Só quando rodando sob Playwright (`playwright.config.ts` passa esta env var pro `next dev`
   // que ele mesmo sobe) — o badge de dev do Next ("stale version"/Turbopack, canto inferior)
   // intercepta cliques na sidebar recolhida por baixo dele; nunca desligado no dev normal.

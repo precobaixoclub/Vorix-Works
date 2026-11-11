@@ -6,7 +6,7 @@ import { dirname, join, sep } from "node:path";
 import sharp from "sharp";
 import type { PublicObjectRepositoryPort } from "../../../application/ports/public-object-repository.port.js";
 import { resolveObjectPath } from "../../../infrastructure/storage/local-object-storage.js";
-import { verifyObjectSignature } from "../../../shared/utils/object-url-signing.js";
+import { objectSignatureSecondsLeft, verifyObjectSignature } from "../../../shared/utils/object-url-signing.js";
 import { NotFoundError } from "../http/app-error.js";
 
 /**
@@ -49,7 +49,10 @@ export async function registerUploadedObjectRoutes(app: FastifyInstance, options
     const fileStat = await stat(realFile).catch(() => undefined);
     if (!fileStat?.isFile()) throw notFound("NOT_FOUND");
 
-    reply.header("Cache-Control", publicObject ? "public, max-age=3600" : "private, max-age=900");
+    // A signed URL may be reused for as long as its signature lives (capped at a day): storefront
+    // photos keep the same URL all day, so browsers stop downloading them on every page.
+    const signedFor = publicObject ? 0 : objectSignatureSecondsLeft(typeof query.exp === "string" ? query.exp : undefined);
+    reply.header("Cache-Control", publicObject ? "public, max-age=3600" : `private, max-age=${Math.max(60, Math.min(86_400, signedFor))}`);
     const width = Number(query.w);
     if (THUMB_WIDTHS.has(width) && THUMB_SOURCES.test(key)) {
       const thumb = await thumbnail(realRoot, realFile, key, width, fileStat.mtimeMs).catch((error) => {

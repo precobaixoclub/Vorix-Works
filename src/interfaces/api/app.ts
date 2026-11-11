@@ -51,6 +51,9 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     // URL do log de acesso sem credenciais de query (assinatura de arquivo, tokens escopados).
     logger: { level: config.logLevel, serializers: { req: redactedRequestSerializer } },
     genReqId: () => randomUUID(),
+    // The API is only reachable through one reverse proxy (Traefik; no published port): trust the
+    // address it appends, so per-IP limits apply per visitor instead of one bucket for everyone.
+    trustProxy: 1,
   });
 
   await app.register(cors, {

@@ -1,5 +1,6 @@
 import {validSitePath} from "@/features/sites/public-routing";
 import {notFound} from "next/navigation";
+import {preconnect} from "react-dom";
 import {fetchTenantSite,tenantSiteMetadata} from "@/features/sites/server";
 import {TenantSiteRenderer} from "@/components/sites/TenantSiteRenderer";
 type Props={params:Promise<{hostname:string;path?:string[]}>};
@@ -9,4 +10,6 @@ export const revalidate=15;
 // No paths at build time: each page is generated on its first visit and then reused (on-demand ISR).
 export async function generateStaticParams(){return [];}
 export async function generateMetadata({params}:Props){const {hostname,path=[]}=await params;return tenantSiteMetadata(await fetchTenantSite({hostname},{path}),path,`https://${hostname}`);}
-export default async function TenantDomainPage({params}:Props){const {hostname,path=[]}=await params;const site=await fetchTenantSite({hostname},{path});if(!site)notFound();if(!validSitePath(site,path))notFound();return <TenantSiteRenderer site={site} basePath="" canonicalBase={`https://${hostname}`} path={path}/>;}
+/** Photos come from the API origin: open that connection while the HTML is still arriving. */
+function preconnectImages(){const origin=process.env.NEXT_PUBLIC_API_URL?.trim();if(origin)preconnect(new URL(origin).origin);}
+export default async function TenantDomainPage({params}:Props){preconnectImages();const {hostname,path=[]}=await params;const site=await fetchTenantSite({hostname},{path});if(!site)notFound();if(!validSitePath(site,path))notFound();return <TenantSiteRenderer site={site} basePath="" canonicalBase={`https://${hostname}`} path={path}/>;}

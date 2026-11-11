@@ -8,6 +8,9 @@ const SKIP_PATHS = new Set(["/health", "/livez", "/readyz", "/v1/health"]);
 export function registerRateLimitMiddleware(app: FastifyInstance, rateLimiter: OperationalRateLimiter): void {
   app.addHook("preHandler", async (request: FastifyRequest, reply: FastifyReply) => {
     if (SKIP_PATHS.has(request.url.split("?")[0])) return;
+    // Files under /uploads are authorized by their URL signature. Counting them spent the request
+    // budget in a single storefront page (dozens of photos) and wrote one database row per image.
+    if ((request.method === "GET" || request.method === "HEAD") && request.url.startsWith("/uploads/")) return;
     const principal = request.zunoContext.principal;
     const group = routeGroup(request.method, request.url);
     const result = await rateLimiter.consume({

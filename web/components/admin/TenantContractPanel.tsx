@@ -10,11 +10,10 @@ import { Input } from "@/components/Field";
 import { ErrorState } from "@/components/ErrorState";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { TenantAccessEditor } from "./TenantAccessEditor";
-import type { TenantMember, TenantWorkspace } from "@/features/platform-admin/types";
 import type { CapacityPreviewResult } from "@/features/billing/types";
 import { accessLabels, date, describeChange, money, quota, selectClass, type Contract } from "./tenant-contract-model";
 
-export function TenantContractPanel({ tenantId, members, workspaces, onChanged }: { tenantId: string; members: TenantMember[]; workspaces: TenantWorkspace[]; onChanged: () => Promise<unknown> }) {
+export function TenantContractPanel({ tenantId, onChanged }: { tenantId: string; onChanged: () => Promise<unknown> }) {
   const path = `/v1/admin/tenants/${encodeURIComponent(tenantId)}`;
   const { data, error, mutate } = useSWR(["admin-contract", tenantId], () => apiClient.get<Contract>(`${path}/contract`));
   const [tab, setTab] = useState("contract");
@@ -41,7 +40,7 @@ export function TenantContractPanel({ tenantId, members, workspaces, onChanged }
       <CapacityEditor key={JSON.stringify(data.capacity)} data={data} path={path} refresh={refresh} />
     </>}
     {tab === "access" && <>
-      <TenantAccessEditor data={data} members={members} workspaces={workspaces} path={path} refresh={refresh} />
+      <TenantAccessEditor data={data} path={path} refresh={refresh} />
     </>}
     {tab === "history" && <Card><CardHeader><h2 className="font-semibold">Liberações, bloqueios e limites</h2><p className="text-sm text-muted-foreground">Últimas 100 alterações administrativas. A movimentação de créditos aparece abaixo.</p></CardHeader><CardBody>
       {!data.history.length ? <p className="text-sm text-muted-foreground">Nenhuma alteração manual registrada.</p> : <ul className="divide-y divide-border">{data.history.map(change => <li key={change.id} className="space-y-1 py-4 text-sm"><p className="font-medium">{change.reason}</p><p className="text-xs text-muted-foreground">{date(change.occurredAt)} · {change.actorUserId ?? "Migração da plataforma"}</p><ul className="list-inside list-disc text-muted-foreground">{(describeChange(change.before, change.after).length ? describeChange(change.before, change.after) : ["Configuração salva sem alteração de valores."]).map(line => <li key={line}>{line}</li>)}</ul></li>)}</ul>}

@@ -7,6 +7,7 @@ import { Button } from "@/components/Button";
 import { Modal } from "@/components/Modal";
 import { Spinner } from "@/components/Spinner";
 import { Switch } from "@/components/ui/switch";
+import { WorkspaceAccessPicker, type WorkspaceOption } from "@/components/settings/WorkspaceAccessPicker";
 import { addTeamMember, removeTeamMember, updateMemberAccess, updateTeamMember } from "@/features/identity/api";
 import { useAccessCatalog, useMemberAccess, useTeams } from "@/features/identity/hooks";
 import type { MemberAccess, TenantRole } from "@/features/identity/types";
@@ -23,14 +24,18 @@ type TeamChoice = "none" | "member" | "manager";
 const message = (cause: unknown) => (cause instanceof Error ? cause.message.replace(/^[A-Z_]+:\s*/, "") : "Não foi possível salvar.");
 
 /**
- * Editar o acesso de um usuário em três partes simples: Perfil (padrão inicial), Equipes (de quais
- * participa e quais gerencia) e Permissões (agrupadas, mostrando o que veio do perfil e o que foi
+ * Editar o acesso de um usuário em quatro partes simples: Perfil (padrão inicial), Espaços de
+ * trabalho (quais ele vê), Equipes (de quais participa e quais gerencia) e Permissões (agrupadas, mostrando o que veio do perfil e o que foi
  * personalizado). Salvar manda o estado inteiro; o backend aplica as proteções e audita.
  */
-export function UserAccessModal({ userId, name, workspaceId, isSelf, actorIsOwner, onClose, onSaved }: {
+export function UserAccessModal({ userId, name, workspaceId, workspaces, actorWorkspaceIds, isSelf, actorIsOwner, onClose, onSaved }: {
   userId: string;
   name: string;
   workspaceId: string;
+  /** Espaços da conta que quem edita enxerga. */
+  workspaces: readonly WorkspaceOption[];
+  /** Espaços de quem edita; `null` = todos. Restrito só distribui os próprios. */
+  actorWorkspaceIds: string[] | null;
   isSelf: boolean;
   actorIsOwner: boolean;
   onClose: () => void;
@@ -42,6 +47,7 @@ export function UserAccessModal({ userId, name, workspaceId, isSelf, actorIsOwne
   const [role, setRole] = useState<TenantRole>("editor");
   const [enabled, setEnabled] = useState<Set<string>>(new Set());
   const [teamChoices, setTeamChoices] = useState<Record<string, TeamChoice>>({});
+  const [workspaceChoice, setWorkspaceChoice] = useState<string[] | null>(null);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -49,6 +55,7 @@ export function UserAccessModal({ userId, name, workspaceId, isSelf, actorIsOwne
     setRole(access.role);
     setEnabled(new Set(access.effectivePermissions));
     setTeamChoices(Object.fromEntries(access.teams.map((team) => [team.teamId, team.isManager ? "manager" : "member"])));
+    setWorkspaceChoice(access.workspaceIds ?? null);
   }, [access]);
 
   const preset = useMemo(() => new Set(catalog?.profiles.find((profile) => profile.role === role)?.permissions ?? []), [catalog, role]);
@@ -67,14 +74,17 @@ export function UserAccessModal({ userId, name, workspaceId, isSelf, actorIsOwne
     return on ? "granted" : "none";
   }
 
+  const workspacesChanged = access ? !sameWorkspaces(workspaceChoice, access.workspaceIds ?? null) : false;
+  const workspaceInvalid = workspaceChoice !== null && workspaceChoice.length === 0;
+
   async function save() {
-    if (!access || readOnly) return;
+    if (!access || readOnly || workspaceInvalid) return;
     setSaving(true);
     try {
       const all = new Set([...preset, ...enabled]);
       const permissionGrants = [...all].filter((permission) => enabled.has(permission) && !preset.has(permission));
       const permissionRevokes = [...all].filter((permission) => !enabled.has(permission) && preset.has(permission));
-      await updateMemberAccess(userId, { role, permissionGrants, permissionRevokes });
+      await updateMemberAccess(userId, { role, permissionGrants, permissionRevokes, ...(workspacesChanged ? { workspaceIds: workspaceChoice } : {}) });
       await syncTeams(access);
       await mutate();
       await onSaved();
@@ -127,7 +137,13 @@ export function UserAccessModal({ userId, name, workspaceId, isSelf, actorIsOwne
           </section>
 
           <section className="space-y-2">
-            <h3 className="text-sm font-semibold text-foreground">2. Equipes</h3>
+            <h3 className="text-sm font-semibold text-foreground">2. Espaços de trabalho</h3>
+            <p className="text-xs text-muted-foreground">Ao entrar, a pessoa só vê os espaços liberados aqui.</p>
+            <WorkspaceAccessPicker value={workspaceChoice} onChange={setWorkspaceChoice} workspaces={workspaces} disabled={readOnly} allowAll={actorWorkspaceIds === null} lockedAll={ownerLocked} />
+          </section>
+
+          <section className="space-y-2">
+            <h3 className="text-sm font-semibold text-foreground">3. Equipes</h3>
             <p className="text-xs text-muted-foreground">Participar define o que é "dados da equipe" para a pessoa. Gerenciar permite configurar o kanban e acompanhar a equipe.</p>
             {(teams ?? []).length === 0 ? <p className="text-sm text-muted-foreground">Nenhuma equipe cadastrada neste workspace.</p> : null}
             <ul className="space-y-1.5">
@@ -148,7 +164,7 @@ export function UserAccessModal({ userId, name, workspaceId, isSelf, actorIsOwne
 
           <section className="space-y-3">
             <div className="flex items-baseline justify-between gap-2">
-              <h3 className="text-sm font-semibold text-foreground">3. Permissões</h3>
+              <h3 className="text-sm font-semibold text-foreground">4. Permissões</h3>
               {customized ? <span className="text-xs text-primary dark:text-primary-glow">{customized} personalizada(s)</span> : <span className="text-xs text-muted-foreground">Padrão do perfil</span>}
             </div>
             {catalog.categories.map((category) => (
@@ -182,12 +198,18 @@ export function UserAccessModal({ userId, name, workspaceId, isSelf, actorIsOwne
 
           <div className="sticky bottom-0 flex justify-end gap-2 border-t border-border bg-card/95 py-3">
             <Button variant="secondary" onClick={onClose} disabled={saving}>Cancelar</Button>
-            <Button onClick={() => void save()} loading={saving} disabled={saving || readOnly}>Salvar acesso</Button>
+            <Button onClick={() => void save()} loading={saving} disabled={saving || readOnly || workspaceInvalid}>Salvar acesso</Button>
           </div>
         </div>
       )}
     </Modal>
   );
+}
+
+function sameWorkspaces(a: readonly string[] | null, b: readonly string[] | null): boolean {
+  if (a === null || b === null) return a === b;
+  const set = new Set(a);
+  return set.size === new Set(b).size && b.every((id) => set.has(id));
 }
 
 function Notice({ children }: { children: React.ReactNode }) {

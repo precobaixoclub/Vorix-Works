@@ -51,7 +51,7 @@ export function listTenantMembers(): Promise<TenantMembershipType[]> {
   return apiClient.get<TenantMembershipType[]>("/v1/tenant-members");
 }
 
-export function createTenantMember(input: { name: string; email: string; password: string; role: TenantRole; avatarUrl?: string | null }): Promise<TenantMembershipType> {
+export function createTenantMember(input: { name: string; email: string; password: string; role: TenantRole; avatarUrl?: string | null; workspaceIds?: string[] | null }): Promise<TenantMembershipType> {
   return apiClient.post<TenantMembershipType>("/v1/tenant-members", input);
 }
 
@@ -88,7 +88,8 @@ export function getMemberAccess(userId: string): Promise<MemberAccess> {
   return apiClient.get<MemberAccess>(`/v1/tenant-members/${encodeURIComponent(userId)}/access`);
 }
 
-export function updateMemberAccess(userId: string, input: { role: TenantRole; permissionGrants: string[]; permissionRevokes: string[] }): Promise<MemberAccess> {
+/** `workspaceIds` só vai quando mudou (`null` = todos os espaços). */
+export function updateMemberAccess(userId: string, input: { role: TenantRole; permissionGrants: string[]; permissionRevokes: string[]; workspaceIds?: string[] | null }): Promise<MemberAccess> {
   return apiClient.put<MemberAccess>(`/v1/tenant-members/${encodeURIComponent(userId)}/access`, input);
 }
 

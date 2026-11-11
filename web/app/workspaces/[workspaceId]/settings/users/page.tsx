@@ -25,6 +25,7 @@ import { useMyAccess } from "@/features/auth/access";
 import { useTenantInvites, useTenantMembers } from "@/features/identity/hooks";
 import type { TenantMemberInvite, TenantMembership, TenantRole } from "@/features/identity/types";
 import { useInboxMembers } from "@/features/inbox/hooks";
+import { useWorkspaces } from "@/features/workspace/hooks";
 import { RBAC_COPY } from "@/lib/rbac";
 
 /** Perfis (0173): owner = Administrador, admin = Gerente, editor = Atendente; viewer é legado. */
@@ -44,6 +45,11 @@ export default function UsersPage() {
   const { data: members, error: membersError, isLoading: membersLoading, mutate: mutateMembers } = useTenantMembers();
   const { data: invites, error: invitesError, isLoading: invitesLoading, mutate: mutateInvites } = useTenantInvites();
   const { data: inboxMembers } = useInboxMembers(workspace.id);
+  const { data: workspaces } = useWorkspaces();
+  const workspaceOptions = (workspaces ?? []).map((item) => ({ id: item.id, name: item.name, status: item.status }));
+  // Espaços de quem está editando (`null` = todos): restrito só distribui os próprios.
+  const actorWorkspaceIds = members?.find((member) => member.userId === currentUserId)?.workspaceIds ?? null;
+  const inviteBlocked = actorWorkspaceIds !== null;
   const [inviteOpen, setInviteOpen] = useState(false);
   const [profileEditor, setProfileEditor] = useState<TenantMembership | "new">();
   const { mutate: mutateCache } = useSWRConfig();
@@ -117,7 +123,7 @@ export default function UsersPage() {
       active="users"
       title="Usuários"
       description="Cadastre nome, e-mail e foto de quem trabalha com você e gerencie o acesso à conta."
-      actions={<div className="flex gap-2"><GuardedButton variant="secondary" onClick={() => setInviteOpen(true)} allowed={canManage} blockedReason={RBAC_COPY.manageTenant}>Convidar por e-mail</GuardedButton><GuardedButton onClick={() => setProfileEditor("new")} allowed={canManage} blockedReason={RBAC_COPY.manageTenant}>Cadastrar usuário</GuardedButton></div>}
+      actions={<div className="flex gap-2"><GuardedButton variant="secondary" onClick={() => setInviteOpen(true)} allowed={canManage && !inviteBlocked} blockedReason={inviteBlocked ? "Você acessa só alguns espaços: use Cadastrar usuário para escolher os espaços da pessoa." : RBAC_COPY.manageTenant}>Convidar por e-mail</GuardedButton><GuardedButton onClick={() => setProfileEditor("new")} allowed={canManage} blockedReason={RBAC_COPY.manageTenant}>Cadastrar usuário</GuardedButton></div>}
     >
       {error ? <p className="mb-4 rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</p> : null}
 
@@ -135,6 +141,7 @@ export default function UsersPage() {
                     <TableRow>
                       <TableHead>Usuário</TableHead>
                       <TableHead>Perfil</TableHead>
+                      <TableHead>Espaços</TableHead>
                       <TableHead>Status</TableHead>
                       <TableHead className="text-right">Ações</TableHead>
                     </TableRow>
@@ -161,6 +168,7 @@ export default function UsersPage() {
                           {member.customizedPermissions ? <Badge variant="secondary" title="Permissões ajustadas sobre o padrão do perfil">Personalizado</Badge> : null}
                         </div>
                       </TableCell>
+                      <TableCell className="max-w-56 text-sm text-muted-foreground"><span className="block truncate">{workspaceSummary(member.isAccountOwner ? null : member.workspaceIds ?? null, workspaceOptions)}</span></TableCell>
                       <TableCell>{member.status === "disabled" ? <Badge variant="outline">Desativado</Badge> : <Badge variant="default">Ativo</Badge>}</TableCell>
                       <TableCell className="text-right">
                         <Button variant="ghost" onClick={() => setAccessEditor({ userId: member.userId, name: identity.name })} disabled={busy}>Acesso</Button>
@@ -223,7 +231,7 @@ export default function UsersPage() {
         </CardBody>
       </Card>
 
-      {profileEditor && canManage ? <UserProfileModal member={profileEditor === "new" ? undefined : profileEditor} onClose={() => setProfileEditor(undefined)} onSaved={async () => {
+      {profileEditor && canManage ? <UserProfileModal member={profileEditor === "new" ? undefined : profileEditor} workspaces={workspaceOptions} actorWorkspaceIds={actorWorkspaceIds} actorIsOwner={actorIsOwner} onClose={() => setProfileEditor(undefined)} onSaved={async () => {
         await mutateMembers();
         await mutateCache((key) => Array.isArray(key) && key[0] === "inbox-members");
       }} /> : null}
@@ -233,6 +241,8 @@ export default function UsersPage() {
           userId={accessEditor.userId}
           name={accessEditor.name}
           workspaceId={workspace.id}
+          workspaces={workspaceOptions}
+          actorWorkspaceIds={actorWorkspaceIds}
           isSelf={accessEditor.userId === currentUserId || !canManageAccess}
           actorIsOwner={actorIsOwner}
           onClose={() => setAccessEditor(undefined)}
@@ -276,6 +286,14 @@ export default function UsersPage() {
       />
     </SettingsShell>
   );
+}
+
+/** "Todos" ou os nomes dos espaços liberados (os que quem vê a lista não enxerga viram "+N"). */
+function workspaceSummary(ids: readonly string[] | null, options: readonly { id: string; name: string }[]): string {
+  if (ids === null) return "Todos";
+  const names = ids.map((id) => options.find((option) => option.id === id)?.name).filter((name): name is string => Boolean(name));
+  const hidden = ids.length - names.length;
+  return [...names, ...(hidden ? [`+${hidden}`] : [])].join(", ") || "—";
 }
 
 function memberIdentity(userId: string, members: readonly { userId: string; name: string; email: string }[] | undefined) {

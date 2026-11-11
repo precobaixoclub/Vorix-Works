@@ -42,16 +42,16 @@ test("admin altera recursos, limites e soluções com um único motivo e um úni
   await page.getByLabel("Propostas comerciais", { exact: false }).selectOption("blocked");
   await page.locator("#limit-mode-workspaces").selectOption("custom"); await page.getByLabel("Limite de Espaços ativos").fill("3");
   await page.getByRole("switch", { name: "Vorix Marketing" }).click(); await page.getByLabel("Minutos de gravação por mês").fill("1500");
-  await expect(page.getByText("Dono da conta: acessa todos os espaços.")).toBeVisible();
-  await page.getByLabel("Espaços de Vendedora").selectOption("some"); await page.getByRole("checkbox", { name: "Loja Centro" }).uncheck();
-  await expect(page.getByText("5 alterações pendentes")).toBeVisible();
+  // Quem acessa quais espaços é decisão do próprio cliente (Configurações → Usuários), não do admin.
+  await expect(page.getByText("Usuários e espaços de trabalho")).toHaveCount(0);
+  await expect(page.getByText("4 alterações pendentes")).toBeVisible();
   await page.getByLabel("Motivo da alteração", { exact: true }).fill("Negociação comercial autorizada"); await save.click();
   await expect(page.getByText("Alterações salvas", { exact: true })).toBeVisible();
   expect(state.writes[0].path).toBe(`/v1/admin/tenants/${target}/controls`); expect(state.writes[0].body.capabilities).toEqual({ proposals: false }); expect(state.writes[0].body.limits).toEqual({ workspaces: 3 });
   expect(state.writes.slice(1).map(write => write.path)).toEqual([`/v1/admin/tenants/${target}/solutions/marketing`, `/v1/admin/tenants/${target}/solutions/meetings`]);
   expect(state.writes[1].body).toMatchObject({ enabled: true, source: "manual", reason: "Negociação comercial autorizada" });
   expect(state.writes[2].body).toMatchObject({ enabled: true, reason: "Negociação comercial autorizada", limits: { maxConcurrentRecordings: 3, monthlyRecordingMinutes: 1500, meetingRetentionDays: 45, maxStorageBytes: 21474836480 } });
-  expect(state.writes[3]).toEqual({ path: `/v1/admin/tenants/${target}/members/seller/workspaces`, body: { workspaceIds: ["ws-client"], reason: "Negociação comercial autorizada" } });
+  expect(state.writes).toHaveLength(3);
   await expect(page.getByText("Nenhuma alteração pendente.")).toBeVisible();
   await page.reload(); await page.getByRole("button", { name: "Acessos e limites", exact: true }).click();
   await expect(page.locator("#feature-proposals")).toHaveValue("blocked"); await expect(page.getByLabel("Limite de Espaços ativos")).toHaveValue("3");

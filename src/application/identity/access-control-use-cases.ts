@@ -11,6 +11,7 @@ import {
 import type { AccessAuditLogPort } from "../ports/access-audit-log.port.js";
 import type { TenantMembershipRepositoryPort } from "../ports/tenant-membership-repository.port.js";
 import type { TeamMembershipRepositoryPort, TeamRepositoryPort } from "../ports/team-repository.port.js";
+import type { WorkspaceRepositoryPort } from "../ports/workspace-repository.port.js";
 
 /**
  * Perfis, direitos de acesso e escopo (0173) — a ÚNICA porta para: (1) saber o que uma pessoa
@@ -23,6 +24,8 @@ export type AccessControlDeps = {
   teamRepository?: TeamRepositoryPort;
   teamMembershipRepository?: TeamMembershipRepositoryPort;
   accessAuditLog?: AccessAuditLogPort;
+  /** Valida os espaços de trabalho liberados para uma pessoa (precisam ser desta conta). */
+  workspaceRepository?: Pick<WorkspaceRepositoryPort, "listByTenant">;
   /** Chamado depois de qualquer mudança de acesso — invalida o cache do resolvedor por requisição. */
   onAccessChanged?: (userId: string, tenantId: string) => void;
 };
@@ -34,6 +37,8 @@ export type AccessContext = {
   role: TenantRole;
   permissions: readonly Permission[];
   isAccountOwner: boolean;
+  /** Espaços que QUEM PEDE acessa; ausente = todos. Quem é restrito só distribui os próprios. */
+  workspaceIds?: readonly string[];
   memberTeamIds: string[];
   managedTeamIds: string[];
 };
@@ -56,7 +61,7 @@ export function scopeFor(context: Pick<AccessContext, "permissions">, domain: Sc
   return "own";
 }
 
-export async function resolveAccessContext(deps: Pick<AccessControlDeps, "teamMembershipRepository">, principal: Pick<AuthPrincipal, "tenantId" | "userId" | "role" | "permissions" | "isAccountOwner">): Promise<AccessContext> {
+export async function resolveAccessContext(deps: Pick<AccessControlDeps, "teamMembershipRepository">, principal: Pick<AuthPrincipal, "tenantId" | "userId" | "role" | "permissions" | "isAccountOwner" | "workspaceIds">): Promise<AccessContext> {
   const memberships = deps.teamMembershipRepository ? await deps.teamMembershipRepository.listByUser(principal.userId, principal.tenantId) : [];
   return {
     tenantId: principal.tenantId,
@@ -64,6 +69,7 @@ export async function resolveAccessContext(deps: Pick<AccessControlDeps, "teamMe
     role: principal.role,
     permissions: principal.permissions ?? effectivePermissions(principal.role),
     isAccountOwner: principal.isAccountOwner === true,
+    ...(principal.workspaceIds ? { workspaceIds: principal.workspaceIds } : {}),
     memberTeamIds: memberships.map((membership) => membership.teamId),
     managedTeamIds: memberships.filter((membership) => isTeamManagerRole(membership.role)).map((membership) => membership.teamId),
   };
@@ -118,6 +124,8 @@ export type MemberAccessView = {
   role: TenantRole;
   status: TenantMembership["status"];
   isAccountOwner: boolean;
+  /** Espaços de trabalho liberados; `null` = todos (o Administrador principal sempre é `null`). */
+  workspaceIds: string[] | null;
   permissionGrants: string[];
   permissionRevokes: string[];
   effectivePermissions: Permission[];
@@ -134,6 +142,7 @@ export async function getMemberAccess(deps: AccessControlDeps, input: { tenantId
     role: membership.role,
     status: membership.status,
     isAccountOwner: membership.isAccountOwner,
+    workspaceIds: membership.isAccountOwner ? null : membership.workspaceIds ?? null,
     permissionGrants: membership.permissionGrants,
     permissionRevokes: membership.permissionRevokes,
     effectivePermissions: effectivePermissions(membership.role, membership.permissionGrants, membership.permissionRevokes),
@@ -152,6 +161,36 @@ async function tenantTeams(deps: AccessControlDeps, tenantId: string, membership
 }
 
 /**
+ * Espaços de trabalho que uma pessoa acessa (0196). `null` = todos (padrão). Regras: ao menos um
+ * espaço, todos desta conta, o Administrador principal sempre com todos, e quem está restrito só
+ * distribui os espaços que ele mesmo acessa (nunca "todos").
+ */
+export async function normalizeWorkspaceAccess(
+  deps: Pick<AccessControlDeps, "workspaceRepository">,
+  actor: Pick<AccessContext, "tenantId" | "workspaceIds">,
+  input: { workspaceIds: readonly string[] | null; targetIsAccountOwner: boolean },
+): Promise<string[] | null> {
+  if (input.workspaceIds === null) {
+    if (actor.workspaceIds) throw new Error("ACCESS_ESCALATION_FORBIDDEN: você só pode liberar os espaços de trabalho que você mesmo acessa.");
+    return null;
+  }
+  if (input.targetIsAccountOwner) throw new Error("ACCESS_WORKSPACE_INVALID: o Administrador principal sempre acessa todos os espaços de trabalho.");
+  const ids = [...new Set(input.workspaceIds)];
+  if (!ids.length) throw new Error("ACCESS_WORKSPACE_INVALID: escolha ao menos um espaço de trabalho.");
+  if (!deps.workspaceRepository) throw new Error("ACCESS_WORKSPACE_INVALID: escolha de espaços indisponível neste ambiente.");
+  const owned = new Set((await deps.workspaceRepository.listByTenant(actor.tenantId)).map((workspace) => workspace.id));
+  if (ids.some((id) => !owned.has(id))) throw new Error("ACCESS_WORKSPACE_INVALID: um dos espaços escolhidos não pertence a esta conta.");
+  if (actor.workspaceIds && ids.some((id) => !actor.workspaceIds!.includes(id))) throw new Error("ACCESS_ESCALATION_FORBIDDEN: você só pode liberar os espaços de trabalho que você mesmo acessa.");
+  return ids;
+}
+
+function sameWorkspaces(a: readonly string[] | null, b: readonly string[] | null): boolean {
+  if (a === null || b === null) return a === b;
+  const set = new Set(a);
+  return set.size === new Set(b).size && b.every((id) => set.has(id));
+}
+
+/**
  * Altera perfil e exceções de UMA vez (o estado salvo é sempre coerente). Trocar de perfil sem
  * mandar exceções zera as exceções — o novo perfil carrega o próprio padrão. Toda diferença vira
  * uma linha de auditoria (perfil, cada permissão concedida/removida).
@@ -159,9 +198,11 @@ async function tenantTeams(deps: AccessControlDeps, tenantId: string, membership
 export async function updateMemberAccess(
   deps: AccessControlDeps,
   actor: AccessContext,
-  input: { userId: string; role: TenantRole; permissionGrants?: readonly string[]; permissionRevokes?: readonly string[] },
+  input: { userId: string; role: TenantRole; permissionGrants?: readonly string[]; permissionRevokes?: readonly string[]; workspaceIds?: readonly string[] | null },
 ): Promise<MemberAccessView> {
   const target = await mustMember(deps, input.userId, actor.tenantId);
+  const currentWorkspaces = target.isAccountOwner ? null : target.workspaceIds ?? null;
+  const workspacesChanged = input.workspaceIds !== undefined && !sameWorkspaces(input.workspaceIds, currentWorkspaces);
   const roleChanged = input.role !== target.role;
   const next = normalizeAccessChange({
     role: input.role,
@@ -169,6 +210,8 @@ export async function updateMemberAccess(
     revokes: input.permissionRevokes ?? (roleChanged ? [] : target.permissionRevokes),
   });
   assertAccessChangeAllowed({ actor: actorFrom(actor), target, next, activeOwnerCount: await activeOwnerCount(deps, actor.tenantId) });
+  // Valida os espaços ANTES de gravar qualquer coisa: o salvar é tudo ou nada.
+  const nextWorkspaces = workspacesChanged ? await normalizeWorkspaceAccess(deps, actor, { workspaceIds: input.workspaceIds!, targetIsAccountOwner: target.isAccountOwner }) : currentWorkspaces;
   await deps.membershipRepository.updateAccess(target.userId, actor.tenantId, { role: next.role, permissionGrants: next.grants, permissionRevokes: next.revokes });
 
   const audit = (eventType: Parameters<AccessAuditLogPort["record"]>[0]["eventType"], previousValue: unknown, newValue: unknown) =>
@@ -178,6 +221,10 @@ export async function updateMemberAccess(
   const after = new Set(effectivePermissions(next.role, next.grants, next.revokes));
   for (const permission of after) if (!before.has(permission)) await audit("permission_granted", { enabled: false }, { permission, origin: next.grants.includes(permission) ? "exception" : "profile" });
   for (const permission of before) if (!after.has(permission)) await audit("permission_revoked", { permission, enabled: true }, { enabled: false, origin: next.revokes.includes(permission) ? "exception" : "profile" });
+  if (workspacesChanged) {
+    await deps.membershipRepository.setWorkspaceAccess(target.userId, actor.tenantId, nextWorkspaces);
+    await audit("workspace_access_changed", { workspaceIds: currentWorkspaces }, { workspaceIds: nextWorkspaces });
+  }
   deps.onAccessChanged?.(target.userId, actor.tenantId);
   return getMemberAccess(deps, { tenantId: actor.tenantId, userId: target.userId });
 }

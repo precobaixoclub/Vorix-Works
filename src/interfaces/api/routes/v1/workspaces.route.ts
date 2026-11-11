@@ -96,7 +96,11 @@ function canonicalLogoUrl(storage: ObjectStoragePort | undefined, scope: { tenan
   return storage.resolvePublicUrl(owned.key);
 }
 
-export async function registerWorkspaceRoutes(app: FastifyInstance, deps: WorkspaceUseCaseDeps & { objectStorage?: ObjectStoragePort }): Promise<void> {
+export async function registerWorkspaceRoutes(app: FastifyInstance, deps: WorkspaceUseCaseDeps & {
+  objectStorage?: ObjectStoragePort;
+  /** Quem só acessa alguns espaços passa a acessar também o espaço que acabou de criar. */
+  grantCreatedWorkspace?: (input: { userId: string; tenantId: string; workspaceIds: readonly string[]; workspaceId: string }) => Promise<void>;
+}): Promise<void> {
   app.post("/workspaces/:id/logo", { schema: { params: ID_PARAMS_SCHEMA } }, async (request) => {
     const principal = requirePermission(request, "workspace:update");
     const { id } = request.params as { id: string };
@@ -125,6 +129,7 @@ export async function registerWorkspaceRoutes(app: FastifyInstance, deps: Worksp
     const workspace = await createWorkspace(deps, { tenantId: principal.tenantId, name: body.name, kind: body.kind }).catch(
       translateWorkspaceError,
     );
+    if (principal.workspaceIds) await deps.grantCreatedWorkspace?.({ userId: principal.userId, tenantId: principal.tenantId, workspaceIds: principal.workspaceIds, workspaceId: workspace.id });
     reply.status(201);
     return successEnvelope(workspace, request.id);
   });

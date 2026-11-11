@@ -6,7 +6,6 @@ import {
   getPlatformDashboard,
   getTenantDetail,
   listTenantsOverview,
-  setMemberWorkspaceAccess,
   setPriceMultiplier,
   suspendTenant,
   type PlatformAdminUseCaseDeps,
@@ -93,8 +92,6 @@ function translatePlatformError(error: unknown): never {
     if (error.message.startsWith("PLATFORM_ADMIN_TENANT_NOT_FOUND")) throw new NotFoundError(error.message);
     if (error.message.startsWith("PLATFORM_BILLING_TENANT_NOT_FOUND")) throw new NotFoundError(error.message);
     if (error.message.startsWith("PLATFORM_ADMIN_INVALID_DELTA")) throw new ValidationError(error.message);
-    if (error.message.startsWith("PLATFORM_ADMIN_MEMBER_NOT_FOUND")) throw new NotFoundError(error.message);
-    if (error.message.startsWith("PLATFORM_ADMIN_INVALID_WORKSPACE_ACCESS")) throw new ValidationError(error.message);
     if (error.message.startsWith("CHANGE_PLAN_") || error.message.startsWith("TENANT_CONTROLS_CONFLICT")) throw new ValidationError(error.message);
     if (error.message.startsWith("PLATFORM_ADMIN_INVALID_MULTIPLIER")) throw new ValidationError(error.message);
     if (error.message.startsWith("PLATFORM_BILLING_INVALID_MULTIPLIER")) throw new ValidationError(error.message);
@@ -136,23 +133,6 @@ export async function registerAdminRoutes(
     const detail = await getTenantDetail(deps, { tenantId }).catch(translatePlatformError);
     return successEnvelope(detail, request.id);
   });
-
-  // Espaços de trabalho que uma pessoa acessa (`workspaceIds: null` = todos).
-  app.put(
-    "/admin/tenants/:tenantId/members/:userId/workspaces",
-    { schema: {
-      params: { type: "object", required: ["tenantId", "userId"], properties: { tenantId: { type: "string", minLength: 1, maxLength: 200 }, userId: { type: "string", minLength: 1, maxLength: 200 } } },
-      // `type: ["array", "null"]` (never anyOf): type coercion would turn null into [].
-      body: { type: "object", additionalProperties: false, required: ["workspaceIds"], properties: { workspaceIds: { type: ["array", "null"], maxItems: 500, items: { type: "string", minLength: 1, maxLength: 200 } }, reason: { type: "string", maxLength: 500 } } },
-    } },
-    async (request) => {
-      const principal = requirePlatformAdmin(request);
-      const { tenantId, userId } = request.params as { tenantId: string; userId: string };
-      const body = request.body as { workspaceIds: string[] | null; reason?: string };
-      const result = await setMemberWorkspaceAccess(deps, { tenantId, userId, workspaceIds: body.workspaceIds, reason: body.reason?.trim() || undefined, actor: { userId: principal.userId } }).catch(translatePlatformError);
-      return successEnvelope(result, request.id);
-    },
-  );
 
   // Ajusta cr\u00e9ditos avulsos \u2014 positivo adiciona, negativo debita. Gera ledger entry.
   app.post(

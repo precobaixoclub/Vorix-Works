@@ -217,6 +217,11 @@ export async function registerV1Routes(app: FastifyInstance): Promise<void> {
     platformBillingRepository: app.zunoContainer.identity?.platformBillingRepository,
     creativeEngineEntitlementRepository: app.zunoContainer.creativeEngineEntitlementRepository,
     objectStorage: app.zunoContainer.objectStorage,
+    grantCreatedWorkspace: app.zunoContainer.identity ? async ({ userId, tenantId, workspaceIds, workspaceId }) => {
+      const identity = app.zunoContainer.identity!;
+      await identity.membershipRepository.setWorkspaceAccess(userId, tenantId, [...workspaceIds, workspaceId]);
+      identity.accessResolver.invalidate(userId, tenantId);
+    } : undefined,
   });
   await registerAuthRoutes(app, {
     identity: app.zunoContainer.identity,
@@ -970,8 +975,6 @@ export async function registerV1Routes(app: FastifyInstance): Promise<void> {
       membershipRepository: identity.membershipRepository,
       userRepository: identity.userRepository,
       workspaceRepository: app.zunoContainer.workspaceRepository,
-      accessAuditLog: identity.accessAuditLog,
-      onAccessChanged: (userId, tenantId) => identity.accessResolver.invalidate(userId, tenantId),
       idGenerator: () => `credit-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
       now: () => new Date(),
       platformAiSettings: {

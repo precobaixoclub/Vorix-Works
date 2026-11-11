@@ -9,7 +9,6 @@ import { Input } from "@/components/Field";
 import { ErrorState } from "@/components/ErrorState";
 import { GuardedButton } from "@/components/GuardedButton";
 import { Switch } from "@/components/ui/switch";
-import type { TenantMember, TenantWorkspace } from "@/features/platform-admin/types";
 import { accessLabels, describeChange, features, quota, resources, selectClass, type AccessMode, type Contract, type Controls, type Feature, type Resource, type TenantSolution } from "./tenant-contract-model";
 
 const GIB = 1024 ** 3;
@@ -24,25 +23,17 @@ const meetingsFields: { key: MeetingsLimitKey; label: string; scale: number }[] 
 ];
 
 type SolutionDraft = { enabled: boolean; limits?: Record<string, number> };
-/** Por pessoa: `null` = todos os espaços; lista = só esses espaços. */
-type Draft = { controls: Controls; solutions: Record<string, SolutionDraft>; members: Record<string, string[] | null> };
-const userIdIn = (record: Record<string, unknown>, userId: string) => Object.hasOwn(record, userId);
-const roleLabels: Record<string, string> = { owner: "Administrador", admin: "Gerente", editor: "Atendente", viewer: "Visualizador" };
-const sameAccess = (a: string[] | null | undefined, b: string[] | null | undefined) => (a ?? null) === null || (b ?? null) === null ? (a ?? null) === (b ?? null) : a!.length === b!.length && a!.every(id => b!.includes(id));
+type Draft = { controls: Controls; solutions: Record<string, SolutionDraft> };
 
 function solutionBaseline(solution: TenantSolution): SolutionDraft {
   const enabled = solution.entitlement?.enabled ?? solution.enabled;
   return solution.key === "meetings" ? { enabled, limits: { ...MEETINGS_DEFAULT_LIMITS, ...solution.entitlement?.limits } } : { enabled };
 }
-function initialDraft(data: Contract, solutions: TenantSolution[], members: TenantMember[]): Draft {
+function initialDraft(data: Contract, solutions: TenantSolution[]): Draft {
   return {
     controls: structuredClone(data.controls),
     solutions: Object.fromEntries(solutions.map(solution => [solution.key, solutionBaseline(solution)])),
-    members: Object.fromEntries(members.map(member => [member.userId, member.workspaceIds ? [...member.workspaceIds] : null])),
   };
-}
-function workspaceNames(ids: string[] | null, workspaces: TenantWorkspace[]) {
-  return ids === null ? "todos os espaços" : ids.map(id => workspaces.find(workspace => workspace.id === id)?.name ?? id).join(", ") || "nenhum espaço";
 }
 const normalizeControls = (controls: Controls): Controls => ({ ...controls, displayName: controls.displayName?.trim() || undefined });
 function solutionChanges(solution: TenantSolution, draft: SolutionDraft) {
@@ -62,17 +53,17 @@ const sourceLabel = (source?: string) => source === "subscription" ? "assinatura
  * pode usar (acesso, soluções, recursos do plano, limites de uso e limites do Meetings). Ao salvar,
  * só o que mudou é enviado: controles da conta (uma chamada versionada) e cada solução alterada.
  */
-export function TenantAccessEditor({ data, members, workspaces, path, refresh }: { data: Contract; members: TenantMember[]; workspaces: TenantWorkspace[]; path: string; refresh: () => Promise<void> }) {
+export function TenantAccessEditor({ data, path, refresh }: { data: Contract; path: string; refresh: () => Promise<void> }) {
   const { data: solutions, error, mutate } = useSWR(["admin-tenant-solutions", data.controls.tenantId], () => apiClient.get<{ solutions: TenantSolution[] }>(`${path}/solutions`));
   const [generation, setGeneration] = useState(0);
   if (error) return <ErrorState error={error} onRetry={() => mutate()} />;
   if (!solutions) return <p className="py-8 text-sm text-muted-foreground">Carregando soluções da conta…</p>;
   const reload = async (resetDraft: boolean) => { await Promise.all([refresh(), mutate()]); if (resetDraft) setGeneration(value => value + 1); };
-  return <AccessForm key={generation} data={data} solutions={solutions.solutions} members={members} workspaces={workspaces} path={path} reload={reload} />;
+  return <AccessForm key={generation} data={data} solutions={solutions.solutions} path={path} reload={reload} />;
 }
 
-function AccessForm({ data, solutions, members, workspaces, path, reload }: { data: Contract; solutions: TenantSolution[]; members: TenantMember[]; workspaces: TenantWorkspace[]; path: string; reload: (resetDraft: boolean) => Promise<void> }) {
-  const [draft, setDraft] = useState<Draft>(() => initialDraft(data, solutions, members));
+function AccessForm({ data, solutions, path, reload }: { data: Contract; solutions: TenantSolution[]; path: string; reload: (resetDraft: boolean) => Promise<void> }) {
+  const [draft, setDraft] = useState<Draft>(() => initialDraft(data, solutions));
   const [reason, setReason] = useState(""); const [busy, setBusy] = useState(false); const [error, setError] = useState("");
   const controls = draft.controls;
   const setControls = (patch: Partial<Controls>) => setDraft(current => ({ ...current, controls: { ...current.controls, ...patch } }));
@@ -80,16 +71,11 @@ function AccessForm({ data, solutions, members, workspaces, path, reload }: { da
 
   const controlChanges = describeChange(data.controls, normalizeControls(controls));
   const changedSolutions = solutions.map(solution => ({ solution, lines: solutionChanges(solution, draft.solutions[solution.key]) })).filter(item => item.lines.length);
-  const setMemberAccess = (userId: string, workspaceIds: string[] | null) => setDraft(current => ({ ...current, members: { ...current.members, [userId]: workspaceIds } }));
-  const changedMembers = members.filter(member => !member.isAccountOwner && userIdIn(draft.members, member.userId) && !sameAccess(member.workspaceIds, draft.members[member.userId]));
-  const memberLines = changedMembers.map(member => `${member.name}: ${workspaceNames(member.workspaceIds ?? null, workspaces)} → ${workspaceNames(draft.members[member.userId], workspaces)}`);
-  const changes = [...controlChanges, ...memberLines, ...changedSolutions.flatMap(item => item.lines)];
+  const changes = [...controlChanges, ...changedSolutions.flatMap(item => item.lines)];
   const invalidNumber = Object.values(controls.limits).some(value => typeof value === "number" && Number.isNaN(value))
     || Object.values(draft.solutions).some(item => Object.values(item.limits ?? {}).some(value => Number.isNaN(value)));
-  const memberWithoutWorkspace = changedMembers.find(member => draft.members[member.userId]?.length === 0);
   const blockedReason = !changes.length ? "Nenhuma alteração para salvar."
     : invalidNumber ? "Preencha todos os limites definidos."
-    : memberWithoutWorkspace ? `Escolha ao menos um espaço para ${memberWithoutWorkspace.name} (ou deixe "Todos os espaços").`
     : reason.trim().length < 3 ? "Informe o motivo da alteração (mínimo 3 caracteres)." : "";
 
   async function save() {
@@ -105,10 +91,6 @@ function AccessForm({ data, solutions, members, workspaces, path, reload }: { da
       for (const { solution } of changedSolutions) {
         const item = draft.solutions[solution.key];
         await apiClient.put(`${path}/solutions/${encodeURIComponent(solution.key)}`, { enabled: item.enabled, source: solution.commercialAvailability === "internal" ? "internal" : "manual", reason: reason.trim(), ...(item.limits ? { limits: item.limits } : {}) });
-        savedSomething = true;
-      }
-      for (const member of changedMembers) {
-        await apiClient.put(`${path}/members/${encodeURIComponent(member.userId)}/workspaces`, { workspaceIds: draft.members[member.userId], reason: reason.trim() });
         savedSomething = true;
       }
       toast.success("Alterações salvas", { description: "O acesso da conta é atualizado em até 1 segundo." });
@@ -134,31 +116,6 @@ function AccessForm({ data, solutions, members, workspaces, path, reload }: { da
               <label className="space-y-1 text-sm">Nome da conta<Input value={controls.displayName ?? ""} maxLength={120} placeholder={controls.tenantId} onChange={event => setControls({ displayName: event.target.value })} /></label>
               <label className="space-y-1 text-sm">Acesso à plataforma<select className={selectClass} value={controls.accessMode} onChange={event => setControls({ accessMode: event.target.value as AccessMode })}>{Object.entries(accessLabels).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></label>
             </div>
-          </Section>
-
-          <Section title="Usuários e espaços de trabalho" description="Defina quais espaços cada pessoa enxerga. Espaços fora da lista somem do seletor e ficam inacessíveis para ela.">
-            {!members.length ? <p className="text-sm text-muted-foreground">Nenhuma pessoa nesta conta.</p> : <div className="divide-y divide-border">{members.map(member => {
-              const access = draft.members[member.userId] ?? null;
-              return <div key={member.userId} className="grid gap-2 py-3 sm:grid-cols-2">
-                <div className="min-w-0 text-sm">
-                  <span className="font-medium">{member.name}</span>{!member.isAccountOwner && !sameAccess(member.workspaceIds, access) && <Changed />}
-                  <span className="block truncate text-xs text-muted-foreground">{member.email} · {roleLabels[member.role] ?? member.role}{member.status === "disabled" ? " · desativado" : ""}</span>
-                </div>
-                {member.isAccountOwner ? <p className="text-sm text-muted-foreground sm:pt-2">Dono da conta: acessa todos os espaços.</p> : <div className="space-y-2">
-                  <select aria-label={`Espaços de ${member.name}`} className={selectClass} value={access === null ? "all" : "some"} onChange={event => setMemberAccess(member.userId, event.target.value === "all" ? null : workspaces.map(workspace => workspace.id))}>
-                    <option value="all">Todos os espaços</option><option value="some">Escolher espaços</option>
-                  </select>
-                  {access !== null && <div className="flex flex-wrap gap-2">{workspaces.map(workspace => {
-                    const checked = access.includes(workspace.id);
-                    return <label key={workspace.id} className={`flex cursor-pointer items-center gap-2 rounded-md border px-3 py-1.5 text-sm ${checked ? "border-primary/60 bg-primary/10" : "border-border"}`}>
-                      <input type="checkbox" className="accent-[var(--primary)]" checked={checked} onChange={event => setMemberAccess(member.userId, event.target.checked ? [...access, workspace.id] : access.filter(id => id !== workspace.id))} />
-                      {workspace.name}{workspace.status !== "active" && <span className="text-xs text-muted-foreground">(inativo)</span>}
-                    </label>;
-                  })}</div>}
-                  {access !== null && access.length === 0 && <p className="text-xs text-amber-700 dark:text-amber-300">Escolha ao menos um espaço.</p>}
-                </div>}
-              </div>;
-            })}</div>}
           </Section>
 
           <Section title="Soluções" description="Ligue ou desligue cada produto para esta conta.">

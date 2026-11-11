@@ -6,14 +6,26 @@ import { PersonAvatar } from "@/components/DashboardKit";
 import { Input, Label } from "@/components/Field";
 import { Modal } from "@/components/Modal";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { WorkspaceAccessPicker, type WorkspaceOption } from "@/components/settings/WorkspaceAccessPicker";
 import { createTenantMember, updateTenantMemberProfile } from "@/features/identity/api";
 import type { TenantMembership, TenantRole } from "@/features/identity/types";
 
-export function UserProfileModal({ member, onClose, onSaved }: { member?: TenantMembership; onClose: () => void; onSaved: () => Promise<void> }) {
+export function UserProfileModal({ member, workspaces = [], actorWorkspaceIds = null, actorIsOwner = false, onClose, onSaved }: {
+  member?: TenantMembership;
+  /** Cadastro: espaços que quem cadastra enxerga e os dele (`null` = todos). */
+  workspaces?: readonly WorkspaceOption[];
+  actorWorkspaceIds?: string[] | null;
+  actorIsOwner?: boolean;
+  onClose: () => void;
+  onSaved: () => Promise<void>;
+}) {
   const [name, setName] = useState(member?.name ?? "");
   const [email, setEmail] = useState(member?.email ?? "");
   const [password, setPassword] = useState("");
   const [role, setRole] = useState<TenantRole>("editor");
+  // Quem só acessa alguns espaços cadastra a pessoa já restrita a eles.
+  const [workspaceIds, setWorkspaceIds] = useState<string[] | null>(actorWorkspaceIds);
+  const workspaceInvalid = !member && workspaceIds !== null && workspaceIds.length === 0;
   const [avatarUrl, setAvatarUrl] = useState<string | null>(member?.avatarUrl ?? null);
   const [photoChanged, setPhotoChanged] = useState(false);
   const [readingPhoto, setReadingPhoto] = useState(false);
@@ -41,13 +53,13 @@ export function UserProfileModal({ member, onClose, onSaved }: { member?: Tenant
   }
 
   async function save() {
-    if (busy || readingPhoto) return;
+    if (busy || readingPhoto || workspaceInvalid) return;
     setBusy(true);
     setError(undefined);
     try {
       const profile = { name: name.trim(), email: email.trim(), ...(photoChanged ? { avatarUrl } : {}) };
       if (member) await updateTenantMemberProfile(member.userId, profile);
-      else await createTenantMember({ ...profile, password, role });
+      else await createTenantMember({ ...profile, password, role, workspaceIds });
       await onSaved();
       onClose();
     } catch (cause) { setError(cause instanceof Error ? cause.message.replace(/^[A-Z_]+:\s*/, "") : "Não foi possível salvar o usuário."); }
@@ -70,10 +82,11 @@ export function UserProfileModal({ member, onClose, onSaved }: { member?: Tenant
         <div><Label htmlFor="user-email">E-mail</Label><Input id="user-email" type="email" required maxLength={320} autoComplete="email" value={email} disabled={busy} onChange={(event) => setEmail(event.target.value)} placeholder="pessoa@empresa.com" /></div>
         {!member ? <>
           <div><Label htmlFor="user-password">Senha inicial</Label><Input id="user-password" type="password" required minLength={8} maxLength={72} autoComplete="new-password" value={password} disabled={busy} onChange={(event) => setPassword(event.target.value)} /><p className="mt-1 text-xs text-muted-foreground">Pelo menos 8 caracteres. Compartilhe o acesso com o usuário após o cadastro.</p></div>
-          <div><Label htmlFor="user-role">Papel de acesso</Label><Select value={role} onValueChange={(value) => setRole(value as TenantRole)} disabled={busy}><SelectTrigger id="user-role"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="owner">Administrador</SelectItem><SelectItem value="admin">Gestor</SelectItem><SelectItem value="editor">Editor</SelectItem><SelectItem value="viewer">Visualizador</SelectItem></SelectContent></Select></div>
+          <div><Label htmlFor="user-role">Papel de acesso</Label><Select value={role} onValueChange={(value) => setRole(value as TenantRole)} disabled={busy}><SelectTrigger id="user-role"><SelectValue /></SelectTrigger><SelectContent>{actorIsOwner ? <SelectItem value="owner">Administrador</SelectItem> : null}<SelectItem value="admin">Gerente</SelectItem><SelectItem value="editor">Atendente</SelectItem></SelectContent></Select></div>
+          <div className="space-y-1.5"><Label>Espaços de trabalho</Label><WorkspaceAccessPicker value={workspaceIds} onChange={setWorkspaceIds} workspaces={workspaces} disabled={busy} allowAll={actorWorkspaceIds === null} /></div>
         </> : null}
         {error ? <p role="alert" className="text-sm text-destructive">{error}</p> : null}
-        <div className="flex justify-end gap-2"><Button type="button" variant="secondary" disabled={busy || readingPhoto} onClick={onClose}>Cancelar</Button><Button type="submit" loading={busy} disabled={busy || readingPhoto || !name.trim() || !email.trim()}>{member ? "Salvar alterações" : "Cadastrar usuário"}</Button></div>
+        <div className="flex justify-end gap-2"><Button type="button" variant="secondary" disabled={busy || readingPhoto} onClick={onClose}>Cancelar</Button><Button type="submit" loading={busy} disabled={busy || readingPhoto || !name.trim() || !email.trim() || workspaceInvalid}>{member ? "Salvar alterações" : "Cadastrar usuário"}</Button></div>
       </form>
     </Modal>
   );

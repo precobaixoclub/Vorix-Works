@@ -8,7 +8,7 @@ import { PostgresTenantMembershipRepository } from "../dist/infrastructure/stora
 import { PostgresWorkspaceRepository } from "../dist/infrastructure/storage/postgres/postgres-workspace-repository.js";
 import { PostgresAccessAuditLog } from "../dist/infrastructure/storage/postgres/postgres-access-audit-log.js";
 import { AccessResolver } from "../dist/application/identity/access-resolver.js";
-import { setMemberWorkspaceAccess } from "../dist/application/platform-admin/platform-admin.usecases.js";
+import { getMemberAccess, resolveAccessContext, updateMemberAccess } from "../dist/application/identity/access-control-use-cases.js";
 import { registerWorkspaceTenantGuard } from "../dist/interfaces/api/http/workspace-tenant-guard.js";
 import { registerErrorHandler } from "../dist/interfaces/api/http/error-handler.js";
 import { startTestPostgres } from "./helpers/pglite-test-db.mjs";
@@ -35,23 +35,38 @@ async function member(role, isAccountOwner = false) {
   return user.id;
 }
 
-test("admin restricts a person to chosen workspaces; the guard hides the others and the owner keeps everything", async () => {
+test("the account itself restricts a person to chosen workspaces; the guard hides the others and the owner keeps everything", async () => {
   const [store, office] = [await deps.workspaceRepository.create({ tenantId, name: "Loja" }), await deps.workspaceRepository.create({ tenantId, name: "Escritório" })];
   const foreign = await deps.workspaceRepository.create({ tenantId: "another-tenant", name: "Outra conta" });
-  const owner = await member("owner", true); const seller = await member("editor");
+  const owner = await member("owner", true); const manager = await member("admin"); const seller = await member("editor");
   const changed = [];
-  const adminDeps = { ...deps, onAccessChanged: (userId) => changed.push(userId) };
+  const accessDeps = { ...deps, onAccessChanged: (userId) => changed.push(userId) };
+  const ownerActor = await resolveAccessContext(deps, { tenantId, userId: owner, role: "owner", isAccountOwner: true });
+  const save = (actor, userId, workspaceIds, role = "editor") => updateMemberAccess(accessDeps, actor, { userId, role, workspaceIds });
 
-  await assert.rejects(setMemberWorkspaceAccess(adminDeps, { tenantId, userId: seller, workspaceIds: [], actor: { userId: "root" } }), /INVALID_WORKSPACE_ACCESS/);
-  await assert.rejects(setMemberWorkspaceAccess(adminDeps, { tenantId, userId: seller, workspaceIds: [foreign.id], actor: { userId: "root" } }), /INVALID_WORKSPACE_ACCESS/);
-  await assert.rejects(setMemberWorkspaceAccess(adminDeps, { tenantId, userId: owner, workspaceIds: [store.id], actor: { userId: "root" } }), /INVALID_WORKSPACE_ACCESS/);
-  await assert.rejects(setMemberWorkspaceAccess(adminDeps, { tenantId, userId: "nobody", workspaceIds: null, actor: { userId: "root" } }), /MEMBER_NOT_FOUND/);
+  await assert.rejects(save(ownerActor, seller, []), /ACCESS_WORKSPACE_INVALID/);
+  await assert.rejects(save(ownerActor, seller, [foreign.id]), /ACCESS_WORKSPACE_INVALID/);
+  await assert.rejects(save(ownerActor, owner, [store.id], "owner"), /ACCESS_SELF_CHANGE_FORBIDDEN/);
+  // Invalid choice saves nothing (not even the profile).
+  await assert.rejects(save(ownerActor, seller, [foreign.id], "admin"), /ACCESS_WORKSPACE_INVALID/);
+  assert.equal((await deps.membershipRepository.getByUserAndTenant(seller, tenantId)).role, "editor");
 
-  await setMemberWorkspaceAccess(adminDeps, { tenantId, userId: seller, workspaceIds: [store.id, store.id], reason: "Só a loja", actor: { userId: "root" } });
-  assert.deepEqual((await deps.membershipRepository.getByUserAndTenant(seller, tenantId)).workspaceIds, [store.id]);
+  const view = await save(ownerActor, seller, [store.id, store.id]);
+  assert.deepEqual(view.workspaceIds, [store.id]);
   assert.deepEqual(changed, [seller]);
   const audit = await deps.accessAuditLog.list({ tenantId, targetUserId: seller });
-  assert.equal(audit[0].eventType, "workspace_access_changed"); assert.deepEqual(audit[0].newValue, { workspaceIds: [store.id], reason: "Só a loja" });
+  assert.equal(audit[0].eventType, "workspace_access_changed"); assert.deepEqual(audit[0].newValue, { workspaceIds: [store.id] });
+  // Unchanged choice is not a change (no new audit line).
+  await save(ownerActor, seller, [store.id]);
+  assert.equal((await deps.accessAuditLog.list({ tenantId, targetUserId: seller })).length, audit.length);
+
+  // A manager limited to the store can only hand out the store — never "all", never the office.
+  await save(ownerActor, manager, [store.id], "admin");
+  const managerActor = await resolveAccessContext(deps, { tenantId, userId: manager, role: "admin", workspaceIds: [store.id] });
+  const managerPermissions = { ...managerActor, permissions: [...managerActor.permissions, "tenant_member:manage_permissions"] };
+  await assert.rejects(save(managerPermissions, seller, null), /ACCESS_ESCALATION_FORBIDDEN/);
+  await assert.rejects(save(managerPermissions, seller, [office.id]), /ACCESS_ESCALATION_FORBIDDEN/);
+  assert.equal((await getMemberAccess(deps, { tenantId, userId: owner })).workspaceIds, null);
 
   const resolver = new AccessResolver(deps.membershipRepository);
   const sellerPrincipal = await resolver.resolve({ userId: seller, tenantId, role: "editor", sessionId: "s", isPlatformAdmin: false });
@@ -74,6 +89,6 @@ test("admin restricts a person to chosen workspaces; the guard hides the others 
   assert.equal(await status(`/workspaces/${office.id}/activate`, "owner", "POST"), 200);
   await app.close();
 
-  await setMemberWorkspaceAccess(adminDeps, { tenantId, userId: seller, workspaceIds: null, actor: { userId: "root" } });
+  await save(ownerActor, seller, null);
   assert.equal((await deps.membershipRepository.getByUserAndTenant(seller, tenantId)).workspaceIds, null);
 });

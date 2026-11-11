@@ -12,6 +12,7 @@ import { ACCESS_PROFILE_LABELS, PERMISSION_CATALOG } from "../../../../domain/id
 import {
   assertCanAssignRole,
   getMemberAccess,
+  normalizeWorkspaceAccess,
   removeMemberSafely,
   resolveAccessContext,
   setMemberStatus,
@@ -38,8 +39,11 @@ const PROFILE_PROPERTIES = {
   avatarUrl: { type: ["string", "null"], maxLength: 2_800_000 },
 } as const;
 const PROFILE_SCHEMA = { type: "object", required: ["name", "email"], additionalProperties: false, properties: PROFILE_PROPERTIES } as const;
+/** Espaços de trabalho liberados; `null` = todos. `type: [..., "null"]` (não `anyOf`): o Ajv com
+ * coerção transformaria `null` em `[]` dentro de um `anyOf`. */
+const WORKSPACE_IDS_SCHEMA = { type: ["array", "null"], maxItems: 500, items: { type: "string", minLength: 1, maxLength: 120 } } as const;
 const CREATE_MEMBER_SCHEMA = { type: "object", required: ["name", "email", "password", "role"], additionalProperties: false, properties: {
-  ...PROFILE_PROPERTIES, password: { type: "string", minLength: 8, maxLength: 72 }, role: UPDATE_ROLE_BODY_SCHEMA.properties.role,
+  ...PROFILE_PROPERTIES, password: { type: "string", minLength: 8, maxLength: 72 }, role: UPDATE_ROLE_BODY_SCHEMA.properties.role, workspaceIds: WORKSPACE_IDS_SCHEMA,
 } } as const;
 
 const ACCESS_BODY_SCHEMA = {
@@ -50,6 +54,7 @@ const ACCESS_BODY_SCHEMA = {
     role: { type: "string", enum: ["owner", "admin", "editor", "viewer"] },
     permissionGrants: { type: "array", maxItems: 200, items: { type: "string", minLength: 1, maxLength: 80 } },
     permissionRevokes: { type: "array", maxItems: 200, items: { type: "string", minLength: 1, maxLength: 80 } },
+    workspaceIds: WORKSPACE_IDS_SCHEMA,
   },
 } as const;
 
@@ -60,6 +65,7 @@ function translateInviteError(error: unknown): never {
     // Equipe padrão (0195): o único responsável N1 não pode sair sem substituto.
     if (error.message.startsWith("TEAM_DEFAULT_")) throw new ConflictError(error.message.replace(/^[A-Z_]+: /, ""));
     if (error.message.startsWith("ACCESS_PERMISSION_UNKNOWN")) throw new ValidationError(error.message);
+    if (error.message.startsWith("ACCESS_WORKSPACE_INVALID")) throw new ValidationError(error.message.replace(/^[A-Z_]+: /, ""));
     if (error.message.startsWith("ACCESS_")) throw new ForbiddenError(error.message.replace(/^[A-Z_]+: /, ""));
     if (error.message.startsWith("USAGE_LIMIT_REACHED")) throw new ConflictError("Limite de usuários atingido. Ajuste a quantidade em Plano e cobrança antes de cadastrar outro usuário.");
     if (error.message.startsWith("IDENTITY_VALIDATION_ERROR") || error.message.startsWith("USER_EMAIL_ALREADY_EXISTS")) throw new ValidationError(error.message);
@@ -142,7 +148,7 @@ export async function registerTenantMembersRoutes(app: FastifyInstance, deps: Te
   app.put("/tenant-members/:userId/access", { schema: { params: USER_ID_PARAMS_SCHEMA, body: ACCESS_BODY_SCHEMA } }, async (request) => {
     const principal = requirePermission(request, "tenant_member:manage_permissions");
     const { userId } = request.params as { userId: string };
-    const body = request.body as { role: "owner" | "admin" | "editor" | "viewer"; permissionGrants?: string[]; permissionRevokes?: string[] };
+    const body = request.body as { role: "owner" | "admin" | "editor" | "viewer"; permissionGrants?: string[]; permissionRevokes?: string[]; workspaceIds?: string[] | null };
     try {
       const actor = await resolveAccessContext(deps, principal);
       return successEnvelope(await updateMemberAccess(accessDeps, actor, { userId, ...body }), request.id);
@@ -167,16 +173,20 @@ export async function registerTenantMembersRoutes(app: FastifyInstance, deps: Te
 
   app.post("/tenant-members", { bodyLimit: 3_000_000, schema: { body: CREATE_MEMBER_SCHEMA } }, async (request, reply) => {
     const principal = requirePermission(request, "tenant_member:manage");
-    const body = request.body as { name: string; email: string; password: string; role: "owner" | "admin" | "editor" | "viewer"; avatarUrl?: string | null };
+    const { workspaceIds: requestedWorkspaces, ...body } = request.body as { name: string; email: string; password: string; role: "owner" | "admin" | "editor" | "viewer"; avatarUrl?: string | null; workspaceIds?: string[] | null };
     try {
       if (!deps.passwordHasher) throw new ValidationError("Cadastro indisponível neste ambiente.");
-      assertCanAssignRole(await resolveAccessContext(deps, principal), body.role);
+      const actor = await resolveAccessContext(deps, principal);
+      assertCanAssignRole(actor, body.role);
+      // Quem está restrito a alguns espaços cria a pessoa já restrita a eles (nunca "todos").
+      const workspaceIds = await normalizeWorkspaceAccess(deps, actor, { workspaceIds: requestedWorkspaces === undefined ? actor.workspaceIds ?? null : requestedWorkspaces, targetIsAccountOwner: false });
       await deps.assertCanAddMember?.(principal.tenantId);
       const avatarUrl = await normalizeUserAvatar(body.avatarUrl);
       const { user, membership } = await registerUser({ ...deps, passwordHasher: deps.passwordHasher }, { ...body, tenantId: principal.tenantId, avatarUrl: avatarUrl ?? undefined });
-      await deps.accessAuditLog?.record({ tenantId: principal.tenantId, actorUserId: principal.userId, targetUserId: user.id, eventType: "member_created", newValue: { role: membership.role } });
+      if (workspaceIds) await deps.membershipRepository.setWorkspaceAccess(user.id, principal.tenantId, workspaceIds);
+      await deps.accessAuditLog?.record({ tenantId: principal.tenantId, actorUserId: principal.userId, targetUserId: user.id, eventType: "member_created", newValue: { role: membership.role, workspaceIds } });
       reply.code(201);
-      return successEnvelope({ ...membership, name: user.name, email: user.email, avatarUrl: user.avatarUrl }, request.id);
+      return successEnvelope({ ...membership, workspaceIds, name: user.name, email: user.email, avatarUrl: user.avatarUrl }, request.id);
     } catch (error) { translateInviteError(error); }
   });
 
@@ -203,6 +213,8 @@ export async function registerTenantMembersRoutes(app: FastifyInstance, deps: Te
   app.post("/tenant-members/invites", { schema: { body: INVITE_BODY_SCHEMA } }, async (request, reply) => {
     const principal = requirePermission(request, "tenant_member:manage");
     const { email, role } = request.body as { email: string; role: "owner" | "admin" | "editor" | "viewer" };
+    // Convite aceito entra com todos os espaços; quem só acessa alguns usa "Cadastrar usuário".
+    if (principal.workspaceIds) throw new ForbiddenError("Você acessa só alguns espaços de trabalho: cadastre o usuário diretamente para escolher os espaços dele.");
     try { assertCanAssignRole(await resolveAccessContext(deps, principal), role); } catch (error) { translateInviteError(error); }
     const { invite, rawToken } = await inviteMember(deps, { tenantId: principal.tenantId, email, role, invitedByUserId: principal.userId });
     await deps.accessAuditLog?.record({ tenantId: principal.tenantId, actorUserId: principal.userId, eventType: "invite_created", newValue: { email, role } });

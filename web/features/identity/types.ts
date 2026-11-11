@@ -41,6 +41,8 @@ export type TenantMembership = {
   /** Perfis e permissões (0173). */
   status?: "active" | "disabled";
   isAccountOwner?: boolean;
+  /** Espaços de trabalho liberados (0196); `null`/ausente = todos. */
+  workspaceIds?: string[] | null;
   permissionGrants?: string[];
   permissionRevokes?: string[];
   /** Quantas exceções sobre o perfil padrão. */
@@ -57,6 +59,8 @@ export type MemberAccess = {
   role: TenantRole;
   status: "active" | "disabled";
   isAccountOwner: boolean;
+  /** Espaços de trabalho liberados; `null` = todos. */
+  workspaceIds: string[] | null;
   permissionGrants: string[];
   permissionRevokes: string[];
   effectivePermissions: string[];

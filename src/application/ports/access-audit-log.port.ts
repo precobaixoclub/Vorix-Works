@@ -14,6 +14,7 @@ export const ACCESS_AUDIT_EVENT_TYPES = [
   "team_manager_granted",
   "team_manager_revoked",
   "invite_created",
+  "workspace_access_changed",
 ] as const;
 export type AccessAuditEventType = (typeof ACCESS_AUDIT_EVENT_TYPES)[number];
 

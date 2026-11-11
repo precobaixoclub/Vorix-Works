@@ -88,7 +88,7 @@ export default function AdminTenantDetailPage() {
         description={`Plano ${planName} · status ${billing.subscriptionStatus} · ${formatProfitPercent(billing.priceMultiplier)}% de lucro sobre o custo`}
       />
 
-      <TenantContractPanel tenantId={tenantId} onChanged={() => { void mutate(); }} />
+      <TenantContractPanel tenantId={tenantId} members={members} workspaces={workspaces} onChanged={() => mutate()} />
 
       <h2 className="mb-3 text-lg font-semibold">Uso de IA e créditos</h2>
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">

@@ -970,6 +970,8 @@ export async function registerV1Routes(app: FastifyInstance): Promise<void> {
       membershipRepository: identity.membershipRepository,
       userRepository: identity.userRepository,
       workspaceRepository: app.zunoContainer.workspaceRepository,
+      accessAuditLog: identity.accessAuditLog,
+      onAccessChanged: (userId, tenantId) => identity.accessResolver.invalidate(userId, tenantId),
       idGenerator: () => `credit-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
       now: () => new Date(),
       platformAiSettings: {

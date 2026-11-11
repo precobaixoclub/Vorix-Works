@@ -9,33 +9,16 @@ import { Card, CardBody, CardHeader } from "@/components/Card";
 import { Input } from "@/components/Field";
 import { ErrorState } from "@/components/ErrorState";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
-import { TenantSolutionsCard } from "./TenantSolutionsCard";
-import type { CapacityState, CapacityPreviewResult } from "@/features/billing/types";
+import { TenantAccessEditor } from "./TenantAccessEditor";
+import type { TenantMember, TenantWorkspace } from "@/features/platform-admin/types";
+import type { CapacityPreviewResult } from "@/features/billing/types";
+import { accessLabels, date, describeChange, money, quota, selectClass, type Contract } from "./tenant-contract-model";
 
-const features = { crm: "CRM e oportunidades", proposals: "Propostas comerciais", automation: "Automações comerciais", ai_auto_reply: "Respostas automáticas com IA", advanced_analytics: "Relatórios avançados" } as const;
-const resources = { users: "Usuários", workspaces: "Espaços ativos", messaging_connections: "Conexões de mensagens", contacts: "Contatos", ai_credits: "Créditos de IA por mês", automations: "Automações" } as const;
-type Feature = keyof typeof features;
-type Resource = keyof typeof resources;
-type Controls = { tenantId: string; displayName?: string; accessMode: "inherit" | "enabled" | "blocked"; capabilities: Partial<Record<Feature, boolean>>; limits: Partial<Record<Resource, number | null>>; version: number };
-type Entitlements = { planCode: string; planVersionId: string; virtual: boolean; readOnly: boolean; capabilities: Record<Feature, boolean>; limits: Record<Resource, number | null> };
-type Contract = {
-  controls: Controls; contract: Entitlements; effective: Entitlements; usage: Record<Resource, number>; planName: string; capacity: CapacityState;
-  subscription: { status: string; interval: string; provider: string; currentPeriodEnd?: string; trialEnd?: string; cancelAtPeriodEnd: boolean; linkedToProvider: boolean } | null;
-  addons: { code: string; name: string; resource?: string; quantity: number; unitPrice: number }[];
-  plans: { code: string; name: string; monthlyPrice: number; yearlyPrice: number; currency: string }[];
-  history: { id: string; actorUserId?: string; reason: string; occurredAt: string; before: Controls; after: Controls }[];
-};
-const selectClass = "h-10 w-full rounded-md border border-border bg-surface px-3 text-sm text-foreground";
-const money = (value: number, currency: string) => new Intl.NumberFormat("pt-BR", { style: "currency", currency }).format(value);
-const quota = (value: number | null | undefined) => value === null ? "Ilimitado" : (value ?? 0).toLocaleString("pt-BR");
-const date = (value?: string) => value ? new Date(value).toLocaleString("pt-BR") : "—";
-const accessLabels = { inherit: "Seguir situação da assinatura", enabled: "Liberar acesso manualmente", blocked: "Bloquear acesso à conta" };
-
-export function TenantContractPanel({ tenantId, onChanged }: { tenantId: string; onChanged: () => void }) {
+export function TenantContractPanel({ tenantId, members, workspaces, onChanged }: { tenantId: string; members: TenantMember[]; workspaces: TenantWorkspace[]; onChanged: () => Promise<unknown> }) {
   const path = `/v1/admin/tenants/${encodeURIComponent(tenantId)}`;
   const { data, error, mutate } = useSWR(["admin-contract", tenantId], () => apiClient.get<Contract>(`${path}/contract`));
   const [tab, setTab] = useState("contract");
-  const refresh = async () => { await mutate(); onChanged(); };
+  const refresh = async () => { await Promise.all([mutate(), onChanged()]); };
   if (error) return <ErrorState error={error} onRetry={() => mutate()} />;
   if (!data) return <p className="py-8 text-sm text-muted-foreground">Carregando contrato e permissões…</p>;
   return <section className="my-6 space-y-5" aria-label="Gestão da conta">
@@ -58,35 +41,16 @@ export function TenantContractPanel({ tenantId, onChanged }: { tenantId: string;
       <CapacityEditor key={JSON.stringify(data.capacity)} data={data} path={path} refresh={refresh} />
     </>}
     {tab === "access" && <>
-      <ControlsEditor key={data.controls.version} data={data} path={path} refresh={refresh} />
-      <TenantSolutionsCard tenantId={tenantId} />
+      <TenantAccessEditor data={data} members={members} workspaces={workspaces} path={path} refresh={refresh} />
     </>}
     {tab === "history" && <Card><CardHeader><h2 className="font-semibold">Liberações, bloqueios e limites</h2><p className="text-sm text-muted-foreground">Últimas 100 alterações administrativas. A movimentação de créditos aparece abaixo.</p></CardHeader><CardBody>
-      {!data.history.length ? <p className="text-sm text-muted-foreground">Nenhuma alteração manual registrada.</p> : <ul className="divide-y divide-border">{data.history.map(change => <li key={change.id} className="space-y-1 py-4 text-sm"><p className="font-medium">{change.reason}</p><p className="text-xs text-muted-foreground">{date(change.occurredAt)} · {change.actorUserId ?? "Migração da plataforma"}</p><ul className="list-inside list-disc text-muted-foreground">{describeChange(change.before, change.after).map(line => <li key={line}>{line}</li>)}</ul></li>)}</ul>}
+      {!data.history.length ? <p className="text-sm text-muted-foreground">Nenhuma alteração manual registrada.</p> : <ul className="divide-y divide-border">{data.history.map(change => <li key={change.id} className="space-y-1 py-4 text-sm"><p className="font-medium">{change.reason}</p><p className="text-xs text-muted-foreground">{date(change.occurredAt)} · {change.actorUserId ?? "Migração da plataforma"}</p><ul className="list-inside list-disc text-muted-foreground">{(describeChange(change.before, change.after).length ? describeChange(change.before, change.after) : ["Configuração salva sem alteração de valores."]).map(line => <li key={line}>{line}</li>)}</ul></li>)}</ul>}
     </CardBody></Card>}
   </section>;
 }
 
 function Fact({ title, value, detail }: { title: string; value: string; detail: string }) {
   return <Card><CardBody className="space-y-1 pt-5"><p className="text-xs text-muted-foreground">{title}</p><p className="text-lg font-semibold">{value}</p><p className="break-words text-xs text-muted-foreground">{detail}</p></CardBody></Card>;
-}
-function ControlsEditor({ data, path, refresh }: { data: Contract; path: string; refresh: () => Promise<void> }) {
-  const [draft, setDraft] = useState<Controls>(structuredClone(data.controls));
-  const [reason, setReason] = useState(""); const [busy, setBusy] = useState(false); const [error, setError] = useState("");
-  async function save() {
-    setBusy(true); setError("");
-    try { await apiClient.put(`${path}/controls`, { displayName: draft.displayName || undefined, accessMode: draft.accessMode, capabilities: draft.capabilities, limits: draft.limits, expectedVersion: data.controls.version, reason: reason.trim() }); await refresh(); toast.success("Acessos e limites atualizados"); }
-    catch (cause) { setError(cause instanceof Error ? cause.message : "Não foi possível salvar."); } finally { setBusy(false); }
-  }
-  return <Card><CardHeader><h2 className="font-semibold">Controles administrativos</h2><p className="text-sm text-muted-foreground">Valem para todos os espaços desta conta. Estas concessões alteram o acesso, sem criar cobranças ou mudar o valor contratado.</p></CardHeader><CardBody>
-    <form onSubmit={event => { event.preventDefault(); void save(); }}><fieldset disabled={busy} className="space-y-5">
-      <div className="grid gap-4 sm:grid-cols-2"><label className="space-y-1 text-sm">Nome da conta<Input value={draft.displayName ?? ""} maxLength={120} placeholder={draft.tenantId} onChange={event => setDraft({ ...draft, displayName: event.target.value })} /></label><label className="space-y-1 text-sm">Acesso à plataforma<select className={selectClass} value={draft.accessMode} onChange={event => setDraft({ ...draft, accessMode: event.target.value as Controls["accessMode"] })}>{Object.entries(accessLabels).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></label></div>
-      <div><h3 className="mb-2 font-medium">Recursos do plano</h3><div className="divide-y divide-border">{(Object.entries(features) as [Feature, string][]).map(([key, label]) => <div key={key} className="grid items-center gap-2 py-3 sm:grid-cols-2"><label htmlFor={`feature-${key}`} className="text-sm">{label}<span className="block text-xs text-muted-foreground">Contrato: {data.contract.capabilities[key] ? "incluído" : "não incluído"} · Efetivo: {data.effective.capabilities[key] && !data.effective.readOnly ? "liberado" : "bloqueado"}</span></label><select id={`feature-${key}`} className={selectClass} value={draft.capabilities[key] === undefined ? "inherit" : draft.capabilities[key] ? "enabled" : "blocked"} onChange={event => { const capabilities = { ...draft.capabilities }; if (event.target.value === "inherit") delete capabilities[key]; else capabilities[key] = event.target.value === "enabled"; setDraft({ ...draft, capabilities }); }}><option value="inherit">Seguir contrato</option><option value="enabled">Liberar manualmente</option><option value="blocked">Bloquear</option></select></div>)}</div></div>
-      <div><h3 className="mb-2 font-medium">Limites de uso</h3><p className="mb-2 text-xs text-muted-foreground">Reduzir um limite preserva os dados existentes e impede novas inclusões acima do teto. Apenas espaços ativos ocupam vagas.</p><div className="divide-y divide-border">{(Object.entries(resources) as [Resource, string][]).map(([key, label]) => <div key={key} className="grid items-center gap-2 py-3 sm:grid-cols-[1fr_1fr_8rem]"><label htmlFor={`limit-mode-${key}`} className="text-sm">{label}<span className="block text-xs text-muted-foreground">Uso: {quota(data.usage[key])} · Contrato: {quota(data.contract.limits[key])} · Efetivo: {quota(data.effective.limits[key])}</span></label><select id={`limit-mode-${key}`} className={selectClass} value={draft.limits[key] === undefined ? "inherit" : draft.limits[key] === null ? "unlimited" : "custom"} onChange={event => { const limits = { ...draft.limits }; if (event.target.value === "inherit") delete limits[key]; else limits[key] = event.target.value === "unlimited" ? null : data.contract.limits[key] ?? 0; setDraft({ ...draft, limits }); }}><option value="inherit">Seguir contrato</option><option value="custom">Definir limite</option><option value="unlimited">Ilimitado</option></select>{typeof draft.limits[key] === "number" && <Input aria-label={`Limite de ${label}`} type="number" min={0} max={1000000000} step={1} required value={draft.limits[key] ?? 0} onChange={event => setDraft({ ...draft, limits: { ...draft.limits, [key]: event.target.value === "" ? 0 : Number(event.target.value) } })} />}</div>)}</div></div>
-      <label className="block space-y-1 text-sm">Motivo da alteração<Input required minLength={3} maxLength={500} value={reason} onChange={event => setReason(event.target.value)} placeholder="Ex.: liberação comercial negociada com o cliente" /></label>
-      {error && <p role="alert" className="text-sm text-destructive">{error}</p>}<Button type="submit" disabled={reason.trim().length < 3}>{busy ? "Salvando…" : "Salvar acessos e limites"}</Button>
-    </fieldset></form>
-  </CardBody></Card>;
 }
 function PlanChange({ data, path, refresh }: { data: Contract; path: string; refresh: () => Promise<void> }) {
   const [planCode, setPlanCode] = useState(data.contract.planCode); const [confirm, setConfirm] = useState(false); const [busy, setBusy] = useState(false);
@@ -116,13 +80,4 @@ function CapacityEditor({ data, path, refresh }: { data: Contract; path: string;
     {!!data.capacity.pending.length && <div><h3 className="mb-2 text-sm font-medium">Reduções agendadas</h3><ul className="space-y-2">{data.capacity.pending.map(change => <li className="flex flex-wrap items-center justify-between gap-2 text-sm" key={change.id}><span>{change.addonCode}: {change.targetQuantity} unidades em {date(change.effectiveAt)}</span><Button variant="secondary" disabled={busy} onClick={() => run(async () => { await apiClient.post(`${path}/capacity/pending/${encodeURIComponent(change.id)}/cancel`, {}); await refresh(); })}>Cancelar redução</Button></li>)}</ul></div>}
     <ConfirmDialog open={confirm} onCancel={() => setConfirm(false)} busy={busy} onConfirm={() => run(async () => { await apiClient.post(`${path}/capacity/apply`, { ...payload, confirmed: true }); await refresh(); setConfirm(false); toast.success("Capacidade atualizada"); })} title="Aplicar alteração de cobrança?" description={`Valor recorrente projetado: ${preview ? money(preview.requestedOnCurrentPlan.totalMonthlyAmount, preview.requestedOnCurrentPlan.currency) : "—"}. Aumentos entram agora; reduções valem na renovação. O provedor pode aplicar ajuste proporcional.`} confirmLabel="Confirmar quantidades e cobrança" />
   </CardBody></Card>;
-}
-function describeChange(before: Controls, after: Controls) {
-  const lines: string[] = [];
-  if (before.displayName !== after.displayName) lines.push(`Nome: ${before.displayName ?? "sem nome"} → ${after.displayName ?? "sem nome"}`);
-  if (before.accessMode !== after.accessMode) lines.push(`Acesso: ${accessLabels[before.accessMode]} → ${accessLabels[after.accessMode]}`);
-  const featureValue = (value?: boolean) => value === undefined ? "seguir contrato" : value ? "liberado" : "bloqueado";
-  for (const [key, label] of Object.entries(features) as [Feature, string][]) if (before.capabilities[key] !== after.capabilities[key]) lines.push(`${label}: ${featureValue(before.capabilities[key])} → ${featureValue(after.capabilities[key])}`);
-  for (const [key, label] of Object.entries(resources) as [Resource, string][]) if (before.limits[key] !== after.limits[key]) lines.push(`${label}: ${before.limits[key] === undefined ? "seguir contrato" : quota(before.limits[key])} → ${after.limits[key] === undefined ? "seguir contrato" : quota(after.limits[key])}`);
-  return lines.length ? lines : ["Configuração salva sem alteração de valores."];
 }

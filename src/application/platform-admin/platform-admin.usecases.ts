@@ -22,6 +22,7 @@ import type { PlatformBillingRepositoryPort } from "../ports/platform-billing-re
 import type { TenantMembershipRepositoryPort } from "../ports/tenant-membership-repository.port.js";
 import type { UserRepositoryPort } from "../ports/user-repository.port.js";
 import type { WorkspaceRepositoryPort } from "../ports/workspace-repository.port.js";
+import type { AccessAuditLogPort } from "../ports/access-audit-log.port.js";
 import { changePlan, type LifecycleUseCaseDeps } from "../billing/lifecycle-use-cases.js";
 
 export type PlatformAdminUseCaseDeps = {
@@ -32,6 +33,9 @@ export type PlatformAdminUseCaseDeps = {
   workspaceRepository: WorkspaceRepositoryPort;
   idGenerator: () => string;
   now: () => Date;
+  /** Auditoria e invalidação do cache de acesso quando o admin muda o acesso de alguém. */
+  accessAuditLog?: AccessAuditLogPort;
+  onAccessChanged?: (userId: string, tenantId: string) => void;
 };
 
 export type PlatformAdminActor = { userId: string };
@@ -41,7 +45,8 @@ export type PlatformTenantDetail = {
   overview: TenantAdminOverview;
   planName: string;
   workspaces: { id: string; name: string; status: string }[];
-  members: { userId: string; email: string; name: string; role: string }[];
+  /** `workspaceIds: null` = acessa todos os espaços da conta. */
+  members: { userId: string; email: string; name: string; role: string; status: string; isAccountOwner: boolean; workspaceIds: string[] | null }[];
   recentCreditEntries: TenantCreditLedgerEntry[];
   usageHistory: TenantAiUsageMonthly[];
 };
@@ -146,6 +151,9 @@ export async function getTenantDetail(
         email: u?.email ?? "(desconhecido)",
         name: u?.name ?? "(desconhecido)",
         role: m.role,
+        status: m.status,
+        isAccountOwner: m.isAccountOwner,
+        workspaceIds: m.isAccountOwner ? null : m.workspaceIds,
       };
     }),
   );
@@ -167,6 +175,31 @@ export async function getTenantDetail(
     recentCreditEntries,
     usageHistory,
   };
+}
+
+/**
+ * Define quais espaços de trabalho uma pessoa acessa dentro da conta (`null` = todos). O dono da
+ * conta sempre acessa todos. Uma lista vazia é recusada: para tirar todo o acesso, desative a pessoa.
+ */
+export async function setMemberWorkspaceAccess(
+  deps: PlatformAdminUseCaseDeps,
+  input: { tenantId: string; userId: string; workspaceIds: string[] | null; reason?: string; actor: PlatformAdminActor },
+): Promise<{ userId: string; workspaceIds: string[] | null }> {
+  const membership = await deps.membershipRepository.getByUserAndTenant(input.userId, input.tenantId);
+  if (!membership) throw new Error("PLATFORM_ADMIN_MEMBER_NOT_FOUND: pessoa não pertence a esta conta.");
+  if (membership.isAccountOwner && input.workspaceIds !== null) throw new Error("PLATFORM_ADMIN_INVALID_WORKSPACE_ACCESS: o dono da conta sempre acessa todos os espaços.");
+  let workspaceIds: string[] | null = null;
+  if (input.workspaceIds !== null) {
+    const owned = new Set((await deps.workspaceRepository.listByTenant(input.tenantId)).map(workspace => workspace.id));
+    workspaceIds = [...new Set(input.workspaceIds)];
+    if (!workspaceIds.length) throw new Error("PLATFORM_ADMIN_INVALID_WORKSPACE_ACCESS: escolha ao menos um espaço ou desative a pessoa.");
+    const foreign = workspaceIds.find(id => !owned.has(id));
+    if (foreign) throw new Error(`PLATFORM_ADMIN_INVALID_WORKSPACE_ACCESS: o espaço "${foreign}" não pertence a esta conta.`);
+  }
+  await deps.membershipRepository.setWorkspaceAccess(input.userId, input.tenantId, workspaceIds);
+  deps.onAccessChanged?.(input.userId, input.tenantId);
+  await deps.accessAuditLog?.record({ tenantId: input.tenantId, actorUserId: input.actor.userId, targetUserId: input.userId, eventType: "workspace_access_changed", previousValue: { workspaceIds: membership.workspaceIds }, newValue: { workspaceIds, reason: input.reason } });
+  return { userId: input.userId, workspaceIds };
 }
 
 /** Ajuste manual de cr\u00e9ditos (o admin libera/subtrai tokens avulsos). */

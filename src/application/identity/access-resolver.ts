@@ -10,7 +10,7 @@ import type { TenantMembershipRepositoryPort } from "../ports/tenant-membership-
  * explicitamente quando o acesso muda neste mesmo processo.
  */
 export class AccessResolver {
-  private readonly cache = new Map<string, { expiresAt: number; principal: Pick<AuthPrincipal, "role" | "permissions" | "permissionRevokes" | "isAccountOwner"> | null }>();
+  private readonly cache = new Map<string, { expiresAt: number; principal: Pick<AuthPrincipal, "role" | "permissions" | "permissionRevokes" | "isAccountOwner" | "workspaceIds"> | null }>();
 
   constructor(private readonly membershipRepository: TenantMembershipRepositoryPort, private readonly ttlMs = 0) {}
 
@@ -24,7 +24,9 @@ export class AccessResolver {
       entry = {
         expiresAt: now + this.ttlMs,
         principal: membership && membership.status === "active"
-          ? { role: membership.role, permissions: effectivePermissions(membership.role, membership.permissionGrants, membership.permissionRevokes), isAccountOwner: membership.isAccountOwner, permissionRevokes: membership.permissionRevokes }
+          ? { role: membership.role, permissions: effectivePermissions(membership.role, membership.permissionGrants, membership.permissionRevokes), isAccountOwner: membership.isAccountOwner, permissionRevokes: membership.permissionRevokes,
+            // Dono da conta sempre enxerga todos os espaços; demais pessoas podem ser restritas.
+            ...(membership.workspaceIds && !membership.isAccountOwner ? { workspaceIds: membership.workspaceIds } : {}) }
           : null,
       };
       this.cache.set(key, entry);

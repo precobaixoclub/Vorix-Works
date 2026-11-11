@@ -1,4 +1,5 @@
 import type { FastifyInstance } from "fastify";
+import { canAccessWorkspace } from "../../http/workspace-tenant-guard.js";
 import {
   activateWorkspace,
   archiveWorkspace,
@@ -115,7 +116,7 @@ export async function registerWorkspaceRoutes(app: FastifyInstance, deps: Worksp
     const principal = requirePermission(request, "workspace:read");
     const { status } = request.query as { status?: (typeof WORKSPACE_STATUS_ENUM)[number] };
     const workspaces = await listWorkspaces(deps, { tenantId: principal.tenantId, status }).catch(translateWorkspaceError);
-    return successEnvelope(workspaces, request.id);
+    return successEnvelope(workspaces.filter(workspace => canAccessWorkspace(principal, workspace.id)), request.id);
   });
 
   app.post("/workspaces", { schema: { body: CREATE_BODY_SCHEMA } }, async (request, reply) => {

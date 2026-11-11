@@ -69,7 +69,8 @@ export type PlatformTenantDetail = {
   overview: TenantAdminOverview;
   planName: string;
   workspaces: { id: string; name: string; status: string }[];
-  members: { userId: string; email: string; name: string; role: string }[];
+  /** `workspaceIds: null` = acessa todos os espaços da conta. */
+  members: TenantMember[];
   recentCreditEntries: TenantCreditLedgerEntry[];
   usageHistory: TenantAiUsageMonthly[];
 };
@@ -93,3 +94,6 @@ export type PlatformDashboardSummary = {
     profitUsd: number;
   }>;
 };
+
+export type TenantMember = { userId: string; email: string; name: string; role: string; status?: string; isAccountOwner?: boolean; workspaceIds?: string[] | null };
+export type TenantWorkspace = { id: string; name: string; status: string };

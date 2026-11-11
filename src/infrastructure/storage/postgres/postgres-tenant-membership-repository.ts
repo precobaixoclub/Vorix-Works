@@ -19,6 +19,7 @@ type MembershipRow = {
   permission_revokes: string[] | null;
   status: string | null;
   is_account_owner: boolean | null;
+  workspace_ids: string[] | null;
   created_at: Date;
   updated_at: Date;
 };
@@ -97,6 +98,14 @@ export class PostgresTenantMembershipRepository implements TenantMembershipRepos
     return result.rows[0] ? this.toDomain(result.rows[0]) : undefined;
   }
 
+  async setWorkspaceAccess(userId: string, tenantId: string, workspaceIds: readonly string[] | null): Promise<TenantMembership | undefined> {
+    const result = await this.pool.query<MembershipRow>(
+      "update tenant_members set workspace_ids = $3, updated_at = now() where user_id = $1 and tenant_id = $2 returning *",
+      [userId, tenantId, workspaceIds === null ? null : [...new Set(workspaceIds)]],
+    );
+    return result.rows[0] ? this.toDomain(result.rows[0]) : undefined;
+  }
+
   async remove(userId: string, tenantId: string): Promise<void> {
     await this.pool.query("delete from tenant_members where user_id = $1 and tenant_id = $2", [userId, tenantId]);
   }
@@ -111,6 +120,7 @@ export class PostgresTenantMembershipRepository implements TenantMembershipRepos
       permissionRevokes: row.permission_revokes ?? [],
       status: row.status === "disabled" ? "disabled" : "active",
       isAccountOwner: row.is_account_owner === true,
+      workspaceIds: row.workspace_ids ?? null,
       createdAt: row.created_at.toISOString(),
       updatedAt: row.updated_at.toISOString(),
     };

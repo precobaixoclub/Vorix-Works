@@ -432,6 +432,9 @@ export type TenantMembership = {
   /** Administrador principal (dono da conta): nunca perde o perfil Administrador, a gestão de
    * acessos, nem pode ser desativado/removido por outra pessoa. Um por empresa. */
   isAccountOwner: boolean;
+  /** Espaços de trabalho que a pessoa pode acessar nesta empresa. `null` = todos (padrão).
+   * Ignorado para o dono da conta, que sempre acessa todos. Migration 0196. */
+  workspaceIds: string[] | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -574,6 +577,9 @@ export type AuthPrincipal = {
   permissions?: readonly Permission[];
   permissionRevokes?: readonly string[];
   isAccountOwner?: boolean;
+  /** Espaços permitidos, preenchidos pelo resolvedor de acesso. `undefined` = todos os espaços da
+   * empresa. Aplicado por `workspace-tenant-guard.ts` e pela listagem de espaços. */
+  workspaceIds?: readonly string[];
   /** Superadmin da plataforma — propaga do JWT para rotas `/v1/admin/*`. Default `false`
    * quando o claim não veio no token (compatibilidade com tokens antigos). Sprint 25. */
   isPlatformAdmin: boolean;

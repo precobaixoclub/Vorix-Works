@@ -19,7 +19,7 @@ async function fixture(page: Page, { paid = false, failWrite = false } = {}) {
     const reply = (data: unknown, status = 200) => route.fulfill({ status, json: { ok: true, data } });
     if (method === "GET" && path.endsWith("/contract")) return reply({ contract: entitlements, effective: { ...entitlements, capabilities: { ...capabilities, ...controls.capabilities }, limits: { ...limits, ...controls.limits } }, controls, usage: { users: 1, workspaces: 1, messaging_connections: 1, contacts: 3, ai_credits: 0, automations: 0, storage_mb: 0 }, planName: "Start", capacity: { current: snapshot, canChangeNow: paid, meetingsSellable: true, pending: [], adjustableAddons: [], nextCharge: paid ? { at: stamp, amount: 99, currency: "BRL" } : undefined }, subscription: paid ? { status: "active", interval: "monthly", provider: "fixture", currentPeriodEnd: stamp, cancelAtPeriodEnd: false, linkedToProvider: true } : null, addons: [], plans: [{ code: "START", name: "Start", monthlyPrice: 99, yearlyPrice: 999, currency: "BRL" }, { code: "PRO", name: "Pro", monthlyPrice: 199, yearlyPrice: 1999, currency: "BRL" }], history });
     if (method === "GET" && path.endsWith("/solutions")) return reply({ solutions });
-    if (method === "GET") return reply({ overview: { tenantId: target, displayName: controls.displayName, billing: { tenantId: target, planCode: "START", subscriptionStatus: "active", monthlyCreditsQuota: 50, creditsExtra: 0, priceMultiplier: 2 }, currentUsage: usage, currentProfitUsd: 0, totalCreditsUsedThisMonth: 0, quotaUsagePercent: 0 }, planName: "Start", workspaces: [{ id: "ws-client", name: "Espaço preservado", status: "active" }], members: [{ userId: "client-owner", name: "Dono cliente", email: "client@fixture.test", role: "owner" }], recentCreditEntries: [], usageHistory: [] });
+    if (method === "GET") return reply({ overview: { tenantId: target, displayName: controls.displayName, billing: { tenantId: target, planCode: "START", subscriptionStatus: "active", monthlyCreditsQuota: 50, creditsExtra: 0, priceMultiplier: 2 }, currentUsage: usage, currentProfitUsd: 0, totalCreditsUsedThisMonth: 0, quotaUsagePercent: 0 }, planName: "Start", workspaces: [{ id: "ws-client", name: "Espaço preservado", status: "active" }, { id: "ws-centro", name: "Loja Centro", status: "active" }], members: [{ userId: "client-owner", name: "Dono cliente", email: "client@fixture.test", role: "owner", isAccountOwner: true, workspaceIds: null }, { userId: "seller", name: "Vendedora", email: "seller@fixture.test", role: "editor", isAccountOwner: false, workspaceIds: null }], recentCreditEntries: [], usageHistory: [] });
     const body = request.postDataJSON(); writes.push({ path, body });
     if (path.endsWith("/controls")) {
       if (failWrite) { failWrite = false; return route.fulfill({ status: 409, json: { ok: false, error: { code: "CONFLICT", message: "A conta foi alterada. Recarregue antes de salvar.", recoverable: true } } }); }
@@ -33,21 +33,29 @@ async function fixture(page: Page, { paid = false, failWrite = false } = {}) {
   return { writes };
 }
 
-test("admin edita concessões com motivo, mantém nome e histórico após recarregar e preserva os limites do Meetings", async ({ page }, info) => {
+test("admin altera recursos, limites e soluções com um único motivo e um único botão", async ({ page }, info) => {
   const state = await fixture(page); await page.goto(`/admin/tenants/${target}`);
   await expect(page.getByRole("heading", { name: "Cliente gerenciado", exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Acessos e limites", exact: true }).click();
-  const save = page.getByRole("button", { name: "Salvar acessos e limites" }); await expect(save).toBeDisabled();
+  const save = page.getByRole("button", { name: "Salvar alterações" }); await expect(save).toBeDisabled();
+  await expect(page.getByText("Motivo da alteração do produto")).toHaveCount(0); await expect(page.getByRole("button", { name: /^Salvar/ })).toHaveCount(1);
   await page.getByLabel("Propostas comerciais", { exact: false }).selectOption("blocked");
   await page.locator("#limit-mode-workspaces").selectOption("custom"); await page.getByLabel("Limite de Espaços ativos").fill("3");
+  await page.getByRole("switch", { name: "Vorix Marketing" }).click(); await page.getByLabel("Minutos de gravação por mês").fill("1500");
+  await expect(page.getByText("Dono da conta: acessa todos os espaços.")).toBeVisible();
+  await page.getByLabel("Espaços de Vendedora").selectOption("some"); await page.getByRole("checkbox", { name: "Loja Centro" }).uncheck();
+  await expect(page.getByText("5 alterações pendentes")).toBeVisible();
   await page.getByLabel("Motivo da alteração", { exact: true }).fill("Negociação comercial autorizada"); await save.click();
-  await expect(page.getByText("Acessos e limites atualizados", { exact: true })).toBeVisible();
+  await expect(page.getByText("Alterações salvas", { exact: true })).toBeVisible();
   expect(state.writes[0].path).toBe(`/v1/admin/tenants/${target}/controls`); expect(state.writes[0].body.capabilities).toEqual({ proposals: false }); expect(state.writes[0].body.limits).toEqual({ workspaces: 3 });
+  expect(state.writes.slice(1).map(write => write.path)).toEqual([`/v1/admin/tenants/${target}/solutions/marketing`, `/v1/admin/tenants/${target}/solutions/meetings`]);
+  expect(state.writes[1].body).toMatchObject({ enabled: true, source: "manual", reason: "Negociação comercial autorizada" });
+  expect(state.writes[2].body).toMatchObject({ enabled: true, reason: "Negociação comercial autorizada", limits: { maxConcurrentRecordings: 3, monthlyRecordingMinutes: 1500, meetingRetentionDays: 45, maxStorageBytes: 21474836480 } });
+  expect(state.writes[3]).toEqual({ path: `/v1/admin/tenants/${target}/members/seller/workspaces`, body: { workspaceIds: ["ws-client"], reason: "Negociação comercial autorizada" } });
+  await expect(page.getByText("Nenhuma alteração pendente.")).toBeVisible();
   await page.reload(); await page.getByRole("button", { name: "Acessos e limites", exact: true }).click();
   await expect(page.locator("#feature-proposals")).toHaveValue("blocked"); await expect(page.getByLabel("Limite de Espaços ativos")).toHaveValue("3");
-  await page.getByLabel("Motivo da alteração do produto").fill("Revisão do acesso Meetings"); await page.getByRole("switch", { name: "Desligar Vorix Meetings" }).click();
-  expect(state.writes.at(-1)?.body.limits).toMatchObject({ maxConcurrentRecordings: 3, monthlyRecordingMinutes: 1200, meetingRetentionDays: 45 });
-  await page.getByRole("button", { name: "Histórico de alterações" }).click(); await expect(page.getByText("Negociação comercial autorizada", { exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "Histórico de alterações" }).click(); await expect(page.getByText("Negociação comercial autorizada", { exact: true })).toBeVisible();
   await page.screenshot({ path: info.outputPath("admin-history.png"), fullPage: true });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 });
@@ -72,7 +80,7 @@ test("quantidades pagas exibem prévia e exigem confirmação no tenant selecion
 test("falha ao salvar mantém o rascunho e apresenta o conflito", async ({ page }) => {
   await fixture(page, { failWrite: true }); await page.goto(`/admin/tenants/${target}`);
   await page.getByRole("button", { name: "Acessos e limites", exact: true }).click(); await page.locator("#feature-crm").selectOption("blocked");
-  await page.getByLabel("Motivo da alteração", { exact: true }).fill("Bloqueio temporário de teste"); await page.getByRole("button", { name: "Salvar acessos e limites" }).click();
+  await page.getByLabel("Motivo da alteração", { exact: true }).fill("Bloqueio temporário de teste"); await page.getByRole("button", { name: "Salvar alterações" }).click();
   await expect(page.getByRole("alert").filter({ hasText: "A conta foi alterada" })).toBeVisible();
   await expect(page.locator("#feature-crm")).toHaveValue("blocked"); await expect(page.getByLabel("Motivo da alteração", { exact: true })).toHaveValue("Bloqueio temporário de teste");
 });

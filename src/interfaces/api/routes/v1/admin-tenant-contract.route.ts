@@ -8,6 +8,8 @@ import { successEnvelope } from "../../http/response-envelope.js";
 import { ConflictError, NotFoundError, ValidationError } from "../../http/app-error.js";
 
 const params = { type: "object", required: ["tenantId"], properties: { tenantId: { type: "string", minLength: 1, maxLength: 200 } } } as const;
+// `null` = ilimitado. Use `type: ["integer", "null"]`, never `anyOf`: Fastify coerces types and
+// would turn null into 0 on the integer branch, saving "unlimited" as a zero limit.
 const controlsSchema = {
   type: "object", additionalProperties: false, required: ["expectedVersion", "reason", "accessMode", "capabilities", "limits"],
   properties: {
@@ -15,7 +17,7 @@ const controlsSchema = {
     displayName: { type: "string", minLength: 1, maxLength: 120, pattern: "\\S" },
     accessMode: { type: "string", enum: ["inherit", "enabled", "blocked"] },
     capabilities: { type: "object", additionalProperties: false, properties: Object.fromEntries(["crm", "proposals", "automation", "ai_auto_reply", "advanced_analytics"].map(key => [key, { type: "boolean" }])) },
-    limits: { type: "object", additionalProperties: false, properties: Object.fromEntries(PLAN_LIMIT_RESOURCES.filter(key => key !== "storage_mb").map(key => [key, { anyOf: [{ type: "integer", minimum: 0, maximum: 1_000_000_000 }, { type: "null" }] }])) },
+    limits: { type: "object", additionalProperties: false, properties: Object.fromEntries(PLAN_LIMIT_RESOURCES.filter(key => key !== "storage_mb").map(key => [key, { type: ["integer", "null"], minimum: 0, maximum: 1_000_000_000 }])) },
   },
 };
 const capacityProperties = {

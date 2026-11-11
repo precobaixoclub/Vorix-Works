@@ -128,12 +128,14 @@ test('HTTP controls require platform admin and reject unknown fields, negative q
   const contractData = contractResponse.json().data;
   assert.equal(contractData.contract.virtual, false); assert.equal(contractData.addons[0].quantity, 2);
   assert.equal(Object.hasOwn(contractData.subscription, 'providerSubscriptionId'), false);
-  const body = { expectedVersion: 1, reason: 'Contrato negociado', accessMode: 'inherit', capabilities: {}, limits: { users: 2 } };
+  const body = { expectedVersion: 1, reason: 'Contrato negociado', accessMode: 'inherit', capabilities: {}, limits: { users: 2, contacts: null } };
   const url = '/admin/tenants/tenant-controls-cas/controls';
   assert.equal((await app.inject({ method: 'PUT', url, payload: body })).statusCode, 403);
   for (const payload of [{ ...body, limits: { users: -1 } }, { ...body, capabilities: { invented: true } }, { ...body, tenantId: 'other' }, { ...body, limits: { storage_mb: 50 } }]) assert.equal((await app.inject({ method: 'PUT', url, headers: { 'x-admin': 'yes' }, payload })).statusCode, 400);
   assert.equal((await app.inject({ method: 'PUT', url: '/admin/tenants/tenant-does-not-exist/controls', headers: { 'x-admin': 'yes' }, payload: body })).statusCode, 404);
   assert.equal((await app.inject({ method: 'PUT', url, headers: { 'x-admin': 'yes' }, payload: body })).statusCode, 200);
+  // "Ilimitado" (null) must survive HTTP validation; type coercion used to persist it as 0.
+  assert.deepEqual((await deps.platformBillingRepository.getTenantControls('tenant-controls-cas')).limits, { users: 2, contacts: null });
   assert.equal((await app.inject({ method: 'PUT', url, headers: { 'x-admin': 'yes' }, payload: body })).statusCode, 409);
   await app.close();
 });

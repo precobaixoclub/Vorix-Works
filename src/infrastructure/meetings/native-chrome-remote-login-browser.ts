@@ -192,9 +192,15 @@ export class NativeChromeRemoteLoginBrowserFactory implements RemoteLoginBrowser
             // Texto pela entrada padrão: nunca aparece na linha de comando de um processo.
             // Fora do teclado americano (ç, ã...) o xdotool remapeia uma tecla por caractere; rápido
             // demais, o Chrome lê o mapa já desfeito e perde o caractere. Esses vão um a um, com folga.
+            // A tecla remapeada só tem a forma minúscula: maiúsculas (Ç, É...) vão com Shift segurado.
             for (const run of event.v.match(/[\x20-\x7e]+|[^\x20-\x7e]/gu) ?? []) {
-              await xdo(/^[\x20-\x7e]+$/.test(run) ? ["type", "--delay", "8", "--file", "-"] : ["type", "--delay", "120", "--file", "-"], run);
-              if (!/^[\x20-\x7e]+$/.test(run)) await new Promise((resolve) => setTimeout(resolve, 120));
+              if (/^[\x20-\x7e]+$/.test(run)) { await xdo(["type", "--delay", "8", "--file", "-"], run); continue; }
+              const lower = run.toLocaleLowerCase("pt-BR");
+              const upper = lower !== run && lower.length === run.length;
+              if (upper) await xdo(["keydown", "shift"]);
+              await xdo(["type", "--delay", "120", "--file", "-"], upper ? lower : run);
+              if (upper) await xdo(["keyup", "shift"]);
+              await new Promise((resolve) => setTimeout(resolve, 120));
             }
           }
         },

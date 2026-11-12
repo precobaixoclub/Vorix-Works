@@ -205,6 +205,8 @@ test("GOOGLE OAUTH: state assinado (sem memória), connect, refresh, revogado e 
   const { authorizationUrl } = service.begin({ tenantId, workspaceId, userId: "u-ana" });
   const signedState = new URL(authorizationUrl).searchParams.get("state");
   assert.match(new URL(authorizationUrl).searchParams.get("scope"), /calendar\.events/);
+  // A importação da transcrição nativa do Meet usa o MESMO token: o escopo precisa vir no consentimento.
+  assert.match(new URL(authorizationUrl).searchParams.get("scope"), /meetings\.space\.readonly/);
   assert.equal(new URL(authorizationUrl).searchParams.get("access_type"), "offline");
 
   // Outra instância do serviço (outra réplica/restart) valida o MESMO state: nada em memória.

@@ -63,6 +63,13 @@ services:
       JWT_SECRET: "${ZUNO_JWT_SECRET}"
       # Vorix Meetings: gravação real por bot (contas Google conectadas pelo cliente). "false" desliga.
       MEETINGS_REAL_RECORDING_ENABLED: "${MEETINGS_REAL_RECORDING_ENABLED:-true}"
+      # Google Calendar por pessoa (Meetings → Integrações). Sem wiring aqui o .env.zuno nunca chega
+      # ao container. Client/secret vazios = cartão "não configurado" (nada quebra).
+      GOOGLE_CALENDAR_ENABLED: "${GOOGLE_CALENDAR_ENABLED:-false}"
+      GOOGLE_CALENDAR_CLIENT_ID: "${GOOGLE_CALENDAR_CLIENT_ID:-}"
+      GOOGLE_CALENDAR_CLIENT_SECRET: "${GOOGLE_CALENDAR_CLIENT_SECRET:-}"
+      GOOGLE_CALENDAR_OAUTH_REDIRECT_URI: "${GOOGLE_CALENDAR_OAUTH_REDIRECT_URI:-https://vorixworks.com/google-calendar/callback}"
+      GOOGLE_CALENDAR_SCOPES: "${GOOGLE_CALENDAR_SCOPES:-}"
       # Marketplaces (credenciais do app em cada canal). Vazio = canal desligado.
       ML_CLIENT_ID: "${ML_CLIENT_ID:-}"
       ML_CLIENT_SECRET: "${ML_CLIENT_SECRET:-}"
@@ -441,6 +448,12 @@ services:
       JWT_SECRET: "${ZUNO_JWT_SECRET}"
       ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:-}"
       MEETINGS_REAL_RECORDING_ENABLED: "${MEETINGS_REAL_RECORDING_ENABLED:-true}"
+      # Sync da agenda + importação da transcrição nativa do Meet: mesmas credenciais da API (o
+      # refresh do token acontece aqui).
+      GOOGLE_CALENDAR_ENABLED: "${GOOGLE_CALENDAR_ENABLED:-false}"
+      GOOGLE_CALENDAR_CLIENT_ID: "${GOOGLE_CALENDAR_CLIENT_ID:-}"
+      GOOGLE_CALENDAR_CLIENT_SECRET: "${GOOGLE_CALENDAR_CLIENT_SECRET:-}"
+      GOOGLE_CALENDAR_OAUTH_REDIRECT_URI: "${GOOGLE_CALENDAR_OAUTH_REDIRECT_URI:-https://vorixworks.com/google-calendar/callback}"
       MEETINGS_WHISPER_MODEL: "${MEETINGS_WHISPER_MODEL:-small}"
       MEETINGS_WHISPER_THREADS: "${MEETINGS_WHISPER_THREADS:-2}"
       MEETINGS_WHISPER_BEAM_SIZE: "1"

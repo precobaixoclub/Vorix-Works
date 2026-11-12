@@ -10,6 +10,7 @@ import { interactiveSocialConnection } from "@/features/social/api";
 import { NETWORK_LABEL } from "@/features/social/presentation";
 import { SOCIAL_NETWORKS, type SocialConnectionFrame } from "@/features/social/types";
 import { RemoteInputQueue, type RemoteInputAction } from "@/features/social/remote-input";
+import { SocialConnectionStream } from "@/features/social/connection-stream";
 
 export default function ConnectPage() { return <Suspense><InteractiveConnection /></Suspense>; }
 
@@ -20,9 +21,27 @@ function InteractiveConnection() {
   const surface = useRef<HTMLDivElement>(null); const input = useRef<HTMLInputElement>(null); const queue = useRef<RemoteInputQueue | null>(null);
   const pointer = useRef<{ x: number; y: number } | null>(null);
   const back = `/workspaces/${workspace.id}/social/integrations`;
+  // Canal ao vivo (WebSocket) por padrão; sem ele, cai no modo por consulta (requisição por quadro).
+  const [mode, setMode] = useState<"stream" | "poll">("stream");
+  const [streamImage, setStreamImage] = useState<string>(); const [checkpoint, setCheckpoint] = useState(false);
+  const stream = useRef<SocialConnectionStream | null>(null);
 
   useEffect(() => {
-    if (!network || !flow) return;
+    if (!network || !flow || mode !== "stream") return;
+    let current: string | undefined;
+    const live = new SocialConnectionStream({
+      onFrame: blob => { const next = URL.createObjectURL(blob); setStreamImage(next); if (current) URL.revokeObjectURL(current); current = next; },
+      onStatus: status => { if (status === "EXPIRED") setError("Esta conexão expirou. Clique em Conectar novamente."); else setCheckpoint(status === "CHECKPOINT_REQUIRED"); },
+      onUnavailable: () => setMode("poll"),
+      onEnded: () => setMode("poll"),
+    });
+    stream.current = live;
+    live.open({ workspaceId: workspace.id, network, flowId: flow });
+    return () => { live.close(); if (stream.current === live) stream.current = null; if (current) URL.revokeObjectURL(current); };
+  }, [workspace.id, network, flow, mode]);
+
+  useEffect(() => {
+    if (!network || !flow || mode !== "poll") return;
     let stopped = false; let timer: ReturnType<typeof setTimeout>; let fetching = false; let refreshPending = false; let lastInputAt = 0;
     const schedule = (delay: number) => { clearTimeout(timer); if (!stopped && !document.hidden) timer = setTimeout(() => void poll(), delay); };
     const inputs = new RemoteInputQueue(async action => {
@@ -45,11 +64,12 @@ function InteractiveConnection() {
     document.addEventListener("visibilitychange", visible);
     void poll();
     return () => { stopped = true; clearTimeout(timer); inputs.discard(); if (queue.current === inputs) queue.current = null; document.removeEventListener("visibilitychange", visible); };
-  }, [workspace.id, network, flow]);
+  }, [workspace.id, network, flow, mode]);
 
   function send(action: RemoteInputAction) {
     if (!network || !flow || busy) return;
     // Input exists only in memory until delivered, and is never persisted in browser storage.
+    if (stream.current?.send(action)) return;
     queue.current?.enqueue(action);
   }
   async function finish(cancel: boolean) {
@@ -59,9 +79,10 @@ function InteractiveConnection() {
     catch (cause) { setError(cause instanceof Error ? cause.message : "Conclua o login para continuar."); setBusy(false); }
   }
   if (!network || !flow) return <p>Conexão inválida. Volte às integrações e clique em Conectar.</p>;
+  const image = mode === "stream" ? streamImage : frame ? `data:image/jpeg;base64,${frame.image}` : undefined;
   return <div className="mx-auto max-w-6xl space-y-4 p-4 md:p-8">
     <PageHeader title={`Conectar ${NETWORK_LABEL[network]}`} description="Entre na sua conta na tela abaixo. Conclua as verificações solicitadas pela rede e clique em Continuar." />
-    {frame?.status === "CHECKPOINT_REQUIRED" ? <p role="status" className="rounded-lg bg-amber-50 p-3 text-amber-900">A rede solicitou uma confirmação de segurança. Conclua a verificação nesta tela ou no aplicativo para continuar.</p> : null}
+    {(mode === "stream" ? checkpoint : frame?.status === "CHECKPOINT_REQUIRED") ? <p role="status" className="rounded-lg bg-amber-50 p-3 text-amber-900">A rede solicitou uma confirmação de segurança. Conclua a verificação nesta tela ou no aplicativo para continuar.</p> : null}
     {error ? <p role="alert" className="text-destructive">{error}</p> : null}
     <Card className="overflow-hidden p-0">
       <div ref={surface} tabIndex={0} role="application" aria-label={`Login do ${NETWORK_LABEL[network]}. Clique no campo desejado e digite.`} className="outline-none focus:ring-2 focus:ring-primary" onKeyDown={event => {
@@ -72,7 +93,7 @@ function InteractiveConnection() {
         else if (allowed.includes(event.key)) send({ kind: "key", key: event.shiftKey && event.key === "Tab" ? "Shift+Tab" : event.key });
         else if (event.key.length === 1 && !event.ctrlKey && !event.metaKey) send({ kind: "text", text: event.key });
       }} onCompositionEnd={event => { if (event.data) send({ kind: "text", text: event.data }); }} onPaste={event => { event.preventDefault(); send({ kind: "text", text: event.clipboardData.getData("text").slice(0, 2000) }); }} onWheel={event => send({ kind: "scroll", delta: Math.max(-1600, Math.min(1600, Math.round(event.deltaY))) })}>
-        {frame ? <img src={`data:image/jpeg;base64,${frame.image}`} alt={`Tela de autenticação do ${NETWORK_LABEL[network]}`} className="block h-auto w-full touch-none" draggable={false} onPointerDown={event => { const rect = event.currentTarget.getBoundingClientRect(); pointer.current = { x: Math.min(1279, Math.max(0, (event.clientX - rect.left) * 1280 / rect.width)), y: Math.min(799, Math.max(0, (event.clientY - rect.top) * 800 / rect.height)) }; event.currentTarget.setPointerCapture(event.pointerId); surface.current?.focus({ preventScroll: true }); }} onPointerCancel={() => { pointer.current = null; }} onPointerUp={event => { const start = pointer.current; pointer.current = null; if (!start) return; const rect = event.currentTarget.getBoundingClientRect(); const x = Math.min(1279, Math.max(0, (event.clientX - rect.left) * 1280 / rect.width)); const y = Math.min(799, Math.max(0, (event.clientY - rect.top) * 800 / rect.height)); send(Math.hypot(x - start.x, y - start.y) > 4 ? { kind: "drag", ...start, toX: x, toY: y } : { kind: "click", x, y }); }} /> : <p className="p-12">Abrindo conexão…</p>}
+        {image ? <img src={image} alt={`Tela de autenticação do ${NETWORK_LABEL[network]}`} className="block h-auto w-full touch-none" draggable={false} onPointerDown={event => { const rect = event.currentTarget.getBoundingClientRect(); pointer.current = { x: Math.min(1279, Math.max(0, (event.clientX - rect.left) * 1280 / rect.width)), y: Math.min(799, Math.max(0, (event.clientY - rect.top) * 800 / rect.height)) }; event.currentTarget.setPointerCapture(event.pointerId); surface.current?.focus({ preventScroll: true }); }} onPointerCancel={() => { pointer.current = null; }} onPointerUp={event => { const start = pointer.current; pointer.current = null; if (!start) return; const rect = event.currentTarget.getBoundingClientRect(); const x = Math.min(1279, Math.max(0, (event.clientX - rect.left) * 1280 / rect.width)); const y = Math.min(799, Math.max(0, (event.clientY - rect.top) * 800 / rect.height)); send(Math.hypot(x - start.x, y - start.y) > 4 ? { kind: "drag", ...start, toX: x, toY: y } : { kind: "click", x, y }); }} /> : <p className="p-12">Abrindo conexão…</p>}
       </div>
     </Card>
     <div className="flex flex-wrap items-center gap-2">
@@ -82,6 +103,6 @@ function InteractiveConnection() {
       <Button variant="secondary" onClick={() => send({ kind: "key", key: "Enter" })}>Enter</Button>
     </div>
     <p className="text-sm text-muted-foreground">O Vorix não guarda sua senha nem códigos de verificação. A conexão expira automaticamente após alguns minutos.</p>
-    <div className="flex justify-end gap-2"><Button disabled={busy} variant="secondary" onClick={() => void finish(true)}>Cancelar</Button><Button disabled={busy || !frame} onClick={() => void finish(false)}>{busy ? "Verificando…" : "Continuar"}</Button></div>
+    <div className="flex justify-end gap-2"><Button disabled={busy} variant="secondary" onClick={() => void finish(true)}>Cancelar</Button><Button disabled={busy || !image} onClick={() => void finish(false)}>{busy ? "Verificando…" : "Continuar"}</Button></div>
   </div>;
 }

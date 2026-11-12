@@ -1,5 +1,8 @@
 import Fastify from "fastify";
 import { timingSafeEqual } from "node:crypto";
+import type { IncomingMessage, Server } from "node:http";
+import type { Duplex } from "node:stream";
+import { WebSocketServer } from "ws";
 import { pathToFileURL } from "node:url";
 import { resolve } from "node:path";
 import { z } from "zod";
@@ -42,8 +45,52 @@ export function createSocialGatewayServer(service: SocialGatewayService, token: 
   app.post("/rpc/status", async request => service.status(account.extend({ externalPostId: z.string().max(200).optional(), providerReference: z.string().max(300).optional() }).parse(request.body)));
   app.post("/rpc/acknowledge", async request => service.acknowledge(account.extend({ idempotencyKey: z.string().min(1).max(300), outcome: z.enum(["published", "not_published"]), externalUrl: z.string().url().max(2000).optional() }).parse(request.body)));
   app.post("/rpc/music", async request => service.music(account.extend({ query: z.string().max(100), format, limit: z.number().int().min(1).max(20) }).parse(request.body)));
+  attachStream(app.server, service, token);
   app.addHook("onClose", () => service.shutdown());
   return app;
+}
+
+export const SOCIAL_GATEWAY_STREAM_PATH = "/stream";
+const streamInput = z.object({ t: z.literal("input"), action: interactionSchema }).strict();
+
+/**
+ * Live login screen for the API relay only (same service token as the RPCs, checked before the
+ * upgrade). The first message is the flow scope; the flow must belong to that user. Afterwards
+ * JPEG frames go out as binary messages and validated human input comes in. Nothing is logged.
+ */
+function attachStream(server: Server, service: SocialGatewayService, token: string): void {
+  const wss = new WebSocketServer({ noServer: true, maxPayload: 8 * 1024 });
+  const expected = Buffer.from(`Bearer ${token}`);
+  server.on("upgrade", (request: IncomingMessage, socket: Duplex, head: Buffer) => {
+    if (new URL(request.url ?? "/", "http://gateway").pathname !== SOCIAL_GATEWAY_STREAM_PATH) { socket.destroy(); return; }
+    const supplied = Buffer.from(request.headers.authorization ?? "");
+    if (supplied.length !== expected.length || !timingSafeEqual(supplied, expected)) { socket.write("HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n"); socket.destroy(); return; }
+    wss.handleUpgrade(request, socket, head, client => {
+      let session: ReturnType<SocialGatewayService["stream"]> | undefined;
+      const scopeTimer = setTimeout(() => client.close(4400, "scope required"), 5_000);
+      client.on("message", (data, isBinary) => {
+        if (isBinary) return;
+        let message: unknown;
+        try { message = JSON.parse(data.toString()); } catch { return; }
+        if (!session) {
+          clearTimeout(scopeTimer);
+          const parsed = flow.safeParse(message);
+          if (!parsed.success) { client.close(4400, "invalid scope"); return; }
+          try {
+            session = service.stream(parsed.data, parsed.data.flowId, {
+              frame: jpeg => { if (client.readyState === client.OPEN && client.bufferedAmount < 4 * 1024 * 1024) client.send(jpeg, { binary: true }); },
+              status: status => { if (client.readyState === client.OPEN) client.send(JSON.stringify({ t: "status", ...status })); if (status.s === "EXPIRED") client.close(4404, "flow expired"); },
+            });
+          } catch { client.close(4404, "flow not found"); }
+          return;
+        }
+        const input = streamInput.safeParse(message);
+        if (input.success) session.input(input.data.action);
+      });
+      client.on("close", () => { clearTimeout(scopeTimer); session?.close(); });
+      client.on("error", () => { clearTimeout(scopeTimer); session?.close(); });
+    });
+  });
 }
 
 async function main(): Promise<void> {

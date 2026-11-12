@@ -2,6 +2,7 @@ import type { IncomingMessage, Server } from "node:http";
 import type { Duplex } from "node:stream";
 import { WebSocket, WebSocketServer, type RawData } from "ws";
 import type { AuthPort } from "../../application/ports/auth.port.js";
+import type { AccessResolver } from "../../application/identity/access-resolver.js";
 import { hasPermission } from "../../domain/identity/identity.model.js";
 import type { MeetingRepositoryPort, RecorderProvisioningSession } from "../../application/ports/meeting-repository.port.js";
 import { hashViewerToken, signWorkerLinkToken } from "../../infrastructure/meetings/provisioning-link-auth.js";
@@ -12,6 +13,7 @@ export const PROVISIONING_STREAM_PATH = "/v1/meetings/recorder-provisioning/stre
 export type ProvisioningStreamDeps = {
   repository: Pick<MeetingRepositoryPort, "findProvisioningSessionByViewerHash" | "getProvisioningSession" | "consumeProvisioningViewer">;
   authPort: AuthPort;
+  accessResolver?: Pick<AccessResolver, "resolve">;
   canUseMeetings: (tenantId: string) => Promise<boolean>;
   masterSecret: string;
   now: () => Date;
@@ -73,8 +75,11 @@ function handleViewer(client: WebSocket, deps: ProvisioningStreamDeps): void {
     }
     if (!token || !accessToken) return close(4401, "unauthorized");
     const authentication = await deps.authPort.verifyToken(accessToken);
-    if (!authentication.authenticated || !hasPermission(authentication.principal.role, "meeting:manage_recorder_accounts")) return close(4401, "unauthorized");
-    const principal = authentication.principal;
+    // Tokens de escopo restrito (mídia/avatar/stream da Inbox viajam em URL) só valem nas próprias rotas.
+    if (!authentication.authenticated || authentication.principal.purpose) return close(4401, "unauthorized");
+    // Perfil, permissões e status ATUAIS: membro desativado ou rebaixado não abre o navegador.
+    const principal = deps.accessResolver ? await deps.accessResolver.resolve(authentication.principal) : authentication.principal;
+    if (!principal || !hasPermission(principal, "meeting:manage_recorder_accounts")) return close(4401, "unauthorized");
     let session = await deps.repository.findProvisioningSessionByViewerHash(hashViewerToken(token)).catch(() => undefined);
     if (!session || !OPEN_STATES.includes(session.status) || Date.parse(session.expiresAt) <= deps.now().getTime()) return close(4401, "unauthorized");
     if (session.tenantId !== principal.tenantId || session.createdByUserId !== principal.userId || !await deps.canUseMeetings(principal.tenantId)) return close(4401, "unauthorized");

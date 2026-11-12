@@ -1,4 +1,5 @@
 [
+  "tests/social-connection-stream.test.mjs",
   "tests/meetings.test.mjs",
   "tests/meetings-agenda.test.mjs",
   "tests/meetings-processing.test.mjs",

@@ -32,6 +32,7 @@ import { registerUploadedObjectRoutes } from "./routes/uploads.route.js";
 import { createObjectKeyReadAuthorizer, registerSignedObjectUrlResponses } from "./object-url-access.js";
 import { migrateInlineWorkspaceLogos } from "../../infrastructure/storage/postgres/inline-workspace-logo-migration.js";
 import { attachProvisioningStreamProxy } from "./meetings-provisioning-stream.js";
+import { attachSocialConnectionStreamProxy } from "./social-connection-stream.js";
 
 export type BuildAppOptions = {
   config?: ApiConfig;
@@ -180,8 +181,26 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   await app.register(registerV1Routes, { prefix: "/v1" });
   // Relay WebSocket do navegador temporário de login das contas de gravação (Meetings).
   if (container.meetings && config.jwtSecret) {
-    const stream = attachProvisioningStreamProxy(app.server, { repository: container.meetings.repository, authPort: container.authPort, canUseMeetings: (tenantId) => container.solutionAccess?.hasAccess(tenantId, "meetings") ?? Promise.resolve(false), masterSecret: config.jwtSecret, now: () => new Date() });
+    const stream = attachProvisioningStreamProxy(app.server, { repository: container.meetings.repository, authPort: container.authPort, ...(container.identity?.accessResolver ? { accessResolver: container.identity.accessResolver } : {}), canUseMeetings: (tenantId) => container.solutionAccess?.hasAccess(tenantId, "meetings") ?? Promise.resolve(false), masterSecret: config.jwtSecret, now: () => new Date() });
     app.addHook("onClose", async () => { for (const client of stream.clients) client.terminate(); stream.close(); });
+  }
+
+  // Relay WebSocket da tela de login das redes sociais (Marketing): substitui a captura por polling.
+  if (container.social && config.social.gatewayUrl && config.social.gatewayToken) {
+    const social = container.social;
+    const socialStream = attachSocialConnectionStreamProxy(app.server, {
+      authPort: container.authPort,
+      ...(container.identity?.accessResolver ? { accessResolver: container.identity.accessResolver } : {}),
+      workspaceRepository: container.workspaceRepository,
+      canConnect: async (tenantId, network) => {
+        if (container.solutionAccess && !await container.solutionAccess.hasAccess(tenantId, "marketing")) return false;
+        const selected = await social.resolver.connectionProviderFor(tenantId, network);
+        return selected.ok && selected.providerType === `${network}_unofficial`;
+      },
+      gatewayUrl: config.social.gatewayUrl,
+      gatewayToken: config.social.gatewayToken,
+    });
+    app.addHook("onClose", async () => { for (const client of socialStream.clients) client.terminate(); socialStream.close(); });
   }
 
   registerPublicationScheduler(app, container, { enabled: config.publication.schedulerEnabled, intervalMs: config.publication.schedulerIntervalMs });

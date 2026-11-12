@@ -9,7 +9,8 @@ import { GatewayError, type GatewayCredential, type GatewayFrame, type GatewayIn
 
 type StoredSession = GatewayCredential & { cookies: Awaited<ReturnType<BrowserContext["cookies"]>>; updatedAt: string };
 type Receipt = { externalAccountId: string; result: SocialPublishResult; createdAt: string };
-type Flow = { scope: GatewayUserScope; page: Page; driver: BrowserSocialDriver; context: BrowserContext; close: () => Promise<void>; expiresAt: number; framePromise?: Promise<GatewayFrame> };
+type Flow = { scope: GatewayUserScope; page: Page; driver: BrowserSocialDriver; context: BrowserContext; close: () => Promise<void>; expiresAt: number; framePromise?: Promise<GatewayFrame>; stopStream?: () => void };
+const SECRET_FIELDS = 'input[type="password"], input[autocomplete="current-password"], input[autocomplete="new-password"], input[name*="pass" i], input[autocomplete="one-time-code"], input[name*="code" i], input[name*="otp" i]';
 type AccountInput = GatewayScope & { credentialReferenceId: string; externalAccountId?: string };
 
 /** Single gateway replica owns the private volume and account locks (no distributed browser sessions). */
@@ -51,12 +52,60 @@ export class SocialGatewayService {
     if (flow.framePromise) return flow.framePromise;
     const capture = (async (): Promise<GatewayFrame> => {
       const state = await flow.driver.securityState();
-      // Passwords and security codes are never returned in the image or saved to disk.
-      const bytes = await flow.page.screenshot({ type: "jpeg", quality: 55, mask: [flow.page.locator('input[type="password"], input[autocomplete="current-password"], input[autocomplete="new-password"], input[name*="pass" i], input[autocomplete="one-time-code"], input[name*="code" i], input[name*="otp" i]')], timeout: 10_000 });
+      const bytes = await this.screenshot(flow);
       return { image: bytes.toString("base64"), width: 1280, height: 800, status: state === "CHECKPOINT_REQUIRED" ? "CHECKPOINT_REQUIRED" : "CONNECTING", expiresAt: new Date(flow.expiresAt).toISOString() };
     })().finally(() => { flow.framePromise = undefined; });
     flow.framePromise = capture;
     return capture;
+  }
+  /** Passwords and security codes are never returned in the image or saved to disk. The caret stays
+   * visible so the person sees where the next letter goes. */
+  private screenshot(flow: Flow): Promise<Buffer> {
+    return flow.page.screenshot({ type: "jpeg", quality: 55, caret: "initial", mask: [flow.page.locator(SECRET_FIELDS)], timeout: 10_000 });
+  }
+  /**
+   * Live screen for one flow, pushed over a socket instead of polled: frames go out as soon as the
+   * page changes (only when the image actually differs) and input comes back on the same channel.
+   * Fast captures while the person is typing or clicking, slow ones when idle. One stream per flow;
+   * nothing is cached beyond the last frame sent, which is compared and then dropped with the stream.
+   */
+  stream(scope: GatewayUserScope, flowId: string, sink: { frame(jpeg: Buffer): void; status(status: { s: GatewayFrame["status"] | "EXPIRED"; expiresAt?: string }): void }): { input(action: GatewayInteraction): void; close(): void } {
+    const flow = this.flow(scope, flowId);
+    flow.stopStream?.();
+    let stopped = false;
+    let activeUntil = Date.now() + 4_000;
+    let lastFrame: Buffer | undefined;
+    let lastStatus: string | undefined;
+    let statusCheckedAt = 0;
+    let wake: (() => void) | undefined;
+    const stop = () => { stopped = true; wake?.(); if (flow.stopStream === stop) flow.stopStream = undefined; };
+    flow.stopStream = stop;
+    void (async () => {
+      while (!stopped) {
+        if (this.flows.get(flowId) !== flow || flow.expiresAt <= Date.now()) { sink.status({ s: "EXPIRED" }); break; }
+        try {
+          const bytes = await this.screenshot(flow);
+          if (stopped) break;
+          if (!lastFrame || !bytes.equals(lastFrame)) { lastFrame = bytes; sink.frame(bytes); }
+          if (Date.now() - statusCheckedAt > 1_500) {
+            statusCheckedAt = Date.now();
+            const state = await flow.driver.securityState().catch(() => undefined);
+            const status = state === "CHECKPOINT_REQUIRED" ? "CHECKPOINT_REQUIRED" : "CONNECTING";
+            if (status !== lastStatus && !stopped) { lastStatus = status; sink.status({ s: status, expiresAt: new Date(flow.expiresAt).toISOString() }); }
+          }
+        } catch { /* page mid-navigation: next tick */ }
+        await new Promise<void>(resolve => { const timer = setTimeout(resolve, Date.now() < activeUntil ? 60 : 1_000); wake = () => { clearTimeout(timer); resolve(); }; });
+        wake = undefined;
+      }
+      stop();
+    })();
+    return {
+      input: action => {
+        activeUntil = Date.now() + 4_000;
+        void this.interact(scope, flowId, action).then(() => wake?.(), () => undefined);
+      },
+      close: stop,
+    };
   }
   async interact(scope: GatewayUserScope, flowId: string, action: GatewayInteraction): Promise<{ accepted: true }> {
     return this.mutex.run(`flow:${flowId}`, async () => {

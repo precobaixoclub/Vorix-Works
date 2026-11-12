@@ -8,6 +8,7 @@ import { Card } from "@/components/Card";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { ErrorState } from "@/components/ErrorState";
 import { PageHeader } from "@/components/PageHeader";
+import { SearchableCombo } from "@/components/SearchableCombo";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAuth } from "@/contexts/auth-context";
 import { useCurrentWorkspace } from "@/contexts/workspace-context";
@@ -15,7 +16,9 @@ import {
   connectGoogleCalendar,
   disconnectGoogleCalendar,
   GOOGLE_CALENDAR_RETURN_KEY,
+  selectGoogleCalendar,
   syncGoogleCalendar,
+  useGoogleCalendars,
   useGoogleCalendarStatus,
   useGoogleSyncLog,
 } from "@/features/meetings/agenda";
@@ -28,7 +31,7 @@ const STATUS_LABEL = { not_connected: "Não conectado", connected: "Conectado", 
 const ACTION_LABEL: Record<string, string> = {
   connect: "Conexão", disconnect: "Desconexão", token_refresh: "Renovação de acesso", create: "Criação", update: "Atualização", delete: "Remoção",
   cancel: "Cancelamento", conflict: "Conflito", sync_token_expired: "Recarga completa", full_sync: "Sincronização completa", incremental_sync: "Sincronização",
-  relink_own_event: "Evento reconhecido", cancel_ignored_terminal: "Cancelamento ignorado (concluído)", sync: "Sincronização", push: "Envio",
+  relink_own_event: "Evento reconhecido", select_calendar: "Troca de agenda", cancel_ignored_terminal: "Cancelamento ignorado (concluído)", sync: "Sincronização", push: "Envio",
 };
 
 /** Integrações do Vorix Meetings: Google Calendar por pessoa (cada um conecta a própria agenda). */
@@ -38,8 +41,10 @@ export default function MeetingsIntegrationsPage() {
   const status = useGoogleCalendarStatus(workspace.id);
   const connected = status.data?.status === "connected" || status.data?.status === "reconnect_required";
   const log = useGoogleSyncLog(workspace.id, Boolean(connected));
+  const calendars = useGoogleCalendars(workspace.id, status.data?.status === "connected");
   const [busy, setBusy] = useState(false);
   const [confirmDisconnect, setConfirmDisconnect] = useState(false);
+  const [pendingCalendar, setPendingCalendar] = useState<{ id: string; name: string } | null>(null);
   const canWrite = state.status === "authenticated" && state.role !== "viewer";
 
   async function connect() {
@@ -59,14 +64,18 @@ export default function MeetingsIntegrationsPage() {
     try {
       await action();
       toast.success(message);
-      await Promise.all([status.mutate(), log.mutate()]);
+      await Promise.all([status.mutate(), log.mutate(), calendars.mutate()]);
     } catch (error) {
       toast.error("Não foi possível concluir", { description: error instanceof ApiError || error instanceof Error ? error.message : undefined });
     } finally {
       setBusy(false);
       setConfirmDisconnect(false);
+      setPendingCalendar(null);
     }
   }
+
+  const calendarItems = (calendars.data?.calendars ?? []).map((calendar) => ({ id: calendar.id, label: calendar.primary ? `${calendar.name} (principal)` : calendar.name }));
+  const selectedCalendar = calendars.data?.calendars.find((calendar) => calendar.id === calendars.data?.selectedId);
 
   const data = status.data;
   return (
@@ -89,6 +98,40 @@ export default function MeetingsIntegrationsPage() {
                 {data.lastSyncedAt ? <p className="mt-2 text-xs text-muted-foreground">Última sincronização: {formatDateTime(data.lastSyncedAt)}</p> : null}
                 {data.lastErrorMessage && data.status !== "reconnect_required" ? <p className="mt-1 text-xs text-destructive">Último erro: {data.lastErrorMessage}</p> : null}
                 {!data.configured ? <p className="mt-2 text-xs text-muted-foreground">A integração com o Google ainda não está configurada neste servidor.</p> : null}
+                {data.status === "connected" ? (
+                  <div className="mt-4 max-w-sm space-y-1.5" data-testid="google-calendar-picker">
+                    <label htmlFor="google-calendar-picker" className="text-xs font-medium text-foreground">Agenda sincronizada</label>
+                    {calendars.error ? (
+                      <div className="space-y-2 text-xs">
+                        <p className="text-destructive">{calendars.error instanceof Error ? calendars.error.message : "Não foi possível carregar suas agendas."}</p>
+                        <div className="flex flex-wrap gap-2">
+                          <Button variant="secondary" size="sm" disabled={busy} onClick={() => calendars.mutate()}>Tentar de novo</Button>
+                          {canWrite ? <Button variant="secondary" size="sm" disabled={busy || !data.configured} onClick={connect}>Reconectar</Button> : null}
+                        </div>
+                      </div>
+                    ) : canWrite ? (
+                      <SearchableCombo
+                        id="google-calendar-picker"
+                        items={calendarItems}
+                        loading={!calendars.data}
+                        loadingLabel="Carregando suas agendas..."
+                        value={calendars.data?.selectedId ?? ""}
+                        onValueChange={(id) => {
+                          if (!id || id === calendars.data?.selectedId) return;
+                          const target = calendars.data?.calendars.find((calendar) => calendar.id === id);
+                          if (target) setPendingCalendar({ id: target.id, name: target.name });
+                        }}
+                        placeholder="Escolha a agenda"
+                        searchPlaceholder="Buscar agenda..."
+                        emptyText="Nenhuma agenda em que você possa criar eventos."
+                        disabled={busy}
+                      />
+                    ) : (
+                      <p className="text-sm text-foreground">{selectedCalendar ? selectedCalendar.name : "—"}</p>
+                    )}
+                    <p className="text-xs text-muted-foreground">Os compromissos criados na Vorix vão para esta agenda, e os dela aparecem aqui.</p>
+                  </div>
+                ) : null}
               </div>
             </div>
             {canWrite ? (
@@ -130,6 +173,15 @@ export default function MeetingsIntegrationsPage() {
         busy={busy}
         onConfirm={() => act(() => disconnectGoogleCalendar(workspace.id), "Google Calendar desconectado")}
         onCancel={() => setConfirmDisconnect(false)}
+      />
+      <ConfirmDialog
+        open={Boolean(pendingCalendar)}
+        title={`Sincronizar a agenda "${pendingCalendar?.name ?? ""}"?`}
+        description={`Os compromissos importados da agenda "${selectedCalendar?.name ?? "atual"}" saem da Vorix (nada é apagado no Google). Os criados na Vorix continuam, e a nova agenda é carregada em instantes.`}
+        confirmLabel="Trocar agenda"
+        busy={busy}
+        onConfirm={() => { if (pendingCalendar) void act(() => selectGoogleCalendar(workspace.id, pendingCalendar.id), "Agenda trocada — sincronizando em instantes."); }}
+        onCancel={() => setPendingCalendar(null)}
       />
       <ZoomIntegrationCard workspaceId={workspace.id} canWrite={canWrite} />
     </main>

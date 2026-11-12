@@ -167,6 +167,7 @@ import { ObjectStorageMeetingMedia } from "../../../infrastructure/meetings/obje
 import type { CalendarUseCaseDeps } from "../../../application/calendar/calendar-event-use-cases.js";
 import type { CalendarConnectionDeps } from "../../../application/calendar/calendar-connection-use-cases.js";
 import { MeetingsCalendarLink } from "../../../application/meetings/meeting-processing.js";
+import { GoogleCalendarApiClient } from "../../../infrastructure/calendar/google-calendar-api-client.js";
 import { GoogleCalendarOAuthService } from "../../../infrastructure/calendar/google-calendar-oauth-service.js";
 import { PostgresCalendarConnectionRepository } from "../../../infrastructure/storage/postgres/postgres-calendar-connection-repository.js";
 import { PostgresCalendarEventRepository } from "../../../infrastructure/storage/postgres/postgres-calendar-event-repository.js";
@@ -1730,9 +1731,10 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
         : {}),
     };
     const calendarConnections = new PostgresCalendarConnectionRepository(identityRepositories.pool);
+    const calendarEvents = new PostgresCalendarEventRepository(identityRepositories.pool);
     const meetingsAgenda = {
       calendar: {
-        events: new PostgresCalendarEventRepository(identityRepositories.pool),
+        events: calendarEvents,
         connections: calendarConnections,
         meetings: new MeetingsCalendarLink({ repository: meetings.repository, idGenerator: meetings.idGenerator, limitsFor: meetings.limitsFor }),
         now: () => new Date(),
@@ -1747,6 +1749,8 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
           stateSigningKey: createHmac("sha256", config.jwtSecret ?? randomBytes(32).toString("hex")).update("vorix:google-calendar-oauth-state:v1").digest(),
         }),
         now: () => new Date(),
+        calendars: new GoogleCalendarApiClient(),
+        events: calendarEvents,
       },
     };
 

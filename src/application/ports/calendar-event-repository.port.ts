@@ -75,4 +75,9 @@ export type CalendarEventRepositoryPort = {
   findByGoogleEventId(googleAccountId: string, googleEventId: string): Promise<CalendarEvent | undefined>;
   /** Eventos com edição local pendente (local > synced) da conta, incluindo cancelamentos. */
   listPendingPush(input: { tenantId: string; workspaceId: string; ownerUserId: string; limit: number }): Promise<CalendarEvent[]>;
+  /**
+   * Troca de agenda: apaga as CÓPIAS locais de eventos importados de uma agenda que deixou de ser
+   * sincronizada (nada é apagado no Google). Fica o que tem edição local ainda não enviada.
+   */
+  removeImportedFromCalendar(input: { googleAccountId: string; googleCalendarId: string }): Promise<number>;
 };

@@ -116,6 +116,14 @@ export type CalendarConnection = {
   updatedAt: string;
 };
 
+/** Uma agenda da conta Google da pessoa em que ela pode criar eventos (lista do Google). */
+export type GoogleCalendarOption = {
+  id: string;
+  name: string;
+  primary: boolean;
+  color?: string;
+};
+
 export type CalendarSyncLogEntry = {
   tenantId: string;
   workspaceId: string;

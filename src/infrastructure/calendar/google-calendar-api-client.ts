@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { CalendarSyncApiPort, GoogleCalendarEventPayload } from "../../application/calendar/calendar-sync-use-cases.js";
+import type { GoogleCalendarOption } from "../../domain/calendar/calendar.model.js";
 
 /**
  * Cliente HTTP fino sobre a Google Calendar API v3 — sem SDK. Não conhece tokens/OAuth; recebe
@@ -55,6 +56,29 @@ export class GoogleCalendarApiClient implements CalendarSyncApiPort {
       const json = (await safeJson(response)) as { error?: { message?: string } };
       throw new GoogleCalendarApiError(response.status, json.error?.message ?? `HTTP ${response.status}`);
     }
+  }
+
+  /**
+   * Agendas em que a pessoa pode criar eventos (escopo `calendar.calendarlist.readonly`). Só as que
+   * ela é dona ou pode editar: a Vorix também cria eventos na agenda escolhida.
+   */
+  async listCalendars(input: { accessToken: string }): Promise<GoogleCalendarOption[]> {
+    const calendars: GoogleCalendarOption[] = [];
+    let pageToken: string | undefined;
+    for (let page = 0; page < 10; page += 1) {
+      const url = new URL(`${this.baseUrl()}/users/me/calendarList`);
+      url.searchParams.set("minAccessRole", "writer");
+      url.searchParams.set("maxResults", "250");
+      if (pageToken) url.searchParams.set("pageToken", pageToken);
+      const json = await this.request<{ items?: { id?: string; summary?: string; summaryOverride?: string; primary?: boolean; backgroundColor?: string; deleted?: boolean }[]; nextPageToken?: string }>(url, { headers: this.auth(input.accessToken) });
+      for (const item of json.items ?? []) {
+        if (!item.id || item.deleted) continue;
+        calendars.push({ id: item.id, name: item.summaryOverride?.trim() || item.summary?.trim() || item.id, primary: Boolean(item.primary), ...(item.backgroundColor ? { color: item.backgroundColor } : {}) });
+      }
+      pageToken = json.nextPageToken;
+      if (!pageToken) break;
+    }
+    return calendars.sort((a, b) => Number(b.primary) - Number(a.primary) || a.name.localeCompare(b.name, "pt-BR"));
   }
 
   private async request<T>(url: URL, init: RequestInit): Promise<T> {

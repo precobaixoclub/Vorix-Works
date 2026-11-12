@@ -14,7 +14,7 @@ import { SolutionAccessService } from "../dist/application/solutions/solution-ac
 import { MeetingsCalendarLink } from "../dist/application/meetings/meeting-processing.js";
 import { resolveEventTimes } from "../dist/application/calendar/calendar-event-use-cases.js";
 import { syncConnection } from "../dist/application/calendar/calendar-sync-use-cases.js";
-import { completeGoogleCalendarConnect } from "../dist/application/calendar/calendar-connection-use-cases.js";
+import { completeGoogleCalendarConnect, listGoogleCalendars, selectGoogleCalendar } from "../dist/application/calendar/calendar-connection-use-cases.js";
 import { zonedLocalToUtc } from "../dist/domain/calendar/calendar.model.js";
 import { buildApp } from "../dist/interfaces/api/app.js";
 import { loadApiConfig } from "../dist/interfaces/api/config/api-config.js";
@@ -500,4 +500,58 @@ test("LOCK DISTRIBUÍDO: dois processos nunca sincronizam a mesma conta; lease v
     syncConnection(syncDeps(google), { connectionId: account.connection.id, owner: "worker-D" }),
   ]);
   assert.deepEqual([one.status, two.status].sort(), ["locked", "synced"]);
+});
+
+test("ESCOLHA DE AGENDA: só agendas da própria conta; troca recarrega a nova e tira da Vorix só os importados da anterior", async () => {
+  const account = await connectedAccount("pick");
+  const google = new FakeGoogle();
+  google.remoteCreate({ id: "old1", summary: "Da principal", start: { dateTime: "2026-11-20T10:00:00-03:00" }, end: { dateTime: "2026-11-20T11:00:00-03:00" } });
+  google.remoteCreate({ id: "old2", summary: "Editada na Vorix", start: { dateTime: "2026-11-21T10:00:00-03:00" }, end: { dateTime: "2026-11-21T11:00:00-03:00" } });
+  await syncConnection(syncDeps(google), { connectionId: account.connection.id, owner: "worker-1" });
+  const edited = await events().findByGoogleEventId(account.connection.id, "old2");
+  await events().applyLocalChange(edited.id, { title: "Editada e ainda não enviada" });
+  const own = await localEvent(account, { title: "Criada na Vorix" });
+
+  let listError;
+  const deps = {
+    connections: connections(),
+    events: events(),
+    now: () => new Date(),
+    auth: { ...fakeAuth, isConfigured: () => true, getAccessToken: async () => ({ ok: true, accessToken: "at" }) },
+    calendars: { listCalendars: async () => { if (listError) throw listError; return [{ id: "pick@empresa.com", name: "Pessoal", primary: true }, { id: "trabalho@group.calendar.google.com", name: "Trabalho", primary: false }]; } },
+  };
+  const actor = { tenantId: account.tenantId, userId: account.userId };
+  const input = { workspaceId: account.workspaceId };
+
+  const choice = await listGoogleCalendars(deps, actor, input);
+  assert.equal(choice.selectedId, "pick@empresa.com", "'primary' aparece como a agenda principal da lista");
+  assert.equal(choice.calendars.length, 2);
+
+  await selectGoogleCalendar(deps, actor, { ...input, calendarId: "pick@empresa.com" });
+  assert.equal((await connections().getById(account.connection.id)).calendarId, "primary", "escolher a mesma agenda não muda nada");
+  await assert.rejects(selectGoogleCalendar(deps, actor, { ...input, calendarId: "agenda-de-outra-pessoa@x.com" }), /CALENDAR_OAUTH_CALENDAR_NOT_ALLOWED/);
+  await assert.rejects(selectGoogleCalendar(deps, { ...actor, userId: "outra-pessoa" }, { ...input, calendarId: "trabalho@group.calendar.google.com" }), /CALENDAR_OAUTH_NOT_CONNECTED/, "nunca troca a agenda de outra pessoa");
+
+  assert.ok(await connections().acquireSyncLease(account.connection.id, "worker-busy", 60_000));
+  await assert.rejects(selectGoogleCalendar(deps, actor, { ...input, calendarId: "trabalho@group.calendar.google.com" }), /CALENDAR_OAUTH_SYNC_BUSY/, "não troca no meio de uma sincronização");
+  await connections().releaseSyncLease(account.connection.id, "worker-busy");
+
+  await selectGoogleCalendar(deps, actor, { ...input, calendarId: "trabalho@group.calendar.google.com" });
+  const after = await connections().getById(account.connection.id);
+  assert.equal(after.calendarId, "trabalho@group.calendar.google.com");
+  assert.equal(after.syncToken, undefined, "a próxima sincronização é a carga completa da agenda nova");
+  const left = (await db.pool.query("select id, google_event_id from calendar_events where tenant_id = $1", [account.tenantId])).rows;
+  assert.deepEqual(left.map((row) => row.google_event_id ?? row.id).sort(), ["old2", own.id].sort(), "sai só o importado sem edição pendente");
+  assert.ok(await connections().acquireSyncLease(account.connection.id, "worker-next", 1_000), "lease liberado depois da troca");
+  await connections().releaseSyncLease(account.connection.id, "worker-next");
+
+  listError = Object.assign(new Error("forbidden"), { status: 403 });
+  await assert.rejects(listGoogleCalendars(deps, actor, input), /CALENDAR_OAUTH_RECONNECT_REQUIRED/, "conectado antes da permissão nova: pede para reconectar");
+});
+
+test("ESCOLHA DE AGENDA (HTTP): viewer não troca a agenda", async () => {
+  const app = await buildTestApp();
+  const account = await setupTenant("pick-http");
+  const response = await app.inject({ method: "POST", url: "/v1/meetings/google/calendar", headers: auth(account.tenantId, "viewer", "u-v"), payload: { workspaceId: account.workspaceId, calendarId: "x@y.com" } });
+  assert.equal(response.statusCode, 403);
 });

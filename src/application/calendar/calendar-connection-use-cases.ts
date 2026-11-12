@@ -1,5 +1,7 @@
-import type { CalendarConnection, CalendarSyncLogEntry } from "../../domain/calendar/calendar.model.js";
+import { randomUUID } from "node:crypto";
+import type { CalendarConnection, CalendarSyncLogEntry, GoogleCalendarOption } from "../../domain/calendar/calendar.model.js";
 import type { CalendarConnectionRepositoryPort } from "../ports/calendar-connection-repository.port.js";
+import type { CalendarEventRepositoryPort } from "../ports/calendar-event-repository.port.js";
 
 /** OAuth do Google Calendar, implementado em `infrastructure/calendar` (injetado via DI). */
 export type GoogleCalendarAuthPort = {
@@ -13,10 +15,18 @@ export type GoogleCalendarAuthPort = {
   getAccessToken(input: { tenantId: string; workspaceId: string; userId: string }): Promise<{ ok: true; accessToken: string } | { ok: false; reason: string; message: string }>;
 };
 
+/** Lista de agendas da conta Google (implementada em `infrastructure/calendar`). */
+export type GoogleCalendarListPort = {
+  listCalendars(input: { accessToken: string }): Promise<GoogleCalendarOption[]>;
+};
+
 export type CalendarConnectionDeps = {
   connections: CalendarConnectionRepositoryPort;
   auth: GoogleCalendarAuthPort;
   now: () => Date;
+  /** Escolha de agenda: sem isso, a conta usa sempre a agenda principal. */
+  calendars?: GoogleCalendarListPort;
+  events?: Pick<CalendarEventRepositoryPort, "removeImportedFromCalendar">;
 };
 
 export type CalendarConnectionActor = { tenantId: string; userId: string };
@@ -79,4 +89,59 @@ export async function listGoogleCalendarSyncLog(deps: CalendarConnectionDeps, ac
   const connection = await deps.connections.getByUser({ tenantId: actor.tenantId, workspaceId: input.workspaceId, userId: actor.userId });
   if (!connection) return [];
   return deps.connections.listLog({ tenantId: actor.tenantId, connectionId: connection.id, limit: Math.min(Math.max(input.limit ?? 50, 1), 200) });
+}
+
+export type GoogleCalendarChoice = { selectedId: string; calendars: GoogleCalendarOption[] };
+
+/** Agendas da conta Google da pessoa em que ela pode criar eventos, com a que está sincronizada. */
+export async function listGoogleCalendars(deps: CalendarConnectionDeps, actor: CalendarConnectionActor, input: { workspaceId: string }): Promise<GoogleCalendarChoice> {
+  const owner = { tenantId: actor.tenantId, workspaceId: input.workspaceId, userId: actor.userId };
+  const connection = await deps.connections.getByUser(owner);
+  if (!connection || connection.status !== "connected") throw new Error("CALENDAR_OAUTH_NOT_CONNECTED: conecte o Google Calendar primeiro.");
+  return fetchCalendars(deps, owner, connection);
+}
+
+/**
+ * Troca a agenda sincronizada. Só aceita uma agenda da PRÓPRIA conta em que a pessoa pode criar
+ * eventos. A próxima sincronização faz a carga completa da agenda nova; as cópias locais dos eventos
+ * importados da anterior saem da Vorix (nada é apagado no Google). Segura o lease do sync durante a
+ * troca, para o worker nunca gravar o syncToken da agenda antiga por cima.
+ */
+export async function selectGoogleCalendar(deps: CalendarConnectionDeps, actor: CalendarConnectionActor, input: { workspaceId: string; calendarId: string }): Promise<GoogleCalendarStatus> {
+  const owner = { tenantId: actor.tenantId, workspaceId: input.workspaceId, userId: actor.userId };
+  const connection = await deps.connections.getByUser(owner);
+  if (!connection || connection.status !== "connected") throw new Error("CALENDAR_OAUTH_NOT_CONNECTED: conecte o Google Calendar primeiro.");
+  const { selectedId, calendars } = await fetchCalendars(deps, owner, connection);
+  const target = calendars.find((calendar) => calendar.id === input.calendarId);
+  if (!target) throw new Error("CALENDAR_OAUTH_CALENDAR_NOT_ALLOWED: escolha uma agenda da sua conta Google em que você pode criar eventos.");
+  if (target.id === selectedId) return getGoogleCalendarStatus(deps, actor, input);
+
+  const leaseOwner = `select-calendar:${randomUUID()}`;
+  const locked = await deps.connections.acquireSyncLease(connection.id, leaseOwner, 60_000);
+  if (!locked) throw new Error("CALENDAR_OAUTH_SYNC_BUSY: a agenda está sincronizando agora — tente de novo em alguns segundos.");
+  try {
+    await deps.connections.update(connection.id, { calendarId: target.id, syncToken: null, nextSyncAt: deps.now().toISOString() });
+    const removed = deps.events ? await deps.events.removeImportedFromCalendar({ googleAccountId: connection.id, googleCalendarId: locked.calendarId }) : 0;
+    await deps.connections.log({ tenantId: owner.tenantId, workspaceId: owner.workspaceId, connectionId: connection.id, direction: "auth", action: "select_calendar", status: "ok", ...(removed ? { error: `${removed} evento(s) da agenda anterior retirados da Vorix` } : {}) });
+  } finally {
+    await deps.connections.releaseSyncLease(connection.id, leaseOwner);
+  }
+  return getGoogleCalendarStatus(deps, actor, input);
+}
+
+async function fetchCalendars(deps: CalendarConnectionDeps, owner: { tenantId: string; workspaceId: string; userId: string }, connection: CalendarConnection): Promise<GoogleCalendarChoice> {
+  if (!deps.calendars) throw new Error("CALENDAR_OAUTH_NOT_CONFIGURED: a escolha de agenda não está disponível neste servidor.");
+  const token = await deps.auth.getAccessToken(owner);
+  if (!token.ok) throw new Error(`CALENDAR_OAUTH_RECONNECT_REQUIRED: ${token.message}`);
+  let calendars: GoogleCalendarOption[];
+  try {
+    calendars = await deps.calendars.listCalendars({ accessToken: token.accessToken });
+  } catch (error) {
+    const status = (error as { status?: unknown }).status;
+    // Conectado antes desta permissão existir: o Google recusa a lista até a pessoa reconectar.
+    if (status === 401 || status === 403) throw new Error("CALENDAR_OAUTH_RECONNECT_REQUIRED: reconecte o Google Calendar para permitir escolher a agenda.");
+    throw new Error("CALENDAR_OAUTH_GOOGLE_UNAVAILABLE: não foi possível buscar suas agendas no Google agora — tente de novo.");
+  }
+  const selected = calendars.find((calendar) => calendar.id === connection.calendarId) ?? (connection.calendarId === "primary" ? calendars.find((calendar) => calendar.primary) : undefined);
+  return { selectedId: selected?.id ?? connection.calendarId, calendars };
 }

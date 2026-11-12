@@ -99,6 +99,15 @@ export function disconnectGoogleCalendar(workspaceId: string) {
 export function syncGoogleCalendar(workspaceId: string) {
   return apiClient.post<GoogleCalendarStatus>("/v1/meetings/google/sync", { workspaceId });
 }
+export type GoogleCalendarOption = { id: string; name: string; primary: boolean; color?: string };
+export type GoogleCalendarChoice = { selectedId: string; calendars: GoogleCalendarOption[] };
+
+export function listGoogleCalendars(workspaceId: string) {
+  return apiClient.get<GoogleCalendarChoice>(`/v1/meetings/google/calendars?workspaceId=${q(workspaceId)}`);
+}
+export function selectGoogleCalendar(workspaceId: string, calendarId: string) {
+  return apiClient.post<GoogleCalendarStatus>("/v1/meetings/google/calendar", { workspaceId, calendarId });
+}
 export function getGoogleSyncLog(workspaceId: string) {
   return apiClient.get<CalendarSyncLogEntry[]>(`/v1/meetings/google/sync-log?workspaceId=${q(workspaceId)}`);
 }
@@ -113,6 +122,10 @@ export function useAgendaEvents(workspaceId: string, from: string, to: string) {
 
 export function useGoogleCalendarStatus(workspaceId: string) {
   return useSWR(["meeting-google-status", workspaceId], () => getGoogleCalendarStatus(workspaceId));
+}
+
+export function useGoogleCalendars(workspaceId: string, enabled: boolean) {
+  return useSWR(enabled ? ["meeting-google-calendars", workspaceId] : null, () => listGoogleCalendars(workspaceId), { revalidateOnFocus: false, shouldRetryOnError: false });
 }
 
 export function useGoogleSyncLog(workspaceId: string, enabled: boolean) {

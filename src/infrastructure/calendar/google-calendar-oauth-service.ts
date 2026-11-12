@@ -18,10 +18,17 @@ export type GoogleCalendarOAuthConfig = {
 export type GoogleCalendarTokenSet = { accessToken: string; refreshToken?: string; scope?: string; expiresIn?: number };
 
 /**
- * Escopos mínimos: ler/escrever EVENTOS (não a lista de agendas), ler a transcrição NATIVA do Meet
- * (só texto + quem falou, usada pela importação sem robô) e o e-mail da conta conectada.
+ * Escopos mínimos: ler/escrever EVENTOS, ver a LISTA de agendas (só para a pessoa escolher qual
+ * sincronizar), ler a transcrição NATIVA do Meet (só texto + quem falou, usada pela importação sem
+ * robô) e o e-mail da conta conectada.
  */
-export const GOOGLE_CALENDAR_REQUIRED_SCOPES = ["https://www.googleapis.com/auth/calendar.events", "https://www.googleapis.com/auth/meetings.space.readonly", "openid", "email"] as const;
+export const GOOGLE_CALENDAR_REQUIRED_SCOPES = [
+  "https://www.googleapis.com/auth/calendar.events",
+  "https://www.googleapis.com/auth/calendar.calendarlist.readonly",
+  "https://www.googleapis.com/auth/meetings.space.readonly",
+  "openid",
+  "email",
+] as const;
 
 const STATE_TTL_MS = 10 * 60 * 1000;
 

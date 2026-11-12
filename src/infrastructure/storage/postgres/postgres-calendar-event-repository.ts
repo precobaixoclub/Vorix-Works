@@ -187,6 +187,15 @@ export class PostgresCalendarEventRepository implements CalendarEventRepositoryP
     );
     return result.rows.map(toDomain);
   }
+
+  async removeImportedFromCalendar(input: { googleAccountId: string; googleCalendarId: string }): Promise<number> {
+    const result = await this.pool.query(
+      `delete from calendar_events
+       where google_account_id = $1 and google_calendar_id = $2 and source = 'google' and local_version <= synced_version`,
+      [input.googleAccountId, input.googleCalendarId],
+    );
+    return result.rowCount ?? 0;
+  }
 }
 
 function toDomain(row: Row): CalendarEvent {

@@ -16,8 +16,10 @@ import {
   completeGoogleCalendarConnect,
   disconnectGoogleCalendar,
   getGoogleCalendarStatus,
+  listGoogleCalendars,
   listGoogleCalendarSyncLog,
   requestGoogleCalendarSync,
+  selectGoogleCalendar,
   type CalendarConnectionDeps,
 } from "../../../../application/calendar/calendar-connection-use-cases.js";
 import type { WorkspaceRepositoryPort } from "../../../../application/ports/workspace-repository.port.js";
@@ -90,6 +92,7 @@ const UPDATE_BODY = {
   },
 } as const;
 const RESOLVE_BODY = { type: "object", required: ["workspaceId", "keep"], additionalProperties: false, properties: { workspaceId: { type: "string", minLength: 1 }, keep: { type: "string", enum: ["local", "remote"] } } } as const;
+const SELECT_CALENDAR_BODY = { type: "object", required: ["workspaceId", "calendarId"], additionalProperties: false, properties: { workspaceId: { type: "string", minLength: 1 }, calendarId: { type: "string", minLength: 1, maxLength: 1024 } } } as const;
 const CALLBACK_BODY = { type: "object", required: ["state", "code"], additionalProperties: false, properties: { state: { type: "string", minLength: 10, maxLength: 2000 }, code: { type: "string", minLength: 1, maxLength: 2000 } } } as const;
 
 function actorOf(request: FastifyRequest, permission: Parameters<typeof requirePermission>[1]): CalendarActor {
@@ -204,6 +207,19 @@ export async function registerMeetingAgendaRoutes(app: FastifyInstance, deps: Me
     const actor = actorOf(request, "calendar_event:write");
     const { workspaceId } = request.body as { workspaceId: string };
     return successEnvelope(await guard(() => requestGoogleCalendarSync(deps.connection, actor, { workspaceId })), request.id);
+  });
+
+  app.get("/meetings/google/calendars", { schema: { querystring: WORKSPACE } }, async (request) => {
+    const actor = actorOf(request, "calendar_event:read");
+    const { workspaceId } = request.query as { workspaceId: string };
+    return successEnvelope(await guard(() => listGoogleCalendars(deps.connection, actor, { workspaceId })), request.id);
+  });
+
+  app.post("/meetings/google/calendar", { schema: { body: SELECT_CALENDAR_BODY }, config: { readOnlyGuard: true } }, async (request) => {
+    const actor = actorOf(request, "calendar_event:write");
+    const body = request.body as { workspaceId: string; calendarId: string };
+    await ownWorkspace(actor, body.workspaceId);
+    return successEnvelope(await guard(() => selectGoogleCalendar(deps.connection, actor, body)), request.id);
   });
 
   app.get("/meetings/google/sync-log", { schema: { querystring: WORKSPACE } }, async (request) => {

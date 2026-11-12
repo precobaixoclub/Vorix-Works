@@ -5,6 +5,7 @@
   "AutofillAddressEnabled": false,
   "AutofillCreditCardEnabled": false,
   "PromotionsEnabled": false,
+  "TranslateEnabled": false,
   "DefaultBrowserSettingEnabled": false,
   "MetricsReportingEnabled": false
 }

@@ -1,0 +1,10 @@
+{
+  "PasswordManagerEnabled": false,
+  "BrowserSignin": 0,
+  "SyncDisabled": true,
+  "AutofillAddressEnabled": false,
+  "AutofillCreditCardEnabled": false,
+  "PromotionsEnabled": false,
+  "DefaultBrowserSettingEnabled": false,
+  "MetricsReportingEnabled": false
+}

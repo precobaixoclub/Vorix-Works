@@ -19,7 +19,7 @@ ENV NODE_ENV=production \
     PULSE_SERVER=unix:/tmp/pulse/native
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      ffmpeg xvfb pulseaudio pulseaudio-utils dbus-x11 \
+      ffmpeg xvfb xdotool pulseaudio pulseaudio-utils dbus-x11 \
       fonts-liberation fonts-noto-color-emoji ca-certificates procps tini \
     && rm -rf /var/lib/apt/lists/* \
     && useradd --create-home --uid 10001 recorder \
@@ -37,6 +37,10 @@ RUN test "$(dpkg --print-architecture)" = amd64 \
     && google-chrome-stable --version \
     && rm -f /tmp/google-chrome-stable.deb \
     && rm -rf /var/lib/apt/lists/*
+
+# Chrome policy (standard enterprise config, not a disguise): the remote login never saves the
+# password in the profile, never turns on Chrome's own sign-in/sync and shows no promo screens.
+COPY docker/meetings-chrome-policy.json /etc/opt/chrome/policies/managed/vorix.json
 
 WORKDIR /app
 COPY --from=build /app/package.json /app/package-lock.json ./

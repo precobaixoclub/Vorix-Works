@@ -6,6 +6,7 @@ import { processNextRecorderJob, recoverOrphanRecorders } from "../../applicatio
 import type { ObjectStoragePort } from "../../application/ports/object-storage.port.js";
 import { ObjectStorageMeetingMedia } from "../../infrastructure/meetings/object-storage-meeting-media.js";
 import { GoogleMeetBotHealthChecker, PlaywrightGoogleMeetRecorder } from "../../infrastructure/meetings/playwright-google-meet-recorder.js";
+import { NativeChromeRemoteLoginBrowserFactory } from "../../infrastructure/meetings/native-chrome-remote-login-browser.js";
 import { PlaywrightRemoteLoginBrowserFactory } from "../../infrastructure/meetings/playwright-remote-login-browser.js";
 import { RecorderProvisioningHost } from "../../infrastructure/meetings/recorder-provisioning-host.js";
 import { FfprobeRecordingFileValidator } from "../../infrastructure/meetings/recording-file-validator.js";
@@ -101,10 +102,19 @@ async function main(): Promise<void> {
   const provisioning = provisioningEnabled
     ? new RecorderProvisioningHost({
       repository,
-      browsers: new PlaywrightRemoteLoginBrowserFactory({
-        ...(env.MEETINGS_CHROMIUM_PATH?.trim() ? { chromiumExecutablePath: env.MEETINGS_CHROMIUM_PATH.trim() } : {}),
-        xvfbPath: env.MEETINGS_XVFB_PATH?.trim() || "Xvfb",
-      }),
+      // Padrão: Chrome comum, sem automação, durante o login (o Google recusa navegador automatizado).
+      // MEETINGS_REMOTE_LOGIN_MODE=playwright volta ao modo antigo (diagnóstico).
+      browsers: env.MEETINGS_REMOTE_LOGIN_MODE?.trim() === "playwright" || process.platform !== "linux"
+        ? new PlaywrightRemoteLoginBrowserFactory({
+          ...(env.MEETINGS_CHROMIUM_PATH?.trim() ? { chromiumExecutablePath: env.MEETINGS_CHROMIUM_PATH.trim() } : {}),
+          xvfbPath: env.MEETINGS_XVFB_PATH?.trim() || "Xvfb",
+        })
+        : new NativeChromeRemoteLoginBrowserFactory({
+          ...(env.MEETINGS_CHROMIUM_PATH?.trim() ? { chromeExecutablePath: env.MEETINGS_CHROMIUM_PATH.trim() } : {}),
+          xvfbPath: env.MEETINGS_XVFB_PATH?.trim() || "Xvfb",
+          ffmpegPath: env.MEETINGS_FFMPEG_PATH?.trim() || "ffmpeg",
+          xdotoolPath: env.MEETINGS_XDOTOOL_PATH?.trim() || "xdotool",
+        }),
       healthCheck: healthChecker,
       encryptSession: (plaintext: string) => encryptSecret(plaintext, secretsMasterKey),
       workerId,

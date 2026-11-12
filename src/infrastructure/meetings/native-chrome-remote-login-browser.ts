@@ -190,7 +190,12 @@ export class NativeChromeRemoteLoginBrowserFactory implements RemoteLoginBrowser
             await xdo([event.a === "down" ? "keydown" : "keyup", key]);
           } else if (event.v) {
             // Texto pela entrada padrão: nunca aparece na linha de comando de um processo.
-            await xdo(["type", "--delay", "8", "--file", "-"], event.v);
+            // Fora do teclado americano (ç, ã...) o xdotool remapeia uma tecla por caractere; rápido
+            // demais, o Chrome lê o mapa já desfeito e perde o caractere. Esses vão um a um, com folga.
+            for (const run of event.v.match(/[\x20-\x7e]+|[^\x20-\x7e]/gu) ?? []) {
+              await xdo(/^[\x20-\x7e]+$/.test(run) ? ["type", "--delay", "8", "--file", "-"] : ["type", "--delay", "120", "--file", "-"], run);
+              if (!/^[\x20-\x7e]+$/.test(run)) await new Promise((resolve) => setTimeout(resolve, 120));
+            }
           }
         },
         async detect(): Promise<LoginDetection> {

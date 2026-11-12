@@ -61,6 +61,8 @@ services:
       SOCIAL_GATEWAY_TOKEN: "${SOCIAL_GATEWAY_TOKEN:-}"
       AUTH_MODE: jwt
       JWT_SECRET: "${ZUNO_JWT_SECRET}"
+      # Vorix Meetings: gravação real por bot (contas Google conectadas pelo cliente). "false" desliga.
+      MEETINGS_REAL_RECORDING_ENABLED: "${MEETINGS_REAL_RECORDING_ENABLED:-true}"
       # Marketplaces (credenciais do app em cada canal). Vazio = canal desligado.
       ML_CLIENT_ID: "${ML_CLIENT_ID:-}"
       ML_CLIENT_SECRET: "${ML_CLIENT_SECRET:-}"
@@ -413,17 +415,17 @@ services:
       retries: 3
       start_period: 20s
 
-  # ── Vorix Meetings (perfil `meetings`: NÃO sobe no deploy normal) ───────────────────────────
-  # Ativação: `docker compose --profile meetings up -d --no-build meetings-worker meetings-recorder`
-  # depois de construir as imagens. Antes do 1º start do recorder (usuário 10001), criar a pasta dele
-  # no volume de uploads: docker run --rm -v zuno_uploads:/u alpine sh -c 'mkdir -p /u/meetings && chown 10001 /u/meetings'
+  # ── Vorix Meetings (ligado em produção) ─────────────────────────────────────────────────────
+  # Sobem no deploy normal (alvos `meetings` e `all` do deploy-production.sh). O `all` pula os dois
+  # se houver gravação ou conexão de conta em andamento, para não derrubá-la.
+  # A pasta do recorder (usuário 10001) no volume de uploads já existe; num host novo:
+  # docker run --rm -v zuno_uploads:/u alpine sh -c 'mkdir -p /u/meetings && chown 10001 /u/meetings'
   #
   # Processamento: transcrição LOCAL e gratuita (padrão faster-whisper small INT8; motor escolhido no
   # painel admin) + resumo pela IA da plataforma. Uma transcrição por vez, só com folga no host e
   # sem gravação em andamento. Limites rígidos: estourar a memória derruba só este job (volta para
   # a fila), nunca a API, o banco ou o WhatsApp. Modelos ficam no volume e não são baixados de novo.
   meetings-worker:
-    profiles: [meetings]
     logging: *bounded-logging
     build:
       context: .
@@ -438,9 +440,9 @@ services:
       DATABASE_URL: "postgres://zuno:${ZUNO_POSTGRES_PASSWORD}@zuno-postgres:5432/zuno"
       JWT_SECRET: "${ZUNO_JWT_SECRET}"
       ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:-}"
-      MEETINGS_REAL_RECORDING_ENABLED: "${MEETINGS_REAL_RECORDING_ENABLED:-false}"
+      MEETINGS_REAL_RECORDING_ENABLED: "${MEETINGS_REAL_RECORDING_ENABLED:-true}"
       MEETINGS_WHISPER_MODEL: "${MEETINGS_WHISPER_MODEL:-small}"
-      MEETINGS_WHISPER_THREADS: "1"
+      MEETINGS_WHISPER_THREADS: "${MEETINGS_WHISPER_THREADS:-2}"
       MEETINGS_WHISPER_BEAM_SIZE: "1"
       MEETINGS_WHISPER_CPP_MODEL: "${MEETINGS_WHISPER_CPP_MODEL:-ggml-base-q5_1.bin}"
       MEETINGS_TRANSCRIBE_MIN_AVAILABLE_MB: "${MEETINGS_TRANSCRIBE_MIN_AVAILABLE_MB:-450}"
@@ -453,16 +455,15 @@ services:
       - zuno_meetings_models:/data/whisper-cache
     networks: [zuno_network]
     init: true
-    mem_limit: 1200m
+    mem_limit: 2500m
     mem_reservation: 96m
-    memswap_limit: 1200m
-    cpus: 1.0
+    memswap_limit: 2500m
+    cpus: 2.0
     pids_limit: 128
 
   # Gravador: Chrome + PulseAudio. Grava SÓ ÁUDIO por padrão (sem codificar vídeo), 1 login por vez.
   # Limites rígidos: se o Chrome estourar, cai a gravação — nunca a API, o site ou o WhatsApp.
   meetings-recorder:
-    profiles: [meetings]
     logging: *bounded-logging
     build:
       context: .
@@ -485,10 +486,10 @@ services:
     volumes:
       - zuno_uploads:/app/uploads
     networks: [zuno_network]
-    mem_limit: 900m
+    mem_limit: 1800m
     mem_reservation: 128m
-    memswap_limit: 1200m
-    cpus: 1.0
+    memswap_limit: 1800m
+    cpus: 2.0
     pids_limit: 512
     shm_size: 256m
 

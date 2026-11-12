@@ -2,8 +2,10 @@
 # Deploy de produção do Vorix (host único, docker compose) — procedimento OFICIAL e automatizado.
 #
 # Uso (no host, como root):
-#   sh scripts/deploy/deploy-production.sh <tarball-do-commit.tgz> <sha> [api|web|all]
-#     api (padrão) = zuno-api + vorix-worker; web = zuno-web; all = os três (em sequência).
+#   sh scripts/deploy/deploy-production.sh <tarball-do-commit.tgz> <sha> [api|web|meetings|all]
+#     api (padrão) = zuno-api + vorix-worker + marketplaces-worker; web = zuno-web;
+#     meetings = meetings-worker + meetings-recorder; all = todos (em sequência).
+#     Com gravação ou conexão de conta em andamento, `meetings` aborta e `all` pula os dois.
 #
 # Etapas (qualquer falha antes do restart aborta sem tocar no que está no ar):
 #  1. preflight: espaço em disco, .env presente, compose válido;
@@ -36,10 +38,21 @@ cd "$ROOT"
 case "$TARGET" in
   api) SERVICES="zuno-api vorix-worker marketplaces-worker" ;;
   web) SERVICES="zuno-web" ;;
-  all) SERVICES="zuno-api vorix-worker marketplaces-worker social-provider-gateway zuno-web" ;;
+  meetings) SERVICES="meetings-worker meetings-recorder" ;;
+  all) SERVICES="zuno-api vorix-worker marketplaces-worker social-provider-gateway zuno-web meetings-worker meetings-recorder" ;;
   *) echo "alvo inválido: $TARGET"; echo DEPLOY_FAILED; exit 2 ;;
 esac
-image_of() { case "$1" in zuno-api) echo zuno-zuno-api ;; vorix-worker) echo zuno-vorix-worker ;; marketplaces-worker) echo zuno-marketplaces-worker ;; zuno-web) echo zuno-zuno-web ;; social-provider-gateway) echo zuno-social-provider-gateway ;; esac; }
+image_of() { case "$1" in zuno-api) echo zuno-zuno-api ;; vorix-worker) echo zuno-vorix-worker ;; marketplaces-worker) echo zuno-marketplaces-worker ;; zuno-web) echo zuno-zuno-web ;; social-provider-gateway) echo zuno-social-provider-gateway ;; meetings-worker) echo zuno-meetings-worker ;; meetings-recorder) echo zuno-meetings-recorder ;; esac; }
+
+# Reiniciar o recorder no meio de uma gravação (ou de um login Google) derruba a sessão.
+if echo "$SERVICES" | grep -q meetings-recorder; then
+  BUSY=$(docker exec zuno-zuno-postgres-1 psql -U zuno -d zuno -Atc "select (select count(*) from meeting_recorder_runs where state in ('starting','waiting_admission','recording','processing')) + (select count(*) from recorder_provisioning_sessions where status in ('starting','live') and expires_at > now())" 2>/dev/null || echo 0)
+  if [ "${BUSY:-0}" != "0" ]; then
+    if [ "$TARGET" = "meetings" ]; then echo "MEETINGS_BUSY: $BUSY gravação(ões)/conexão(ões) em andamento"; echo DEPLOY_FAILED; exit 1; fi
+    SERVICES=$(echo "$SERVICES" | sed "s/ meetings-worker meetings-recorder//")
+    echo "MEETINGS_SKIPPED_BUSY: $BUSY gravação(ões)/conexão(ões) em andamento; Meetings fica na versão atual"
+  fi
+fi
 
 # 1. preflight
 [ -f "$TARBALL" ] || { echo "tarball ausente"; echo DEPLOY_FAILED; exit 1; }
@@ -89,6 +102,9 @@ rollback() {
   if ! docker image inspect "zuno-marketplaces-worker:rollback-$STAMP" >/dev/null 2>&1; then
     $COMPOSE stop marketplaces-worker >/dev/null 2>&1 || true
   fi
+  if echo "$SERVICES" | grep -q meetings-worker && ! docker image inspect "zuno-meetings-worker:rollback-$STAMP" >/dev/null 2>&1; then
+    $COMPOSE stop meetings-worker >/dev/null 2>&1 || true
+  fi
   # Extract and validate the complete source backup before replacing ANY current source path.
   # A full disk used to leave the host tree half-restored and abort before restoring image tags.
   RESTORE_DIR="$ROOT/deploy_backups/restore-$STAMP"
@@ -113,7 +129,11 @@ rollback() {
   RESTORE_SERVICES="zuno-api vorix-worker zuno-web"
   if docker image inspect "zuno-marketplaces-worker:rollback-$STAMP" >/dev/null 2>&1; then RESTORE_SERVICES="$RESTORE_SERVICES marketplaces-worker"; fi
   if docker image inspect "zuno-social-provider-gateway:rollback-$STAMP" >/dev/null 2>&1; then RESTORE_SERVICES="$RESTORE_SERVICES social-provider-gateway"; fi
-  case "$TARGET" in api) RESTORE_SERVICES="zuno-api vorix-worker$(docker image inspect zuno-marketplaces-worker:rollback-$STAMP >/dev/null 2>&1 && echo ' marketplaces-worker')" ;; web) RESTORE_SERVICES="zuno-web" ;; esac
+  for service in meetings-worker meetings-recorder; do
+    echo "$SERVICES" | grep -q "$service" && docker image inspect "$(image_of "$service"):rollback-$STAMP" >/dev/null 2>&1 && RESTORE_SERVICES="$RESTORE_SERVICES $service"
+  done
+  case "$TARGET" in api) RESTORE_SERVICES="zuno-api vorix-worker$(docker image inspect zuno-marketplaces-worker:rollback-$STAMP >/dev/null 2>&1 && echo ' marketplaces-worker')" ;; web) RESTORE_SERVICES="zuno-web" ;; meetings) RESTORE_SERVICES=$(echo "$RESTORE_SERVICES" | grep -o "meetings-[a-z]*" | tr '\n' ' ') ;; esac
+  [ -n "$(echo "$RESTORE_SERVICES" | tr -d " ")" ] || { echo "ROLLED_BACK (nada anterior a restaurar)"; echo DEPLOY_FAILED; exit 1; }
   $COMPOSE up -d --no-build $RESTORE_SERVICES
   echo "ROLLED_BACK (banco não é revertido: migrations são aditivas; dump em deploy_backups/db-pre-$SHA-$STAMP.sql.gz)"
   echo DEPLOY_FAILED
@@ -155,8 +175,9 @@ wait_healthy() {
     ok=1
     for service in $SERVICES; do
       [ "$service" = "zuno-web" ] && continue
-      status=$(docker inspect -f '{{.State.Health.Status}}' "zuno-$service-1" 2>/dev/null || echo none)
-      [ "$status" = "healthy" ] || ok=0
+      # Sem healthcheck (meetings-worker): basta estar rodando.
+      status=$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "zuno-$service-1" 2>/dev/null || echo none)
+      [ "$status" = "healthy" ] || [ "$status" = "running" ] || ok=0
     done
     [ "$ok" = 1 ] && return 0
     sleep 6

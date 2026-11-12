@@ -34,6 +34,11 @@ export const metadata: Metadata = {
     description: "Atendimento e vendas no mesmo fluxo.",
     images: ["/opengraph-image.png"],
   },
+  // Google Search Console: comprova o domínio para a verificação do app OAuth (Google Calendar).
+  // Não remover — o Google confere de novo periodicamente.
+  verification: {
+    google: "HoC1d--vDZQJBn1J2UuCAAuyO5B2jm77360SHVXpP7Y",
+  },
   other: {
     "facebook-domain-verification": "0slbgshopmsabjin5tk6xt2ylbi4eg",
   },

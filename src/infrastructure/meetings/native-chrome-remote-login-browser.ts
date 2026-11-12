@@ -118,9 +118,11 @@ export class NativeChromeRemoteLoginBrowserFactory implements RemoteLoginBrowser
       });
 
       // Entrada: um comando por vez, na ordem em que chegou (apertar/soltar nunca se invertem).
+      // UTF-8: sem isso o xdotool recusa acentos e "ç" (o container roda na localidade C).
+      const xdoEnv = { ...env, LC_ALL: "C.UTF-8" };
       let queue: Promise<unknown> = Promise.resolve();
       const xdo = (args: string[], stdin?: string) => {
-        queue = queue.then(() => run(xdotoolPath, args, env, stdin)).catch(() => undefined);
+        queue = queue.then(() => run(xdotoolPath, args, xdoEnv, stdin)).catch(() => undefined);
         return queue;
       };
       let wheelX = 0;
@@ -128,8 +130,8 @@ export class NativeChromeRemoteLoginBrowserFactory implements RemoteLoginBrowser
       let retryHandoffAt = 0;
 
       const windowTitles = async (): Promise<string[]> => {
-        const ids = (await run(xdotoolPath, ["search", "--onlyvisible", "--class", "google-chrome"], env).catch(() => "")).split(/\s+/).filter(Boolean).slice(0, 8);
-        const names = await Promise.all(ids.map((id) => run(xdotoolPath, ["getwindowname", id], env).catch(() => "")));
+        const ids = (await run(xdotoolPath, ["search", "--onlyvisible", "--class", "google-chrome"], xdoEnv).catch(() => "")).split(/\s+/).filter(Boolean).slice(0, 8);
+        const names = await Promise.all(ids.map((id) => run(xdotoolPath, ["getwindowname", id], xdoEnv).catch(() => "")));
         return names.map((name) => name.trim()).filter(Boolean);
       };
 

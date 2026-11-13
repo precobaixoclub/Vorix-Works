@@ -16,16 +16,22 @@ import {Input} from "@/components/Field";
 import {ErrorState} from "@/components/ErrorState";
 import {ProductFormModal} from "./ProductFormModal";
 import {CatalogBulkTools} from "./CatalogBulkTools";
+import {TaxonomyManager} from "./ProductEngineEditor";
+import {cn} from "@/lib/utils";
 
 export function PaginatedCatalog({card}:{card:(product:Product,onOpen:()=>void)=>ReactNode}){
  const workspace=useCurrentWorkspace(),access=useMyAccess(),searchParams=useSearchParams();
  const [search,setSearch]=useState(searchParams.get("q")??""),[query,setQuery]=useState(search),[category,setCategory]=useState(""),[brand,setBrand]=useState(""),[type,setType]=useState(""),[active,setActive]=useState("true"),[site,setSite]=useState(""),[stock,setStock]=useState(searchParams.get("filtro")==="sem-estoque"?"out":searchParams.get("filtro")==="repor"?"low":""),[sort,setSort]=useState("recentes"),[page,setPage]=useState(0),[view,setView]=useState(searchParams.get("view")==="lista"?"list":"grid");
- const [selected,setSelected]=useState<string[]>([]),[editing,setEditing]=useState<Product|"new"|{duplicateOf:Product}>();
+ const [selected,setSelected]=useState<string[]>([]),[editing,setEditing]=useState<Product|"new"|{duplicateOf:Product}>(),[organizing,setOrganizing]=useState(false);
  useEffect(()=>{const timer=setTimeout(()=>{setQuery(search);setPage(0);},250);return()=>clearTimeout(timer);},[search]);
  const filters=Object.fromEntries(Object.entries({search:query,category,brand,type,active,site,stock}).filter(([,v])=>v));
  const key=bulkPath(workspace.id,`products?${new URLSearchParams({...filters,offset:String(page*50),limit:"50",sort})}`);
  const {data,error,isLoading,mutate}=useSWR(key,()=>apiClient.get<{items:Product[];total:number}>(key));
- const {data:metadata}=useSWR(["product-metadata",workspace.id],()=>getProductMetadata(workspace.id));
+ const {data:metadata,error:metadataError,mutate:refreshMetadata}=useSWR(["product-metadata",workspace.id],()=>getProductMetadata(workspace.id));
+ const categories=(metadata?.categories??[]).filter(c=>c.active).sort((a,b)=>a.position-b.position||a.name.localeCompare(b.name,"pt-BR"));
+ const categoryLabel=(id:string)=>{const c=metadata?.categories.find(item=>item.id===id),parent=c?.parentId?metadata?.categories.find(item=>item.id===c.parentId):undefined;return parent?`${parent.name} / ${c?.name}`:c?.name??"";};
+ const pickCategory=(id:string)=>{setCategory(id);setPage(0);setSelected([]);};
+ const chip=(active:boolean)=>cn("rounded-full border px-3 py-1.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/45",active?"border-primary bg-primary text-primary-foreground":"border-border bg-background text-foreground hover:border-primary/60");
  const {data:settings}=useCommercialSettings(workspace.id);
  const visibility=settings?.visibility??{canViewCost:false,isManager:false};
  const canManage=access.can("product:manage");const items=data?.items??[];
@@ -33,7 +39,17 @@ export function PaginatedCatalog({card}:{card:(product:Product,onOpen:()=>void)=
  const selectStyle="min-w-0 w-full rounded-md border border-border bg-background p-2 text-sm";
  const toggle=(id:string)=>setSelected(ids=>ids.includes(id)?ids.filter(v=>v!==id):ids.length<500?[...ids,id]:ids);
  return <div className="mx-auto max-w-7xl px-3 py-6 sm:px-6">
-  <PageHeader title="Produtos" description="Seu catálogo em um só lugar: produtos, preços, estoque e operações em massa." actions={canManage?<Button onClick={()=>setEditing("new")}>Cadastrar produto</Button>:undefined}/>
+  <PageHeader title="Produtos" description="Seu catálogo em um só lugar: produtos, preços, estoque e operações em massa." actions={canManage?<div className="flex flex-wrap gap-2"><Button variant="secondary" onClick={()=>setOrganizing(true)}>Categorias</Button><Button onClick={()=>setEditing("new")}>Cadastrar produto</Button></div>:undefined}/>
+  <section aria-label="Categorias do catálogo" className="mb-4 rounded-xl border bg-card p-3">
+   <div className="flex flex-wrap items-center gap-2">
+    <span className="mr-1 text-sm font-semibold">Categorias</span>
+    {metadataError?<><span className="text-sm text-muted-foreground">Não foi possível carregar as categorias.</span><Button variant="ghost" onClick={()=>void refreshMetadata()}>Tentar novamente</Button></>:!metadata?<span role="status" className="text-sm text-muted-foreground">Carregando…</span>:categories.length?<>
+     <button type="button" className={chip(!category)} aria-pressed={!category} onClick={()=>pickCategory("")}>Todas</button>
+     {categories.map(c=><button key={c.id} type="button" className={chip(category===c.id)} aria-pressed={category===c.id} onClick={()=>pickCategory(c.id)}>{categoryLabel(c.id)}{!c.siteVisible?<span className="ml-1 text-xs opacity-70">(fora do site)</span>:null}</button>)}
+    </>:<span className="text-sm text-muted-foreground">Nenhuma categoria ainda. Crie categorias como Feminino e Masculino para separar o catálogo e o site.</span>}
+    {canManage?<Button variant="ghost" className="ml-auto" onClick={()=>setOrganizing(true)}>{categories.length?"Criar e editar categorias":"Criar categorias"}</Button>:null}
+   </div>
+  </section>
   <CatalogBulkTools key={workspace.id} workspaceId={workspace.id} selectedIds={selected} filters={filters} canManage={canManage} canViewCost={visibility.canViewCost} isManager={visibility.isManager} inventoryManage={access.can("inventory:manage")} onSaved={()=>{void mutate();setSelected([]);}}/>
   <section aria-label="Filtros do catálogo" className="mb-4 grid grid-cols-1 gap-3 rounded-xl border bg-card p-3 sm:grid-cols-2 lg:grid-cols-4">
    <label className="text-xs">Buscar produto<Input aria-label="Buscar produto" placeholder="Nome, código, modelo ou cidade" value={search} onChange={e=>setSearch(e.target.value)}/></label>
@@ -50,6 +66,7 @@ export function PaginatedCatalog({card}:{card:(product:Product,onOpen:()=>void)=
   {!isLoading&&!error&&!items.length?<p className="rounded-xl border border-dashed p-8 text-center text-sm">Nenhum produto encontrado com esses filtros.</p>:null}
   <div className={view==="grid"?"grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5":"space-y-2"}>{items.map(p=><div key={p.id} className="relative min-w-0">{canManage?<label className="absolute right-2 top-2 z-10 flex rounded-md border bg-background p-2"><input aria-label={`Selecionar ${p.name}`} type="checkbox" checked={selected.includes(p.id)} onChange={()=>toggle(p.id)}/></label>:null}{view==="grid"?card(p,()=>setEditing(p)):<button className="flex w-full flex-wrap gap-3 rounded-lg border p-4 pr-14 text-left text-sm" onClick={()=>setEditing(p)}><span className="min-w-0 flex-1 break-words font-medium">{p.name}<span className="block text-xs text-muted-foreground">{p.code}</span></span><span>{formatCurrencyCents(p.priceCents)}</span>{access.can("inventory:read")?<span>{p.trackStock?`${p.stockQuantity} em estoque`:"Sem controle"}</span>:null}</button>}</div>)}</div>
   <nav aria-label="Paginação do catálogo" className="mt-4 flex flex-wrap items-center justify-between gap-3"><Button variant="secondary" disabled={page===0} onClick={()=>setPage(v=>v-1)}>Anterior</Button><span className="text-sm">Página {page+1} de {Math.max(1,Math.ceil((data?.total??0)/50))} · até 50 itens por página</span><Button variant="secondary" disabled={!data||(page+1)*50>=data.total} onClick={()=>setPage(v=>v+1)}>Próxima</Button></nav>
+  {organizing?<TaxonomyManager workspaceId={workspace.id} onClose={()=>{setOrganizing(false);void refreshMetadata();}}/>:null}
   {editing?<ProductFormModal key={editing==="new"?"new":"duplicateOf" in editing?`copy-${editing.duplicateOf.id}`:editing.id} workspaceId={workspace.id} product={editing==="new"||"duplicateOf" in editing?undefined:editing} template={editing!=="new"&&"duplicateOf" in editing?editing.duplicateOf:undefined} onDuplicate={canManage?product=>setEditing({duplicateOf:product}):undefined} canViewCost={visibility.canViewCost} isManager={visibility.isManager} onClose={()=>setEditing(undefined)} onSaved={async()=>{setEditing(undefined);await mutate();}}/>:null}
  </div>;
 }

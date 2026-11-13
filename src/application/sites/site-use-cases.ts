@@ -90,7 +90,7 @@ export async function publicSite(deps:SiteEngineDeps,lookup:{slug?:string;hostna
  const metadata=await deps.productEngineRepository.metadata(site);
  const commerce=await commerceContext(deps,site,snapshot,!!preview);
  const visibleCategoryIds=metadata.categories.filter(category=>category.active&&category.siteVisible&&visibleCategory(metadata,category.id)).map(category=>category.id);
- let products:Product[],catalogTotal:number,slugs:{id:string;slug:string}[]|undefined;
+ let products:Product[],catalogTotal:number,slugs:{id:string;slug:string}[]|undefined,stocked:Set<string>|undefined;
  if(deps.productRepository.listPublicCatalog){
   // Paginação no banco (Fase 2): só o que esta página precisa — 1ª página, produtos citados nas seções e o produto/categoria da URL.
   const list=deps.productRepository.listPublicCatalog.bind(deps.productRepository),scope={tenantId:site.tenantId,workspaceId:site.workspaceId,visibleCategoryIds};
@@ -108,10 +108,14 @@ export async function publicSite(deps:SiteEngineDeps,lookup:{slug?:string;hostna
   const unique=new Map<string,Product>();for(const product of [...first.products,...cited.products,...byPath.products,...byCategory.products])unique.set(product.id,product);
   products=[...unique.values()];catalogTotal=first.total;
   if(options.includeSlugs&&deps.productRepository.listPublicCatalogSlugs)slugs=await deps.productRepository.listPublicCatalogSlugs(scope);
+  if(deps.productRepository.listPublicCatalogCategoryIds)stocked=new Set(await deps.productRepository.listPublicCatalogCategoryIds(scope));
  }else{
   products=(await deps.productRepository.listByWorkspace({...site,activeOnly:true})).filter(product=>isPublicCatalogProduct(product,metadata));catalogTotal=products.length;
   if(options.includeSlugs)slugs=products.map(product=>({id:product.id,slug:product.details?.slug??product.id}));
+  stocked=new Set(products.flatMap(product=>product.categoryId?[product.categoryId]:[]));
  }
+ // Uma categoria só aparece no site (menu, abas, página) se ela ou uma subcategoria tem produto à venda.
+ const populated=(id:string)=>!stocked||descendants(metadata,id).some(item=>stocked!.has(item));
  const visible=products.filter(product=>isPublicCatalogProduct(product,metadata));
  const catalog=await presentPublicProducts(deps,visible,metadata,commerce);
  const ids=new Set(catalog.map(product=>product.id));
@@ -120,7 +124,7 @@ export async function publicSite(deps:SiteEngineDeps,lookup:{slug?:string;hostna
  const blocks=(items:SiteSnapshot["content"]["blocks"])=>items.filter(item=>item.enabled).map(item=>signed({...item,slides:item.slides?.filter(slide=>slide.enabled&&(preview||(!slide.startsAt||Date.parse(slide.startsAt)<=Date.now())&&(!slide.endsAt||Date.parse(slide.endsAt)>Date.now()))),productIds:item.productIds.filter(id=>ids.has(id))}));
  const content={...snapshot.content,logoUrl:snapshot.content.logoUrl?signOwnedUrl(snapshot.content.logoUrl,OBJECT_URL_TTL.publicSite):undefined,faviconUrl:snapshot.content.faviconUrl?signOwnedUrl(snapshot.content.faviconUrl,OBJECT_URL_TTL.publicSite):undefined,blocks:blocks(snapshot.content.blocks),pages:snapshot.content.pages.filter(page=>preview||page.published).map(page=>({...page,blocks:blocks(page.blocks)}))};
  const importedTemplate=await importedTemplateView(deps.repository,site,snapshot);
- return {id:site.id,slug:site.slug,content,theme:snapshot.theme,...(importedTemplate?{importedTemplate}:{}),activeTemplateId:snapshot.activeTemplateId??snapshot.theme.template,templateVersion:snapshot.templateConfigs?.[snapshot.theme.template]?.templateVersion??1,layoutConfig:signed(snapshot.layoutConfig??{heroVariant:"signature",productGallery:"split"}),publishedAt:site.publishedAt,products:catalog,categories:metadata.categories.filter(category=>category.active&&category.siteVisible&&visibleCategory(metadata,category.id)).map(({id,name,slug,parentId,position,imageUrl})=>({id,name,slug,parentId,position,imageUrl:imageUrl?signOwnedUrl(imageUrl,OBJECT_URL_TTL.publicSite):undefined})),brands:metadata.brands.filter(brand=>brand.active).map(({id,name,slug,logoUrl})=>({id,name,slug,logoUrl:logoUrl?signOwnedUrl(logoUrl,OBJECT_URL_TTL.publicSite):undefined})),commerceEnabled:false,commerce:{...siteCommerceSummary(commerce.settings,commerce.hasWhatsapp,commerce.checkoutReady),couponsAvailable:(commerce.rules??[]).some(rule=>!!rule.couponCode&&ruleActive(rule,commerce.now??new Date()))},catalog:{total:catalogTotal,initial:PUBLIC_CATALOG_INITIAL,...(slugs?{slugs}:{})}};
+ return {id:site.id,slug:site.slug,content,theme:snapshot.theme,...(importedTemplate?{importedTemplate}:{}),activeTemplateId:snapshot.activeTemplateId??snapshot.theme.template,templateVersion:snapshot.templateConfigs?.[snapshot.theme.template]?.templateVersion??1,layoutConfig:signed(snapshot.layoutConfig??{heroVariant:"signature",productGallery:"split"}),publishedAt:site.publishedAt,products:catalog,categories:metadata.categories.filter(category=>category.active&&category.siteVisible&&visibleCategory(metadata,category.id)&&populated(category.id)).map(({id,name,slug,parentId,position,imageUrl})=>({id,name,slug,parentId,position,imageUrl:imageUrl?signOwnedUrl(imageUrl,OBJECT_URL_TTL.publicSite):undefined})),brands:metadata.brands.filter(brand=>brand.active).map(({id,name,slug,logoUrl})=>({id,name,slug,logoUrl:logoUrl?signOwnedUrl(logoUrl,OBJECT_URL_TTL.publicSite):undefined})),commerceEnabled:false,commerce:{...siteCommerceSummary(commerce.settings,commerce.hasWhatsapp,commerce.checkoutReady),couponsAvailable:(commerce.rules??[]).some(rule=>!!rule.couponCode&&ruleActive(rule,commerce.now??new Date()))},catalog:{total:catalogTotal,initial:PUBLIC_CATALOG_INITIAL,...(slugs?{slugs}:{})}};
 }
 export async function verifySiteDomain(deps:SiteEngineDeps,input:{siteId:string;tenantId:string;id:string}){
  const domains=await deps.repository.domains(input.siteId,input.tenantId);const domain=domains.find(item=>item.id===input.id);

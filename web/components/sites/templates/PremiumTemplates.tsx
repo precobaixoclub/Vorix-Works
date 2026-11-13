@@ -11,6 +11,7 @@ import {isFashionKidsSite} from "@/features/sites/fashion-kids";
 import {FASHION_KIDS_RENDERER} from "./FashionKids";
 import {SiteText} from "../SiteText";
 import {siteText} from "@/features/sites/site-texts";
+import {categoryMenuLinks,categoryPath} from "@/features/sites/site-categories";
 
 export type TemplateHeroProps={block:SiteBlock;site:PublicTenantSite;basePath:string};
 export type TemplateCardProps={product:PublicSiteProduct;site:PublicTenantSite;basePath:string;index:number};
@@ -40,7 +41,9 @@ function TemplateHeader(props:TemplateHeaderProps&{variant:string}){
  const nav=header.navigation.filter(link=>link.enabled&&safeSiteHref(link.url));
  const hasContact=site.content.blocks.some(block=>block.enabled&&block.type==="contact");
  const cta=siteHref(header.buttonUrl||(hasContact?"#contato":undefined),basePath);
- const links=nav.map(link=><a key={link.id} data-site-link={link.id} href={siteHref(link.url,basePath)} target={link.newTab?"_blank":undefined} rel={link.newTab?"noopener noreferrer":undefined}>{link.label}</a>);
+ const links=[...nav.map(link=><a key={link.id} data-site-link={link.id} href={siteHref(link.url,basePath)} target={link.newTab?"_blank":undefined} rel={link.newTab?"noopener noreferrer":undefined}>{link.label}</a>),
+  // As categorias principais entram no menu sozinhas: quem visita já vê a separação (Feminino, Masculino…).
+  ...categoryMenuLinks(site.categories,nav).map(category=><a key={category.id} className="ts-nav-category" href={`${basePath}${categoryPath(category.slug)}`}>{category.name}</a>)];
  return <>
   {header.announcement?.enabled&&header.announcement.text?<div className="ts-announcement">{safeSiteHref(header.announcement.url)?<a href={siteHref(header.announcement.url,basePath)}>{header.announcement.text}</a>:header.announcement.text}</div>:null}
   <header className={`premium-header ${variant}-header ${header.sticky?"is-sticky":""}`}>

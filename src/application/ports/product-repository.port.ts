@@ -47,5 +47,7 @@ export type ProductRepositoryPort = {
   /** Vitrine pública paginada no banco (Fase 2): só produtos ativos, visíveis e de categoria visível. */
   listPublicCatalog?(input: PublicCatalogQuery): Promise<{ products: Product[]; total: number }>;
   listPublicCatalogSlugs?(input: Pick<PublicCatalogQuery, "tenantId" | "workspaceId" | "visibleCategoryIds">): Promise<{ id: string; slug: string }[]>;
+  /** Categorias que têm ao menos um produto na vitrine pública (o site não mostra aba vazia). */
+  listPublicCatalogCategoryIds?(input: Pick<PublicCatalogQuery, "tenantId" | "workspaceId" | "visibleCategoryIds">): Promise<string[]>;
 };
 export type PublicCatalogQuery = { tenantId: string; workspaceId: string; visibleCategoryIds: readonly string[]; search?: string; categoryIds?: readonly string[]; brandId?: string; ids?: readonly string[]; slug?: string; sort?: "manual" | "name" | "price_asc" | "price_desc"; offset: number; limit: number };

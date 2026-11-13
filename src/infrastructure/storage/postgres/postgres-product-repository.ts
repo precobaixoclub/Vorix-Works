@@ -108,6 +108,12 @@ export class PostgresProductRepository implements ProductRepositoryPort {
     return ["tenant_id = $1", "workspace_id = $2", "active", "(details->>'siteVisible') = 'true'", "coalesce((details->>'catalogVisible')::boolean, true)",
       "not (details->>'type' = 'REAL_ESTATE' and coalesce(details->'realEstate'->>'status', '') in ('sold', 'rented', 'inactive'))", "(category_id is null or category_id = any($3::text[]))"];
   }
+  async listPublicCatalogCategoryIds(input: Pick<PublicCatalogQuery, "tenantId" | "workspaceId" | "visibleCategoryIds">): Promise<string[]> {
+    const params: unknown[] = [];
+    const where = [...this.publicCatalogWhere(input, params), "category_id is not null"].join(" and ");
+    const result = await this.pool.query<{ category_id: string }>(`select distinct category_id from products where ${where}`, params);
+    return result.rows.map((row) => row.category_id);
+  }
   async listPublicCatalog(input: PublicCatalogQuery): Promise<{ products: Product[]; total: number }> {
     const params: unknown[] = [];
     const conditions = this.publicCatalogWhere(input, params);

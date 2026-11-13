@@ -15,7 +15,7 @@ export type GoogleCalendarOAuthConfig = {
   scopes: readonly string[];
 };
 
-export type GoogleCalendarTokenSet = { accessToken: string; refreshToken?: string; scope?: string; expiresIn?: number };
+export type GoogleCalendarTokenSet = { accessToken: string; refreshToken?: string; scope?: string; expiresIn?: number; idToken?: string };
 
 /**
  * Escopos mínimos: ler/escrever EVENTOS, ver a LISTA de agendas (só para a pessoa escolher qual
@@ -95,7 +95,7 @@ export class GoogleCalendarOAuthService implements CalendarSyncOAuthPort {
     const owner = this.verifyState(input.state);
     const tokens = await this.tokenRequest({ grant_type: "authorization_code", code: input.code, redirect_uri: this.input.config.redirectUri! });
     if (!tokens.refreshToken) throw new Error("CALENDAR_OAUTH_NO_REFRESH_TOKEN: o Google não devolveu acesso offline — conecte de novo autorizando o acesso.");
-    const profile = await this.fetchProfile(tokens.accessToken);
+    const profile = await this.fetchProfile(tokens);
     await this.persistTokens(owner, tokens);
     return this.input.connectionRepository.upsert({ ...owner, ...(profile.email ? { googleEmail: profile.email } : {}), status: "connected" });
   }
@@ -115,6 +115,7 @@ export class GoogleCalendarOAuthService implements CalendarSyncOAuthPort {
     try {
       const tokens = await this.tokenRequest({ grant_type: "refresh_token", refresh_token: refreshToken });
       await this.persistTokens(input, { ...tokens, refreshToken: tokens.refreshToken ?? refreshToken });
+      await this.backfillEmail(input, tokens.idToken);
       return { ok: true, accessToken: tokens.accessToken };
     } catch (error) {
       if (error instanceof GoogleCalendarAuthRevokedError) return { ok: false, reason: "revoked", message: "Google Calendar precisa ser reconectado." };
@@ -148,19 +149,40 @@ export class GoogleCalendarOAuthService implements CalendarSyncOAuthPort {
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: new URLSearchParams({ client_id: this.input.config.clientId!, client_secret: this.input.config.clientSecret!, ...fields }),
     });
-    const json = (await safeJson(response)) as { access_token?: string; refresh_token?: string; scope?: string; expires_in?: number; error?: string; error_description?: string };
+    const json = (await safeJson(response)) as { access_token?: string; refresh_token?: string; scope?: string; expires_in?: number; id_token?: string; error?: string; error_description?: string };
     if (!response.ok || !json.access_token) {
       const message = `CALENDAR_OAUTH_TOKEN_FAILED: ${json.error_description ?? json.error ?? `HTTP ${response.status}`}`;
       if (json.error === "invalid_grant" || response.status === 400 || response.status === 401) throw new GoogleCalendarAuthRevokedError(message);
       throw new Error(message);
     }
-    return { accessToken: json.access_token, ...(json.refresh_token ? { refreshToken: json.refresh_token } : {}), ...(json.scope ? { scope: json.scope } : {}), ...(json.expires_in ? { expiresIn: json.expires_in } : {}) };
+    return { accessToken: json.access_token, ...(json.refresh_token ? { refreshToken: json.refresh_token } : {}), ...(json.scope ? { scope: json.scope } : {}), ...(json.expires_in ? { expiresIn: json.expires_in } : {}), ...(json.id_token ? { idToken: json.id_token } : {}) };
   }
 
-  private async fetchProfile(accessToken: string): Promise<{ email?: string }> {
-    const response = await this.http()(`${this.userInfoBaseUrl()}/oauth2/v3/userinfo`, { headers: { Authorization: `Bearer ${accessToken}` } });
-    const json = (await safeJson(response)) as { email?: string };
-    return json.email ? { email: json.email } : {};
+  /**
+   * E-mail da conta conectada: primeiro do `id_token` (veio direto do endpoint de token do Google, por
+   * TLS, na troca do código — OIDC dispensa checar a assinatura nesse caso); se faltar, o endpoint
+   * `/v1/userinfo` do OpenID do Google. Sem e-mail a conexão funciona, mas a regra "gravar só
+   * reuniões externas" não sabe quem é o dono.
+   */
+  private async fetchProfile(tokens: GoogleCalendarTokenSet): Promise<{ email?: string }> {
+    const fromIdToken = emailFromIdToken(tokens.idToken);
+    if (fromIdToken) return { email: fromIdToken };
+    try {
+      const response = await this.http()(`${this.userInfoBaseUrl()}/v1/userinfo`, { headers: { Authorization: `Bearer ${tokens.accessToken}` } });
+      if (!response.ok) return {};
+      const json = (await safeJson(response)) as { email?: unknown };
+      return typeof json.email === "string" && json.email.includes("@") ? { email: json.email.trim().toLowerCase() } : {};
+    } catch {
+      return {};
+    }
+  }
+
+  /** Conexão feita antes de o e-mail ser lido certo: completa na renovação do token. */
+  private async backfillEmail(owner: { tenantId: string; workspaceId: string; userId: string }, idToken: string | undefined): Promise<void> {
+    const email = emailFromIdToken(idToken);
+    if (!email) return;
+    const connection = await this.input.connectionRepository.getByUser(owner).catch(() => undefined);
+    if (connection && !connection.googleEmail) await this.input.connectionRepository.update(connection.id, { googleEmail: email }).catch(() => undefined);
   }
 
   private async revokeToken(token: string): Promise<void> {
@@ -193,6 +215,17 @@ export class GoogleCalendarOAuthService implements CalendarSyncOAuthPort {
 
   private now(): Date {
     return this.input.now?.() ?? new Date();
+  }
+}
+
+function emailFromIdToken(idToken: string | undefined): string | undefined {
+  const payload = idToken?.split(".")[1];
+  if (!payload) return undefined;
+  try {
+    const claims = JSON.parse(Buffer.from(payload, "base64url").toString("utf8")) as { email?: unknown };
+    return typeof claims.email === "string" && claims.email.includes("@") ? claims.email.trim().toLowerCase() : undefined;
+  } catch {
+    return undefined;
   }
 }
 

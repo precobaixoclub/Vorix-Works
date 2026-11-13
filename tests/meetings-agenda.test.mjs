@@ -178,12 +178,18 @@ function fakeGoogleOAuthFetch(state) {
       state.tokenCalls.push(body.get("grant_type"));
       if (body.get("grant_type") === "refresh_token" && state.refresh === "revoked") return new Response(JSON.stringify({ error: "invalid_grant" }), { status: 400 });
       if (body.get("grant_type") === "refresh_token" && state.refresh === "down") return new Response("{}", { status: 503 });
-      return new Response(JSON.stringify({ access_token: `at-${state.tokenCalls.length}`, refresh_token: "rt-1", expires_in: 3600 }), { status: 200 });
+      return new Response(JSON.stringify({ access_token: `at-${state.tokenCalls.length}`, refresh_token: "rt-1", expires_in: 3600, ...(state.idTokenEmail ? { id_token: fakeIdToken(state.idTokenEmail) } : {}) }), { status: 200 });
     }
-    if (target.includes("userinfo")) return new Response(JSON.stringify({ email: "ana@empresa.com" }), { status: 200 });
+    // Só o endpoint REAL do OpenID do Google (um caminho errado aqui escondeu o e-mail vazio em produção).
+    if (target === "https://openidconnect.googleapis.com/v1/userinfo") return state.userInfoDown ? new Response("{}", { status: 503 }) : new Response(JSON.stringify({ email: "ana@empresa.com" }), { status: 200 });
     if (target.endsWith("/revoke")) return new Response("{}", { status: 200 });
     return new Response("{}", { status: 404 });
   };
+}
+
+function fakeIdToken(email) {
+  const part = (value) => Buffer.from(JSON.stringify(value)).toString("base64url");
+  return `${part({ alg: "RS256" })}.${part({ iss: "https://accounts.google.com", email, email_verified: true })}.assinatura`;
 }
 
 function oauthService(state, secretManager, now = () => new Date()) {
@@ -554,4 +560,23 @@ test("ESCOLHA DE AGENDA (HTTP): viewer não troca a agenda", async () => {
   const account = await setupTenant("pick-http");
   const response = await app.inject({ method: "POST", url: "/v1/meetings/google/calendar", headers: auth(account.tenantId, "viewer", "u-v"), payload: { workspaceId: account.workspaceId, calendarId: "x@y.com" } });
   assert.equal(response.statusCode, 403);
+});
+
+test("GOOGLE OAUTH e-mail: vem do id_token (sem depender do userinfo) e conexão antiga sem e-mail é completada na renovação", async () => {
+  const { tenantId, workspaceId } = await setupTenant("oauth-email");
+  const state = { tokenCalls: [], refresh: "ok", idTokenEmail: "Bia@Empresa.com", userInfoDown: true };
+  const secrets = new InMemorySecretManager();
+  let clock = new Date("2026-11-12T12:00:00Z");
+  const service = oauthService(state, secrets, () => clock);
+  const { authorizationUrl } = service.begin({ tenantId, workspaceId, userId: "u-bia" });
+  const connection = await service.complete({ state: new URL(authorizationUrl).searchParams.get("state"), code: "c" });
+  assert.equal(connection.googleEmail, "bia@empresa.com", "userinfo fora do ar não importa: o id_token já traz o e-mail");
+
+  // Conexão feita antes da correção: sem e-mail. A próxima renovação do token completa.
+  const repo = connections();
+  await db.pool.query("update calendar_connections set google_email = null where id = $1", [connection.id]);
+  clock = new Date(clock.getTime() + 2 * 60 * 60 * 1000);
+  const token = await service.getAccessToken({ tenantId, workspaceId, userId: "u-bia" });
+  assert.equal(token.ok, true);
+  assert.equal((await repo.getById(connection.id)).googleEmail, "bia@empresa.com");
 });

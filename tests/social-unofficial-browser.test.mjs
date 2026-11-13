@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { BrowserSocialDriver, publicationResponseProof } from "../dist/infrastructure/social/gateway/browser-driver.js";
-import { SocialBrowserPool } from "../dist/infrastructure/social/gateway/browser-pool.js";
+import { SocialBrowserPool, desktopUserAgent, parseGatewayProxy } from "../dist/infrastructure/social/gateway/browser-pool.js";
 
 test("browser pool: libera Chromium ocioso, preserva contextos ativos e relança sem compartilhar cookies", async () => {
   const pool = new SocialBrowserPool({ maxContexts: 1, idleTimeoutMs: 30 });
@@ -18,6 +18,27 @@ test("browser pool: libera Chromium ocioso, preserva contextos ativos e relança
     assert.equal((await second.context.cookies()).length, 0);
     await second.close();
   } finally { await pool.shutdown(); }
+});
+
+test("browser pool: não se anuncia como automação (o reCAPTCHA da Meta repete o desafio para sempre)", async () => {
+  const pool = new SocialBrowserPool({ maxContexts: 1 });
+  try {
+    const lease = await pool.open();
+    const page = await lease.context.newPage();
+    const env = await page.evaluate(() => ({ webdriver: navigator.webdriver, ua: navigator.userAgent, lang: navigator.language, tz: Intl.DateTimeFormat().resolvedOptions().timeZone }));
+    assert.equal(env.webdriver, false);
+    assert.doesNotMatch(env.ua, /Headless/i);
+    assert.equal(env.lang, "pt-BR");
+    assert.equal(env.tz, "America/Sao_Paulo");
+    await lease.close();
+  } finally { await pool.shutdown(); }
+});
+test("browser pool: user agent de desktop e proxy opcional sem credencial na URL", () => {
+  assert.equal(desktopUserAgent("156.0.8078.79"), "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36");
+  assert.equal(parseGatewayProxy(""), undefined);
+  assert.equal(parseGatewayProxy(undefined), undefined);
+  assert.deepEqual(parseGatewayProxy("http://us%40er:p%3Ass@br.proxy.test:8080"), { server: "http://br.proxy.test:8080", username: "us@er", password: "p:ss" });
+  assert.throws(() => parseGatewayProxy("ftp://x.test:21"), /http, https or socks5/);
 });
 
 // Real Chromium with local deterministic DOM fixtures. These are browser integration tests,

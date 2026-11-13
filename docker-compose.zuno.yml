@@ -399,6 +399,8 @@ services:
       SOCIAL_GATEWAY_MAX_CONTEXTS: "${SOCIAL_GATEWAY_MAX_CONTEXTS:-2}"
       SOCIAL_GATEWAY_MEDIA_ORIGINS: "${SOCIAL_GATEWAY_MEDIA_ORIGINS:-https://api.vorixworks.com}"
       SOCIAL_GATEWAY_CHROMIUM_SANDBOX: "false"
+      # Opcional: proxy residencial no Brasil (http://user:pass@host:port), para o login nao sair de IP de datacenter.
+      SOCIAL_GATEWAY_PROXY_URL: "${SOCIAL_GATEWAY_PROXY_URL:-}"
     volumes:
       - zuno_social_gateway:/data
     tmpfs:

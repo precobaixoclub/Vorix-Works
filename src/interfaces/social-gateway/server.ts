@@ -7,7 +7,7 @@ import { pathToFileURL } from "node:url";
 import { resolve } from "node:path";
 import { z } from "zod";
 import { SOCIAL_POST_FORMATS } from "../../domain/social/social-publishing.model.js";
-import { SocialBrowserPool } from "../../infrastructure/social/gateway/browser-pool.js";
+import { SocialBrowserPool, parseGatewayProxy } from "../../infrastructure/social/gateway/browser-pool.js";
 import { EncryptedGatewayStore } from "../../infrastructure/social/gateway/encrypted-store.js";
 import { GatewayError, interactionSchema, scopeSchema } from "../../infrastructure/social/gateway/protocol.js";
 import { SocialGatewayService } from "../../infrastructure/social/gateway/service.js";
@@ -95,7 +95,7 @@ function attachStream(server: Server, service: SocialGatewayService, token: stri
 
 async function main(): Promise<void> {
   const store = new EncryptedGatewayStore(process.env.SOCIAL_GATEWAY_DATA_DIR ?? "/data", process.env.SOCIAL_GATEWAY_ENCRYPTION_KEY ?? "");
-  const pool = new SocialBrowserPool({ maxContexts: Math.min(4, Math.max(1, Number(process.env.SOCIAL_GATEWAY_MAX_CONTEXTS ?? 2))), executablePath: process.env.SOCIAL_GATEWAY_CHROMIUM_PATH });
+  const pool = new SocialBrowserPool({ maxContexts: Math.min(4, Math.max(1, Number(process.env.SOCIAL_GATEWAY_MAX_CONTEXTS ?? 2))), executablePath: process.env.SOCIAL_GATEWAY_CHROMIUM_PATH, proxy: parseGatewayProxy(process.env.SOCIAL_GATEWAY_PROXY_URL) });
   const origins = (process.env.SOCIAL_GATEWAY_MEDIA_ORIGINS ?? "https://api.vorixworks.com").split(",").map(value => new URL(value.trim()).origin);
   const app = createSocialGatewayServer(new SocialGatewayService(store, pool, { mediaOrigins: origins }), process.env.SOCIAL_GATEWAY_TOKEN ?? "");
   await pool.checkReadiness();

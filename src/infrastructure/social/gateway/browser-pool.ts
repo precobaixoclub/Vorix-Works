@@ -10,7 +10,8 @@ export class SocialBrowserPool {
   private active = 0;
   private closed = false;
   private readonly waiters: { resolve: () => void; reject: (error: Error) => void; timer: NodeJS.Timeout }[] = [];
-  constructor(private readonly options: { maxContexts?: number; executablePath?: string; queueTimeoutMs?: number; idleTimeoutMs?: number } = {}) {}
+  private userAgent?: string;
+  constructor(private readonly options: { maxContexts?: number; executablePath?: string; queueTimeoutMs?: number; idleTimeoutMs?: number; proxy?: GatewayProxy } = {}) {}
   stats() { return { activeContexts: this.active, queuedContexts: this.waiters.length, browserRunning: this.browser?.isConnected() ?? false }; }
   private async acquire(): Promise<void> {
     if (this.closed) throw new GatewayError("BUSY");
@@ -38,14 +39,17 @@ export class SocialBrowserPool {
     await this.closing;
     if (this.closed) throw new GatewayError("BUSY");
     if (this.browser?.isConnected()) return this.browser;
-    if (!this.launching) this.launching = chromium.launch({ headless: true, executablePath: this.options.executablePath, args: ["--disable-dev-shm-usage", "--disable-breakpad", "--disable-crash-reporter"], chromiumSandbox: process.env.SOCIAL_GATEWAY_CHROMIUM_SANDBOX !== "false" }).then(async browser => { if (this.closed) { await browser.close(); throw new GatewayError("BUSY"); } this.browser = browser; return browser; }).finally(() => { this.launching = undefined; });
+    // A network's anti-bot check (Meta reCAPTCHA) never accepts a browser that announces automation:
+    // the image challenge repeats "try again" forever. So no navigator.webdriver, no "HeadlessChrome"
+    // in the user agent, and the person's Brazilian locale/timezone instead of the server's.
+    if (!this.launching) this.launching = chromium.launch({ headless: true, executablePath: this.options.executablePath, ignoreDefaultArgs: ["--enable-automation"], args: ["--disable-dev-shm-usage", "--disable-breakpad", "--disable-crash-reporter", "--disable-blink-features=AutomationControlled", "--lang=pt-BR"], ...(this.options.proxy ? { proxy: this.options.proxy } : {}), chromiumSandbox: process.env.SOCIAL_GATEWAY_CHROMIUM_SANDBOX !== "false" }).then(async browser => { if (this.closed) { await browser.close(); throw new GatewayError("BUSY"); } this.browser = browser; this.userAgent = desktopUserAgent(browser.version()); return browser; }).finally(() => { this.launching = undefined; });
     return this.launching;
   }
   async open(cookies?: Parameters<BrowserContext["addCookies"]>[0]): Promise<{ context: BrowserContext; close: () => Promise<void> }> {
     await this.acquire();
     let context: BrowserContext | undefined;
     try {
-      context = await (await this.getBrowser()).newContext({ viewport: { width: 1280, height: 800 }, locale: "en-US", acceptDownloads: false, serviceWorkers: "block" });
+      context = await (await this.getBrowser()).newContext({ viewport: { width: 1280, height: 800 }, userAgent: this.userAgent, locale: "pt-BR", timezoneId: "America/Sao_Paulo", extraHTTPHeaders: { "Accept-Language": "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7" }, acceptDownloads: false, serviceWorkers: "block" });
       context.setDefaultTimeout(12_000);
       context.setDefaultNavigationTimeout(40_000);
       if (cookies) await context.addCookies(cookies);
@@ -63,6 +67,25 @@ export class SocialBrowserPool {
     await this.launching?.catch(() => undefined);
   }
   async checkReadiness(): Promise<void> { const lease = await this.open(); try { await lease.context.newPage(); } finally { await lease.close(); } }
+}
+
+export type GatewayProxy = { server: string; username?: string; password?: string };
+
+/** The desktop Chrome user agent for this Chromium build, without the "HeadlessChrome" token. */
+export function desktopUserAgent(version: string): string {
+  const major = /^(\d+)/.exec(version)?.[1] ?? "130";
+  return `Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${major}.0.0.0 Safari/537.36`;
+}
+
+/** `http://user:pass@host:port` → Playwright proxy settings; credentials never stay in the URL. */
+export function parseGatewayProxy(raw: string | undefined): GatewayProxy | undefined {
+  if (!raw?.trim()) return undefined;
+  const url = new URL(raw.trim());
+  if (!["http:", "https:", "socks5:"].includes(url.protocol)) throw new Error("SOCIAL_GATEWAY_PROXY_URL must be http, https or socks5");
+  const proxy: GatewayProxy = { server: `${url.protocol}//${url.host}` };
+  if (url.username) proxy.username = decodeURIComponent(url.username);
+  if (url.password) proxy.password = decodeURIComponent(url.password);
+  return proxy;
 }
 
 export class GatewayMutex {

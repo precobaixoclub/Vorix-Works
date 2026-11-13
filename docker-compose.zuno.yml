@@ -174,6 +174,8 @@ services:
       INBOX_WUZAPI_BASE_URL: "${INBOX_WUZAPI_BASE_URL:-http://wuzapi:8080}"
       INBOX_WUZAPI_ADMIN_TOKEN: "${WUZAPI_ADMIN_TOKEN:-}"
       INBOX_RABBITMQ_URL: "${INBOX_RABBITMQ_URL:-}"
+      # glibc keeps freed photo memory in many arenas; 2 arenas lets it go back (sharp/libvips).
+      MALLOC_ARENA_MAX: "2"
       # Bloco "Media Storage" (ver docs/conversas-whatsapp-experience-completion.md) — mídia real
       # de Conversas (inbound baixada pelo worker, outbound composta aqui) precisa sobreviver a
       # restart/rebuild/deploy: volume nomeado dedicado (`zuno_inbox_media`, NUNCA `zuno_uploads` —
@@ -198,7 +200,8 @@ services:
     # (admin/QR/status/envio) sem expor o WuzAPI na rede pública. Ver docker-compose.conversas-gateway.yml.
     networks: [zuno_network, cmdesk_cmdesk-network, conversas_internal]
     init: true
-    mem_limit: 512m
+    # 1 GB: product photos are opened and resized here; 512 MB was killed mid-upload (OOM).
+    mem_limit: 1024m
     mem_reservation: 256m
     healthcheck:
       # curl evita inicializar outro runtime Node a cada verificação.

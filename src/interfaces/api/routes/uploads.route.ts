@@ -5,6 +5,7 @@ import { mkdir, readFile, realpath, rename, stat, writeFile } from "node:fs/prom
 import { dirname, join, sep } from "node:path";
 import sharp from "sharp";
 import type { PublicObjectRepositoryPort } from "../../../application/ports/public-object-repository.port.js";
+import { withImageSlot } from "../../../infrastructure/image-processing/image-work-limiter.js";
 import { resolveObjectPath } from "../../../infrastructure/storage/local-object-storage.js";
 import { objectSignatureSecondsLeft, verifyObjectSignature } from "../../../shared/utils/object-url-signing.js";
 import { NotFoundError } from "../http/app-error.js";
@@ -91,7 +92,8 @@ async function thumbnail(root: string, source: string, key: string, width: numbe
   const cached = await stat(target).catch(() => undefined);
   if (cached && cached.mtimeMs >= sourceMtime) return readFile(target);
   // Lido para memória antes: o sharp com caminho mantém o arquivo aberto no cache do libvips.
-  const body = await sharp(await readFile(source), { limitInputPixels: 64_000_000 }).rotate().resize({ width, height: width, fit: "inside", withoutEnlargement: true }).webp({ quality: 78 }).toBuffer();
+  const original = await readFile(source);
+  const body = await withImageSlot(() => sharp(original, { limitInputPixels: 64_000_000 }).rotate().resize({ width, height: width, fit: "inside", withoutEnlargement: true }).webp({ quality: 78 }).toBuffer());
   await mkdir(dirname(target), { recursive: true });
   const temporary = `${target}.${randomUUID()}.tmp`;
   await writeFile(temporary, body);

@@ -26,6 +26,15 @@ case "$0" in
   *) RUN_COPY="/tmp/vorix-deploy-run-$$.sh"; cp "$0" "$RUN_COPY"; exec sh "$RUN_COPY" "$@" ;;
 esac
 TARBALL="$1"; SHA="$2"; TARGET="${3:-api}"
+# O /tmp do servidor é RAM (tmpfs). Cada pacote tem ~380 MB e ficava lá para sempre, até a memória
+# acabar e derrubar os outros serviços da máquina. O pacote de entrada e esta cópia do script só
+# servem a este deploy (a cópia que fica é deploy_backups/release-$SHA.tgz, em disco): apaga ao sair,
+# com sucesso, falha ou rollback.
+cleanup_run_files() {
+  case "$TARBALL" in /tmp/zuno-*.tgz|/var/tmp/zuno-*.tgz) rm -f "$TARBALL" ;; esac
+  case "$0" in /tmp/vorix-deploy-run-*) rm -f "$0" ;; esac
+}
+trap cleanup_run_files EXIT
 ROOT=/opt/zuno
 COMPOSE="docker compose --env-file .env.zuno -f docker-compose.zuno.yml"
 STAMP="$(date +%Y%m%d%H%M%S)"

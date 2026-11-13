@@ -117,7 +117,8 @@ test("captura lenta não bloqueia a digitação, é compartilhada e nunca vaza p
     const delivered = await Promise.race([f.service.interact(f.user, f.flow.flowId, { kind: "key", key: "Tab" }).then(() => true), new Promise(resolve => setTimeout(() => resolve(false), 1000))]);
     assert.equal(delivered, true, "teclado não espera terminar a captura");
     assert.deepEqual(typed, ["Tab"]); assert.equal(captures, 1);
-    assert.ok(config.mask[0].selector.includes('input[autocomplete="current-password"]'));
+    // A senha oculta já aparece como pontos; sem tarja, o olho da rede deixa a pessoa conferir o que digitou.
+    assert.equal(config.mask, undefined);
   } finally { release(); await Promise.all([one, two]); }
 });
 

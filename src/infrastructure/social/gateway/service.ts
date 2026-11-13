@@ -10,7 +10,6 @@ import { GatewayError, type GatewayCredential, type GatewayFrame, type GatewayIn
 type StoredSession = GatewayCredential & { cookies: Awaited<ReturnType<BrowserContext["cookies"]>>; updatedAt: string };
 type Receipt = { externalAccountId: string; result: SocialPublishResult; createdAt: string };
 type Flow = { scope: GatewayUserScope; page: Page; driver: BrowserSocialDriver; context: BrowserContext; close: () => Promise<void>; expiresAt: number; framePromise?: Promise<GatewayFrame>; stopStream?: () => void };
-const SECRET_FIELDS = 'input[type="password"], input[autocomplete="current-password"], input[autocomplete="new-password"], input[name*="pass" i], input[autocomplete="one-time-code"], input[name*="code" i], input[name*="otp" i]';
 type AccountInput = GatewayScope & { credentialReferenceId: string; externalAccountId?: string };
 
 /** Single gateway replica owns the private volume and account locks (no distributed browser sessions). */
@@ -58,10 +57,11 @@ export class SocialGatewayService {
     flow.framePromise = capture;
     return capture;
   }
-  /** Passwords and security codes are never returned in the image or saved to disk. The caret stays
-   * visible so the person sees where the next letter goes. */
+  /** A hidden password field already renders as dots; it shows the text only after the person clicks
+   * the network's own "show password" eye, so they can check what they typed. Frames go only to that
+   * person and are never saved to disk. The caret stays visible so they see where the next letter goes. */
   private screenshot(flow: Flow): Promise<Buffer> {
-    return flow.page.screenshot({ type: "jpeg", quality: 55, caret: "initial", mask: [flow.page.locator(SECRET_FIELDS)], timeout: 10_000 });
+    return flow.page.screenshot({ type: "jpeg", quality: 55, caret: "initial", timeout: 10_000 });
   }
   /**
    * Live screen for one flow, pushed over a socket instead of polled: frames go out as soon as the

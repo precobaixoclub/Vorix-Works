@@ -18,7 +18,7 @@ function InteractiveConnection() {
   const workspace = useCurrentWorkspace(); const params = useSearchParams(); const router = useRouter();
   const network = SOCIAL_NETWORKS.find(value => value === params.get("network")); const flow = params.get("flow");
   const [frame, setFrame] = useState<SocialConnectionFrame>(); const [error, setError] = useState(""); const [busy, setBusy] = useState(false);
-  const surface = useRef<HTMLDivElement>(null); const input = useRef<HTMLInputElement>(null); const queue = useRef<RemoteInputQueue | null>(null);
+  const surface = useRef<HTMLDivElement>(null); const input = useRef<HTMLInputElement>(null); const [showTyped, setShowTyped] = useState(false); const queue = useRef<RemoteInputQueue | null>(null);
   const pointer = useRef<{ x: number; y: number } | null>(null);
   const back = `/workspaces/${workspace.id}/social/integrations`;
   // Canal ao vivo (WebSocket) por padrão; sem ele, cai no modo por consulta (requisição por quadro).
@@ -97,12 +97,13 @@ function InteractiveConnection() {
       </div>
     </Card>
     <div className="flex flex-wrap items-center gap-2">
-      <label className="text-sm">Para digitar pelo celular: <input ref={input} type="password" autoComplete="off" aria-label="Texto para o campo selecionado na rede" className="rounded border bg-background p-2" /></label>
+      <label className="text-sm">Para digitar pelo celular: <input ref={input} type={showTyped ? "text" : "password"} autoComplete="off" aria-label="Texto para o campo selecionado na rede" className="rounded border bg-background p-2" /></label>
+      <Button variant="ghost" aria-pressed={showTyped} onClick={() => setShowTyped(value => !value)}>{showTyped ? "Ocultar" : "Mostrar"}</Button>
       <Button variant="secondary" onClick={() => { const value = input.current?.value; if (input.current) input.current.value = ""; if (value) send({ kind: "text", text: value }); }}>Enviar ao campo selecionado</Button>
       <Button variant="secondary" onClick={() => send({ kind: "key", key: "Tab" })}>Próximo campo</Button>
       <Button variant="secondary" onClick={() => send({ kind: "key", key: "Enter" })}>Enter</Button>
     </div>
-    <p className="text-sm text-muted-foreground">O Vorix não guarda sua senha nem códigos de verificação. A conexão expira automaticamente após alguns minutos.</p>
+    <p className="text-sm text-muted-foreground">Para conferir a senha, clique no olho do campo de senha na tela acima. O Vorix não guarda sua senha nem códigos de verificação. A conexão expira automaticamente após alguns minutos.</p>
     <div className="flex justify-end gap-2"><Button disabled={busy} variant="secondary" onClick={() => void finish(true)}>Cancelar</Button><Button disabled={busy || !image} onClick={() => void finish(false)}>{busy ? "Verificando…" : "Continuar"}</Button></div>
   </div>;
 }

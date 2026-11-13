@@ -134,3 +134,18 @@ export function useGoogleSyncLog(workspaceId: string, enabled: boolean) {
 
 /** Retorno do OAuth do Google: guarda para onde voltar (workspace). */
 export const GOOGLE_CALENDAR_RETURN_KEY = "vorix:google-calendar-return";
+
+/**
+ * Link do evento no Google abrindo na conta CONECTADA: sem `authuser`, o Google usa a primeira conta
+ * logada no navegador e mostra "não foi possível encontrar o evento" para quem tem várias contas.
+ */
+export function googleEventHref(htmlLink: string, googleEmail?: string): string {
+  if (!googleEmail) return htmlLink;
+  try {
+    const url = new URL(htmlLink);
+    url.searchParams.set("authuser", googleEmail);
+    return url.toString();
+  } catch {
+    return htmlLink;
+  }
+}

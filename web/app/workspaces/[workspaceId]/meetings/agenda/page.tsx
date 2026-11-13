@@ -17,6 +17,7 @@ import {
   completeAgendaEvent,
   resolveAgendaConflict,
   useAgendaEvents,
+  googleEventHref,
   useGoogleCalendarStatus,
   type CalendarEvent,
 } from "@/features/meetings/agenda";
@@ -168,6 +169,7 @@ export default function AgendaPage() {
         <EventDetail
           workspaceId={workspace.id}
           event={selected}
+          googleEmail={google.data?.googleEmail}
           canWrite={canWrite}
           onClose={() => setSelected(null)}
           onEdit={() => setEditing({ event: selected })}
@@ -290,7 +292,7 @@ function ListView({ from, byDay, onPick }: { from: Date; byDay: Map<string, Cale
 
 const SYNC_LABEL: Record<string, string> = { ok: "Sincronizado com o Google", pending: "Aguardando envio ao Google", failed: "Falha ao sincronizar", conflict: "Conflito com o Google" };
 
-function EventDetail({ workspaceId, event, canWrite, onClose, onEdit, onChanged }: { workspaceId: string; event: CalendarEvent; canWrite: boolean; onClose: () => void; onEdit: () => void; onChanged: () => void }) {
+function EventDetail({ workspaceId, event, googleEmail, canWrite, onClose, onEdit, onChanged }: { workspaceId: string; event: CalendarEvent; googleEmail?: string; canWrite: boolean; onClose: () => void; onEdit: () => void; onChanged: () => void }) {
   const [busy, setBusy] = useState(false);
   const run = async (action: () => Promise<unknown>, success: string) => {
     setBusy(true);
@@ -330,7 +332,7 @@ function EventDetail({ workspaceId, event, canWrite, onClose, onEdit, onChanged 
         ) : null}
         <div className="flex flex-wrap justify-end gap-2 pt-2">
           {event.meetingId ? <Link href={`/workspaces/${workspaceId}/meetings/central/${event.meetingId}`} className="inline-flex h-9 items-center rounded-md border border-border px-3 text-sm font-medium hover:bg-muted/50">Abrir reunião</Link> : null}
-          {event.htmlLink ? <a href={event.htmlLink} target="_blank" rel="noreferrer" className="inline-flex h-9 items-center gap-1 rounded-md border border-border px-3 text-sm font-medium hover:bg-muted/50">Google <ExternalLink className="h-3.5 w-3.5" /></a> : null}
+          {event.htmlLink ? <a href={googleEventHref(event.htmlLink, googleEmail)} target="_blank" rel="noreferrer" className="inline-flex h-9 items-center gap-1 rounded-md border border-border px-3 text-sm font-medium hover:bg-muted/50">Google <ExternalLink className="h-3.5 w-3.5" /></a> : null}
           {canWrite && open ? (
             <>
               <Button variant="secondary" disabled={busy} onClick={onEdit}>Editar</Button>

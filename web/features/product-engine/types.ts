@@ -1,4 +1,4 @@
-export type ProductOption={key:string;name:string;values:string[];/** Cor visual de cada valor (só apresentação). */swatches?:Record<string,string>;/** Foto de cada valor (ex.: a foto da cor), herdada pelas combinações. */images?:Record<string,string>};
+export type ProductOption={key:string;name:string;values:string[];/** Cor visual de cada valor (só apresentação). */swatches?:Record<string,string>;/** Foto de cada valor (ex.: a foto da cor), herdada pelas combinações. */images?:Record<string,string>;/** Outras fotos do valor, depois da principal (ex.: costas). */extraImages?:Record<string,string[]>};
 export type ProductSpec={key:string;label:string;value:string|number|boolean};
 import type {VehicleDetails,RealEstateDetails} from "./specializations";
 export type {VehicleDetails,RealEstateDetails} from "./specializations";

@@ -4,10 +4,11 @@ import {vehicleDetailsSchema,realEstateDetailsSchema} from "./product-specializa
 export const PRODUCT_TYPES = ["GENERAL", "APPAREL", "VEHICLE", "REAL_ESTATE"] as const;
 const short = z.string().trim().max(160);
 const hexColor = z.string().regex(/^#[0-9a-fA-F]{6}$/);
-/** Valores são livres ("Marrom — Logo Branca"); a cor visual (`swatches`) e a foto do valor (`images`)
+/** Valores são livres ("Marrom — Logo Branca"); a cor visual (`swatches`), a foto do valor (`images`) e as
+ * outras fotos dele (`extraImages`, ex.: costas)
  * são só apresentação: dois valores podem ter a mesma cor e continuar sendo variações diferentes. */
-export const productOptionSchema = z.object({ key: z.string().regex(/^[a-z][a-z0-9_]{0,39}$/), name: short.min(1), values: z.array(short.min(1)).min(1).max(50), swatches: z.record(short, hexColor).optional(), images: z.record(short, z.string().max(2000)).optional() }).strict().superRefine((option, ctx) => {
-  for (const field of ["swatches", "images"] as const) if (Object.keys(option[field] ?? {}).some(value => !option.values.includes(value))) ctx.addIssue({ code: "custom", message: "Cor ou foto de um valor que não existe mais na variação.", path: [field] });
+export const productOptionSchema = z.object({ key: z.string().regex(/^[a-z][a-z0-9_]{0,39}$/), name: short.min(1), values: z.array(short.min(1)).min(1).max(50), swatches: z.record(short, hexColor).optional(), images: z.record(short, z.string().max(2000)).optional(), extraImages: z.record(short, z.array(z.string().max(2000)).max(30)).optional() }).strict().superRefine((option, ctx) => {
+  for (const field of ["swatches", "images", "extraImages"] as const) if (Object.keys(option[field] ?? {}).some(value => !option.values.includes(value))) ctx.addIssue({ code: "custom", message: "Cor ou foto de um valor que não existe mais na variação.", path: [field] });
 });
 /** Característica do segmento (ex.: "Modelagem: Oversized"), com o rótulo junto para o site exibir sem configuração. */
 export const productSpecSchema = z.object({ key: z.string().regex(/^[a-z][a-z0-9_]{0,39}$/), label: short.min(1), value: z.union([z.string().trim().max(2000), z.number().finite(), z.boolean()]) }).strict();

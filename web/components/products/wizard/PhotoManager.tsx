@@ -4,7 +4,7 @@ import {AlertTriangle,ArrowLeft,ArrowRight,ImagePlus,Link2,Loader2,Star,Trash2} 
 import {Button} from "@/components/Button";
 import {Input} from "@/components/Field";
 import {Popover,PopoverContent,PopoverTrigger} from "@/components/ui/popover";
-import {bareUrl,photoLinkChoices,rowKey,unlinkedPhotos,rowLabel,type DraftOption,type DraftRow} from "@/features/product-engine/wizard";
+import {bareUrl,linkPhotoToValue,photoLinkChoices,rowKey,unlinkedPhotos,valuePhotos,rowLabel,type DraftOption,type DraftRow} from "@/features/product-engine/wizard";
 import {thumbUrl} from "@/lib/media";
 import {cn} from "@/lib/utils";
 
@@ -26,7 +26,7 @@ export function PhotoManager({photos,onPhotos,alts,onAlt,upload,pending=[],optio
  const remove=(url:string)=>{
   onPhotos(photos.filter(item=>item!==url));
   // Foto removida deixa de valer para valores e combinações (voltam a herdar).
-  onOptions(options.map(option=>({...option,values:option.values.map(value=>bareUrl(value.image)===bareUrl(url)?{...value,image:undefined}:value)})));
+  onOptions(options.reduce((next,option)=>{const value=option.values.find(item=>valuePhotos(item).some(image=>bareUrl(image)===bareUrl(url)));return value?linkPhotoToValue(next,option.id,value.id,url,false):next;},options));
   onRows(rows.map(row=>bareUrl(row.image)===bareUrl(url)?{...row,image:undefined}:row));
  };
  const pick=(files:FileList|File[]|null)=>{const list=[...(files??[])].filter(file=>file.type.startsWith("image/"));if(list.length)upload(list);};
@@ -77,7 +77,7 @@ function IconButton({label,onClick,disabled,danger,children}:{label:string;onCli
 
 /** Onde a foto aparece: valores (ex.: "Preto") e combinações específicas. */
 function linksOf(url:string,options:DraftOption[],rows:DraftRow[]):string[]{
- const values=options.flatMap(option=>option.values.filter(value=>bareUrl(value.image)===bareUrl(url)).map(value=>value.label));
+ const values=options.flatMap(option=>option.values.filter(value=>valuePhotos(value).some(image=>bareUrl(image)===bareUrl(url))).map(value=>value.label));
  const own=rows.filter(row=>bareUrl(row.image)===bareUrl(url)).map(row=>rowLabel(row,options));
  return [...values,...own];
 }
@@ -86,7 +86,8 @@ function LinkPhoto({url,photos,options,onOptions,rows,onRows,alt,onAlt,disabled}
  const [showRows,setShowRows]=useState(false);
  const same=(image?:string)=>bareUrl(image)===bareUrl(url);
  const choices=photoLinkChoices(url,photos,options,rows);
- const setValue=(optionId:string,valueId:string,on:boolean)=>onOptions(options.map(option=>option.id!==optionId?option:{...option,values:option.values.map(value=>value.id!==valueId?value:{...value,image:on?url:same(value.image)?undefined:value.image})}));
+ const setValue=(optionId:string,valueId:string,on:boolean)=>onOptions(linkPhotoToValue(options,optionId,valueId,url,on));
+ const holds=(value:DraftOption["values"][number])=>valuePhotos(value).some(image=>same(image));
  const setRow=(key:string,on:boolean)=>onRows(rows.map(row=>rowKey(row,options)!==key?row:{...row,image:on?url:same(row.image)?undefined:row.image}));
  return <Popover>
   <PopoverTrigger asChild><Button type="button" size="sm" variant="secondary" disabled={disabled} className="h-9 px-2.5"><Link2 className="h-3.5 w-3.5"/>Vincular</Button></PopoverTrigger>
@@ -94,11 +95,11 @@ function LinkPhoto({url,photos,options,onOptions,rows,onRows,alt,onAlt,disabled}
    <p className="text-sm font-semibold">Esta foto pertence a</p>
    {!options.length?<p className="text-xs text-muted-foreground">O produto não tem variações: a foto vale para o produto todo.</p>:choices.options.map(option=><fieldset key={option.id} className="space-y-1">
     <legend className="text-xs font-medium text-muted-foreground">{option.name}</legend>
-    {!option.values.length?<p className="text-xs text-muted-foreground">Todas já estão em outras fotos.</p>:null}
-    <div className="flex flex-wrap gap-1.5">{option.values.map(value=>{const on=same(value.image);return <label key={value.id} className={cn("inline-flex min-h-9 cursor-pointer items-center gap-1.5 rounded-full border px-3 text-xs",on?"border-primary bg-primary/10":"border-border")}><input type="checkbox" className="sr-only" checked={on} onChange={event=>setValue(option.id,value.id,event.target.checked)}/>{on?"✓ ":""}{value.label}</label>;})}</div>
+    <div className="flex flex-wrap gap-1.5">{option.values.map(value=>{const on=holds(value),count=valuePhotos(value).length;return <label key={value.id} className={cn("inline-flex min-h-9 cursor-pointer items-center gap-1.5 rounded-full border px-3 text-xs",on?"border-primary bg-primary/10":"border-border")}><input type="checkbox" className="sr-only" checked={on} onChange={event=>setValue(option.id,value.id,event.target.checked)}/>{on?"✓ ":""}{value.label}{count?<span className="text-muted-foreground">· {count} foto{count>1?"s":""}</span>:null}</label>;})}</div>
    </fieldset>)}
-   {options.length?<p className="text-[11px] text-muted-foreground">Ao marcar uma cor, todas as combinações dela usam esta foto (ex.: Preto / P, Preto / M...).</p>:null}
-   {choices.hidden?<p className="text-[11px] text-muted-foreground">As variações que já estão em outra foto não aparecem aqui. Para mudar, desmarque na outra foto.</p>:null}
+   {options.length?<p className="text-[11px] text-muted-foreground">Uma cor pode ter várias fotos (frente, costas...), e cada foto mostra uma cor só. No site, quem escolhe a cor vê só as fotos dela.</p>:null}
+   {options.length?<p className="text-[11px] text-muted-foreground">Ao marcar uma cor, todas as combinações dela usam estas fotos (ex.: Preto / P, Preto / M...).</p>:null}
+   {choices.hidden?<p className="text-[11px] text-muted-foreground">Combinações que já têm outra foto própria não aparecem aqui. Para mudar, desmarque na outra foto.</p>:null}
    {choices.rows.length?<div>
     <button type="button" className="text-xs font-medium underline" onClick={()=>setShowRows(!showRows)} aria-expanded={showRows}>{showRows?"Ocultar":"Escolher"} combinações específicas</button>
     {showRows?<div className="mt-2 max-h-48 space-y-1 overflow-y-auto">{choices.rows.map(row=>{const key=rowKey(row,options);return <label key={key} className="flex min-h-8 items-center gap-2 text-xs"><input type="checkbox" checked={same(row.image)} onChange={event=>setRow(key,event.target.checked)}/>{rowLabel(row,options)}</label>;})}</div>:null}

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { blankRow, effectiveImage, optionsFromDetails, photoLinkChoices, unlinkedPhotos, rowLabel, rowsFromVariants, syncRows, toDetailsOptions, toVariantDrafts, variationProblems, type DraftOption } from "@/features/product-engine/wizard";
+import { blankRow, effectiveImage, linkPhotoToValue, optionsFromDetails, photoLinkChoices, unlinkedPhotos, valuePhotos, rowLabel, rowsFromVariants, syncRows, toDetailsOptions, toVariantDrafts, variationProblems, type DraftOption } from "@/features/product-engine/wizard";
 import { PRODUCT_SEGMENTS, segmentOf } from "@/features/product-engine/segments";
 
 const option = (name: string, labels: string[], extra: Partial<DraftOption> = {}): DraftOption => ({ id: `opt-${name}`, name, values: labels.map((label) => ({ id: `${name}-${label}`, label })), ...extra });
@@ -91,29 +91,36 @@ describe("segmentos", () => {
   });
 });
 
-describe("photo links: one photo per variation", () => {
-  const options: DraftOption[] = [
-    { id: "cor", name: "Cor", values: [{ id: "preto", label: "Preto", image: "https://x/a.webp?sig=1" }, { id: "azul", label: "Azul" }, { id: "verde", label: "Verde", image: "https://x/gone.webp" }] },
-    { id: "tam", name: "Tamanho", values: [{ id: "p", label: "P" }] },
-  ];
-  const rows = [
-    { ...blankRow({ cor: "preto", tam: "p" }) },
-    { ...blankRow({ cor: "azul", tam: "p" }), image: "https://x/b.webp" },
-    { ...blankRow({ cor: "verde", tam: "p" }) },
-  ];
-  const photos = ["https://x/a.webp", "https://x/b.webp", "https://x/c.webp"];
+describe("photo links: a colour can have several photos, a photo shows one colour", () => {
+  const cor = (): DraftOption => ({ id: "cor", name: "Cor", values: [{ id: "marrom", label: "Marrom" }, { id: "preto", label: "Preto" }] });
 
-  it("another photo does not offer a value or combination already linked elsewhere", () => {
-    const choices = photoLinkChoices("https://x/c.webp", photos, options, rows);
-    expect(choices.options[0].values.map((value) => value.label)).toEqual(["Azul", "Verde"]);
-    expect(choices.rows.map((row) => row.valueIds.cor)).toEqual(["verde"]);
-    expect(choices.hidden).toBe(2);
+  it("front and back of the same colour: the first is the main photo, the next are extra", () => {
+    let options = linkPhotoToValue([cor()], "cor", "preto", "https://x/preto-frente.webp", true);
+    options = linkPhotoToValue(options, "cor", "preto", "https://x/preto-costas.webp", true);
+    expect(options[0].values[1]).toMatchObject({ image: "https://x/preto-frente.webp", more: ["https://x/preto-costas.webp"] });
+    expect(valuePhotos(options[0].values[1])).toHaveLength(2);
+    const saved = toDetailsOptions(options);
+    expect(saved[0].images).toEqual({ Preto: "https://x/preto-frente.webp" });
+    expect(saved[0].extraImages).toEqual({ Preto: ["https://x/preto-costas.webp"] });
+    expect(optionsFromDetails({ options: saved } as never)[0].values[1]).toMatchObject({ image: "https://x/preto-frente.webp", more: ["https://x/preto-costas.webp"] });
   });
 
-  it("the photo that holds the link still offers it, so it can be unlinked", () => {
-    const choices = photoLinkChoices("https://x/a.webp?sig=2", photos, options, rows);
-    expect(choices.options[0].values.map((value) => value.label)).toEqual(["Preto", "Azul", "Verde"]);
-    expect(choices.rows.map((row) => row.valueIds.cor)).toEqual(["preto", "verde"]);
+  it("linking a photo to another colour moves it; unlinking the main photo promotes the next", () => {
+    let options = linkPhotoToValue([cor()], "cor", "preto", "https://x/a.webp", true);
+    options = linkPhotoToValue(options, "cor", "preto", "https://x/b.webp", true);
+    options = linkPhotoToValue(options, "cor", "marrom", "https://x/a.webp?sig=1", true);
+    expect(valuePhotos(options[0].values[0])).toEqual(["https://x/a.webp?sig=1"]);
+    expect(valuePhotos(options[0].values[1])).toEqual(["https://x/b.webp"]);
+    options = linkPhotoToValue(options, "cor", "preto", "https://x/b.webp", false);
+    expect(options[0].values[1].image).toBeUndefined();
+  });
+
+  it("a combination's own photo stays single: one already holding another photo is not offered", () => {
+    const rows = [{ ...blankRow({ cor: "preto" }) }, { ...blankRow({ cor: "marrom" }), image: "https://x/b.webp" }];
+    const choices = photoLinkChoices("https://x/c.webp", ["https://x/b.webp", "https://x/c.webp"], [cor()], rows);
+    expect(choices.options[0].values).toHaveLength(2);
+    expect(choices.rows.map((row) => row.valueIds.cor)).toEqual(["preto"]);
+    expect(choices.hidden).toBe(1);
   });
 });
 

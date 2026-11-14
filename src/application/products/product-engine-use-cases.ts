@@ -12,8 +12,8 @@ export async function validateProductExtension(deps: ProductUseCaseDeps, input: 
   input.details.media=input.details.media.map(media=>({...media,url:stripObjectUrlSignature(media.url)}));
   const images=input.imageUrls??existing?.imageUrls??[];
   if(input.details.media.some(media=>!images.includes(media.url)))throw Error("PRODUCT_VALIDATION: a mídia precisa estar na galeria do produto.");
-  input.details.options=input.details.options.map(option=>option.images?{...option,images:Object.fromEntries(Object.entries(option.images).map(([value,url])=>[value,stripObjectUrlSignature(url)]))}:option);
-  if(input.details.options.some(option=>Object.values(option.images??{}).some(url=>!images.includes(url))))throw Error("PRODUCT_VALIDATION: a foto da variação precisa estar na galeria do produto.");
+  input.details.options=input.details.options.map(option=>({...option,...(option.images?{images:Object.fromEntries(Object.entries(option.images).map(([value,url])=>[value,stripObjectUrlSignature(url)]))}:{}),...(option.extraImages?{extraImages:Object.fromEntries(Object.entries(option.extraImages).map(([value,urls])=>[value,urls.map(stripObjectUrlSignature)]))}:{})}));
+  if(input.details.options.some(option=>[...Object.values(option.images??{}),...Object.values(option.extraImages??{}).flat()].some(url=>!images.includes(url))))throw Error("PRODUCT_VALIDATION: a foto da variação precisa estar na galeria do produto.");
   if(deps.salesCatalogRepository&&existing&&!options.skipVariantCheck){
    for(const variant of await deps.salesCatalogRepository.listVariants(existing.id)){
     if(Object.keys(variant.optionValues??{}).length)validateVariantSelection(input.details.options,variant.optionValues!);

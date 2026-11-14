@@ -8,7 +8,7 @@ import type {ProductDetails,ProductOption} from "./types";
  * viram `details.options` + combinações num único envio. Valores e combinações têm id próprio na tela:
  * renomear "Marrom" para "Marrom — Logo Branca" mantém a mesma combinação (e o histórico dela).
  */
-export type DraftValue={id:string;label:string;/** Cor visual (#rrggbb); vazio = cor sugerida pelo nome. */swatch?:string;/** Foto do valor, herdada pelas combinações. */image?:string};
+export type DraftValue={id:string;label:string;/** Cor visual (#rrggbb); vazio = cor sugerida pelo nome. */swatch?:string;/** Foto do valor, herdada pelas combinações. */image?:string;/** Outras fotos do valor, depois da principal (ex.: costas). */more?:string[]};
 export type DraftOption={id:string;/** Chave gravada (só opções já salvas); novas recebem uma a partir do nome. */key?:string;name:string;typeId?:string;values:DraftValue[]};
 export type DraftRow={variantId?:string;/** optionId → valueId */valueIds:Record<string,string>;sku:string;price:string;cost:string;minimum:string;stock:string;/** Saldo lido ao abrir: só enviar ajuste quando o usuário mudou a quantidade. */initialStock?:number;/** Foto própria da combinação (sobrescreve a do valor). */image?:string;active:boolean};
 
@@ -19,18 +19,34 @@ const normalize=(text:string)=>text.normalize("NFD").replace(/[̀-ͯ]/g,"").trim
 
 export function rowKey(row:Pick<DraftRow,"valueIds">,options:readonly DraftOption[]):string{return options.map(option=>row.valueIds[option.id]??"").join("|");}
 export function rowLabel(row:Pick<DraftRow,"valueIds">,options:readonly DraftOption[]):string{return options.map(option=>option.values.find(value=>value.id===row.valueIds[option.id])?.label??"?").join(" / ");}
+/** Every photo of a value, the main one first (the one combinations inherit). */
+export const valuePhotos=(value:Pick<DraftValue,"image"|"more">):string[]=>value.image?[value.image,...(value.more??[])]:[];
+
 /**
- * What a photo's "Vincular" can still offer: a value or combination already linked to ANOTHER photo
- * of the product is left out (one photo per variation), so linking here never silently steals it.
- * A link to a photo no longer in the product counts as free.
+ * Links a photo to a value (or unlinks it). A value can hold several photos (front, back...), but a
+ * photo shows one value per variation: linking it to "Preto" takes it out of "Marrom". The first
+ * photo of a value is its main one; unlinking the main one promotes the next.
+ */
+export function linkPhotoToValue(options:readonly DraftOption[],optionId:string,valueId:string,url:string,on:boolean):DraftOption[]{
+ const same=(image?:string)=>bareUrl(image)===bareUrl(url);
+ const without=(value:DraftValue):DraftValue=>{const rest=valuePhotos(value).filter(image=>!same(image));return {...value,image:rest[0],more:rest.length>1?rest.slice(1):undefined};};
+ return options.map(option=>option.id!==optionId?option:{...option,values:option.values.map(value=>{
+  const clean=without(value);
+  if(!on||value.id!==valueId)return clean;
+  return clean.image?{...clean,more:[...(clean.more??[]),url]}:{...clean,image:url};
+ })});
+}
+
+/**
+ * What a photo's "Vincular" can still offer. Values are always offered (a colour can have several
+ * photos); a combination's own photo is single, so a combination already holding ANOTHER photo is
+ * left out. A link to a photo no longer in the product counts as free.
  */
 export function photoLinkChoices(url:string,photos:readonly string[],options:readonly DraftOption[],rows:readonly DraftRow[]):{options:DraftOption[];rows:DraftRow[];hidden:number}{
  const kept=new Set(photos.map(photo=>bareUrl(photo)));
  const taken=(image?:string)=>!!image&&bareUrl(image)!==bareUrl(url)&&kept.has(bareUrl(image));
- const free=options.map(option=>({...option,values:option.values.filter(value=>!taken(value.image))}));
- const freeRows=rows.filter(row=>!taken(row.image)&&options.every(option=>!taken(option.values.find(value=>value.id===row.valueIds[option.id])?.image)));
- const hidden=options.reduce((n,option)=>n+option.values.filter(value=>taken(value.image)).length,0)+rows.filter(row=>taken(row.image)).length;
- return {options:free,rows:freeRows,hidden};
+ const freeRows=rows.filter(row=>!taken(row.image));
+ return {options:[...options],rows:freeRows,hidden:rows.length-freeRows.length};
 }
 /**
  * Photos not linked to any variation, worth a warning only when the product has 2+ variations
@@ -41,7 +57,7 @@ export function unlinkedPhotos(photos:readonly string[],options:readonly DraftOp
  const usable=options.filter(option=>option.values.length);
  const count=rows.length?rows.filter(row=>row.active).length:usable.length?usable.reduce((n,option)=>n*option.values.length,1):0;
  if(count<2)return [];
- const linked=new Set([...usable.flatMap(option=>option.values.map(value=>bareUrl(value.image))),...rows.map(row=>bareUrl(row.image))].filter(Boolean));
+ const linked=new Set([...usable.flatMap(option=>option.values.flatMap(value=>valuePhotos(value).map(image=>bareUrl(image)))),...rows.map(row=>bareUrl(row.image))].filter(Boolean));
  return photos.filter(photo=>!linked.has(bareUrl(photo)));
 }
 export const blankRow=(valueIds:Record<string,string>):DraftRow=>({valueIds,sku:"",price:"",cost:"",minimum:"",stock:"0",active:true});
@@ -64,7 +80,7 @@ export function inheritedImage(row:Pick<DraftRow,"valueIds">,options:readonly Dr
 export function effectiveImage(row:DraftRow,options:readonly DraftOption[],cover?:string):string|undefined{return row.image??inheritedImage(row,options)??cover;}
 
 export function optionsFromDetails(details:Pick<ProductDetails,"options">):DraftOption[]{
- return details.options.map(option=>({id:newId(),key:option.key,name:option.name,values:option.values.map(label=>({id:newId(),label,swatch:option.swatches?.[label],image:option.images?.[label]}))}));
+ return details.options.map(option=>({id:newId(),key:option.key,name:option.name,values:option.values.map(label=>({id:newId(),label,swatch:option.swatches?.[label],image:option.images?.[label],...(option.images?.[label]&&option.extraImages?.[label]?.length?{more:option.extraImages[label]}:{})}))}));
 }
 
 export function rowsFromVariants(options:readonly DraftOption[],variants:readonly ProductVariant[]):DraftRow[]{
@@ -97,7 +113,8 @@ export function toDetailsOptions(options:readonly DraftOption[]):ProductOption[]
  return options.filter(option=>option.values.length).map(option=>{
   const swatches=Object.fromEntries(option.values.flatMap(value=>value.swatch?[[value.label,value.swatch]]:[]));
   const images=Object.fromEntries(option.values.flatMap(value=>value.image?[[value.label,bareUrl(value.image)!]]:[]));
-  return {key:keys.get(option.id)!,name:option.name.trim(),values:option.values.map(value=>value.label),...(Object.keys(swatches).length?{swatches}:{}),...(Object.keys(images).length?{images}:{})};
+  const extraImages=Object.fromEntries(option.values.flatMap(value=>value.image&&value.more?.length?[[value.label,value.more.map(url=>bareUrl(url)!)]]:[]));
+  return {key:keys.get(option.id)!,name:option.name.trim(),values:option.values.map(value=>value.label),...(Object.keys(swatches).length?{swatches}:{}),...(Object.keys(images).length?{images}:{}),...(Object.keys(extraImages).length?{extraImages}:{})};
  });
 }
 

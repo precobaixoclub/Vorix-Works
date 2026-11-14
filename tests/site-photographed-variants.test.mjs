@@ -24,3 +24,13 @@ test("a product without any photo link keeps every variation", () => {
   assert.equal(result.variants, all);
   assert.equal(result.options, bare);
 });
+
+test("extra photos of a value (e.g. the back) are kept for shown values and dropped with hidden ones", async () => {
+  const { productOptionSchema } = await import("../dist/domain/products/product-details.js");
+  const option = { key: "cor", name: "Cor", values: ["Preto", "Azul"], images: { Preto: "https://x/f.webp" }, extraImages: { Preto: ["https://x/b.webp"] } };
+  assert.equal(productOptionSchema.safeParse(option).success, true);
+  assert.equal(productOptionSchema.safeParse({ ...option, extraImages: { Verde: ["https://x/v.webp"] } }).success, false);
+  const { options: shown } = photographedVariants([option], [{ id: "p", optionValues: { cor: "Preto" } }, { id: "a", optionValues: { cor: "Azul" } }]);
+  assert.deepEqual(shown[0].values, ["Preto"]);
+  assert.deepEqual(shown[0].extraImages, { Preto: ["https://x/b.webp"] });
+});

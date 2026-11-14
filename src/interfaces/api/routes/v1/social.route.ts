@@ -168,7 +168,7 @@ export async function registerSocialRoutes(app: FastifyInstance, deps: SocialRou
       }
       return successEnvelope(await social.gateway.call(operation, scope), request.id);
     } catch (error) {
-      if (error instanceof GatewayError) throw new AppError({ code: "SOCIAL_CONNECTION_ACTION_REQUIRED", message: error.code === "NOT_FOUND" ? "Esta conexão expirou. Clique em Conectar novamente." : error.code === "CHECKPOINT_REQUIRED" ? "Conclua a confirmação de segurança solicitada pela rede e tente continuar." : error.code === "AUTH_REQUIRED" || error.code === "SESSION_INVALID" ? "Conclua o login na rede antes de continuar." : "A conexão está indisponível no momento. Tente novamente.", statusCode: error.code === "NOT_FOUND" ? 404 : 409, recoverable: true });
+      if (error instanceof GatewayError) throw new AppError({ code: "SOCIAL_CONNECTION_ACTION_REQUIRED", message: error.code === "NOT_FOUND" ? "Esta conexão expirou. Clique em Conectar novamente." : error.code === "CHECKPOINT_REQUIRED" ? "Conclua a confirmação de segurança solicitada pela rede e tente continuar." : error.code === "AUTH_REQUIRED" || error.code === "SESSION_INVALID" ? "Conclua o login na rede antes de continuar." : error.code === "NETWORK_ERROR" ? "Sem conexão de saída para a rede social. Se o Vorix usa a sua internet de casa, ligue o computador com o túnel do Vorix e tente de novo." : "A conexão está indisponível no momento. Tente novamente.", statusCode: error.code === "NOT_FOUND" ? 404 : 409, recoverable: true });
       translate(error);
     }
   });

@@ -1,4 +1,5 @@
 import { chromium, type Browser, type BrowserContext } from "playwright-core";
+import { connect as tcpConnect } from "node:net";
 import { GatewayError } from "./protocol.js";
 
 /** Bounded FIFO admission. A browser is shared; contexts and cookies are never shared. */
@@ -46,6 +47,12 @@ export class SocialBrowserPool {
     return this.launching;
   }
   async open(cookies?: Parameters<BrowserContext["addCookies"]>[0]): Promise<{ context: BrowserContext; close: () => Promise<void> }> {
+    // With a proxy (e.g. the owner's home connection through the SSH tunnel), never fall back to
+    // the server's own address: Meta would see the account jump countries. Proxy down = retry later.
+    if (this.options.proxy && !await proxyReachable(this.options.proxy.server)) {
+      console.error(JSON.stringify({ event: "SOCIAL_GATEWAY_PROXY_OFFLINE", proxy: this.options.proxy.server }));
+      throw new GatewayError("NETWORK_ERROR");
+    }
     await this.acquire();
     let context: BrowserContext | undefined;
     try {
@@ -77,6 +84,18 @@ export function desktopUserAgent(version: string): string {
   return `Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${major}.0.0.0 Safari/537.36`;
 }
 
+/** Can we open a TCP connection to the proxy right now? (socks5 defaults to 1080, http to 80, https to 443.) */
+export function proxyReachable(server: string, timeoutMs = 3_000): Promise<boolean> {
+  const url = new URL(server);
+  const port = Number(url.port) || (url.protocol.startsWith("socks") ? 1080 : url.protocol === "https:" ? 443 : 80);
+  return new Promise((resolve) => {
+    const socket = tcpConnect({ host: url.hostname, port });
+    const done = (ok: boolean) => { socket.destroy(); resolve(ok); };
+    socket.setTimeout(timeoutMs, () => done(false));
+    socket.once("connect", () => done(true));
+    socket.once("error", () => done(false));
+  });
+}
 /** `http://user:pass@host:port` → Playwright proxy settings; credentials never stay in the URL. */
 export function parseGatewayProxy(raw: string | undefined): GatewayProxy | undefined {
   if (!raw?.trim()) return undefined;

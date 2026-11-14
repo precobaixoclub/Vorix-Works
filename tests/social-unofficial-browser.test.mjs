@@ -130,3 +130,17 @@ test("browser engine: native music search, selection and segment controls preser
     assert.equal(await page.locator('[aria-label="Duration"]').inputValue(), "15");
   } finally { await lease.close(); await pool.shutdown(); }
 });
+
+test("with a proxy configured and unreachable, the pool refuses instead of leaving from the server's own address", async () => {
+  const { SocialBrowserPool, proxyReachable } = await import("../dist/infrastructure/social/gateway/browser-pool.js");
+  const net = await import("node:net");
+  const server = net.createServer((socket) => socket.end());
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const { port } = server.address();
+  assert.equal(await proxyReachable(`socks5://127.0.0.1:${port}`), true);
+  await new Promise((resolve) => server.close(resolve));
+  assert.equal(await proxyReachable(`socks5://127.0.0.1:${port}`, 500), false);
+  const pool = new SocialBrowserPool({ proxy: { server: `socks5://127.0.0.1:${port}` } });
+  await assert.rejects(pool.open(), (error) => error.code === "NETWORK_ERROR");
+  await pool.close?.();
+});

@@ -41,7 +41,7 @@ export class SocialGatewayService {
         const id = randomUUID(); const expiresAt = Date.now() + (this.options.flowTtlMs ?? 10 * 60_000);
         this.flows.set(id, { scope, page, driver, ...lease, expiresAt });
         return { flowId: id, expiresAt: new Date(expiresAt).toISOString() };
-      } catch { await lease.close(); throw new GatewayError("TEMPORARY_PLATFORM_ERROR"); }
+      } catch (error) { await lease.close(); throw error instanceof GatewayError && error.code === "NETWORK_ERROR" ? error : new GatewayError("TEMPORARY_PLATFORM_ERROR"); }
     });
   }
   async frame(scope: GatewayUserScope, flowId: string): Promise<GatewayFrame> {

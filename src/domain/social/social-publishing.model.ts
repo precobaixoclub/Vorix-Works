@@ -356,6 +356,7 @@ export function userMessageForError(network: SocialNetwork, errorClass: SocialEr
     case "RATE_LIMITED":
       return `O ${label} limitou publicações desta conta por enquanto. Vamos tentar novamente mais tarde.`;
     case "NETWORK_ERROR":
+      return `Sem conexão com o ${label} agora. Se as redes saem pela sua internet de casa, confira se o computador com o túnel do Vorix está ligado. Vamos tentar novamente automaticamente.`;
     case "TIMEOUT":
     case "TEMPORARY_PLATFORM_ERROR":
       return `O ${label} está instável no momento. Vamos tentar novamente automaticamente.`;

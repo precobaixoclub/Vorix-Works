@@ -21,7 +21,7 @@ import { getProductMetadata } from "@/features/product-engine/api";
 import { PRODUCT_SEGMENTS, segmentOf, type ProductSegment } from "@/features/product-engine/segments";
 import { defaultRealEstate, validateSpecializedForm } from "@/features/product-engine/specializations";
 import { newProductDetails, type ProductDetails, type ProductMetadata } from "@/features/product-engine/types";
-import { bareUrl, effectiveImage, formatQuantity, optionsFromDetails, quantityFromInput, rowLabel, rowsFromVariants, syncRows, toDetailsOptions, toVariantDrafts, variationProblems, type DraftOption, type DraftRow } from "@/features/product-engine/wizard";
+import { bareUrl, effectiveImage, formatQuantity, optionsFromDetails, quantityFromInput, rowLabel, rowsFromVariants, syncRows, toDetailsOptions, toVariantDrafts, unlinkedPhotos, variationProblems, type DraftOption, type DraftRow } from "@/features/product-engine/wizard";
 import { listVariants } from "@/features/sales/api";
 import { BILLING_TYPE_LABEL, formatBp } from "@/features/sales/presentation";
 import { formatCurrencyCents } from "@/lib/format";
@@ -411,6 +411,7 @@ function ReviewStep({ state, patchDetails, patch, segment, variationsOn, stockOn
   const warnings = [
     ...(!state.photos.length ? [["photos", "O produto está sem fotos."]] : []),
     ...(price <= 0 && segment.itemType !== "service" ? [["pricing", "O preço está zerado."]] : []),
+    ...(variationsOn && unlinkedPhotos(state.photos, usable, state.rows).length ? [["photos", `${unlinkedPhotos(state.photos, usable, state.rows).length} foto(s) não estão vinculadas a nenhuma variação.`]] : []),
     ...(variationsOn && usable.length > 1 && usable.some((option) => option.values.some((value) => !value.image)) && state.photos.length > 1 ? [["photos", "Algumas variações ainda usam a capa como foto."]] : []),
     ...(stockOn && stockTotal <= 0 ? [["pricing", "O estoque está zerado: o produto aparece como indisponível."]] : []),
   ] as [string, string][];

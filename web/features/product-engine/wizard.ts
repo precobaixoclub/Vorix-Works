@@ -19,6 +19,31 @@ const normalize=(text:string)=>text.normalize("NFD").replace(/[̀-ͯ]/g,"").trim
 
 export function rowKey(row:Pick<DraftRow,"valueIds">,options:readonly DraftOption[]):string{return options.map(option=>row.valueIds[option.id]??"").join("|");}
 export function rowLabel(row:Pick<DraftRow,"valueIds">,options:readonly DraftOption[]):string{return options.map(option=>option.values.find(value=>value.id===row.valueIds[option.id])?.label??"?").join(" / ");}
+/**
+ * What a photo's "Vincular" can still offer: a value or combination already linked to ANOTHER photo
+ * of the product is left out (one photo per variation), so linking here never silently steals it.
+ * A link to a photo no longer in the product counts as free.
+ */
+export function photoLinkChoices(url:string,photos:readonly string[],options:readonly DraftOption[],rows:readonly DraftRow[]):{options:DraftOption[];rows:DraftRow[];hidden:number}{
+ const kept=new Set(photos.map(photo=>bareUrl(photo)));
+ const taken=(image?:string)=>!!image&&bareUrl(image)!==bareUrl(url)&&kept.has(bareUrl(image));
+ const free=options.map(option=>({...option,values:option.values.filter(value=>!taken(value.image))}));
+ const freeRows=rows.filter(row=>!taken(row.image)&&options.every(option=>!taken(option.values.find(value=>value.id===row.valueIds[option.id])?.image)));
+ const hidden=options.reduce((n,option)=>n+option.values.filter(value=>taken(value.image)).length,0)+rows.filter(row=>taken(row.image)).length;
+ return {options:free,rows:freeRows,hidden};
+}
+/**
+ * Photos not linked to any variation, worth a warning only when the product has 2+ variations
+ * (with one or none, every photo simply belongs to the product). Counts active combinations,
+ * or the combinations the values would make before the rows exist.
+ */
+export function unlinkedPhotos(photos:readonly string[],options:readonly DraftOption[],rows:readonly DraftRow[]):string[]{
+ const usable=options.filter(option=>option.values.length);
+ const count=rows.length?rows.filter(row=>row.active).length:usable.length?usable.reduce((n,option)=>n*option.values.length,1):0;
+ if(count<2)return [];
+ const linked=new Set([...usable.flatMap(option=>option.values.map(value=>bareUrl(value.image))),...rows.map(row=>bareUrl(row.image))].filter(Boolean));
+ return photos.filter(photo=>!linked.has(bareUrl(photo)));
+}
 export const blankRow=(valueIds:Record<string,string>):DraftRow=>({valueIds,sku:"",price:"",cost:"",minimum:"",stock:"0",active:true});
 
 /** Todas as combinações dos valores atuais, mantendo o que já foi preenchido em cada uma. */

@@ -1,10 +1,10 @@
 "use client";
 import {useRef,useState} from "react";
-import {ArrowLeft,ArrowRight,ImagePlus,Link2,Loader2,Star,Trash2} from "lucide-react";
+import {AlertTriangle,ArrowLeft,ArrowRight,ImagePlus,Link2,Loader2,Star,Trash2} from "lucide-react";
 import {Button} from "@/components/Button";
 import {Input} from "@/components/Field";
 import {Popover,PopoverContent,PopoverTrigger} from "@/components/ui/popover";
-import {bareUrl,rowKey,rowLabel,type DraftOption,type DraftRow} from "@/features/product-engine/wizard";
+import {bareUrl,photoLinkChoices,rowKey,unlinkedPhotos,rowLabel,type DraftOption,type DraftRow} from "@/features/product-engine/wizard";
 import {thumbUrl} from "@/lib/media";
 import {cn} from "@/lib/utils";
 
@@ -21,6 +21,7 @@ export function PhotoManager({photos,onPhotos,alts,onAlt,upload,pending=[],optio
  const input=useRef<HTMLInputElement>(null);const [dragging,setDragging]=useState<number>(),[over,setOver]=useState(false);
  const uploading=pending.length>0;
  const usable=options.filter(option=>option.values.length);
+ const loose=new Set(unlinkedPhotos(photos,usable,rows));
  const move=(from:number,to:number)=>{if(to<0||to>=photos.length||from===to)return;const next=[...photos];const [item]=next.splice(from,1);next.splice(to,0,item);onPhotos(next);};
  const remove=(url:string)=>{
   onPhotos(photos.filter(item=>item!==url));
@@ -38,18 +39,19 @@ export function PhotoManager({photos,onPhotos,alts,onAlt,upload,pending=[],optio
    <Button type="button" variant="secondary" disabled={disabled||photos.length+pending.length>=MAX_PHOTOS} onClick={()=>input.current?.click()}>Escolher fotos</Button>
    <input ref={input} type="file" accept="image/jpeg,image/png,image/webp" multiple className="hidden" aria-label="Escolher fotos do produto" onChange={event=>{pick(event.target.files);event.target.value="";}}/>
   </div>
+  {loose.size?<div role="status" className="flex items-start gap-2 rounded-lg border border-warning/40 bg-warning/5 px-3 py-2 text-sm"><AlertTriangle aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0 text-warning"/><p><strong className="font-semibold">{loose.size===1?"1 foto não está vinculada":`${loose.size} fotos não estão vinculadas`} a nenhuma variação.</strong> <span className="text-muted-foreground">Como o produto tem mais de uma variação, use “Vincular” para dizer qual variação cada foto mostra. No site, aparecem só as variações que têm foto vinculada.</span></p></div>:null}
   {photos.length||uploading?<ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4" aria-label="Fotos do produto">
    {photos.map((url,index)=>{const linked=linksOf(url,usable,rows);return <li key={url} draggable={!disabled} onDragStart={()=>setDragging(index)} onDragOver={event=>{if(dragging!==undefined)event.preventDefault();}} onDrop={event=>{if(dragging===undefined)return;event.preventDefault();move(dragging,index);setDragging(undefined);}} onDragEnd={()=>setDragging(undefined)}
-    className={cn("group overflow-hidden rounded-xl border bg-card",index===0?"border-primary ring-1 ring-primary/40":"border-border/70",dragging===index&&"opacity-50")}>
+    className={cn("group overflow-hidden rounded-xl border bg-card",index===0?"border-primary ring-1 ring-primary/40":loose.has(url)?"border-warning/60":"border-border/70",dragging===index&&"opacity-50")}>
     <div className="relative aspect-square bg-muted/40">
      {/* eslint-disable-next-line @next/next/no-img-element */}
      <img src={thumbUrl(url,480)} alt={alts[bareUrl(url)!]||`Foto ${index+1}`} loading="lazy" decoding="async" className="h-full w-full object-cover"/>
      {index===0?<span className="absolute left-2 top-2 rounded-full bg-primary px-2 py-0.5 text-[11px] font-semibold text-primary-foreground">Capa</span>:null}
     </div>
     <div className="space-y-2 p-2">
-     <p className="line-clamp-2 min-h-8 text-xs text-muted-foreground">{linked.length?<>Usada em <strong className="text-foreground">{linked.join(", ")}</strong></>:"Foto geral do produto"}</p>
+     <p className="line-clamp-2 min-h-8 text-xs text-muted-foreground">{linked.length?<>Usada em <strong className="text-foreground">{linked.join(", ")}</strong></>:loose.has(url)?<span className="inline-flex items-center gap-1 font-medium text-warning"><AlertTriangle aria-hidden="true" className="h-3.5 w-3.5"/>Sem variação vinculada</span>:"Foto geral do produto"}</p>
      <div className="flex items-center gap-1">
-      <LinkPhoto url={url} options={usable} onOptions={next=>onOptions(options.map(option=>next.find(item=>item.id===option.id)??option))} rows={rows} onRows={onRows} alt={alts[bareUrl(url)!]??""} onAlt={alt=>onAlt(url,alt)} disabled={disabled}/>
+      <LinkPhoto url={url} photos={photos} options={usable} onOptions={next=>onOptions(options.map(option=>next.find(item=>item.id===option.id)??option))} rows={rows} onRows={onRows} alt={alts[bareUrl(url)!]??""} onAlt={alt=>onAlt(url,alt)} disabled={disabled}/>
       <span className="flex-1"/>
       <IconButton label="Mover para a esquerda" disabled={disabled||index===0} onClick={()=>move(index,index-1)}><ArrowLeft className="h-4 w-4"/></IconButton>
       <IconButton label="Mover para a direita" disabled={disabled||index===photos.length-1} onClick={()=>move(index,index+1)}><ArrowRight className="h-4 w-4"/></IconButton>
@@ -80,23 +82,26 @@ function linksOf(url:string,options:DraftOption[],rows:DraftRow[]):string[]{
  return [...values,...own];
 }
 
-function LinkPhoto({url,options,onOptions,rows,onRows,alt,onAlt,disabled}:{url:string;options:DraftOption[];onOptions:(options:DraftOption[])=>void;rows:DraftRow[];onRows:(rows:DraftRow[])=>void;alt:string;onAlt:(alt:string)=>void;disabled?:boolean}){
+function LinkPhoto({url,photos,options,onOptions,rows,onRows,alt,onAlt,disabled}:{url:string;photos:string[];options:DraftOption[];onOptions:(options:DraftOption[])=>void;rows:DraftRow[];onRows:(rows:DraftRow[])=>void;alt:string;onAlt:(alt:string)=>void;disabled?:boolean}){
  const [showRows,setShowRows]=useState(false);
  const same=(image?:string)=>bareUrl(image)===bareUrl(url);
+ const choices=photoLinkChoices(url,photos,options,rows);
  const setValue=(optionId:string,valueId:string,on:boolean)=>onOptions(options.map(option=>option.id!==optionId?option:{...option,values:option.values.map(value=>value.id!==valueId?value:{...value,image:on?url:same(value.image)?undefined:value.image})}));
  const setRow=(key:string,on:boolean)=>onRows(rows.map(row=>rowKey(row,options)!==key?row:{...row,image:on?url:same(row.image)?undefined:row.image}));
  return <Popover>
   <PopoverTrigger asChild><Button type="button" size="sm" variant="secondary" disabled={disabled} className="h-9 px-2.5"><Link2 className="h-3.5 w-3.5"/>Vincular</Button></PopoverTrigger>
   <PopoverContent align="start" className="max-h-[70vh] w-[min(20rem,calc(100vw-2rem))] space-y-3 overflow-y-auto p-3">
    <p className="text-sm font-semibold">Esta foto pertence a</p>
-   {!options.length?<p className="text-xs text-muted-foreground">O produto não tem variações: a foto vale para o produto todo.</p>:options.map(option=><fieldset key={option.id} className="space-y-1">
+   {!options.length?<p className="text-xs text-muted-foreground">O produto não tem variações: a foto vale para o produto todo.</p>:choices.options.map(option=><fieldset key={option.id} className="space-y-1">
     <legend className="text-xs font-medium text-muted-foreground">{option.name}</legend>
+    {!option.values.length?<p className="text-xs text-muted-foreground">Todas já estão em outras fotos.</p>:null}
     <div className="flex flex-wrap gap-1.5">{option.values.map(value=>{const on=same(value.image);return <label key={value.id} className={cn("inline-flex min-h-9 cursor-pointer items-center gap-1.5 rounded-full border px-3 text-xs",on?"border-primary bg-primary/10":"border-border")}><input type="checkbox" className="sr-only" checked={on} onChange={event=>setValue(option.id,value.id,event.target.checked)}/>{on?"✓ ":""}{value.label}</label>;})}</div>
    </fieldset>)}
    {options.length?<p className="text-[11px] text-muted-foreground">Ao marcar uma cor, todas as combinações dela usam esta foto (ex.: Preto / P, Preto / M...).</p>:null}
-   {rows.length?<div>
+   {choices.hidden?<p className="text-[11px] text-muted-foreground">As variações que já estão em outra foto não aparecem aqui. Para mudar, desmarque na outra foto.</p>:null}
+   {choices.rows.length?<div>
     <button type="button" className="text-xs font-medium underline" onClick={()=>setShowRows(!showRows)} aria-expanded={showRows}>{showRows?"Ocultar":"Escolher"} combinações específicas</button>
-    {showRows?<div className="mt-2 max-h-48 space-y-1 overflow-y-auto">{rows.map(row=>{const key=rowKey(row,options);return <label key={key} className="flex min-h-8 items-center gap-2 text-xs"><input type="checkbox" checked={same(row.image)} onChange={event=>setRow(key,event.target.checked)}/>{rowLabel(row,options)}</label>;})}</div>:null}
+    {showRows?<div className="mt-2 max-h-48 space-y-1 overflow-y-auto">{choices.rows.map(row=>{const key=rowKey(row,options);return <label key={key} className="flex min-h-8 items-center gap-2 text-xs"><input type="checkbox" checked={same(row.image)} onChange={event=>setRow(key,event.target.checked)}/>{rowLabel(row,options)}</label>;})}</div>:null}
    </div>:null}
    <div className="space-y-1 border-t border-border pt-3"><label htmlFor={`alt-${url}`} className="text-xs font-medium text-muted-foreground">Descrição da foto (acessibilidade)</label><Input id={`alt-${url}`} value={alt} onChange={event=>onAlt(event.target.value)} placeholder="Ex.: Camiseta preta, vista de frente"/></div>
   </PopoverContent>

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { effectiveImage, optionsFromDetails, rowLabel, rowsFromVariants, syncRows, toDetailsOptions, toVariantDrafts, variationProblems, type DraftOption } from "@/features/product-engine/wizard";
+import { blankRow, effectiveImage, optionsFromDetails, photoLinkChoices, unlinkedPhotos, rowLabel, rowsFromVariants, syncRows, toDetailsOptions, toVariantDrafts, variationProblems, type DraftOption } from "@/features/product-engine/wizard";
 import { PRODUCT_SEGMENTS, segmentOf } from "@/features/product-engine/segments";
 
 const option = (name: string, labels: string[], extra: Partial<DraftOption> = {}): DraftOption => ({ id: `opt-${name}`, name, values: labels.map((label) => ({ id: `${name}-${label}`, label })), ...extra });
@@ -88,5 +88,47 @@ describe("segmentos", () => {
     expect(segmentOf({ type: "APPAREL" }).id).toBe("apparel");
     expect(segmentOf({ type: "GENERAL" }, "service").id).toBe("service");
     expect(segmentOf({ type: "GENERAL", segment: "food" }).id).toBe("food");
+  });
+});
+
+describe("photo links: one photo per variation", () => {
+  const options: DraftOption[] = [
+    { id: "cor", name: "Cor", values: [{ id: "preto", label: "Preto", image: "https://x/a.webp?sig=1" }, { id: "azul", label: "Azul" }, { id: "verde", label: "Verde", image: "https://x/gone.webp" }] },
+    { id: "tam", name: "Tamanho", values: [{ id: "p", label: "P" }] },
+  ];
+  const rows = [
+    { ...blankRow({ cor: "preto", tam: "p" }) },
+    { ...blankRow({ cor: "azul", tam: "p" }), image: "https://x/b.webp" },
+    { ...blankRow({ cor: "verde", tam: "p" }) },
+  ];
+  const photos = ["https://x/a.webp", "https://x/b.webp", "https://x/c.webp"];
+
+  it("another photo does not offer a value or combination already linked elsewhere", () => {
+    const choices = photoLinkChoices("https://x/c.webp", photos, options, rows);
+    expect(choices.options[0].values.map((value) => value.label)).toEqual(["Azul", "Verde"]);
+    expect(choices.rows.map((row) => row.valueIds.cor)).toEqual(["verde"]);
+    expect(choices.hidden).toBe(2);
+  });
+
+  it("the photo that holds the link still offers it, so it can be unlinked", () => {
+    const choices = photoLinkChoices("https://x/a.webp?sig=2", photos, options, rows);
+    expect(choices.options[0].values.map((value) => value.label)).toEqual(["Preto", "Azul", "Verde"]);
+    expect(choices.rows.map((row) => row.valueIds.cor)).toEqual(["preto", "verde"]);
+  });
+});
+
+describe("photos without a variation", () => {
+  const cor = (images: Record<string, string> = {}): DraftOption => ({ id: "cor", name: "Cor", values: ["Preto", "Azul"].map((label) => ({ id: label, label, ...(images[label] ? { image: images[label] } : {}) })) });
+  const photos = ["https://x/a.webp", "https://x/b.webp", "https://x/c.webp"];
+
+  it("with 2+ variations, lists the photos not linked to any of them", () => {
+    expect(unlinkedPhotos(photos, [cor({ Preto: "https://x/a.webp?sig=1" })], [{ ...blankRow({ cor: "Preto" }) }, { ...blankRow({ cor: "Azul" }), image: "https://x/b.webp" }])).toEqual(["https://x/c.webp"]);
+    expect(unlinkedPhotos(photos, [cor()], [])).toEqual(photos);
+  });
+
+  it("with one variation or none, any number of photos is fine", () => {
+    expect(unlinkedPhotos(photos, [], [])).toEqual([]);
+    expect(unlinkedPhotos(photos, [{ id: "cor", name: "Cor", values: [{ id: "p", label: "Preto" }] }], [])).toEqual([]);
+    expect(unlinkedPhotos(photos, [cor()], [{ ...blankRow({ cor: "Preto" }) }, { ...blankRow({ cor: "Azul" }), active: false }])).toEqual([]);
   });
 });

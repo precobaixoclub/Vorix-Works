@@ -9,6 +9,7 @@ import type {SalesCatalogRepositoryPort} from "../ports/sales-engine-repository.
 import {normalizeSiteHostname,siteContentSchema,siteThemeSchema,siteSnapshotSchema,captureSiteTemplateConfig,siteImageUrls,type Site,type SiteSnapshot} from "../../domain/sites/site.model.js";
 import {signOwnedUrl,OBJECT_URL_TTL} from "../../shared/utils/object-url-signing.js";
 import {publicVehicleDetails,publicRealEstateDetails} from "../../domain/products/product-specializations.js";
+import type {ProductDetails} from "../../domain/products/product-details.js";
 import type {Product} from "../../domain/crm/crm.model.js";
 import type {SiteCommerceRepositoryPort} from "../ports/site-commerce-repository.port.js";
 import {defaultSiteCommerceSettings,resolveProductCommerce,siteCommerceSummary,type SiteCommerceSettings} from "../../domain/sites/site-commerce.js";
@@ -44,8 +45,9 @@ export async function commerceContext(deps:Pick<SiteEngineDeps,"commerceReposito
  return {settings,hasWhatsapp,contactForm:snapshot.content.contactForm,checkoutReady,rules:preview&&snapshot.commerceConfig?snapshot.commerceConfig.rules.map(({id,definition})=>({...definition,id,tenantId:site.tenantId,workspaceId:site.workspaceId,siteId:site.id,revision:1,createdAt:"",updatedAt:""})):await deps.commercialRules?.list({tenantId:site.tenantId,workspaceId:site.workspaceId,siteId:site.id})??[],now:deps.now?.()??new Date()};
 }
 export async function presentPublicProduct(deps:Pick<SiteEngineDeps,"salesCatalogRepository">,product:Product,metadata:CatalogMetadata,commerce:SiteCommerceContext,preloadedVariants?:Awaited<ReturnType<SiteEngineDeps["salesCatalogRepository"]["listVariants"]>>){
-  const variants=(preloadedVariants??await deps.salesCatalogRepository.listVariants(product.id)).filter(variant=>variant.active&&(!product.details?.options.length||(Object.keys(variant.optionValues??{}).length===product.details.options.length&&product.details.options.every(option=>option.values.includes(variant.optionValues?.[option.key]??"")))));
-  const details=product.details!;
+  const sellable=(preloadedVariants??await deps.salesCatalogRepository.listVariants(product.id)).filter(variant=>variant.active&&(!product.details?.options.length||(Object.keys(variant.optionValues??{}).length===product.details.options.length&&product.details.options.every(option=>option.values.includes(variant.optionValues?.[option.key]??"")))));
+  const {variants,options}=photographedVariants(product.details!.options,sellable);
+  const details={...product.details!,options};
   const availableQuantity=product.trackStock?(details.options.length?variants.reduce((n,item)=>n+Math.max(0,(item.stockQuantity??0)-(item.reservedQuantity??0)),0):Math.max(0,product.stockQuantity-(product.reservedQuantity??0))):undefined;
   const resolvedCommerce=resolveProductCommerce({settings:commerce.settings,hasWhatsapp:commerce.hasWhatsapp,contactForm:commerce.contactForm,checkoutReady:commerce.checkoutReady,product:{type:details.type,itemType:product.itemType,saleMode:details.saleMode,trackStock:product.trackStock,availableQuantity,priceCents:product.priceCents}});
   // Rules match product, category, collection and currency — never the variant — so the unit price
@@ -64,6 +66,17 @@ export async function presentPublicProduct(deps:Pick<SiteEngineDeps,"salesCatalo
   };
 }
 export type PublicSiteProduct=Awaited<ReturnType<typeof presentPublicProduct>>;
+/**
+ * Once the owner links photos to variations, the site shows only the variations that have a photo
+ * (by its own photo or by one of its values, e.g. the colour "Preto"); the rest are left out, along
+ * with option values no shown variation uses. A product with no photo links keeps every variation.
+ */
+export function photographedVariants<V extends {imageUrl?:string;optionValues?:Record<string,string>}>(options:ProductDetails["options"],variants:V[]):{variants:V[];options:ProductDetails["options"]}{
+ const photographed=(variant:V)=>!!variant.imageUrl||options.some(option=>!!option.images?.[variant.optionValues?.[option.key]??""]);
+ const shown=variants.filter(photographed);
+ if(!shown.length||shown.length===variants.length)return {variants,options};
+ return {variants:shown,options:options.map(option=>{const used=new Set(shown.map(variant=>variant.optionValues?.[option.key]));const values=option.values.filter(value=>used.has(value));return {...option,values,...(option.images?{images:Object.fromEntries(Object.entries(option.images).filter(([value])=>used.has(value)))}:{})};})};
+}
 /** Presents many products with their variants loaded in ONE query (instead of one per product). */
 export async function presentPublicProducts(deps:Pick<SiteEngineDeps,"salesCatalogRepository">,products:readonly Product[],metadata:CatalogMetadata,commerce:SiteCommerceContext){
  const batch=deps.salesCatalogRepository.listVariantsForProducts&&products.length>1?await deps.salesCatalogRepository.listVariantsForProducts(products.map(product=>product.id)):undefined;

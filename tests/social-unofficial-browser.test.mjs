@@ -144,3 +144,27 @@ test("with a proxy configured and unreachable, the pool refuses instead of leavi
   await assert.rejects(pool.open(), (error) => error.code === "NETWORK_ERROR");
   await pool.close?.();
 });
+
+test("browser engine: Instagram account comes from the session cookies even when the API or the address bar disagree", async () => {
+  const pool = new SocialBrowserPool(); const lease = await pool.open();
+  try {
+    let currentUser = 400, userInfo = 200;
+    await lease.context.route("https://www.instagram.com/**", route => {
+      const path = new URL(route.request().url()).pathname;
+      if (path === "/api/v1/accounts/current_user/") return route.fulfill({ status: currentUser, contentType: "application/json", body: JSON.stringify(currentUser === 200 ? { user: { pk: 42, username: "loja_api", full_name: "Loja" } } : { message: "useragent mismatch" }) });
+      if (path === "/api/v1/users/42/info/") return route.fulfill({ status: userInfo, contentType: "application/json", body: JSON.stringify(userInfo === 200 ? { user: { pk: "42", username: "loja_info" } } : {}) });
+      return route.fulfill({ status: 200, contentType: "text/html", body: '<main><img alt="Foto do perfil de loja_pagina" src="data:,"></main>' });
+    });
+    const page = await lease.context.newPage(); const driver = new BrowserSocialDriver("instagram", page, lease.context, []);
+    await page.goto("https://www.instagram.com/accounts/login/");
+    await assert.rejects(() => driver.identity(), /AUTH_REQUIRED/, "no session cookie = not logged in");
+    await lease.context.addCookies([{ name: "ds_user_id", value: "42", domain: ".instagram.com", path: "/", secure: true }, { name: "sessionid", value: "42%3Aabc", domain: ".instagram.com", path: "/", secure: true, httpOnly: true }]);
+    assert.deepEqual(await driver.identity(), { externalAccountId: "42", username: "loja_info", displayName: undefined }, "logged in while the address still says /accounts/login/");
+    userInfo = 500;
+    assert.equal((await driver.identity()).username, "loja_pagina", "both APIs failing: the @ comes from the page");
+    currentUser = 200;
+    assert.deepEqual(await driver.identity(), { externalAccountId: "42", username: "loja_api", displayName: "Loja" });
+    await page.setContent('<main><input type="password"></main>');
+    await assert.rejects(() => driver.identity(), /AUTH_REQUIRED/, "password field on screen = still logging in");
+  } finally { await lease.close(); await pool.shutdown(); }
+});

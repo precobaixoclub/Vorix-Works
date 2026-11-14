@@ -49,29 +49,48 @@ export class BrowserSocialDriver {
     if (/\/accounts\/login|\/login\/?$/.test(url.pathname) || await this.page.locator('input[type="password"]').first().isVisible().catch(() => false)) return "AUTH_REQUIRED";
     return undefined;
   }
+  /** GET on Instagram's web API from inside the page (cookies, CSRF and app id as the web app sends them). */
+  private instagramApi(path: string): Promise<{ status: number; ok: boolean; body: { message?: string; checkpoint_url?: string; user?: { pk?: string | number; username?: string; full_name?: unknown } } }> {
+    return this.page.evaluate(async ({ path, appId }) => {
+      const csrf = /(?:^|;\s*)csrftoken=([^;]+)/.exec((globalThis as unknown as { document: { cookie: string } }).document.cookie)?.[1] ?? "";
+      try {
+        const reply = await fetch(path, { credentials: "include", headers: { "x-ig-app-id": appId, "x-csrftoken": csrf, "x-requested-with": "XMLHttpRequest" }, signal: AbortSignal.timeout(15_000) });
+        return { status: reply.status, ok: reply.ok, body: await reply.json().catch(() => ({})) };
+      } catch { return { status: 0, ok: false, body: {} }; }
+    }, { path, appId: "936619743392459" }) as Promise<{ status: number; ok: boolean; body: { message?: string; checkpoint_url?: string; user?: { pk?: string | number; username?: string; full_name?: unknown } } }>;
+  }
+  /** Last resort for the @: the logged-in profile picture says "Foto do perfil de <user>" / "<user>'s profile picture". */
+  private async instagramUsernameOnPage(): Promise<string | undefined> {
+    const alts = await this.page.locator("img[alt]").evaluateAll(images => images.map(image => image.getAttribute("alt") ?? "")).catch(() => [] as string[]);
+    for (const alt of alts) { const match = /foto do perfil de ([\w.]+)|^([\w.]+)'s profile picture/i.exec(alt); if (match) return match[1] ?? match[2]; }
+    return undefined;
+  }
   async identity(): Promise<BrowserIdentity> {
     const state = await this.securityState();
-    if (state) throw new GatewayError(state);
+    // Instagram logs in without leaving /accounts/login/ in the address bar: there, the session
+    // cookies decide (below), unless the password field is still on screen.
+    const loginAddressOnly = state === "AUTH_REQUIRED" && this.network === "instagram" && !await this.page.locator('input[type="password"]').first().isVisible().catch(() => false);
+    if (state && !loginAddressOnly) throw new GatewayError(state);
     // Read the currently authenticated identity, never a user-supplied profile URL.
     if (this.network === "instagram") {
-      // Asked from inside the logged-in page, like Instagram's own web app: same browser, same
-      // connection (the owner's home tunnel) and same headers. A request from Playwright's own HTTP
-      // client hung through the SOCKS tunnel and looked like a different device to Instagram.
+      // The account number comes from Instagram's own session cookies (ds_user_id, set only after a
+      // real login); the API answer only adds the @ and the name. Every request runs inside the
+      // logged-in page, like Instagram's web app: same browser and the owner's home connection.
+      const cookies = await this.context.cookies("https://www.instagram.com");
+      const pk = cookies.find(c => c.name === "ds_user_id")?.value;
+      if (!pk || !/^\d+$/.test(pk) || !cookies.some(c => c.name === "sessionid" && c.value)) throw new GatewayError("AUTH_REQUIRED");
       if (!/(^|\.)instagram\.com$/.test(new URL(this.page.url()).hostname)) await this.home();
-      const response = await this.page.evaluate(async (appId) => {
-        const csrf = /(?:^|;\s*)csrftoken=([^;]+)/.exec((globalThis as unknown as { document: { cookie: string } }).document.cookie)?.[1] ?? "";
-        try {
-          const reply = await fetch("/api/v1/accounts/current_user/?edit=true", { credentials: "include", headers: { "x-ig-app-id": appId, "x-csrftoken": csrf, "x-requested-with": "XMLHttpRequest" }, signal: AbortSignal.timeout(15_000) });
-          return { status: reply.status, ok: reply.ok, body: await reply.json().catch(() => ({})) as { message?: string; checkpoint_url?: string; user?: { pk?: string | number; username?: string; full_name?: unknown } } };
-        } catch { return { status: 0, ok: false, body: {} as { message?: string; checkpoint_url?: string; user?: { pk?: string | number; username?: string; full_name?: unknown } } }; }
-      }, "936619743392459");
-      if (response.status === 0) throw new GatewayError("NETWORK_ERROR");
-      if (response.status === 401 || response.status === 403) throw new GatewayError("AUTH_REQUIRED");
-      const body = response.body;
-      if (body.message === "challenge_required" || body.checkpoint_url) throw new GatewayError("CHECKPOINT_REQUIRED");
-      const user = body.user;
-      if (!response.ok || !user?.pk || !user?.username) throw new GatewayError("AUTH_REQUIRED");
-      return { externalAccountId: String(user.pk), username: String(user.username), displayName: typeof user.full_name === "string" ? user.full_name : undefined };
+      const current = await this.instagramApi("/api/v1/accounts/current_user/?edit=true");
+      if (current.body.message === "challenge_required" || current.body.checkpoint_url) throw new GatewayError("CHECKPOINT_REQUIRED");
+      let user = current.ok ? current.body.user : undefined;
+      if (!user?.username) {
+        const info = await this.instagramApi(`/api/v1/users/${pk}/info/`);
+        if (info.ok) user = info.body.user;
+        console.error(JSON.stringify({ event: "SOCIAL_IDENTITY_FALLBACK", network: "instagram", currentUser: current.status, currentMessage: current.body.message, userInfo: info.status }));
+      }
+      if (user?.pk !== undefined && String(user.pk) !== pk) throw new GatewayError("AUTH_REQUIRED");
+      const username = typeof user?.username === "string" ? user.username : await this.instagramUsernameOnPage();
+      return { externalAccountId: pk, ...(username ? { username } : {}), displayName: typeof user?.full_name === "string" && user.full_name ? user.full_name : undefined };
     }
     if (this.network === "facebook") {
       const cookies = (await this.context.cookies()).filter(c => /(^|\.)facebook\.com$/.test(c.domain.replace(/^\./, "")));

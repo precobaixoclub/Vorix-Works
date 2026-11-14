@@ -78,6 +78,7 @@ export class SocialGatewayService {
     let lastFrame: Buffer | undefined;
     let lastStatus: string | undefined;
     let statusCheckedAt = 0;
+    let frameFailures = 0;
     let wake: (() => void) | undefined;
     const stop = () => { stopped = true; wake?.(); if (flow.stopStream === stop) flow.stopStream = undefined; };
     flow.stopStream = stop;
@@ -87,6 +88,7 @@ export class SocialGatewayService {
         try {
           const bytes = await this.screenshot(flow);
           if (stopped) break;
+          frameFailures = 0;
           if (!lastFrame || !bytes.equals(lastFrame)) { lastFrame = bytes; sink.frame(bytes); }
           if (Date.now() - statusCheckedAt > 1_500) {
             statusCheckedAt = Date.now();
@@ -94,7 +96,12 @@ export class SocialGatewayService {
             const status = state === "CHECKPOINT_REQUIRED" ? "CHECKPOINT_REQUIRED" : "CONNECTING";
             if (status !== lastStatus && !stopped) { lastStatus = status; sink.status({ s: status, expiresAt: new Date(flow.expiresAt).toISOString() }); }
           }
-        } catch { /* page mid-navigation: next tick */ }
+        } catch (error) {
+          // Usually the page is mid-navigation (next tick fixes it). Repeated failures freeze the
+          // person's view while clicks still land, so they are logged (every 20th in a row).
+          frameFailures++;
+          if (frameFailures % 20 === 1) console.error(JSON.stringify({ event: "SOCIAL_GATEWAY_FRAME_FAILED", inARow: frameFailures, error: String(error instanceof Error ? error.message : error).slice(0, 120) }));
+        }
         await new Promise<void>(resolve => { const timer = setTimeout(resolve, Date.now() < activeUntil ? 60 : 1_000); wake = () => { clearTimeout(timer); resolve(); }; });
         wake = undefined;
       }
@@ -103,7 +110,7 @@ export class SocialGatewayService {
     return {
       input: action => {
         activeUntil = Date.now() + 4_000;
-        void this.interact(scope, flowId, action).then(() => wake?.(), () => undefined);
+        void this.interact(scope, flowId, action).then(() => wake?.(), error => { console.error(JSON.stringify({ event: "SOCIAL_GATEWAY_INPUT_FAILED", kind: action.kind, error: String(error instanceof Error ? error.message : error).slice(0, 120) })); });
       },
       close: stop,
     };
@@ -112,7 +119,7 @@ export class SocialGatewayService {
     return this.mutex.run(`flow:${flowId}`, async () => {
       const flow = this.flow(scope, flowId);
       // Human input only. No arbitrary URL, script, selector, file upload, or challenge solver.
-      if (action.kind === "click") await flow.page.mouse.click(action.x, action.y);
+      if (action.kind === "click") { await flow.driver.describeClick?.(action.x, action.y); await flow.page.mouse.click(action.x, action.y); }
       if (action.kind === "drag") { await flow.page.mouse.move(action.x, action.y); await flow.page.mouse.down(); try { await flow.page.mouse.move(action.toX, action.toY, { steps: 20 }); } finally { await flow.page.mouse.up(); } }
       if (action.kind === "text") await flow.page.keyboard.insertText(action.text);
       if (action.kind === "key") await flow.page.keyboard.press(action.key);

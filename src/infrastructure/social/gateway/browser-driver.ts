@@ -55,9 +55,11 @@ export class BrowserSocialDriver {
     });
     // Errors the page does not show (e.g. "send code" refused): host, path and status only, once each.
     this.page.on("response", response => {
-      if (response.status() < 400 || !allowedBrowserURL(this.network, response.url())) return;
-      const url = new URL(response.url());
-      this.logOnce("SOCIAL_GATEWAY_HTTP_ERROR", `${url.hostname}${url.pathname}`, String(response.status()));
+      if (!allowedBrowserURL(this.network, response.url())) return;
+      const method = response.request().method(), url = new URL(response.url());
+      if (response.status() >= 400) this.logOnce("SOCIAL_GATEWAY_HTTP_ERROR", `${url.hostname}${url.pathname}`, String(response.status()));
+      // Every send (POST etc.) the page makes, even successful: shows whether a click reached the network.
+      else if (method !== "GET" && method !== "HEAD" && method !== "OPTIONS") this.logOnce("SOCIAL_GATEWAY_SEND", `${url.hostname}${url.pathname}`, `${method} ${response.status()}`);
     });
     this.page.on("requestfailed", request => {
       if (!allowedBrowserURL(this.network, request.url())) return;
@@ -66,6 +68,22 @@ export class BrowserSocialDriver {
     });
     this.context.on("page", popup => { void popup.close().catch(() => undefined); });
     this.page.on("dialog", dialog => { void dialog.dismiss(); });
+  }
+  /**
+   * What a click at (x, y) lands on: tag, role, a couple of class names, and the host of the frame
+   * it is in. No text, values or attributes beyond these: for finding why a login button ignores clicks.
+   */
+  async describeClick(x: number, y: number): Promise<void> {
+    const target = await this.page.evaluate(({ x, y }) => {
+      const doc = (globalThis as unknown as { document: { elementFromPoint(x: number, y: number): { tagName: string; className?: unknown; getAttribute(name: string): string | null; closest(selector: string): unknown } | null } }).document;
+      const element = doc.elementFromPoint(x, y);
+      if (!element) return "nothing";
+      const classes = typeof element.className === "string" ? element.className.split(/\s+/).filter(Boolean).slice(0, 3).join(".") : "";
+      const frame = element.tagName === "IFRAME" ? (() => { try { return new URL(element.getAttribute("src") ?? "", "https://x.invalid").hostname; } catch { return "?"; } })() : "";
+      return `${element.tagName.toLowerCase()}${classes ? "." + classes : ""}${element.getAttribute("role") ? "[role=" + element.getAttribute("role") + "]" : ""}${element.closest("[aria-modal=true],[role=dialog]") ? " in-dialog" : ""}${frame ? " iframe:" + frame : ""}`;
+    }, { x, y }).catch(error => `error:${String(error instanceof Error ? error.message : error).slice(0, 80)}`);
+    const frames = this.page.frames().map(frame => { try { return new URL(frame.url()).hostname || "blank"; } catch { return "?"; } });
+    this.logOnce("SOCIAL_GATEWAY_CLICK", target, `frames=${[...new Set(frames)].join(",")}`);
   }
   async login(): Promise<void> { await this.page.goto(LOGIN[this.network], { waitUntil: "domcontentloaded" }); }
   async home(): Promise<void> { await this.page.goto(HOME[this.network], { waitUntil: "domcontentloaded" }); }

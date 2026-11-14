@@ -11,7 +11,7 @@ const reply = (body, headers = {}, status = 200) => new Response(body, { status,
 test("only the networks' public bundles are cached, never pages, APIs or photos", () => {
   assert.equal(staticAssetURL("https://static.cdninstagram.com/rsrc.php/v4/yX/r/abc.js"), true);
   assert.equal(staticAssetURL("https://static.xx.fbcdn.net/rsrc.php/v3/y1/l/0,cross/x.css"), true);
-  assert.equal(staticAssetURL("https://sf16-website-login.neutral.ttwstatic.com/obj/a.js"), true);
+  assert.equal(staticAssetURL("https://sf16-website-login.neutral.ttwstatic.com/obj/a.js"), false, "TikTok login scripts always come from the browser");
   assert.equal(staticAssetURL("https://www.instagram.com/api/v1/accounts/current_user/"), false);
   assert.equal(staticAssetURL("https://scontent.cdninstagram.com/v/t51/photo.jpg"), false);
   assert.equal(staticAssetURL("https://static.cdninstagram.com/other/path.js"), false);

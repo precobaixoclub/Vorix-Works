@@ -1,17 +1,18 @@
 import type { Route } from "playwright-core";
 
 /**
- * The networks' static bundles (JavaScript, CSS, fonts, icon sprites): public files, versioned by
- * their URL and identical for everyone. Only these are cached; pages, APIs, profile photos and
- * anything tied to an account always go through the browser (and the owner's home connection).
+ * Meta's static bundles (Instagram/Facebook: JavaScript, CSS, fonts, icon sprites): public files,
+ * versioned by their URL and identical for everyone. Only these are cached; pages, APIs, profile
+ * photos and anything tied to an account always go through the browser (and the owner's home
+ * connection). TikTok is left out on purpose: its login scripts served this way stopped the login
+ * options ("Usar telefone/e-mail") from opening.
  */
 const META_STATIC = /^static\.(cdninstagram\.com|[a-z0-9-]+\.fbcdn\.net)$/;
-const TIKTOK_STATIC = /(^|\.)(ttwstatic\.com|tiktokstatic\.com)$/;
 export function staticAssetURL(raw: string): boolean {
   try {
     const url = new URL(raw);
     if (url.protocol !== "https:" || url.username || url.password || (url.port && url.port !== "443")) return false;
-    return META_STATIC.test(url.hostname) ? url.pathname.startsWith("/rsrc.php/") : TIKTOK_STATIC.test(url.hostname);
+    return META_STATIC.test(url.hostname) && url.pathname.startsWith("/rsrc.php/");
   } catch { return false; }
 }
 

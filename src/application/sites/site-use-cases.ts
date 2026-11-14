@@ -139,17 +139,18 @@ export async function publicSite(deps:SiteEngineDeps,lookup:{slug?:string;hostna
   ]);
   // Seções automáticas (Destaques, Em promoção, Categoria): só os candidatos delas; a seleção final é feita já com preço.
   const curated=blocks.filter(block=>block.enabled&&curatedSource(block));
+  const only={...scope,withTotal:false},now=commerce.now??new Date();
   const wants=(source:string)=>curated.some(block=>block.source===source);
-  const saleRules=wants("sale")?(commerce.rules??[]).filter(rule=>!rule.couponCode&&rule.benefit.type!=="FIXED"&&ruleActive(rule,commerce.now??new Date())):[];
+  const saleRules=wants("sale")?(commerce.rules??[]).filter(rule=>!rule.couponCode&&rule.benefit.type!=="FIXED"&&ruleActive(rule,now)):[];
   const saleIds=[...new Set(saleRules.flatMap(rule=>rule.scope.type==="PRODUCTS"?rule.scope.ids:[]))].slice(0,200);
   const saleCategories=[...new Set(saleRules.flatMap(rule=>rule.scope.type==="CATEGORIES"?rule.scope.ids.flatMap(id=>descendants(metadata,id)):[]))];
   const curatedLists=curated.length?await Promise.all([
-   wants("featured")?list({...scope,featured:true,sort,offset:0,limit:48}):empty,
-   wants("sale")?list({...scope,promoted:true,sort,offset:0,limit:48}):empty,
-   saleIds.length?list({...scope,ids:saleIds,offset:0,limit:200}):empty,
-   saleCategories.length?list({...scope,categoryIds:saleCategories,sort,offset:0,limit:48}):empty,
-   saleRules.some(rule=>rule.scope.type==="STORE"||rule.scope.type==="COLLECTIONS")?list({...scope,sort,offset:0,limit:48}):empty,
-   ...curated.flatMap(block=>{const category=categoryRef(metadata,block.categoryId);return block.source==="category"&&category&&visibleCategoryIds.includes(category.id)?[list({...scope,categoryIds:descendants(metadata,category.id),sort,offset:0,limit:block.limit??CURATED_LIMIT})]:[];}),
+   wants("featured")?list({...only,featured:true,sort,offset:0,limit:48}):empty,
+   wants("sale")?list({...only,promotedAt:now,sort,offset:0,limit:48}):empty,
+   saleIds.length?list({...only,ids:saleIds,offset:0,limit:200}):empty,
+   saleCategories.length?list({...only,categoryIds:saleCategories,sort,offset:0,limit:48}):empty,
+   saleRules.some(rule=>rule.scope.type==="STORE"||rule.scope.type==="COLLECTIONS")?list({...only,sort,offset:0,limit:48}):empty,
+   ...curated.flatMap(block=>{const category=categoryRef(metadata,block.categoryId);return block.source==="category"&&category&&visibleCategoryIds.includes(category.id)?[list({...only,categoryIds:descendants(metadata,category.id),sort,offset:0,limit:block.limit??CURATED_LIMIT})]:[];}),
   ]):[];
   const unique=new Map<string,Product>();for(const product of [...first.products,...cited.products,...byPath.products,...byCategory.products,...curatedLists.flatMap(page=>page.products)])unique.set(product.id,product);
   products=[...unique.values()];catalogTotal=first.total;

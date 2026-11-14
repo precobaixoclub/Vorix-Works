@@ -215,6 +215,9 @@ test("21c seções automáticas: Destaques, Em promoção e Categoria se montam 
  const priced=result.products.find(item=>item.id===promo.id);
  assert.equal(priced.originalPriceCents,10000);assert.equal(priced.priceCents,8000);assert.equal(priced.featured,false);
  assert.equal(result.products.find(item=>item.id===expired.id)?.priceCents??10000,10000);
+ const scheduled=await c.product({name:"Agendada",priceCents:10000,details:profile({siteVisible:true,promotion:{percent:10,startsAt:"2999-01-01T00:00:00-03:00"}})});
+ const running=await c.d.productRepository.listPublicCatalog({...c.scope,visibleCategoryIds:[shirts.id],promotedAt:new Date(),withTotal:false,offset:0,limit:48});
+ assert.deepEqual(running.products.map(item=>item.id),[promo.id],"o banco já descarta promoção vencida ou agendada");assert.notEqual(scheduled.id,promo.id);
 });
 test("22 APIs Site: RBAC, isolamento, rascunho privado e formulário contextual idempotente no Contact existente",async()=>{
  const c=await setup(),other=await setup();c.allowed.add(other.tenantId);const app=Fastify();app.decorateRequest("zunoContext",null);app.addHook("onRequest",async request=>{const [tenantId,role]=(request.headers.authorization??"").replace("Bearer ","").split(":");request.zunoContext={principal:tenantId?{tenantId,role,userId:c.actor.userId}:undefined};});await registerSiteRoutes(app,{...c.siteDeps,workspaceRepository:c.workspaceRepository,objectStorage:new DisabledObjectStorage()});

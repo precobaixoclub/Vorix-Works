@@ -50,4 +50,4 @@ export type ProductRepositoryPort = {
   /** Categorias que têm ao menos um produto na vitrine pública (o site não mostra aba vazia). */
   listPublicCatalogCategoryIds?(input: Pick<PublicCatalogQuery, "tenantId" | "workspaceId" | "visibleCategoryIds">): Promise<string[]>;
 };
-export type PublicCatalogQuery = { tenantId: string; workspaceId: string; visibleCategoryIds: readonly string[]; search?: string; categoryIds?: readonly string[]; brandId?: string; ids?: readonly string[]; slug?: string; featured?: boolean; promoted?: boolean; sort?: "manual" | "name" | "price_asc" | "price_desc"; offset: number; limit: number };
+export type PublicCatalogQuery = { tenantId: string; workspaceId: string; visibleCategoryIds: readonly string[]; search?: string; categoryIds?: readonly string[]; brandId?: string; ids?: readonly string[]; slug?: string; featured?: boolean; /** Only products whose own promotion is running at this instant. */ promotedAt?: Date; /** false = skip the count (the caller ignores `total`). */ withTotal?: boolean; sort?: "manual" | "name" | "price_asc" | "price_desc"; offset: number; limit: number };

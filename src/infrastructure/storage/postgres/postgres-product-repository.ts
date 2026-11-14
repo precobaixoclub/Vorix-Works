@@ -124,12 +124,14 @@ export class PostgresProductRepository implements ProductRepositoryPort {
     if (input.ids) add((p) => `id = any(${p}::text[])`, [...input.ids]);
     if (input.slug) add((p) => `(details->>'slug' = ${p} or id = ${p})`, input.slug);
     if (input.featured) conditions.push("(details->>'featured') = 'true'");
-    if (input.promoted) conditions.push("(details->'promotion') is not null");
+    if (input.promotedAt) add((p) => `(details->'promotion') is not null and coalesce((details->'promotion'->>'startsAt')::timestamptz <= ${p}, true) and coalesce((details->'promotion'->>'endsAt')::timestamptz > ${p}, true)`, input.promotedAt.toISOString());
     const order = input.sort === "price_asc" ? "price_cents asc, name asc" : input.sort === "price_desc" ? "price_cents desc, name asc" : "name asc";
     const where = conditions.join(" and ");
-    const total = Number((await this.pool.query(`select count(*) n from products where ${where}`, params)).rows[0].n);
-    const result = await this.pool.query<ProductRow>(`select * from products where ${where} order by ${order}, id limit ${Math.min(200, Math.max(1, input.limit))} offset ${Math.max(0, input.offset)}`, params);
-    return { products: result.rows.map(toDomain), total };
+    const [count, result] = await Promise.all([
+      input.withTotal === false ? undefined : this.pool.query(`select count(*) n from products where ${where}`, params),
+      this.pool.query<ProductRow>(`select * from products where ${where} order by ${order}, id limit ${Math.min(200, Math.max(1, input.limit))} offset ${Math.max(0, input.offset)}`, params),
+    ]);
+    return { products: result.rows.map(toDomain), total: count ? Number(count.rows[0].n) : result.rowCount ?? result.rows.length };
   }
   async listPublicCatalogSlugs(input: Pick<PublicCatalogQuery, "tenantId" | "workspaceId" | "visibleCategoryIds">): Promise<{ id: string; slug: string }[]> {
     const params: unknown[] = [];

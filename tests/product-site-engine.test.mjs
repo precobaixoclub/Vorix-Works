@@ -20,7 +20,7 @@ import {registerAdminPlanVersionsRoutes} from "../dist/interfaces/api/routes/v1/
 import {addDealItem,updateDealItem,winDeal,reopenDeal,getDealCommercialSummary} from "../dist/application/sales/deal-commercial-use-cases.js";
 import {createProposalFromDeal} from "../dist/application/sales/proposal-sales-use-cases.js";
 import {publicProposalContent} from "../dist/application/crm/proposal-use-cases.js";
-import {publishSite,publicSite,verifySiteDomain,validateSiteSnapshot} from "../dist/application/sites/site-use-cases.js";
+import {publishSite,publicSite,publicCatalogPage,verifySiteDomain,validateSiteSnapshot} from "../dist/application/sites/site-use-cases.js";
 import {registerSiteRoutes} from "../dist/interfaces/api/routes/v1/sites.route.js";
 import {DisabledObjectStorage} from "../dist/infrastructure/storage/disabled-object-storage.js";
 import {normalizeSiteHostname,siteContentSchema,siteThemeSchema} from "../dist/domain/sites/site.model.js";
@@ -218,6 +218,24 @@ test("21c seções automáticas: Destaques, Em promoção e Categoria se montam 
  const scheduled=await c.product({name:"Agendada",priceCents:10000,details:profile({siteVisible:true,promotion:{percent:10,startsAt:"2999-01-01T00:00:00-03:00"}})});
  const running=await c.d.productRepository.listPublicCatalog({...c.scope,visibleCategoryIds:[shirts.id],promotedAt:new Date(),withTotal:false,offset:0,limit:48});
  assert.deepEqual(running.products.map(item=>item.id),[promo.id],"o banco já descarta promoção vencida ou agendada");assert.notEqual(scheduled.id,promo.id);
+});
+test("21d Nossa seleção alterna Feminino e Masculino (com subcategorias) em vez de um bloco de cada, também na paginação e em Destaques",async()=>{
+ const c=await setup();const save=(name,parentId)=>c.d.productEngineRepository.saveCategory({...c.scope,id:randomUUID(),name,slug:name.toLowerCase(),active:true,siteVisible:true,position:0,...(parentId?{parentId}:{})});
+ const fem=await save("Feminino"),masc=await save("Masculino"),tees=await save("Camisetas",masc.id);
+ const made=[];for(const [name,categoryId] of [["A1",fem.id],["A2",fem.id],["A3",fem.id],["B1",masc.id],["B2",tees.id],["B3",tees.id]])made.push(await c.product({name,categoryId,priceCents:1000,details:profile({siteVisible:true,featured:true})}));
+ const blocks=[{id:"destaques",type:"catalog",title:"Destaques",source:"featured"},{id:"todos",type:"catalog",title:"Todos"}];
+ let site=await c.siteDeps.repository.create({...c.scope,slug:"fixture-"+randomUUID(),draft:{content:siteContentSchema.parse({name:"Loja",blocks}),theme:siteThemeSchema.parse({catalog:{columns:4,mobileColumns:2,imageRatio:"square",cardStyle:"bordered",showPrice:true,showSku:false,showAvailability:true,showFilters:true,showSearch:true,sort:"manual",pageSize:12}})}});
+ site=await publishSite(c.siteDeps,{...c.scope,id:site.id,revision:site.revision,actorUserId:c.actor.userId});
+ const name=id=>made.find(item=>item.id===id).name;
+ const side=id=>name(id)[0];
+ const alternates=ids=>ids.every((id,index)=>index===0||side(id)!==side(ids[index-1]));
+ const result=await publicSite(c.siteDeps,{slug:site.slug});
+ assert.ok(alternates(result.content.blocks.find(item=>item.id==="destaques").productIds),"Destaques alterna");
+ const pageOne=await publicCatalogPage(c.siteDeps,{slug:site.slug},{offset:0,limit:3,sort:"manual"}),pageTwo=await publicCatalogPage(c.siteDeps,{slug:site.slug},{offset:3,limit:3,sort:"manual"});
+ const order=[...pageOne.products,...pageTwo.products].map(item=>item.id);
+ assert.equal(new Set(order).size,6,"paginação sem repetir nem pular");assert.ok(alternates(order),"catálogo alterna: "+order.map(name).join(","));
+ const byName=await publicCatalogPage(c.siteDeps,{slug:site.slug},{offset:0,limit:6,sort:"name"});
+ assert.deepEqual(byName.products.map(item=>item.name),["A1","A2","A3","B1","B2","B3"],"ordem por nome continua por nome");
 });
 test("22 APIs Site: RBAC, isolamento, rascunho privado e formulário contextual idempotente no Contact existente",async()=>{
  const c=await setup(),other=await setup();c.allowed.add(other.tenantId);const app=Fastify();app.decorateRequest("zunoContext",null);app.addHook("onRequest",async request=>{const [tenantId,role]=(request.headers.authorization??"").replace("Bearer ","").split(":");request.zunoContext={principal:tenantId?{tenantId,role,userId:c.actor.userId}:undefined};});await registerSiteRoutes(app,{...c.siteDeps,workspaceRepository:c.workspaceRepository,objectStorage:new DisabledObjectStorage()});

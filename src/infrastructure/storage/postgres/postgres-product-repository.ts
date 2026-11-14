@@ -125,11 +125,16 @@ export class PostgresProductRepository implements ProductRepositoryPort {
     if (input.slug) add((p) => `(details->>'slug' = ${p} or id = ${p})`, input.slug);
     if (input.featured) conditions.push("(details->>'featured') = 'true'");
     if (input.promotedAt) add((p) => `(details->'promotion') is not null and coalesce((details->'promotion'->>'startsAt')::timestamptz <= ${p}, true) and coalesce((details->'promotion'->>'endsAt')::timestamptz > ${p}, true)`, input.promotedAt.toISOString());
-    const order = input.sort === "price_asc" ? "price_cents asc, name asc" : input.sort === "price_desc" ? "price_cents desc, name asc" : "name asc";
     const where = conditions.join(" and ");
+    // The mix arrays go only to the page query (the count would not know their types).
+    const pageParams = [...params];
+    const mixed = input.mix?.ids.length && (!input.sort || input.sort === "manual") ? input.mix : undefined;
+    if (mixed) pageParams.push([...mixed.ids], [...mixed.groups]);
+    const group = `coalesce(($${params.length + 2}::text[])[array_position($${params.length + 1}::text[], category_id)], category_id, '')`;
+    const order = input.sort === "price_asc" ? "price_cents asc, name asc" : input.sort === "price_desc" ? "price_cents desc, name asc" : mixed ? `row_number() over (partition by ${group} order by name, id), ${group}, name asc` : "name asc";
     const [count, result] = await Promise.all([
       input.withTotal === false ? undefined : this.pool.query(`select count(*) n from products where ${where}`, params),
-      this.pool.query<ProductRow>(`select * from products where ${where} order by ${order}, id limit ${Math.min(200, Math.max(1, input.limit))} offset ${Math.max(0, input.offset)}`, params),
+      this.pool.query<ProductRow>(`select * from products where ${where} order by ${order}, id limit ${Math.min(200, Math.max(1, input.limit))} offset ${Math.max(0, input.offset)}`, pageParams),
     ]);
     return { products: result.rows.map(toDomain), total: count ? Number(count.rows[0].n) : result.rowCount ?? result.rows.length };
   }

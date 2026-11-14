@@ -68,6 +68,12 @@ export async function presentPublicProduct(deps:Pick<SiteEngineDeps,"salesCatalo
 export type PublicSiteProduct=Awaited<ReturnType<typeof presentPublicProduct>>;
 /** A section points at a category by id, or by its address (slug) when it came from an imported template. */
 const categoryRef=(metadata:Pick<CatalogMetadata,"categories">,ref?:string)=>ref?metadata.categories.find(category=>category.id===ref||category.slug===ref):undefined;
+/** The main category above a category (Camisetas → Masculino). */
+const mainCategoryOf=(metadata:Pick<CatalogMetadata,"categories">,id:string|undefined)=>{let current=id?metadata.categories.find(item=>item.id===id):undefined;const seen=new Set<string>();while(current?.parentId&&!seen.has(current.id)){seen.add(current.id);const parentId=current.parentId;const parent=metadata.categories.find(item=>item.id===parentId);if(!parent)break;current=parent;}return current?.id??id??"";};
+/** "Nossa seleção" alternates the main categories (Feminino, Masculino...) instead of showing all of one, then all of the other. */
+export const categoryMix=(metadata:Pick<CatalogMetadata,"categories">,sort?:string)=>!sort||sort==="manual"?{ids:metadata.categories.map(item=>item.id),groups:metadata.categories.map(item=>mainCategoryOf(metadata,item.id))}:undefined;
+/** Round-robin over groups, keeping the order inside each group. */
+export function interleaveBy<T>(items:readonly T[],group:(item:T)=>string):T[]{const buckets=new Map<string,T[]>();for(const item of items){const key=group(item),list=buckets.get(key);if(list)list.push(item);else buckets.set(key,[item]);}const lists=[...buckets.values()],out:T[]=[];for(let index=0;out.length<items.length;index++)for(const list of lists)if(index<list.length)out.push(list[index]);return out;}
 /** Default number of products in an automatic section (Destaques, Em promoção, Categoria). */
 export const CURATED_LIMIT=12;
 type SiteBlockValue=SiteSnapshot["content"]["blocks"][number];
@@ -82,7 +88,8 @@ export function curatedPicks(catalog:PublicSiteProduct[],metadata:Pick<CatalogMe
   const category=source==="category"?categoryRef(metadata,block.categoryId):undefined;
   const inCategory=category?new Set(descendants(metadata as CatalogMetadata,category.id)):undefined;
   const pick=catalog.filter(product=>source==="featured"?product.featured:source==="sale"?onSale(product):!!inCategory&&!!product.categoryId&&inCategory.has(product.categoryId));
-  return [...pick].sort(order).slice(0,block.limit??CURATED_LIMIT).map(product=>product.id);
+  const sorted=[...pick].sort(order);
+  return (sort==="price_asc"||sort==="price_desc"||sort==="name"?sorted:interleaveBy(sorted,product=>mainCategoryOf(metadata,product.categoryId))).slice(0,block.limit??CURATED_LIMIT).map(product=>product.id);
  };
 }
 /**
@@ -132,10 +139,10 @@ export async function publicSite(deps:SiteEngineDeps,lookup:{slug?:string;hostna
   const sort=snapshot.theme.catalog?.sort;
   const empty=Promise.resolve({products:[] as Product[],total:0});
   const [first,cited,byPath,byCategory]=await Promise.all([
-   list({...scope,sort,offset:0,limit:PUBLIC_CATALOG_INITIAL}),
+   list({...scope,sort,mix:categoryMix(metadata,sort),offset:0,limit:PUBLIC_CATALOG_INITIAL}),
    referenced.length?list({...scope,ids:referenced,offset:0,limit:200}):empty,
    path[0]==="produto"&&path[1]?list({...scope,slug:path[1],offset:0,limit:1}):empty,
-   category?list({...scope,categoryIds:descendants(metadata,category.id),sort,offset:0,limit:PUBLIC_CATALOG_INITIAL}):empty,
+   category?list({...scope,categoryIds:descendants(metadata,category.id),sort,mix:categoryMix(metadata,sort),offset:0,limit:PUBLIC_CATALOG_INITIAL}):empty,
   ]);
   // Seções automáticas (Destaques, Em promoção, Categoria): só os candidatos delas; a seleção final é feita já com preço.
   const curated=blocks.filter(block=>block.enabled&&curatedSource(block));
@@ -194,6 +201,6 @@ export async function publicCatalogPage(deps:SiteEngineDeps,lookup:{slug?:string
   const all=(await deps.productRepository.listByWorkspace({...site,activeOnly:true})).filter(product=>isPublicCatalogProduct(product,metadata));
   return {products:await Promise.all(all.slice(query.offset,query.offset+query.limit).map(product=>presentPublicProduct(deps,product,metadata,commerce))),total:all.length};
  }
- const page=await deps.productRepository.listPublicCatalog({tenantId:site.tenantId,workspaceId:site.workspaceId,visibleCategoryIds,search:query.search,categoryIds:category?descendants(metadata,category.id):undefined,brandId:query.brand,ids:query.ids,sort:query.sort,offset:query.offset,limit:query.limit});
+ const page=await deps.productRepository.listPublicCatalog({tenantId:site.tenantId,workspaceId:site.workspaceId,visibleCategoryIds,search:query.search,categoryIds:category?descendants(metadata,category.id):undefined,brandId:query.brand,ids:query.ids,sort:query.sort,mix:categoryMix(metadata,query.sort),offset:query.offset,limit:query.limit});
  return {products:await presentPublicProducts(deps,page.products.filter(product=>isPublicCatalogProduct(product,metadata)),metadata,commerce),total:page.total};
 }

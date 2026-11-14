@@ -50,14 +50,14 @@ export class BrowserSocialDriver {
     return undefined;
   }
   /** GET on Instagram's web API from inside the page (cookies, CSRF and app id as the web app sends them). */
-  private instagramApi(path: string): Promise<{ status: number; ok: boolean; body: { message?: string; checkpoint_url?: string; user?: { pk?: string | number; username?: string; full_name?: unknown } } }> {
+  private instagramApi(path: string): Promise<{ status: number; ok: boolean; body: { message?: string; checkpoint_url?: string; user?: { pk?: string | number; username?: string; full_name?: unknown }; form_data?: { username?: string; first_name?: unknown; full_name?: unknown } } }> {
     return this.page.evaluate(async ({ path, appId }) => {
       const csrf = /(?:^|;\s*)csrftoken=([^;]+)/.exec((globalThis as unknown as { document: { cookie: string } }).document.cookie)?.[1] ?? "";
       try {
         const reply = await fetch(path, { credentials: "include", headers: { "x-ig-app-id": appId, "x-csrftoken": csrf, "x-requested-with": "XMLHttpRequest" }, signal: AbortSignal.timeout(15_000) });
         return { status: reply.status, ok: reply.ok, body: await reply.json().catch(() => ({})) };
       } catch { return { status: 0, ok: false, body: {} }; }
-    }, { path, appId: "936619743392459" }) as Promise<{ status: number; ok: boolean; body: { message?: string; checkpoint_url?: string; user?: { pk?: string | number; username?: string; full_name?: unknown } } }>;
+    }, { path, appId: "936619743392459" }) as Promise<{ status: number; ok: boolean; body: { message?: string; checkpoint_url?: string; user?: { pk?: string | number; username?: string; full_name?: unknown }; form_data?: { username?: string; first_name?: unknown; full_name?: unknown } } }>;
   }
   /** Last resort for the @: the logged-in profile picture says "Foto do perfil de <user>" / "<user>'s profile picture". */
   private async instagramUsernameOnPage(): Promise<string | undefined> {
@@ -65,7 +65,16 @@ export class BrowserSocialDriver {
     for (const alt of alts) { const match = /foto do perfil de ([\w.]+)|^([\w.]+)'s profile picture/i.exec(alt); if (match) return match[1] ?? match[2]; }
     return undefined;
   }
+  private recentIdentity?: { at: number; url: string; value: BrowserIdentity };
+  /** Who is logged in. Asked again within 30s on the same page, the answer is reused (no extra request to the network). */
   async identity(): Promise<BrowserIdentity> {
+    const recent = this.recentIdentity;
+    if (recent && Date.now() - recent.at < 30_000 && recent.url === this.page.url() && !await this.securityState()) return recent.value;
+    const value = await this.readIdentity();
+    this.recentIdentity = { at: Date.now(), url: this.page.url(), value };
+    return value;
+  }
+  private async readIdentity(): Promise<BrowserIdentity> {
     const state = await this.securityState();
     // Instagram logs in without leaving /accounts/login/ in the address bar: there, the session
     // cookies decide (below), unless the password field is still on screen.
@@ -82,7 +91,11 @@ export class BrowserSocialDriver {
       if (!/(^|\.)instagram\.com$/.test(new URL(this.page.url()).hostname)) await this.home();
       const current = await this.instagramApi("/api/v1/accounts/current_user/?edit=true");
       if (current.body.message === "challenge_required" || current.body.checkpoint_url) throw new GatewayError("CHECKPOINT_REQUIRED");
-      let user = current.ok ? current.body.user : undefined;
+      // The web answers current_user?edit=true with { form_data: { username, first_name } }; older
+      // or mobile-style answers use { user: { pk, username, full_name } }. Both are read, so no second
+      // request is needed (a second one got "429 too many requests").
+      const form = current.body.form_data;
+      let user = current.ok ? current.body.user ?? (form?.username ? { username: form.username, full_name: form.full_name ?? form.first_name } : undefined) : undefined;
       if (!user?.username) {
         const info = await this.instagramApi(`/api/v1/users/${pk}/info/`);
         if (info.ok) user = info.body.user;

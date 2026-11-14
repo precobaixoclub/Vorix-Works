@@ -13,7 +13,9 @@ const LOGIN: Record<SocialNetwork, string> = { instagram: "https://www.instagram
 const DOMAINS: Record<SocialNetwork, readonly string[]> = {
   instagram: ["instagram.com", "cdninstagram.com", "fbcdn.net", "facebook.com", "fbsbx.com"],
   facebook: ["facebook.com", "fbcdn.net", "fbsbx.com", "messenger.com"],
-  tiktok: ["tiktok.com", "tiktokcdn.com", "tiktokcdn-us.com", "tiktokv.com", "tiktokv.us", "byteoversea.com", "ibytedtos.com", "ibyteimg.com", "muscdn.com", "ttwstatic.com", "tiktokstatic.com", "byteimg.com", "bytedance.com", "captcha-delivery.com"],
+  tiktok: ["tiktok.com", "tiktokcdn.com", "tiktokcdn-us.com", "tiktokv.com", "tiktokv.us", "byteoversea.com", "ibytedtos.com", "ibyteimg.com", "muscdn.com", "ttwstatic.com", "tiktokstatic.com", "byteimg.com", "bytedance.com", "captcha-delivery.com",
+    // ByteDance hosts used by TikTok's identity check ("Verifique se é realmente você"), login codes and security SDK.
+    "tiktokw.us", "tiktokw.eu", "tiktokw.com", "tiktokv.eu", "tiktokcdn-eu.com", "byteoversea.net", "sgsnssdk.com", "isnssdk.com", "byteintlapi.com", "bytedapm.com"],
 };
 export function allowedBrowserURL(network: SocialNetwork, raw: string): boolean {
   try { const url = new URL(raw); return url.protocol === "https:" && !url.username && !url.password && (!url.port || url.port === "443") && DOMAINS[network].some(domain => url.hostname === domain || url.hostname.endsWith(`.${domain}`)); } catch { return false; }
@@ -23,11 +25,17 @@ export type BrowserPublishInput = { format: SocialPostFormat; caption: string; m
 
 export class BrowserSocialDriver {
   constructor(readonly network: SocialNetwork, readonly page: Page, private readonly context: BrowserContext, private readonly mediaOrigins: readonly string[], private readonly assets?: StaticAssetCache) {}
+  private readonly blockedHosts = new Set<string>();
   async guardNetwork(): Promise<void> {
     await this.context.route("**/*", async route => {
       const request = route.request();
       const challengeFrame = !(request.isNavigationRequest() && request.frame() === this.page.mainFrame()) && allowedChallengeURL(request.url());
-      if (!allowedBrowserURL(this.network, request.url()) && !challengeFrame) { await route.abort(); return; }
+      if (!allowedBrowserURL(this.network, request.url()) && !challengeFrame) {
+        // Only the host name, once per flow: shows what a network started to need (never paths, queries or data).
+        const host = (() => { try { return new URL(request.url()).hostname; } catch { return "invalid"; } })();
+        if (!this.blockedHosts.has(host)) { this.blockedHosts.add(host); console.error(JSON.stringify({ event: "SOCIAL_GATEWAY_BLOCKED_HOST", network: this.network, host, type: request.resourceType() })); }
+        await route.abort(); return;
+      }
       // Routing turns off Chromium's cache: the network's public bundles come from the shared copy.
       if (!await this.assets?.serve(route).catch(() => false)) await route.continue();
     });

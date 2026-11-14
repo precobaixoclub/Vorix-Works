@@ -1,3 +1,4 @@
+import { StaticAssetCache } from "../../infrastructure/social/gateway/static-asset-cache.js";
 import Fastify from "fastify";
 import { timingSafeEqual } from "node:crypto";
 import type { IncomingMessage, Server } from "node:http";
@@ -95,9 +96,11 @@ function attachStream(server: Server, service: SocialGatewayService, token: stri
 
 async function main(): Promise<void> {
   const store = new EncryptedGatewayStore(process.env.SOCIAL_GATEWAY_DATA_DIR ?? "/data", process.env.SOCIAL_GATEWAY_ENCRYPTION_KEY ?? "");
-  const pool = new SocialBrowserPool({ maxContexts: Math.min(4, Math.max(1, Number(process.env.SOCIAL_GATEWAY_MAX_CONTEXTS ?? 2))), executablePath: process.env.SOCIAL_GATEWAY_CHROMIUM_PATH, proxy: parseGatewayProxy(process.env.SOCIAL_GATEWAY_PROXY_URL) });
+  const pool = new SocialBrowserPool({ maxContexts: Math.min(4, Math.max(1, Number(process.env.SOCIAL_GATEWAY_MAX_CONTEXTS ?? 2))), executablePath: process.env.SOCIAL_GATEWAY_CHROMIUM_PATH, proxy: parseGatewayProxy(process.env.SOCIAL_GATEWAY_PROXY_URL), idleTimeoutMs: Math.max(30, Number(process.env.SOCIAL_GATEWAY_BROWSER_IDLE_SECONDS ?? 180)) * 1000 });
+  // Shared copy of the networks' public bundles (JS/CSS/fonts): later screens and logins skip the tunnel for them.
+  const staticAssets = new StaticAssetCache(Math.min(256, Math.max(16, Number(process.env.SOCIAL_GATEWAY_STATIC_CACHE_MB ?? 64))) * 1024 * 1024);
   const origins = (process.env.SOCIAL_GATEWAY_MEDIA_ORIGINS ?? "https://api.vorixworks.com").split(",").map(value => new URL(value.trim()).origin);
-  const app = createSocialGatewayServer(new SocialGatewayService(store, pool, { mediaOrigins: origins }), process.env.SOCIAL_GATEWAY_TOKEN ?? "");
+  const app = createSocialGatewayServer(new SocialGatewayService(store, pool, { mediaOrigins: origins, staticAssets }), process.env.SOCIAL_GATEWAY_TOKEN ?? "");
   await pool.checkReadiness();
   for (const signal of ["SIGTERM", "SIGINT"] as const) process.once(signal, () => { void app.close(); });
   await app.listen({ host: "0.0.0.0", port: Number(process.env.SOCIAL_GATEWAY_PORT ?? 3210) });

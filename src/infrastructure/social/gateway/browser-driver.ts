@@ -6,6 +6,7 @@ import type { SocialHealthResult, SocialPublishResult } from "../../../applicati
 import type { SocialFeature, SocialMediaItem, SocialMusicSelection, SocialMusicTrack, SocialNetwork, SocialPostFormat } from "../../../domain/social/social-publishing.model.js";
 import { unofficialCapabilities } from "../unofficial-social-providers.js";
 import { GatewayError } from "./protocol.js";
+import type { StaticAssetCache } from "./static-asset-cache.js";
 
 const HOME: Record<SocialNetwork, string> = { instagram: "https://www.instagram.com/", facebook: "https://www.facebook.com/", tiktok: "https://www.tiktok.com/" };
 const LOGIN: Record<SocialNetwork, string> = { instagram: "https://www.instagram.com/accounts/login/", facebook: "https://www.facebook.com/login/", tiktok: "https://www.tiktok.com/login" };
@@ -21,12 +22,14 @@ export type BrowserIdentity = { externalAccountId: string; username?: string; di
 export type BrowserPublishInput = { format: SocialPostFormat; caption: string; media: readonly SocialMediaItem[]; music?: SocialMusicSelection };
 
 export class BrowserSocialDriver {
-  constructor(readonly network: SocialNetwork, readonly page: Page, private readonly context: BrowserContext, private readonly mediaOrigins: readonly string[]) {}
+  constructor(readonly network: SocialNetwork, readonly page: Page, private readonly context: BrowserContext, private readonly mediaOrigins: readonly string[], private readonly assets?: StaticAssetCache) {}
   async guardNetwork(): Promise<void> {
     await this.context.route("**/*", async route => {
       const request = route.request();
       const challengeFrame = !(request.isNavigationRequest() && request.frame() === this.page.mainFrame()) && allowedChallengeURL(request.url());
-      if (allowedBrowserURL(this.network, request.url()) || challengeFrame) await route.continue(); else await route.abort();
+      if (!allowedBrowserURL(this.network, request.url()) && !challengeFrame) { await route.abort(); return; }
+      // Routing turns off Chromium's cache: the network's public bundles come from the shared copy.
+      if (!await this.assets?.serve(route).catch(() => false)) await route.continue();
     });
     await this.context.routeWebSocket(/.*/, socket => { socket.close(); });
     this.context.on("page", popup => { void popup.close().catch(() => undefined); });
@@ -51,12 +54,23 @@ export class BrowserSocialDriver {
     if (state) throw new GatewayError(state);
     // Read the currently authenticated identity, never a user-supplied profile URL.
     if (this.network === "instagram") {
-      const response = await this.context.request.get("https://www.instagram.com/api/v1/accounts/current_user/?edit=true", { headers: { "x-ig-app-id": "936619743392459", "x-csrftoken": (await this.context.cookies()).find(c => c.name === "csrftoken")?.value ?? "" }, timeout: 20_000 });
-      if (response.status() === 401 || response.status() === 403) throw new GatewayError("AUTH_REQUIRED");
-      const body = await response.json().catch(() => ({}));
+      // Asked from inside the logged-in page, like Instagram's own web app: same browser, same
+      // connection (the owner's home tunnel) and same headers. A request from Playwright's own HTTP
+      // client hung through the SOCKS tunnel and looked like a different device to Instagram.
+      if (!/(^|\.)instagram\.com$/.test(new URL(this.page.url()).hostname)) await this.home();
+      const response = await this.page.evaluate(async (appId) => {
+        const csrf = /(?:^|;\s*)csrftoken=([^;]+)/.exec((globalThis as unknown as { document: { cookie: string } }).document.cookie)?.[1] ?? "";
+        try {
+          const reply = await fetch("/api/v1/accounts/current_user/?edit=true", { credentials: "include", headers: { "x-ig-app-id": appId, "x-csrftoken": csrf, "x-requested-with": "XMLHttpRequest" }, signal: AbortSignal.timeout(15_000) });
+          return { status: reply.status, ok: reply.ok, body: await reply.json().catch(() => ({})) as { message?: string; checkpoint_url?: string; user?: { pk?: string | number; username?: string; full_name?: unknown } } };
+        } catch { return { status: 0, ok: false, body: {} as { message?: string; checkpoint_url?: string; user?: { pk?: string | number; username?: string; full_name?: unknown } } }; }
+      }, "936619743392459");
+      if (response.status === 0) throw new GatewayError("NETWORK_ERROR");
+      if (response.status === 401 || response.status === 403) throw new GatewayError("AUTH_REQUIRED");
+      const body = response.body;
       if (body.message === "challenge_required" || body.checkpoint_url) throw new GatewayError("CHECKPOINT_REQUIRED");
       const user = body.user;
-      if (!response.ok() || !user?.pk || !user?.username) throw new GatewayError("AUTH_REQUIRED");
+      if (!response.ok || !user?.pk || !user?.username) throw new GatewayError("AUTH_REQUIRED");
       return { externalAccountId: String(user.pk), username: String(user.username), displayName: typeof user.full_name === "string" ? user.full_name : undefined };
     }
     if (this.network === "facebook") {

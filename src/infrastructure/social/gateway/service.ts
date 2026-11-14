@@ -5,6 +5,7 @@ import type { SocialMusicTrack } from "../../../domain/social/social-publishing.
 import { BrowserSocialDriver, type BrowserPublishInput } from "./browser-driver.js";
 import { GatewayMutex, SocialBrowserPool } from "./browser-pool.js";
 import { EncryptedGatewayStore } from "./encrypted-store.js";
+import type { StaticAssetCache } from "./static-asset-cache.js";
 import { GatewayError, type GatewayCredential, type GatewayFrame, type GatewayInteraction, type GatewayScope, type GatewayUserScope } from "./protocol.js";
 
 type StoredSession = GatewayCredential & { cookies: Awaited<ReturnType<BrowserContext["cookies"]>>; updatedAt: string };
@@ -17,12 +18,12 @@ export class SocialGatewayService {
   private readonly flows = new Map<string, Flow>();
   private readonly mutex = new GatewayMutex();
   private readonly timer: NodeJS.Timeout;
-  resources() { return { ...this.pool.stats?.(), interactiveFlows: this.flows.size }; }
-  constructor(private readonly store: EncryptedGatewayStore, private readonly pool: SocialBrowserPool, private readonly options: { mediaOrigins: readonly string[]; flowTtlMs?: number; operationTimeoutMs?: number; driverFactory?: (network: GatewayScope["network"], page: Page, context: BrowserContext) => BrowserSocialDriver }) {
+  resources() { return { ...this.pool.stats?.(), interactiveFlows: this.flows.size, staticAssets: this.options.staticAssets?.stats() }; }
+  constructor(private readonly store: EncryptedGatewayStore, private readonly pool: SocialBrowserPool, private readonly options: { mediaOrigins: readonly string[]; staticAssets?: StaticAssetCache; flowTtlMs?: number; operationTimeoutMs?: number; driverFactory?: (network: GatewayScope["network"], page: Page, context: BrowserContext) => BrowserSocialDriver }) {
     this.timer = setInterval(() => { for (const [id, flow] of this.flows) if (flow.expiresAt <= Date.now()) { this.flows.delete(id); void flow.close(); } }, 10_000);
     this.timer.unref();
   }
-  private driver(scope: GatewayScope, page: Page, context: BrowserContext): BrowserSocialDriver { return this.options.driverFactory?.(scope.network, page, context) ?? new BrowserSocialDriver(scope.network, page, context, this.options.mediaOrigins); }
+  private driver(scope: GatewayScope, page: Page, context: BrowserContext): BrowserSocialDriver { return this.options.driverFactory?.(scope.network, page, context) ?? new BrowserSocialDriver(scope.network, page, context, this.options.mediaOrigins, this.options.staticAssets); }
   private key(scope: GatewayScope, suffix: string): string { return JSON.stringify([scope.tenantId, scope.workspaceId, scope.network, suffix]); }
   private flow(scope: GatewayUserScope, id: string): Flow {
     const flow = this.flows.get(id);

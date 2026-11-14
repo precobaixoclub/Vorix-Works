@@ -197,6 +197,25 @@ test("21b categorias no site: só as que têm produto à venda (própria ou de s
  const result=await publicSite(c.siteDeps,{slug:site.slug});
  assert.deepEqual(result.categories.map(item=>item.slug).sort(),["camisas","masculino","moda"],"Feminino só tem produto fora do site: não vira aba vazia");
 });
+test("21c seções automáticas: Destaques, Em promoção e Categoria se montam sozinhas e somem vazias",async()=>{
+ const c=await setup();const shirts=await c.d.productEngineRepository.saveCategory({...c.scope,id:randomUUID(),name:"Camisas",slug:"camisas",active:true,siteVisible:true,position:0});
+ const featured=await c.product({name:"Destaque",priceCents:10000,details:profile({siteVisible:true,featured:true})});
+ const promo=await c.product({name:"Promo",priceCents:10000,details:profile({siteVisible:true,promotion:{percent:20}})});
+ const expired=await c.product({name:"Expirada",priceCents:10000,details:profile({siteVisible:true,promotion:{percent:30,endsAt:"2020-01-01T00:00:00.000Z"}})});
+ const shirt=await c.product({name:"Camisa",priceCents:5000,categoryId:shirts.id,details:profile({siteVisible:true})});
+ const blocks=[{id:"destaques",type:"catalog",title:"Destaques",source:"featured"},{id:"promo",type:"catalog",title:"Em promoção",source:"sale"},{id:"camisas",type:"catalog",title:"Camisas",source:"category",categoryId:shirts.id},{id:"todos",type:"catalog",title:"Todos"}];
+ let site=await c.siteDeps.repository.create({...c.scope,slug:"fixture-"+randomUUID(),draft:{content:siteContentSchema.parse({name:"Loja",blocks}),theme:siteThemeSchema.parse({})}});
+ site=await publishSite(c.siteDeps,{...c.scope,id:site.id,revision:site.revision,actorUserId:c.actor.userId});
+ const result=await publicSite(c.siteDeps,{slug:site.slug});
+ const block=id=>result.content.blocks.find(item=>item.id===id).productIds;
+ assert.deepEqual(block("destaques"),[featured.id]);
+ assert.deepEqual(block("promo"),[promo.id],"promoção vencida não entra");
+ assert.deepEqual(block("camisas"),[shirt.id]);
+ assert.deepEqual(block("todos"),[],"sem origem continua sendo o catálogo completo");
+ const priced=result.products.find(item=>item.id===promo.id);
+ assert.equal(priced.originalPriceCents,10000);assert.equal(priced.priceCents,8000);assert.equal(priced.featured,false);
+ assert.equal(result.products.find(item=>item.id===expired.id)?.priceCents??10000,10000);
+});
 test("22 APIs Site: RBAC, isolamento, rascunho privado e formulário contextual idempotente no Contact existente",async()=>{
  const c=await setup(),other=await setup();c.allowed.add(other.tenantId);const app=Fastify();app.decorateRequest("zunoContext",null);app.addHook("onRequest",async request=>{const [tenantId,role]=(request.headers.authorization??"").replace("Bearer ","").split(":");request.zunoContext={principal:tenantId?{tenantId,role,userId:c.actor.userId}:undefined};});await registerSiteRoutes(app,{...c.siteDeps,workspaceRepository:c.workspaceRepository,objectStorage:new DisabledObjectStorage()});
  try{const site=await newSite(c);const endpoint=`/sites/${site.id}?workspaceId=${c.workspaceId}`;assert.equal((await app.inject({url:endpoint})).statusCode,401);assert.equal((await app.inject({url:`/sites/${site.id}?workspaceId=${other.workspaceId}`,headers:{authorization:`Bearer ${other.tenantId}:owner`}})).statusCode,404);assert.equal((await app.inject({method:"PUT",url:endpoint,headers:{authorization:`Bearer ${c.tenantId}:viewer`},payload:{revision:site.revision,draft:site.draft}})).statusCode,403);assert.equal((await app.inject({method:"POST",url:`/sites/${site.id}/publish?workspaceId=${c.workspaceId}`,headers:{authorization:`Bearer ${c.tenantId}:editor`},payload:{revision:site.revision}})).statusCode,403);assert.equal((await app.inject({url:`/public/sites/${site.slug}`})).statusCode,404);await publishSite(c.siteDeps,{...c.scope,id:site.id,revision:site.revision,actorUserId:c.actor.userId});const input={name:"Pessoa de fixture",email:"lead@fixture.invalid",phone:"+5511987654321",message:"Quero conhecer o produto",requestKey:randomUUID(),website:""};for(const phone of [undefined,"+210656032780390"]){assert.equal((await app.inject({method:"POST",url:`/public/sites/${site.slug}/inquiries`,payload:{...input,phone}})).statusCode,400);await assert.rejects(c.siteDeps.repository.addInquiry({site,...input,phone}),/CONTACT_PHONE_REQUIRED/);}const response=await app.inject({method:"POST",url:`/public/sites/${site.slug}/inquiries`,payload:input});assert.equal(response.statusCode,200,response.body);assert.equal((await app.inject({method:"POST",url:`/public/sites/${site.slug}/inquiries`,payload:input})).json().data.id,response.json().data.id);assert.equal((await c.d.contactRepository.listByWorkspace(c.scope)).length,1);assert.equal((await app.inject({method:"POST",url:`/public/sites/${site.slug}/inquiries`,payload:{...input,requestKey:randomUUID(),website:"bot"}})).statusCode,400);}

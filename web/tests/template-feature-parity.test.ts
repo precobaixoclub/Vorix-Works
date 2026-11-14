@@ -18,8 +18,8 @@ describe("recursos comuns dos modelos padrão",()=>{
    expect(detail).toContain('class="sp-color-choices"');expect(detail).toContain('class="sp-color-photo"');expect(detail).toContain("50,00");expect(site).toEqual(before);
   }
  });
- it("novos sites recebem categorias e editorial editáveis, sem promessas comerciais inventadas",()=>{
-  for(const template of WEBSITE_TEMPLATES){const snapshot=initialSiteSnapshot("Marca",template.id);expect(snapshot.content.header?.showSearch).toBe(true);expect(snapshot.content.blocks.map(block=>block.type)).toEqual(["hero","categories","catalog","image_text","contact"]);expect(JSON.stringify(snapshot.content)).not.toMatch(/frete grátis|compra segura|mais vendidos|troca grátis/i);}
+ it("novos sites recebem destaques, promoções, categorias e editorial editáveis, sem promessas comerciais inventadas",()=>{
+  for(const template of WEBSITE_TEMPLATES){const snapshot=initialSiteSnapshot("Marca",template.id);expect(snapshot.content.header?.showSearch).toBe(true);expect(snapshot.content.blocks.map(block=>block.type==="catalog"?`catalog:${block.source}`:block.type)).toEqual(["hero","catalog:featured","catalog:sale","categories","catalog:all","image_text","contact"]);expect(JSON.stringify(snapshot.content)).not.toMatch(/frete grátis|compra segura|mais vendidos|troca grátis/i);}
  });
  it("trocar modelos mantém as escolhas salvas da revisão 1 e não repõe seções removidas",()=>{
   const snapshot=initialSiteSnapshot("Legado","nexus");snapshot.theme.primary="#123456";snapshot.theme.catalog!.mobileColumns=1;snapshot.content.blocks=snapshot.content.blocks.filter(b=>b.type!=="categories"&&b.type!=="image_text");

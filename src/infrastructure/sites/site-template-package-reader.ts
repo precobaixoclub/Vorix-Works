@@ -34,6 +34,8 @@ const sectionEntry = z.object({
   type: z.string().min(1).max(40), file: z.string().max(200).optional(),
   title: z.string().max(200).optional(), text: z.string().max(2000).optional(),
   videoUrl: z.string().max(500).optional(),
+  /** Só no catálogo: quais produtos a seção mostra (ver documentação). */
+  source: z.enum(["all", "featured", "sale", "category"]).optional(), category: z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, "use o endereço da categoria (ex.: camisetas)").max(120).optional(), limit: z.number().int().min(1).max(48).optional(),
   images: z.array(z.object({ file: z.string().max(200), alt: z.string().max(200).default("") }).strict()).max(24).optional(),
 }).strict();
 const manifestSchema = z.object({
@@ -158,6 +160,12 @@ export async function readSiteTemplatePackage(zip: Buffer, store?: TemplateAsset
       if (entry.type === "video") {
         if (entry.videoUrl && !/^https:\/\/(www\.)?(youtube\.com|youtu\.be|vimeo\.com)\//.test(entry.videoUrl)) issues.error("MANIFEST_INVALID", `${where}: o vídeo precisa ser um link público https do YouTube ou Vimeo.`, undefined, "manifest.json");
         else base.videoUrl = entry.videoUrl;
+      }
+      if (entry.source || entry.category || entry.limit) {
+        if (entry.type !== "catalog") issues.error("MANIFEST_INVALID", `${where}: “source”, “category” e “limit” só valem para a seção catalog.`, undefined, "manifest.json");
+        else if (entry.source === "category" && !entry.category) issues.error("MANIFEST_INVALID", `${where}: com "source": "category", informe "category" com o endereço da categoria (ex.: "camisetas").`, undefined, "manifest.json");
+        else if (entry.category && entry.source !== "category") issues.error("MANIFEST_INVALID", `${where}: "category" só vale com "source": "category".`, undefined, "manifest.json");
+        else { if (entry.source) base.source = entry.source; if (entry.category) base.category = entry.category; if (entry.limit) base.limit = entry.limit; }
       }
       if (entry.type === "gallery" && entry.images) {
         base.images = [];

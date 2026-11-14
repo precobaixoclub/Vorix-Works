@@ -17,7 +17,9 @@
   "home": [
     { "type": "hero", "file": "sections/hero.html" },
     { "type": "features", "file": "sections/features.html" },
-    { "type": "catalog", "title": "Peças da semana", "text": "Escolhidas a dedo, prontas para enviar." },
+    { "type": "catalog", "title": "Destaques", "text": "Escolhidas a dedo, prontas para enviar.", "source": "featured", "limit": 8 },
+    { "type": "catalog", "title": "Em promoção", "source": "sale", "limit": 8 },
+    { "type": "catalog", "title": "Peças da semana", "text": "Todo o ateliê, com busca e filtros." },
     { "type": "image_text", "file": "sections/story.html" },
     { "type": "stats", "file": "sections/stats.html" },
     { "type": "testimonials", "file": "sections/testimonials.html" },

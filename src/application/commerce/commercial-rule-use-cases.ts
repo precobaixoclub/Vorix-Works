@@ -9,7 +9,7 @@ export function categoryAncestors(categoryId:string|undefined,categories:{id:str
  const ids:string[]=[];while(categoryId&&!ids.includes(categoryId)){ids.push(categoryId);categoryId=categories.find(item=>item.id===categoryId)?.parentId;}return ids;
 }
 export function pricingLine(product:Product,variantId:string|undefined,quantity:number,price:number,categories:{id:string;parentId?:string}[]):RuleLine{
- return {key:JSON.stringify([product.id,variantId??""]),productId:product.id,variantId,categoryIds:categoryAncestors(product.categoryId,categories),collection:product.details?.apparel?.collection,quantity,unitPriceCents:price,currency:product.currency};
+ return {key:JSON.stringify([product.id,variantId??""]),productId:product.id,variantId,categoryIds:categoryAncestors(product.categoryId,categories),collection:product.details?.apparel?.collection,quantity,unitPriceCents:price,currency:product.currency,...(product.details?.promotion?{promotion:product.details.promotion}:{})};
 }
 export async function validateCommercialRuleInput(deps:SiteEngineDeps,scope:RuleScope,input:unknown){
  const definition=commercialRuleSchema.parse(input);

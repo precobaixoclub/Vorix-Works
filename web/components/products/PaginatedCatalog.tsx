@@ -18,6 +18,10 @@ import {ProductFormModal} from "./ProductFormModal";
 import {CatalogBulkTools} from "./CatalogBulkTools";
 import {TaxonomyManager} from "./ProductEngineEditor";
 import {cn} from "@/lib/utils";
+import {updateProduct} from "@/features/crm/api";
+import {Star,BadgePercent} from "lucide-react";
+import {toast} from "sonner";
+import {promotionStatus} from "./wizard/ProductPromotionFields";
 
 export function PaginatedCatalog({card}:{card:(product:Product,onOpen:()=>void)=>ReactNode}){
  const workspace=useCurrentWorkspace(),access=useMyAccess(),searchParams=useSearchParams();
@@ -64,9 +68,20 @@ export function PaginatedCatalog({card}:{card:(product:Product,onOpen:()=>void)=
   <div className="mb-3 flex flex-wrap items-center gap-3"><span className="text-sm">{data?.total??0} produtos</span>{canManage?<label className="flex items-center gap-2 text-sm"><input type="checkbox" aria-label="Selecionar página" checked={items.length>0&&items.every(p=>selected.includes(p.id))} onChange={e=>setSelected(ids=>e.target.checked?[...new Set([...ids,...items.map(p=>p.id)])].slice(0,500):ids.filter(id=>!items.some(p=>p.id===id)))}/>Selecionar página</label>:null}{selected.length?<Button variant="ghost" onClick={()=>setSelected([])}>Limpar seleção</Button>:null}<Button variant="ghost" onClick={()=>setView(view==="grid"?"list":"grid")}>{view==="grid"?"Lista":"Vitrine"}</Button></div>
   {isLoading?<p role="status">Carregando produtos…</p>:null}{error?<ErrorState error={error} onRetry={()=>mutate()}/>:null}
   {!isLoading&&!error&&!items.length?<p className="rounded-xl border border-dashed p-8 text-center text-sm">Nenhum produto encontrado com esses filtros.</p>:null}
-  <div className={view==="grid"?"grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5":"space-y-2"}>{items.map(p=><div key={p.id} className="relative min-w-0">{canManage?<label className="absolute right-2 top-2 z-10 flex rounded-md border bg-background p-2"><input aria-label={`Selecionar ${p.name}`} type="checkbox" checked={selected.includes(p.id)} onChange={()=>toggle(p.id)}/></label>:null}{view==="grid"?card(p,()=>setEditing(p)):<button className="flex w-full flex-wrap gap-3 rounded-lg border p-4 pr-14 text-left text-sm" onClick={()=>setEditing(p)}><span className="min-w-0 flex-1 break-words font-medium">{p.name}<span className="block text-xs text-muted-foreground">{p.code}</span></span><span>{formatCurrencyCents(p.priceCents)}</span>{access.can("inventory:read")?<span>{p.trackStock?`${p.stockQuantity} em estoque`:"Sem controle"}</span>:null}</button>}</div>)}</div>
+  <div className={view==="grid"?"grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5":"space-y-2"}>{items.map(p=><div key={p.id} className="relative min-w-0">{canManage?<FeatureToggle product={p} workspaceId={workspace.id} onSaved={()=>void mutate()}/>:null}{promotionStatus(p.details?.promotion)==="running"?<span className="pointer-events-none absolute bottom-2 left-2 z-10 inline-flex items-center gap-1 rounded-full bg-primary px-2 py-0.5 text-[11px] font-semibold text-primary-foreground"><BadgePercent aria-hidden="true" className="h-3 w-3"/>-{p.details!.promotion!.percent}%</span>:null}{canManage?<label className="absolute right-2 top-2 z-10 flex rounded-md border bg-background p-2"><input aria-label={`Selecionar ${p.name}`} type="checkbox" checked={selected.includes(p.id)} onChange={()=>toggle(p.id)}/></label>:null}{view==="grid"?card(p,()=>setEditing(p)):<button className="flex w-full flex-wrap gap-3 rounded-lg border p-4 pr-14 text-left text-sm" onClick={()=>setEditing(p)}><span className="min-w-0 flex-1 break-words font-medium">{p.name}<span className="block text-xs text-muted-foreground">{p.code}</span></span><span>{formatCurrencyCents(p.priceCents)}</span>{access.can("inventory:read")?<span>{p.trackStock?`${p.stockQuantity} em estoque`:"Sem controle"}</span>:null}</button>}</div>)}</div>
   <nav aria-label="Paginação do catálogo" className="mt-4 flex flex-wrap items-center justify-between gap-3"><Button variant="secondary" disabled={page===0} onClick={()=>setPage(v=>v-1)}>Anterior</Button><span className="text-sm">Página {page+1} de {Math.max(1,Math.ceil((data?.total??0)/50))} · até 50 itens por página</span><Button variant="secondary" disabled={!data||(page+1)*50>=data.total} onClick={()=>setPage(v=>v+1)}>Próxima</Button></nav>
   {organizing?<TaxonomyManager workspaceId={workspace.id} onClose={()=>{setOrganizing(false);void refreshMetadata();}}/>:null}
   {editing?<ProductFormModal key={editing==="new"?"new":"duplicateOf" in editing?`copy-${editing.duplicateOf.id}`:editing.id} workspaceId={workspace.id} product={editing==="new"||"duplicateOf" in editing?undefined:editing} template={editing!=="new"&&"duplicateOf" in editing?editing.duplicateOf:undefined} onDuplicate={canManage?product=>setEditing({duplicateOf:product}):undefined} canViewCost={visibility.canViewCost} isManager={visibility.isManager} onClose={()=>setEditing(undefined)} onSaved={async()=>{setEditing(undefined);await mutate();}}/>:null}
  </div>;
+}
+
+/** One click to put a product in (or take it out of) the site's "Destaques". */
+function FeatureToggle({product,workspaceId,onSaved}:{product:Product;workspaceId:string;onSaved:()=>void}){
+ const [saving,setSaving]=useState(false),on=product.details?.featured===true,label=on?`Tirar ${product.name} dos destaques`:`Destacar ${product.name} no site`;
+ if(!product.details)return null;
+ return <button type="button" aria-label={label} title={on?"Em destaque no site (clique para tirar)":product.details.siteVisible?"Destacar no site":"Destacar no site (o produto ainda não aparece no site)"} aria-pressed={on} disabled={saving}
+  className={cn("absolute left-2 top-2 z-10 flex h-9 w-9 items-center justify-center rounded-md border bg-background transition-colors disabled:opacity-50",on?"border-amber-500/60 text-amber-500":"text-muted-foreground hover:text-foreground")}
+  onClick={async event=>{event.stopPropagation();setSaving(true);try{await updateProduct(product.id,workspaceId,{details:{...product.details!,featured:on?undefined:true}});toast.success(on?"Produto tirado dos destaques.":"Produto em destaque no site.");onSaved();}catch(error){toast.error(error instanceof Error?error.message:"Não foi possível salvar.");}finally{setSaving(false);}}}>
+  <Star aria-hidden="true" className="h-4 w-4" fill={on?"currentColor":"none"}/>
+ </button>;
 }

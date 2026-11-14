@@ -123,6 +123,8 @@ export class PostgresProductRepository implements ProductRepositoryPort {
     if (input.brandId) add((p) => `brand_id = ${p}`, input.brandId);
     if (input.ids) add((p) => `id = any(${p}::text[])`, [...input.ids]);
     if (input.slug) add((p) => `(details->>'slug' = ${p} or id = ${p})`, input.slug);
+    if (input.featured) conditions.push("(details->>'featured') = 'true'");
+    if (input.promoted) conditions.push("(details->'promotion') is not null");
     const order = input.sort === "price_asc" ? "price_cents asc, name asc" : input.sort === "price_desc" ? "price_cents desc, name asc" : "name asc";
     const where = conditions.join(" and ");
     const total = Number((await this.pool.query(`select count(*) n from products where ${where}`, params)).rows[0].n);

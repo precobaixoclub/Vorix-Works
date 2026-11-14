@@ -11,12 +11,24 @@ export function newSiteBlock(type:SiteBlock["type"],id=crypto.randomUUID()):Site
  const itemTypes=["features","stats","testimonials","faq"];
  return {id,type,title:titles[type]??BLOCK_LABELS[type],text:type==="hero"?"Explore nossos produtos e conheça de perto o que preparamos para você.":"",imageAlt:"",productIds:[],items:itemTypes.includes(type)?[{title:type==="faq"?"Como posso falar com a equipe?":"Escreva aqui seu destaque",text:type==="faq"?"Use nosso formulário de contato ou o WhatsApp. Será um prazer ajudar.":"Conte aos visitantes o que torna sua empresa especial.",...(type==="features"?{icon:"heart" as const}:{}),...(type==="stats"?{value:"Seu número"}:{}),...(type==="testimonials"?{rating:5}:{})}]:[],enabled:true,...(type==="hero"?{eyebrow:"Feito para você",buttonLabel:"Explorar catálogo",buttonUrl:"#catalogo"}:{}),...(type==="cta"?{buttonLabel:"Falar com a equipe",buttonUrl:"#contato"}:{}),...(type==="image_text"?{style:{imagePosition:"right" as const}}:{})};
 }
+/** Product sections that fill themselves; they stay hidden on the site while empty. */
+export const CATALOG_SECTION_PRESETS={featured:{title:"Destaques",eyebrow:"Escolhidos para você",label:"Produtos em destaque"},sale:{title:"Em promoção",eyebrow:"Aproveite",label:"Produtos em promoção"},category:{title:"Compre por categoria",eyebrow:undefined,label:"Produtos de uma categoria"}} as const;
+export function newCatalogSection(source:keyof typeof CATALOG_SECTION_PRESETS,id=crypto.randomUUID()):SiteBlock{
+ const preset=CATALOG_SECTION_PRESETS[source];
+ return {...newSiteBlock("catalog",id),title:preset.title,...(preset.eyebrow?{eyebrow:preset.eyebrow}:{}),source,limit:8};
+}
+/** "Adicionar seção": every section type, plus the automatic product sections. */
+export const ADD_SECTION_ITEMS=[...Object.entries(BLOCK_LABELS).map(([id,label])=>({id,label})),...Object.entries(CATALOG_SECTION_PRESETS).map(([source,preset])=>({id:`catalog:${source}`,label:preset.label}))];
+export function newSectionOfKind(kind:string):SiteBlock{
+ const [type,source]=kind.split(":");
+ return type==="catalog"&&source&&source in CATALOG_SECTION_PRESETS?newCatalogSection(source as keyof typeof CATALOG_SECTION_PRESETS):newSiteBlock(type as SiteBlock["type"]);
+}
 export function initialSiteSnapshot(name:string,template:SiteTheme["template"]="catalog"):SiteSnapshot{
  const preset=TEMPLATE_PRESETS.find(item=>item.id===template)!;
  const hero=newSiteBlock("hero","hero");hero.eyebrow=preset.eyebrow;hero.title=template==="studio"?"Seu próximo passo começa com uma boa conversa.":template==="showcase"?"O extraordinário está nos detalhes.":"Boas escolhas começam por aqui.";
  const categories={...newSiteBlock("categories","categories"),title:"Explore por categoria"};
  const editorial={...newSiteBlock("image_text","collection-story"),eyebrow:"UM OLHAR MAIS DE PERTO",title:template==="nexus"?"Design em cada detalhe.":template==="studio"?"Conheça de perto o que fazemos.":template==="pulse"?"Encontre seu próximo favorito.":"O extraordinário está nos detalhes.",text:"Explore as imagens e conheça os detalhes da nossa seleção.",buttonLabel:"Ver a coleção",buttonUrl:"#catalogo"};
- return {theme:structuredClone(preset.theme),content:{name,description:"",footer:"Seu próximo encontro com algo especial começa aqui.",socials:[],seo:{title:name,description:""},header:{navigation:[{id:"home",label:"Início",url:"/",enabled:true,newTab:false},{id:"catalog",label:"Produtos",url:"#catalogo",enabled:true,newTab:false},{id:"contact",label:"Contato",url:"#contato",enabled:true,newTab:false}],showSearch:true,sticky:false,announcement:{enabled:false,text:"Boas escolhas começam por aqui."}},footerColumns:[],footerNote:"",blocks:[hero,categories,newSiteBlock("catalog","catalog"),editorial,newSiteBlock("contact","contact")],pages:[],contactForm:true}};
+ return {theme:structuredClone(preset.theme),content:{name,description:"",footer:"Seu próximo encontro com algo especial começa aqui.",socials:[],seo:{title:name,description:""},header:{navigation:[{id:"home",label:"Início",url:"/",enabled:true,newTab:false},{id:"catalog",label:"Produtos",url:"#catalogo",enabled:true,newTab:false},{id:"contact",label:"Contato",url:"#contato",enabled:true,newTab:false}],showSearch:true,sticky:false,announcement:{enabled:false,text:"Boas escolhas começam por aqui."}},footerColumns:[],footerNote:"",blocks:[hero,newCatalogSection("featured","featured"),newCatalogSection("sale","sale"),categories,{...newSiteBlock("catalog","catalog"),source:"all"},editorial,newSiteBlock("contact","contact")],pages:[],contactForm:true}};
 }
 export const applySiteTemplate=selectSiteTemplate;
 export function resolvedHeader(content:SiteContent):NonNullable<SiteContent["header"]>{return content.header??{navigation:[{id:"catalog",label:"Produtos",url:"#catalogo",enabled:true,newTab:false},...content.pages.filter(page=>page.published).map(page=>({id:page.slug,label:page.title,url:`/${page.slug}`,enabled:true,newTab:false})),{id:"contact",label:"Contato",url:"#contato",enabled:true,newTab:false}],showSearch:false,sticky:false};}

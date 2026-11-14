@@ -1,4 +1,5 @@
 "use client";
+import {SaleBadge} from "./SitePrice";
 import {createContext,useContext,useState,type ReactNode} from "react";
 import type {PublicSiteProduct} from "@/features/sites/types";
 import {isColorOption} from "@/features/sites/product-media";
@@ -22,4 +23,4 @@ export function ProductCard({product,href,className,children,compact=true,photoC
  {compact?product.quantityOffers?.[0]?.tiers.some(tier=>tier.minimum>1||tier.unitPriceCents!==product.priceCents)?<details className="sp-card-offer"><summary>Preço por quantidade</summary><ProductCommercialInfo product={product}/></details>:null:<ProductCommercialInfo product={product}/>}</article></CardContext.Provider>;
 }
 export function ProductCardTitle(){const {product,href}=useContext(CardContext);return <a className="sp-card-title" href={href}><h3>{product.name}</h3></a>;}
-export function ProductCardMedia({children}:{children?:ReactNode}){const {product,href,selected}=useContext(CardContext);return <ProductGallery product={product} selected={selected} href={href} card>{children}</ProductGallery>;}
+export function ProductCardMedia({children}:{children?:ReactNode}){const {product,href,selected}=useContext(CardContext);return <ProductGallery product={product} selected={selected} href={href} card><SaleBadge product={product}/>{children}</ProductGallery>;}

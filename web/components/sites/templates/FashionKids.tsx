@@ -1,4 +1,5 @@
 "use client";
+import {SitePrice} from "../SitePrice";
 import {Fragment, useRef, useState, type ReactNode} from "react";
 import {SiteText} from "../SiteText";
 import {siteText} from "@/features/sites/site-texts";
@@ -82,7 +83,7 @@ export function FashionKidsHero({site, block, basePath}: TemplateHeroProps) {
 export function FashionKidsProductCard({site, product, basePath}: TemplateCardProps) {
   return <ProductCard product={product} compact photoColors className="fk-product" href={`${basePath}/produto/${encodeURIComponent(product.slug)}`}>
     <div className="premium-product-image fk-product-image"><ProductCardMedia/></div>
-    <div className="fk-product-copy"><ProductCardTitle/>{site.theme.catalog?.showPrice !== false ? <span className="fk-price">{formatCurrencyCents(product.priceCents, product.currency)}</span> : null}</div>
+    <div className="fk-product-copy"><ProductCardTitle/>{site.theme.catalog?.showPrice !== false ? <span className="fk-price"><SitePrice product={product}/></span> : null}</div>
   </ProductCard>;
 }
 

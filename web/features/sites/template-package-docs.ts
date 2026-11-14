@@ -32,12 +32,28 @@ export const TEMPLATED_SECTION_DOCS: SectionDoc[] = [
 ];
 
 export const NATIVE_SECTION_DOCS = [
-  { type: "catalog", label: "Catálogo de produtos", manifest: "title, text", classes: ".ts-section, .ts-section-heading, .ts-product-grid, .ts-product-card, .ts-price, .ts-button" },
+  { type: "catalog", label: "Catálogo de produtos", manifest: "title, text, source, category, limit", classes: ".ts-section, .ts-section-heading, .ts-product-grid, .ts-product-card, .ts-price, .ts-button, .sp-price, .sp-price-was, .sp-price-now, .sp-sale-badge, .sp-sale-flag, [data-curated]" },
   { type: "categories", label: "Categorias", manifest: "title, text", classes: ".ts-category-grid, .ts-category" },
   { type: "contact", label: "Contato e formulário", manifest: "title, text", classes: ".ts-contact, .ts-contact-copy, .ts-contact-details, .ts-field, .ts-button" },
   { type: "video", label: "Vídeo (YouTube ou Vimeo)", manifest: "title, text, videoUrl", classes: ".ts-video" },
   { type: "gallery", label: "Galeria de fotos", manifest: "title, text, images: [{ file, alt }]", classes: ".ts-section, .ts-container" },
 ] as const;
+
+/** Que produtos uma seção "catalog" mostra (campo "source" do manifest). */
+export const CATALOG_SOURCE_DOCS = [
+  { source: "all", label: "Todos os produtos", detail: "Padrão. O catálogo completo, com busca, filtros e abas de categoria." },
+  { source: "featured", label: "Destaques", detail: "Os produtos marcados com a estrela em Produtos. A seção some do site enquanto não houver nenhum." },
+  { source: "sale", label: "Em promoção", detail: "Os produtos com desconto ativo (promoção do produto ou regra comercial). Some quando não houver promoção." },
+  { source: "category", label: "Uma categoria", detail: "Os produtos da categoria informada em \"category\" (o endereço dela, ex.: \"camisetas\") e das subcategorias. Some se a categoria não tiver produtos no site." },
+] as const;
+export const CATALOG_SOURCE_EXAMPLE = `"home": [
+  { "type": "hero", "file": "sections/hero.html" },
+  { "type": "catalog", "title": "Destaques", "source": "featured", "limit": 8 },
+  { "type": "catalog", "title": "Em promoção", "source": "sale", "limit": 8 },
+  { "type": "categories", "title": "Compre por categoria" },
+  { "type": "catalog", "title": "Camisetas", "source": "category", "category": "camisetas" },
+  { "type": "catalog", "title": "Todos os produtos" }
+]`;
 
 export const FIELD_DOCS = [
   ["title", "Título", "h1–h6, p, span, strong, em, div, li, dt, dd, figcaption, small, cite, blockquote"],
@@ -183,7 +199,7 @@ export const AI_PROMPT = `Converta o site/template HTML anexo para o formato "Pa
 1. Crie manifest.json (format "vorix-site-template", formatVersion 1) listando as seções da página inicial na ordem.
 2. Para cada seção, crie sections/<nome>.html com UMA <section data-vorix-block="<tipo>"> (tipos: hero, text, image, image_text, cta, features, stats, testimonials, logos, faq, divider).
 3. Marque textos, botões e imagens editáveis com data-vorix-field (title, text, eyebrow, button, image) e listas com data-vorix-repeat="items".
-4. Catálogo de produtos, categorias, contato, vídeo e galeria NÃO têm HTML: entram no manifest só com "type" e "title".
+4. Catálogo de produtos, categorias, contato, vídeo e galeria NÃO têm HTML: entram no manifest só com "type" e "title". Para vitrines, use seções "catalog" com "source": "featured" (destaques), "sale" (promoção) ou "category" + "category": "<endereço>", e uma final sem "source" com todos os produtos.
 5. Remova todo JavaScript, iframes, formulários, SVG inline, atributos style e on*.
 6. Junte o CSS em styles.css, sem @import nem @font-face, e com @media para celular. Use as variáveis --site-primary etc. para as cores.
 7. Coloque as imagens em assets/ (JPG, PNG ou WEBP, até 5 MB) e referencie com caminho relativo.

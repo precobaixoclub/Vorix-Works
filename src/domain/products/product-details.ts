@@ -46,6 +46,11 @@ export const productDetailsSchema = z.preprocess(raw=>{
   vehicle: vehicleDetailsSchema.optional(),
   realEstate: realEstateDetailsSchema.optional(),
   siteVisible: z.boolean().default(false), catalogVisible: z.boolean().default(true), canPurchaseOnline: z.boolean().default(false),
+  /** Destaque: entra nas seções "Destaques" do site. */
+  featured: z.boolean().optional(),
+  /** Promoção do produto: desconto percentual aplicado antes das regras comerciais (site, carrinho e WhatsApp). */
+  promotion: z.object({ percent: z.number().int().min(1).max(90), startsAt: z.string().datetime({ offset: true }).optional(), endsAt: z.string().datetime({ offset: true }).optional() }).strict()
+    .refine(value => !value.startsAt || !value.endsAt || Date.parse(value.endsAt) > Date.parse(value.startsAt), "O fim da promoção deve ser depois do início.").optional(),
   /** Como o Site comercializa este produto; herda o modo do Site por padrão (Vorix Commerce, Fase 1). */
   saleMode: z.enum(["INHERIT_SITE_DEFAULT","SHOW_ONLY","WHATSAPP_DIRECT","WHATSAPP_CART","ONLINE_CHECKOUT"]).default("INHERIT_SITE_DEFAULT"),
   /** Peso/medidas para cálculo de frete (Fase 2). A variação pode sobrescrever no próprio cadastro. */

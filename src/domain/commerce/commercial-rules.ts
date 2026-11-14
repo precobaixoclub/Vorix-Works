@@ -40,7 +40,10 @@ export const commercialRuleSchema=z.object({
 export type CommercialRuleInput=z.infer<typeof commercialRuleSchema>;
 export type RuleScope={tenantId:string;workspaceId:string;siteId:string};
 export type CommercialRule=CommercialRuleInput&RuleScope&{id:string;revision:number;createdAt:string;updatedAt:string};
-export type RuleLine={key:string;productId:string;variantId?:string;categoryIds?:string[];collection?:string;quantity:number;unitPriceCents:number;currency:string};
+export type ProductPromotion={percent:number;startsAt?:string;endsAt?:string};
+export type RuleLine={key:string;productId:string;variantId?:string;categoryIds?:string[];collection?:string;quantity:number;unitPriceCents:number;currency:string;/** The product's own promotion; applied before the rules. */promotion?:ProductPromotion};
+export function promotionActive(promotion:ProductPromotion|undefined,now:Date):promotion is ProductPromotion{return !!promotion&&(!promotion.startsAt||Date.parse(promotion.startsAt)<=now.getTime())&&(!promotion.endsAt||Date.parse(promotion.endsAt)>now.getTime());}
+export const promotionalPrice=(price:number,percent:number)=>Math.round(price*(100-percent)/100);
 export type AppliedCommercialRule={id:string;revision:number;name:string;priority:number;benefit:CommercialRuleInput["benefit"];tier?:{minimum:number;maximum?:number;unitPriceCents:number};discountCents:number;coupon:boolean};
 export type PricedRuleLine=RuleLine&{originalUnitPriceCents:number;totalCents:number;discountCents:number;appliedRules:AppliedCommercialRule[]};
 export type RuleProgress={ruleId:string;name:string;productId?:string;missing:number;unitPriceCents:number;currency:string};
@@ -91,7 +94,28 @@ function apply(rule:CommercialRule,original:RuleLine[],current:PricedRuleLine[])
  return items;
 }
 const total=(lines:PricedRuleLine[])=>lines.reduce((sum,line)=>sum+line.totalCents,0);
+/**
+ * A product's own promotion lowers its unit price first; the store's rules then apply on top, as
+ * on any price. The promotion shows up as an applied rule ("Promoção") with its own discount, so the
+ * site, cart and WhatsApp order all show the same "de/por".
+ */
 export function evaluateCommercialRules(input:{lines:RuleLine[];rules:CommercialRule[];channel:"CHECKOUT"|"WHATSAPP";now?:Date;couponCode?:string}):CommercialPricing{
+ const now=input.now??new Date();
+ const promoted=input.lines.map(line=>promotionActive(line.promotion,now)?{...line,unitPriceCents:promotionalPrice(line.unitPriceCents,line.promotion.percent)}:line);
+ if(promoted.every((line,index)=>line===input.lines[index]))return evaluateRules(input);
+ const result=evaluateRules({...input,now,lines:promoted});
+ const promotions=new Map<string,AppliedCommercialRule>();
+ const items=result.items.map((item,index)=>{
+  const original=input.lines[index];if(promoted[index]===original)return item;
+  const cut=(original.unitPriceCents-promoted[index].unitPriceCents)*original.quantity;
+  const entry:AppliedCommercialRule={id:`promotion:${original.productId}`,revision:1,name:"Promoção",priority:0,benefit:{type:"PERCENT",basisPoints:original.promotion!.percent*100},discountCents:cut,coupon:false};
+  const prev=promotions.get(entry.id);promotions.set(entry.id,{...entry,discountCents:(prev?.discountCents??0)+cut});
+  return {...item,unitPriceCents:original.unitPriceCents,originalUnitPriceCents:original.unitPriceCents,discountCents:item.discountCents+cut,appliedRules:[entry,...item.appliedRules]};
+ });
+ const original=input.lines.reduce((sum,line)=>sum+line.unitPriceCents*line.quantity,0);
+ return {...result,items,originalSubtotalCents:original,discountCents:original-result.totalCents,appliedRules:[...promotions.values(),...result.appliedRules]};
+}
+function evaluateRules(input:{lines:RuleLine[];rules:CommercialRule[];channel:"CHECKOUT"|"WHATSAPP";now?:Date;couponCode?:string}):CommercialPricing{
  const now=input.now??new Date(),lines=input.lines;
  const base=lines.map(line=>({...line,originalUnitPriceCents:line.unitPriceCents,totalCents:line.quantity*line.unitPriceCents,discountCents:0,appliedRules:[] as AppliedCommercialRule[]}));
  const available=input.rules.filter(rule=>ruleActive(rule,now)&&rule.channels.includes(input.channel));

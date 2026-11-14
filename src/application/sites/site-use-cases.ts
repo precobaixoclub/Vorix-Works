@@ -55,7 +55,7 @@ export async function presentPublicProduct(deps:Pick<SiteEngineDeps,"salesCatalo
   const unitByPrice=new Map<number,number>();
   const effectiveUnit=(price:number,variantId?:string)=>{const known=unitByPrice.get(price);if(known!==undefined)return known;const value=evaluateUnit(price,variantId);unitByPrice.set(price,value);return value;};
   const evaluateUnit=(price:number,variantId?:string)=>{const item=evaluateCommercialRules({lines:[pricingLine(product,variantId,1,price,metadata.categories)],rules:commerce.rules??[],channel:resolvedCommerce.allowedActions.includes("buy_now")?"CHECKOUT":"WHATSAPP",now:commerce.now}).items[0];return item.appliedRules.some(rule=>rule.benefit.type==="FIXED")?price:item.totalCents;};
-  return {id:product.id,name:product.name,description:product.description,sku:product.code,slug:details.slug??product.id,type:details.type,categoryId:product.categoryId,brandId:product.brandId,priceCents:effectiveUnit(product.priceCents),originalPriceCents:product.priceCents,currency:product.currency,unit:product.unit,
+  return {id:product.id,name:product.name,description:product.description,sku:product.code,slug:details.slug??product.id,featured:details.featured===true,type:details.type,categoryId:product.categoryId,brandId:product.brandId,priceCents:effectiveUnit(product.priceCents),originalPriceCents:product.priceCents,currency:product.currency,unit:product.unit,
    imageUrls:product.imageUrls.map(url=>signOwnedUrl(url,OBJECT_URL_TTL.publicSite)),media:details.media.map(item=>({...item,url:signOwnedUrl(item.url,OBJECT_URL_TTL.publicSite)})),attributes:details.attributes,attributeLabels:Object.fromEntries(metadata.attributes.filter(item=>item.active).map(item=>[item.key,item.unit?`${item.label} (${item.unit})`:item.label])),apparel:details.type==="APPAREL"?details.apparel:undefined,vehicle:details.type==="VEHICLE"?publicVehicleDetails(details.vehicle):undefined,realEstate:details.type==="REAL_ESTATE"?publicRealEstateDetails(details.realEstate):undefined,billingType:product.billingType,options:details.options.map(option=>({...option,...(option.images?{images:Object.fromEntries(Object.entries(option.images).map(([value,url])=>[value,signOwnedUrl(url,OBJECT_URL_TTL.publicSite)]))}:{}),...(option.extraImages?{extraImages:Object.fromEntries(Object.entries(option.extraImages).map(([value,urls])=>[value,urls.map(url=>signOwnedUrl(url,OBJECT_URL_TTL.publicSite))]))}:{})})),specs:details.specs,seo:details.seo,
    availableQuantity,
    // Compra online depende do fluxo de checkout do Site (Fase 2), não de um booleano do produto.
@@ -66,6 +66,25 @@ export async function presentPublicProduct(deps:Pick<SiteEngineDeps,"salesCatalo
   };
 }
 export type PublicSiteProduct=Awaited<ReturnType<typeof presentPublicProduct>>;
+/** A section points at a category by id, or by its address (slug) when it came from an imported template. */
+const categoryRef=(metadata:Pick<CatalogMetadata,"categories">,ref?:string)=>ref?metadata.categories.find(category=>category.id===ref||category.slug===ref):undefined;
+/** Default number of products in an automatic section (Destaques, Em promoção, Categoria). */
+export const CURATED_LIMIT=12;
+type SiteBlockValue=SiteSnapshot["content"]["blocks"][number];
+const curatedSource=(block:SiteBlockValue)=>block.type==="catalog"&&(block.source==="featured"||block.source==="sale"||block.source==="category")?block.source:undefined;
+/** On sale = the price shown is below the list price (product promotion or a store rule), for the product or a variation. */
+export const onSale=(product:Pick<PublicSiteProduct,"priceCents"|"originalPriceCents"|"variants">)=>product.priceCents<product.originalPriceCents||product.variants.some(variant=>variant.priceCents<variant.originalPriceCents);
+/** The products an automatic section shows, picked from the already-priced catalog; undefined = not automatic. */
+export function curatedPicks(catalog:PublicSiteProduct[],metadata:Pick<CatalogMetadata,"categories">,sort?:string){
+ const order=(a:PublicSiteProduct,b:PublicSiteProduct)=>sort==="price_asc"?a.priceCents-b.priceCents:sort==="price_desc"?b.priceCents-a.priceCents:a.name.localeCompare(b.name,"pt-BR");
+ return (block:SiteBlockValue):string[]|undefined=>{
+  const source=curatedSource(block);if(!source)return undefined;
+  const category=source==="category"?categoryRef(metadata,block.categoryId):undefined;
+  const inCategory=category?new Set(descendants(metadata as CatalogMetadata,category.id)):undefined;
+  const pick=catalog.filter(product=>source==="featured"?product.featured:source==="sale"?onSale(product):!!inCategory&&!!product.categoryId&&inCategory.has(product.categoryId));
+  return [...pick].sort(order).slice(0,block.limit??CURATED_LIMIT).map(product=>product.id);
+ };
+}
 /**
  * Once the owner links photos to variations, the site shows only the variations that have a photo
  * (by its own photo or by one of its values, e.g. the colour "Preto"); the rest are left out, along
@@ -118,7 +137,21 @@ export async function publicSite(deps:SiteEngineDeps,lookup:{slug?:string;hostna
    path[0]==="produto"&&path[1]?list({...scope,slug:path[1],offset:0,limit:1}):empty,
    category?list({...scope,categoryIds:descendants(metadata,category.id),sort,offset:0,limit:PUBLIC_CATALOG_INITIAL}):empty,
   ]);
-  const unique=new Map<string,Product>();for(const product of [...first.products,...cited.products,...byPath.products,...byCategory.products])unique.set(product.id,product);
+  // Seções automáticas (Destaques, Em promoção, Categoria): só os candidatos delas; a seleção final é feita já com preço.
+  const curated=blocks.filter(block=>block.enabled&&curatedSource(block));
+  const wants=(source:string)=>curated.some(block=>block.source===source);
+  const saleRules=wants("sale")?(commerce.rules??[]).filter(rule=>!rule.couponCode&&rule.benefit.type!=="FIXED"&&ruleActive(rule,commerce.now??new Date())):[];
+  const saleIds=[...new Set(saleRules.flatMap(rule=>rule.scope.type==="PRODUCTS"?rule.scope.ids:[]))].slice(0,200);
+  const saleCategories=[...new Set(saleRules.flatMap(rule=>rule.scope.type==="CATEGORIES"?rule.scope.ids.flatMap(id=>descendants(metadata,id)):[]))];
+  const curatedLists=curated.length?await Promise.all([
+   wants("featured")?list({...scope,featured:true,sort,offset:0,limit:48}):empty,
+   wants("sale")?list({...scope,promoted:true,sort,offset:0,limit:48}):empty,
+   saleIds.length?list({...scope,ids:saleIds,offset:0,limit:200}):empty,
+   saleCategories.length?list({...scope,categoryIds:saleCategories,sort,offset:0,limit:48}):empty,
+   saleRules.some(rule=>rule.scope.type==="STORE"||rule.scope.type==="COLLECTIONS")?list({...scope,sort,offset:0,limit:48}):empty,
+   ...curated.flatMap(block=>{const category=categoryRef(metadata,block.categoryId);return block.source==="category"&&category&&visibleCategoryIds.includes(category.id)?[list({...scope,categoryIds:descendants(metadata,category.id),sort,offset:0,limit:block.limit??CURATED_LIMIT})]:[];}),
+  ]):[];
+  const unique=new Map<string,Product>();for(const product of [...first.products,...cited.products,...byPath.products,...byCategory.products,...curatedLists.flatMap(page=>page.products)])unique.set(product.id,product);
   products=[...unique.values()];catalogTotal=first.total;
   if(options.includeSlugs&&deps.productRepository.listPublicCatalogSlugs)slugs=await deps.productRepository.listPublicCatalogSlugs(scope);
   if(deps.productRepository.listPublicCatalogCategoryIds)stocked=new Set(await deps.productRepository.listPublicCatalogCategoryIds(scope));
@@ -132,9 +165,10 @@ export async function publicSite(deps:SiteEngineDeps,lookup:{slug?:string;hostna
  const visible=products.filter(product=>isPublicCatalogProduct(product,metadata));
  const catalog=await presentPublicProducts(deps,visible,metadata,commerce);
  const ids=new Set(catalog.map(product=>product.id));
+ const picks=curatedPicks(catalog,metadata,snapshot.theme.catalog?.sort);
  const ownedImages=new Set(siteImageUrls(snapshot));
  const signed=<T>(value:T):T=>JSON.parse(JSON.stringify(value,(_key,value)=>typeof value==="string"&&ownedImages.has(value)?signOwnedUrl(value,OBJECT_URL_TTL.publicSite):value));
- const blocks=(items:SiteSnapshot["content"]["blocks"])=>items.filter(item=>item.enabled).map(item=>signed({...item,slides:item.slides?.filter(slide=>slide.enabled&&(preview||(!slide.startsAt||Date.parse(slide.startsAt)<=Date.now())&&(!slide.endsAt||Date.parse(slide.endsAt)>Date.now()))),productIds:item.productIds.filter(id=>ids.has(id))}));
+ const blocks=(items:SiteSnapshot["content"]["blocks"])=>items.filter(item=>item.enabled).map(item=>signed({...item,slides:item.slides?.filter(slide=>slide.enabled&&(preview||(!slide.startsAt||Date.parse(slide.startsAt)<=Date.now())&&(!slide.endsAt||Date.parse(slide.endsAt)>Date.now()))),productIds:picks(item)??item.productIds.filter(id=>ids.has(id))}));
  const content={...snapshot.content,logoUrl:snapshot.content.logoUrl?signOwnedUrl(snapshot.content.logoUrl,OBJECT_URL_TTL.publicSite):undefined,faviconUrl:snapshot.content.faviconUrl?signOwnedUrl(snapshot.content.faviconUrl,OBJECT_URL_TTL.publicSite):undefined,blocks:blocks(snapshot.content.blocks),pages:snapshot.content.pages.filter(page=>preview||page.published).map(page=>({...page,blocks:blocks(page.blocks)}))};
  const importedTemplate=await importedTemplateView(deps.repository,site,snapshot);
  return {id:site.id,slug:site.slug,content,theme:snapshot.theme,...(importedTemplate?{importedTemplate}:{}),activeTemplateId:snapshot.activeTemplateId??snapshot.theme.template,templateVersion:snapshot.templateConfigs?.[snapshot.theme.template]?.templateVersion??1,layoutConfig:signed(snapshot.layoutConfig??{heroVariant:"signature",productGallery:"split"}),publishedAt:site.publishedAt,products:catalog,categories:metadata.categories.filter(category=>category.active&&category.siteVisible&&visibleCategory(metadata,category.id)&&populated(category.id)).map(({id,name,slug,parentId,position,imageUrl})=>({id,name,slug,parentId,position,imageUrl:imageUrl?signOwnedUrl(imageUrl,OBJECT_URL_TTL.publicSite):undefined})),brands:metadata.brands.filter(brand=>brand.active).map(({id,name,slug,logoUrl})=>({id,name,slug,logoUrl:logoUrl?signOwnedUrl(logoUrl,OBJECT_URL_TTL.publicSite):undefined})),commerceEnabled:false,commerce:{...siteCommerceSummary(commerce.settings,commerce.hasWhatsapp,commerce.checkoutReady),couponsAvailable:(commerce.rules??[]).some(rule=>!!rule.couponCode&&ruleActive(rule,commerce.now??new Date()))},catalog:{total:catalogTotal,initial:PUBLIC_CATALOG_INITIAL,...(slugs?{slugs}:{})}};

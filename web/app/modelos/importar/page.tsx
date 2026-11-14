@@ -2,7 +2,7 @@ import type React from "react";
 import { PublicFooter } from "@/components/public/PublicFooter";
 import { PublicHeader } from "@/components/public/PublicHeader";
 import {
-  AI_PROMPT, ALLOWED_ATTRIBUTES_TEXT, ALLOWED_TAGS_TEXT, CSS_VARIABLES, FEATURES_EXAMPLE, FIELD_DOCS, HERO_EXAMPLE, ISSUE_DOCS, MANIFEST_EXAMPLE, NATIVE_SECTION_DOCS,
+  AI_PROMPT, ALLOWED_ATTRIBUTES_TEXT, CATALOG_SOURCE_DOCS, CATALOG_SOURCE_EXAMPLE, ALLOWED_TAGS_TEXT, CSS_VARIABLES, FEATURES_EXAMPLE, FIELD_DOCS, HERO_EXAMPLE, ISSUE_DOCS, MANIFEST_EXAMPLE, NATIVE_SECTION_DOCS,
   PACKAGE_LIMITS, STRUCTURE_EXAMPLE, TEMPLATED_SECTION_DOCS, THEME_EXAMPLE,
 } from "@/features/sites/template-package-docs";
 
@@ -18,6 +18,7 @@ const TOC = [
   ["tema", "theme.json"],
   ["secoes", "Seções e campos editáveis"],
   ["vorix", "Seções montadas pelo Vorix"],
+  ["vitrine", "Destaques, promoções e categorias"],
   ["css", "styles.css"],
   ["imagens", "Imagens"],
   ["regras", "O que não é permitido"],
@@ -107,6 +108,13 @@ export default function TemplateImportDocsPage() {
             <p>Estas seções dependem de dados do Vorix (produtos, formulário, vídeo) e <strong className="text-foreground">não aceitam HTML próprio</strong>: entram no manifest só com o tipo e os textos. Para mudar a aparência, use o styles.css com as classes abaixo.</p>
             <Table head={["Tipo", "Seção", "No manifest", "Classes para estilizar"]} rows={NATIVE_SECTION_DOCS.map((section) => [<code key="t">{section.type}</code>, section.label, section.manifest, <code key="c" className="break-words">{section.classes}</code>])} />
             <p>Cabeçalho e rodapé também podem ser ajustados: <code>.ts-header</code>, <code>.ts-nav</code>, <code>.ts-brand</code>, <code>.ts-footer</code>.</p>
+          </Section>
+
+          <Section id="vitrine" title="Destaques, promoções e categorias">
+            <p>Uma seção <code>catalog</code> pode se montar sozinha. Use <code>source</code> para escolher os produtos e <code>limit</code> (1 a 48, padrão 12) para a quantidade. Seções automáticas não têm busca nem filtros e ganham o botão “Ver todos”. Vazias, elas somem do site. Os mesmos tipos existem nos modelos do Vorix, então quem usa o modelo pode trocar ou reordenar as seções no editor.</p>
+            <Table head={["source", "Mostra", "Detalhes"]} rows={CATALOG_SOURCE_DOCS.map((item) => [<code key="s">{item.source}</code>, item.label, item.detail])} />
+            <Code>{CATALOG_SOURCE_EXAMPLE}</Code>
+            <p>Preço com desconto aparece como “de/por”: <code>.sp-price-was</code> (preço antigo, riscado), <code>.sp-price-now</code> e o selo <code>.sp-sale-badge</code>. Na foto do card, o selo é <code>.sp-sale-flag</code>. Cada seção automática tem <code>data-curated=&quot;featured|sale|category&quot;</code> para estilos próprios.</p>
           </Section>
 
           <Section id="css" title="styles.css">

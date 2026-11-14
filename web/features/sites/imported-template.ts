@@ -8,7 +8,7 @@ export type TemplateSection={type:string;tree:TemplateNode};
 export type ImportedTemplateView={id:string;name:string;css:string;sections:TemplateSection[];sectionMap:Record<string,number>};
 export type TemplateIssue={code:string;severity:"error"|"warning";message:string;hint?:string;file?:string;line?:number};
 export type TemplateReport={ok:boolean;errors:TemplateIssue[];warnings:TemplateIssue[];summary:{files:number;sections:number;pages:number;assets:number}};
-export type TemplateSampleBlock={type:SiteBlock["type"];title:string;text:string;eyebrow?:string;buttonLabel?:string;buttonUrl?:string;imageUrl?:string;imageAlt:string;videoUrl?:string;items:{title:string;text:string;value?:string;imageUrl?:string;imageAlt?:string}[];images?:{url:string;alt:string}[];section?:number};
+export type TemplateSampleBlock={type:SiteBlock["type"];title:string;text:string;eyebrow?:string;buttonLabel?:string;buttonUrl?:string;imageUrl?:string;imageAlt:string;videoUrl?:string;items:{title:string;text:string;value?:string;imageUrl?:string;imageAlt?:string}[];images?:{url:string;alt:string}[];source?:"all"|"featured"|"sale"|"category";category?:string;limit?:number;section?:number};
 export type ImportedTemplatePackage={name:string;version:string;author?:string;description?:string;previewUrl?:string;theme:Partial<SiteSnapshot["theme"]>;css:string;sections:TemplateSection[];home:TemplateSampleBlock[];pages:{slug:string;title:string;blocks:TemplateSampleBlock[]}[];navigation:{label:string;url:string}[];assetUrls:string[]};
 export type ImportedTemplateSummary={id:string;name:string;version:string;author?:string;description?:string;previewUrl?:string;sections:number;pages:number;createdAt:string};
 export type ImportedTemplateDetail=ImportedTemplateSummary&{report:TemplateReport;package:ImportedTemplatePackage;signedPackage:{css:string;sections:TemplateSection[]}};
@@ -31,6 +31,7 @@ function blockFrom(sample:TemplateSampleBlock,id:string):SiteBlock{
   imageUrl:sample.imageUrl,imageAlt:sample.imageAlt??"",buttonLabel:sample.buttonLabel||undefined,buttonUrl:sample.buttonUrl||undefined,
   items:sample.items.length?sample.items.map(item=>({title:item.title,text:item.text,...(item.value?{value:item.value}:{}),...(item.imageUrl?{imageUrl:item.imageUrl,imageAlt:item.imageAlt??""}:{})})):sample.type==="features"||sample.type==="stats"||sample.type==="testimonials"||sample.type==="faq"||sample.type==="logos"?[]:base.items,
   ...(sample.videoUrl?{videoUrl:sample.videoUrl}:{}),
+  ...(sample.source?{source:sample.source}:{}),...(sample.category?{categoryId:sample.category}:{}),...(sample.limit?{limit:sample.limit}:{}),
   ...(sample.images?{images:sample.images.map((image,index)=>({id:`${id}-img-${index}`,url:image.url,alt:image.alt}))}:{}),
   slides:undefined,
  };

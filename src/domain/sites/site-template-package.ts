@@ -75,6 +75,8 @@ export type TemplateSampleBlock = {
   type: string; title: string; text: string; eyebrow?: string; buttonLabel?: string; buttonUrl?: string; imageUrl?: string; imageAlt: string; videoUrl?: string;
   items: { title: string; text: string; value?: string; imageUrl?: string; imageAlt?: string }[];
   images?: { url: string; alt: string }[];
+  /** Catálogo: quais produtos (todos, destaques, promoção ou uma categoria pelo endereço). */
+  source?: "all" | "featured" | "sale" | "category"; category?: string; limit?: number;
   /** Índice em `sections` do desenho desta seção (ausente nas seções do Vorix). */
   section?: number;
 };

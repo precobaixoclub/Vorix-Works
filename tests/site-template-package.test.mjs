@@ -27,14 +27,23 @@ const codes=report=>report.errors.map(issue=>issue.code);
 test("o pacote de exemplo da documentação passa sem erros nem avisos e vira conteúdo editável",async()=>{
  const {report,package:pkg}=await readSiteTemplatePackage(await example());
  assert.deepEqual([report.ok,report.errors,report.warnings],[true,[],[]]);
- assert.deepEqual(pkg.home.map(block=>block.type),["hero","features","catalog","image_text","stats","testimonials","faq","cta","contact"]);
+ assert.deepEqual(pkg.home.map(block=>block.type),["hero","features","catalog","catalog","catalog","image_text","stats","testimonials","faq","cta","contact"]);
+ assert.deepEqual(pkg.home.slice(2,5).map(block=>[block.source,block.limit]),[["featured",8],["sale",8],[undefined,undefined]],"vitrines automáticas do exemplo");
  const hero=pkg.home[0];assert.equal(hero.title,"Peças feitas à mão para durar");assert.equal(hero.buttonLabel,"Ver coleção");assert.equal(hero.buttonUrl,"#catalogo");assert.match(hero.imageUrl,/^vorix-asset:assets\/hero\.jpg$/);
- assert.equal(pkg.home[1].items.length,3);assert.equal(pkg.home[4].items[0].value,"12 anos");
+ assert.equal(pkg.home[1].items.length,3);assert.equal(pkg.home[6].items[0].value,"12 anos");
  assert.equal(pkg.pages[0].blocks[0].title,"Feito à mão desde 2012","o título do manifest substitui o do HTML");
  postcss.parse(pkg.css).walkRules(rule=>{if(!/keyframes/.test(rule.parent?.name??""))for(const selector of rule.selectors)assert.ok(selector.startsWith(".tenant-site-imported"),selector);});
  assert.equal(JSON.stringify(pkg.sections).includes("data-vorix"),false,"atributos de marcação não vão para a vitrine");
 });
 
+test("catálogo automático no manifest: source/category/limit só no catalog e category só com source category",async()=>{
+ const ok=await readSiteTemplatePackage(await pack({"manifest.json":manifest([{type:"catalog",title:"Camisetas",source:"category",category:"camisetas",limit:6}])}));
+ assert.equal(ok.report.ok,true,JSON.stringify(ok.report.errors));assert.deepEqual([ok.package.home[0].source,ok.package.home[0].category,ok.package.home[0].limit],["category","camisetas",6]);
+ for(const entry of[{type:"catalog",source:"category"},{type:"catalog",source:"featured",category:"camisetas"},{type:"contact",source:"sale"}]){
+  const bad=await readSiteTemplatePackage(await pack({"manifest.json":manifest([entry])}));
+  assert.equal(bad.report.ok,false,JSON.stringify(entry));assert.ok(codes(bad.report).includes("MANIFEST_INVALID"));
+ }
+});
 test("pacote com problemas: bloqueia e explica cada um com arquivo e linha",async()=>{
  const zip=await pack({
   "manifest.json":manifest([{type:"hero",file:"sections/hero.html"},{type:"catalog",file:"sections/catalog.html"},{type:"carrossel3d",file:"x.html"},{type:"cta"}]),

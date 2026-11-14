@@ -15,7 +15,10 @@ export const siteBlockSchema=z.object({
  id:z.string().regex(/^[a-zA-Z0-9_-]{1,100}$/), type:z.enum(["hero","text","catalog","categories","contact","image","faq","features","image_text","gallery","cta","stats","testimonials","logos","video","divider"]),
  title:text.default(""),text:text.default(""),imageUrl:image.optional(),imageAlt:z.string().max(200).default(""),
  buttonLabel:z.string().max(100).optional(),buttonUrl:safeLink.optional(),
- productIds:z.array(z.string().max(160)).max(100).default([]),items:z.array(z.object({title:z.string().max(200),text,value:z.string().max(80).optional(),imageUrl:image.optional(),imageAlt:z.string().max(200).optional(),url:safeLink.optional(),icon:z.enum(["check","truck","shield","heart","sparkles","leaf","clock","star","pin","gift"]).optional(),rating:z.number().int().min(1).max(5).optional()}).strict()).max(30).default([]),enabled:z.boolean().default(true),
+ productIds:z.array(z.string().max(160)).max(100).default([]),
+ /** Catálogo: quais produtos a seção mostra. Ausente = como antes (escolhidos à mão, ou todos). */
+ source:z.enum(["all","featured","sale","category","manual"]).optional(),categoryId:z.string().max(160).optional(),limit:z.number().int().min(1).max(48).optional(),
+ items:z.array(z.object({title:z.string().max(200),text,value:z.string().max(80).optional(),imageUrl:image.optional(),imageAlt:z.string().max(200).optional(),url:safeLink.optional(),icon:z.enum(["check","truck","shield","heart","sparkles","leaf","clock","star","pin","gift"]).optional(),rating:z.number().int().min(1).max(5).optional()}).strict()).max(30).default([]),enabled:z.boolean().default(true),
  eyebrow:z.string().max(100).optional(),richText:siteRichTextSchema.optional(),slides:z.array(slide).max(10).optional(),
  images:z.array(z.object({id:z.string().max(100),url:image,alt:z.string().max(200),caption:z.string().max(300).optional(),href:safeLink.optional()}).strict()).max(24).optional(),
  videoUrl:z.string().max(2000).refine(value=>{if(!value)return true;try{const url=new URL(value);return url.protocol==="https:"&&["www.youtube.com","youtube.com","youtu.be","vimeo.com","www.vimeo.com"].includes(url.hostname)&&!url.username&&!url.password;}catch{return false;}},"Use um vídeo público do YouTube ou Vimeo.").optional(),

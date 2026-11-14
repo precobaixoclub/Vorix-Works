@@ -30,6 +30,7 @@ import { thumbUrl } from "@/lib/media";
 import { cn } from "@/lib/utils";
 import { CombinationTable } from "./wizard/CombinationTable";
 import { MAX_PHOTOS, PhotoManager, type PendingPhoto } from "./wizard/PhotoManager";
+import { ProductPromotionFields } from "./wizard/ProductPromotionFields";
 import { VariationEditor } from "./wizard/VariationEditor";
 import { Field, SegmentPicker, StepIntro, WizardStepper, type WizardStep } from "./wizard/WizardParts";
 
@@ -382,6 +383,7 @@ function PricingStep({ state, patch, patchDetails, segment, variationsOn, canVie
       {segment.itemType === "service" ? <Field label="Como é cobrado" htmlFor="product-billing"><select id="product-billing" value={state.billingType} disabled={!canManage} onChange={(event) => patch({ billingType: event.target.value as BillingType })} className="h-10 w-full rounded-md border border-border bg-background px-3 text-sm">{(Object.keys(BILLING_TYPE_LABEL) as BillingType[]).map((key) => <option key={key} value={key}>{BILLING_TYPE_LABEL[key]}</option>)}</select></Field> : null}
     </div>
     {realEstate ? <><RealEstateFields section="precos" value={state.details.realEstate ?? defaultRealEstate()} onChange={(realEstate) => patchDetails({ realEstate })} /><RealEstateFields section="estoque" value={state.details.realEstate ?? defaultRealEstate()} onChange={(realEstate) => patchDetails({ realEstate })} /></> : null}
+    {!realEstate ? <ProductPromotionFields value={state.details.promotion} onChange={(promotion) => patchDetails({ promotion })} priceCents={listCents} disabled={!canManage} /> : null}
     {segment.stock ? <div className="space-y-4 border-t border-border/60 pt-5">
       <label className="flex items-center justify-between gap-3 rounded-xl border border-border/70 px-3 py-3">
         <span><span className="block text-sm font-medium">Controlar estoque</span><span className="block text-xs text-muted-foreground">Cada venda ganha desconta do estoque; perder ou reabrir a venda devolve.</span></span>
@@ -437,6 +439,7 @@ function ReviewStep({ state, patchDetails, patch, segment, variationsOn, stockOn
       <h4 className="text-sm font-semibold">Publicação</h4>
       <ToggleRow label="Disponível para venda" hint="Desativado, o produto não entra em novas oportunidades nem no site." checked={state.active} disabled={!canManage} onChange={(active) => patch({ active })} />
       <ToggleRow label="Mostrar no site" hint="Depende do módulo Vorix Site." checked={state.details.siteVisible} disabled={!canManage} onChange={(siteVisible) => patchDetails({ siteVisible })} />
+      {state.details.siteVisible ? <ToggleRow label="Destacar no site" hint="Aparece nas seções “Destaques” do site." checked={state.details.featured === true} disabled={!canManage} onChange={(featured) => patchDetails({ featured: featured || undefined })} /> : null}
       {state.details.siteVisible ? <Field label="Como vender no site" htmlFor="product-sale-mode"><select id="product-sale-mode" value={state.details.saleMode ?? "INHERIT_SITE_DEFAULT"} disabled={!canManage} onChange={(event) => patchDetails({ saleMode: event.target.value as NonNullable<ProductDetails["saleMode"]> })} className="h-10 w-full rounded-md border border-border bg-background px-3 text-sm">{SALE_MODES.map((mode) => <option key={mode.value} value={mode.value}>{mode.label}</option>)}</select></Field> : null}
       <ToggleRow label="Incluir no catálogo" checked={state.details.catalogVisible} disabled={!canManage} onChange={(catalogVisible) => patchDetails({ catalogVisible })} />
       {segment.shipping ? <details className="rounded-xl border border-border/70 p-3"><summary className="cursor-pointer text-sm font-medium">Peso e medidas para frete</summary><div className="mt-3"><ShippingMeasures value={state.details.shipping} onChange={(shipping) => patchDetails({ shipping })} /></div></details> : null}

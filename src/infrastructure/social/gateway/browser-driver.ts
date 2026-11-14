@@ -25,21 +25,45 @@ export type BrowserPublishInput = { format: SocialPostFormat; caption: string; m
 
 export class BrowserSocialDriver {
   constructor(readonly network: SocialNetwork, readonly page: Page, private readonly context: BrowserContext, private readonly mediaOrigins: readonly string[], private readonly assets?: StaticAssetCache) {}
-  private readonly blockedHosts = new Set<string>();
+  private readonly logged = new Set<string>();
+  /** Diagnostics for the operator: an address (host or host+path, never query strings or bodies) and a short detail, once per flow. */
+  private logOnce(event: string, where: string, detail: string): void {
+    const key = `${event} ${where} ${detail}`;
+    if (this.logged.has(key) || this.logged.size > 200) return;
+    this.logged.add(key);
+    console.error(JSON.stringify({ event, network: this.network, where, detail }));
+  }
   async guardNetwork(): Promise<void> {
     await this.context.route("**/*", async route => {
       const request = route.request();
       const challengeFrame = !(request.isNavigationRequest() && request.frame() === this.page.mainFrame()) && allowedChallengeURL(request.url());
       if (!allowedBrowserURL(this.network, request.url()) && !challengeFrame) {
         // Only the host name, once per flow: shows what a network started to need (never paths, queries or data).
-        const host = (() => { try { return new URL(request.url()).hostname; } catch { return "invalid"; } })();
-        if (!this.blockedHosts.has(host)) { this.blockedHosts.add(host); console.error(JSON.stringify({ event: "SOCIAL_GATEWAY_BLOCKED_HOST", network: this.network, host, type: request.resourceType() })); }
+        this.logOnce("SOCIAL_GATEWAY_BLOCKED_HOST", (() => { try { return new URL(request.url()).hostname; } catch { return "invalid"; } })(), request.resourceType());
         await route.abort(); return;
       }
       // Routing turns off Chromium's cache: the network's public bundles come from the shared copy.
       if (!await this.assets?.serve(route).catch(() => false)) await route.continue();
     });
-    await this.context.routeWebSocket(/.*/, socket => { socket.close(); });
+    // Real-time connections only to the network's own hosts over wss (TikTok's identity check needs
+    // them); anything else is closed and its host logged.
+    await this.context.routeWebSocket(/.*/, socket => {
+      const url = socket.url();
+      if (url.startsWith("wss://") && allowedBrowserURL(this.network, `https://${url.slice("wss://".length)}`)) { socket.connectToServer(); return; }
+      this.logOnce("SOCIAL_GATEWAY_BLOCKED_HOST", (() => { try { return new URL(url).hostname; } catch { return "invalid"; } })(), "websocket");
+      socket.close();
+    });
+    // Errors the page does not show (e.g. "send code" refused): host, path and status only, once each.
+    this.page.on("response", response => {
+      if (response.status() < 400 || !allowedBrowserURL(this.network, response.url())) return;
+      const url = new URL(response.url());
+      this.logOnce("SOCIAL_GATEWAY_HTTP_ERROR", `${url.hostname}${url.pathname}`, String(response.status()));
+    });
+    this.page.on("requestfailed", request => {
+      if (!allowedBrowserURL(this.network, request.url())) return;
+      const url = new URL(request.url()), error = request.failure()?.errorText ?? "";
+      if (error !== "net::ERR_ABORTED") this.logOnce("SOCIAL_GATEWAY_REQUEST_FAILED", `${url.hostname}${url.pathname}`, error);
+    });
     this.context.on("page", popup => { void popup.close().catch(() => undefined); });
     this.page.on("dialog", dialog => { void dialog.dismiss(); });
   }

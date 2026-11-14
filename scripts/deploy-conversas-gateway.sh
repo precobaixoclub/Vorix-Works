@@ -7,11 +7,11 @@
 #
 # Uso: scripts/deploy-conversas-gateway.sh
 # Variáveis (mesmo padrão de .env.zuno.example, mas para este stack):
-#   DEPLOY_SSH_TARGET   (default: root@143.198.47.74, mesmo host do Vorix — VPS única por ora)
+#   DEPLOY_SSH_TARGET   (default: root@62.83.93.42, mesmo host do Vorix — VPS única por ora)
 #   DEPLOY_REMOTE_DIR   (default: /opt/conversas-gateway — DIFERENTE de /opt/zuno, propositalmente)
 set -euo pipefail
 
-DEPLOY_SSH_TARGET="${DEPLOY_SSH_TARGET:-root@143.198.47.74}"
+DEPLOY_SSH_TARGET="${DEPLOY_SSH_TARGET:-root@62.83.93.42}"
 DEPLOY_REMOTE_DIR="${DEPLOY_REMOTE_DIR:-/opt/conversas-gateway}"
 COMPOSE_FILE="docker-compose.conversas-gateway.yml"
 

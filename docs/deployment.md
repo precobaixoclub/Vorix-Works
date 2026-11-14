@@ -5,123 +5,152 @@ Para release, usar `scripts/deploy/deploy-production.sh` com pacote de `git arch
 
 ## Commit e Deploy Vorix Atual
 
-Use este fluxo para atualizar Git e o servidor `vorixworks.com` a partir do workspace local.
+Use este fluxo para atualizar o Git e o servidor de `vorixworks.com` a partir do workspace local.
 
-Valores operacionais documentados em `.env.zuno.example`:
+### Servidor de produção (desde 10/11/2026)
 
-- `DEPLOY_GIT_BRANCH=main`
-- `DEPLOY_SSH_HOST=209.97.152.212`
-- `DEPLOY_SSH_USER=root`
-- `DEPLOY_SSH_TARGET=root@209.97.152.212`
-- `DEPLOY_SSH_AUTH=ssh-key`
-- `DEPLOY_SSH_PASSWORD=` — preencher somente no `.env.zuno` privado se o acesso for por senha; nunca commitar valor real.
-- `DEPLOY_REMOTE_DIR=/opt/zuno`
-- `DEPLOY_COMPOSE_FILE=docker-compose.zuno.yml`
-- `DEPLOY_ENV_FILE=.env.zuno`
-- `DEPLOY_API_HEALTH_URL=https://api.vorixworks.com/v1/health`
-- `DEPLOY_WEB_HEALTH_URL=https://vorixworks.com`
-- `DEPLOY_COMMAND=cd /opt/zuno && docker compose --env-file .env.zuno -f docker-compose.zuno.yml up -d --build`
+| Item | Valor |
+|---|---|
+| Host | `62.83.93.42` (NetCup, Debian 13, 8 vCPU, 16 GB RAM, 320 GB) |
+| Acesso | `root`, **somente chave SSH** (senha desativada) |
+| Chave local | `~/.ssh/rumoaoaltar_netcup_ed25519` (alias `rumoaoaltar-netcup` no `~/.ssh/config`) |
+| Código / env | `/opt/zuno` / `/opt/zuno/.env.zuno` (só existe no servidor; nunca sobrescrever) |
+| Gateway WhatsApp | env em `/opt/conversas-spike/.env.conversas`, compose em `/opt/zuno` |
+| Proxy / HTTPS | Traefik em `/opt/edge` (compartilhado; não mexer em deploy do Vorix) |
+| Git | `origin` → `git@github.com:precobaixoclub/Vorix-Works.git`, branch `main` |
 
-Passo a passo:
+O servidor antigo `143.198.47.74` (DigitalOcean) foi migrado e **desativado**. O mesmo host
+também roda o Rumo ao Altar (`/opt/rumoaoaltar`) e o Preço Baixo Club (`/opt/preco-baixo-club`):
+um deploy do Vorix nunca deve tocar nessas pastas, nem em `/opt/edge`.
 
-1. Conferir pendências:
+Teste de acesso:
 
-   ```bash
-   git status --short
-   ```
+```bash
+ssh -i ~/.ssh/rumoaoaltar_netcup_ed25519 root@62.83.93.42 'hostname; docker ps --filter name=zuno --format "{{.Names}} {{.Status}}"'
+```
 
-2. Validar frontend antes de commitar/deployar:
+### 1. Conferir pendências
 
-   ```bash
-   cd web
-   npm run typecheck
-   npm test
-   npm run build
-   cd ..
-   ```
+```bash
+git status --short
+git pull --ff-only origin main
+```
 
-3. Se houver mudanças, commitar e enviar ao Git:
+Se `git status --short` estiver vazio, não crie commit vazio: deploye o `HEAD` atual.
 
-   ```bash
-   git add -A
-   git commit -m "Mensagem objetiva do ajuste"
-   git push origin main
-   ```
+### 2. Validar antes de commitar
 
-4. Empacotar e enviar o código local ao servidor sem secrets/runtime:
+```bash
+npm run typecheck
+npm test
+cd web
+npm run typecheck
+npm test
+npm run build
+cd ..
+```
 
-   **Usar `git archive`, nunca `tar` sobre a working tree crua.** Achado ao vivo (Rodada 2,
-   Fatia 3): um `tar -C . .` embarca os bytes exatos que estiverem no disco local no momento —
-   inclusive line endings CRLF que um checkout Windows com `core.autocrlf=true` pode ter
-   introduzido silenciosamente (`git status` fica limpo porque o autocrlf normaliza para o diff
-   do próprio git, mas os bytes crus no disco divergem). O runner de migrations calcula checksum
-   sobre esses bytes crus sem normalização — um CRLF a mais já quebra o checksum de uma migration
-   já aplicada e bloqueia qualquer migration nova (`MIGRATION_CHECKSUM_MISMATCH`, ver
-   `docs/*-final-report*.md` desta fatia para o diagnóstico completo). `git archive` sempre emite
-   o conteúdo CANÔNICO do commit (LF, igual ao que está no repositório), nunca o estado do
-   checkout local, e já exclui `.git`/arquivos não rastreados automaticamente — não precisa mais
-   de `--exclude` manual por diretório.
+Gate oficial em Linux (opcional, igual à imagem de produção): `sh scripts/ci/linux-release-gate.sh <dir> <rótulo>`.
 
-   ```bash
-   git archive --format=tar HEAD | gzip > /tmp/zuno-local-sync.tgz
+### 3. Commitar e enviar ao Git
 
-   scp /tmp/zuno-local-sync.tgz root@209.97.152.212:/tmp/zuno-local-sync.tgz
-   ```
+```bash
+git add -A
+git commit -m "Mensagem objetiva do ajuste"
+git push origin main
+```
 
-   `.gitattributes` (`* text=auto eol=lf`) na raiz do repositório garante que isto continue valendo
-   mesmo que alguém rode `git archive` a partir de um checkout Windows — o próprio Git normaliza
-   pra LF na hora de gerar o archive, independente do `core.autocrlf` de quem roda o comando.
+Nunca commitar `.env.zuno`, senha, token ou chave privada.
 
-5. No servidor, criar backup, preservar `.env.zuno` e substituir só o código:
+### 4. Gerar o pacote do commit
 
-   ```bash
-   ssh root@209.97.152.212 'set -euo pipefail; cd /opt/zuno; \
-     stamp=$(date +%Y%m%d%H%M%S); \
-     mkdir -p deploy_backups; \
-     tar -czf "deploy_backups/pre-local-sync-$stamp.tgz" \
-       --exclude="./deploy_backups" \
-       --exclude="./node_modules" \
-       --exclude="./web/node_modules" \
-       --exclude="./web/.next" \
-       --exclude="./dist" .; \
-     rm -rf assets db docs examples scripts src tests web \
-       .dockerignore .editorconfig .env.example .env.zuno.example .gitignore \
-       CHANGELOG.md Dockerfile README.md docker-compose.zuno.yml \
-       package.json package-lock.json tsconfig.json; \
-     tar -xzf /tmp/zuno-local-sync.tgz -C /opt/zuno; \
-     chown -R root:root /opt/zuno'
-   ```
+**Usar `git archive`, nunca `tar` sobre a working tree crua.** Um `tar` embarca os bytes do disco
+local, inclusive CRLF introduzido por `core.autocrlf=true` no Windows; o runner de migrations
+calcula checksum sobre os bytes crus, e um CRLF a mais quebra o checksum de migration já aplicada
+(`MIGRATION_CHECKSUM_MISMATCH`). `git archive` emite o conteúdo canônico do commit (LF, via
+`.gitattributes`) e já exclui `.git` e arquivos não rastreados.
 
-6. Rebuild/restart completo:
+```bash
+SHA=$(git rev-parse HEAD)
+git archive --format=tar HEAD | gzip > "/tmp/zuno-$SHA.tgz"
+sha256sum "/tmp/zuno-$SHA.tgz"
+```
 
-   ```bash
-   ssh root@209.97.152.212 \
-     'cd /opt/zuno && docker compose --env-file .env.zuno -f docker-compose.zuno.yml up -d --build'
-   ```
+### 5. Enviar e conferir no servidor
 
-7. **Se o deploy incluir migration nova**, aplicar DEPOIS do rebuild (o container já precisa estar
-   de pé com o código novo — `scripts/migrate.mjs` faz parte da imagem, não do host):
+```bash
+scp "/tmp/zuno-$SHA.tgz" root@62.83.93.42:/tmp/
+ssh root@62.83.93.42 "sha256sum /tmp/zuno-$SHA.tgz"   # deve bater com o hash local
+```
 
-   ```bash
-   ssh root@209.97.152.212 \
-     'cd /opt/zuno && docker compose --env-file .env.zuno -f docker-compose.zuno.yml exec -T zuno-api node scripts/migrate.mjs'
-   ```
+### 6. Rodar o deploy oficial
 
-8. Checar saúde:
+```bash
+ssh root@62.83.93.42 "sh /opt/zuno/scripts/deploy/deploy-production.sh /tmp/zuno-$SHA.tgz $SHA all; echo EXIT=\$?"
+```
 
-   ```bash
-   curl -I https://vorixworks.com
-   curl -s https://api.vorixworks.com/v1/health
-   ssh root@209.97.152.212 'docker ps --filter name=zuno --format "table {{.Names}}\t{{.Status}}"'
-   ```
+Alvos: `api` (zuno-api + vorix-worker + marketplaces-worker), `web` (zuno-web) ou `all`
+(os anteriores + social-provider-gateway). O script faz preflight (8 GB livres), backup de código,
+`.env.zuno`, banco e sessões sociais em `/opt/zuno/deploy_backups/`, marca as imagens atuais como
+`:rollback-<stamp>`, troca o código, faz build sequencial, aplica migrations antes de trocar os
+serviços, sobe e confere health. Se algo falhar, faz **rollback automático**.
 
-Regras:
+A saída vai para o log (`EXIT=0` = sucesso). Conferir o final:
 
-- Nunca commitar `.env.zuno` real.
-- Nunca commitar senha SSH, token, chave privada ou segredo operacional.
-- Nunca sobrescrever `.env.zuno` do servidor durante deploy.
-- Sempre criar backup em `/opt/zuno/deploy_backups/` antes de substituir código.
-- Se `git status --short` estiver vazio, não criar commit vazio; deployar o HEAD atual.
+```bash
+ssh root@62.83.93.42 "tail -15 \$(ls -t /var/log/vorix-deploy-$SHA-*.log | head -1)"
+```
+
+O log deve terminar com `DEPLOYED <sha>` e `DEPLOY_DONE`. `DEPLOY_FAILED`/`ROLLED_BACK` indicam
+que nada novo ficou no ar.
+
+### 7. Checar saúde
+
+```bash
+curl -I https://vorixworks.com
+curl -s https://api.vorixworks.com/v1/health
+ssh root@62.83.93.42 'docker ps --filter name=zuno --format "table {{.Names}}\t{{.Status}}"'
+```
+
+O `meetings-recorder` (perfil `meetings`) não faz parte dos alvos do script. Se precisar recriá-lo:
+
+```bash
+ssh root@62.83.93.42 'cd /opt/zuno && docker compose --env-file .env.zuno -f docker-compose.zuno.yml --profile meetings up -d --no-deps meetings-recorder'
+```
+
+O `meetings-worker` segue desligado.
+
+### 8. Rollback manual (sem rebuild)
+
+```bash
+ssh root@62.83.93.42 'cd /opt/zuno && sh scripts/deploy/rollback-production.sh <stamp> all'
+```
+
+O `<stamp>` está no nome do log e das imagens `:rollback-<stamp>`. O banco nunca é revertido
+(migrations são aditivas); o dump fica em `deploy_backups/db-pre-<sha>-<stamp>.sql.gz`.
+
+### Gateway do WhatsApp (Conversas)
+
+Deploy separado; nunca reinicia zuno-api/zuno-web/zuno-postgres. Em produção o stack roda com
+projeto `conversas-gateway`, compose em `/opt/zuno` e env em `/opt/conversas-spike`:
+
+```bash
+scp docker-compose.conversas-gateway.yml root@62.83.93.42:/opt/zuno/
+ssh root@62.83.93.42 'docker compose -p conversas-gateway --env-file /opt/conversas-spike/.env.conversas -f /opt/zuno/docker-compose.conversas-gateway.yml up -d'
+ssh root@62.83.93.42 'docker ps --filter name=conversas-gateway --format "table {{.Names}}\t{{.Status}}"'
+```
+
+Atenção: `scripts/deploy-conversas-gateway.sh` usa por padrão `/opt/conversas-gateway`, que não é
+o layout de produção; use os comandos acima (ou ajuste `DEPLOY_REMOTE_DIR`) até o script ser
+alinhado. A sessão do WhatsApp fica em volume Docker e sobrevive ao `up -d`.
+
+### Regras
+
+- Nunca commitar `.env.zuno` real, senha SSH, token, chave privada ou segredo operacional.
+- Nunca sobrescrever `.env.zuno` nem `.env.conversas` do servidor durante deploy.
+- Sempre usar o script oficial (backup em `/opt/zuno/deploy_backups/` antes de trocar código).
+- Nunca `docker compose up --build` com web + api + worker juntos.
+- Nunca mexer em `/opt/rumoaoaltar`, `/opt/preco-baixo-club` ou `/opt/edge` num deploy do Vorix.
 
 **Production permanece bloqueada por padrão** (`ProductionGuard`, ver `docs/sprint-24-final-report.md`). Este documento descreve como implantar um ambiente controlado (sandbox/staging) — não um passo a passo de ativação de produção real, que exige aprovação explícita fora do escopo desta sprint.
 

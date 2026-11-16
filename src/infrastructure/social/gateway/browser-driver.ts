@@ -154,6 +154,46 @@ export class BrowserSocialDriver {
     }, { x, y }).catch(error => `error:${String(error instanceof Error ? error.message : error).slice(0, 80)}`);
     this.logOnce("SOCIAL_GATEWAY_CLICK_FALLBACK", result.slice(0, 200), "");
   }
+  /**
+   * Typing (and Backspace) for the login screens. Same problem as clicks: inside TikTok's identity
+   * check the browser's key events may never reach the page. If the focused field did not change,
+   * the edit is applied to it directly (with the input event frameworks listen to). Never logged.
+   */
+  async typeText(text: string): Promise<void> { await this.edit(text, () => this.page.keyboard.insertText(text)); }
+  async pressKey(key: string): Promise<void> {
+    if (key !== "Backspace") { await this.page.keyboard.press(key); return; }
+    await this.edit(undefined, () => this.page.keyboard.press(key));
+  }
+  private async edit(text: string | undefined, native: () => Promise<void>): Promise<void> {
+    const read = () => this.page.evaluate(() => {
+      const element = (globalThis as unknown as { document: { activeElement: { value?: unknown } | null } }).document.activeElement;
+      return element && typeof element.value === "string" ? element.value : null;
+    }).catch(() => null);
+    const before = await read();
+    await native();
+    if (before === null) return;
+    await this.page.waitForTimeout(120);
+    if (await read() !== before) return;
+    const applied = await this.page.evaluate(({ text }) => {
+      type Field = { value: string; selectionStart: number | null; selectionEnd: number | null; maxLength?: number; dispatchEvent(event: unknown): boolean };
+      const g = globalThis as unknown as { document: { activeElement: Field | null }; HTMLInputElement: { prototype: object }; HTMLTextAreaElement: { prototype: object }; InputEvent: new (type: string, init: object) => unknown; Event: new (type: string, init: object) => unknown };
+      const field = g.document.activeElement;
+      if (!field || typeof field.value !== "string") return false;
+      const proto = field instanceof (g.HTMLTextAreaElement as unknown as new () => object) ? g.HTMLTextAreaElement.prototype : g.HTMLInputElement.prototype;
+      const setter = Object.getOwnPropertyDescriptor(proto, "value")?.set;
+      if (!setter) return false;
+      const start = field.selectionStart ?? field.value.length, end = field.selectionEnd ?? field.value.length;
+      let next: string, caret: number;
+      if (text === undefined) { const from = start === end ? Math.max(0, start - 1) : start; next = field.value.slice(0, from) + field.value.slice(end); caret = from; }
+      else { next = field.value.slice(0, start) + text + field.value.slice(end); if (field.maxLength && field.maxLength > 0) next = next.slice(0, field.maxLength); caret = Math.min(next.length, start + text.length); }
+      setter.call(field, next);
+      try { (field as unknown as { setSelectionRange(a: number, b: number): void }).setSelectionRange(caret, caret); } catch { /* some input types have no caret */ }
+      field.dispatchEvent(new g.InputEvent("input", { bubbles: true, inputType: text === undefined ? "deleteContentBackward" : "insertText", data: text ?? null }));
+      field.dispatchEvent(new g.Event("change", { bubbles: true }));
+      return true;
+    }, { text }).catch(() => false);
+    this.logOnce("SOCIAL_GATEWAY_TYPE_FALLBACK", text === undefined ? "backspace" : "text", String(applied));
+  }
   async login(): Promise<void> { await this.page.goto(LOGIN[this.network], { waitUntil: "domcontentloaded" }); }
   async home(): Promise<void> { await this.page.goto(HOME[this.network], { waitUntil: "domcontentloaded" }); }
   private async button(pattern: RegExp): Promise<Locator | undefined> {

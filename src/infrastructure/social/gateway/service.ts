@@ -121,8 +121,8 @@ export class SocialGatewayService {
       // Human input only. No arbitrary URL, script, selector, file upload, or challenge solver.
       if (action.kind === "click") { await flow.driver.describeClick?.(action.x, action.y); await flow.page.mouse.click(action.x, action.y); await flow.driver.afterClick?.(action.x, action.y); }
       if (action.kind === "drag") { await flow.page.mouse.move(action.x, action.y); await flow.page.mouse.down(); try { await flow.page.mouse.move(action.toX, action.toY, { steps: 20 }); } finally { await flow.page.mouse.up(); } }
-      if (action.kind === "text") await flow.page.keyboard.insertText(action.text);
-      if (action.kind === "key") await flow.page.keyboard.press(action.key);
+      if (action.kind === "text") await (flow.driver.typeText ? flow.driver.typeText(action.text) : flow.page.keyboard.insertText(action.text));
+      if (action.kind === "key") await (flow.driver.pressKey ? flow.driver.pressKey(action.key) : flow.page.keyboard.press(action.key));
       if (action.kind === "scroll") await flow.page.mouse.wheel(0, action.delta);
       return { accepted: true };
     });

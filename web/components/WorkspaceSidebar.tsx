@@ -100,6 +100,41 @@ export function WorkspaceSidebar({ workspaceId }: { workspaceId: string }) {
         )
       ) : null}
 
+      {navigation.featured ? (
+        collapsed ? (
+          <Tooltip delayDuration={200}>
+            <TooltipTrigger asChild>
+              <Link
+                href={`${base}${navigation.featured.href}`}
+                aria-label={navigation.featured.label}
+                aria-current={isItemActive(navigation.featured) ? "page" : undefined}
+                className="mb-3 flex h-9 w-full items-center justify-center rounded-md border border-amber-500/50 bg-amber-500/15 text-amber-600 transition-colors hover:bg-amber-500/25 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/40 dark:text-amber-300"
+              >
+                <NavIcon id={navigation.featured.icon} className="h-4 w-4" />
+              </Link>
+            </TooltipTrigger>
+            <TooltipContent side="right">{navigation.featured.label}</TooltipContent>
+          </Tooltip>
+        ) : (
+          <Link
+            href={`${base}${navigation.featured.href}`}
+            aria-current={isItemActive(navigation.featured) ? "page" : undefined}
+            className={cn(
+              "mb-3 flex w-full items-center gap-2.5 rounded-md border px-2.5 py-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/40",
+              isItemActive(navigation.featured) ? "border-amber-500 bg-amber-500/20" : "border-amber-500/50 bg-amber-500/10 hover:bg-amber-500/20",
+            )}
+          >
+            <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-amber-500/25 text-amber-600 dark:text-amber-300">
+              <NavIcon id={navigation.featured.icon} className="h-4 w-4" />
+            </span>
+            <span className="min-w-0">
+              <span className="block truncate text-[13px] font-semibold text-foreground">{navigation.featured.label}</span>
+              <span className="block truncate text-[11px] text-muted-foreground">{navigation.featured.hint}</span>
+            </span>
+          </Link>
+        )
+      ) : null}
+
       <div className={cn("flex flex-1 flex-col gap-3 overflow-y-auto overflow-x-hidden", !collapsed && "pr-1")}>
         <div className="flex flex-col gap-1">{renderLink(navigation.home)}</div>
 

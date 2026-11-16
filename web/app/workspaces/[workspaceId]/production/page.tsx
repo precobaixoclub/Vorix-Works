@@ -29,6 +29,7 @@ import { TablePagination, usePagination } from "@/components/ui/table-pagination
 import { useDebounce } from "@/hooks/useDebounce";
 import { useSortedRows } from "@/hooks/useSortedRows";
 import { useCreativeEngineWorkspaceStatus } from "@/features/creative-engine-entitlement/hooks";
+import { IdeasPoolBanner } from "@/features/editorial-ideas/IdeasPoolBanner";
 
 const CHANNELS: ProductionChannel[] = ["instagram", "facebook", "tiktok", "youtube"];
 const FORMATS: ProductionFormat[] = ["single_image", "carousel", "video"];
@@ -872,6 +873,8 @@ export default function ProductionLinePage() {
           </Link>
         </div>
       </div>
+
+      <IdeasPoolBanner workspaceId={workspace.id} className="mb-4" />
 
       <ProductionModeTabs mode={mode} onChange={setMode} queueCount={totalQueueRuns} tankCount={pendingIdeaCount} ideasHref={`/workspaces/${workspace.id}/ideias`} />
 

@@ -22,6 +22,8 @@ export type SolutionNavigation = {
   home: WorkspaceNavItem;
   /** Ação principal em destaque no topo da sidebar (ex.: "Novo conteúdo"). */
   primaryAction?: WorkspaceNavItem & { cta: string };
+  /** Atalho em destaque logo abaixo da ação principal (ex.: Bolsão de ideias). */
+  featured?: WorkspaceNavItem & { hint: string };
   sections: readonly WorkspaceNavSection[];
   /** Área técnica, só para owner/admin (ver `canUseBackstage`). */
   backstage: readonly WorkspaceNavItem[];
@@ -143,11 +145,11 @@ export const SOLUTION_NAVIGATION: Readonly<Record<SolutionKey, SolutionNavigatio
   marketing: {
     home: MARKETING_HOME,
     primaryAction: { ...CREATE_NAV_ITEM, cta: "Novo conteúdo" },
+    featured: { ...IDEAS_NAV_ITEM, hint: "Ideias de post prontas" },
     sections: [
       {
         label: "CONTEÚDO",
         items: [
-          IDEAS_NAV_ITEM,
           { href: "/campaigns", label: "Conteúdos", icon: "content" },
           { href: "/calendar", label: "Calendário", icon: "calendar" },
           { href: "/publish", label: "Publicar", icon: "publish" },
@@ -220,6 +222,7 @@ export function buildRouteLabels(base: string, available: readonly SolutionKey[]
     const navigation = SOLUTION_NAVIGATION[key];
     add(navigation.home);
     if (navigation.primaryAction) add(navigation.primaryAction);
+    if (navigation.featured) add(navigation.featured);
     navigation.sections.forEach((section) => section.items.forEach(add));
     navigation.backstage.forEach(add);
   }

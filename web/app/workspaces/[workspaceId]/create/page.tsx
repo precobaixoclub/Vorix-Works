@@ -11,6 +11,7 @@ import { Modal } from "@/components/Modal";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import { useCurrentWorkspace } from "@/contexts/workspace-context";
+import { IdeasPoolBanner } from "@/features/editorial-ideas/IdeasPoolBanner";
 import { useAssets } from "@/features/assets/hooks";
 import type { Asset, AssetMaterialType } from "@/features/assets/types";
 import { uploadPublicationMedia } from "@/features/media-upload/api";
@@ -398,6 +399,7 @@ export default function CreatePage() {
             <h1 className="font-display text-2xl font-semibold text-foreground sm:text-3xl">Criar conteúdo</h1>
             <p className="mt-1 text-sm text-muted-foreground">Descreva sua ideia, envie referências e deixe a IA montar a criação.</p>
           </div>
+          <IdeasPoolBanner workspaceId={workspace.id} />
 
           <Card
             className={cn("p-5 transition-colors sm:p-7", dragOver && "ring-2 ring-primary")}

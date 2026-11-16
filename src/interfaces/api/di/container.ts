@@ -172,6 +172,8 @@ import { GoogleCalendarOAuthService } from "../../../infrastructure/calendar/goo
 import { PostgresCalendarConnectionRepository } from "../../../infrastructure/storage/postgres/postgres-calendar-connection-repository.js";
 import { PostgresCalendarEventRepository } from "../../../infrastructure/storage/postgres/postgres-calendar-event-repository.js";
 import { PostgresMeetingRepository } from "../../../infrastructure/storage/postgres/postgres-meeting-repository.js";
+import { PostgresMeetingPlanRepository } from "../../../infrastructure/storage/postgres/postgres-meeting-plan-repository.js";
+import { meetingRecordingGate, type MeetingPlanDeps } from "../../../application/meetings/meeting-plans.js";
 import { isSolutionKey, type SolutionKey } from "../../../domain/solutions/solution.model.js";
 import { PostgresSolutionEntitlementRepository } from "../../../infrastructure/storage/postgres/postgres-solution-entitlement-repository.js";
 import type { RadarUseCaseDeps } from "../../../application/radar/radar-use-cases.js";
@@ -353,6 +355,8 @@ export type ApiContainer = {
   solutionAccess?: SolutionAccessService;
   /** Vorix Meetings — só com identidade real (Postgres). */
   meetings?: MeetingUseCaseDeps & { maxUploadBytes: number; zoom?: ZoomIntegration };
+  /** Planos de gravação do Meetings (franquia de horas por ciclo) — só com identidade real. */
+  meetingPlans?: MeetingPlanDeps;
   /** Agenda do Meetings + conexão Google Calendar (a sincronização roda no worker). */
   meetingsAgenda?: { calendar: CalendarUseCaseDeps; connection: CalendarConnectionDeps };
   /** Radar de Sentimento — só existe com `RADAR_ENABLED=true` e identidade real (Postgres). A
@@ -1710,7 +1714,15 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
     const siteEngine:SiteEngineDeps={publicBaseDomain:config.sitePublicBaseDomain,repository:identityRepositories.siteRepository,productRepository:identityRepositories.productRepository,productEngineRepository:identityRepositories.productEngineRepository,salesCatalogRepository:identityRepositories.salesCatalogRepository,hasAccess:tenantId=>solutionAccess.hasAccess(tenantId,"site"),canPublish:async tenantId=>!(await resolveEffectiveEntitlements(identityRepositories,tenantId)).readOnly,resolveTxt};
     // Vorix Meetings: repositório próprio, gravações no storage privado do Core, limites
     // comerciais lidos do entitlement da solução `meetings`.
+    const meetingPlans: MeetingPlanDeps = {
+      plans: new PostgresMeetingPlanRepository(identityRepositories.pool),
+      entitlements: new PostgresSolutionEntitlementRepository(identityRepositories.pool),
+      now: () => new Date(),
+      idGenerator: (prefix) => `${prefix}-${Date.now().toString(36)}-${randomBytes(5).toString("hex")}`,
+    };
     const meetings: MeetingUseCaseDeps & { maxUploadBytes: number; zoom?: ZoomIntegration } = {
+      // Plano de gravação por franquia: barra gravação/upload/importação nova sem saldo ou sem plano vivo.
+      recordingGate: meetingRecordingGate(meetingPlans),
       repository: new PostgresMeetingRepository(identityRepositories.pool),
       media: new ObjectStorageMeetingMedia(objectStorage),
       limitsFor: async (tenantId) => limitsFromEntitlement((await solutionAccess.getEntitlement(tenantId, "meetings"))?.limits),
@@ -1793,6 +1805,7 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
       solutionAccess,
       siteEngine,
       meetings,
+      meetingPlans,
       meetingsAgenda,
       executionHandlers,
       executionFeatureFlags,

@@ -34,6 +34,8 @@ import { LocalObjectStorage } from "../../infrastructure/storage/local-object-st
 import { PostgresCalendarConnectionRepository } from "../../infrastructure/storage/postgres/postgres-calendar-connection-repository.js";
 import { PostgresCalendarEventRepository } from "../../infrastructure/storage/postgres/postgres-calendar-event-repository.js";
 import { PostgresMeetingRepository } from "../../infrastructure/storage/postgres/postgres-meeting-repository.js";
+import { PostgresMeetingPlanRepository } from "../../infrastructure/storage/postgres/postgres-meeting-plan-repository.js";
+import { meetingRecordingGate, runMeetingPlanMaintenance, type MeetingPlanDeps } from "../../application/meetings/meeting-plans.js";
 import { PostgresNotificationRepository } from "../../infrastructure/storage/postgres/postgres-notification-repository.js";
 import { PostgresSolutionEntitlementRepository } from "../../infrastructure/storage/postgres/postgres-solution-entitlement-repository.js";
 import { S3ObjectStorage } from "../../infrastructure/storage/s3-object-storage.js";
@@ -101,6 +103,13 @@ async function main(): Promise<void> {
   const media = new ObjectStorageMeetingMedia(storage ?? ({} as ObjectStoragePort));
   const solutions = new SolutionAccessService({ repository: new PostgresSolutionEntitlementRepository(pool) });
   const limitsFor = async (tenantId: string) => limitsFromEntitlement((await solutions.getEntitlement(tenantId, "meetings"))?.limits);
+  // Planos de gravação por franquia: gate da auto-gravação + rotina de ciclo/retenção/avisos.
+  const meetingPlans: MeetingPlanDeps = {
+    plans: new PostgresMeetingPlanRepository(pool),
+    entitlements: new PostgresSolutionEntitlementRepository(pool),
+    now: () => new Date(),
+    idGenerator: (prefix) => `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`,
+  };
   const idGenerator = (prefix: string) => `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
   const log = (message: string, details?: Record<string, unknown>) => console.log(`[meetings-worker] ${message}${details ? ` ${JSON.stringify(details)}` : ""}`);
 
@@ -285,6 +294,16 @@ async function main(): Promise<void> {
     loop("retention", int(env.MEETINGS_RETENTION_INTERVAL_MS, 60 * 60_000), async () => {
       const result = await purgeExpiredRecordings({ repository, media, now: () => new Date() }, { defaultRetentionDays: int(env.MEETINGS_DEFAULT_RETENTION_DAYS, 90), limit: 200 });
       if (result.purged || result.failed) log("retenção", result);
+      const plans = await runMeetingPlanMaintenance({
+        ...meetingPlans,
+        media,
+        markRecordingPurged: (recordingId) => repository.markRecordingPurged({ recordingId }),
+        audit: (entry) => repository.audit(entry),
+        notify: async (notice) => {
+          await notifications.create({ tenantId: notice.tenantId, workspaceId: notice.workspaceId, userId: notice.userId, title: notice.title, body: notice.body, sourceType: "meeting", sourceId: notice.meetingId, sourceUrl: `/workspaces/${notice.workspaceId}/meetings/central/${notice.meetingId}` });
+        },
+      }, { limit: 100, defaultRetentionDays: int(env.MEETINGS_DEFAULT_RETENTION_DAYS, 90) });
+      if (plans.advanced || plans.windowsClosed || plans.filesRemoved || plans.notices) log("planos de gravação", plans);
     });
   }
 
@@ -301,6 +320,7 @@ async function main(): Promise<void> {
         realRecordingEnabled,
         limitsFor,
         limit: 50,
+        recordingGate: meetingRecordingGate(meetingPlans),
         // Limite mensal de minutos do plano também vale para a gravação automática.
         minutesQuotaReached: async (tenantId) => {
           const limits = await limitsFor(tenantId);

@@ -55,7 +55,19 @@ export type MeetingUseCaseDeps = {
   now: () => Date;
   /** Uso do mês para aplicar o limite de minutos do plano (opcional: sem ele, não limita). */
   insights?: MeetingInsightsRepositoryPort;
+  /** Plano de gravação por franquia (`meeting-plans.ts`). `undefined` = tenant sem plano (regra
+   * antiga). Recusa = nenhuma gravação nova (gravar, agenda, upload, importação). */
+  recordingGate?: MeetingRecordingGate;
 };
+
+export type MeetingRecordingGate = (tenantId: string) => Promise<{ ok: true } | { ok: false; reason: "TRIAL_EXPIRED" | "PLAN_ENDED" | "PAYMENT_FAILED" | "PLAN_QUOTA_REACHED"; message: string } | undefined>;
+
+/** Recusa do plano de gravação, se houver (sem plano = sem recusa). */
+export async function recordingGateRefusal(gate: MeetingRecordingGate | undefined, tenantId: string): Promise<{ reason: "TRIAL_EXPIRED" | "PLAN_ENDED" | "PAYMENT_FAILED" | "PLAN_QUOTA_REACHED"; message: string } | undefined> {
+  if (!gate) return undefined;
+  const result = await gate(tenantId);
+  return result && !result.ok ? { reason: result.reason, message: result.message } : undefined;
+}
 
 /** Limite mensal de minutos do plano (`monthlyRecordingMinutes`, 0 = sem limite). */
 async function minutesQuotaReached(deps: MeetingUseCaseDeps, tenantId: string): Promise<number | undefined> {
@@ -156,6 +168,10 @@ export type RecordingRefusalReason =
   | "INVALID_RECORDER_SESSION"
   | "HUMAN_IDENTITY_REQUIRED"
   | "MINUTES_QUOTA_REACHED"
+  | "TRIAL_EXPIRED"
+  | "PLAN_ENDED"
+  | "PAYMENT_FAILED"
+  | "PLAN_QUOTA_REACHED"
   | "INVALID_STATE";
 
 export type RecordingRequestResult =
@@ -221,6 +237,11 @@ export async function requestRecording(deps: MeetingUseCaseDeps, actor: MeetingA
     };
   }
 
+  const planRefusal = await recordingGateRefusal(deps.recordingGate, actor.tenantId);
+  if (planRefusal) {
+    await deps.repository.audit({ tenantId: actor.tenantId, workspaceId: input.workspaceId, meetingId: meeting.id, actorUserId: actor.userId, action: "recording.refused", details: { reason: planRefusal.reason } });
+    return { ok: false, reason: planRefusal.reason, message: planRefusal.message };
+  }
   const quotaMinutes = await minutesQuotaReached(deps, actor.tenantId);
   if (quotaMinutes !== undefined) {
     await deps.repository.audit({ tenantId: actor.tenantId, workspaceId: input.workspaceId, meetingId: meeting.id, actorUserId: actor.userId, action: "recording.refused", details: { reason: "MINUTES_QUOTA_REACHED" } });
@@ -393,6 +414,8 @@ export async function uploadMeetingRecording(
     throw new MeetingError("MEETING_UNSUPPORTED_MEDIA", "Formato não suportado. Envie MP3, M4A, WAV, WEBM, OGG, MP4 ou MOV.");
   }
   if (input.file.bytes <= 0) throw new MeetingError("MEETING_INVALID_INPUT", "O arquivo está vazio.");
+  const planRefusal = await recordingGateRefusal(deps.recordingGate, actor.tenantId);
+  if (planRefusal) throw new MeetingError("MEETING_STORAGE_LIMIT_REACHED", planRefusal.message);
   const quotaMinutes = await minutesQuotaReached(deps, actor.tenantId);
   if (quotaMinutes !== undefined) throw new MeetingError("MEETING_STORAGE_LIMIT_REACHED", `Você usou os ${quotaMinutes} minutos de gravação do seu plano neste mês. Amplie o plano ou aguarde o próximo mês.`);
   const limits = await deps.limitsFor(actor.tenantId);

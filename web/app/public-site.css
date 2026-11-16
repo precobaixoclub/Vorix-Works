@@ -766,3 +766,13 @@
   .public-auth-products small { font-size: 11px; }
 }
 @media (max-width: 359px) { .public-auth-products { grid-template-columns: 1fr; } }
+
+/* Planos de gravação do Meetings (/produtos/meetings/planos) */
+.public-price-card.featured { border-color: color-mix(in srgb,var(--public-violet) 65%,var(--public-border)); background: radial-gradient(ellipse at 90% 0%,color-mix(in srgb,var(--public-violet) 14%,transparent),transparent 70%),var(--public-raised); position: relative; }
+.public-price-card.featured::before { content: ""; position: absolute; top: -1px; left: 18%; right: 18%; height: 1px; background: var(--public-violet); box-shadow: 0 0 13px var(--public-violet); }
+.public-meeting-benefits { grid-template-columns: repeat(4,1fr); margin-top: 40px; }
+@media (max-width: 1024px) { .public-meeting-benefits { grid-template-columns: repeat(2,1fr); } }
+@media (max-width: 640px) { .public-meeting-benefits { grid-template-columns: 1fr; } }
+.public-meeting-plans-hero ~ .public-section ol.public-steps { list-style: none; padding: 0; margin-top: 10px; }
+@media (max-width: 760px) { .public-meeting-plans-hero ~ .public-section ol.public-steps { grid-template-columns: 1fr; } }
+@media (max-width: 1150px) { .public-meeting-plans-hero > .public-container { grid-template-columns: 1fr; } }

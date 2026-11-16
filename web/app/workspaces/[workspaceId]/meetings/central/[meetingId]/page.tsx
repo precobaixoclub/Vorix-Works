@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { BarChart3, ClipboardList, FileText, Handshake, Info, ListChecks, MessageSquareText, Scissors, Search, Send, Share2, Sparkles, Square, UsersRound, Video } from "lucide-react";
+import { BarChart3, ClipboardList, Download, FileText, Handshake, Info, ListChecks, MessageSquareText, Scissors, Search, Send, Share2, Sparkles, Square, UsersRound, Video } from "lucide-react";
 import { toast } from "sonner";
 import { useSWRConfig } from "swr";
 import { Button } from "@/components/Button";
@@ -397,6 +397,13 @@ function TranscriptProgress({ status }: { status: "queued" | "running" | "comple
   );
 }
 
+function downloadUrl(url: string, recording: MeetingRecording): string {
+  const extension = recording.mimeType.includes("mp4") ? (recording.mimeType.startsWith("audio/") ? "m4a" : "mp4") : recording.mimeType.split("/")[1]?.split(";")[0] ?? "bin";
+  // Só a rota de arquivos do próprio Vorix entende `download`; em outro storage o link abre o arquivo.
+  if (!url.includes("/uploads/")) return url;
+  return `${url}${url.includes("?") ? "&" : "?"}download=${encodeURIComponent(`gravacao-${recording.id}.${extension}`)}`;
+}
+
 function RecordingPlayer({ workspaceId, meetingId, recording, playerRef }: { workspaceId: string; meetingId: string; recording: MeetingRecording; playerRef: React.MutableRefObject<HTMLMediaElement | null> }) {
   const [source, setSource] = useState<{ url: string; mimeType: string } | null>(null);
   const [failed, setFailed] = useState<string | null>(null);
@@ -438,6 +445,14 @@ function RecordingPlayer({ workspaceId, meetingId, recording, playerRef }: { wor
           // eslint-disable-next-line jsx-a11y/media-has-caption
           <audio ref={(element) => { playerRef.current = element; }} src={source.url} controls preload="metadata" className="w-full" />
         )
+      ) : null}
+      {source ? (
+        <div className="mt-2 flex justify-end">
+          {/* Exportação do arquivo: a mesma URL assinada, servida como download. */}
+          <a href={downloadUrl(source.url, recording)} download className="inline-flex items-center gap-1.5 text-sm text-primary hover:underline dark:text-primary-glow">
+            <Download className="h-4 w-4" /> Baixar gravação
+          </a>
+        </div>
       ) : null}
     </Card>
   );

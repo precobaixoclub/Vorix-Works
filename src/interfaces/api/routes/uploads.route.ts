@@ -20,7 +20,7 @@ import { NotFoundError } from "../http/app-error.js";
 export async function registerUploadedObjectRoutes(app: FastifyInstance, options: { rootDir: string; publicObjects?: PublicObjectRepositoryPort }): Promise<void> {
   app.get("/uploads/*", async (request, reply) => {
     const key = (request.params as { "*": string })["*"];
-    const query = (request.query ?? {}) as { exp?: unknown; sig?: unknown; w?: unknown };
+    const query = (request.query ?? {}) as { exp?: unknown; sig?: unknown; w?: unknown; download?: unknown };
     // Observabilidade: o MOTIVO da negação vai para o log (nunca a chave nem a assinatura); a
     // resposta é sempre o mesmo 404, para não revelar se o arquivo existe.
     const notFound = (reason: string) => {
@@ -64,6 +64,10 @@ export async function registerUploadedObjectRoutes(app: FastifyInstance, options
     }
     reply.header("Accept-Ranges", "bytes");
     reply.type(contentTypeForKey(key));
+    // `?download=nome`: baixar em vez de abrir (exportação de gravação). Só muda o cabeçalho — o
+    // acesso continua exigindo a mesma assinatura; o nome é saneado para nunca injetar cabeçalho.
+    const downloadName = attachmentName(query.download);
+    if (downloadName) reply.header("Content-Disposition", `attachment; filename="${downloadName}"`);
     // Range (um único intervalo): o player de áudio/vídeo navega pela gravação sem baixar tudo.
     const range = parseSingleRange(request.headers.range, fileStat.size);
     if (range === "unsatisfiable") {
@@ -99,6 +103,13 @@ async function thumbnail(root: string, source: string, key: string, width: numbe
   await writeFile(temporary, body);
   await rename(temporary, target);
   return body;
+}
+
+/** Nome de arquivo seguro para `Content-Disposition` (só letras, números, ponto, hífen e sublinhado). */
+export function attachmentName(raw: unknown): string | undefined {
+  if (typeof raw !== "string") return undefined;
+  const name = raw.normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^A-Za-z0-9._-]+/g, "-").replace(/^[-.]+|-+$/g, "").slice(0, 100);
+  return name || undefined;
 }
 
 /** `bytes=a-b` | `bytes=a-` | `bytes=-n`. Múltiplos intervalos ou formato inválido = ignora (200 inteiro). */

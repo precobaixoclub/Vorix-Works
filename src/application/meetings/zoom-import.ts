@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { parseZoomVtt } from "../../domain/meetings/zoom-transcript.js";
 import { meetingUsagePeriod, type MeetingDetail } from "../../domain/meetings/meeting.model.js";
 import type { MeetingInsightsRepositoryPort } from "../ports/meeting-insights-repository.port.js";
-import { MeetingError, requireVisibleMeeting, type MeetingActor, type MeetingUseCaseDeps } from "./meeting-use-cases.js";
+import { MeetingError, recordingGateRefusal, requireVisibleMeeting, type MeetingActor, type MeetingUseCaseDeps } from "./meeting-use-cases.js";
 
 /**
  * Vorix Meetings — importar gravações EM NUVEM do Zoom (sem robô): a pessoa conecta o Zoom, vê as
@@ -95,6 +95,8 @@ export async function importZoomRecording(deps: ZoomImportDeps, actor: MeetingAc
   if (!zoomMeeting) throw new MeetingError("MEETING_NOT_FOUND", "Gravação não encontrada no Zoom (pode ter sido apagada).");
   const media = pickMedia(zoomMeeting.recording_files ?? []);
   if (!media?.download_url) throw new MeetingError("MEETING_INVALID_INPUT", "Esta gravação do Zoom ainda não tem áudio disponível. Tente de novo em alguns minutos.");
+  const planRefusal = await recordingGateRefusal(deps.recordingGate, actor.tenantId);
+  if (planRefusal) throw new MeetingError("MEETING_STORAGE_LIMIT_REACHED", planRefusal.message);
   const limits = await deps.limitsFor(actor.tenantId);
   const inUse = await deps.repository.storageBytesInUse(actor.tenantId);
   if (media.file_size && inUse + media.file_size > limits.maxStorageBytes) throw new MeetingError("MEETING_STORAGE_LIMIT_REACHED", "O armazenamento de gravações do seu plano está cheio.");

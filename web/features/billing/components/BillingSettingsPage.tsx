@@ -22,6 +22,7 @@ import { applyCapacity, cancelPendingCapacityChange, cancelSubscription, changeP
 import { useAiCredits, useBillingOverview, useCapacityState } from "@/features/billing/hooks";
 import { RESOURCE_LABELS, type BillingInterval, type BillingOverview, type BillingOverviewAvailableAddon, type CapacityPendingChange, type CapacityPreviewResult, type PlatformPlanCode } from "@/features/billing/types";
 import { fetchPublicPlans, formatCreditsQuota, type PublicPlan } from "@/features/platform-plans/api";
+import { MeetingPlanCard } from "@/features/meeting-plans/MeetingPlanCard";
 import { formatCurrencyCents, formatDate } from "@/lib/format";
 import { canManageBilling, RBAC_COPY } from "@/lib/rbac";
 
@@ -227,6 +228,8 @@ export default function BillingSettingsPage({ account = false }: { account?: boo
       <AiCreditsCard canManage={canManage} returnPath={returnPath} />
 
       <CapacityCard canManage={canManage} consumption={data.consumption} virtual={data.virtual} onNeedPaymentMethod={(capacity) => void goToCheckout(data.planCode as PlatformPlanCode, interval, capacity)} />
+
+      <MeetingPlanCard className="mt-5" />
 
       <Card id="comparar-planos" className="mt-5">
         <CardHeader><p className="text-sm font-semibold text-foreground">Comparar planos</p></CardHeader>

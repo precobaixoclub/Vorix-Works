@@ -30,6 +30,7 @@ import { registerAiProvidersRoutes } from "./ai-providers.route.js";
 import { registerAssetsRoutes } from "./assets.route.js";
 import { registerProductionSettingsRoutes } from "./production-settings.route.js";
 import { registerEditorialIdeasRoutes } from "./editorial-ideas.route.js";
+import { registerMeetingPlanRoutes } from "./meeting-plans.route.js";
 import { registerBrandProfileRoutes } from "./brand-profile.route.js";
 import { registerBrandIdentityRoutes } from "./brand-identity.route.js";
 import { registerFileRoutes } from "./files.route.js";
@@ -175,6 +176,7 @@ export async function registerV1Routes(app: FastifyInstance): Promise<void> {
   // este tenant enxerga.
   await registerSolutionRoutes(app, { solutionAccess: app.zunoContainer.solutionAccess });
   // Vorix Meetings — só com identidade real; o guarda de solução barra tenants sem `meetings`.
+  if (app.zunoContainer.meetingPlans) await registerMeetingPlanRoutes(app, app.zunoContainer.meetingPlans);
   if (app.zunoContainer.meetings) {
     await registerMeetingRoutes(app, { ...app.zunoContainer.meetings, workspaceRepository: app.zunoContainer.workspaceRepository });
     // Contas de gravação do cliente (self-service). O navegador de login só existe com JWT_SECRET

@@ -23,7 +23,7 @@ import {
 import type { MeetingRepositoryPort } from "../ports/meeting-repository.port.js";
 import type { MeetingInsightsRepositoryPort } from "../ports/meeting-insights-repository.port.js";
 import { MEETING_TEMPLATE_DEFINITIONS, type MeetingSummaryTemplate } from "../../domain/meetings/meeting-intelligence.js";
-import { auditSkippedRecorderAccounts, recorderEligibilityFor, type MeetingMediaStoragePort } from "./meeting-use-cases.js";
+import { auditSkippedRecorderAccounts, recorderEligibilityFor, recordingGateRefusal, type MeetingMediaStoragePort, type MeetingRecordingGate } from "./meeting-use-cases.js";
 
 /**
  * Processamento assíncrono do Vorix Meetings — roda no WORKER, nunca na API.
@@ -298,19 +298,25 @@ const SCHEDULER_NOTIFY: Partial<Record<string, { title: string; body: string }>>
   INVALID_RECORDER_SESSION: { title: "Contas de gravação precisam ser reconectadas", body: "A sessão do Google das contas de gravação expirou. Reconecte em Meetings → Configurações → Contas de gravação." },
   NO_RECORDER_ACCOUNT_AVAILABLE: { title: "Gravação automática não iniciada", body: "Nenhuma conta de gravação ficou disponível dentro da janela de entrada." },
   CONCURRENCY_LIMIT_REACHED: { title: "Gravação automática não iniciada", body: "O limite de gravações simultâneas do seu plano estava em uso no horário da reunião." },
+  TRIAL_EXPIRED: { title: "Gravação automática não iniciada", body: "Seu teste gratuito do Meetings terminou. Escolha um plano em Meetings → Configurações para voltar a gravar." },
+  PLAN_ENDED: { title: "Gravação automática não iniciada", body: "Sua assinatura de gravação foi encerrada. Contrate um plano em Meetings → Configurações para voltar a gravar." },
+  PAYMENT_FAILED: { title: "Gravação automática não iniciada", body: "O pagamento da sua assinatura de gravação não foi confirmado. Regularize para voltar a gravar." },
+  PLAN_QUOTA_REACHED: { title: "Gravação automática não iniciada", body: "A franquia de horas do seu plano neste ciclo acabou. Ela renova no próximo ciclo, ou mude para um plano maior." },
 };
 
 export async function evaluateAutoRecordings(
   deps: Pick<MeetingProcessingDeps, "repository" | "now"> & { notify?: MeetingOwnerNotifier },
-  input: { defaults: AutoRecordWindow; realRecordingEnabled: boolean; limitsFor: (tenantId: string) => Promise<MeetingsLimits>; limit: number; minutesQuotaReached?: (tenantId: string) => Promise<boolean> },
+  input: { defaults: AutoRecordWindow; realRecordingEnabled: boolean; limitsFor: (tenantId: string) => Promise<MeetingsLimits>; limit: number; minutesQuotaReached?: (tenantId: string) => Promise<boolean>; recordingGate?: MeetingRecordingGate },
 ): Promise<{ evaluated: number; outcomes: Record<string, number> }> {
   const due = await deps.repository.listAutoRecordDue({ now: deps.now(), defaults: input.defaults, limit: input.limit });
   const outcomes: Record<string, number> = {};
   for (const meeting of due) {
     let outcome: string;
+    let planRefusal: Awaited<ReturnType<typeof recordingGateRefusal>>;
     if (!input.realRecordingEnabled) outcome = "RECORDING_DISABLED";
     else if (!meeting.meetingUrl || !parseGoogleMeetUrl(meeting.meetingUrl)) outcome = "MISSING_MEETING_URL";
     else if (!isConfirmedHumanIdentity(meeting.humanJoinIdentitySource)) outcome = "HUMAN_IDENTITY_REQUIRED";
+    else if ((planRefusal = await recordingGateRefusal(input.recordingGate, meeting.tenantId))) outcome = planRefusal.reason;
     else if (input.minutesQuotaReached && (await input.minutesQuotaReached(meeting.tenantId))) outcome = "MINUTES_QUOTA_REACHED";
     else {
       const limits = await input.limitsFor(meeting.tenantId);

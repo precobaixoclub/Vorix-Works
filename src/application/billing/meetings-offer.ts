@@ -72,6 +72,8 @@ export async function syncMeetingsEntitlementFromSubscription(deps: MeetingsEnti
   // An explicit operator grant/block outranks renewals and purchased quantities. Billing still
   // reports the contracted capacity; the negotiated administrative access remains independent.
   if (current && current.source !== "subscription") return { concurrentRecordings };
+  // Tenant com plano de gravação por franquia (`meeting-plans.ts`): o acesso é derivado do plano.
+  if (current?.limits?.recordingPlan === 1) return { concurrentRecordings };
   if (concurrentRecordings > 0) {
     const unchanged = current?.enabled && current.source === "subscription" && current.limits?.maxConcurrentRecordings === concurrentRecordings;
     if (!unchanged) {

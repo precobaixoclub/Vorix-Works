@@ -21,6 +21,7 @@ import {
   type AutoRecordMode, type KeywordTracker, type SummaryTemplateKey,
 } from "@/features/meetings/intelligence";
 import { ApiError } from "@/lib/api-client";
+import { MeetingPlanCard } from "@/features/meeting-plans/MeetingPlanCard";
 
 const TEMPLATE_OPTIONS: [SummaryTemplateKey, string][] = [["general", "Geral"], ["sales", "Vendas (BANT)"], ["internal", "Reunião interna"], ["one_on_one", "1:1 (líder e liderado)"], ["interview", "Entrevista de emprego"], ["support", "Atendimento / suporte"]];
 const AUTO_RECORD_OPTIONS: [AutoRecordMode, string, string][] = [
@@ -54,10 +55,13 @@ export default function MeetingsSettingsPage() {
     <main className="mx-auto max-w-[960px] space-y-6 px-3 py-5 sm:px-6 sm:py-8">
       <PageHeader title="Preferências do Meetings" description="Como o Vorix grava, resume e acompanha as suas reuniões." />
 
+      <MeetingPlanCard />
+
       {usage.data ? (
         <Card className="space-y-3 p-5">
-          <h2 className="flex items-center gap-2 text-base font-medium text-foreground"><Gauge className="h-4 w-4" /> Uso do plano neste mês</h2>
-          <UsageBar label="Minutos de gravação" used={usage.data.minutesUsed} limit={usage.data.minutesLimit} format={(value) => `${value} min`} />
+          <h2 className="flex items-center gap-2 text-base font-medium text-foreground"><Gauge className="h-4 w-4" /> {usage.data.minutesLimit ? "Uso do plano neste mês" : "Armazenamento"}</h2>
+          {/* Com plano de gravação (limite mensal 0) a franquia aparece no cartão do plano, por ciclo. */}
+          {usage.data.minutesLimit ? <UsageBar label="Minutos de gravação" used={usage.data.minutesUsed} limit={usage.data.minutesLimit} format={(value) => `${value} min`} /> : null}
           <UsageBar label="Armazenamento de gravações" used={usage.data.storageBytesUsed} limit={usage.data.storageBytesLimit} format={formatBytes} />
           <p className="text-xs text-muted-foreground">{usage.data.aiAnalyses} {usage.data.aiAnalyses === 1 ? "resumo gerado" : "resumos gerados"} por IA neste mês.</p>
         </Card>

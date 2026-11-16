@@ -18,6 +18,7 @@ import {
 import { useTenantDetail } from "@/features/platform-admin/hooks";
 import { StatsGrid } from "@/components/StatsGrid";
 import { TenantContractPanel, type TenantContractTab } from "@/components/admin/TenantContractPanel";
+import { AdminMeetingPlanCard } from "@/features/meeting-plans/AdminMeetingPlanCard";
 
 /**
  * Detalhe de um tenant (`/admin/tenants/[tenantId]`) — Sprint 25. Tudo o que o admin manual
@@ -107,6 +108,8 @@ export default function AdminTenantDetailPage() {
       </nav>
 
       {tab === "contract" || tab === "access" || tab === "history" ? <TenantContractPanel tenantId={tenantId} tab={tab} onChanged={() => mutate()} /> : null}
+
+      {tab === "access" ? <div className="mt-6"><AdminMeetingPlanCard tenantId={tenantId} /></div> : null}
 
       {tab === "credits" ? (
         <div className="space-y-6">

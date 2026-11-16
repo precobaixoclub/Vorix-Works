@@ -35,6 +35,8 @@ export const SETTINGS_NAV: readonly WorkspaceNavItem[] = [{ href: "/settings", l
 const CONVERSATIONS_HOME: WorkspaceNavItem = { href: "", label: "Início", icon: "home" };
 const MARKETING_HOME: WorkspaceNavItem = { href: "/production", label: "Produção", icon: "production" };
 const CREATE_NAV_ITEM: WorkspaceNavItem = { href: "/create", label: "Criar", icon: "create" };
+/** Bolsão de ideias do workspace: pautas prontas para virar post (EditorialIdeasBoard). */
+const IDEAS_NAV_ITEM: WorkspaceNavItem = { href: "/ideias", label: "Bolsão de ideias", icon: "ideas" };
 const MEETINGS_HOME: WorkspaceNavItem = { href: "/meetings", label: "Início", icon: "home" };
 const MEETINGS_CENTRAL: WorkspaceNavItem = { href: "/meetings/central", label: "Reuniões", icon: "meetings" };
 const MEETINGS_RECORDINGS: WorkspaceNavItem = { href: "/meetings/recordings", label: "Gravações", icon: "recordings" };
@@ -145,6 +147,7 @@ export const SOLUTION_NAVIGATION: Readonly<Record<SolutionKey, SolutionNavigatio
       {
         label: "CONTEÚDO",
         items: [
+          IDEAS_NAV_ITEM,
           { href: "/campaigns", label: "Conteúdos", icon: "content" },
           { href: "/calendar", label: "Calendário", icon: "calendar" },
           { href: "/publish", label: "Publicar", icon: "publish" },
@@ -161,7 +164,7 @@ export const SOLUTION_NAVIGATION: Readonly<Record<SolutionKey, SolutionNavigatio
       },
     ],
     backstage: MARKETING_BACKSTAGE,
-    mobilePrimary: [MARKETING_HOME, CREATE_NAV_ITEM, { href: "/campaigns", label: "Conteúdos", icon: "content" }, { href: "/calendar", label: "Calendário", icon: "calendar" }],
+    mobilePrimary: [MARKETING_HOME, CREATE_NAV_ITEM, IDEAS_NAV_ITEM, { href: "/campaigns", label: "Conteúdos", icon: "content" }],
     mobileMenu: [
       {
         label: "Redes sociais",
@@ -170,6 +173,7 @@ export const SOLUTION_NAVIGATION: Readonly<Record<SolutionKey, SolutionNavigatio
       {
         label: "Conteúdo",
         items: [
+          { href: "/calendar", label: "Calendário", icon: "calendar" },
           { href: "/publish", label: "Publicar", icon: "publish" },
           { href: "/meta-ads", label: "Anúncios", icon: "ads" },
         ],

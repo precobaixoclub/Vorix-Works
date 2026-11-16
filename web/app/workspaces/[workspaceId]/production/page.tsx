@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/Button";
 import { Input, Label, Textarea } from "@/components/Field";
 import { StatusBadge } from "@/components/StatusBadge";
@@ -29,7 +29,6 @@ import { TablePagination, usePagination } from "@/components/ui/table-pagination
 import { useDebounce } from "@/hooks/useDebounce";
 import { useSortedRows } from "@/hooks/useSortedRows";
 import { useCreativeEngineWorkspaceStatus } from "@/features/creative-engine-entitlement/hooks";
-import { EditorialIdeasBoard } from "@/features/editorial-ideas/EditorialIdeasBoard";
 
 const CHANNELS: ProductionChannel[] = ["instagram", "facebook", "tiktok", "youtube"];
 const FORMATS: ProductionFormat[] = ["single_image", "carousel", "video"];
@@ -239,7 +238,7 @@ function hasProductionCardTitle(workspaceId: string, run: ExecutionRun): boolean
 /** Alternância persistente entre Fila (execuções reais em andamento) e Tanque (ideias pendentes +
  * rotina) — sempre visível nos dois modos, pra nunca depender de um botão perdido no cabeçalho
  * pra saber que essas duas coisas existem e como alternar entre elas. */
-function ProductionModeTabs({ mode, onChange, queueCount, tankCount }: { mode: ProductionMode; onChange: (mode: ProductionMode) => void; queueCount: number; tankCount: number }) {
+function ProductionModeTabs({ mode, onChange, queueCount, tankCount, ideasHref }: { mode: ProductionMode; onChange: (mode: ProductionMode) => void; queueCount: number; tankCount: number; ideasHref: string }) {
   return (
     <div className="mb-4 inline-flex gap-1 rounded-lg bg-card p-1">
       <button
@@ -256,13 +255,10 @@ function ProductionModeTabs({ mode, onChange, queueCount, tankCount }: { mode: P
       >
         Planejamento{tankCount > 0 ? ` (${tankCount})` : ""}
       </button>
-      <button
-        type="button"
-        onClick={() => onChange("pautas")}
-        className={`min-h-9 rounded-md px-3.5 text-sm font-medium transition-colors ${mode === "pautas" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}
-      >
-        Pautas
-      </button>
+      {/* O bolsão tem página própria (menu Marketing → Bolsão de ideias); aqui é só um atalho. */}
+      <Link href={ideasHref} className="inline-flex min-h-9 items-center rounded-md px-3.5 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground">
+        Bolsão de ideias
+      </Link>
     </div>
   );
 }
@@ -270,6 +266,11 @@ function ProductionModeTabs({ mode, onChange, queueCount, tankCount }: { mode: P
 export default function ProductionLinePage() {
   const workspace = useCurrentWorkspace();
   const searchParams = useSearchParams();
+  const router = useRouter();
+  // Link antigo (?mode=pautas): o bolsão agora tem página própria.
+  useEffect(() => {
+    if (searchParams.get("mode") === "pautas") router.replace(`/workspaces/${workspace.id}/ideias`);
+  }, [searchParams, router, workspace.id]);
   const [config, setConfig] = useState<ProductionLineConfig>(DEFAULT_PRODUCTION_CONFIG);
   const [selectedBlueprintId, setSelectedBlueprintId] = useState(DEFAULT_PRODUCTION_CONFIG.blueprints[0]?.id ?? "");
   const [selectedRuleId, setSelectedRuleId] = useState(DEFAULT_PRODUCTION_CONFIG.postingRules[0]?.id ?? "");
@@ -639,19 +640,12 @@ export default function ProductionLinePage() {
     updateRule(rule.id, { weeklyMix: rule.weeklyMix.map((item) => (item.id === itemId ? { ...item, ...patch } : item)) });
   }
 
-  if (mode === "pautas") {
-    return (
-      <main className="mx-auto max-w-6xl px-3 py-5 sm:px-6 sm:py-8">
-        <ProductionModeTabs mode={mode} onChange={setMode} queueCount={totalQueueRuns} tankCount={pendingIdeaCount} />
-        <EditorialIdeasBoard workspaceId={workspace.id} />
-      </main>
-    );
-  }
+  if (mode === "pautas") return null;
 
   if (mode === "configure") {
     return (
       <main className="mx-auto max-w-6xl px-3 py-5 sm:px-6 sm:py-8">
-        <ProductionModeTabs mode={mode} onChange={setMode} queueCount={totalQueueRuns} tankCount={pendingIdeaCount} />
+        <ProductionModeTabs mode={mode} onChange={setMode} queueCount={totalQueueRuns} tankCount={pendingIdeaCount} ideasHref={`/workspaces/${workspace.id}/ideias`} />
 
         <PromptSetupCard workspaceId={workspace.id} hasGuidelines={hasGuidelines} compact={false} />
 
@@ -879,7 +873,7 @@ export default function ProductionLinePage() {
         </div>
       </div>
 
-      <ProductionModeTabs mode={mode} onChange={setMode} queueCount={totalQueueRuns} tankCount={pendingIdeaCount} />
+      <ProductionModeTabs mode={mode} onChange={setMode} queueCount={totalQueueRuns} tankCount={pendingIdeaCount} ideasHref={`/workspaces/${workspace.id}/ideias`} />
 
       <div className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border border-border bg-card px-3 py-1.5 text-xs text-muted-foreground">
         <span>Prompt: <strong className="font-semibold text-foreground">{hasGuidelines ? "configurado" : "pendente"}</strong></span>

@@ -42,6 +42,7 @@ export const SOLUTION_HOME_PATH: Record<SolutionKey, string> = {
 const MARKETING_SEGMENTS: ReadonlySet<string> = new Set([
   "create",
   "production",
+  "ideias",
   "campaigns",
   "calendar",
   "publish",

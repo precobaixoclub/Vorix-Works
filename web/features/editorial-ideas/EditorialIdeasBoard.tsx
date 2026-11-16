@@ -50,6 +50,19 @@ const STATUS_TONE: Record<EditorialIdeaStatus, string> = {
 const WEEKDAY = new Intl.DateTimeFormat("pt-BR", { weekday: "short", day: "2-digit", month: "2-digit", timeZone: "UTC" });
 const formatDay = (date?: string) => (date ? WEEKDAY.format(new Date(`${date}T00:00:00Z`)) : "—");
 
+function todayIso(): string {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+}
+
+/** Por que esta ideia não pode virar post agora (`null` = pode). */
+function createBlockedReason(idea: EditorialIdea): string | null {
+  if (idea.format === "video") return "Ideias de vídeo trazem o roteiro pronto para gravar; o gerador automático faz imagem e carrossel.";
+  if (idea.status === "in_production") return "Esta ideia já está sendo criada. Acompanhe na Produção.";
+  if (idea.status === "archived") return "Ideia arquivada. Mude o estado para Disponível antes de criar o post.";
+  return null;
+}
+
 function StatusPill({ status }: { status: EditorialIdeaStatus }) {
   return <span className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium ${STATUS_TONE[status]}`}>{EDITORIAL_STATUS_LABEL[status]}</span>;
 }
@@ -151,7 +164,7 @@ export function EditorialIdeasBoard({ workspaceId }: { workspaceId: string }) {
     try {
       const pack = JSON.parse(await file.text()) as unknown;
       const result = await importEditorialPack(workspaceId, pack);
-      toast.success(`${result.created} pauta(s) importada(s)${result.skipped ? `; ${result.skipped} já existiam e foram mantidas` : ""}.`);
+      toast.success(`${result.created} ideia(s) importada(s)${result.skipped ? `; ${result.skipped} já existiam e foram mantidas` : ""}.`);
       await load();
     } catch (cause) {
       toast.error(cause instanceof SyntaxError ? "O arquivo não é um JSON válido." : cause instanceof Error ? cause.message : "Não foi possível importar o pacote.");
@@ -167,7 +180,7 @@ export function EditorialIdeasBoard({ workspaceId }: { workspaceId: string }) {
       const result = await buildEditorialCalendar(workspaceId);
       setIdeas(result.ideas);
       setView("calendar");
-      toast.success(result.scheduled ? `${result.scheduled} pauta(s) distribuídas nos próximos 30 dias, de segunda a sexta.` : "O calendário dos próximos 30 dias já está completo.");
+      toast.success(result.scheduled ? `${result.scheduled} ideia(s) distribuídas nos próximos 30 dias, de segunda a sexta.` : "Os próximos 30 dias já estão planejados.");
     } catch (cause) {
       toast.error(cause instanceof Error ? cause.message : "Não foi possível montar o calendário.");
     } finally {
@@ -204,9 +217,9 @@ export function EditorialIdeasBoard({ workspaceId }: { workspaceId: string }) {
       const run = await generateFromIdea({ workspaceId, ...brief, channel: "instagram", aspectRatio: "4:5" });
       syncedRuns.current.delete(run.executionRunId);
       replace(await updateEditorialIdea(workspaceId, idea.id, { status: "in_production", executionRunId: run.executionRunId }));
-      toast.success("Pauta enviada ao motor criativo. Acompanhe na Fila; a peça passa pela Revisão antes de qualquer publicação.");
+      toast.success("Post em criação! Acompanhe na Produção — ele vai para a Revisão antes de qualquer publicação.");
     } catch (cause) {
-      toast.error(cause instanceof Error ? cause.message : "Não foi possível enviar a pauta ao motor criativo.");
+      toast.error(cause instanceof Error ? cause.message : "Não foi possível criar o post com esta ideia.");
     } finally {
       setBusy(null);
     }
@@ -214,13 +227,13 @@ export function EditorialIdeasBoard({ workspaceId }: { workspaceId: string }) {
 
   const header = (
     <PageHeader
-      title="Pautas editoriais"
-      description="O bolsão criativo do workspace: escolha uma pauta, envie ao motor criativo e acompanhe até a publicação."
+      title="Bolsão de ideias"
+      description="Ideias de post prontas, com texto, legenda e roteiro. Escolha uma, clique em Criar post e revise antes de publicar."
       actions={
         <>
           <input ref={fileInput} type="file" accept="application/json,.json" className="hidden" onChange={(event) => { const file = event.target.files?.[0]; if (file) void onImportFile(file); }} />
-          <Button variant="secondary" disabled={busy === "import"} onClick={() => fileInput.current?.click()}>{busy === "import" ? "Importando…" : "Importar pacote"}</Button>
-          <Button disabled={busy === "calendar" || !ideas?.length} onClick={() => void onBuildCalendar()}>{busy === "calendar" ? "Montando…" : "Montar calendário de 30 dias"}</Button>
+          <Button variant="ghost" disabled={busy === "import"} onClick={() => fileInput.current?.click()}>{busy === "import" ? "Importando…" : "Importar ideias"}</Button>
+          <Button variant="secondary" disabled={busy === "calendar" || !ideas?.length} onClick={() => void onBuildCalendar()}>{busy === "calendar" ? "Montando…" : "Planejar próximos 30 dias"}</Button>
         </>
       }
     />
@@ -233,19 +246,64 @@ export function EditorialIdeasBoard({ workspaceId }: { workspaceId: string }) {
       <>
         {header}
         <EmptyState
-          title="Nenhuma pauta neste workspace ainda"
-          description="Importe um pacote de pautas (arquivo JSON no formato vorix.editorial-pack/v1). Reimportar o mesmo pacote nunca duplica pautas."
-          action={<Button onClick={() => fileInput.current?.click()}>Importar pacote</Button>}
+          title="Nenhuma ideia neste workspace ainda"
+          description="Importe um pacote de ideias (arquivo JSON no formato vorix.editorial-pack/v1). Importar o mesmo pacote de novo nunca duplica ideias."
+          action={<Button onClick={() => fileInput.current?.click()}>Importar ideias</Button>}
         />
       </>
     );
   }
 
   const scheduled = ideas.filter((idea) => idea.scheduledDate && idea.status !== "archived").sort((a, b) => a.scheduledDate!.localeCompare(b.scheduledDate!));
+  const today = todayIso();
+  const upNext = scheduled.filter((idea) => idea.scheduledDate! >= today && idea.status === "available").slice(0, 5);
+  const categoryCount = (category: string) => ideas.filter((idea) => idea.category === category).length;
 
   return (
     <>
       {header}
+
+      <ol className="mb-5 grid gap-2 sm:grid-cols-3">
+        {[
+          ["Escolha uma ideia", "Use as sugestões da semana ou filtre por assunto."],
+          ["Clique em Criar post", "O Vorix monta a arte com a identidade da sua marca."],
+          ["Revise e publique", "Nada é publicado sem a sua aprovação na Revisão."],
+        ].map(([title, description], index) => (
+          <li key={title} className="flex gap-3 rounded-lg border border-border bg-card p-3">
+            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary/15 text-xs font-semibold tabular-nums text-primary">{index + 1}</span>
+            <span><span className="block text-sm font-medium text-foreground">{title}</span><span className="block text-xs text-muted-foreground">{description}</span></span>
+          </li>
+        ))}
+      </ol>
+
+      {upNext.length ? (
+        <section className="mb-5">
+          <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2">
+            <h2 className="text-base font-semibold text-foreground">Sugestões para os próximos dias</h2>
+            <button type="button" onClick={() => setView("calendar")} className="text-sm text-primary hover:underline">Ver calendário completo</button>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+            {upNext.map((idea) => (
+              <IdeaCard key={idea.id} idea={idea} busy={busy} onOpen={() => setSelectedId(idea.id)} onCreate={() => void onGenerate(idea)} />
+            ))}
+          </div>
+        </section>
+      ) : null}
+
+      <div className="mb-4 flex flex-wrap gap-2" role="group" aria-label="Filtrar por assunto">
+        {["all", ...categories].map((category) => (
+          <button
+            key={category}
+            type="button"
+            onClick={() => setCategoryFilter(category)}
+            aria-pressed={categoryFilter === category}
+            className={`rounded-full border px-3 py-1 text-sm transition-colors ${categoryFilter === category ? "border-primary bg-primary text-primary-foreground" : "border-border bg-card text-muted-foreground hover:text-foreground"}`}
+          >
+            {category === "all" ? "Todas" : category} <span className="tabular-nums opacity-70">{category === "all" ? ideas.length : categoryCount(category)}</span>
+          </button>
+        ))}
+      </div>
+
       <StatsGrid className="mb-4">
         {EDITORIAL_STATUS_ORDER.filter((status) => status !== "archived").map((status) => (
           <Card key={status}><CardContent className="p-4">
@@ -259,20 +317,13 @@ export function EditorialIdeasBoard({ workspaceId }: { workspaceId: string }) {
         <CardContent className="p-4">
           <div className="flex flex-wrap items-end gap-x-4 gap-y-3">
             <div className="min-w-56 flex-1">
-              <Input type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar por título, código ou abordagem" />
+              <Input type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar ideia por palavra (ex.: CRM, reunião, site)" />
             </div>
             <Select value={statusFilter} onValueChange={(value: EditorialIdeaStatus | "all") => setStatusFilter(value)}>
               <SelectTrigger className="w-40"><SelectValue placeholder="Estado" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">Todos os estados</SelectItem>
                 {EDITORIAL_STATUS_ORDER.map((status) => <SelectItem key={status} value={status}>{EDITORIAL_STATUS_LABEL[status]}</SelectItem>)}
-              </SelectContent>
-            </Select>
-            <Select value={categoryFilter} onValueChange={setCategoryFilter}>
-              <SelectTrigger className="w-56"><SelectValue placeholder="Categoria" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Todas as categorias</SelectItem>
-                {categories.map((category) => <SelectItem key={category} value={category}>{category}</SelectItem>)}
               </SelectContent>
             </Select>
             <Select value={formatFilter} onValueChange={(value: EditorialIdeaFormat | "all") => setFormatFilter(value)}>
@@ -295,7 +346,7 @@ export function EditorialIdeasBoard({ workspaceId }: { workspaceId: string }) {
 
       {view === "calendar" ? (
         scheduled.length === 0 ? (
-          <EmptyState title="Nenhuma pauta no calendário" description="Monte o calendário de 30 dias: uma pauta por dia útil, alternando categorias e formatos." action={<Button onClick={() => void onBuildCalendar()}>Montar calendário de 30 dias</Button>} />
+          <EmptyState title="Nenhuma ideia no calendário" description="Planeje os próximos 30 dias: uma ideia por dia útil, alternando assuntos e formatos." action={<Button onClick={() => void onBuildCalendar()}>Planejar próximos 30 dias</Button>} />
         ) : (
           <Card><CardContent className="divide-y divide-border p-0">
             {scheduled.map((idea) => (
@@ -314,16 +365,17 @@ export function EditorialIdeasBoard({ workspaceId }: { workspaceId: string }) {
             <TableHeader>
               <TableRow>
                 <SortableHead columnKey="id" sort={sort} onSort={onSort}>Código</SortableHead>
-                <SortableHead columnKey="title" sort={sort} onSort={onSort}>Pauta</SortableHead>
-                <SortableHead columnKey="category" sort={sort} onSort={onSort}>Categoria</SortableHead>
+                <SortableHead columnKey="title" sort={sort} onSort={onSort}>Ideia</SortableHead>
+                <SortableHead columnKey="category" sort={sort} onSort={onSort}>Assunto</SortableHead>
                 <TableHead>Formato</TableHead>
                 <SortableHead columnKey="status" sort={sort} onSort={onSort}>Estado</SortableHead>
                 <SortableHead columnKey="date" sort={sort} onSort={onSort} align="right">Data</SortableHead>
+                <TableHead className="text-right">Ação</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {paginatedItems.length === 0 ? (
-                <TableRow><TableCell colSpan={6} className="py-8 text-center text-muted-foreground">Nenhuma pauta com esses filtros. Limpe a busca ou troque o estado.</TableCell></TableRow>
+                <TableRow><TableCell colSpan={7} className="py-8 text-center text-muted-foreground">Nenhuma ideia com esses filtros. Limpe a busca ou escolha outro assunto.</TableCell></TableRow>
               ) : paginatedItems.map((idea) => (
                 <TableRow key={idea.id} className="cursor-pointer" onClick={() => setSelectedId(idea.id)}>
                   <TableCell className="tabular-nums text-muted-foreground">{idea.externalId}</TableCell>
@@ -335,6 +387,11 @@ export function EditorialIdeasBoard({ workspaceId }: { workspaceId: string }) {
                   <TableCell className="text-sm text-muted-foreground">{EDITORIAL_FORMAT_LABEL[idea.format]}</TableCell>
                   <TableCell><StatusPill status={idea.status} /></TableCell>
                   <TableCell className="text-right text-sm tabular-nums text-muted-foreground">{idea.scheduledDate ? formatDay(idea.scheduledDate) : idea.suggestedDate ? `sugerida ${formatDay(idea.suggestedDate)}` : "—"}</TableCell>
+                  <TableCell className="text-right" onClick={(event) => event.stopPropagation()}>
+                    {idea.format === "video"
+                      ? <Button size="sm" variant="ghost" onClick={() => setSelectedId(idea.id)}>Ver roteiro</Button>
+                      : <CreatePostButton idea={idea} busy={busy} size="sm" onCreate={() => void onGenerate(idea)} />}
+                  </TableCell>
                 </TableRow>
               ))}
             </TableBody>
@@ -366,10 +423,6 @@ function EditorialIdeaDetail({ idea, busy, onClose, onStatusChange, onScheduleCh
 }) {
   const [date, setDate] = useState(idea.scheduledDate ?? "");
   useEffect(() => { setDate(idea.scheduledDate ?? ""); }, [idea.scheduledDate]);
-  const isVideo = idea.format === "video";
-  const generating = busy === `generate:${idea.id}`;
-  const generateBlocked = isVideo ? "O motor de ideias gera imagem única e carrossel; pautas de vídeo seguem o roteiro para produção manual." : idea.status === "in_production" ? "Esta pauta já está em produção." : idea.status === "archived" ? "Reative a pauta antes de produzir." : null;
-  const generateButton = <Button disabled={Boolean(generateBlocked) || generating} onClick={onGenerate}>{generating ? "Enviando…" : "Enviar ao motor criativo"}</Button>;
 
   return (
     <DetailModal
@@ -390,9 +443,7 @@ function EditorialIdeaDetail({ idea, busy, onClose, onStatusChange, onScheduleCh
       defaultWidthPercent={62}
       footer={
         <div className="flex flex-wrap items-center gap-2">
-          {generateBlocked ? (
-            <Tooltip><TooltipTrigger asChild><span tabIndex={0}>{generateButton}</span></TooltipTrigger><TooltipContent>{generateBlocked}</TooltipContent></Tooltip>
-          ) : generateButton}
+          <CreatePostButton idea={idea} busy={busy} onCreate={onGenerate} />
           <Select value={idea.status} onValueChange={(value: EditorialIdeaStatus) => onStatusChange(value)}>
             <SelectTrigger className="w-40" disabled={busy === `status:${idea.id}`}><SelectValue /></SelectTrigger>
             <SelectContent>{EDITORIAL_STATUS_ORDER.map((status) => <SelectItem key={status} value={status}>{EDITORIAL_STATUS_LABEL[status]}</SelectItem>)}</SelectContent>
@@ -440,5 +491,30 @@ function EditorialIdeaDetail({ idea, busy, onClose, onStatusChange, onScheduleCh
         </div>
       </div>
     </DetailModal>
+  );
+}
+
+/** "Criar post" com o motivo do bloqueio no tooltip (nunca escondido). */
+function CreatePostButton({ idea, busy, onCreate, size }: { idea: EditorialIdea; busy: string | null; onCreate: () => void; size?: "sm" }) {
+  const blocked = createBlockedReason(idea);
+  const creating = busy === `generate:${idea.id}`;
+  const button = <Button size={size} disabled={Boolean(blocked) || Boolean(busy?.startsWith("generate:"))} onClick={onCreate}>{creating ? "Criando…" : "Criar post"}</Button>;
+  if (!blocked) return button;
+  return <Tooltip><TooltipTrigger asChild><span tabIndex={0} className="inline-flex">{button}</span></TooltipTrigger><TooltipContent>{blocked}</TooltipContent></Tooltip>;
+}
+
+function IdeaCard({ idea, busy, onOpen, onCreate }: { idea: EditorialIdea; busy: string | null; onOpen: () => void; onCreate: () => void }) {
+  return (
+    <Card className="flex flex-col">
+      <CardContent className="flex flex-1 flex-col gap-2 p-4">
+        <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{formatDay(idea.scheduledDate)} · {EDITORIAL_FORMAT_LABEL[idea.format]}</p>
+        <button type="button" onClick={onOpen} className="text-left text-sm font-medium text-foreground hover:underline">{idea.title}</button>
+        <p className="text-xs text-muted-foreground">{idea.category}</p>
+        <div className="mt-auto flex flex-wrap gap-2 pt-2">
+          {idea.format === "video" ? <Button size="sm" onClick={onOpen}>Ver roteiro</Button> : <CreatePostButton idea={idea} busy={busy} size="sm" onCreate={onCreate} />}
+          <Button size="sm" variant="ghost" onClick={onOpen}>Ver ideia</Button>
+        </div>
+      </CardContent>
+    </Card>
   );
 }

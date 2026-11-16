@@ -85,6 +85,16 @@ export class BrowserSocialDriver {
     this.page.on("console", message => { if (message.type() === "error" && Date.now() <= this.watchUntil) this.logOnce("SOCIAL_GATEWAY_CONSOLE", "error", mask(message.text())); });
     this.context.on("page", popup => { this.logOnce("SOCIAL_GATEWAY_POPUP", (() => { try { return new URL(popup.url()).hostname || "blank"; } catch { return "?"; } })(), "closed"); void popup.close().catch(() => undefined); });
     this.page.on("dialog", dialog => { void dialog.dismiss(); });
+    // TikTok's "Continuar com Google/Facebook/Apple" need sites this browser never opens: they would
+    // spin forever. Only the options that work here stay (QR code, phone/e-mail/username).
+    if (this.network === "tiktok") await this.context.addInitScript(() => {
+      const doc = (globalThis as unknown as { document: { readyState: string; documentElement: unknown; addEventListener(type: string, fn: () => void): void; querySelectorAll(selector: string): ArrayLike<{ textContent: string | null; style: { display: string } }> } }).document;
+      const works = /c[oó]digo QR|QR code|telefone|e-?mail|phone|usu[aá]rio|username/i;
+      const hide = () => { for (const item of Array.from(doc.querySelectorAll('[data-e2e="channel-item"]'))) if (!works.test(item.textContent ?? "")) item.style.display = "none"; };
+      const Observer = (globalThis as unknown as { MutationObserver: new (fn: () => void) => { observe(target: unknown, options: { childList: boolean; subtree: boolean }): void } }).MutationObserver;
+      const start = () => { hide(); new Observer(hide).observe(doc.documentElement, { childList: true, subtree: true }); };
+      if (doc.readyState === "loading") doc.addEventListener("DOMContentLoaded", start); else start();
+    });
   }
   /**
    * What a click at (x, y) lands on: tag, role, a couple of class names, and the host of the frame

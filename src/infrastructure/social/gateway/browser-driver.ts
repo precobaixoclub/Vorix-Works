@@ -128,10 +128,31 @@ export class BrowserSocialDriver {
     this.logOnce("SOCIAL_GATEWAY_CLICK", target, `frames=${[...new Set(frames)].join(",")}`);
   }
   /** After a click: whether the page received it and whether its handlers let it through. */
-  async afterClick(): Promise<void> {
+  /**
+   * After a click: whether the page received it. TikTok's identity check ("Verifique se é realmente
+   * você") can leave the browser's own clicks undelivered; then the click is handed straight to the
+   * element under the pointer, with the same pointer/mouse sequence a real click produces.
+   */
+  async afterClick(x?: number, y?: number): Promise<void> {
     await this.page.waitForTimeout(300);
     const seen = await this.page.evaluate(() => JSON.stringify((globalThis as unknown as { __vorixClick?: unknown }).__vorixClick ?? "nothing")).catch(() => "error");
     this.logOnce("SOCIAL_GATEWAY_CLICK_RESULT", seen.slice(0, 200), "");
+    if (seen !== '"nothing"' || x === undefined || y === undefined) return;
+    const result = await this.page.evaluate(({ x, y }) => {
+      type Element = { dispatchEvent(event: unknown): boolean; focus?(): void };
+      const g = globalThis as unknown as { document: { elementFromPoint(x: number, y: number): Element | null }; PointerEvent: new (type: string, init: object) => unknown; MouseEvent: new (type: string, init: object) => unknown; __vorixClick?: unknown };
+      const target = g.document.elementFromPoint(x, y);
+      if (!target) return "no target";
+      const base = { bubbles: true, cancelable: true, composed: true, clientX: x, clientY: y, button: 0, view: globalThis };
+      const pointer = { ...base, pointerId: 1, pointerType: "mouse", isPrimary: true };
+      target.dispatchEvent(new g.PointerEvent("pointerover", pointer)); target.dispatchEvent(new g.MouseEvent("mouseover", base));
+      target.dispatchEvent(new g.PointerEvent("pointerdown", { ...pointer, buttons: 1 })); target.dispatchEvent(new g.MouseEvent("mousedown", { ...base, buttons: 1, detail: 1 }));
+      target.focus?.();
+      target.dispatchEvent(new g.PointerEvent("pointerup", pointer)); target.dispatchEvent(new g.MouseEvent("mouseup", { ...base, detail: 1 }));
+      target.dispatchEvent(new g.MouseEvent("click", { ...base, detail: 1 }));
+      return JSON.stringify(g.__vorixClick ?? "still nothing");
+    }, { x, y }).catch(error => `error:${String(error instanceof Error ? error.message : error).slice(0, 80)}`);
+    this.logOnce("SOCIAL_GATEWAY_CLICK_FALLBACK", result.slice(0, 200), "");
   }
   async login(): Promise<void> { await this.page.goto(LOGIN[this.network], { waitUntil: "domcontentloaded" }); }
   async home(): Promise<void> { await this.page.goto(HOME[this.network], { waitUntil: "domcontentloaded" }); }

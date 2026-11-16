@@ -8,6 +8,7 @@ import type { BrandVisualProfileRepositoryPort } from "../../application/ports/b
 import type { ScreenshotTextInventoryStorePort } from "../../application/ports/screenshot-text-inventory-store.port.js";
 import type { PublicObjectRepositoryPort } from "../../application/ports/public-object-repository.port.js";
 import type { ProductionSettingsRepositoryPort } from "../../application/ports/production-settings-repository.port.js";
+import type { EditorialIdeaRepositoryPort } from "../../application/ports/editorial-idea-repository.port.js";
 import type { AssetMetadataSourcePort } from "../../application/ports/asset-metadata-source.port.js";
 import type { BriefingFieldValueRepositoryPort } from "../../application/ports/briefing-field-value-repository.port.js";
 import type { BriefingQuestionRepositoryPort } from "../../application/ports/briefing-question-repository.port.js";
@@ -68,6 +69,7 @@ import { InMemoryBrandVisualProfileRepository } from "./in-memory-brand-visual-p
 import { InMemoryScreenshotTextInventoryStore } from "./in-memory-screenshot-text-inventory-store.js";
 import { InMemoryPublicObjectRepository } from "./in-memory-public-object-repository.js";
 import { InMemoryProductionSettingsRepository } from "./in-memory-production-settings-repository.js";
+import { InMemoryEditorialIdeaRepository } from "./in-memory-editorial-idea-repository.js";
 import { InMemoryContentGenerationHistoryRepository } from "./in-memory-content-generation-history-repository.js";
 import { InMemoryCreativeEngineRunRepository } from "./in-memory-creative-engine-run-repository.js";
 import { InMemoryCreativeEngineEntitlementRepository } from "./in-memory-creative-engine-entitlement-repository.js";
@@ -116,6 +118,7 @@ import { PostgresBrandVisualProfileRepository } from "./postgres/postgres-brand-
 import { PostgresScreenshotTextInventoryStore } from "./postgres/postgres-screenshot-text-inventory-store.js";
 import { PostgresPublicObjectRepository } from "./postgres/postgres-public-object-repository.js";
 import { PostgresProductionSettingsRepository } from "./postgres/postgres-production-settings-repository.js";
+import { PostgresEditorialIdeaRepository } from "./postgres/postgres-editorial-idea-repository.js";
 import { PostgresContentGenerationHistoryRepository } from "./postgres/postgres-content-generation-history-repository.js";
 import { PostgresCreativeEngineRunRepository } from "./postgres/postgres-creative-engine-run-repository.js";
 import { PostgresCreativeEngineEntitlementRepository } from "./postgres/postgres-creative-engine-entitlement-repository.js";
@@ -191,6 +194,8 @@ export type PlatformRepositories = {
   /** Objetos explicitamente públicos de `/uploads` (0140). */
   publicObjectRepository: PublicObjectRepositoryPort;
   productionSettingsRepository: ProductionSettingsRepositoryPort;
+  /** Bolsão de pautas editoriais por workspace (0197). */
+  editorialIdeaRepository: EditorialIdeaRepositoryPort;
   chatRepository: ChatRepositoryPort;
   conversationRepository: ConversationRepositoryPort;
   conversationEventRepository: ConversationEventRepositoryPort;
@@ -311,6 +316,7 @@ export function buildPlatformRepositories(options: { driver: PersistenceDriver; 
       screenshotTextInventoryStore: new InMemoryScreenshotTextInventoryStore(),
       publicObjectRepository: new InMemoryPublicObjectRepository(),
       productionSettingsRepository: new InMemoryProductionSettingsRepository(),
+      editorialIdeaRepository: new InMemoryEditorialIdeaRepository(),
       chatRepository: new InMemoryChatRepository(),
       conversationRepository: new InMemoryConversationRepository(),
       conversationEventRepository: new InMemoryConversationEventRepository(),
@@ -380,6 +386,7 @@ export function buildPlatformRepositories(options: { driver: PersistenceDriver; 
     screenshotTextInventoryStore: new PostgresScreenshotTextInventoryStore(pool),
     publicObjectRepository: new PostgresPublicObjectRepository(pool),
     productionSettingsRepository: new PostgresProductionSettingsRepository(pool),
+    editorialIdeaRepository: new PostgresEditorialIdeaRepository(pool),
     chatRepository: new PostgresChatRepository(pool),
     conversationRepository: new PostgresConversationRepository(pool),
     conversationEventRepository: new PostgresConversationEventRepository(pool),

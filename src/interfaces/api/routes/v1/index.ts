@@ -29,6 +29,7 @@ import { resolveEffectiveEntitlements } from "../../../../application/billing/en
 import { registerAiProvidersRoutes } from "./ai-providers.route.js";
 import { registerAssetsRoutes } from "./assets.route.js";
 import { registerProductionSettingsRoutes } from "./production-settings.route.js";
+import { registerEditorialIdeasRoutes } from "./editorial-ideas.route.js";
 import { registerBrandProfileRoutes } from "./brand-profile.route.js";
 import { registerBrandIdentityRoutes } from "./brand-identity.route.js";
 import { registerFileRoutes } from "./files.route.js";
@@ -884,6 +885,10 @@ export async function registerV1Routes(app: FastifyInstance): Promise<void> {
     objectStorage: app.zunoContainer.objectStorage,
     maxUploadBytes: app.zunoConfig.objectStorage.maxUploadBytes,
     removeImageBackground: app.zunoContainer.removeImageBackground,
+  });
+  await registerEditorialIdeasRoutes(app, {
+    editorialIdeaRepository: app.zunoContainer.editorialIdeaRepository,
+    workspaceRepository: app.zunoContainer.workspaceRepository,
   });
   await registerProductionSettingsRoutes(app, {
     productionSettingsRepository: app.zunoContainer.productionSettingsRepository,

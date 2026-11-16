@@ -29,6 +29,7 @@ import { TablePagination, usePagination } from "@/components/ui/table-pagination
 import { useDebounce } from "@/hooks/useDebounce";
 import { useSortedRows } from "@/hooks/useSortedRows";
 import { useCreativeEngineWorkspaceStatus } from "@/features/creative-engine-entitlement/hooks";
+import { EditorialIdeasBoard } from "@/features/editorial-ideas/EditorialIdeasBoard";
 
 const CHANNELS: ProductionChannel[] = ["instagram", "facebook", "tiktok", "youtube"];
 const FORMATS: ProductionFormat[] = ["single_image", "carousel", "video"];
@@ -75,7 +76,7 @@ const IN_PROGRESS_STATES: readonly ExecutionRunState[] = ["created", "validating
 const RUN_STATE_LABEL: Record<string, string> = { created: "Na fila", validating: "Preparando", ready: "Pronto para processar", running: "Gerando com IA…" };
 const UNTITLED_CONTENT_TITLE = "Conteúdo sem título";
 
-type ProductionMode = "queue" | "configure";
+type ProductionMode = "queue" | "configure" | "pautas";
 type QueueTabId = (typeof QUEUE_TABS)[number]["id"];
 type PeriodFilterId = (typeof PERIOD_FILTERS)[number]["id"];
 type SortOrder = "recent" | "oldest";
@@ -255,6 +256,13 @@ function ProductionModeTabs({ mode, onChange, queueCount, tankCount }: { mode: P
       >
         Planejamento{tankCount > 0 ? ` (${tankCount})` : ""}
       </button>
+      <button
+        type="button"
+        onClick={() => onChange("pautas")}
+        className={`min-h-9 rounded-md px-3.5 text-sm font-medium transition-colors ${mode === "pautas" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}
+      >
+        Pautas
+      </button>
     </div>
   );
 }
@@ -270,7 +278,7 @@ export default function ProductionLinePage() {
   // Link direto pro tanque de ideias (ex.: "Ver tanque de ideias" a partir de Criar, depois de
   // "Guardar no tanque") — sem isso, esse link cairia sempre na fila (modo padrão), nunca
   // realmente mostrando onde a ideia acabou de ser guardada.
-  const [mode, setMode] = useState<ProductionMode>(() => (searchParams.get("mode") === "configure" ? "configure" : "queue"));
+  const [mode, setMode] = useState<ProductionMode>(() => (searchParams.get("mode") === "configure" ? "configure" : searchParams.get("mode") === "pautas" ? "pautas" : "queue"));
   const [ideaStatusFilter, setIdeaStatusFilter] = useState<IdeaStatusFilter>("all");
   const [ideaSearch, setIdeaSearch] = useState("");
   const [formatFilter, setFormatFilter] = useState<ProductionFormat | "all">("all");
@@ -629,6 +637,15 @@ export default function ProductionLinePage() {
 
   function updateWeeklyMix(rule: PostingRule, itemId: string, patch: Partial<WeeklyFormatQuota>) {
     updateRule(rule.id, { weeklyMix: rule.weeklyMix.map((item) => (item.id === itemId ? { ...item, ...patch } : item)) });
+  }
+
+  if (mode === "pautas") {
+    return (
+      <main className="mx-auto max-w-6xl px-3 py-5 sm:px-6 sm:py-8">
+        <ProductionModeTabs mode={mode} onChange={setMode} queueCount={totalQueueRuns} tankCount={pendingIdeaCount} />
+        <EditorialIdeasBoard workspaceId={workspace.id} />
+      </main>
+    );
   }
 
   if (mode === "configure") {

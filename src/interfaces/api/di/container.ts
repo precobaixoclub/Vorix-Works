@@ -295,6 +295,7 @@ export type ApiContainer = {
   workspaceRepository: WorkspaceRepositoryPort;
   assetLibraryRepository: AssetLibraryRepositoryPort;
   productionSettingsRepository: ProductionSettingsRepositoryPort;
+  editorialIdeaRepository: import("../../../application/ports/editorial-idea-repository.port.js").EditorialIdeaRepositoryPort;
   chatRepository: ChatRepositoryPort;
   conversationRepository: ConversationRepositoryPort;
   conversationEventRepository: ConversationEventRepositoryPort;

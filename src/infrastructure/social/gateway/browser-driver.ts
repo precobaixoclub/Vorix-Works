@@ -85,6 +85,16 @@ export class BrowserSocialDriver {
     this.page.on("console", message => { if (message.type() === "error" && Date.now() <= this.watchUntil) this.logOnce("SOCIAL_GATEWAY_CONSOLE", "error", mask(message.text())); });
     this.context.on("page", popup => { this.logOnce("SOCIAL_GATEWAY_POPUP", (() => { try { return new URL(popup.url()).hostname || "blank"; } catch { return "?"; } })(), "closed"); void popup.close().catch(() => undefined); });
     this.page.on("dialog", dialog => { void dialog.dismiss(); });
+    // Diagnostics: what the page itself saw of the last click (target, trusted, reached the top,
+    // cancelled). Tags and class names only.
+    await this.context.addInitScript(() => {
+      type Target = { tagName?: string; className?: unknown } | null;
+      const g = globalThis as unknown as { __vorixClick?: Record<string, unknown>; addEventListener(type: string, fn: (event: { target: Target; isTrusted: boolean; defaultPrevented: boolean }) => void, capture: boolean): void };
+      const name = (target: Target) => target?.tagName ? `${target.tagName.toLowerCase()}${typeof target.className === "string" && target.className ? "." + target.className.split(/s+/).slice(0, 2).join(".") : ""}` : "none";
+      g.addEventListener("pointerdown", event => { g.__vorixClick = { down: name(event.target), trusted: event.isTrusted }; }, true);
+      g.addEventListener("click", event => { g.__vorixClick = { ...g.__vorixClick, click: name(event.target), clickTrusted: event.isTrusted }; }, true);
+      g.addEventListener("click", event => { g.__vorixClick = { ...g.__vorixClick, reachedTop: true, prevented: event.defaultPrevented }; }, false);
+    });
     // TikTok's "Continuar com Google/Facebook/Apple" need sites this browser never opens: they would
     // spin forever. Only the options that work here stay (QR code, phone/e-mail/username).
     if (this.network === "tiktok") await this.context.addInitScript(() => {
@@ -107,11 +117,21 @@ export class BrowserSocialDriver {
       if (!element) return "nothing";
       const classes = typeof element.className === "string" ? element.className.split(/\s+/).filter(Boolean).slice(0, 3).join(".") : "";
       const frame = element.tagName === "IFRAME" ? (() => { try { return new URL(element.getAttribute("src") ?? "", "https://x.invalid").hostname; } catch { return "?"; } })() : "";
-      return `${element.tagName.toLowerCase()}${classes ? "." + classes : ""}${element.getAttribute("role") ? "[role=" + element.getAttribute("role") + "]" : ""}${element.closest("[aria-modal=true],[role=dialog]") ? " in-dialog" : ""}${frame ? " iframe:" + frame : ""}`;
+      const blocked = (element as unknown as { closest(selector: string): unknown }).closest("[inert]") ? " INERT" : "";
+      const view = globalThis as unknown as { getComputedStyle(element: unknown): { pointerEvents: string } };
+      const noPointer = view.getComputedStyle(element).pointerEvents === "none" ? " NO-POINTER" : "";
+      (globalThis as unknown as { __vorixClick?: unknown }).__vorixClick = undefined;
+      return `${element.tagName.toLowerCase()}${blocked}${noPointer}${classes ? "." + classes : ""}${element.getAttribute("role") ? "[role=" + element.getAttribute("role") + "]" : ""}${element.closest("[aria-modal=true],[role=dialog]") ? " in-dialog" : ""}${frame ? " iframe:" + frame : ""}`;
     }, { x, y }).catch(error => `error:${String(error instanceof Error ? error.message : error).slice(0, 80)}`);
     this.watchUntil = Date.now() + 15_000;
     const frames = this.page.frames().map(frame => { try { return new URL(frame.url()).hostname || "blank"; } catch { return "?"; } });
     this.logOnce("SOCIAL_GATEWAY_CLICK", target, `frames=${[...new Set(frames)].join(",")}`);
+  }
+  /** After a click: whether the page received it and whether its handlers let it through. */
+  async afterClick(): Promise<void> {
+    await this.page.waitForTimeout(300);
+    const seen = await this.page.evaluate(() => JSON.stringify((globalThis as unknown as { __vorixClick?: unknown }).__vorixClick ?? "nothing")).catch(() => "error");
+    this.logOnce("SOCIAL_GATEWAY_CLICK_RESULT", seen.slice(0, 200), "");
   }
   async login(): Promise<void> { await this.page.goto(LOGIN[this.network], { waitUntil: "domcontentloaded" }); }
   async home(): Promise<void> { await this.page.goto(HOME[this.network], { waitUntil: "domcontentloaded" }); }

@@ -119,7 +119,7 @@ export class SocialGatewayService {
     return this.mutex.run(`flow:${flowId}`, async () => {
       const flow = this.flow(scope, flowId);
       // Human input only. No arbitrary URL, script, selector, file upload, or challenge solver.
-      if (action.kind === "click") { await flow.driver.describeClick?.(action.x, action.y); await flow.page.mouse.click(action.x, action.y); }
+      if (action.kind === "click") { await flow.driver.describeClick?.(action.x, action.y); await flow.page.mouse.click(action.x, action.y); await flow.driver.afterClick?.(); }
       if (action.kind === "drag") { await flow.page.mouse.move(action.x, action.y); await flow.page.mouse.down(); try { await flow.page.mouse.move(action.toX, action.toY, { steps: 20 }); } finally { await flow.page.mouse.up(); } }
       if (action.kind === "text") await flow.page.keyboard.insertText(action.text);
       if (action.kind === "key") await flow.page.keyboard.press(action.key);

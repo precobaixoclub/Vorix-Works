@@ -26,6 +26,8 @@ export type BrowserPublishInput = { format: SocialPostFormat; caption: string; m
 export class BrowserSocialDriver {
   constructor(readonly network: SocialNetwork, readonly page: Page, private readonly context: BrowserContext, private readonly mediaOrigins: readonly string[], private readonly assets?: StaticAssetCache) {}
   private readonly logged = new Set<string>();
+  /** Until when requests are logged after the last click (diagnostics only). */
+  private watchUntil = 0;
   /** Diagnostics for the operator: an address (host or host+path, never query strings or bodies) and a short detail, once per flow. */
   private logOnce(event: string, where: string, detail: string): void {
     const key = `${event} ${where} ${detail}`;
@@ -66,7 +68,22 @@ export class BrowserSocialDriver {
       const url = new URL(request.url()), error = request.failure()?.errorText ?? "";
       if (error !== "net::ERR_ABORTED") this.logOnce("SOCIAL_GATEWAY_REQUEST_FAILED", `${url.hostname}${url.pathname}`, error);
     });
-    this.context.on("page", popup => { void popup.close().catch(() => undefined); });
+    // After a click: every request the page starts (any method) and the ones still unanswered 15s
+    // later, plus the page's own script errors (addresses masked): shows why a button does nothing.
+    const pending = new Set<import("playwright-core").Request>();
+    const mask = (text: string) => text.replace(/[^s@]+@[^s@]+/g, "<email>").replace(/d{4,}/g, "<n>").slice(0, 160);
+    this.page.on("request", request => {
+      if (Date.now() > this.watchUntil || !allowedBrowserURL(this.network, request.url())) return;
+      const url = new URL(request.url());
+      this.logOnce("SOCIAL_GATEWAY_AFTER_CLICK", `${url.hostname}${url.pathname}`, `${request.method()} ${request.resourceType()}`);
+      pending.add(request);
+      setTimeout(() => { if (pending.delete(request)) this.logOnce("SOCIAL_GATEWAY_STUCK", `${url.hostname}${url.pathname}`, "no answer after 15s"); }, 15_000).unref?.();
+    });
+    this.page.on("requestfinished", request => { pending.delete(request); });
+    this.page.on("requestfailed", request => { pending.delete(request); });
+    this.page.on("pageerror", error => { if (Date.now() <= this.watchUntil) this.logOnce("SOCIAL_GATEWAY_PAGE_ERROR", mask(error.name || "Error"), mask(error.message)); });
+    this.page.on("console", message => { if (message.type() === "error" && Date.now() <= this.watchUntil) this.logOnce("SOCIAL_GATEWAY_CONSOLE", "error", mask(message.text())); });
+    this.context.on("page", popup => { this.logOnce("SOCIAL_GATEWAY_POPUP", (() => { try { return new URL(popup.url()).hostname || "blank"; } catch { return "?"; } })(), "closed"); void popup.close().catch(() => undefined); });
     this.page.on("dialog", dialog => { void dialog.dismiss(); });
   }
   /**
@@ -82,6 +99,7 @@ export class BrowserSocialDriver {
       const frame = element.tagName === "IFRAME" ? (() => { try { return new URL(element.getAttribute("src") ?? "", "https://x.invalid").hostname; } catch { return "?"; } })() : "";
       return `${element.tagName.toLowerCase()}${classes ? "." + classes : ""}${element.getAttribute("role") ? "[role=" + element.getAttribute("role") + "]" : ""}${element.closest("[aria-modal=true],[role=dialog]") ? " in-dialog" : ""}${frame ? " iframe:" + frame : ""}`;
     }, { x, y }).catch(error => `error:${String(error instanceof Error ? error.message : error).slice(0, 80)}`);
+    this.watchUntil = Date.now() + 15_000;
     const frames = this.page.frames().map(frame => { try { return new URL(frame.url()).hostname || "blank"; } catch { return "?"; } });
     this.logOnce("SOCIAL_GATEWAY_CLICK", target, `frames=${[...new Set(frames)].join(",")}`);
   }

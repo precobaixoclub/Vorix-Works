@@ -8,7 +8,10 @@ export function useSocialAccounts(workspaceId: string) {
 }
 
 export function useComposerOptions(workspaceId: string) {
-  return useSWR(["social-composer", workspaceId], () => getComposerOptions(workspaceId));
+  // Revalida ao focar a aba — igual às Integrações (`useSocialAccounts`). Sem isso, o Publicar
+  // podia servir contas de cache (de antes de conectar/desconectar) enquanto as Integrações já
+  // estavam atualizadas, dando a impressão de que "puxa redes diferentes das conectadas".
+  return useSWR(["social-composer", workspaceId], () => getComposerOptions(workspaceId), { revalidateOnFocus: true });
 }
 
 export function useSocialPosts(workspaceId: string, range: { from: string; to: string }) {

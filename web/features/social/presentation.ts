@@ -155,7 +155,7 @@ export type NetworkChoice = {
 };
 
 export function networkChoices(options: readonly SocialComposerAccount[], workspaceId: string): NetworkChoice[] {
-  return (["instagram", "tiktok", "youtube"] as const).map((network) => {
+  return (["instagram", "facebook", "tiktok", "youtube"] as const).map((network) => {
     const accounts = options.filter((option) => option.network === network);
     const label = NETWORK_LABEL[network];
     const integrations = `/workspaces/${workspaceId}/social/integrations`;

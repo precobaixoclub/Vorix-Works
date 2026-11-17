@@ -465,6 +465,7 @@ function PublicationDetailModal({ workspaceId, post, busy, onClose, onCancel }: 
       footer={
         <div className="flex flex-wrap gap-2">
           <Link href={publishAgainHref(workspaceId, post)}><Button>Publicar novamente</Button></Link>
+          {post.externalUrl ? <a href={post.externalUrl} target="_blank" rel="noreferrer"><Button variant="secondary">Ver publicação</Button></a> : null}
           {status === "scheduled" ? <Button variant="secondary" disabled={busy} onClick={onCancel}>Cancelar agendamento</Button> : null}
         </div>
       }

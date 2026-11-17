@@ -16,6 +16,8 @@ export type UnifiedPublication = {
   createdAt: string;
   publishedAt?: string;
   cancelledAt?: string;
+  /** Link para a publicação ao vivo na rede (quando já publicada). */
+  externalUrl?: string;
 };
 
 export type PublicationDisplayStatus = "draft" | "scheduled" | "publishing" | "published" | "failed" | "cancelled";

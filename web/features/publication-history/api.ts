@@ -1,12 +1,13 @@
 import { cancelTikTokPost } from "@/features/tiktok/api";
-import { cancelMetaPost } from "@/features/meta/api";
 import { cancelYouTubePost } from "@/features/youtube/api";
+import { cancelSocialPost } from "@/features/social/api";
 import type { PublicationNetwork } from "./types";
 
-/** Despacha o cancelamento pro endpoint certo conforme a rede — cada rede tem sua própria rota
- * de cancelamento (o Publication engine não expõe um endpoint cross-network hoje). */
-export function cancelUnifiedPublication(workspaceId: string, network: PublicationNetwork, publicationId: string): Promise<{ publicationId: string; state: string }> {
+/** Despacha o cancelamento pro endpoint certo conforme a rede. Instagram e Facebook agora passam
+ * pelo sistema de publicação social (`/v1/social/posts/:id/cancel`), a mesma fonte da lista. */
+export async function cancelUnifiedPublication(workspaceId: string, network: PublicationNetwork, publicationId: string): Promise<{ publicationId: string; state: string }> {
   if (network === "tiktok") return cancelTikTokPost(workspaceId, publicationId);
   if (network === "youtube") return cancelYouTubePost(workspaceId, publicationId);
-  return cancelMetaPost(workspaceId, publicationId);
+  const post = await cancelSocialPost(workspaceId, publicationId);
+  return { publicationId: post.id, state: post.state };
 }

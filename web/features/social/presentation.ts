@@ -112,7 +112,36 @@ export type IntegrationCardModel = {
   accounts: SocialAccountView[];
   primaryAction?: "connect" | "reconnect";
   waitingPublications: number;
+  /** Quando o card representa mais de uma rede (ex.: a conexão Meta = Instagram + Facebook). */
+  networks?: SocialNetwork[];
+  displayLabel?: string;
 };
+
+/**
+ * Une os cards de Instagram e Facebook num só "Instagram + Facebook": é a MESMA conexão Meta
+ * (conectar uma conecta as duas). `network: "instagram"` governa o botão Conectar (dispara o OAuth
+ * da Meta); cada conta mantém sua própria rede para avatar, testar e desconectar.
+ */
+export function composeMetaCard(igCard: IntegrationCardModel, fbCard: IntegrationCardModel): IntegrationCardModel {
+  const parts = [igCard, fbCard];
+  const accounts = [...igCard.accounts, ...fbCard.accounts];
+  const waitingPublications = igCard.waitingPublications + fbCard.waitingPublications;
+  const base = { network: "instagram" as SocialNetwork, networks: ["instagram", "facebook"] as SocialNetwork[], displayLabel: "Instagram + Facebook", waitingPublications };
+  const attention = parts.find((card) => card.state === "attention");
+  const connect = parts.find((card) => card.primaryAction === "connect");
+  const reconnect = parts.find((card) => card.primaryAction === "reconnect");
+  if (attention) {
+    return { ...base, state: "attention", headline: attention.headline, accounts, ...(attention.message ? { message: attention.message } : {}), ...(reconnect ? { primaryAction: "reconnect" as const } : connect ? { primaryAction: "connect" as const } : {}) };
+  }
+  if (parts.some((card) => card.state === "connected")) {
+    return { ...base, state: "connected", headline: "Conectado", accounts, ...(connect ? { primaryAction: "connect" as const } : {}) };
+  }
+  if (parts.every((card) => card.state === "unavailable")) {
+    const message = igCard.message ?? fbCard.message;
+    return { ...base, state: "unavailable", headline: "Indisponível", accounts: [], ...(message ? { message } : {}) };
+  }
+  return { ...base, state: "disconnected", headline: "Não conectado", message: "Conecte a sua conta Meta para publicar no Instagram e no Facebook.", accounts: [], primaryAction: "connect" };
+}
 
 const ATTENTION: readonly SocialConnectionStatus[] = ["REAUTH_REQUIRED", "CHECKPOINT_REQUIRED", "TEMPORARY_ERROR", "DISABLED"];
 
@@ -163,6 +192,60 @@ export function networkChoices(options: readonly SocialComposerAccount[], worksp
     if (!accounts.some((account) => account.publishable)) return { network, accounts, selectable: false, reason: accounts[0]?.warning ?? `A conta do ${label} precisa de atenção.`, cta: { label: `Reconectar ${label}`, href: integrations } };
     return { network, accounts, selectable: true };
   });
+}
+
+/**
+ * Alvos de publicação do compositor. Instagram e Facebook vêm da MESMA conexão Meta, então aparecem
+ * como UM alvo "Instagram + Facebook": marcar publica nas duas redes de uma vez. TikTok e YouTube
+ * seguem como alvos próprios. `accounts` são todas as contas do grupo (exibição); `publishableAccounts`
+ * são as que entram como destino ao marcar o alvo.
+ */
+export type ComposerTarget = {
+  key: string;
+  label: string;
+  networks: SocialNetwork[];
+  accounts: SocialComposerAccount[];
+  publishableAccounts: SocialComposerAccount[];
+  selectable: boolean;
+  reason?: string;
+  cta?: { label: string; href: string };
+};
+
+const META_NETWORKS: readonly SocialNetwork[] = ["instagram", "facebook"];
+
+export function composerTargets(choices: readonly NetworkChoice[], workspaceId: string): ComposerTarget[] {
+  const integrations = `/workspaces/${workspaceId}/social/integrations`;
+  const metaChoices = choices.filter((choice) => META_NETWORKS.includes(choice.network));
+  const targets: ComposerTarget[] = [];
+  if (metaChoices.length) {
+    const accounts = metaChoices.flatMap((choice) => choice.accounts);
+    const publishableAccounts = accounts.filter((account) => account.publishable);
+    const selectable = publishableAccounts.length > 0;
+    const reason = metaChoices.map((choice) => choice.reason).find(Boolean);
+    targets.push({
+      key: "meta",
+      label: "Instagram + Facebook",
+      networks: [...META_NETWORKS],
+      accounts,
+      publishableAccounts,
+      selectable,
+      ...(selectable ? {} : { reason: reason ?? "Conecte a sua conta Meta.", cta: { label: "Conectar Instagram", href: integrations } }),
+    });
+  }
+  for (const choice of choices) {
+    if (META_NETWORKS.includes(choice.network)) continue;
+    targets.push({
+      key: choice.network,
+      label: NETWORK_LABEL[choice.network],
+      networks: [choice.network],
+      accounts: choice.accounts,
+      publishableAccounts: choice.accounts.filter((account) => account.publishable),
+      selectable: choice.selectable,
+      ...(choice.reason ? { reason: choice.reason } : {}),
+      ...(choice.cta ? { cta: choice.cta } : {}),
+    });
+  }
+  return targets;
 }
 
 export function mediaShape(media: readonly SocialMediaItem[]): "none" | "image" | "images" | "video" | "mixed" {

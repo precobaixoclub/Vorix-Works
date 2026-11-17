@@ -5,7 +5,9 @@ import {
   allowedActions,
   buildComposeRequest,
   compatibleFormats,
+  composeMetaCard,
   composerBlockers,
+  composerTargets,
   defaultFormat,
   DESTINATION_STATE_META,
   destinationActionLabel,
@@ -39,6 +41,7 @@ const igOption: SocialComposerAccount = {
   ],
 };
 const ttOption: SocialComposerAccount = { accountId: "tt-1", network: "tiktok", publishable: true, musicSearch: false, formats: [{ format: "short_video", label: "Vídeo curto", features: ["caption"], maxItems: 1, kinds: ["video"], maxCaptionLength: 2200 }] };
+const fbOption: SocialComposerAccount = { accountId: "fb-1", network: "facebook", displayName: "Vorix Works", publishable: true, musicSearch: false, formats: [{ format: "feed_image", label: "Imagem no feed", features: ["caption"], maxItems: 1, kinds: ["image"], maxCaptionLength: 2200 }] };
 const IMAGE: SocialMediaItem = { url: "https://cdn/a.jpg", kind: "image", width: 1080, height: 1350 };
 const VIDEO: SocialMediaItem = { url: "https://cdn/v.mp4", kind: "video", width: 1080, height: 1920, durationSec: 20 };
 
@@ -77,6 +80,38 @@ describe("Composer", () => {
     expect(choices.find((choice) => choice.network === "instagram")).toMatchObject({ selectable: true });
     expect(choices.find((choice) => choice.network === "facebook")).toMatchObject({ selectable: false, cta: { label: "Conectar Facebook", href: "/workspaces/ws-1/social/integrations" } });
     expect(choices.find((choice) => choice.network === "tiktok")).toMatchObject({ selectable: false, reason: "Sua conta do TikTok precisa ser reconectada.", cta: { label: "Reconectar TikTok" } });
+  });
+
+  it("composerTargets une Instagram + Facebook num só alvo (conexão Meta); TikTok/YouTube ficam próprios", () => {
+    const targets = composerTargets(networkChoices([igOption, fbOption, ttOption], "ws-1"), "ws-1");
+    const meta = targets.find((target) => target.key === "meta")!;
+    expect(targets[0].key).toBe("meta");
+    expect(meta.label).toBe("Instagram + Facebook");
+    expect(meta.networks).toEqual(["instagram", "facebook"]);
+    expect(meta.selectable).toBe(true);
+    // marcar o alvo Meta entra com as DUAS contas (IG + FB) como destino
+    expect(meta.publishableAccounts.map((account) => account.accountId).sort()).toEqual(["fb-1", "ig-1"]);
+    expect(targets.map((target) => target.key)).toContain("tiktok");
+    expect(targets.find((target) => target.key === "tiktok")?.networks).toEqual(["tiktok"]);
+  });
+
+  it("composerTargets: sem conta Meta publicável, o alvo Meta não é selecionável e oferece conectar", () => {
+    const targets = composerTargets(networkChoices([ttOption], "ws-1"), "ws-1");
+    const meta = targets.find((target) => target.key === "meta")!;
+    expect(meta.selectable).toBe(false);
+    expect(meta.publishableAccounts).toEqual([]);
+    expect(meta.cta).toMatchObject({ href: "/workspaces/ws-1/social/integrations" });
+  });
+
+  it("composeMetaCard une Instagram + Facebook num card único com as duas contas", () => {
+    const ig = integrationCard("instagram", [account({ id: "ig-1", network: "instagram", username: "vorix" })], { network: "instagram", canConnect: true });
+    const fb = integrationCard("facebook", [account({ id: "fb-1", network: "facebook", username: "Vorix Works" })], { network: "facebook", canConnect: true });
+    const meta = composeMetaCard(ig, fb);
+    expect(meta.displayLabel).toBe("Instagram + Facebook");
+    expect(meta.networks).toEqual(["instagram", "facebook"]);
+    expect(meta.network).toBe("instagram");
+    expect(meta.state).toBe("connected");
+    expect(meta.accounts.map((item) => item.id).sort()).toEqual(["fb-1", "ig-1"]);
   });
 
   it("capabilities controlam os formatos oferecidos (sem paridade presumida entre redes)", () => {

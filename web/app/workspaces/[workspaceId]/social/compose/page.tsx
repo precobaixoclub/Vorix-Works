@@ -33,6 +33,7 @@ import {
   buildComposeRequest,
   compatibleFormats,
   composerBlockers,
+  composerTargets,
   defaultFormat,
   formatSupportsCaption,
   localInputsIn,
@@ -41,6 +42,7 @@ import {
   previewAspect,
   splitHashtags,
   type ComposerDraft,
+  type ComposerTarget,
 } from "@/features/social/presentation";
 import type { SocialComposerAccount, SocialDestinationCheck, SocialMediaItem, SocialPostFormat } from "@/features/social/types";
 import { cn } from "@/lib/utils";
@@ -88,7 +90,8 @@ function SocialComposer() {
   }, [params]);
 
   const accounts = useMemo(() => options.data?.accounts ?? [], [options.data]);
-  const choices = useMemo(() => networkChoices(accounts, workspace.id), [accounts, workspace.id]);
+  // Instagram + Facebook aparecem como UM alvo (mesma conexão Meta): marcar publica nos dois.
+  const targets = useMemo(() => composerTargets(networkChoices(accounts, workspace.id), workspace.id), [accounts, workspace.id]);
   const accountById = useMemo(() => new Map(accounts.map((account) => [account.accountId, account])), [accounts]);
 
   // Formato de cada destino acompanha a mídia (só formatos que a conta suporta).
@@ -114,15 +117,21 @@ function SocialComposer() {
   const blockers = composerBlockers(draft);
   const canSubmit = draft.when.mode === "now" ? can(ACTION_PERMISSION.publish_now) : can(ACTION_PERMISSION.schedule);
 
-  function toggleAccount(account: SocialComposerAccount, selected: boolean) {
+  function toggleTarget(target: ComposerTarget, selected: boolean) {
     setChecks([]);
-    setDraft((current) => ({
-      ...current,
-      destinations: selected
-        ? [...current.destinations, { accountId: account.accountId, network: account.network, format: defaultFormat(account, current.media), customize: false, caption: current.caption, hashtags: current.hashtags }]
-        : current.destinations.filter((destination) => destination.accountId !== account.accountId),
-    }));
+    const ids = new Set(target.publishableAccounts.map((account) => account.accountId));
+    setDraft((current) => {
+      const without = current.destinations.filter((destination) => !ids.has(destination.accountId));
+      return {
+        ...current,
+        destinations: selected
+          ? [...without, ...target.publishableAccounts.map((account) => ({ accountId: account.accountId, network: account.network, format: defaultFormat(account, current.media), customize: false, caption: current.caption, hashtags: current.hashtags }))]
+          : without,
+      };
+    });
   }
+
+  const targetChecked = (target: ComposerTarget) => target.publishableAccounts.length > 0 && target.publishableAccounts.every((account) => draft.destinations.some((destination) => destination.accountId === account.accountId));
 
   async function addFiles(files: FileList | null) {
     if (!files?.length) return;
@@ -233,24 +242,21 @@ function SocialComposer() {
           <Card className="space-y-4 p-5">
             <SectionTitle step={3} title="Redes" />
             <div className="grid gap-3 sm:grid-cols-3" data-testid="social-network-choices">
-              {choices.map((choice) => (
-                <div key={choice.network} className={cn("rounded-lg border p-3", choice.selectable ? "border-border" : "border-dashed border-border opacity-80")}>
-                  <div className="mb-2 flex items-center gap-2"><NetworkMark network={choice.network} size="sm" /><span className="text-sm font-medium">{NETWORK_LABEL[choice.network]}</span></div>
-                  {choice.selectable ? (
-                    <ul className="space-y-1.5">
-                      {choice.accounts.map((account) => (
-                        <li key={account.accountId}>
-                          <label className={cn("flex items-center gap-2 text-sm", account.publishable ? "cursor-pointer" : "cursor-not-allowed text-muted-foreground")} title={account.warning}>
-                            <Checkbox disabled={!account.publishable} checked={draft.destinations.some((destination) => destination.accountId === account.accountId)} onCheckedChange={(value) => toggleAccount(account, value === true)} aria-label={`${NETWORK_LABEL[account.network]} ${accountName(account)}`} />
-                            <span className="truncate">{accountName(account)}</span>
-                          </label>
-                        </li>
-                      ))}
-                    </ul>
+              {targets.map((target) => (
+                <div key={target.key} className={cn("rounded-lg border p-3", target.selectable ? "border-border" : "border-dashed border-border opacity-80")}>
+                  <div className="mb-2 flex items-center gap-2">
+                    <span className="flex items-center -space-x-1">{target.networks.map((network) => <NetworkMark key={network} network={network} size="sm" />)}</span>
+                    <span className="text-sm font-medium">{target.label}</span>
+                  </div>
+                  {target.selectable ? (
+                    <label className="flex items-center gap-2 text-sm cursor-pointer" title={target.publishableAccounts.map((account) => `${NETWORK_LABEL[account.network]}: ${accountName(account)}`).join(" · ")}>
+                      <Checkbox checked={targetChecked(target)} onCheckedChange={(value) => toggleTarget(target, value === true)} aria-label={target.label} />
+                      <span className="truncate">{target.networks.length > 1 ? target.publishableAccounts.map((account) => accountName(account)).join(" · ") : accountName(target.publishableAccounts[0] ?? target.accounts[0])}</span>
+                    </label>
                   ) : (
                     <div className="space-y-2">
-                      <p className="text-xs text-muted-foreground">{choice.reason}</p>
-                      {choice.cta ? <Button size="sm" variant="secondary" asChild><Link href={choice.cta.href}>{choice.cta.label}</Link></Button> : null}
+                      <p className="text-xs text-muted-foreground">{target.reason}</p>
+                      {target.cta ? <Button size="sm" variant="secondary" asChild><Link href={target.cta.href}>{target.cta.label}</Link></Button> : null}
                     </div>
                   )}
                 </div>

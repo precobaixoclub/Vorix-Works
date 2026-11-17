@@ -20,7 +20,7 @@ import { useMyAccess } from "@/features/auth/access";
 import { beginSocialConnection, disconnectSocialAccount, getAuthorizedAccounts, SOCIAL_OAUTH_FLOW_KEY, syncSocialAccounts, testSocialAccount, updateSocialLatePolicy } from "@/features/social/api";
 import { AccountAvatar, NetworkMark, StatePill } from "@/features/social/components";
 import { useSocialAccounts, useSocialSettings } from "@/features/social/hooks";
-import { accountName, ACTION_PERMISSION, formatDateTime, integrationCard, LATE_POLICY_OPTIONS, NETWORK_LABEL, waitingLabel, type IntegrationCardModel } from "@/features/social/presentation";
+import { accountName, ACTION_PERMISSION, composeMetaCard, formatDateTime, integrationCard, LATE_POLICY_OPTIONS, NETWORK_LABEL, waitingLabel, type IntegrationCardModel } from "@/features/social/presentation";
 import { SOCIAL_NETWORKS, type SocialAccountView, type SocialAuthorizedAccount, type SocialLatePolicy, type SocialNetwork } from "@/features/social/types";
 
 /** Marketing → Integrações: contas sociais e canais do YouTube. */
@@ -52,8 +52,17 @@ function SocialIntegrations() {
   }, [params, router, workspace.id]);
 
   const cards = useMemo(() => SOCIAL_NETWORKS.map((network) => integrationCard(network, data?.accounts ?? [], data?.networks.find((item) => item.network === network))), [data]);
+  // Instagram + Facebook são a MESMA conexão Meta → um card único "Instagram + Facebook".
+  const displayCards = useMemo(() => {
+    const byNetwork = new Map(cards.map((card) => [card.network, card]));
+    const ig = byNetwork.get("instagram");
+    const fb = byNetwork.get("facebook");
+    const meta = ig && fb ? composeMetaCard(ig, fb) : ig ?? fb;
+    const rest = cards.filter((card) => card.network !== "instagram" && card.network !== "facebook");
+    return meta ? [meta, ...rest] : rest;
+  }, [cards]);
   const nothingConnected = !!data && data.accounts.every((account) => account.status === "DISCONNECTED");
-  const firstConnectable = cards.find((card) => card.primaryAction === "connect");
+  const firstConnectable = displayCards.find((card) => card.primaryAction === "connect");
 
   async function connect(network: SocialNetwork) {
     setBusy(`connect:${network}`);
@@ -115,9 +124,9 @@ function SocialIntegrations() {
 
       {data ? (
         <div className="grid gap-4 md:grid-cols-2" data-testid="social-integration-cards">
-          {cards.map((card) => (
+          {displayCards.map((card) => (
             <IntegrationCard
-              key={card.network}
+              key={card.displayLabel ?? card.network}
               card={card}
               timezone={timezone}
               busy={busy}
@@ -159,14 +168,15 @@ function IntegrationCard({ card, timezone, busy, canConnect, canManage, onConnec
   onTest: (account: SocialAccountView) => void;
   onDisconnect: (account: SocialAccountView) => void;
 }) {
-  const label = NETWORK_LABEL[card.network];
+  const label = card.displayLabel ?? NETWORK_LABEL[card.network];
+  const networks = card.networks ?? [card.network];
   const tone = card.state === "connected" ? "emerald" : card.state === "attention" ? "amber" : "neutral";
   const waiting = waitingLabel(card.waitingPublications);
   return (
     <Card className="flex flex-col gap-4 p-5" data-testid={`social-card-${card.network}`}>
       <div className="flex items-start justify-between gap-3">
         <div className="flex min-w-0 items-center gap-3">
-          <NetworkMark network={card.network} size="lg" />
+          <span className="flex items-center -space-x-2">{networks.map((network) => <NetworkMark key={network} network={network} size="lg" />)}</span>
           <div className="min-w-0">
             <p className="font-semibold text-foreground">{label}</p>
             <StatePill label={card.headline} tone={tone} className="mt-1" />

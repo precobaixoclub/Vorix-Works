@@ -407,7 +407,24 @@ export class MetaInstagramOAuthService {
     // DEBUG TEMPORÁRIO (remover): diagnóstico do /me/accounts — sem expor tokens.
     try {
       console.warn("META_DEBUG_ACCOUNTS " + JSON.stringify({ status: response.status, count: (json.data ?? []).length, pages: (json.data ?? []).map((p) => ({ id: p.id, name: p.name, hasToken: !!p.access_token, hasIg: !!p.instagram_business_account })), error: json.error?.message }));
-    } catch { /* noop */ }
+      // Caminho alternativo 1: negócios do usuário.
+      const bizUrl = new URL(`${this.graphBaseUrl()}/me/businesses`);
+      bizUrl.searchParams.set("fields", "id,name");
+      bizUrl.searchParams.set("access_token", userAccessToken);
+      const bizRes = await this.http()(bizUrl.toString());
+      const bizJson = await safeJson(bizRes) as { data?: Array<{ id?: string; name?: string }>; error?: { message?: string } };
+      console.warn("META_DEBUG_BUSINESSES " + JSON.stringify({ status: bizRes.status, businesses: (bizJson.data ?? []).map((b) => ({ id: b.id, name: b.name })), error: bizJson.error?.message }));
+      // Caminho alternativo 2: para cada negócio, páginas que ele possui (com token da página + IG).
+      for (const biz of bizJson.data ?? []) {
+        if (!biz.id) continue;
+        const opUrl = new URL(`${this.graphBaseUrl()}/${biz.id}/owned_pages`);
+        opUrl.searchParams.set("fields", "id,name,access_token,instagram_business_account{id,username}");
+        opUrl.searchParams.set("access_token", userAccessToken);
+        const opRes = await this.http()(opUrl.toString());
+        const opJson = await safeJson(opRes) as { data?: Array<{ id?: string; name?: string; access_token?: string; instagram_business_account?: unknown }>; error?: { message?: string } };
+        console.warn("META_DEBUG_OWNED_PAGES " + JSON.stringify({ biz: biz.name, status: opRes.status, pages: (opJson.data ?? []).map((p) => ({ id: p.id, name: p.name, hasToken: !!p.access_token, hasIg: !!p.instagram_business_account })), error: opJson.error?.message }));
+      }
+    } catch (dbg) { console.warn("META_DEBUG_ERROR " + (dbg instanceof Error ? dbg.message : String(dbg))); }
 
     const pages: ResolvedPage[] = [];
     for (const page of json.data ?? []) {

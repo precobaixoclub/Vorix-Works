@@ -50,6 +50,10 @@ export type EditorialIdeaContent = {
   priority: EditorialIdeaPriority;
   /** Data sugerida de publicação (AAAA-MM-DD). */
   suggestedDate?: string;
+  /** Prompt criativo específico desta pauta: orienta a composição/narrativa do motor criativo
+   * (entra no `ideaText` do brief), sem desrespeitar as regras globais de identidade e veracidade.
+   * Opcional — pautas sem prompt seguem o comportamento padrão do motor. */
+  creativePrompt?: string;
 };
 
 export type EditorialIdea = EditorialIdeaContent & {
@@ -72,8 +76,18 @@ export const EDITORIAL_PACK_MAX_IDEAS = 500;
 const LIMITS = {
   externalId: 40, title: 200, category: 80, commercialObjective: 300, targetAudience: 300, concept: 1500,
   keyMessage: 400, approach: 80, visualDirection: 1500, narrativeStructure: 1000, caption: 2200, cta: 120,
-  slideHeadline: 160, slideBody: 500, sceneTime: 20, sceneVisual: 400, sceneText: 400,
+  slideHeadline: 160, slideBody: 500, sceneTime: 20, sceneVisual: 400, sceneText: 400, creativePrompt: 8000,
 } as const;
+
+/** Prompt criativo específico (opcional): texto longo, multilinha. Vazio vira "sem prompt". */
+export function normalizeCreativePrompt(value: unknown, where = "prompt criativo"): string | undefined {
+  if (value === undefined || value === null) return undefined;
+  if (typeof value !== "string") throw new EditorialPackError(`${where}: precisa ser texto.`);
+  const trimmed = value.trim();
+  if (!trimmed) return undefined;
+  if (trimmed.length > LIMITS.creativePrompt) throw new EditorialPackError(`${where}: passa de ${LIMITS.creativePrompt} caracteres.`);
+  return trimmed;
+}
 
 export class EditorialPackError extends Error {
   constructor(message: string) {
@@ -167,6 +181,7 @@ export function parseEditorialPack(input: unknown): EditorialIdeaContent[] {
       cta: text(item, "cta", LIMITS.cta, where),
       priority: priority as EditorialIdeaPriority,
       ...(typeof suggestedDate === "string" ? { suggestedDate } : {}),
+      ...(normalizeCreativePrompt(item.creativePrompt, `${where} prompt criativo`) ? { creativePrompt: normalizeCreativePrompt(item.creativePrompt, where)! } : {}),
     };
   });
 }
@@ -251,21 +266,39 @@ function clip(value: string, max: number): string {
  * paleta, o logotipo e as diretrizes criativas do workspace são aplicados pelo próprio motor; aqui
  * vai só o conceito da pauta, para a IA variar a composição sem descaracterizar a ideia.
  */
+/** Orçamento de caracteres do `ideaText` (bate com o maxLength do schema de `POST /production/ideas/generate`). */
+export const EDITORIAL_IDEA_TEXT_BUDGET = 8000;
+
 export function buildEditorialGenerationBrief(idea: EditorialIdeaContent): EditorialGenerationBrief {
   if (!isGeneratableFormat(idea.format)) throw new Error("EDITORIAL_FORMAT_NOT_GENERATABLE: pautas de vídeo seguem para produção manual.");
   // O fecho (CTA e a regra de não inventar nada) sempre vai inteiro; quem encolhe é o miolo.
   const closing = `CTA: ${idea.cta}\nUse apenas capacidades reais da Vorix; não invente números, preços, integrações ou depoimentos.`;
-  const body = [
-    `Pauta ${idea.externalId} — ${idea.title}`,
-    `Mensagem principal: ${idea.keyMessage}`,
-    idea.carouselScript ? `Telas: ${idea.carouselScript.map((slide, index) => `${index + 1}) ${slide.headline} — ${slide.body}`).join(" ")}` : `Estrutura: ${idea.narrativeStructure}`,
-    `Conceito: ${idea.concept}`,
-    `Direção visual: ${idea.visualDirection}`,
-  ].join("\n");
+  const structure = idea.carouselScript
+    ? `Telas: ${idea.carouselScript.map((slide, index) => `${index + 1}) ${slide.headline} — ${slide.body}`).join(" ")}`
+    : `Estrutura: ${idea.narrativeStructure}`;
+  // Com prompt próprio: ele é a direção dominante de composição/narrativa. Um cabeçalho curto
+  // preserva o vínculo com a pauta (id, título, mensagem, roteiro); o prompt vem logo em seguida.
+  // Sem prompt: comportamento padrão (conceito + direção visual da pauta).
+  const body = idea.creativePrompt
+    ? [
+        `Pauta ${idea.externalId} — ${idea.title}`,
+        `Mensagem principal: ${idea.keyMessage}`,
+        structure,
+        "",
+        "PROMPT CRIATIVO ESPECÍFICO (direção dominante de arte e narrativa):",
+        idea.creativePrompt,
+      ].join("\n")
+    : [
+        `Pauta ${idea.externalId} — ${idea.title}`,
+        `Mensagem principal: ${idea.keyMessage}`,
+        structure,
+        `Conceito: ${idea.concept}`,
+        `Direção visual: ${idea.visualDirection}`,
+      ].join("\n");
   return {
     name: clip(idea.title, 200),
     objective: clip(idea.commercialObjective, 300),
-    ideaText: `${clip(body, 2000 - closing.length - 1)}\n${closing}`,
+    ideaText: `${clip(body, EDITORIAL_IDEA_TEXT_BUDGET - closing.length - 1)}\n${closing}`,
     targetAudience: clip(idea.targetAudience, 300),
     format: idea.format,
   };

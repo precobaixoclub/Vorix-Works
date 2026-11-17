@@ -14,6 +14,7 @@ import { StatsGrid } from "@/components/StatsGrid";
 import { Card, CardContent } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Textarea } from "@/components/ui/textarea";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { TablePagination, usePagination } from "@/components/ui/table-pagination";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -205,6 +206,18 @@ export function EditorialIdeasBoard({ workspaceId }: { workspaceId: string }) {
       replace(await updateEditorialIdea(workspaceId, idea.id, { scheduledDate }));
     } catch (cause) {
       toast.error(cause instanceof Error ? cause.message : "Não foi possível mudar a data.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function onPromptChange(idea: EditorialIdea, creativePrompt: string | null) {
+    setBusy(`prompt:${idea.id}`);
+    try {
+      replace(await updateEditorialIdea(workspaceId, idea.id, { creativePrompt }));
+      toast.success(creativePrompt ? "Prompt criativo salvo." : "Prompt criativo removido.");
+    } catch (cause) {
+      toast.error(cause instanceof Error ? cause.message : "Não foi possível salvar o prompt criativo.");
     } finally {
       setBusy(null);
     }
@@ -406,6 +419,7 @@ export function EditorialIdeasBoard({ workspaceId }: { workspaceId: string }) {
           onClose={() => setSelectedId(null)}
           onStatusChange={(status) => void onStatusChange(selected, status)}
           onScheduleChange={(date) => void onScheduleChange(selected, date)}
+          onPromptChange={(prompt) => void onPromptChange(selected, prompt)}
           onGenerate={() => void onGenerate(selected)}
         />
       ) : null}
@@ -413,16 +427,21 @@ export function EditorialIdeasBoard({ workspaceId }: { workspaceId: string }) {
   );
 }
 
-function EditorialIdeaDetail({ idea, busy, onClose, onStatusChange, onScheduleChange, onGenerate }: {
+function EditorialIdeaDetail({ idea, busy, onClose, onStatusChange, onScheduleChange, onPromptChange, onGenerate }: {
   idea: EditorialIdea;
   busy: string | null;
   onClose: () => void;
   onStatusChange: (status: EditorialIdeaStatus) => void;
   onScheduleChange: (date: string | null) => void;
+  onPromptChange: (prompt: string | null) => void;
   onGenerate: () => void;
 }) {
   const [date, setDate] = useState(idea.scheduledDate ?? "");
   useEffect(() => { setDate(idea.scheduledDate ?? ""); }, [idea.scheduledDate]);
+  const [prompt, setPrompt] = useState(idea.creativePrompt ?? "");
+  useEffect(() => { setPrompt(idea.creativePrompt ?? ""); }, [idea.creativePrompt, idea.id]);
+  const promptBusy = busy === `prompt:${idea.id}`;
+  const promptDirty = prompt.trim() !== (idea.creativePrompt ?? "");
 
   return (
     <DetailModal
@@ -463,6 +482,26 @@ function EditorialIdeaDetail({ idea, busy, onClose, onStatusChange, onScheduleCh
           <DetailBlock label="Direção visual"><p className="text-sm text-foreground">{idea.visualDirection}</p></DetailBlock>
           <DetailBlock label="Estrutura narrativa"><p className="text-sm text-foreground">{idea.narrativeStructure}</p></DetailBlock>
         </div>
+        <DetailBlock label="Prompt criativo específico">
+          <p className="mb-2 text-xs text-muted-foreground">
+            Opcional. Quando preenchido, orienta a composição e a narrativa da arte desta pauta no motor criativo — sem desrespeitar a identidade da marca nem inventar recursos. Vazio = o motor usa o padrão.
+          </p>
+          <Textarea
+            value={prompt}
+            onChange={(event) => setPrompt(event.target.value)}
+            rows={6}
+            maxLength={8000}
+            disabled={promptBusy}
+            placeholder="Ex.: fotografia editorial hiper-realista, cena de escritório com close no gesto humano e um elemento digital simbólico; roxo como acento; logo oficial pequeno; sem botão de CTA na arte…"
+            className="min-h-32 font-mono text-xs"
+          />
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <Button size="sm" disabled={!promptDirty || promptBusy || !prompt.trim()} onClick={() => onPromptChange(prompt.trim())}>{promptBusy ? "Salvando…" : "Salvar prompt"}</Button>
+            <Button size="sm" variant="secondary" disabled={!prompt.trim()} onClick={() => { void navigator.clipboard.writeText(prompt).then(() => toast.success("Prompt copiado.")); }}>Copiar</Button>
+            <Button size="sm" variant="ghost" disabled={!idea.creativePrompt || promptBusy} onClick={() => { setPrompt(""); onPromptChange(null); }}>Remover</Button>
+            <span className="ml-auto text-xs tabular-nums text-muted-foreground">{prompt.length}/8000</span>
+          </div>
+        </DetailBlock>
         {idea.carouselScript ? (
           <DetailBlock label="Roteiro do carrossel">
             <ol className="space-y-2">{idea.carouselScript.map((slide, index) => (

@@ -38,6 +38,7 @@ export class InMemoryEditorialIdeaRepository implements EditorialIdeaRepositoryP
     if (patch.status && patch.status !== idea.status) { next.status = patch.status; next.statusChangedAt = timestamp; }
     if (patch.scheduledDate !== undefined) { if (patch.scheduledDate === null) delete next.scheduledDate; else next.scheduledDate = patch.scheduledDate; }
     if (patch.executionRunId !== undefined) { if (patch.executionRunId === null) delete next.executionRunId; else next.executionRunId = patch.executionRunId; }
+    if (patch.creativePrompt !== undefined) { if (patch.creativePrompt === null || patch.creativePrompt === "") delete next.creativePrompt; else next.creativePrompt = patch.creativePrompt; }
     this.ideas.set(id, next);
     return next;
   }

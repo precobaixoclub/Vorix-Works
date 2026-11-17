@@ -36,6 +36,8 @@ export type EditorialIdea = {
   suggestedDate?: string;
   scheduledDate?: string;
   executionRunId?: string;
+  /** Prompt criativo específico desta pauta (opcional): orienta a arte/narrativa do motor criativo. */
+  creativePrompt?: string;
   statusChangedAt: string;
 };
 
@@ -51,7 +53,7 @@ export function importEditorialPack(workspaceId: string, pack: unknown): Promise
   return apiClient.post(`/v1/editorial-ideas/import`, { workspaceId, pack });
 }
 
-export function updateEditorialIdea(workspaceId: string, id: string, patch: { status?: EditorialIdeaStatus; scheduledDate?: string | null; executionRunId?: string | null }): Promise<EditorialIdea> {
+export function updateEditorialIdea(workspaceId: string, id: string, patch: { status?: EditorialIdeaStatus; scheduledDate?: string | null; executionRunId?: string | null; creativePrompt?: string | null }): Promise<EditorialIdea> {
   return apiClient.patch<EditorialIdea>(`/v1/editorial-ideas/${encodeURIComponent(id)}`, { workspaceId, ...patch });
 }
 

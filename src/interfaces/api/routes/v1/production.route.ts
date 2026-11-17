@@ -55,7 +55,7 @@ const GENERATE_BODY_SCHEMA = {
     workspaceId: { type: "string", minLength: 1 },
     name: { type: "string", minLength: 1, maxLength: 200 },
     objective: { type: "string", minLength: 3, maxLength: 300 },
-    ideaText: { type: "string", minLength: 2, maxLength: 2000 },
+    ideaText: { type: "string", minLength: 2, maxLength: 8000 },
     format: { type: "string", enum: ["single_image", "carousel"] },
     channel: { type: "string", minLength: 1 },
     targetAudience: { type: "string", maxLength: 300 },

@@ -6,6 +6,7 @@ import {
   buildEditorialCalendar,
   buildEditorialGenerationBrief,
   businessDays,
+  normalizeCreativePrompt,
   parseEditorialPack,
 } from "../dist/domain/editorial/editorial-idea.model.js";
 import { InMemoryEditorialIdeaRepository } from "../dist/infrastructure/storage/in-memory-editorial-idea-repository.js";
@@ -64,10 +65,45 @@ test("motor criativo: brief respeita os limites da rota de geração; vídeo nã
   const [carousel] = parseEditorialPack(pack([idea("C-1", { format: "carousel", concept: "x".repeat(1400), carouselScript: [{ headline: "Capa", body: "a".repeat(400) }, { headline: "Fim", body: "b".repeat(400) }] })]));
   const brief = buildEditorialGenerationBrief(carousel);
   assert.equal(brief.format, "carousel");
-  assert.ok(brief.ideaText.length <= 2000 && brief.objective.length <= 300 && brief.targetAudience.length <= 300);
+  assert.ok(brief.ideaText.length <= 8000 && brief.objective.length <= 300 && brief.targetAudience.length <= 300);
   assert.match(brief.ideaText, /não invente/);
   const [video] = parseEditorialPack(pack([idea("V-1", { format: "video", videoScript: [{ time: "0-2s", visual: "a", text: "b" }, { time: "2-5s", visual: "c", text: "d" }] })]));
   assert.throws(() => buildEditorialGenerationBrief(video), /vídeo/);
+});
+
+test("prompt criativo específico: parse opcional, normalização e injeção dominante no brief", () => {
+  // normalização: vazio vira undefined; espaços aparados; excesso recusado.
+  assert.equal(normalizeCreativePrompt(undefined), undefined);
+  assert.equal(normalizeCreativePrompt("   "), undefined);
+  assert.equal(normalizeCreativePrompt("  arte editorial  "), "arte editorial");
+  assert.throws(() => normalizeCreativePrompt("x".repeat(8001)), /8000/);
+
+  // parse: aceita creativePrompt opcional e o apara; sem campo = ausente.
+  const [withPrompt] = parseEditorialPack(pack([idea("P-1", { creativePrompt: "  Fotografia editorial hiper-realista, roxo como acento.  " })]));
+  assert.equal(withPrompt.creativePrompt, "Fotografia editorial hiper-realista, roxo como acento.");
+  const [withoutPrompt] = parseEditorialPack(pack([idea("P-2")]));
+  assert.equal(withoutPrompt.creativePrompt, undefined);
+  const [emptyPrompt] = parseEditorialPack(pack([idea("P-3", { creativePrompt: "   " })]));
+  assert.equal(emptyPrompt.creativePrompt, undefined, "prompt vazio não vira campo");
+
+  // brief COM prompt: o prompt entra como direção dominante; o fecho de segurança continua inteiro.
+  const briefWith = buildEditorialGenerationBrief(withPrompt);
+  assert.match(briefWith.ideaText, /PROMPT CRIATIVO ESPECÍFICO/);
+  assert.match(briefWith.ideaText, /Fotografia editorial hiper-realista/);
+  assert.match(briefWith.ideaText, /não invente/, "fecho de segurança preservado");
+  assert.doesNotMatch(briefWith.ideaText, /Conceito:/, "com prompt, o conceito genérico dá lugar à direção dominante");
+
+  // brief SEM prompt: comportamento padrão (conceito + direção visual), sem bloco de prompt.
+  const briefWithout = buildEditorialGenerationBrief(withoutPrompt);
+  assert.doesNotMatch(briefWithout.ideaText, /PROMPT CRIATIVO ESPECÍFICO/);
+  assert.match(briefWithout.ideaText, /Conceito:/);
+  assert.match(briefWithout.ideaText, /Direção visual:/);
+
+  // prompt longo (~2k) não estoura o orçamento do ideaText (limite 8000 da rota de geração).
+  const [longPrompt] = parseEditorialPack(pack([idea("P-4", { creativePrompt: "BRIEF CRIATIVO. ".repeat(130) })]));
+  const briefLong = buildEditorialGenerationBrief(longPrompt);
+  assert.ok(briefLong.ideaText.length <= 8000);
+  assert.match(briefLong.ideaText, /BRIEF CRIATIVO/);
 });
 
 async function api(tenantId = "tenant-a") {
@@ -120,6 +156,36 @@ test("API: estado editorial, data e calendário; pauta de outro workspace não m
   assert.equal((await ctx.app.inject({ method: "GET", url: `/editorial-ideas/${video.id}/brief?workspaceId=${ctx.workspaceA.id}` })).statusCode, 400);
   const brief = await ctx.app.inject({ method: "GET", url: `/editorial-ideas/${first.id}/brief?workspaceId=${ctx.workspaceA.id}` });
   assert.equal(brief.json().data.name, "Pauta VWX-001");
+  await ctx.app.close();
+});
+
+test("API: prompt criativo — grava pelo PATCH, chega ao brief, remove com null e respeita o workspace", async () => {
+  const ctx = await api();
+  await ctx.app.inject({ method: "POST", url: "/editorial-ideas/import", payload: { workspaceId: ctx.workspaceA.id, pack: pack([idea("VWX-001")]) } });
+  const [first] = (await ctx.app.inject({ method: "GET", url: `/editorial-ideas?workspaceId=${ctx.workspaceA.id}` })).json().data;
+  assert.equal(first.creativePrompt, undefined, "nasce sem prompt");
+
+  // grava
+  const saved = await ctx.app.inject({ method: "PATCH", url: `/editorial-ideas/${first.id}`, payload: { workspaceId: ctx.workspaceA.id, creativePrompt: "  Colagem editorial corporativa, sem tela fictícia.  " } });
+  assert.equal(saved.statusCode, 200);
+  assert.equal(saved.json().data.creativePrompt, "Colagem editorial corporativa, sem tela fictícia.");
+
+  // chega ao brief como direção dominante
+  const brief = (await ctx.app.inject({ method: "GET", url: `/editorial-ideas/${first.id}/brief?workspaceId=${ctx.workspaceA.id}` })).json().data;
+  assert.match(brief.ideaText, /Colagem editorial corporativa/);
+  assert.match(brief.ideaText, /PROMPT CRIATIVO ESPECÍFICO/);
+
+  // isolamento: outro workspace não consegue editar
+  assert.equal((await ctx.app.inject({ method: "PATCH", url: `/editorial-ideas/${first.id}`, payload: { workspaceId: ctx.workspaceA2.id, creativePrompt: "x" } })).statusCode, 404);
+
+  // excesso recusado
+  assert.equal((await ctx.app.inject({ method: "PATCH", url: `/editorial-ideas/${first.id}`, payload: { workspaceId: ctx.workspaceA.id, creativePrompt: "x".repeat(8001) } })).statusCode, 400);
+
+  // remove com null
+  const removed = await ctx.app.inject({ method: "PATCH", url: `/editorial-ideas/${first.id}`, payload: { workspaceId: ctx.workspaceA.id, creativePrompt: null } });
+  assert.equal(removed.json().data.creativePrompt, undefined);
+  const briefAfter = (await ctx.app.inject({ method: "GET", url: `/editorial-ideas/${first.id}/brief?workspaceId=${ctx.workspaceA.id}` })).json().data;
+  assert.doesNotMatch(briefAfter.ideaText, /PROMPT CRIATIVO ESPECÍFICO/);
   await ctx.app.close();
 });
 

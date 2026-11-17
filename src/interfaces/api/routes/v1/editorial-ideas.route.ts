@@ -8,6 +8,7 @@ import {
   EditorialPackError,
   isGeneratableFormat,
   isIsoDate,
+  normalizeCreativePrompt,
   parseEditorialPack,
   type EditorialIdeaStatus,
 } from "../../../../domain/editorial/editorial-idea.model.js";
@@ -41,6 +42,7 @@ const UPDATE_BODY_SCHEMA = {
     status: { type: "string", enum: [...EDITORIAL_IDEA_STATUSES] },
     scheduledDate: { anyOf: [{ type: "string", minLength: 10, maxLength: 10 }, { type: "null" }] },
     executionRunId: { anyOf: [{ type: "string", minLength: 1, maxLength: 120 }, { type: "null" }] },
+    creativePrompt: { anyOf: [{ type: "string", maxLength: 8000 }, { type: "null" }] },
   },
 } as const;
 
@@ -94,13 +96,23 @@ export async function registerEditorialIdeasRoutes(app: FastifyInstance, deps: E
   app.patch("/editorial-ideas/:id", { schema: { params: ID_PARAMS_SCHEMA, body: UPDATE_BODY_SCHEMA } }, async (request) => {
     const principal = requirePermission(request, "asset:update");
     const { id } = request.params as { id: string };
-    const { workspaceId, status, scheduledDate, executionRunId } = request.body as { workspaceId: string; status?: EditorialIdeaStatus; scheduledDate?: string | null; executionRunId?: string | null };
+    const { workspaceId, status, scheduledDate, executionRunId, creativePrompt } = request.body as { workspaceId: string; status?: EditorialIdeaStatus; scheduledDate?: string | null; executionRunId?: string | null; creativePrompt?: string | null };
     await assertWorkspaceBelongsToTenant(deps.workspaceRepository, { tenantId: principal.tenantId, workspaceId });
     if (typeof scheduledDate === "string" && !isIsoDate(scheduledDate)) throw new ValidationError("Data do calendário inválida (use AAAA-MM-DD).");
+    // Enviar `null` ou string vazia remove o prompt; uma string é validada/aparada antes de gravar.
+    let creativePromptPatch: string | null | undefined;
+    if (creativePrompt !== undefined) {
+      try {
+        creativePromptPatch = creativePrompt === null ? null : (normalizeCreativePrompt(creativePrompt) ?? null);
+      } catch (error) {
+        throw new ValidationError(error instanceof EditorialPackError ? error.message.replace(/^EDITORIAL_PACK_INVALID:\s*/, "") : "Prompt criativo inválido.");
+      }
+    }
     const updated = await deps.editorialIdeaRepository.update(workspaceId, id, {
       ...(status ? { status } : {}),
       ...(scheduledDate !== undefined ? { scheduledDate } : {}),
       ...(executionRunId !== undefined ? { executionRunId } : {}),
+      ...(creativePromptPatch !== undefined ? { creativePrompt: creativePromptPatch } : {}),
     });
     if (!updated) throw new NotFoundError("Pauta não encontrada neste workspace.");
     return successEnvelope(updated, request.id);

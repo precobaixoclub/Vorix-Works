@@ -12,5 +12,5 @@ export type EditorialIdeaRepositoryPort = {
   /** Insere as pautas novas; um `externalId` que já existe no workspace é ignorado (nunca
    * sobrescreve o trabalho editorial já feito nem duplica). */
   importMany(input: { tenantId: string; workspaceId: string; ideas: readonly EditorialIdeaContent[] }): Promise<{ created: number; skipped: number }>;
-  update(workspaceId: string, id: string, patch: { status?: EditorialIdeaStatus; scheduledDate?: string | null; executionRunId?: string | null }): Promise<EditorialIdea | undefined>;
+  update(workspaceId: string, id: string, patch: { status?: EditorialIdeaStatus; scheduledDate?: string | null; executionRunId?: string | null; creativePrompt?: string | null }): Promise<EditorialIdea | undefined>;
 };

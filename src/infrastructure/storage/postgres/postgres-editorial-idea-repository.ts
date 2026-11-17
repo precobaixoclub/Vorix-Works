@@ -9,14 +9,14 @@ type Row = {
   approach: string; visual_direction: string; narrative_structure: string; carousel_script: CarouselSlide[] | null;
   video_script: VideoScene[] | null; caption: string; cta: string; priority: string; status: string;
   suggested_date: string | null; scheduled_date: string | null; execution_run_id: string | null;
-  status_changed_at: Date; created_at: Date; updated_at: Date;
+  creative_prompt: string | null; status_changed_at: Date; created_at: Date; updated_at: Date;
 };
 
 // `date` volta como texto AAAA-MM-DD (sem fuso): nunca vira um Date em UTC que "muda de dia".
 const COLUMNS = `id, tenant_id, workspace_id, external_id, title, category, commercial_objective, target_audience, concept,
   key_message, format, approach, visual_direction, narrative_structure, carousel_script, video_script, caption, cta,
   priority, status, to_char(suggested_date, 'YYYY-MM-DD') as suggested_date, to_char(scheduled_date, 'YYYY-MM-DD') as scheduled_date,
-  execution_run_id, status_changed_at, created_at, updated_at`;
+  execution_run_id, creative_prompt, status_changed_at, created_at, updated_at`;
 
 /** Adapter Postgres — `db/migrations/0197_editorial_ideas.sql`. */
 export class PostgresEditorialIdeaRepository implements EditorialIdeaRepositoryPort {
@@ -42,14 +42,14 @@ export class PostgresEditorialIdeaRepository implements EditorialIdeaRepositoryP
         const result = await client.query(
           `insert into editorial_ideas (id, tenant_id, workspace_id, external_id, title, category, commercial_objective, target_audience,
              concept, key_message, format, approach, visual_direction, narrative_structure, carousel_script, video_script, caption, cta,
-             priority, suggested_date)
-           values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15::jsonb, $16::jsonb, $17, $18, $19, $20::date)
+             priority, suggested_date, creative_prompt)
+           values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15::jsonb, $16::jsonb, $17, $18, $19, $20::date, $21)
            on conflict (workspace_id, external_id) do nothing`,
           [
             `edi-${randomUUID()}`, input.tenantId, input.workspaceId, idea.externalId, idea.title, idea.category, idea.commercialObjective,
             idea.targetAudience, idea.concept, idea.keyMessage, idea.format, idea.approach, idea.visualDirection, idea.narrativeStructure,
             idea.carouselScript ? JSON.stringify(idea.carouselScript) : null, idea.videoScript ? JSON.stringify(idea.videoScript) : null,
-            idea.caption, idea.cta, idea.priority, idea.suggestedDate ?? null,
+            idea.caption, idea.cta, idea.priority, idea.suggestedDate ?? null, idea.creativePrompt ?? null,
           ],
         );
         created += result.rowCount ?? 0;
@@ -71,10 +71,11 @@ export class PostgresEditorialIdeaRepository implements EditorialIdeaRepositoryP
          status = coalesce($3::text, status),
          scheduled_date = case when $4::boolean then $5::date else scheduled_date end,
          execution_run_id = case when $6::boolean then $7::text else execution_run_id end,
+         creative_prompt = case when $8::boolean then $9::text else creative_prompt end,
          updated_at = now()
        where workspace_id = $1 and id = $2
        returning ${COLUMNS}`,
-      [workspaceId, id, patch.status ?? null, patch.scheduledDate !== undefined, patch.scheduledDate ?? null, patch.executionRunId !== undefined, patch.executionRunId ?? null],
+      [workspaceId, id, patch.status ?? null, patch.scheduledDate !== undefined, patch.scheduledDate ?? null, patch.executionRunId !== undefined, patch.executionRunId ?? null, patch.creativePrompt !== undefined, patch.creativePrompt ?? null],
     );
     return result.rows[0] ? toDomain(result.rows[0]) : undefined;
   }
@@ -92,6 +93,7 @@ function toDomain(row: Row): EditorialIdea {
     ...(row.suggested_date ? { suggestedDate: row.suggested_date } : {}),
     ...(row.scheduled_date ? { scheduledDate: row.scheduled_date } : {}),
     ...(row.execution_run_id ? { executionRunId: row.execution_run_id } : {}),
+    ...(row.creative_prompt ? { creativePrompt: row.creative_prompt } : {}),
     statusChangedAt: row.status_changed_at.toISOString(), createdAt: row.created_at.toISOString(), updatedAt: row.updated_at.toISOString(),
   };
 }

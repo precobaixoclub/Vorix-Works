@@ -404,6 +404,11 @@ export class MetaInstagramOAuthService {
     };
     if (!response.ok) throw new Error(`META_OAUTH_PAGES_FAILED: ${json.error?.message ?? "Não foi possível listar as Páginas do Facebook."}`);
 
+    // DEBUG TEMPORÁRIO (remover): diagnóstico do /me/accounts — sem expor tokens.
+    try {
+      console.warn("META_DEBUG_ACCOUNTS " + JSON.stringify({ status: response.status, count: (json.data ?? []).length, pages: (json.data ?? []).map((p) => ({ id: p.id, name: p.name, hasToken: !!p.access_token, hasIg: !!p.instagram_business_account })), error: json.error?.message }));
+    } catch { /* noop */ }
+
     const pages: ResolvedPage[] = [];
     for (const page of json.data ?? []) {
       if (!page.id || !page.access_token) continue;

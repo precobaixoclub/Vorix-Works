@@ -43,6 +43,16 @@ const IMAGE: SocialMediaItem = { url: "https://cdn/a.jpg", kind: "image", width:
 const VIDEO: SocialMediaItem = { url: "https://cdn/v.mp4", kind: "video", width: 1080, height: 1920, durationSec: 20 };
 
 describe("Integrações", () => {
+  it("YouTube aparece nas integrações, reconecta o canal e oferece apenas vídeo no composer", () => {
+    const youtube: SocialComposerAccount = { ...ttOption, accountId: "yt-1", network: "youtube", displayName: "Canal Vorix" };
+    expect(networkChoices([], "ws-1").find((item) => item.network === "youtube")).toMatchObject({ selectable: false, cta: { label: "Conectar YouTube Shorts", href: "/workspaces/ws-1/social/integrations" } });
+    expect(networkChoices([youtube], "ws-1").find((item) => item.network === "youtube")).toMatchObject({ selectable: true });
+    expect(compatibleFormats(youtube, [IMAGE])).toEqual([]);
+    expect(defaultFormat(youtube, [VIDEO])).toBe("short_video");
+    expect(integrationCard("youtube", [account({ network: "youtube", status: "REAUTH_REQUIRED", needsReconnect: true, waitingPublications: 2 })], { network: "youtube", canConnect: true })).toMatchObject({ state: "attention", primaryAction: "reconnect", waitingPublications: 2 });
+    expect(destinationStatusLine("youtube", "WAITING_REAUTH")).toBe("Aguardando reconexão do YouTube Shorts");
+  });
+
   it("rede sem conta: 'Conectar'; liberação pendente: indisponível com mensagem simples", () => {
     expect(integrationCard("instagram", [], { network: "instagram", canConnect: true })).toMatchObject({ state: "disconnected", primaryAction: "connect" });
     const locked = integrationCard("tiktok", [], { network: "tiktok", canConnect: false, message: "A publicação no TikTok ainda não está liberada para a sua conta." });

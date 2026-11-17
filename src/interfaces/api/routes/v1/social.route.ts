@@ -124,6 +124,14 @@ function translate(error: unknown): never {
   const match = /^([A-Z][A-Z0-9_]+):\s*(.*)$/s.exec(text);
   if (!match) throw error;
   const [, code, message] = match as unknown as [string, string, string];
+  if (code.startsWith("YOUTUBE_")) {
+    const safeMessage = code === "YOUTUBE_CHANNEL_NOT_FOUND"
+      ? "Não foi possível acessar o canal. Confira se esta conta Google possui um canal e se a YouTube Data API v3 está ativa."
+      : code === "YOUTUBE_OAUTH_TOKEN_FAILED"
+        ? "O Google não concluiu a autorização. Volte em Integrações e conecte o YouTube novamente."
+        : "Não foi possível conectar o YouTube. Confira a configuração da integração e tente novamente.";
+    throw new AppError({ code, message: safeMessage, statusCode: 400, recoverable: true });
+  }
   if (code.endsWith("_NOT_FOUND")) throw new NotFoundError(message);
   if (code === "SOCIAL_VALIDATION_FAILED") throw new AppError({ code, message, statusCode: 422, recoverable: true, details: { destinations: (error as { details?: unknown }).details } });
   if (code.startsWith("SCHEDULE_") || code.startsWith("SOCIAL_SCHEDULE") || code === "SOCIAL_DESTINATIONS_REQUIRED" || code === "SOCIAL_DESTINATION_DUPLICATED" || code === "SOCIAL_POLICY_INVALID") throw new AppError({ code, message, statusCode: 400, recoverable: true });

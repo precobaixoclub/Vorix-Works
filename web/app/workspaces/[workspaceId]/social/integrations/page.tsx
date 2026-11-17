@@ -23,7 +23,7 @@ import { useSocialAccounts, useSocialSettings } from "@/features/social/hooks";
 import { accountName, ACTION_PERMISSION, formatDateTime, integrationCard, LATE_POLICY_OPTIONS, NETWORK_LABEL, waitingLabel, type IntegrationCardModel } from "@/features/social/presentation";
 import { SOCIAL_NETWORKS, type SocialAccountView, type SocialAuthorizedAccount, type SocialLatePolicy, type SocialNetwork } from "@/features/social/types";
 
-/** Marketing → Integrações: Instagram, Facebook e TikTok, sem nenhum termo técnico. */
+/** Marketing → Integrações: contas sociais e canais do YouTube. */
 export default function SocialIntegrationsPage() {
   return (
     <Suspense fallback={<IntegrationsSkeleton />}>
@@ -108,13 +108,13 @@ function SocialIntegrations() {
           className="mb-6"
           icon={<Link2 />}
           title="Nenhuma rede conectada"
-          description="Conecte Instagram, Facebook ou TikTok para criar e agendar publicações por aqui."
+          description="Conecte Instagram, Facebook, TikTok ou YouTube para criar e agendar publicações por aqui."
           action={can(ACTION_PERMISSION.connect) ? <Button onClick={() => void connect(firstConnectable.network)} loading={busy === `connect:${firstConnectable.network}`}>Conectar minha primeira rede</Button> : undefined}
         />
       ) : null}
 
       {data ? (
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3" data-testid="social-integration-cards">
+        <div className="grid gap-4 md:grid-cols-2" data-testid="social-integration-cards">
           {cards.map((card) => (
             <IntegrationCard
               key={card.network}
@@ -175,6 +175,7 @@ function IntegrationCard({ card, timezone, busy, canConnect, canManage, onConnec
       </div>
 
       {card.message ? <p className={card.state === "attention" ? "text-sm font-medium text-amber-700 dark:text-amber-400" : "text-sm text-muted-foreground"}>{card.message}</p> : null}
+      {card.network === "youtube" ? <p className="text-sm text-muted-foreground">Publique e agende Shorts com vídeos verticais ou quadrados de até 3 minutos.</p> : null}
       {waiting ? (
         <p className="flex items-center gap-1.5 text-sm text-amber-700 dark:text-amber-400">
           <CalendarClock className="h-4 w-4" aria-hidden /> {waiting}
@@ -312,7 +313,7 @@ function LatePolicyCard({ workspaceId }: { workspaceId: string }) {
           <p className="text-sm text-muted-foreground">O que fazer quando a conta volta a funcionar depois do horário marcado. Agendamentos nunca são apagados.</p>
         </div>
       </div>
-      <div className="mt-4 grid gap-4 md:grid-cols-3">
+      <div className="mt-4 grid gap-4 md:grid-cols-2">
         {data.networks.map((item) => (
           <div key={item.network} className="space-y-2 rounded-lg border border-border p-3">
             <div className="flex items-center gap-2"><NetworkMark network={item.network} size="sm" /><span className="text-sm font-medium">{NETWORK_LABEL[item.network]}</span></div>

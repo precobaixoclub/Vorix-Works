@@ -3,11 +3,13 @@ import { z } from "zod";
 import { lookup } from "node:dns/promises";
 import { isIP } from "node:net";
 import type { SocialHealthResult, SocialPublishResult } from "../../../application/social/social-publishing-provider.port.js";
-import type { SocialFeature, SocialMediaItem, SocialMusicSelection, SocialMusicTrack, SocialNetwork, SocialPostFormat } from "../../../domain/social/social-publishing.model.js";
+import type { SocialFeature, SocialMediaItem, SocialMusicSelection, SocialMusicTrack, SocialPostFormat } from "../../../domain/social/social-publishing.model.js";
+import type { GatewayScope } from "./protocol.js";
 import { unofficialCapabilities } from "../unofficial-social-providers.js";
 import { GatewayError } from "./protocol.js";
 import type { StaticAssetCache } from "./static-asset-cache.js";
 
+type SocialNetwork = GatewayScope["network"];
 const HOME: Record<SocialNetwork, string> = { instagram: "https://www.instagram.com/", facebook: "https://www.facebook.com/", tiktok: "https://www.tiktok.com/" };
 const LOGIN: Record<SocialNetwork, string> = { instagram: "https://www.instagram.com/accounts/login/", facebook: "https://www.facebook.com/login/", tiktok: "https://www.tiktok.com/login" };
 const DOMAINS: Record<SocialNetwork, readonly string[]> = {

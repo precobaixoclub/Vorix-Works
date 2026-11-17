@@ -76,8 +76,18 @@ export const TIKTOK_OFFICIAL_CAPABILITIES: SocialNetworkCapabilities = {
   ],
 };
 
+export const YOUTUBE_OFFICIAL_CAPABILITIES: SocialNetworkCapabilities = {
+  network: "youtube",
+  supportsMusicSearch: false,
+  supportsStatusLookup: true,
+  supportsDelete: false,
+  formats: [
+    { format: "short_video", maxCaptionLength: 5_000, features: ["caption", "hashtags", "embeddedAudio", "link"], constraints: { kinds: ["video"], minItems: 1, maxItems: 1, maxAspectRatio: 1, minDurationSec: 1, maxDurationSec: 180, maxBytes: 500_000_000, mimeTypes: VIDEO_MIMES } },
+  ],
+};
+
 /** Formato estrutural dos serviços OAuth oficiais já existentes (sem acoplar às classes). */
-type OAuthStatusAccount = { credentialReferenceId: string; providerId?: string; providerSubjectId?: string; openId?: string; displayName?: string; avatarUrl?: string; status: string };
+type OAuthStatusAccount = { credentialReferenceId: string; providerId?: string; providerSubjectId?: string; openId?: string; channelId?: string; displayName?: string; avatarUrl?: string; status: string };
 export type OfficialOAuthServiceLike = {
   isConfigured(): boolean;
   begin(input: { tenantId: string; workspaceId: string; userId?: string; network?: string; returnPath?: string }): Promise<{ authorizationUrl: string }>;
@@ -118,7 +128,7 @@ export class OfficialOAuthConnection implements SocialProviderConnectionPort {
     const status = await service.status({ tenantId: input.tenantId, workspaceId: input.workspaceId });
     return status.accounts.flatMap((account): SocialConnectedAccount[] => {
       const network = this.networkOf(account);
-      const externalAccountId = account.providerSubjectId || account.openId;
+      const externalAccountId = account.providerSubjectId || account.openId || account.channelId;
       if (network !== input.network || !externalAccountId) return [];
       const username = account.displayName?.startsWith("@") ? account.displayName.slice(1) : undefined;
       return [{
@@ -146,7 +156,7 @@ abstract class OfficialDelegatingProvider implements SocialPublishingProvider {
 
   abstract getCapabilities(network: SocialNetwork): SocialNetworkCapabilities;
 
-  validatePost(): SocialValidationIssue[] {
+  validatePost(_input: Parameters<SocialPublishingProvider["validatePost"]>[0]): SocialValidationIssue[] {
     return [];
   }
 
@@ -210,7 +220,7 @@ export class MetaOfficialSocialProvider extends OfficialDelegatingProvider {
   readonly descriptor: SocialProviderDescriptor = { type: "meta_official", networks: ["instagram", "facebook"], official: true, implemented: true, realPublishingValidated: false };
 
   getCapabilities(network: SocialNetwork): SocialNetworkCapabilities {
-    if (network === "tiktok") throw new Error("SOCIAL_NETWORK_UNSUPPORTED");
+    if (network !== "instagram" && network !== "facebook") throw new Error("SOCIAL_NETWORK_UNSUPPORTED");
     return META_OFFICIAL_CAPABILITIES[network];
   }
 
@@ -247,6 +257,40 @@ export class TikTokOfficialSocialProvider extends OfficialDelegatingProvider {
   protected statusLookup(input: { externalPostId?: string; providerReference?: string }): { providerRequestId: string } | undefined {
     const publishId = input.providerReference ?? input.externalPostId;
     return publishId ? { providerRequestId: publishId } : undefined;
+  }
+}
+
+/** Shorts são enviados pela API oficial de upload; a fila do Vorix executa no horário marcado. */
+export class YouTubeOfficialSocialProvider extends OfficialDelegatingProvider {
+  readonly descriptor: SocialProviderDescriptor = { type: "youtube_official", networks: ["youtube"], official: true, implemented: true, realPublishingValidated: false };
+
+  getCapabilities(network: SocialNetwork): SocialNetworkCapabilities {
+    if (network !== "youtube") throw new Error("SOCIAL_NETWORK_UNSUPPORTED");
+    return YOUTUBE_OFFICIAL_CAPABILITIES;
+  }
+
+  override validatePost(input: Parameters<SocialPublishingProvider["validatePost"]>[0]): SocialValidationIssue[] {
+    return input.media.flatMap((item): SocialValidationIssue[] => {
+      if (item.kind !== "video") return [];
+      const issues: SocialValidationIssue[] = [];
+      if (!item.width || !item.height || !item.durationSec) issues.push({ field: "media", code: "YOUTUBE_METADATA_REQUIRED", message: "Não foi possível verificar o formato e a duração do vídeo. Envie o arquivo novamente para publicar como Short." });
+      if (item.width && item.height && item.width > item.height) issues.push({ field: "media", code: "MEDIA_ASPECT_RATIO", message: "YouTube Shorts exige um vídeo vertical ou quadrado." });
+      return issues;
+    });
+  }
+
+  protected payload(request: SocialPublishRequest): Record<string, unknown> {
+    return {
+      title: (request.caption.split(/\r?\n/)[0]?.trim() || "Short").replace(/[<>]/g, "").slice(0, 100) || "Short",
+      description: request.caption,
+      videoUrl: request.media.find((item) => item.kind === "video")?.url,
+      privacyStatus: "public",
+    };
+  }
+
+  protected statusLookup(input: { externalPostId?: string; providerReference?: string }): { providerPublicationId: string } | undefined {
+    const videoId = input.externalPostId ?? input.providerReference;
+    return videoId ? { providerPublicationId: videoId } : undefined;
   }
 }
 

@@ -15,7 +15,7 @@ import { DEFAULT_SOCIAL_PLATFORM_DEFAULTS, SocialProviderRegistry, SocialProvide
 import { SocialPublicationRouter } from "../../application/social/social-publication-router.js";
 import type { SocialPublishingProvider } from "../../application/social/social-publishing-provider.port.js";
 import { SocialSessionVault } from "../../application/social/social-session-vault.js";
-import { MetaOfficialSocialProvider, OfficialOAuthConnection, TikTokOfficialSocialProvider, type OfficialOAuthServiceLike } from "./official-social-providers.js";
+import { MetaOfficialSocialProvider, OfficialOAuthConnection, TikTokOfficialSocialProvider, YouTubeOfficialSocialProvider, type OfficialOAuthServiceLike } from "./official-social-providers.js";
 import { SocialMediaProbe } from "./social-media-io.js";
 import { FacebookUnofficialProvider, InstagramUnofficialProvider, TikTokUnofficialProvider } from "./unofficial-social-providers.js";
 import { SocialGatewayClient } from "./gateway/client.js";
@@ -29,9 +29,9 @@ export type SocialPublishingModuleDeps = {
   /** Cofre central das credenciais OAuth (cifrado). */
   credentials: PublicationSecretResolverPort;
   /** Adapters oficiais já existentes (Meta IG/FB, TikTok), quando configurados. */
-  officialAdapters?: { instagram?: PublicationProviderAdapterPort; facebook?: PublicationProviderAdapterPort; tiktok?: PublicationProviderAdapterPort };
+  officialAdapters?: { instagram?: PublicationProviderAdapterPort; facebook?: PublicationProviderAdapterPort; tiktok?: PublicationProviderAdapterPort; youtube?: PublicationProviderAdapterPort };
   /** Serviços OAuth oficiais (resolvidos tarde: nascem depois da governança de credenciais). */
-  oauth?: { meta?: () => OfficialOAuthServiceLike | undefined; tiktok?: () => OfficialOAuthServiceLike | undefined };
+  oauth?: { meta?: () => OfficialOAuthServiceLike | undefined; tiktok?: () => OfficialOAuthServiceLike | undefined; youtube?: () => OfficialOAuthServiceLike | undefined };
   memberships?: Pick<TenantMembershipRepositoryPort, "listByTenant">;
   notification?: Partial<NotificationUseCaseDeps>;
   email?: SocialEmailNotifierPort;
@@ -70,6 +70,10 @@ export function createOfficialSocialProviders(input: Pick<SocialPublishingModule
     new TikTokOfficialSocialProvider(
       { tiktok: input.officialAdapters?.tiktok },
       new OfficialOAuthConnection(input.oauth?.tiktok ?? (() => undefined), () => "tiktok"),
+    ),
+    new YouTubeOfficialSocialProvider(
+      { youtube: input.officialAdapters?.youtube },
+      new OfficialOAuthConnection(input.oauth?.youtube ?? (() => undefined), () => "youtube"),
     ),
   ];
 }

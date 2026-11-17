@@ -58,7 +58,7 @@ export class SocialPublicationRouter implements PublicationProviderAdapterPort {
     enabled: true,
     status: "enabled",
     oauthType: "manual",
-    supportedChannels: ["instagram", "facebook", "tiktok"],
+    supportedChannels: ["instagram", "facebook", "tiktok", "youtube"],
     supportedContentTypes: ["text", "image", "carousel", "video", "document"],
     capabilities: { publish: true, image: true, video: true, carousel: true, scheduling: false, update: false, delete: false, status: true, analytics: false, webhooks: false },
     supportsIdempotencyKey: true,

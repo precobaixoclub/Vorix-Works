@@ -1503,6 +1503,7 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
   });
   kwaiOAuthServiceRef = kwaiOAuthService;
   const youtubeOAuthService = new YouTubeOAuthService({
+    stateStore: oauthStateStore,
     config: {
       enabled: config?.publication.youtubeEnabled ?? false,
       clientId: config?.publication.youtubeClientId,
@@ -1572,14 +1573,17 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
     officialAdapters: {
       ...(config?.publication.metaInstagramEnabled ? { instagram: instagramProvider, facebook: facebookProvider } : {}),
       ...(config?.publication.tiktokEnabled ? { tiktok: tiktokProvider } : {}),
+      ...(config?.publication.youtubeEnabled ? { youtube: youtubeProvider } : {}),
     },
-    oauth: { meta: () => metaInstagramOAuthServiceRef, tiktok: () => tiktokOAuthServiceRef },
+    oauth: { meta: () => metaInstagramOAuthServiceRef, tiktok: () => tiktokOAuthServiceRef, youtube: () => youtubeOAuthServiceRef },
     memberships: identityRepositories?.membershipRepository,
     notification: { notificationRepository: repositories.notificationRepository, realtimePublisher: notificationRealtimePublisher },
     auditRepository: repositories.operationalAuditRepository,
     platformDefaults: {
       meta_official: { enabled: config?.social.metaOfficialGlobalEnabled ?? false },
       tiktok_official: { enabled: config?.social.tiktokOfficialGlobalEnabled ?? false },
+      // YOUTUBE_ENABLED é a ativação explícita pelo operador; switches gravados prevalecem.
+      youtube_official: { enabled: config?.publication.youtubeEnabled ?? false, approved: config?.publication.youtubeEnabled ?? false },
     },
     defaultTimezone: config?.social.defaultTimezone,
     timezoneFor: async ({ tenantId, workspaceId }) => {

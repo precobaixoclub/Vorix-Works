@@ -6,7 +6,7 @@
  * ou mídia. Nada aqui conhece HTTP, OAuth, tokens ou SDK de rede social.
  */
 
-export const SOCIAL_NETWORKS = ["instagram", "facebook", "tiktok"] as const;
+export const SOCIAL_NETWORKS = ["instagram", "facebook", "tiktok", "youtube"] as const;
 export type SocialNetwork = (typeof SOCIAL_NETWORKS)[number];
 
 /**
@@ -14,7 +14,7 @@ export type SocialNetwork = (typeof SOCIAL_NETWORKS)[number];
  * conjunto é ABERTO: um provider novo se registra no registry com as redes que atende, sem mudar
  * composer, fila, calendário ou histórico. Estes são os providers oficiais conhecidos hoje.
  */
-export const KNOWN_SOCIAL_PROVIDER_TYPES = ["meta_official", "tiktok_official", "instagram_unofficial", "facebook_unofficial", "tiktok_unofficial"] as const;
+export const KNOWN_SOCIAL_PROVIDER_TYPES = ["meta_official", "tiktok_official", "youtube_official", "instagram_unofficial", "facebook_unofficial", "tiktok_unofficial"] as const;
 export type SocialProviderType = string;
 
 export function isValidProviderType(value: string): boolean {
@@ -38,7 +38,7 @@ export type SocialFeature = (typeof SOCIAL_FEATURES)[number];
 
 /** Provider sugerido por rede quando o tenant ainda não escolheu (não implica liberado). */
 export function defaultProviderFor(network: SocialNetwork): SocialProviderType {
-  return `${network}_unofficial`;
+  return network === "youtube" ? "youtube_official" : `${network}_unofficial`;
 }
 
 /** Limites de mídia por formato, declarados pelo provider (o que a rede aceita naquele caminho). */
@@ -333,7 +333,7 @@ export function accountNeedsReconnect(status: SocialConnectionStatus): boolean {
   return status === "REAUTH_REQUIRED" || status === "CHECKPOINT_REQUIRED" || status === "DISCONNECTED";
 }
 
-export const NETWORK_LABEL: Record<SocialNetwork, string> = { instagram: "Instagram", facebook: "Facebook", tiktok: "TikTok" };
+export const NETWORK_LABEL: Record<SocialNetwork, string> = { instagram: "Instagram", facebook: "Facebook", tiktok: "TikTok", youtube: "YouTube Shorts" };
 
 /** Mensagem traduzida para o cliente — sem HTTP, endpoint, cookie ou nome técnico de provider. */
 export function userMessageForError(network: SocialNetwork, errorClass: SocialErrorClass): string {

@@ -62,7 +62,7 @@ test("YouTube OAuth: conecta canal e guarda tokens somente no secret store", asy
     httpClient,
   });
 
-  const begin = service.begin({ tenantId: "tenant-1", workspaceId: "workspace-1" });
+  const begin = await service.begin({ tenantId: "tenant-1", workspaceId: "workspace-1" });
   assert.ok(begin.authorizationUrl.startsWith("https://accounts.google.com/o/oauth2/v2/auth"));
   assert.ok(begin.authorizationUrl.includes("access_type=offline"));
   assert.ok(begin.authorizationUrl.includes("prompt=consent"));

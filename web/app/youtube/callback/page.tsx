@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/contexts/auth-context";
 import { OAuthCallbackPanel, type OAuthCallbackState } from "@/features/oauth/OAuthCallbackPanel";
 import { completeYouTubeOAuth } from "@/features/youtube/api";
+import { finishSocialOAuth, takeSocialOAuthFlow } from "@/features/social/oauth-callback";
 
 export const YOUTUBE_RETURN_PATH_KEY = "youtube:return-path";
 
@@ -32,6 +33,7 @@ function YouTubeOAuthCallbackContent() {
 
     if (started.current) return;
     started.current = true;
+    const socialNetwork = takeSocialOAuthFlow();
 
     const returnPath = window.sessionStorage.getItem(YOUTUBE_RETURN_PATH_KEY);
     setReturnHref(returnPath ?? undefined);
@@ -53,6 +55,20 @@ function YouTubeOAuthCallbackContent() {
     if (!code || !state) {
       setCallbackState("error");
       setMessage("Callback inválido: code ou state ausente.");
+      return;
+    }
+
+    if (socialNetwork === "youtube") {
+      finishSocialOAuth("youtube", state, code)
+        .then((target) => {
+          setCallbackState("success");
+          setMessage("Canal conectado. Redirecionando...");
+          router.replace(target);
+        })
+        .catch((cause: unknown) => {
+          setCallbackState("error");
+          setMessage(cause instanceof Error ? cause.message : "Não foi possível concluir a conexão com o YouTube.");
+        });
       return;
     }
 

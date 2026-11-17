@@ -1,4 +1,7 @@
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
+import type { OAuthStateStorePort } from "../../application/ports/oauth-state-store.port.js";
+import { safeReturnPath } from "../../application/ports/oauth-state-store.port.js";
+import { InMemoryOAuthStateStore } from "../storage/oauth-state-stores.js";
 import type { CredentialGovernanceActor, CredentialGovernanceService } from "../../application/credential/credential-governance-service.js";
 import type { PublicationRepositoryPort } from "../../application/ports/publication-repository.port.js";
 import type { PublicationSecretStoragePort } from "../../application/publication/publication-secret-store.js";
@@ -52,18 +55,10 @@ export type YouTubeTokenSet = {
   expiresIn?: number;
 };
 
-type YouTubeOAuthState = {
-  state: string;
-  tenantId: string;
-  workspaceId: string;
-  createdAt: string;
-  expiresAt: string;
-};
-
 const STATE_TTL_MS = 10 * 60 * 1000;
 
 export class YouTubeOAuthService {
-  private readonly states = new Map<string, YouTubeOAuthState>();
+  private stateStoreInstance?: OAuthStateStorePort;
   private telemetry: YouTubeOAuthTelemetry = { oauthSuccess: 0, oauthFailure: 0, tokenRefreshSuccess: 0, tokenRefreshFailure: 0 };
 
   constructor(
@@ -73,22 +68,35 @@ export class YouTubeOAuthService {
       secretStore: PublicationSecretStoragePort;
       credentialGovernanceService?: CredentialGovernanceService;
       httpClient?: typeof fetch;
+      stateStore?: OAuthStateStorePort;
       now?: () => Date;
     },
   ) {}
+
+  private get stateStore(): OAuthStateStorePort {
+    this.stateStoreInstance ??= this.input.stateStore ?? new InMemoryOAuthStateStore();
+    return this.stateStoreInstance;
+  }
 
   isConfigured(): boolean {
     const { enabled, clientId, clientSecret, redirectUri } = this.input.config;
     return !!(enabled && clientId && clientSecret && redirectUri);
   }
 
-  begin(input: { tenantId: string; workspaceId: string }): { authorizationUrl: string; state: string; expiresAt: string } {
+  async begin(input: { tenantId: string; workspaceId: string; userId?: string; network?: string; returnPath?: string }): Promise<{ authorizationUrl: string; state: string; expiresAt: string }> {
     this.assertConfigured();
     const now = this.now();
-    this.pruneExpiredStates(now);
+    await this.stateStore.purgeExpired(now.toISOString()).catch(() => 0);
     const state = randomBytes(24).toString("base64url");
     const expiresAt = new Date(now.getTime() + STATE_TTL_MS).toISOString();
-    this.states.set(state, { state, tenantId: input.tenantId, workspaceId: input.workspaceId, createdAt: now.toISOString(), expiresAt });
+    const codeVerifier = randomBytes(48).toString("base64url");
+    const returnPath = safeReturnPath(input.returnPath);
+    await this.stateStore.create(state, {
+      provider: "youtube", tenantId: input.tenantId, workspaceId: input.workspaceId,
+      ...(input.userId ? { userId: input.userId } : {}),
+      network: "youtube", ...(returnPath ? { returnPath } : {}),
+      codeVerifier, createdAt: now.toISOString(), expiresAt,
+    });
 
     const url = new URL(`${this.authBaseUrl()}/o/oauth2/v2/auth`);
     url.searchParams.set("client_id", this.input.config.clientId!);
@@ -99,23 +107,27 @@ export class YouTubeOAuthService {
     url.searchParams.set("access_type", "offline");
     url.searchParams.set("prompt", "consent");
     url.searchParams.set("include_granted_scopes", "true");
+    url.searchParams.set("code_challenge", createHash("sha256").update(codeVerifier).digest("base64url"));
+    url.searchParams.set("code_challenge_method", "S256");
     return { authorizationUrl: url.toString(), state, expiresAt };
   }
 
-  async complete(input: { state: string; code: string; actor?: CredentialGovernanceActor; context?: AuditContext }): Promise<{ credentialReferenceId: string; providerSubjectId: string; displayName?: string }> {
+  async complete(input: { state: string; code: string; actor?: CredentialGovernanceActor; context?: AuditContext }): Promise<{ credentialReferenceId: string; providerSubjectId: string; displayName?: string; flow: { workspaceId: string; network: "youtube"; returnPath?: string } }> {
     this.assertConfigured();
-    const pending = this.states.get(input.state);
-    if (!pending || pending.expiresAt <= this.now().toISOString()) {
-      this.states.delete(input.state);
+    const consumed = await this.stateStore.consume({ state: input.state, provider: "youtube", now: this.now().toISOString(), ...(input.actor ? { tenantId: input.actor.tenantId, userId: input.actor.userId } : {}) });
+    if (!consumed.ok || !consumed.record.codeVerifier) {
       this.recordOAuthFailure("YOUTUBE_OAUTH_STATE_INVALID");
       throw new Error("YOUTUBE_OAUTH_STATE_INVALID: state OAuth invalido ou expirado.");
     }
-    this.states.delete(input.state);
+    const pending = consumed.record;
 
     let tokens: YouTubeTokenSet;
     let channel: { channelId: string; displayName?: string; avatarUrl?: string };
     try {
-      tokens = await this.exchangeCode(input.code);
+      tokens = await this.exchangeCode(input.code, pending.codeVerifier!);
+      if (tokens.scope && YOUTUBE_REQUIRED_SCOPES.some((scope) => !tokens.scope!.split(/\s+/).includes(scope))) {
+        throw new Error("SOCIAL_YOUTUBE_PERMISSIONS_REQUIRED: autorize o envio de vídeos e a leitura do canal para conectar o YouTube.");
+      }
       channel = await this.fetchChannel(tokens.accessToken);
     } catch (error) {
       this.recordOAuthFailure(error instanceof Error ? error.message.split(":")[0] : "YOUTUBE_OAUTH_FAILED");
@@ -123,6 +135,11 @@ export class YouTubeOAuthService {
     }
 
     const credentialReferenceId = this.credentialReferenceId(pending.tenantId, pending.workspaceId, channel.channelId);
+    if (!tokens.refreshToken) {
+      const existing = await this.input.secretStore.get({ tenantId: pending.tenantId, workspaceId: pending.workspaceId, providerId: "youtube", credentialReferenceId });
+      tokens.refreshToken = existing?.value.refreshToken;
+    }
+    if (!tokens.refreshToken) throw new Error("SOCIAL_YOUTUBE_OFFLINE_ACCESS_REQUIRED: autorize o acesso ao canal novamente para permitir publicações agendadas.");
     const grantedScopes = tokens.scope ? tokens.scope.split(/\s+/).map((scope) => scope.trim()).filter(Boolean) : [...this.input.config.scopes];
     await this.persistCredential({
       tenantId: pending.tenantId,
@@ -138,7 +155,7 @@ export class YouTubeOAuthService {
     });
 
     this.telemetry = { ...this.telemetry, oauthSuccess: this.telemetry.oauthSuccess + 1 };
-    return { credentialReferenceId, providerSubjectId: channel.channelId, displayName: channel.displayName };
+    return { credentialReferenceId, providerSubjectId: channel.channelId, displayName: channel.displayName, flow: { workspaceId: pending.workspaceId, network: "youtube", ...(pending.returnPath ? { returnPath: pending.returnPath } : {}) } };
   }
 
   async refresh(input: { tenantId: string; workspaceId: string; credentialReferenceId: string }): Promise<string | undefined> {
@@ -279,8 +296,8 @@ export class YouTubeOAuthService {
     });
   }
 
-  private async exchangeCode(code: string): Promise<YouTubeTokenSet> {
-    return this.tokenRequest({ grant_type: "authorization_code", code, redirect_uri: this.input.config.redirectUri! });
+  private async exchangeCode(code: string, codeVerifier: string): Promise<YouTubeTokenSet> {
+    return this.tokenRequest({ grant_type: "authorization_code", code, code_verifier: codeVerifier, redirect_uri: this.input.config.redirectUri! });
   }
 
   private async tokenRequest(fields: Record<string, string>): Promise<YouTubeTokenSet> {
@@ -319,13 +336,6 @@ export class YouTubeOAuthService {
 
   private assertConfigured(): void {
     if (!this.isConfigured()) throw new Error("YOUTUBE_OAUTH_NOT_CONFIGURED: defina YOUTUBE_CLIENT_ID, YOUTUBE_CLIENT_SECRET e YOUTUBE_OAUTH_REDIRECT_URI.");
-  }
-
-  private pruneExpiredStates(now: Date): void {
-    const nowIso = now.toISOString();
-    for (const [key, value] of this.states) {
-      if (value.expiresAt <= nowIso) this.states.delete(key);
-    }
   }
 
   private environment(): "sandbox" | "production" {

@@ -22,8 +22,8 @@ import type {
 
 export type Tone = "emerald" | "sky" | "amber" | "rose" | "violet" | "neutral";
 
-export const NETWORK_LABEL: Record<SocialNetwork, string> = { instagram: "Instagram", facebook: "Facebook", tiktok: "TikTok" };
-export const NETWORK_TONE: Record<SocialNetwork, Tone> = { instagram: "rose", facebook: "sky", tiktok: "violet" };
+export const NETWORK_LABEL: Record<SocialNetwork, string> = { instagram: "Instagram", facebook: "Facebook", tiktok: "TikTok", youtube: "YouTube Shorts" };
+export const NETWORK_TONE: Record<SocialNetwork, Tone> = { instagram: "rose", facebook: "sky", tiktok: "violet", youtube: "rose" };
 
 /** Classes do vocabulário fechado de acentos do design system (nunca hex solto). */
 export const TONE_CLASS: Record<Tone, { badge: string; dot: string; soft: string }> = {
@@ -155,7 +155,7 @@ export type NetworkChoice = {
 };
 
 export function networkChoices(options: readonly SocialComposerAccount[], workspaceId: string): NetworkChoice[] {
-  return (["instagram", "facebook", "tiktok"] as const).map((network) => {
+  return (["instagram", "facebook", "tiktok", "youtube"] as const).map((network) => {
     const accounts = options.filter((option) => option.network === network);
     const label = NETWORK_LABEL[network];
     const integrations = `/workspaces/${workspaceId}/social/integrations`;

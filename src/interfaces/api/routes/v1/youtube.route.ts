@@ -92,7 +92,7 @@ export async function registerYouTubeRoutes(app: FastifyInstance, deps: YouTubeR
   app.post("/publication-providers/youtube/oauth/connect", { schema: { body: { type: "object", required: ["workspaceId"], properties: { workspaceId: { type: "string", minLength: 1 } } } } }, async (request) => {
     const principal = requirePermission(request, "publication:admin");
     const { workspaceId } = request.body as { workspaceId: string };
-    return successEnvelope(deps.youtubeOAuthService.begin({ tenantId: principal.tenantId, workspaceId }), request.id);
+    return successEnvelope(await deps.youtubeOAuthService.begin({ tenantId: principal.tenantId, workspaceId, userId: principal.userId }), request.id);
   });
 
   app.post("/publication-providers/youtube/oauth/callback", { schema: { body: { type: "object", required: ["state", "code"], properties: { state: { type: "string", minLength: 1 }, code: { type: "string", minLength: 1 } } } } }, async (request) => {

@@ -41,7 +41,7 @@
     "test:kwai": "npm run build && node --test tests/kwai-publishing.test.mjs",
     "test:instagram": "npm run build && node --test tests/instagram-publishing.test.mjs",
     "test:meta-ads": "npm run build && node --test tests/meta-graph-client.test.mjs tests/meta-ads-oauth-service.test.mjs tests/meta-ads-persistence.test.mjs tests/sync-meta-ad-campaigns.test.mjs",
-    "test:youtube": "npm run build && node --test tests/youtube-publishing.test.mjs",
+    "test:youtube": "npm run build && node --test tests/youtube-publishing.test.mjs tests/social-youtube.test.mjs",
     "test:media-upload": "npm run build && node --test tests/media-upload.test.mjs",
     "test:scheduling": "npm run build && node --test tests/scheduling.test.mjs",
     "test:analytics": "npm run build && node --test tests/analytics.test.mjs",

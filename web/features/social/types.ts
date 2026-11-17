@@ -1,7 +1,10 @@
 /** Espelha as visões públicas de `/v1/social/*` (backend). Nada técnico: sem token, provider ou credencial. */
 
 export type SocialNetwork = "instagram" | "facebook" | "tiktok" | "youtube";
-export const SOCIAL_NETWORKS: readonly SocialNetwork[] = ["instagram", "facebook", "tiktok", "youtube"];
+// Facebook sai da lista de redes publicáveis da UI: a conexão oficial da Meta é uma só — ao conectar
+// o Instagram a mesma Página já responde por tudo —, então expomos só o Instagram (o tipo mantém
+// "facebook" porque a credencial da Página ainda existe no backend e capabilities/labels a referenciam).
+export const SOCIAL_NETWORKS: readonly SocialNetwork[] = ["instagram", "tiktok", "youtube"];
 
 export type SocialPostFormat = "feed_text" | "feed_image" | "feed_video" | "carousel" | "story_image" | "story_video" | "reel" | "short_video" | "photo_post";
 

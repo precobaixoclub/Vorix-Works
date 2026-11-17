@@ -75,7 +75,8 @@ describe("Composer", () => {
   it("rede sem conta ou com conta doente fica desabilitada com motivo e atalho para conectar", () => {
     const choices = networkChoices([igOption, { ...ttOption, publishable: false, warning: "Sua conta do TikTok precisa ser reconectada." }], "ws-1");
     expect(choices.find((choice) => choice.network === "instagram")).toMatchObject({ selectable: true });
-    expect(choices.find((choice) => choice.network === "facebook")).toMatchObject({ selectable: false, cta: { label: "Conectar Facebook", href: "/workspaces/ws-1/social/integrations" } });
+    // Facebook não é mais uma rede publicável da UI: a conexão oficial da Meta é só o Instagram.
+    expect(choices.find((choice) => choice.network === "facebook")).toBeUndefined();
     expect(choices.find((choice) => choice.network === "tiktok")).toMatchObject({ selectable: false, reason: "Sua conta do TikTok precisa ser reconectada.", cta: { label: "Reconectar TikTok" } });
   });
 

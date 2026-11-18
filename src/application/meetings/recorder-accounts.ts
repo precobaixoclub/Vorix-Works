@@ -113,7 +113,7 @@ async function capacityFor(deps: RecorderAccountDeps, tenantId: string, accounts
 }
 
 /** Resumo de capacidade (sem e-mails) — visível para quem grava, para explicar avisos e bloqueios. */
-export async function getRecordingCapacity(deps: RecorderAccountDeps, actor: RecorderAccountActor): Promise<RecordingCapacity & { canManage: boolean; knownHumanEmails: string[] }> {
+export async function getRecordingCapacity(deps: RecorderAccountDeps, actor: RecorderAccountActor): Promise<RecordingCapacity & { canManage: boolean; knownHumanEmails: string[]; connectedHumanEmails: string[] }> {
   const accounts = await deps.repository.listRecorderAccounts({ tenantId: actor.tenantId });
   const known = await deps.repository.knownHumanGoogleEmails({ tenantId: actor.tenantId, userId: actor.userId });
   return {
@@ -121,6 +121,9 @@ export async function getRecordingCapacity(deps: RecorderAccountDeps, actor: Rec
     canManage: hasPermission(actor, "meeting:manage_recorder_accounts"),
     // Sugestões para "Qual conta Google você utilizará para participar?" — só as da própria pessoa.
     knownHumanEmails: [...new Set([...known.connected, ...known.recentExplicit])].sort(),
+    // Contas Google CONECTADAS da pessoa (Google Agenda) — usadas para pré-preencher sozinho o
+    // campo "Conta que você usará na reunião", para não precisar digitar.
+    connectedHumanEmails: [...new Set(known.connected)].sort(),
   };
 }
 

@@ -62,7 +62,7 @@ export function getRecorderEligibility(workspaceId: string, meetingId: string) {
 // ── Contas de gravação (self-service) ──────────────────────────────────────────────────────────
 
 export function getRecordingCapacity(workspaceId: string) {
-  return apiClient.get<RecordingCapacity & { canManage: boolean; knownHumanEmails: string[] }>(`/v1/meetings/recording-capacity?workspaceId=${q(workspaceId)}`);
+  return apiClient.get<RecordingCapacity & { canManage: boolean; knownHumanEmails: string[]; connectedHumanEmails: string[] }>(`/v1/meetings/recording-capacity?workspaceId=${q(workspaceId)}`);
 }
 
 export function listRecorderAccounts(workspaceId: string) {

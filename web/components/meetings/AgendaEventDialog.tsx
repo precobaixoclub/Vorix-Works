@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { HumanIdentityField, recorderAccountsHref } from "@/components/meetings/RecorderIdentity";
@@ -61,9 +61,23 @@ export function AgendaEventDialog({
   const [autoRecord, setAutoRecord] = useState(false);
   const [joinBefore, setJoinBefore] = useState("2");
   const [humanEmail, setHumanEmail] = useState("");
+  const [humanTouched, setHumanTouched] = useState(false);
+  const [editingHuman, setEditingHuman] = useState(false);
   const [busy, setBusy] = useState(false);
   const router = useRouter();
   const capacity = useRecordingCapacity(workspaceId);
+
+  // Preenche sozinho a conta que a pessoa usará na reunião com a conta Google conectada (Google
+  // Agenda). Assim não precisa digitar; dá pra trocar em "Alterar". Só enquanto não foi tocado.
+  const autoHumanEmail = capacity.data?.connectedHumanEmails?.[0] ?? capacity.data?.knownHumanEmails?.[0] ?? "";
+  useEffect(() => {
+    if (autoRecord && !humanTouched && !humanEmail && autoHumanEmail) setHumanEmail(autoHumanEmail);
+  }, [autoRecord, humanTouched, humanEmail, autoHumanEmail]);
+
+  function changeHumanEmail(value: string) {
+    setHumanTouched(true);
+    setHumanEmail(value);
+  }
 
   async function submit() {
     setBusy(true);
@@ -175,8 +189,15 @@ export function AgendaEventDialog({
             ) : null}
             {autoRecord ? (
               <div className="space-y-1">
-                <HumanIdentityField id="agenda-human" value={humanEmail} onChange={setHumanEmail} suggestions={capacity.data?.knownHumanEmails ?? []} />
-                <p className="text-xs text-muted-foreground">Em branco, o Vorix usa a sua conta do Google Agenda quando tiver certeza; se não tiver, a gravação automática só começa depois que você informar.</p>
+                {humanEmail && !editingHuman ? (
+                  <div className="flex items-center justify-between gap-2 text-sm">
+                    <span className="min-w-0 text-muted-foreground">Você entrará como <span className="font-medium text-foreground">{humanEmail}</span></span>
+                    <button type="button" className="shrink-0 text-xs font-medium text-primary underline dark:text-primary-glow" onClick={() => setEditingHuman(true)}>Alterar</button>
+                  </div>
+                ) : (
+                  <HumanIdentityField id="agenda-human" value={humanEmail} onChange={changeHumanEmail} suggestions={capacity.data?.knownHumanEmails ?? []} autoFocus={editingHuman} />
+                )}
+                <p className="text-xs text-muted-foreground">{humanEmail ? "É a conta Google com que você entra no Meet, usada automaticamente. Troque só se for entrar com outra." : "Conecte o Google Agenda para preencher sozinho, ou informe a conta Google com que você entra no Meet."}</p>
               </div>
             ) : null}
           </div>

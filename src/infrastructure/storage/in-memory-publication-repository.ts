@@ -415,6 +415,10 @@ export class InMemoryPublicationRepository implements PublicationRepositoryPort 
     return [...this.credentialReferences.values()].filter((reference) => reference.tenantId === filter.tenantId && reference.workspaceId === filter.workspaceId && (!filter.providerId || reference.providerId === filter.providerId));
   }
 
+  async listCredentialReferencesByTenant(filter: { tenantId: string; providerId?: string }): Promise<PublicationCredentialReference[]> {
+    return [...this.credentialReferences.values()].filter((reference) => reference.tenantId === filter.tenantId && (!filter.providerId || reference.providerId === filter.providerId));
+  }
+
   async createReconciliation(input: Omit<PublicationReconciliation, "createdAt" | "updatedAt">): Promise<PublicationReconciliation> {
     const now = new Date().toISOString();
     const reconciliation = { ...input, createdAt: now, updatedAt: now };

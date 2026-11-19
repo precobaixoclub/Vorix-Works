@@ -298,3 +298,94 @@ test("Meta: canário multi-provider libera instagram/facebook por tenant e produ
   });
   assert.equal(decision.allowed, true);
 });
+
+test("Meta OAuth: reconectar uma marca refresca (cura) o Page Token das OUTRAS Páginas ainda concedidas, sem derrubá-las", async () => {
+  const repository = new InMemoryPublicationRepository();
+  const secretStore = new LocalPublicationSecretStore();
+
+  // Workspace IRMÃO (outra marca) já conectado antes, com um Page Token que o re-auth vai rotacionar.
+  const siblingRef = "facebook:tenant-1:workspace-sibling:page-9";
+  await repository.createCredentialReference({
+    credentialReferenceId: siblingRef,
+    tenantId: "tenant-1",
+    workspaceId: "workspace-sibling",
+    providerId: "facebook",
+    status: "active",
+    environment: "production",
+    providerSubjectId: "page-9",
+    scopes: ["pages_manage_posts"],
+    lastRefreshedAt: "2026-01-01T00:00:00.000Z",
+  });
+  await secretStore.put({
+    credentialReferenceId: siblingRef,
+    tenantId: "tenant-1",
+    workspaceId: "workspace-sibling",
+    providerId: "facebook",
+    value: { accessToken: "page-9-token-STALE", userAccessToken: "user-token-OLD", pageId: "page-9", displayName: "Marca Irmã" },
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+  });
+
+  const httpClient = async (url) => {
+    const href = String(url);
+    if (href.includes("/oauth/access_token") && href.includes("code=auth-code")) return jsonResponse({ access_token: "short-lived", expires_in: 3600 });
+    if (href.includes("/oauth/access_token") && href.includes("fb_exchange_token=short-lived")) return jsonResponse({ access_token: "user-token-FRESH", expires_in: 5_184_000 });
+    if (href.includes("/me/accounts")) {
+      return jsonResponse({
+        data: [
+          // A marca que está reconectando agora.
+          { id: "page-1", name: "Marca Conectando", access_token: "page-1-token-fresh" },
+          // A Página da marca IRMÃ continua concedida, com Page Token NOVO (rotacionado pelo re-auth).
+          { id: "page-9", name: "Marca Irmã", access_token: "page-9-token-FRESH" },
+        ],
+      });
+    }
+    return jsonResponse({ error: { message: "unexpected" } }, 400);
+  };
+
+  const service = new MetaInstagramOAuthService({
+    config: { enabled: true, appId: "app-1", appSecret: "secret-1", redirectUri: "https://app.test/instagram/callback", scopes: ["pages_show_list", "pages_manage_posts"] },
+    repository,
+    secretStore,
+    httpClient,
+  });
+
+  const begin = await service.begin({ tenantId: "tenant-1", workspaceId: "workspace-connecting" });
+  await service.complete({ state: begin.state, code: "auth-code" });
+
+  // A credencial da marca IRMÃ foi curada: Page Token e User Token agora são os frescos.
+  const healed = await secretStore.get({ tenantId: "tenant-1", workspaceId: "workspace-sibling", providerId: "facebook", credentialReferenceId: siblingRef });
+  assert.equal(healed.value.accessToken, "page-9-token-FRESH", "Page Token da irmã deveria ter sido refrescado");
+  assert.equal(healed.value.userAccessToken, "user-token-FRESH", "User Token da irmã deveria ter sido refrescado");
+  assert.equal(healed.value.displayName, "Marca Irmã", "demais campos preservados");
+});
+
+test("Meta OAuth: cura NÃO toca Páginas de outra marca que não voltaram nesta autorização", async () => {
+  const repository = new InMemoryPublicationRepository();
+  const secretStore = new LocalPublicationSecretStore();
+  const otherRef = "facebook:tenant-1:workspace-other:page-outro";
+  await repository.createCredentialReference({
+    credentialReferenceId: otherRef, tenantId: "tenant-1", workspaceId: "workspace-other", providerId: "facebook",
+    status: "active", environment: "production", providerSubjectId: "page-outro", scopes: ["pages_manage_posts"], lastRefreshedAt: "2026-01-01T00:00:00.000Z",
+  });
+  await secretStore.put({
+    credentialReferenceId: otherRef, tenantId: "tenant-1", workspaceId: "workspace-other", providerId: "facebook",
+    value: { accessToken: "token-INTACTO", userAccessToken: "user-INTACTO", pageId: "page-outro" }, createdAt: "2026-01-01T00:00:00.000Z", updatedAt: "2026-01-01T00:00:00.000Z",
+  });
+  const httpClient = async (url) => {
+    const href = String(url);
+    if (href.includes("/oauth/access_token") && href.includes("code=auth-code")) return jsonResponse({ access_token: "short-lived" });
+    if (href.includes("/oauth/access_token") && href.includes("fb_exchange_token=short-lived")) return jsonResponse({ access_token: "user-FRESH" });
+    if (href.includes("/me/accounts")) return jsonResponse({ data: [{ id: "page-1", name: "Conectando", access_token: "page-1-fresh" }] });
+    return jsonResponse({ error: { message: "unexpected" } }, 400);
+  };
+  const service = new MetaInstagramOAuthService({
+    config: { enabled: true, appId: "app-1", appSecret: "secret-1", redirectUri: "https://app.test/instagram/callback", scopes: ["pages_show_list"] },
+    repository, secretStore, httpClient,
+  });
+  const begin = await service.begin({ tenantId: "tenant-1", workspaceId: "workspace-connecting" });
+  await service.complete({ state: begin.state, code: "auth-code" });
+  const untouched = await secretStore.get({ tenantId: "tenant-1", workspaceId: "workspace-other", providerId: "facebook", credentialReferenceId: otherRef });
+  assert.equal(untouched.value.accessToken, "token-INTACTO", "Página fora da autorização não deve ser tocada");
+  assert.equal(untouched.value.userAccessToken, "user-INTACTO");
+});

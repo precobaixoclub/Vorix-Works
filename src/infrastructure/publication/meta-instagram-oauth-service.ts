@@ -203,6 +203,13 @@ export class MetaInstagramOAuthService {
       }
     }
 
+    // Cura das IRMÃS: a reautorização do Meta rotaciona o Page Access Token de TODAS as Páginas
+    // ainda concedidas, invalidando o token guardado dos OUTROS workspaces (cada marca é uma Página
+    // numa só conta do Facebook). Refrescamos esses tokens com a autorização fresca para que
+    // reconectar uma marca não derrube as demais — desde que a Página siga concedida a este usuário.
+    // Páginas que não voltaram nesta autorização não são tocadas (podem estar concedidas por outra conta).
+    await this.healSiblingPageTokens({ tenantId: pending.tenantId, connectedWorkspaceId: pending.workspaceId, pages, userAccessToken }).catch(() => undefined);
+
     this.telemetry = { ...this.telemetry, oauthSuccess: this.telemetry.oauthSuccess + 1 };
     // Contexto do fluxo vem do state persistido no servidor, não do navegador.
     return { accounts, flow: { workspaceId: pending.workspaceId, ...(pending.network ? { network: pending.network } : {}), ...(pending.returnPath ? { returnPath: pending.returnPath } : {}) } };
@@ -296,6 +303,50 @@ export class MetaInstagramOAuthService {
       }).catch(() => undefined);
     }
     return true;
+  }
+
+  /**
+   * Refresca o Page Access Token das credenciais Meta de OUTROS workspaces do mesmo tenant cujas
+   * Páginas continuam concedidas nesta autorização fresca. Chamado após uma reconexão: evita que
+   * reconectar uma marca invalide (rotação de token no re-auth) as Páginas das outras. Só toca
+   * Páginas presentes em `pages` (este usuário as administra agora); nunca revoga nem mexe em
+   * Páginas ausentes. Best-effort: qualquer falha por credencial é ignorada e segue para a próxima.
+   */
+  private async healSiblingPageTokens(input: { tenantId: string; connectedWorkspaceId: string; pages: readonly ResolvedPage[]; userAccessToken: string }): Promise<number> {
+    const freshByPageId = new Map(input.pages.map((page) => [page.pageId, page] as const));
+    const references = await this.input.repository
+      .listCredentialReferencesByTenant({ tenantId: input.tenantId })
+      .catch((): PublicationCredentialReference[] => []);
+    let healed = 0;
+    for (const reference of references) {
+      if (reference.workspaceId === input.connectedWorkspaceId) continue; // já persistido com token fresco acima
+      if (reference.status === "revoked") continue;
+      if (reference.providerId !== "facebook" && reference.providerId !== "instagram") continue;
+      const providerId = reference.providerId;
+      const secret = await this.input.secretStore
+        .get({ tenantId: input.tenantId, workspaceId: reference.workspaceId, providerId, credentialReferenceId: reference.credentialReferenceId })
+        .catch(() => undefined);
+      if (!secret) continue;
+      const pageId = secret.value.pageId ?? (providerId === "facebook" ? reference.providerSubjectId : undefined);
+      if (!pageId) continue;
+      const fresh = freshByPageId.get(pageId);
+      if (!fresh) continue; // Página fora desta autorização — não mexe (pode estar concedida por outra conta)
+      if (secret.value.accessToken === fresh.pageAccessToken && secret.value.userAccessToken === input.userAccessToken) continue; // já está fresco
+      const nowIso = this.now().toISOString();
+      await this.input.secretStore.put({
+        credentialReferenceId: reference.credentialReferenceId,
+        tenantId: input.tenantId,
+        workspaceId: reference.workspaceId,
+        providerId,
+        value: { ...secret.value, accessToken: fresh.pageAccessToken, userAccessToken: input.userAccessToken },
+        createdAt: nowIso,
+        updatedAt: nowIso,
+      });
+      await this.input.repository.createCredentialReference({ ...reference, status: "active", lastRefreshedAt: nowIso }).catch(() => undefined);
+      healed += 1;
+    }
+    this.telemetry = { ...this.telemetry, tokenRefreshSuccess: this.telemetry.tokenRefreshSuccess + healed };
+    return healed;
   }
 
   private async persistCredential(input: {

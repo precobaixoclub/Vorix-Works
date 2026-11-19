@@ -95,6 +95,8 @@ export type PublicationRepositoryPort = {
   releaseExpiredOutbox(now: string): Promise<number>;
   createCredentialReference(input: Omit<PublicationCredentialReference, "createdAt" | "updatedAt">): Promise<PublicationCredentialReference>;
   listCredentialReferences(filter: { tenantId: string; workspaceId: string; providerId?: string }): Promise<PublicationCredentialReference[]>;
+  /** Todas as credenciais do tenant (todos os workspaces) — usado para curar/refrescar irmãs na reconexão Meta. */
+  listCredentialReferencesByTenant(filter: { tenantId: string; providerId?: string }): Promise<PublicationCredentialReference[]>;
   createReconciliation(input: Omit<PublicationReconciliation, "createdAt" | "updatedAt">): Promise<PublicationReconciliation>;
   confirmReconciliationPublished(input: { reconciliationId: string; receiptId: string; receipt: Omit<PublicationReceipt, "id" | "createdAt">; now: string }): Promise<boolean>;
   confirmReconciliationNotPublished(input: { reconciliationId: string; now: string; failure: PublicationFailure }): Promise<boolean>;

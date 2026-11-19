@@ -598,6 +598,11 @@ export class PostgresPublicationRepository implements PublicationRepositoryPort 
     return result.rows.map(toCredentialReference);
   }
 
+  async listCredentialReferencesByTenant(filter: { tenantId: string; providerId?: string }): Promise<PublicationCredentialReference[]> {
+    const result = await this.pool.query<CredentialReferenceRow>("select * from publication_credential_references where tenant_id = $1 and ($2::text is null or provider_id = $2) order by created_at", [filter.tenantId, filter.providerId ?? null]);
+    return result.rows.map(toCredentialReference);
+  }
+
   async createReconciliation(input: Omit<PublicationReconciliation, "createdAt" | "updatedAt">): Promise<PublicationReconciliation> {
     const result = await this.pool.query<ReconciliationRow>("insert into publication_reconciliations (id, publication_id, target_id, attempt_id, outbox_message_id, tenant_id, workspace_id, provider_id, status, provider_request_id, idempotency_key) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) returning *", [input.id, input.publicationId, input.targetId, input.attemptId, input.outboxMessageId, input.tenantId, input.workspaceId, input.providerId, input.status, input.providerRequestId ?? null, input.idempotencyKey]);
     return toReconciliation(result.rows[0]);

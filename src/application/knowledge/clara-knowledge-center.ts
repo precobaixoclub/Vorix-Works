@@ -35,6 +35,10 @@ class SequentialClaraIdGenerator implements ClaraIdGenerator {
     this.nextNumber += 1;
     return id;
   }
+
+  reserve(minimumNext: number): void {
+    this.nextNumber = Math.max(this.nextNumber, minimumNext + 1);
+  }
 }
 
 class NoopClaraLogger implements ClaraLoggerPort {
@@ -55,6 +59,7 @@ export class ClaraKnowledgeCenter implements ClaraKnowledgePort {
   private readonly eventRecorder: ZunoEventRecorderPort;
   private readonly idGenerator: ClaraIdGenerator;
   private readonly now: () => Date;
+  private idSeeded = false;
 
   constructor(dependencies: ClaraKnowledgeCenterDependencies) {
     this.repository = dependencies.repository;
@@ -64,8 +69,27 @@ export class ClaraKnowledgeCenter implements ClaraKnowledgePort {
     this.now = dependencies.now ?? (() => new Date());
   }
 
+  /**
+   * O gerador sequencial padrão reinicia o contador em 1 a cada processo e NÃO conhece os registros
+   * já persistidos (arquivo/DB). Sem isto, um processo novo (servidor reiniciado, script de manutenção)
+   * geraria ids baixos que colidem com registros existentes — e `repository.save` sobrescreve por id,
+   * destruindo dados. Semeia o gerador acima do maior sufixo já gravado, uma única vez (barato depois).
+   */
+  private async ensureIdGeneratorSeeded(): Promise<void> {
+    if (this.idSeeded) return;
+    this.idSeeded = true;
+    if (!this.idGenerator.reserve) return;
+    const records = await this.repository.list();
+    const maxSuffix = records.reduce((max, record) => {
+      const match = /-(\d+)$/.exec(record.id);
+      return match ? Math.max(max, Number(match[1])) : max;
+    }, 0);
+    this.idGenerator.reserve(maxSuffix);
+  }
+
   async create<TModule extends ClaraKnowledgeModule>(input: ClaraCreateKnowledgeInput<TModule>): Promise<ClaraKnowledgeRecord<TModule>> {
     validateCreateInput(input);
+    await this.ensureIdGeneratorSeeded();
     const timestamp = this.timestamp();
     const recordId = this.idGenerator.create("knowledge");
     const version = this.createVersion(1, input.payload, input.audit, "Registro criado.");

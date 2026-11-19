@@ -333,3 +333,25 @@ test("Todas as Skills que consultam a Clara fazem isso exclusivamente via ClaraK
     assert.ok(source.includes("ClaraKnowledgePort") || source.includes("ClaraKnowledgeRecord"), `${file} deveria depender de ClaraKnowledgePort/ClaraKnowledgeRecord (por convenção, espelhado)`);
   }
 });
+
+test("Gerador de id semeia do repositório: um processo novo (contador reinicia em 1) NUNCA sobrescreve registros já persistidos", async () => {
+  // Reproduz o bug real: o SequentialClaraIdGenerator padrão reinicia o contador a cada processo e
+  // não conhece o arquivo — sem semeadura, o 2º processo geraria knowledge-0001 e sobrescreveria o 1º.
+  const repository = new InMemoryClaraKnowledgeRepository();
+  const audit = { actor: { id: "t", type: "system" }, reason: "seed-test" };
+
+  // 1º processo: cria 3 registros com o gerador sequencial PADRÃO (sem idGenerator custom).
+  const first = new ClaraKnowledgeCenter({ repository });
+  const r1 = await first.create({ module: "BrandContext", title: "A", payload: { clientId: "c", brandName: "A" }, audit });
+  const r2 = await first.create({ module: "BrandContext", title: "B", payload: { clientId: "c", brandName: "B" }, audit });
+  const r3 = await first.create({ module: "BrandContext", title: "C", payload: { clientId: "c", brandName: "C" }, audit });
+  const idsBefore = [r1.id, r2.id, r3.id];
+
+  // 2º processo (novo gerador, contador = 1), MESMO repositório.
+  const second = new ClaraKnowledgeCenter({ repository });
+  const r4 = await second.create({ module: "BrandContext", title: "D", payload: { clientId: "c", brandName: "D" }, audit });
+
+  assert.ok(!idsBefore.includes(r4.id), `o novo id (${r4.id}) não pode colidir com os existentes (${idsBefore.join(", ")})`);
+  for (const id of idsBefore) assert.ok(await repository.findById(id), `registro ${id} deveria continuar existindo (não sobrescrito)`);
+  assert.equal((await repository.list()).length, 4, "4 registros distintos — nenhum sobrescrito");
+});

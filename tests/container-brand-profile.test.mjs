@@ -58,7 +58,7 @@ test("resolveBrandProfile: com dados REAIS na Clara (posicionamento real + logo 
   await container.clara.create({
     module: "BrandContext",
     title: "Identidade de marca real",
-    payload: { clientId: tenantId, brandName: "Vorix", positioning: "Site que centraliza as melhores ofertas da Shopee e Mercado Livre em um só lugar." },
+    payload: { clientId: tenantId, workspaceId: workspace.id, brandName: "Vorix", positioning: "Site que centraliza as melhores ofertas da Shopee e Mercado Livre em um só lugar." },
     audit: audit("Cadastro real de teste"),
   });
   await container.clara.create({
@@ -70,19 +70,19 @@ test("resolveBrandProfile: com dados REAIS na Clara (posicionamento real + logo 
   await container.clara.create({
     module: "BusinessContext",
     title: "Negócio real",
-    payload: { clientId: tenantId, businessName: "Preço Baixo Club", description: "Plataforma que agrega e divulga promoções reais de outros e-commerces." },
+    payload: { clientId: tenantId, workspaceId: workspace.id, businessName: "Preço Baixo Club", description: "Plataforma que agrega e divulga promoções reais de outros e-commerces." },
     audit: audit("Cadastro real de teste"),
   });
   await container.clara.create({
     module: "AudienceContext",
     title: "Público real",
-    payload: { clientId: tenantId, targetAudience: "Caçadores de promoção, 20-45 anos, ativos em redes sociais." },
+    payload: { clientId: tenantId, workspaceId: workspace.id, targetAudience: "Caçadores de promoção, 20-45 anos, ativos em redes sociais." },
     audit: audit("Cadastro real de teste"),
   });
   await container.clara.create({
     module: "ProductContext",
     title: "Produto real",
-    payload: { clientId: tenantId, productName: "Tênis RV", description: "Tênis em promoção relâmpago." },
+    payload: { clientId: tenantId, workspaceId: workspace.id, productName: "Tênis RV", description: "Tênis em promoção relâmpago." },
     audit: audit("Cadastro real de teste"),
   });
 
@@ -105,7 +105,7 @@ test("resolveBrandProfile: posicionamento genérico do bootstrap é ignorado mes
   await container.clara.create({
     module: "BrandContext",
     title: "Identidade de marca (ainda genérica)",
-    payload: { clientId: tenantId, brandName: "Vorix", positioning: "Plataforma de marketing com IA para pequenos e médios negócios." },
+    payload: { clientId: tenantId, workspaceId: workspace.id, brandName: "Vorix", positioning: "Plataforma de marketing com IA para pequenos e médios negócios." },
     audit: audit("Ainda não customizado"),
   });
   await container.clara.create({
@@ -131,7 +131,7 @@ test("ponta a ponta: Brand Profile real do workspace chega ao creative_context v
   await container.clara.create({
     module: "BrandContext",
     title: "Identidade de marca real",
-    payload: { clientId: tenantId, brandName: "Vorix", positioning: "Site que centraliza ofertas reais de várias lojas." },
+    payload: { clientId: tenantId, workspaceId: workspace.id, brandName: "Vorix", positioning: "Site que centraliza ofertas reais de várias lojas." },
     audit: audit("teste ponta a ponta"),
   });
 
@@ -179,4 +179,31 @@ test("updateBrandProfile: grava diferenciais (lista) num registro dedicado — s
   await container.updateBrandProfile(workspace.id, { differentiators: [] });
   const cleared = await container.resolveBrandProfile(workspace.id);
   assert.equal(cleared, undefined, "sem nenhum dado real, o perfil volta a ser undefined");
+});
+
+test("Perfil da Marca é POR WORKSPACE: dois workspaces do mesmo tenant têm perfis independentes (editar um nunca sobrescreve o outro)", async () => {
+  const container = buildApiContainer();
+  const tenantId = "tenant-multi-workspace";
+  const wsA = await container.workspaceRepository.create({ tenantId, name: "Marca A" });
+  const wsB = await container.workspaceRepository.create({ tenantId, name: "Marca B" });
+
+  await container.updateBrandProfile(wsA.id, { positioning: "Posicionamento da Marca A", toneOfVoice: "Tom A", businessDescription: "Negócio A", targetAudience: "Público A", differentiators: ["Diferencial A"] });
+  await container.updateBrandProfile(wsB.id, { positioning: "Posicionamento da Marca B", toneOfVoice: "Tom B", businessDescription: "Negócio B", targetAudience: "Público B", differentiators: ["Diferencial B1", "Diferencial B2"] });
+
+  const a = await container.resolveBrandProfile(wsA.id);
+  const b = await container.resolveBrandProfile(wsB.id);
+  assert.equal(a.positioning, "Posicionamento da Marca A");
+  assert.equal(a.toneOfVoice, "Tom A");
+  assert.equal(a.businessDescription, "Negócio A");
+  assert.equal(a.targetAudience, "Público A");
+  assert.deepEqual(a.differentiators, ["Diferencial A"]);
+  assert.equal(b.positioning, "Posicionamento da Marca B");
+  assert.equal(b.businessDescription, "Negócio B");
+  assert.deepEqual(b.differentiators, ["Diferencial B1", "Diferencial B2"]);
+
+  // Editar B de novo não toca em A (o bug original era exatamente este vazamento entre workspaces).
+  await container.updateBrandProfile(wsB.id, { positioning: "Posicionamento B atualizado" });
+  assert.equal((await container.resolveBrandProfile(wsA.id)).positioning, "Posicionamento da Marca A", "A intacto após editar B");
+  assert.equal((await container.resolveBrandProfile(wsB.id)).positioning, "Posicionamento B atualizado");
+  assert.equal((await container.resolveBrandProfile(wsB.id)).businessDescription, "Negócio B", "campos não editados de B preservados");
 });

@@ -38,6 +38,11 @@ export type ClaraAuditMetadata = {
 
 export type ClaraKnowledgeBase = {
   clientId: string;
+  /** Workspace dono do registro. O `clientId` é o tenant (empresa); num tenant com vários
+   * workspaces (ex.: várias marcas), o Perfil da Marca é POR WORKSPACE — este campo é quem
+   * desambigua (ver `resolveBrandProfile`/`updateBrandProfile`). Opcional: registros antigos
+   * (sem workspace) e seeds genéricos da casa continuam válidos. */
+  workspaceId?: string;
   brandId?: string;
   campaignId?: string;
   publicationId?: string;
@@ -474,4 +479,8 @@ export type ClaraContextResponse = {
 
 export type ClaraIdGenerator = {
   create(prefix: string): string;
+  /** Avança o contador para ficar ACIMA de `minimumNext` (ex.: o maior sufixo numérico já
+   * persistido). Opcional — geradores sem estado sequencial ignoram. Evita que um processo novo,
+   * cujo contador reinicia, gere um id baixo que colida com (e sobrescreva) um registro existente. */
+  reserve?(minimumNext: number): void;
 };

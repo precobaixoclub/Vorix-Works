@@ -1098,14 +1098,23 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
       clara.list({ clientId, module: "ProductContext", status: "active" }).catch(() => []),
     ]);
 
-    const brand = brandRecords[0]?.payload as { brandName?: string; positioning?: string; toneOfVoice?: string } | undefined;
+    // Perfil da Marca é POR WORKSPACE: os registros da Clara são keyed por tenant (clientId), então
+    // o workspace dono é guardado no próprio payload (`workspaceId`). Cada módulo editável pega o
+    // registro DESTE workspace — nunca o `[0]` do tenant, que vazaria a marca de um workspace para
+    // os outros do mesmo tenant. Registros antigos sem `workspaceId` (bootstrap genérico da casa)
+    // ficam de fora de propósito: ou são o preenchimento genérico (já filtrado), ou foram migrados.
+    const forWorkspace = <TPayload>(records: typeof brandRecords): TPayload | undefined =>
+      records.find((record) => (record.payload as { workspaceId?: string }).workspaceId === workspaceId)?.payload as TPayload | undefined;
+    const brand = forWorkspace<{ brandName?: string; positioning?: string; toneOfVoice?: string }>(brandRecords);
+    // Identidade visual (cores/estilo) segue derivada da logo no nível do tenant (`ensureHouseIdentityContext`) — fora do escopo desta correção por-workspace.
     const identity = identityRecords[0]?.payload as { colors?: string[]; imageStyle?: string; logoUri?: string } | undefined;
-    const business = businessRecords[0]?.payload as { description?: string } | undefined;
-    const audience = audienceRecords[0]?.payload as { targetAudience?: string } | undefined;
-    const productsOrServices = productRecords
+    const business = forWorkspace<{ description?: string }>(businessRecords);
+    const audience = forWorkspace<{ targetAudience?: string }>(audienceRecords);
+    const workspaceProducts = productRecords.filter((record) => (record.payload as { workspaceId?: string }).workspaceId === workspaceId);
+    const productsOrServices = workspaceProducts
       .map((record) => (record.payload as { productName?: string; serviceName?: string }).productName ?? (record.payload as { productName?: string; serviceName?: string }).serviceName)
       .filter((name): name is string => Boolean(name));
-    const differentiators = productRecords.flatMap((record) => (record.payload as { differentiators?: string[] }).differentiators ?? []);
+    const differentiators = workspaceProducts.flatMap((record) => (record.payload as { differentiators?: string[] }).differentiators ?? []);
 
     // Achado ao vivo numa autorrevisão: `BrandContext.brandName` é SEMPRE o literal "Vorix" nesta
     // base de código — `ensureHouseBrandContext` (acima) escreve esse valor incondicionalmente,
@@ -1153,31 +1162,40 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
     const clientId = workspace.tenantId;
     const audit = { actor: { id: "human", type: "human" as const }, reason: "Edição manual do Perfil da Marca (Marca & Materiais)." };
 
+    // Cada módulo pega o registro DESTE workspace (não o `[0]` do tenant) — é o que torna o Perfil
+    // da Marca por-workspace. Grava sempre `workspaceId` no payload.
+    const forWorkspace = (records: Awaited<ReturnType<typeof clara.list>>) =>
+      records.find((record) => (record.payload as { workspaceId?: string }).workspaceId === workspaceId);
+
     if (patch.positioning !== undefined || patch.toneOfVoice !== undefined) {
-      const existing = await clara.list({ clientId, module: "BrandContext", status: "active" });
-      const current = existing[0]?.payload as { brandName?: string; positioning?: string; toneOfVoice?: string } | undefined;
+      const records = await clara.list({ clientId, module: "BrandContext", status: "active" });
+      const existing = forWorkspace(records);
+      const current = existing?.payload as { brandName?: string; positioning?: string; toneOfVoice?: string } | undefined;
       const payload = {
         clientId,
+        workspaceId,
         brandName: current?.brandName && current.brandName !== "Vorix" ? current.brandName : workspace.name,
         positioning: patch.positioning ?? current?.positioning,
         toneOfVoice: patch.toneOfVoice ?? current?.toneOfVoice,
       };
-      if (existing.length > 0) await clara.update({ id: existing[0].id, patch: payload, audit });
+      if (existing) await clara.update({ id: existing.id, patch: payload, audit });
       else await clara.create({ module: "BrandContext", title: "Identidade de marca", payload, audit });
     }
 
     if (patch.businessDescription !== undefined) {
-      const existing = await clara.list({ clientId, module: "BusinessContext", status: "active" });
-      const current = existing[0]?.payload as { businessName?: string; description?: string } | undefined;
-      const payload = { clientId, businessName: current?.businessName ?? workspace.name, description: patch.businessDescription };
-      if (existing.length > 0) await clara.update({ id: existing[0].id, patch: payload, audit });
+      const records = await clara.list({ clientId, module: "BusinessContext", status: "active" });
+      const existing = forWorkspace(records);
+      const current = existing?.payload as { businessName?: string; description?: string } | undefined;
+      const payload = { clientId, workspaceId, businessName: current?.businessName ?? workspace.name, description: patch.businessDescription };
+      if (existing) await clara.update({ id: existing.id, patch: payload, audit });
       else await clara.create({ module: "BusinessContext", title: "Sobre o negócio", payload, audit });
     }
 
     if (patch.targetAudience !== undefined && patch.targetAudience.trim().length > 0) {
-      const existing = await clara.list({ clientId, module: "AudienceContext", status: "active" });
-      const payload = { clientId, targetAudience: patch.targetAudience };
-      if (existing.length > 0) await clara.update({ id: existing[0].id, patch: payload, audit });
+      const records = await clara.list({ clientId, module: "AudienceContext", status: "active" });
+      const existing = forWorkspace(records);
+      const payload = { clientId, workspaceId, targetAudience: patch.targetAudience };
+      if (existing) await clara.update({ id: existing.id, patch: payload, audit });
       else await clara.create({ module: "AudienceContext", title: "Público-alvo", payload, audit });
     }
 
@@ -1189,10 +1207,10 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
       const cleaned = patch.differentiators.map((item) => item.trim()).filter((item) => item.length > 0);
       const records = await clara.list({ clientId, module: "ProductContext", status: "active" });
       const dedicated = records.find((record) => {
-        const data = record.payload as { productName?: string; serviceName?: string; differentiators?: string[] };
-        return record.title === "Diferenciais" || (Array.isArray(data.differentiators) && !data.productName && !data.serviceName);
+        const data = record.payload as { workspaceId?: string; productName?: string; serviceName?: string; differentiators?: string[] };
+        return data.workspaceId === workspaceId && (record.title === "Diferenciais" || (Array.isArray(data.differentiators) && !data.productName && !data.serviceName));
       });
-      const payload = { clientId, description: "Diferenciais da marca cadastrados no Perfil da Marca.", differentiators: cleaned };
+      const payload = { clientId, workspaceId, description: "Diferenciais da marca cadastrados no Perfil da Marca.", differentiators: cleaned };
       if (dedicated) await clara.update({ id: dedicated.id, patch: payload, audit });
       else if (cleaned.length > 0) await clara.create({ module: "ProductContext", title: "Diferenciais", payload, audit });
     }

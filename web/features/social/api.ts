@@ -32,8 +32,8 @@ export const completeSocialConnection = (network: SocialNetwork, state: string, 
   apiClient.post<SocialConnectionCallbackResult>("/v1/social/connections/callback", { network, state, code });
 export const getAuthorizedAccounts = (workspaceId: string, network: SocialNetwork) =>
   apiClient.get<{ accounts: SocialAuthorizedAccount[] }>(`/v1/social/connections/authorized?${q(workspaceId)}&network=${network}`);
-export const syncSocialAccounts = (workspaceId: string, input: { network?: SocialNetwork; externalAccountIds?: string[] } = {}) =>
-  apiClient.post<SocialAccountsResponse & { connected: number; reconnected: number; revoked: number }>(`/v1/social/accounts/sync?${q(workspaceId)}`, input);
+export const syncSocialAccounts = (workspaceId: string, input: { network?: SocialNetwork; externalAccountIds?: string[]; exclusive?: boolean } = {}) =>
+  apiClient.post<SocialAccountsResponse & { connected: number; reconnected: number; revoked: number; removed: number }>(`/v1/social/accounts/sync?${q(workspaceId)}`, input);
 export const testSocialAccount = (workspaceId: string, accountId: string) =>
   apiClient.post<{ healthy: boolean; message: string }>(`/v1/social/accounts/${encodeURIComponent(accountId)}/test?${q(workspaceId)}`);
 export const disconnectSocialAccount = (workspaceId: string, accountId: string) =>

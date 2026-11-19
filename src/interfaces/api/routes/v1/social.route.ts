@@ -251,16 +251,16 @@ export async function registerSocialRoutes(app: FastifyInstance, deps: SocialRou
   app.post("/social/accounts/sync", {
     schema: {
       querystring: WORKSPACE_QUERY,
-      body: { type: ["object", "null"], additionalProperties: false, properties: { network: NETWORK_SCHEMA, externalAccountIds: { type: "array", maxItems: 50, items: { type: "string", minLength: 1, maxLength: 200 } } } },
+      body: { type: ["object", "null"], additionalProperties: false, properties: { network: NETWORK_SCHEMA, externalAccountIds: { type: "array", maxItems: 50, items: { type: "string", minLength: 1, maxLength: 200 } }, exclusive: { type: "boolean" } } },
     },
     config: { readOnlyGuard: true },
   }, async (request) => {
     const { tenantId, actor: who } = actor(request, "marketing:social_connect");
     const { workspaceId } = request.query as { workspaceId: string };
-    const body = (request.body ?? {}) as { network?: SocialNetwork; externalAccountIds?: string[] };
+    const body = (request.body ?? {}) as { network?: SocialNetwork; externalAccountIds?: string[]; exclusive?: boolean };
     await ownWorkspace(tenantId, workspaceId);
     try {
-      const result = await social.accounts.syncConnections({ tenantId, workspaceId, actor: who, ...(body.network ? { network: body.network } : {}), ...(body.externalAccountIds ? { externalAccountIds: body.externalAccountIds } : {}) });
+      const result = await social.accounts.syncConnections({ tenantId, workspaceId, actor: who, ...(body.network ? { network: body.network } : {}), ...(body.externalAccountIds ? { externalAccountIds: body.externalAccountIds } : {}), ...(body.exclusive ? { exclusive: true } : {}) });
       return successEnvelope({ ...result, accounts: await social.accounts.listAccountViews({ tenantId, workspaceId }) }, request.id);
     } catch (error) { translate(error); }
   });

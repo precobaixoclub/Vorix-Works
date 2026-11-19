@@ -202,10 +202,11 @@ export class SocialAccountService {
    * (rede + id externo) recebe a conexão do provider — trocar de provider nunca duplica a conta.
    * Credencial revogada/expirada → REAUTH_REQUIRED (agendamentos preservados).
    */
-  async syncConnections(input: { tenantId: string; workspaceId: string; actor: SocialAuditActor; network?: SocialNetwork; /** Contas novas a importar (as já conectadas sempre atualizam). */ externalAccountIds?: readonly string[] }): Promise<{ connected: number; reconnected: number; revoked: number }> {
+  async syncConnections(input: { tenantId: string; workspaceId: string; actor: SocialAuditActor; network?: SocialNetwork; /** Contas novas a importar (as já conectadas sempre atualizam). */ externalAccountIds?: readonly string[]; /** Modo exclusivo (seletor "uma Página por workspace"): o workspace passa a ter EXATAMENTE as contas escolhidas nesta rede — as outras da mesma rede são desconectadas (sem apagar agendamentos). Exige `network` + `externalAccountIds`. */ exclusive?: boolean }): Promise<{ connected: number; reconnected: number; revoked: number; removed: number }> {
     let connected = 0;
     let reconnected = 0;
     let revoked = 0;
+    let removed = 0;
     for (const provider of this.deps.resolver.providers.list()) {
       if (!provider.connection) continue;
       for (const network of SOCIAL_NETWORKS.filter((item) => provider.descriptor.networks.includes(item) && (!input.network || item === input.network))) {
@@ -218,7 +219,20 @@ export class SocialAccountService {
         }
       }
     }
-    return { connected, reconnected, revoked };
+    // Exclusivo: desconecta as contas da MESMA rede que não foram escolhidas — garante "uma Página
+    // por workspace" sem apagar nada (agendamentos ficam aguardando, igual ao botão Desconectar).
+    if (input.exclusive && input.network && input.externalAccountIds) {
+      const keep = new Set(input.externalAccountIds);
+      const existing = await this.deps.repository.listAccounts({ tenantId: input.tenantId, workspaceId: input.workspaceId, network: input.network });
+      for (const account of existing) {
+        if (keep.has(account.externalAccountId)) continue;
+        if (account.status === "DISCONNECTED") continue;
+        if (account.connections.length === 0) continue;
+        await this.disconnect({ tenantId: input.tenantId, workspaceId: input.workspaceId, accountId: account.id, actor: input.actor });
+        removed += 1;
+      }
+    }
+    return { connected, reconnected, revoked, removed };
   }
 
   private async applyConnectedAccount(input: { tenantId: string; workspaceId: string; actor: SocialAuditActor; externalAccountIds?: readonly string[] }, providerType: SocialProviderType, remote: SocialConnectedAccount): Promise<"connected" | "reconnected" | "revoked" | "unchanged"> {

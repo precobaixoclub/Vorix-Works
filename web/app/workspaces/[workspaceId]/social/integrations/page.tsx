@@ -13,7 +13,6 @@ import { Input, Select, SelectItem } from "@/components/Field";
 import { GuardedButton } from "@/components/GuardedButton";
 import { Modal } from "@/components/Modal";
 import { PageHeader } from "@/components/PageHeader";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useCurrentWorkspace } from "@/contexts/workspace-context";
 import { useMyAccess } from "@/features/auth/access";
@@ -236,15 +235,16 @@ function IntegrationCard({ card, timezone, busy, canConnect, canManage, onConnec
   );
 }
 
-/** Depois da autorização com várias contas: o cliente escolhe quais usar. */
+/** Depois da autorização: o cliente escolhe UMA conta para ESTE espaço de trabalho (uma Página por espaço). */
 function AccountPicker({ workspaceId, network, onDone }: { workspaceId: string; network: SocialNetwork; onDone: () => void }) {
   const [accounts, setAccounts] = useState<SocialAuthorizedAccount[] | undefined>();
-  const [selected, setSelected] = useState<string[]>([]);
+  const [selected, setSelected] = useState<string | undefined>();
   const [saving, setSaving] = useState(false);
   useEffect(() => {
     getAuthorizedAccounts(workspaceId, network).then((result) => {
       setAccounts(result.accounts);
-      setSelected(result.accounts.filter((account) => account.alreadyConnected).map((account) => account.externalAccountId));
+      const current = result.accounts.find((account) => account.alreadyConnected);
+      setSelected(current?.externalAccountId ?? (result.accounts.length === 1 ? result.accounts[0]?.externalAccountId : undefined));
     }).catch((cause) => {
       toast.error(messageOf(cause));
       onDone();
@@ -252,10 +252,12 @@ function AccountPicker({ workspaceId, network, onDone }: { workspaceId: string; 
   }, [network, onDone, workspaceId]);
 
   async function save() {
+    if (!selected) return;
     setSaving(true);
     try {
-      await syncSocialAccounts(workspaceId, { network, externalAccountIds: selected });
-      toast.success(selected.length === 1 ? `Conta do ${NETWORK_LABEL[network]} conectada.` : `${selected.length} contas do ${NETWORK_LABEL[network]} conectadas.`);
+      // Modo exclusivo: este espaço passa a usar SÓ a conta escolhida; outras da mesma rede saem daqui.
+      await syncSocialAccounts(workspaceId, { network, externalAccountIds: [selected], exclusive: true });
+      toast.success(`Conta do ${NETWORK_LABEL[network]} conectada a este espaço de trabalho.`);
       onDone();
     } catch (cause) {
       toast.error(messageOf(cause));
@@ -265,21 +267,22 @@ function AccountPicker({ workspaceId, network, onDone }: { workspaceId: string; 
   }
 
   return (
-    <Modal title={`Escolha as contas do ${NETWORK_LABEL[network]}`} onClose={onDone}>
+    <Modal title={`Escolha a conta do ${NETWORK_LABEL[network]}`} onClose={onDone}>
       <div className="space-y-4">
-        <p className="text-sm text-muted-foreground">Você autorizou mais de uma conta. Marque as que o Vorix deve usar para publicar.</p>
+        <p className="text-sm text-muted-foreground">Cada espaço de trabalho publica em <strong>uma</strong> conta. Escolha qual o Vorix deve usar aqui — as outras ficam livres para os outros espaços.</p>
         {!accounts ? <Skeleton className="h-24 w-full" /> : (
-          <ul className="space-y-2" data-testid="social-account-picker">
+          <ul className="space-y-2" data-testid="social-account-picker" role="radiogroup">
             {accounts.map((account) => {
-              const checked = selected.includes(account.externalAccountId);
+              const checked = selected === account.externalAccountId;
               return (
                 <li key={account.externalAccountId}>
-                  <label className="flex cursor-pointer items-center gap-3 rounded-lg border border-border p-3 hover:bg-muted/50">
-                    <Checkbox checked={checked} onCheckedChange={(value) => setSelected((current) => value ? [...current, account.externalAccountId] : current.filter((id) => id !== account.externalAccountId))} aria-label={accountName(account)} />
+                  <label className={`flex cursor-pointer items-center gap-3 rounded-lg border p-3 hover:bg-muted/50 ${checked ? "border-primary ring-1 ring-primary" : "border-border"}`}>
+                    <input type="radio" name="social-account-pick" className="sr-only" checked={checked} onChange={() => setSelected(account.externalAccountId)} aria-label={accountName(account)} />
+                    <span aria-hidden className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full border ${checked ? "border-primary" : "border-muted-foreground"}`}>{checked ? <span className="h-2 w-2 rounded-full bg-primary" /> : null}</span>
                     <AccountAvatar name={accountName(account)} avatarUrl={account.avatarUrl} network={network} />
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-sm font-medium">{accountName(account)}</span>
-                      {account.alreadyConnected ? <span className="text-xs text-muted-foreground">Já conectada</span> : null}
+                      {account.alreadyConnected ? <span className="text-xs text-muted-foreground">Em uso aqui</span> : null}
                     </span>
                   </label>
                 </li>
@@ -289,7 +292,7 @@ function AccountPicker({ workspaceId, network, onDone }: { workspaceId: string; 
         )}
         <div className="flex justify-end gap-2">
           <Button variant="secondary" onClick={onDone}>Agora não</Button>
-          <Button onClick={() => void save()} loading={saving} disabled={!accounts || selected.length === 0}>Conectar selecionadas</Button>
+          <Button onClick={() => void save()} loading={saving} disabled={!accounts || !selected}>Usar esta conta</Button>
         </div>
       </div>
     </Modal>

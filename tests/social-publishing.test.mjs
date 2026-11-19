@@ -918,3 +918,34 @@ test("Agendamento usa o fuso do workspace quando o cliente não informa", async 
   assert.equal(post.scheduledAt, "2026-11-01T14:00:00.000Z");
   assert.equal(await h.social.posts.workspaceTimezone({ tenantId: "tenant-a", workspaceId: "ws-a" }), "America/Manaus");
 });
+
+test("Seletor exclusivo: escolher UMA conta deixa o workspace só com ela (uma Página por espaço)", async () => {
+  const h = harness();
+  await h.enable("instagram", ["meta_official"]);
+  // Simula a pilha: duas contas de IG autorizadas e ambas importadas no MESMO workspace.
+  h.authorize({ network: "instagram", externalAccountId: "ig-a", username: "marca_a", displayName: "@marca_a" });
+  h.authorize({ network: "instagram", externalAccountId: "ig-b", username: "marca_b", displayName: "@marca_b" });
+  await h.social.accounts.syncConnections({ tenantId: "tenant-a", workspaceId: "ws-a", actor: h.owner, network: "instagram", externalAccountIds: ["ig-a", "ig-b"] });
+  const piled = await h.repository.listAccounts({ tenantId: "tenant-a", workspaceId: "ws-a" });
+  assert.equal(piled.filter((a) => a.status === "HEALTHY").length, 2, "pilha: duas contas ativas no mesmo workspace");
+
+  // Escolha única (exclusivo): o workspace passa a ter SÓ a ig-a; a ig-b é desconectada (sem apagar).
+  const result = await h.social.accounts.syncConnections({ tenantId: "tenant-a", workspaceId: "ws-a", actor: h.owner, network: "instagram", externalAccountIds: ["ig-a"], exclusive: true });
+  assert.equal(result.removed, 1, "uma conta intrusa removida");
+  const after = await h.repository.listAccounts({ tenantId: "tenant-a", workspaceId: "ws-a" });
+  const byExt = Object.fromEntries(after.map((a) => [a.externalAccountId, a.status]));
+  assert.equal(byExt["ig-a"], "HEALTHY", "a escolhida fica ativa");
+  assert.equal(byExt["ig-b"], "DISCONNECTED", "a não escolhida sai do workspace (sem apagar)");
+});
+
+test("Seletor exclusivo: sem a flag, nada é desconectado (comportamento padrão preservado)", async () => {
+  const h = harness();
+  await h.enable("instagram", ["meta_official"]);
+  h.authorize({ network: "instagram", externalAccountId: "ig-a", username: "marca_a" });
+  h.authorize({ network: "instagram", externalAccountId: "ig-b", username: "marca_b" });
+  await h.social.accounts.syncConnections({ tenantId: "tenant-a", workspaceId: "ws-a", actor: h.owner, network: "instagram", externalAccountIds: ["ig-a", "ig-b"] });
+  const r = await h.social.accounts.syncConnections({ tenantId: "tenant-a", workspaceId: "ws-a", actor: h.owner, network: "instagram", externalAccountIds: ["ig-a"] });
+  assert.equal(r.removed, 0, "sem exclusive não remove nada");
+  const after = await h.repository.listAccounts({ tenantId: "tenant-a", workspaceId: "ws-a" });
+  assert.equal(after.filter((a) => a.status === "HEALTHY").length, 2, "as duas seguem ativas");
+});

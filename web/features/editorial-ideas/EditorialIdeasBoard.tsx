@@ -27,8 +27,10 @@ import {
   EDITORIAL_FORMAT_LABEL,
   EDITORIAL_STATUS_LABEL,
   EDITORIAL_STATUS_ORDER,
+  downloadEditorialTemplate,
   getEditorialBrief,
   importEditorialPack,
+  importEditorialSpreadsheet,
   listEditorialIdeas,
   updateEditorialIdea,
   type EditorialIdea,
@@ -93,6 +95,7 @@ export function EditorialIdeasBoard({ workspaceId }: { workspaceId: string }) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
+  const sheetInput = useRef<HTMLInputElement>(null);
 
   const load = useCallback(async () => {
     setError(null);
@@ -175,6 +178,32 @@ export function EditorialIdeasBoard({ workspaceId }: { workspaceId: string }) {
     }
   }
 
+  async function onDownloadTemplate() {
+    setBusy("template");
+    try {
+      await downloadEditorialTemplate();
+      toast.success("Modelo baixado. Preencha no padrão Vorix (inclusive com outra IA) e importe a planilha.");
+    } catch (cause) {
+      toast.error(cause instanceof Error ? cause.message : "Não foi possível baixar o modelo.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function onImportSheet(file: File) {
+    setBusy("import-sheet");
+    try {
+      const result = await importEditorialSpreadsheet(workspaceId, await file.text());
+      toast.success(`${result.created} ideia(s) importada(s)${result.skipped ? `; ${result.skipped} já existiam e foram mantidas` : ""}.`);
+      await load();
+    } catch (cause) {
+      toast.error(cause instanceof Error ? cause.message : "Não foi possível importar a planilha.");
+    } finally {
+      setBusy(null);
+      if (sheetInput.current) sheetInput.current.value = "";
+    }
+  }
+
   async function onBuildCalendar() {
     setBusy("calendar");
     try {
@@ -245,7 +274,10 @@ export function EditorialIdeasBoard({ workspaceId }: { workspaceId: string }) {
       actions={
         <>
           <input ref={fileInput} type="file" accept="application/json,.json" className="hidden" onChange={(event) => { const file = event.target.files?.[0]; if (file) void onImportFile(file); }} />
-          <Button variant="ghost" disabled={busy === "import"} onClick={() => fileInput.current?.click()}>{busy === "import" ? "Importando…" : "Importar ideias"}</Button>
+          <input ref={sheetInput} type="file" accept=".csv,text/csv" className="hidden" onChange={(event) => { const file = event.target.files?.[0]; if (file) void onImportSheet(file); }} />
+          <Button variant="ghost" disabled={busy === "template"} onClick={() => void onDownloadTemplate()}>{busy === "template" ? "Baixando…" : "Baixar modelo (planilha)"}</Button>
+          <Button variant="ghost" disabled={busy === "import-sheet"} onClick={() => sheetInput.current?.click()}>{busy === "import-sheet" ? "Importando…" : "Importar planilha"}</Button>
+          <Button variant="ghost" disabled={busy === "import"} onClick={() => fileInput.current?.click()}>{busy === "import" ? "Importando…" : "Importar JSON"}</Button>
           <Button variant="secondary" disabled={busy === "calendar" || !ideas?.length} onClick={() => void onBuildCalendar()}>{busy === "calendar" ? "Montando…" : "Planejar próximos 30 dias"}</Button>
         </>
       }
@@ -260,8 +292,8 @@ export function EditorialIdeasBoard({ workspaceId }: { workspaceId: string }) {
         {header}
         <EmptyState
           title="Nenhuma ideia neste workspace ainda"
-          description="Importe um pacote de ideias (arquivo JSON no formato vorix.editorial-pack/v1). Importar o mesmo pacote de novo nunca duplica ideias."
-          action={<Button onClick={() => fileInput.current?.click()}>Importar ideias</Button>}
+          description="Baixe o modelo de planilha, preencha no padrão Vorix (pode ser com outra IA) e importe. Importar de novo nunca duplica ideias."
+          action={<div className="flex flex-wrap justify-center gap-2"><Button variant="secondary" disabled={busy === "template"} onClick={() => void onDownloadTemplate()}>Baixar modelo</Button><Button disabled={busy === "import-sheet"} onClick={() => sheetInput.current?.click()}>Importar planilha</Button></div>}
         />
       </>
     );

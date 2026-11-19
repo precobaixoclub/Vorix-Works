@@ -12,6 +12,7 @@ import {
   parseEditorialPack,
   type EditorialIdeaStatus,
 } from "../../../../domain/editorial/editorial-idea.model.js";
+import { buildEditorialTemplateCsv, editorialCsvToPack } from "../../../../domain/editorial/editorial-spreadsheet.js";
 import { NotFoundError, ValidationError } from "../../http/app-error.js";
 import { requirePermission } from "../../http/require-principal.js";
 import { successEnvelope } from "../../http/response-envelope.js";
@@ -31,6 +32,13 @@ const IMPORT_BODY_SCHEMA = {
   required: ["workspaceId", "pack"],
   additionalProperties: false,
   properties: { workspaceId: { type: "string", minLength: 1 }, pack: { type: "object" } },
+} as const;
+
+const IMPORT_SHEET_BODY_SCHEMA = {
+  type: "object",
+  required: ["workspaceId", "csv"],
+  additionalProperties: false,
+  properties: { workspaceId: { type: "string", minLength: 1 }, csv: { type: "string", minLength: 1, maxLength: 5_000_000 } },
 } as const;
 
 const UPDATE_BODY_SCHEMA = {
@@ -87,6 +95,32 @@ export async function registerEditorialIdeasRoutes(app: FastifyInstance, deps: E
       ideas = parseEditorialPack(pack);
     } catch (error) {
       if (error instanceof EditorialPackError) throw new ValidationError(error.message);
+      throw error;
+    }
+    const result = await deps.editorialIdeaRepository.importMany({ tenantId: principal.tenantId, workspaceId, ideas });
+    return successEnvelope({ ...result, total: ideas.length }, request.id);
+  });
+
+  // Modelo de planilha (CSV) no padrão Vorix: baixar, preencher (inclusive com outra IA) e importar.
+  app.get("/editorial-ideas/template", async (request, reply) => {
+    requirePermission(request, "asset:read");
+    return reply
+      .header("content-disposition", 'attachment; filename="modelo-bolsao-vorix.csv"')
+      .type("text/csv; charset=utf-8")
+      .send(buildEditorialTemplateCsv());
+  });
+
+  // Importar a planilha preenchida. O CSV vira pacote e passa pela MESMA validação do import JSON:
+  // ou importa tudo, ou falha apontando a primeira pauta/coluna com problema (nunca importa metade).
+  app.post("/editorial-ideas/import-spreadsheet", { bodyLimit: 6_000_000, schema: { body: IMPORT_SHEET_BODY_SCHEMA } }, async (request) => {
+    const principal = requirePermission(request, "asset:update");
+    const { workspaceId, csv } = request.body as { workspaceId: string; csv: string };
+    await assertWorkspaceBelongsToTenant(deps.workspaceRepository, { tenantId: principal.tenantId, workspaceId });
+    let ideas;
+    try {
+      ideas = parseEditorialPack(editorialCsvToPack(csv));
+    } catch (error) {
+      if (error instanceof EditorialPackError) throw new ValidationError(error.message.replace(/^EDITORIAL_PACK_INVALID:\s*/, ""));
       throw error;
     }
     const result = await deps.editorialIdeaRepository.importMany({ tenantId: principal.tenantId, workspaceId, ideas });

@@ -53,6 +53,22 @@ export function importEditorialPack(workspaceId: string, pack: unknown): Promise
   return apiClient.post(`/v1/editorial-ideas/import`, { workspaceId, pack });
 }
 
+/** Baixa o modelo de planilha (CSV) no padrão Vorix — preencha (inclusive com outra IA) e importe. */
+export async function downloadEditorialTemplate(): Promise<void> {
+  const blob = await apiClient.download(`/v1/editorial-ideas/template`);
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = "modelo-bolsao-vorix.csv";
+  anchor.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+/** Importa a planilha CSV preenchida no padrão do modelo. */
+export function importEditorialSpreadsheet(workspaceId: string, csv: string): Promise<{ created: number; skipped: number; total: number }> {
+  return apiClient.post(`/v1/editorial-ideas/import-spreadsheet`, { workspaceId, csv });
+}
+
 export function updateEditorialIdea(workspaceId: string, id: string, patch: { status?: EditorialIdeaStatus; scheduledDate?: string | null; executionRunId?: string | null; creativePrompt?: string | null }): Promise<EditorialIdea> {
   return apiClient.patch<EditorialIdea>(`/v1/editorial-ideas/${encodeURIComponent(id)}`, { workspaceId, ...patch });
 }

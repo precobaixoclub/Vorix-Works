@@ -2,10 +2,35 @@
 
 import { useState } from "react";
 import { Button } from "@/components/Button";
-import { Input, Label, Textarea } from "@/components/Field";
+import { Textarea } from "@/components/Field";
 import { Modal } from "@/components/Modal";
+import { cn } from "@/lib/utils";
 import { updateBrandProfile } from "../api";
 import type { BrandProfile } from "../types";
+
+/** Limites reais do backend (`brand-profile.route.ts`) — o contador e o travamento seguem estes
+ * números, pra nunca chegar a validação do servidor ("must NOT have more than N characters"). */
+const LIMITS = { businessDescription: 2000, positioning: 2000, targetAudience: 2000, toneOfVoice: 500 } as const;
+
+/** Cabeçalho do campo: rótulo à esquerda + contador "usados/limite" à direita, que fica âmbar ao
+ * se aproximar e vermelho ao estourar. `tabular-nums` pra o número não "dançar" ao digitar. */
+function FieldHeader({ htmlFor, label, length, max }: { htmlFor: string; label: string; length: number; max: number }) {
+  const over = length > max;
+  const near = !over && length >= Math.floor(max * 0.9);
+  return (
+    <div className="mb-1.5 flex items-baseline justify-between gap-2">
+      <label htmlFor={htmlFor} className="text-xs font-medium text-muted-foreground">
+        {label}
+      </label>
+      <span
+        className={cn("text-[11px] tabular-nums", over ? "font-medium text-rose-500" : near ? "text-amber-500" : "text-muted-foreground/70")}
+        aria-live="polite"
+      >
+        {length.toLocaleString("pt-BR")}/{max.toLocaleString("pt-BR")}
+      </span>
+    </div>
+  );
+}
 
 /** Escreve só os 4 campos com fonte real de persistência hoje (Clara por baixo, via
  * `updateBrandProfile` no backend) — produtos/diferenciais/identidade visual continuam só
@@ -28,8 +53,19 @@ export function EditBrandProfileModal({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | undefined>();
 
+  // Campos que estouraram o limite (acontece quando o valor já veio grande do backend; o
+  // `maxLength` impede DIGITAR além, mas não corta um valor pré-carregado).
+  const overLimitLabels = [
+    businessDescription.length > LIMITS.businessDescription ? "Descrição do negócio" : null,
+    positioning.length > LIMITS.positioning ? "Posicionamento" : null,
+    targetAudience.length > LIMITS.targetAudience ? "Público-alvo" : null,
+    toneOfVoice.length > LIMITS.toneOfVoice ? "Tom de voz" : null,
+  ].filter((label): label is string => label !== null);
+  const hasOverLimit = overLimitLabels.length > 0;
+
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
+    if (hasOverLimit) return;
     setSaving(true);
     setError(undefined);
     try {
@@ -48,53 +84,76 @@ export function EditBrandProfileModal({
   }
 
   return (
-    <Modal title="Editar perfil da marca" onClose={onClose}>
+    <Modal title="Editar perfil da marca" onClose={onClose} maxWidthClass="sm:max-w-lg">
+      <p className="-mt-1 mb-1 text-xs text-muted-foreground">
+        Estas informações orientam a IA a gerar conteúdo com a cara da marca. Capriche na descrição e no posicionamento.
+      </p>
       <form onSubmit={handleSubmit} className="flex flex-col gap-4">
         <div>
-          <Label htmlFor="brand-description">Descrição do negócio</Label>
+          <FieldHeader htmlFor="brand-description" label="Descrição do negócio" length={businessDescription.length} max={LIMITS.businessDescription} />
           <Textarea
             id="brand-description"
-            rows={3}
+            rows={4}
+            maxLength={LIMITS.businessDescription}
             value={businessDescription}
             onChange={(e) => setBusinessDescription(e.target.value)}
             placeholder="Ex.: Loja online de calçados esportivos com foco em corrida de rua."
           />
         </div>
         <div>
-          <Label htmlFor="brand-positioning">Posicionamento</Label>
+          <FieldHeader htmlFor="brand-positioning" label="Posicionamento" length={positioning.length} max={LIMITS.positioning} />
           <Textarea
             id="brand-positioning"
-            rows={3}
+            rows={4}
+            maxLength={LIMITS.positioning}
             value={positioning}
             onChange={(e) => setPositioning(e.target.value)}
             placeholder="Ex.: Marca acessível que entrega qualidade de performance sem o preço de uma marca premium."
           />
         </div>
         <div>
-          <Label htmlFor="brand-audience">Público-alvo</Label>
-          <Input
+          <FieldHeader htmlFor="brand-audience" label="Público-alvo" length={targetAudience.length} max={LIMITS.targetAudience} />
+          <Textarea
             id="brand-audience"
+            rows={2}
+            maxLength={LIMITS.targetAudience}
             value={targetAudience}
             onChange={(e) => setTargetAudience(e.target.value)}
             placeholder="Ex.: corredores amadores de 25 a 45 anos"
           />
         </div>
         <div>
-          <Label htmlFor="brand-tone">Tom de voz</Label>
-          <Input
+          <FieldHeader htmlFor="brand-tone" label="Tom de voz" length={toneOfVoice.length} max={LIMITS.toneOfVoice} />
+          <Textarea
             id="brand-tone"
+            rows={2}
+            maxLength={LIMITS.toneOfVoice}
             value={toneOfVoice}
             onChange={(e) => setToneOfVoice(e.target.value)}
             placeholder="Ex.: direto, motivador e sem jargão técnico"
           />
         </div>
 
-        {error ? <p className="text-xs text-danger">{error}</p> : null}
-        <div className="flex flex-col-reverse gap-2 pt-1 sm:flex-row sm:justify-end">
+        {hasOverLimit ? (
+          <p className="text-xs text-rose-500">
+            {overLimitLabels.length === 1
+              ? `O campo “${overLimitLabels[0]}” passou do limite. Reduza o texto para salvar.`
+              : `Alguns campos passaram do limite (${overLimitLabels.join(", ")}). Reduza o texto para salvar.`}
+          </p>
+        ) : error ? (
+          <p className="text-xs text-danger">{error}</p>
+        ) : null}
+
+        <div className="flex flex-col-reverse gap-2 border-t border-border pt-4 sm:flex-row sm:justify-end">
           <Button type="button" variant="secondary" className="w-full sm:w-auto" onClick={onClose}>
             Cancelar
           </Button>
-          <Button type="submit" className="w-full sm:w-auto" disabled={saving}>
+          <Button
+            type="submit"
+            className="w-full sm:w-auto"
+            disabled={saving || hasOverLimit}
+            title={hasOverLimit ? "Reduza os campos acima do limite para salvar." : undefined}
+          >
             {saving ? "Salvando…" : "Salvar perfil"}
           </Button>
         </div>

@@ -355,3 +355,23 @@ test("Gerador de id semeia do repositório: um processo novo (contador reinicia 
   for (const id of idsBefore) assert.ok(await repository.findById(id), `registro ${id} deveria continuar existindo (não sobrescrito)`);
   assert.equal((await repository.list()).length, 4, "4 registros distintos — nenhum sobrescrito");
 });
+
+test("LocalJsonClaraKnowledgeRepository: leituras concorrentes no cold start veem todos os registros (corrida do loadOnce)", async () => {
+  // Reproduz o bug: loadOnce marcava "carregado" ANTES de terminar de ler o arquivo; leituras
+  // concorrentes (os 5 list() em paralelo de resolveBrandProfile) viam a memória ainda vazia.
+  const filePath = join(tmpdir(), `clara-race-${Date.now()}-${Math.random().toString(36).slice(2)}.json`);
+  try {
+    const seeder = createClara(new LocalJsonClaraKnowledgeRepository(filePath));
+    const audit = { actor: { id: "t", type: "system" }, reason: "seed" };
+    await seeder.clara.create({ module: "BrandContext", title: "A", payload: { clientId: "c", brandName: "A" }, audit });
+    await seeder.clara.create({ module: "BusinessContext", title: "B", payload: { clientId: "c", businessName: "B", description: "d" }, audit });
+    await seeder.clara.create({ module: "AudienceContext", title: "C", payload: { clientId: "c", targetAudience: "t" }, audit });
+
+    // Repositório NOVO (cache frio) + leituras concorrentes, exatamente como resolveBrandProfile faz.
+    const cold = new LocalJsonClaraKnowledgeRepository(filePath);
+    const results = await Promise.all([cold.list(), cold.list(), cold.list(), cold.list(), cold.list()]);
+    for (const records of results) assert.equal(records.length, 3, "toda leitura concorrente deve ver os 3 registros (nunca parcial/vazio)");
+  } finally {
+    await rm(filePath, { force: true });
+  }
+});

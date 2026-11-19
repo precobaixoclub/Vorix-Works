@@ -7,7 +7,7 @@ import { InMemoryClaraKnowledgeRepository } from "./in-memory-clara-knowledge-re
 export class LocalJsonClaraKnowledgeRepository implements ClaraKnowledgeRepositoryPort {
   private readonly filePath: string;
   private readonly memory = new InMemoryClaraKnowledgeRepository();
-  private loaded = false;
+  private loadPromise?: Promise<void>;
 
   constructor(filePath: string) {
     // Ao contrário de LocalArtifactDelivery (que recebe um `relativePath` por chamada e o resolve
@@ -38,17 +38,27 @@ export class LocalJsonClaraKnowledgeRepository implements ClaraKnowledgeReposito
     return this.memory.search(query);
   }
 
-  private async loadOnce(): Promise<void> {
-    if (this.loaded) return;
-    this.loaded = true;
+  private loadOnce(): Promise<void> {
+    // Memoiza a PROMESSA de carregamento, não um booleano: se marcássemos "carregado" antes de o
+    // arquivo terminar de ler, chamadas concorrentes (ex.: os 5 `list()` em paralelo de
+    // `resolveBrandProfile`) veriam o flag já ligado e leriam a memória AINDA VAZIA — devolvendo
+    // dados parciais na primeira leitura após o processo subir. Todos aguardam o mesmo load.
+    if (!this.loadPromise) this.loadPromise = this.loadFromDisk();
+    return this.loadPromise;
+  }
 
+  private async loadFromDisk(): Promise<void> {
     try {
       const raw = await readFile(this.filePath, "utf8");
       const records = JSON.parse(raw) as ClaraKnowledgeRecord[];
       for (const record of records) await this.memory.save(record);
     } catch (error) {
       const code = (error as NodeJS.ErrnoException).code;
-      if (code !== "ENOENT") throw error;
+      if (code !== "ENOENT") {
+        // Falha real (JSON corrompido, permissão): não memoiza o erro — permite nova tentativa.
+        this.loadPromise = undefined;
+        throw error;
+      }
     }
   }
 

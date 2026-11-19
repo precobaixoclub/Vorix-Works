@@ -65,6 +65,13 @@ export const CONNECTION_STATUS_LABEL: Record<SocialConnectionStatus, string> = {
 /** Destino aguardando reconexão nunca é apagado: guarda o horário original até a conta voltar. */
 const FAR_FUTURE = "9999-12-31T00:00:00.000Z";
 
+/**
+ * Redes servidas pela MESMA autorização da Meta: um único login do Instagram já traz a Página do
+ * Facebook (e vice-versa). Por isso, ao concluir uma delas, a rede irmã é ligada sozinha — o
+ * usuário nunca precisa conectar o Facebook num segundo passo.
+ */
+const META_NETWORKS: readonly SocialNetwork[] = ["instagram", "facebook"];
+
 export class SocialAccountService {
   constructor(private readonly deps: SocialAccountServiceDeps) {}
 
@@ -133,19 +140,41 @@ export class SocialAccountService {
     if (!resolution.ok || !resolution.provider.connection) throw new Error(`SOCIAL_CONNECTION_UNAVAILABLE: a conexão com o ${label} está indisponível no momento.`);
     const flow = await resolution.provider.connection.complete({ state: input.state, code: input.code, tenantId: input.tenantId, userId: input.userId, role: input.actor.role });
     const network = flow.network ?? input.network;
-    let accounts = await this.authorizedAccounts({ tenantId: input.tenantId, workspaceId: flow.workspaceId, network });
-    const pending = accounts.filter((account) => !account.alreadyConnected);
+    // Meta é unificada: além da rede que o usuário conectou, liga sozinha a rede irmã já autorizada
+    // (ex.: conectou o Instagram → a Página do Facebook da mesma autorização entra junto).
+    const settleNetworks = META_NETWORKS.includes(network) ? META_NETWORKS : [network];
     let autoConnected = false;
-    if (pending.length === 1) {
-      await this.syncConnections({ tenantId: input.tenantId, workspaceId: flow.workspaceId, actor: input.actor, network, externalAccountIds: [pending[0]!.externalAccountId] });
-      accounts = await this.authorizedAccounts({ tenantId: input.tenantId, workspaceId: flow.workspaceId, network });
-      autoConnected = true;
-    } else if (pending.length === 0) {
-      // Reconexão de contas já conhecidas: atualiza status/credencial e libera a fila.
-      await this.syncConnections({ tenantId: input.tenantId, workspaceId: flow.workspaceId, actor: input.actor, network });
-      autoConnected = accounts.length > 0;
+    let accounts: SocialAuthorizedAccountView[] = [];
+    for (const settleNetwork of settleNetworks) {
+      const settled = await this.settleAuthorizedNetwork({ tenantId: input.tenantId, workspaceId: flow.workspaceId, actor: input.actor, network: settleNetwork }, settleNetwork === network);
+      autoConnected = autoConnected || settled.autoConnected;
+      if (settleNetwork === network) accounts = settled.accounts;
     }
     return { workspaceId: flow.workspaceId, network, ...(flow.returnPath ? { returnPath: flow.returnPath } : {}), autoConnected, accounts };
+  }
+
+  /**
+   * Materializa, sem novo login, as contas já autorizadas no provider para UMA rede:
+   * - 1 conta nova pendente → liga sozinha;
+   * - nenhuma pendente mas já conhecidas → reconecta (atualiza credencial/status e libera a fila);
+   * - várias novas → não escolhe (o cliente decide na tela).
+   * `allowEmptyReconnect` só é verdadeiro para a rede que o usuário conectou (preserva o comportamento
+   * original); para a rede irmã da Meta, uma lista vazia não dispara nada (não força nada indevido).
+   */
+  private async settleAuthorizedNetwork(input: { tenantId: string; workspaceId: string; actor: SocialAuditActor; network: SocialNetwork }, allowEmptyReconnect: boolean): Promise<{ autoConnected: boolean; accounts: SocialAuthorizedAccountView[] }> {
+    let accounts = await this.authorizedAccounts(input);
+    const pending = accounts.filter((account) => !account.alreadyConnected);
+    if (pending.length === 1) {
+      await this.syncConnections({ ...input, externalAccountIds: [pending[0]!.externalAccountId] });
+      accounts = await this.authorizedAccounts(input);
+      return { autoConnected: true, accounts };
+    }
+    if (pending.length === 0 && (allowEmptyReconnect || accounts.length > 0)) {
+      // Reconexão de contas já conhecidas: atualiza status/credencial e libera a fila.
+      await this.syncConnections(input);
+      return { autoConnected: accounts.length > 0, accounts };
+    }
+    return { autoConnected: false, accounts };
   }
 
   /** Contas autorizadas no provider para a rede — só o necessário para o cliente escolher. */

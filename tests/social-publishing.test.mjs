@@ -825,6 +825,38 @@ test("Conexão pelo callback: várias contas autorizadas → cliente escolhe; um
   await assert.rejects(() => h.social.accounts.completeConnection({ tenantId: "tenant-a", userId: "editor-a", network: "instagram", state: new URL(other.redirectUrl).searchParams.get("state"), code: "c", actor: { userId: "editor-a", role: "editor" } }), /OAUTH_STATE_INVALID/);
 });
 
+test("Meta unificada: concluir o Instagram liga sozinho a Página do Facebook da mesma autorização", async () => {
+  const h = harness();
+  await h.enable("instagram", ["meta_official"]);
+  await h.enable("facebook", ["meta_official"]);
+  const { redirectUrl } = await h.social.accounts.beginConnection({ tenantId: "tenant-a", workspaceId: "ws-a", network: "instagram", userId: "owner-a" });
+  const state = new URL(redirectUrl).searchParams.get("state");
+  // A MESMA autorização da Meta traz o Instagram E a Página do Facebook.
+  h.authorize({ network: "instagram", externalAccountId: "ig-loja", username: "loja", displayName: "@loja" });
+  h.authorize({ network: "facebook", externalAccountId: "fb-pagina", username: "Loja Oficial", displayName: "Loja Oficial" });
+  const result = await h.social.accounts.completeConnection({ tenantId: "tenant-a", userId: "owner-a", network: "instagram", state, code: "c", actor: h.owner });
+  assert.equal(result.autoConnected, true);
+  const accounts = await h.repository.listAccounts({ tenantId: "tenant-a", workspaceId: "ws-a" });
+  assert.deepEqual(
+    accounts.map((account) => [account.network, account.externalAccountId, account.status]).sort(),
+    [["facebook", "fb-pagina", "HEALTHY"], ["instagram", "ig-loja", "HEALTHY"]],
+    "IG e Página do FB conectados juntos, sem segundo login",
+  );
+
+  // Facebook não liberado ao tenant → concluir o Instagram não inventa conexão de FB.
+  const soloIg = harness();
+  await soloIg.enable("instagram", ["meta_official"]);
+  const begin = await soloIg.social.accounts.beginConnection({ tenantId: "tenant-a", workspaceId: "ws-a", network: "instagram", userId: "owner-a" });
+  soloIg.authorize({ network: "instagram", externalAccountId: "ig-unico", username: "unico", displayName: "@unico" });
+  const onlyIg = await soloIg.social.accounts.completeConnection({ tenantId: "tenant-a", userId: "owner-a", network: "instagram", state: new URL(begin.redirectUrl).searchParams.get("state"), code: "c", actor: soloIg.owner });
+  assert.equal(onlyIg.autoConnected, true);
+  assert.deepEqual(
+    (await soloIg.repository.listAccounts({ tenantId: "tenant-a", workspaceId: "ws-a" })).map((account) => account.network),
+    ["instagram"],
+    "sem FB liberado, só o Instagram entra",
+  );
+});
+
 test("Notificações: um aviso por publicação (parcial / concluída), bloqueio avisa o criador uma vez, responsáveis recebem reconexão", async () => {
   const h = harness();
   await h.enable("instagram", ["meta_official"]);

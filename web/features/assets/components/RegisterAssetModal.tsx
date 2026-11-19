@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Button } from "@/components/Button";
-import { Input, Label, Textarea } from "@/components/Field";
+import { Input, Label, Select, SelectItem, Textarea } from "@/components/Field";
 import { Modal } from "@/components/Modal";
 import { registerAsset, removeImageBackground, uploadAssetFile, type UploadedAssetFile } from "../api";
 import { deriveAssetKind, FILE_REQUIRED_MATERIAL_TYPES } from "../derive-kind";
@@ -19,7 +19,10 @@ import {
 
 const LOGO_WITHOUT_TRANSPARENCY_ERROR = "ASSET_UPLOAD_LOGO_WITHOUT_TRANSPARENCY";
 
-const SELECT_CLASSES = "w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-primary focus:ring-2 focus:ring-accent-soft";
+// Valores-sentinela para as opções "vazias" (Radix Select não aceita value=""). Traduzidos de/para
+// "" na borda do componente — não muda o dado salvo, só a representação na UI.
+const MATERIAL_TYPE_NONE = "__none__";
+const USAGE_PRIORITY_AUTO = "__auto__";
 
 /** Envia o arquivo pro Object Storage (`POST /v1/assets/upload`) e só depois registra o material
  * com o `storageRef` real. Migração "Marca & Materiais": a categoria técnica (`AssetKind`) deixou
@@ -161,7 +164,10 @@ export function RegisterAssetModal({
   }
 
   return (
-    <Modal title={title} onClose={onClose}>
+    <Modal title={title} onClose={onClose} maxWidthClass="sm:max-w-lg">
+      <p className="-mt-1 mb-1 text-xs text-muted-foreground">
+        Envie logos, fotos, screenshots ou fontes. Quanto mais contexto você der, mais fiéis à marca ficam os conteúdos gerados pela IA.
+      </p>
       <form onSubmit={handleSubmit} className="flex flex-col gap-4">
         <div>
           <Label htmlFor="asset-file">Arquivo</Label>
@@ -195,14 +201,18 @@ export function RegisterAssetModal({
         {isLogoMode ? null : (
           <div>
             <Label htmlFor="asset-material-type">Tipo do material</Label>
-            <select id="asset-material-type" value={materialType} onChange={(e) => setMaterialType(e.target.value as AssetMaterialType | "")} className={SELECT_CLASSES}>
-              <option value="">Não classificado</option>
+            <Select
+              id="asset-material-type"
+              value={materialType || MATERIAL_TYPE_NONE}
+              onValueChange={(value) => setMaterialType(value === MATERIAL_TYPE_NONE ? "" : (value as AssetMaterialType))}
+            >
+              <SelectItem value={MATERIAL_TYPE_NONE}>Não classificado</SelectItem>
               {ASSET_MATERIAL_TYPES.map((type) => (
-                <option key={type} value={type}>
+                <SelectItem key={type} value={type}>
                   {ASSET_MATERIAL_TYPE_LABEL[type]}
-                </option>
+                </SelectItem>
               ))}
-            </select>
+            </Select>
           </div>
         )}
 
@@ -211,17 +221,22 @@ export function RegisterAssetModal({
           <Input id="asset-tags" value={tags} onChange={(e) => setTags(e.target.value)} placeholder="Ex.: campanha, verão" />
         </div>
 
-        <div className="border-t border-border pt-3">
+        <div className="border-t border-border pt-4">
+          <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Orientações para a IA (opcional)</p>
           <div>
             <Label htmlFor="asset-usage-priority">Prioridade</Label>
-            <select id="asset-usage-priority" value={usagePriority} onChange={(e) => setUsagePriority(e.target.value as AssetUsagePriority | "")} className={SELECT_CLASSES}>
-              <option value="">Automático (padrão)</option>
+            <Select
+              id="asset-usage-priority"
+              value={usagePriority || USAGE_PRIORITY_AUTO}
+              onValueChange={(value) => setUsagePriority(value === USAGE_PRIORITY_AUTO ? "" : (value as AssetUsagePriority))}
+            >
+              <SelectItem value={USAGE_PRIORITY_AUTO}>Automático (padrão)</SelectItem>
               {ASSET_USAGE_PRIORITIES.map((priority) => (
-                <option key={priority} value={priority}>
+                <SelectItem key={priority} value={priority}>
                   {ASSET_USAGE_PRIORITY_LABEL[priority]}
-                </option>
+                </SelectItem>
               ))}
-            </select>
+            </Select>
           </div>
 
           <div className="mt-3">

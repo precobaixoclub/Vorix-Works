@@ -7,7 +7,7 @@ import { assertWorkspaceBelongsToTenant } from "./workspace-ownership.js";
 
 export type BrandProfileRoutesDeps = {
   resolveBrandProfile(workspaceId: string): Promise<CreativeBrandProfile | undefined>;
-  updateBrandProfile(workspaceId: string, patch: { positioning?: string; toneOfVoice?: string; businessDescription?: string; targetAudience?: string }): Promise<void>;
+  updateBrandProfile(workspaceId: string, patch: { positioning?: string; toneOfVoice?: string; businessDescription?: string; targetAudience?: string; differentiators?: string[] }): Promise<void>;
   /** Isolamento multi-tenant: workspace de outro tenant = 404. */
   workspaceRepository: WorkspaceRepositoryPort;
 };
@@ -28,6 +28,7 @@ const UPDATE_BODY_SCHEMA = {
     toneOfVoice: { type: "string", maxLength: 500 },
     businessDescription: { type: "string", maxLength: 2000 },
     targetAudience: { type: "string", maxLength: 2000 },
+    differentiators: { type: "array", maxItems: 20, items: { type: "string", maxLength: 200 } },
   },
 } as const;
 

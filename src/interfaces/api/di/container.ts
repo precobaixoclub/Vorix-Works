@@ -510,7 +510,7 @@ export type ApiContainer = {
   resolveBrandProfile(workspaceId: string): Promise<CreativeBrandProfile | undefined>;
   /** Migração "Marca & Materiais" — grava os campos editáveis do Perfil da Marca (ver
    * `resolveBrandProfile` para o caminho de leitura simétrico). */
-  updateBrandProfile(workspaceId: string, patch: { positioning?: string; toneOfVoice?: string; businessDescription?: string; targetAudience?: string }): Promise<void>;
+  updateBrandProfile(workspaceId: string, patch: { positioning?: string; toneOfVoice?: string; businessDescription?: string; targetAudience?: string; differentiators?: string[] }): Promise<void>;
   /** Exposto para teste/auditoria direta da Clara (ex.: provar que `resolveBrandProfile` lê o
    * dado real corretamente) — uso em produção continua indireto, via `resolveBrandProfile`/
    * `ensureHouseTenantProfile`, nunca uma segunda via de escrita de perfil de marca. */
@@ -1146,7 +1146,7 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
    * parcial, nunca reseta o que não foi editado). */
   const updateBrandProfile = async (
     workspaceId: string,
-    patch: { positioning?: string; toneOfVoice?: string; businessDescription?: string; targetAudience?: string },
+    patch: { positioning?: string; toneOfVoice?: string; businessDescription?: string; targetAudience?: string; differentiators?: string[] },
   ): Promise<void> => {
     const workspace = await repositories.workspaceRepository.getById(workspaceId);
     if (!workspace) throw new Error("WORKSPACE_NOT_FOUND: workspace inexistente.");
@@ -1179,6 +1179,22 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
       const payload = { clientId, targetAudience: patch.targetAudience };
       if (existing.length > 0) await clara.update({ id: existing[0].id, patch: payload, audit });
       else await clara.create({ module: "AudienceContext", title: "Público-alvo", payload, audit });
+    }
+
+    // Diferenciais ficam num registro `ProductContext` DEDICADO (title "Diferenciais", sem
+    // productName/serviceName) — `resolveBrandProfile` agrega `differentiators` de todo
+    // ProductContext, então este registro surfa os diferenciais SEM entrar na lista de produtos.
+    // Editar substitui a lista inteira deste registro (nunca duplica).
+    if (patch.differentiators !== undefined) {
+      const cleaned = patch.differentiators.map((item) => item.trim()).filter((item) => item.length > 0);
+      const records = await clara.list({ clientId, module: "ProductContext", status: "active" });
+      const dedicated = records.find((record) => {
+        const data = record.payload as { productName?: string; serviceName?: string; differentiators?: string[] };
+        return record.title === "Diferenciais" || (Array.isArray(data.differentiators) && !data.productName && !data.serviceName);
+      });
+      const payload = { clientId, description: "Diferenciais da marca cadastrados no Perfil da Marca.", differentiators: cleaned };
+      if (dedicated) await clara.update({ id: dedicated.id, patch: payload, audit });
+      else if (cleaned.length > 0) await clara.create({ module: "ProductContext", title: "Diferenciais", payload, audit });
     }
   };
   // Deps exclusivas do motor GPT (`build-execution-handler-resolver.ts`, só lido quando

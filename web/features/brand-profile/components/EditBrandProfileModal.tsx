@@ -49,9 +49,16 @@ export function EditBrandProfileModal({
   const [positioning, setPositioning] = useState(profile?.positioning ?? "");
   const [businessDescription, setBusinessDescription] = useState(profile?.businessDescription ?? "");
   const [targetAudience, setTargetAudience] = useState(profile?.targetAudience ?? "");
+  // Diferenciais são uma LISTA — editados como texto, um por linha.
+  const initialDifferentiators = (profile?.differentiators ?? []).join("\n");
+  const [differentiators, setDifferentiators] = useState(initialDifferentiators);
   const [toneOfVoice, setToneOfVoice] = useState(profile?.toneOfVoice ?? "");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | undefined>();
+
+  const differentiatorItems = differentiators.split("\n").map((item) => item.trim()).filter(Boolean);
+  const differentiatorsChanged = differentiators !== initialDifferentiators;
+  const differentiatorsOverLimit = differentiatorItems.length > 20 || differentiatorItems.some((item) => item.length > 200);
 
   // Campos que estouraram o limite (acontece quando o valor já veio grande do backend; o
   // `maxLength` impede DIGITAR além, mas não corta um valor pré-carregado).
@@ -59,6 +66,7 @@ export function EditBrandProfileModal({
     businessDescription.length > LIMITS.businessDescription ? "Descrição do negócio" : null,
     positioning.length > LIMITS.positioning ? "Posicionamento" : null,
     targetAudience.length > LIMITS.targetAudience ? "Público-alvo" : null,
+    differentiatorsOverLimit ? "Diferenciais" : null,
     toneOfVoice.length > LIMITS.toneOfVoice ? "Tom de voz" : null,
   ].filter((label): label is string => label !== null);
   const hasOverLimit = overLimitLabels.length > 0;
@@ -74,6 +82,7 @@ export function EditBrandProfileModal({
         businessDescription: businessDescription.trim() || undefined,
         targetAudience: targetAudience.trim() || undefined,
         toneOfVoice: toneOfVoice.trim() || undefined,
+        ...(differentiatorsChanged ? { differentiators: differentiatorItems } : {}),
       });
       onSaved(updated);
     } catch (cause) {
@@ -121,6 +130,24 @@ export function EditBrandProfileModal({
             onChange={(e) => setTargetAudience(e.target.value)}
             placeholder="Ex.: corredores amadores de 25 a 45 anos"
           />
+        </div>
+        <div>
+          <div className="mb-1.5 flex items-baseline justify-between gap-2">
+            <label htmlFor="brand-differentiators" className="text-xs font-medium text-muted-foreground">
+              Diferenciais
+            </label>
+            <span className={cn("text-[11px] tabular-nums", differentiatorsOverLimit ? "font-medium text-rose-500" : "text-muted-foreground/70")}>
+              {differentiatorItems.length}/20
+            </span>
+          </div>
+          <Textarea
+            id="brand-differentiators"
+            rows={3}
+            value={differentiators}
+            onChange={(e) => setDifferentiators(e.target.value)}
+            placeholder={"Um diferencial por linha. Ex.:\nSite de casamento grátis para criar\nPresentes via Pix sem comissão da plataforma"}
+          />
+          <p className="mt-1 text-[11px] text-muted-foreground/80">Um por linha. Até 20 itens, 200 caracteres cada.</p>
         </div>
         <div>
           <FieldHeader htmlFor="brand-tone" label="Tom de voz" length={toneOfVoice.length} max={LIMITS.toneOfVoice} />

@@ -152,3 +152,31 @@ test("ponta a ponta: Brand Profile real do workspace chega ao creative_context v
   assert.equal(context.brandName, "Preço Baixo Club");
   assert.equal(context.brandPositioning, "Site que centraliza ofertas reais de várias lojas.");
 });
+
+test("updateBrandProfile: grava diferenciais (lista) num registro dedicado — surfam em resolveBrandProfile e NUNCA viram 'produtos'; editar substitui a lista inteira", async () => {
+  const container = buildApiContainer();
+  const tenantId = "tenant-diferenciais-editaveis";
+  const workspace = await container.workspaceRepository.create({ tenantId, name: "Marca com diferenciais" });
+
+  await container.updateBrandProfile(workspace.id, {
+    differentiators: ["Site de casamento grátis para criar", "Presentes via Pix sem comissão", "   ", "Suporte humano"],
+  });
+  const profile = await container.resolveBrandProfile(workspace.id);
+  assert.ok(profile, "diferenciais reais já devem resolver um perfil");
+  assert.deepEqual(
+    profile.differentiators,
+    ["Site de casamento grátis para criar", "Presentes via Pix sem comissão", "Suporte humano"],
+    "linhas vazias são descartadas",
+  );
+  assert.equal(profile.productsOrServices, undefined, "diferenciais NUNCA entram na lista de produtos");
+
+  // Editar substitui a lista inteira — nunca duplica (reusa o mesmo registro dedicado).
+  await container.updateBrandProfile(workspace.id, { differentiators: ["Apenas um diferencial agora"] });
+  const updated = await container.resolveBrandProfile(workspace.id);
+  assert.deepEqual(updated.differentiators, ["Apenas um diferencial agora"]);
+
+  // Limpar tudo (lista vazia) remove os diferenciais do perfil.
+  await container.updateBrandProfile(workspace.id, { differentiators: [] });
+  const cleared = await container.resolveBrandProfile(workspace.id);
+  assert.equal(cleared, undefined, "sem nenhum dado real, o perfil volta a ser undefined");
+});

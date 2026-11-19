@@ -20,4 +20,5 @@ export type BrandProfilePatch = {
   toneOfVoice?: string;
   businessDescription?: string;
   targetAudience?: string;
+  differentiators?: string[];
 };

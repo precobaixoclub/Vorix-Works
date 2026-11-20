@@ -84,5 +84,6 @@ export function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|icon.svg|robots.txt|sitemap.xml|site-assets/).*)"],
+  // A assinatura de propriedade do TikTok precisa ser acessível sem sessão no Vorix.
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|icon.svg|robots.txt|sitemap.xml|site-assets/|tiktokivf7sejlxrTAtBwlHjPxbb3pctonJMBF\\.txt$).*)"],
 };

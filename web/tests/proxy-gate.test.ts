@@ -7,10 +7,11 @@ const matcher = new RegExp(`^${config.matcher[0]}$`);
 
 describe("proxy matcher", () => {
   it("permite a assinatura pública do TikTok e mantém o gate nos demais caminhos", () => {
-    const signature = "tiktokivf7sejlxrTAtBwlHjPxbb3pctonJMBF.txt";
-    expect(matcher.test(`/${signature}`)).toBe(false);
-    expect(matcher.test(`/workspaces/${signature}`)).toBe(true);
-    expect(matcher.test(`/${signature}/private`)).toBe(true);
+    for (const signature of ["tiktokivf7sejlxrTAtBwlHjPxbb3pctonJMBF.txt", "tiktokmfzCQL44MQEzjMYPD7291ptrWEFFSnoT.txt"]) {
+      expect(matcher.test(`/${signature}`)).toBe(false);
+      expect(matcher.test(`/workspaces/${signature}`)).toBe(true);
+      expect(matcher.test(`/${signature}/private`)).toBe(true);
+    }
     expect(matcher.test("/tiktok/callback")).toBe(true);
   });
 

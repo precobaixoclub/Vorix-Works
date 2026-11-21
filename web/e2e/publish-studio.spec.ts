@@ -6,7 +6,7 @@ const IMAGE = `https://studio-fixture.test/uploads/assets/tenant-qa/${WORKSPACE_
 const ART = `<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1350"><defs><radialGradient id="g"><stop stop-color="#6c33ac"/><stop offset="1" stop-color="#101019"/></radialGradient></defs><rect width="1080" height="1350" fill="#101019"/><circle cx="900" cy="150" r="470" fill="url(#g)"/><rect width="14" height="1350" fill="#9e3dff"/><text x="90" y="160" fill="#a47aff" font-size="27" font-family="Arial" letter-spacing="7">ATENDIMENTO COM CONTEXTO</text><g fill="white" font-family="Arial" font-size="112" font-weight="bold"><text x="85" y="390">A conversa</text><text x="85" y="520">acabou.</text><text x="85" y="685">O contexto</text><text x="85" y="815">precisa ficar.</text></g><rect x="90" y="880" width="550" height="9" rx="4" fill="#9e3dff"/><text x="90" y="1220" fill="white" font-size="28" font-family="Arial" letter-spacing="3">VORIX WORKS</text></svg>`;
 const TITLE = "A conversa acabou. O contexto precisa ficar.";
 const CAPTION = `${TITLE}\n\nConsulte o que já foi dito antes de responder. #Vorix`;
-type Calls = { posts: Record<string, unknown>[]; uploads: number; fail?: boolean; failTarget?: string };
+type Calls = { posts: Record<string, unknown>[]; uploads: number; fail?: boolean; failTarget?: string; resultState?: string; failedHistory?: boolean };
 const ok = (route: Route, data: unknown, status = 200) => route.fulfill({ status, contentType: "application/json", body: JSON.stringify({ ok: true, data }) });
 
 async function setup(page: Page, calls: Calls) {
@@ -25,11 +25,12 @@ async function setup(page: Page, calls: Calls) {
     }
     if (path === "/v1/social/posts") return ok(route, { posts: [{ id: "post-original", state: "PUBLISHED", createdAt: "2026-11-19T14:41:00Z", requiresApproval: false, destinations: ["instagram", "facebook"].map(network => ({ id: `dest-${network}`, network, state: "PUBLISHED", format: "feed_image", caption: CAPTION, media: [{ kind: "image", url: IMAGE }], publishedAt: "2026-11-19T14:41:00Z" })), history: [] }] });
     if (path === "/v1/publication-media/upload") { calls.uploads++; return ok(route, { url: IMAGE + `&upload=${calls.uploads}`, sizeBytes: 1024, contentType: "image/jpeg" }); }
+    if (path === "/v1/publications/new-post") return ok(route, { failures: [{ code: "url_ownership_unverified", message: "Please review our URL ownership verification rules" }], attempts: [] });
     if (["/v1/instagram/posts", "/v1/tiktok/posts", "/v1/youtube/posts"].includes(path)) {
-      if (request.method() === "GET") return ok(route, []);
+      if (request.method() === "GET") return ok(route, calls.failedHistory && path === "/v1/tiktok/posts" ? [{ publicationId: "new-post", state: "failed", description: CAPTION, media: { imageUrls: [IMAGE] }, createdAt: new Date().toISOString() }] : []);
       calls.posts.push(request.postDataJSON());
       if (calls.fail || (calls.failTarget && request.postDataJSON().target === calls.failTarget)) return route.fulfill({ status: 400, contentType: "application/json", body: JSON.stringify({ ok: false, error: { code: "REJECTED", message: "Não foi possível publicar. Revise sua conta.", recoverable: true } }) });
-      return ok(route, { publicationId: "new-post", state: "published" });
+      return ok(route, { publicationId: "new-post", state: calls.resultState || (request.postDataJSON().scheduledAt ? "approved" : "published"), scheduledAt: request.postDataJSON().scheduledAt });
     }
     return route.fallback();
   });
@@ -100,6 +101,7 @@ test("agendamento usa o fuso escolhido e exige uma data no futuro", async ({ pag
   await page.getByRole("button", { name: "Confirmar agendamento" }).click();
   await expect.poll(() => calls.posts.length).toBe(1);
   expect(calls.posts[0]).toMatchObject({ scheduledAt: "2031-11-22T15:30:00.000Z", timezone: "America/Sao_Paulo", target: "facebook" });
+  await expect(page.locator('#publish-feedback[data-tone="success"]')).toContainText("Agendado.");
 });
 
 test("TikTok exige privacidade explícita e mantém conteúdo quando o envio falha", async ({ page }) => {
@@ -149,4 +151,40 @@ test("sucesso parcial mantém a legenda e as imagens para revisar os destinos co
   await expect(page.getByLabel("A legenda que acompanha")).toHaveValue(CAPTION);
   await expect(page.getByAltText("Imagem 1 da publicação")).toBeVisible();
   expect(calls.posts).toHaveLength(2);
+});
+
+test("HTTP 200 com publicação falhada exibe o motivo real e preserva o conteúdo", async ({ page }) => {
+  const calls: Calls = { posts: [], uploads: 0, resultState: "failed" };
+  await setup(page, calls);
+  await useLibrary(page);
+  await page.getByRole("checkbox", { name: "Selecionar TikTok" }).click();
+  await page.getByRole("combobox", { name: "Quem pode ver?" }).click();
+  await page.getByRole("option", { name: "Só eu", exact: true }).click();
+  await page.getByRole("button", { name: "Publicar agora", exact: true }).last().click();
+  await page.getByRole("button", { name: "Confirmar publicação" }).click();
+  await expect(page.locator('#publish-feedback[data-tone="error"]')).toContainText("O domínio dos arquivos ainda não está validado no TikTok");
+  await expect(page.locator("#publish-feedback")).toBeInViewport();
+  await expect(page.getByLabel("A legenda que acompanha")).toHaveValue(CAPTION);
+  await expect(page.getByAltText("Imagem 1 da publicação")).toBeVisible();
+  await expect(page.locator('[data-tone="success"]')).toHaveCount(0);
+});
+
+test("envio pendente mostra processamento sem afirmar que publicou", async ({ page }) => {
+  await setup(page, { posts: [], uploads: 0, resultState: "publishing" });
+  await useLibrary(page);
+  await page.getByRole("checkbox", { name: "Selecionar Instagram" }).click();
+  await page.getByRole("button", { name: "Publicar agora", exact: true }).last().click();
+  await page.getByRole("button", { name: "Confirmar publicação" }).click();
+  await expect(page.locator('#publish-feedback[data-tone="warning"]')).toContainText("Em processamento");
+  await expect(page.locator('[data-tone="success"]')).toHaveCount(0);
+});
+
+test("motivo de uma publicação já falhada pode ser consultado sem reenviar", async ({ page }, testInfo) => {
+  test.skip((page.viewportSize()?.width ?? 0) < 1024, "Histórico lateral no desktop");
+  const calls: Calls = { posts: [], uploads: 0, failedHistory: true };
+  await setup(page, calls);
+  await page.getByRole("button", { name: "Ver motivo", exact: true }).click();
+  await expect(page.locator('#publish-feedback[data-tone="error"]')).toContainText("O domínio dos arquivos ainda não está validado no TikTok");
+  expect(calls.posts).toHaveLength(0);
+  await page.screenshot({ path: testInfo.outputPath("publication-failure-reason.png") });
 });

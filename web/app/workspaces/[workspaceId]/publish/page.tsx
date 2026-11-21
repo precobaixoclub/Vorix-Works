@@ -8,6 +8,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { StudioMedia } from "@/features/publishing-studio/StudioMedia";
 import { StudioPreview } from "@/features/publishing-studio/StudioPreview";
 import styles from "@/features/publishing-studio/studio.module.css";
+import { checkPublicationSubmission, type PublicationSubmissionResult } from "@/features/publishing-studio/submission-result";
 import { zonedToUtc } from "@/features/social/presentation";
 import { ChannelIcon } from "@/components/ChannelIcon";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
@@ -251,7 +252,7 @@ export default function PublishPage() {
     const scheduledAtIso = publishTiming === "schedule" && scheduledAt ? zonedToUtc(scheduledAt, timezone).toISOString() : undefined;
     const targets = PLATFORMS.filter((platform) => selected.has(platform.id));
     const skippedSummaries: string[] = [];
-    const publicationTasks: { label: string; run: () => Promise<unknown> }[] = [];
+    const publicationTasks: { label: string; run: () => Promise<PublicationSubmissionResult> }[] = [];
 
     for (const platform of targets) {
       if (platform.id === "tiktok") {
@@ -322,14 +323,15 @@ export default function PublishPage() {
       return;
     }
 
-    const outcomes = await Promise.allSettled(publicationTasks.map((task) => task.run()));
+    const outcomes = await Promise.allSettled(publicationTasks.map(async (task) => checkPublicationSubmission(workspace.id, await task.run())));
     const summary = outcomes.map((outcome, index) => {
       const label = publicationTasks[index].label;
-      if (outcome.status === "fulfilled") return `${label}: ok`;
+      if (outcome.status === "fulfilled") return `${label}: ${outcome.value.message}`;
       return `${label}: ${messageOf(outcome.reason)}`;
     }).concat(skippedSummaries).join(" · ");
     const fulfilledCount = outcomes.filter((outcome) => outcome.status === "fulfilled").length;
-    const tone = fulfilledCount === 0 ? "error" : fulfilledCount === outcomes.length && skippedSummaries.length === 0 ? "success" : "warning";
+    const processing = outcomes.some((outcome) => outcome.status === "fulfilled" && outcome.value.status === "processing");
+    const tone = fulfilledCount === 0 ? "error" : fulfilledCount === outcomes.length && skippedSummaries.length === 0 && !processing ? "success" : "warning";
     setFeedback({ tone, message: summary });
 
     if (fulfilledCount === outcomes.length && skippedSummaries.length === 0) {
@@ -341,7 +343,7 @@ export default function PublishPage() {
       setPublishTiming("now");
       setSelectedSourceId("");
     }
-    if (fulfilledCount > 0) await Promise.allSettled([mutateTikTokPosts(), mutateMetaPosts(), mutateYouTubePosts(), mutateUnified()]);
+    await Promise.allSettled([mutateTikTokPosts(), mutateMetaPosts(), mutateYouTubePosts(), mutateUnified()]);
     setBusy(false);
   }
 
@@ -357,6 +359,17 @@ export default function PublishPage() {
     } finally {
       setBusy(false);
       setPostPendingCancel(undefined);
+    }
+  }
+
+  async function inspectPostFailure(post: UnifiedPublication) {
+    setBusy(true);
+    try {
+      await checkPublicationSubmission(workspace.id, { publicationId: post.id, state: post.state });
+    } catch (cause) {
+      setFeedback({ tone: "error", message: messageOf(cause) });
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -447,7 +460,7 @@ export default function PublishPage() {
             <StudioPreview {...previewProps} />
             <section className={`${styles.panel} ${styles.recent}`}>
               <div className={styles.sectionHead}><h2 className="text-sm font-semibold">Últimas publicações</h2><Link href={`/workspaces/${workspace.id}/campaigns`} className={styles.textButton}>Ver todas</Link></div>
-              {recentPublications.length === 0 ? <p className={styles.helper}>Seus próximos posts começam aqui.</p> : recentPublications.slice(0, 2).map((post) => <div key={sourceKey(post)} className={styles.recentItem}><ContentThumb post={post} /><div className={styles.recentCopy}><p>{titleOf(post)}</p><small>{formatDateTime(post.publishedAt ?? post.scheduledAt ?? post.createdAt)}</small></div><div className="flex shrink-0 flex-col items-end gap-2"><StatusBadge status={derivePublicationStatus(post)} />{derivePublicationStatus(post) === "scheduled" ? <button type="button" disabled={busy} className="text-xs text-muted-foreground" onClick={() => setPostPendingCancel(post)}>Cancelar</button> : null}</div></div>)}
+              {recentPublications.length === 0 ? <p className={styles.helper}>Seus próximos posts começam aqui.</p> : recentPublications.slice(0, 2).map((post) => <div key={sourceKey(post)} className={styles.recentItem}><ContentThumb post={post} /><div className={styles.recentCopy}><p>{titleOf(post)}</p><small>{formatDateTime(post.publishedAt ?? post.scheduledAt ?? post.createdAt)}</small></div><div className="flex shrink-0 flex-col items-end gap-2"><StatusBadge status={derivePublicationStatus(post)} />{derivePublicationStatus(post) === "failed" ? <button type="button" disabled={busy} className="text-xs font-medium text-primary" onClick={() => void inspectPostFailure(post)}>Ver motivo</button> : null}{derivePublicationStatus(post) === "scheduled" ? <button type="button" disabled={busy} className="text-xs text-muted-foreground" onClick={() => setPostPendingCancel(post)}>Cancelar</button> : null}</div></div>)}
             </section>
           </aside>
         </div>

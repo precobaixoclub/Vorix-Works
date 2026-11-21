@@ -38,6 +38,8 @@ export type SocialAuthorizedAccountView = { externalAccountId: string; username?
 export type SocialAccountView = {
   id: string;
   network: SocialNetwork;
+  /** ID público da conta na rede (Página, conta do Instagram, canal) — não é segredo. */
+  externalAccountId: string;
   username?: string;
   displayName?: string;
   avatarUrl?: string;
@@ -89,6 +91,7 @@ export class SocialAccountService {
       return {
         id: account.id,
         network: account.network,
+        externalAccountId: account.externalAccountId,
         username: account.username,
         displayName: account.displayName,
         avatarUrl: account.avatarUrl,

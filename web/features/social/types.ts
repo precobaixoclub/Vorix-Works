@@ -17,6 +17,7 @@ export type SocialAudioMode = "NONE" | "NATIVE_PLATFORM_MUSIC" | "EMBEDDED_AUDIO
 export type SocialAccountView = {
   id: string;
   network: SocialNetwork;
+  externalAccountId?: string;
   username?: string;
   displayName?: string;
   avatarUrl?: string;

@@ -26,7 +26,9 @@ import { useTikTokCreatorInfo, useTikTokOAuthStatus, useTikTokPosts } from "@/fe
 import { EMPTY_TIKTOK_OPTIONS, TikTokPostSettings, tiktokPostingBlocker } from "@/features/tiktok/TikTokPostSettings";
 import { scheduleYouTubePost } from "@/features/youtube/api";
 import { useYouTubeOAuthStatus, useYouTubePosts } from "@/features/youtube/hooks";
-import type { YouTubeConnectedAccount, YouTubePrivacyStatus } from "@/features/youtube/types";
+import type { YouTubePrivacyStatus } from "@/features/youtube/types";
+import { useSocialAccounts } from "@/features/social/hooks";
+import { pickWorkspaceAccount, workspaceAccountIds } from "@/features/social/workspace-account";
 import { formatDateTime } from "@/lib/format";
 
 const DEFAULT_TIMEZONE = "America/Sao_Paulo";
@@ -67,6 +69,7 @@ export default function PublishPage() {
   const { data: tiktokOAuth } = useTikTokOAuthStatus(workspace.id);
   const { data: metaOAuth } = useMetaOAuthStatus(workspace.id);
   const { data: youtubeOAuth } = useYouTubeOAuthStatus(workspace.id);
+  const { data: socialAccounts } = useSocialAccounts(workspace.id);
   const { mutate: mutateTikTokPosts } = useTikTokPosts(workspace.id);
   const { mutate: mutateMetaPosts } = useMetaPosts(workspace.id);
   const { mutate: mutateYouTubePosts } = useYouTubePosts(workspace.id);
@@ -103,28 +106,32 @@ export default function PublishPage() {
     if (feedback) document.getElementById("publish-feedback")?.scrollIntoView({ block: "center", behavior: "instant" });
   }, [feedback]);
 
+  // Uma autorização da Meta (ou do Google) pode liberar várias Páginas/contas/canais, e todas ficam
+  // registradas na workspace. Publica SÓ na conta escolhida para esta workspace em Integrações;
+  // sem essa amarração, a tela pegava a primeira da lista (ex.: a Página de outra marca).
+  const chosenIds = (network: Platform) => workspaceAccountIds(socialAccounts?.accounts, network);
+  const instagramAccount = pickWorkspaceAccount(metaOAuth?.accounts.filter((account) => account.providerId === "instagram"), chosenIds("instagram"), (account) => account.providerSubjectId);
+  const facebookAccount = pickWorkspaceAccount(metaOAuth?.accounts.filter((account) => account.providerId === "facebook"), chosenIds("facebook"), (account) => account.providerSubjectId);
+  const youtubeAccount = pickWorkspaceAccount(youtubeOAuth?.accounts, chosenIds("youtube"), (account) => account.channelId);
+
   const connectedByPlatform: Record<Platform, boolean> = {
     tiktok: tiktokOAuth?.connected ?? false,
-    instagram: (metaOAuth?.accounts ?? []).some((account) => account.providerId === "instagram" && account.status === "active"),
-    facebook: (metaOAuth?.accounts ?? []).some((account) => account.providerId === "facebook" && account.status === "active"),
-    youtube: youtubeOAuth?.connected ?? false,
+    instagram: Boolean(instagramAccount),
+    facebook: Boolean(facebookAccount),
+    youtube: Boolean(youtubeAccount),
   };
-
-  // Com mais de um canal autorizado, usa o conectado/renovado por último: autorizações antigas
-  // (ex.: feitas com um cliente OAuth anterior) continuam listadas, mas não renovam mais o token.
-  const youtubeAccount = latestActiveAccount(youtubeOAuth?.accounts);
 
   const accountLabelByPlatform: Partial<Record<Platform, string>> = {
     tiktok: tiktokOAuth?.accounts.find((account) => account.status === "active")?.displayName,
-    instagram: metaOAuth?.accounts.find((account) => account.providerId === "instagram" && account.status === "active")?.displayName,
-    facebook: metaOAuth?.accounts.find((account) => account.providerId === "facebook" && account.status === "active")?.displayName,
+    instagram: instagramAccount?.displayName,
+    facebook: facebookAccount?.displayName,
     youtube: youtubeAccount?.displayName,
   };
 
   const credentialReferenceByPlatform: Partial<Record<Platform, string>> = {
     tiktok: tiktokOAuth?.accounts.find((account) => account.status === "active")?.credentialReferenceId,
-    instagram: metaOAuth?.accounts.find((account) => account.providerId === "instagram" && account.status === "active")?.credentialReferenceId,
-    facebook: metaOAuth?.accounts.find((account) => account.providerId === "facebook" && account.status === "active")?.credentialReferenceId,
+    instagram: instagramAccount?.credentialReferenceId,
+    facebook: facebookAccount?.credentialReferenceId,
     youtube: youtubeAccount?.credentialReferenceId,
   };
   const tiktokCredential = credentialReferenceByPlatform.tiktok;
@@ -513,6 +520,3 @@ function ContentThumb({ post }: { post: UnifiedPublication }) {
 function sourceKey(post: UnifiedPublication): string { return `${post.network}:${post.id}`; }
 function titleOf(post: UnifiedPublication): string { return post.text.split(/\r?\n/).map((line) => line.trim()).find(Boolean)?.slice(0, 120) || "Publicação sem legenda"; }
 function messageOf(cause: unknown): string { return cause instanceof Error ? cause.message : "Não foi possível concluir a operação."; }
-function latestActiveAccount(accounts: readonly YouTubeConnectedAccount[] | undefined): YouTubeConnectedAccount | undefined {
-  return (accounts ?? []).filter((account) => account.status === "active").reduce<YouTubeConnectedAccount | undefined>((latest, account) => (!latest || (account.connectedAt ?? "") > (latest.connectedAt ?? "") ? account : latest), undefined);
-}

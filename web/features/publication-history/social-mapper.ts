@@ -52,3 +52,11 @@ export function socialPostsToPublications(
       }),
   );
 }
+
+/** Social destinations contain the actual media; legacy plan summaries can contain only text. */
+export function mergePublicationFeeds(legacy: readonly UnifiedPublication[], social: readonly UnifiedPublication[]): UnifiedPublication[] {
+  const key = (post: UnifiedPublication) => `${post.network}:${post.id}`;
+  const socialKeys = new Set(social.map(key));
+  return [...social, ...legacy.filter(post => !socialKeys.has(key(post)))]
+    .sort((a, b) => (b.scheduledAt ?? b.publishedAt ?? b.createdAt).localeCompare(a.scheduledAt ?? a.publishedAt ?? a.createdAt));
+}

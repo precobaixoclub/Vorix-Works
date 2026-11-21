@@ -7,12 +7,12 @@ const IMAGE = `https://studio-fixture.test/uploads/assets/tenant-qa/${WORKSPACE_
 const ART = `<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1350"><defs><radialGradient id="g"><stop stop-color="#6c33ac"/><stop offset="1" stop-color="#101019"/></radialGradient></defs><rect width="1080" height="1350" fill="#101019"/><circle cx="900" cy="150" r="470" fill="url(#g)"/><rect width="14" height="1350" fill="#9e3dff"/><text x="90" y="160" fill="#a47aff" font-size="27" font-family="Arial" letter-spacing="7">ATENDIMENTO COM CONTEXTO</text><g fill="white" font-family="Arial" font-size="112" font-weight="bold"><text x="85" y="390">A conversa</text><text x="85" y="520">acabou.</text><text x="85" y="685">O contexto</text><text x="85" y="815">precisa ficar.</text></g><rect x="90" y="880" width="550" height="9" rx="4" fill="#9e3dff"/><text x="90" y="1220" fill="white" font-size="28" font-family="Arial" letter-spacing="3">VORIX WORKS</text></svg>`;
 const TITLE = "A conversa acabou. O contexto precisa ficar.";
 const CAPTION = `${TITLE}\n\nConsulte o que já foi dito antes de responder. #Vorix`;
-type Calls = { posts: Record<string, unknown>[]; uploads: number; fail?: boolean; failTarget?: string; resultState?: string; failedHistory?: boolean; creatorBlocked?: boolean; publicCreator?: boolean; durationLimit?: number };
+type Calls = { posts: Record<string, unknown>[]; uploads: number; fail?: boolean; failTarget?: string; resultState?: string; failedHistory?: boolean; creatorBlocked?: boolean; publicCreator?: boolean; durationLimit?: number; youtubeFixture?: boolean };
 const VIDEO_URL = "https://studio-fixture.test/tiktok-two-seconds.mp4";
 const VIDEO = readFileSync("e2e/fixtures/tiktok-two-seconds.mp4");
 const ok = (route: Route, data: unknown, status = 200) => route.fulfill({ status, contentType: "application/json", body: JSON.stringify({ ok: true, data }) });
 
-async function setup(page: Page, calls: Calls) {
+async function setup(page: Page, calls: Calls, query = "") {
   await page.addInitScript(() => localStorage.setItem("theme", "dark"));
   await loginCookie(page.context());
   await page.context().addCookies([{ name: "zuno_csrf_token", value: "studio-test-csrf", url: "http://localhost:3001" }]);
@@ -28,13 +28,17 @@ async function setup(page: Page, calls: Calls) {
     }
     if (path.includes("/publication-providers/") && path.endsWith("/oauth/status")) {
       const network = path.split("/")[3];
-      const accounts = network === "meta" ? ["instagram", "facebook"] : network === "tiktok" ? ["tiktok"] : [];
+      const accounts = network === "meta" ? ["instagram", "facebook"] : network === "tiktok" ? ["tiktok"] : network === "youtube" && calls.youtubeFixture ? ["youtube"] : [];
       return ok(route, { configured: true, connected: accounts.length > 0, accounts: accounts.map(providerId => ({ providerId, credentialReferenceId: `credential-${providerId}`, status: "active", displayName: providerId === "instagram" ? "@vorixworks_oficial" : "Vorix Works", scopes: [] })), telemetry: {} });
     }
-    if (path === "/v1/social/posts") return ok(route, { posts: [{ id: "post-original", state: "PUBLISHED", createdAt: "2026-11-19T14:41:00Z", requiresApproval: false, destinations: ["instagram", "facebook"].map(network => ({ id: `dest-${network}`, network, state: "PUBLISHED", format: "feed_image", caption: CAPTION, media: [{ kind: "image", url: IMAGE }], publishedAt: "2026-11-19T14:41:00Z" })), history: [] }] });
+    if (path === "/v1/social/posts") {
+      if (calls.youtubeFixture) await new Promise(resolve => setTimeout(resolve, 1200));
+      return ok(route, { posts: [{ id: "post-original", state: "PUBLISHED", createdAt: "2026-11-19T14:41:00Z", requiresApproval: false, destinations: ["instagram", "facebook"].map(network => ({ id: `dest-${network}`, network, state: "PUBLISHED", format: "feed_image", caption: CAPTION, media: [{ kind: "image", url: IMAGE }], publishedAt: "2026-11-19T14:41:00Z" })), history: [] }, ...(calls.youtubeFixture ? [{ id: "post-youtube", state: "PUBLISHED", createdAt: "2026-11-21T18:33:55Z", requiresApproval: false, destinations: [{ id: "dest-youtube", network: "youtube", state: "PUBLISHED", format: "short_video", caption: "Meu Short original", media: [{ kind: "video", url: VIDEO_URL }], publishedAt: "2026-11-21T18:34:00Z", externalUrl: "https://www.youtube.com/watch?v=example" }], history: [] }] : [])] });
+    }
     if (path === "/v1/publication-media/upload") { calls.uploads++; const video = request.postDataBuffer()?.includes(Buffer.from("video/mp4")); return ok(route, { url: video ? VIDEO_URL : IMAGE + `&upload=${calls.uploads}`, sizeBytes: 1024, contentType: video ? "video/mp4" : "image/jpeg" }); }
     if (path === "/v1/publications/new-post") return ok(route, { failures: [{ code: "url_ownership_unverified", message: "Please review our URL ownership verification rules" }], attempts: [] });
     if (["/v1/instagram/posts", "/v1/tiktok/posts", "/v1/youtube/posts"].includes(path)) {
+      if (request.method() === "GET" && calls.youtubeFixture && path === "/v1/youtube/posts") return ok(route, [{ publicationId: "post-youtube", state: "published", description: "", media: { imageUrls: [] }, createdAt: "2026-11-21T18:33:55Z" }]);
       if (request.method() === "GET") return ok(route, calls.failedHistory && path === "/v1/tiktok/posts" ? [{ publicationId: "new-post", state: "failed", description: CAPTION, media: { imageUrls: [IMAGE] }, createdAt: new Date().toISOString() }] : []);
       calls.posts.push(request.postDataJSON());
       if (calls.fail || (calls.failTarget && request.postDataJSON().target === calls.failTarget)) return route.fulfill({ status: 400, contentType: "application/json", body: JSON.stringify({ ok: false, error: { code: "REJECTED", message: "Não foi possível publicar. Revise sua conta.", recoverable: true } }) });
@@ -42,7 +46,7 @@ async function setup(page: Page, calls: Calls) {
     }
     return route.fallback();
   });
-  await page.goto(`/workspaces/${WORKSPACE_ID}/publish`);
+  await page.goto(`/workspaces/${WORKSPACE_ID}/publish${query}`);
   await expect(page.getByRole("heading", { name: "Vamos publicar?", exact: true })).toBeVisible();
   await expect(page.getByRole("checkbox", { name: "Selecionar Instagram" })).toBeEnabled();
 }
@@ -204,6 +208,41 @@ test("TikTok verifica duração real do vídeo e bloqueia interações desativad
   await expect(page.getByRole("switch", { name: /Permitir Stitch/ })).toBeDisabled();
   await expect(page.getByRole("button", { name: "Publicar agora", exact: true }).last()).toBeDisabled();
   expect(calls.posts).toHaveLength(0);
+});
+
+test("YouTube recupera vídeo e legenda do destino real mesmo quando o resumo legado chega antes", async ({ page }) => {
+  const calls: Calls = { posts: [], uploads: 0, youtubeFixture: true };
+  await setup(page, calls, "?network=youtube&source=youtube:post-youtube");
+  await expect(page.getByRole("checkbox", { name: "Selecionar YouTube Shorts" })).toBeChecked();
+  await expect(page.getByLabel("A legenda que acompanha")).toHaveValue("Meu Short original");
+  await expect(page.getByLabel("Vídeo selecionado")).toHaveAttribute("src", VIDEO_URL);
+  await expect(page.getByRole("button", { name: "Publicar agora", exact: true }).last()).toBeEnabled();
+  await page.getByRole("button", { name: "Escolher da biblioteca" }).click();
+  const dialog = page.getByRole("dialog", { name: "Escolha seu conteúdo" });
+  await dialog.getByRole("textbox", { name: "Buscar na biblioteca" }).fill("Meu Short original");
+  await expect(dialog.getByRole("button", { name: /Usar conteúdo/ })).toHaveCount(1);
+  await dialog.getByRole("button", { name: /Usar conteúdo/ }).click();
+  await expect(page.getByLabel("Vídeo selecionado")).toHaveAttribute("src", VIDEO_URL);
+  expect(calls.posts).toHaveLength(0);
+  await page.getByRole("button", { name: "Publicar agora", exact: true }).last().click();
+  await page.getByRole("button", { name: "Confirmar publicação" }).click();
+  await expect.poll(() => calls.posts.length).toBe(1);
+  expect(calls.posts[0]).toMatchObject({ videoUrl: VIDEO_URL, description: "Meu Short original", credentialReferenceId: "credential-youtube" });
+});
+
+test("Conteúdos mostra Short como vídeo reproduzível e Publicar novamente preserva a mídia", async ({ page }) => {
+  await setup(page, { posts: [], uploads: 0, youtubeFixture: true });
+  await page.goto(`/workspaces/${WORKSPACE_ID}/campaigns`);
+  await page.getByRole("heading", { name: "Meu Short original", exact: true }).click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog.getByLabel("Vídeo do conteúdo")).toHaveAttribute("src", VIDEO_URL);
+  await expect(dialog.getByLabel("Vídeo do conteúdo")).toHaveAttribute("controls", "");
+  await expect(dialog.getByText("Vídeo", { exact: true })).toBeVisible();
+  await expect(dialog.getByRole("link", { name: "Ver publicação" })).toHaveAttribute("href", "https://www.youtube.com/watch?v=example");
+  await dialog.getByRole("link", { name: "Publicar novamente" }).click();
+  await expect(page.getByLabel("A legenda que acompanha")).toHaveValue("Meu Short original");
+  await expect(page.getByLabel("Vídeo selecionado")).toHaveAttribute("src", VIDEO_URL);
+  await expect(page.getByRole("button", { name: "Publicar agora", exact: true }).last()).toBeEnabled();
 });
 
 test("celular abre a prévia sem perder mídia ou legenda", async ({ page }, testInfo) => {

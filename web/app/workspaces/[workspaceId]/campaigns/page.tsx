@@ -400,6 +400,8 @@ function PublicationCard({ workspaceId, post, busy, onOpen, onCancel }: { worksp
         {thumbnail ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img src={thumbnail} alt="" className="h-full w-full object-cover" />
+        ) : post.media.videoUrl ? (
+          <video src={post.media.videoUrl} muted playsInline preload="metadata" tabIndex={-1} aria-hidden className="pointer-events-none h-full w-full object-cover" />
         ) : (
           <FormatIcon format={format} className="h-12 w-12 text-primary-foreground/75 drop-shadow" />
         )}
@@ -471,7 +473,9 @@ function PublicationDetailModal({ workspaceId, post, busy, onClose, onCancel }: 
       }
     >
       <div className="space-y-6">
-        {thumbnail ? (
+        {post.media.videoUrl ? (
+          <video src={post.media.videoUrl} poster={post.media.thumbnailUrl} controls playsInline preload="metadata" aria-label="Vídeo do conteúdo" className="mx-auto max-h-[60vh] w-full rounded-xl border border-border bg-black object-contain" />
+        ) : thumbnail ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img src={thumbnail} alt="" className="mx-auto max-h-[60vh] w-full rounded-xl border border-border object-contain" />
         ) : (

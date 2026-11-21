@@ -170,6 +170,10 @@ export default function PublishPage() {
     const params = new URLSearchParams(window.location.search);
     const network = params.get("network") as Platform | null;
     const source = params.get("source");
+    const connectionStatus = { tiktok: tiktokOAuth, instagram: metaOAuth, facebook: metaOAuth, youtube: youtubeOAuth };
+    // A cached content feed can arrive before OAuth status on client navigation. Wait before
+    // consuming the query, or the original network will never become selected.
+    if (network && PLATFORMS.some(platform => platform.id === network) && connectionStatus[network] === undefined) return;
     if (source) {
       const post = unified.find((item) => sourceKey(item) === source);
       if (post) applyContent(post);
@@ -179,7 +183,7 @@ export default function PublishPage() {
       setPreviewNetwork(network);
     }
     setQueryApplied(true);
-  }, [queryApplied, unified, connectedByPlatform]);
+  }, [queryApplied, unified, connectedByPlatform, tiktokOAuth, metaOAuth, youtubeOAuth]);
 
   function applyContent(post: UnifiedPublication) {
     setFeedback(undefined);

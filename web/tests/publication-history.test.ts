@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { legacyNetworkPublishHref } from "../features/publication-history/legacy-routes";
-import { socialPostsToPublications } from "../features/publication-history/social-mapper";
+import { mergePublicationFeeds, socialPostsToPublications } from "../features/publication-history/social-mapper";
 import { contentTypeOf, derivePublicationStatus } from "../features/publication-history/types";
 import type { SocialDestinationView, SocialPostView } from "../features/social/types";
 
@@ -72,11 +72,29 @@ describe("socialPostsToPublications", () => {
     expect(rows[0]!.state).toBe("publishing");
   });
 
-  it("filtra redes fora do conjunto pedido (nao duplica TikTok/YouTube dos feeds proprios)", () => {
+  it("permite filtrar redes explicitamente quando solicitado", () => {
     const rows = socialPostsToPublications([
       post({ destinations: [destination({ network: "tiktok" }), destination({ network: "instagram" })] }),
     ], ["instagram", "facebook"]);
     expect(rows.map((row) => row.network)).toEqual(["instagram"]);
+  });
+});
+
+describe("mergePublicationFeeds", () => {
+  it("prioriza vídeo, legenda e link reais do YouTube sem duplicar o resumo legado", () => {
+    const social = socialPostsToPublications([post({ id: "youtube-1", destinations: [destination({ network: "youtube", format: "short_video", caption: "Meu Short", media: [{ kind: "video", url: "https://cdn.test/short.mp4" }], externalUrl: "https://youtube.com/shorts/abc" })] })]);
+    const legacy = [{ ...social[0]!, text: "", media: { imageUrls: [] } }];
+    const merged = mergePublicationFeeds(legacy, social);
+    expect(merged).toHaveLength(1);
+    expect(merged[0]).toMatchObject({ text: "Meu Short", media: { videoUrl: "https://cdn.test/short.mp4" }, externalUrl: "https://youtube.com/shorts/abc" });
+    expect(contentTypeOf(merged[0]!)).toBe("video");
+  });
+  it("preserva publicações legadas e destinos diferentes do mesmo post", () => {
+    const social = socialPostsToPublications([post({ destinations: [destination({ network: "youtube", format: "short_video", media: [{ kind: "video", url: "https://cdn.test/short.mp4" }] })] })]);
+    const legacy = [{ ...social[0]!, network: "tiktok" as const }, { ...social[0]!, id: "older-youtube", createdAt: "2026-01-01T00:00:00Z" }];
+    const merged = mergePublicationFeeds(legacy, social);
+    expect(merged).toHaveLength(3);
+    expect(merged.at(-1)?.id).toBe("older-youtube");
   });
 });
 

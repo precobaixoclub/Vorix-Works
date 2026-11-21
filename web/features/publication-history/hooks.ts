@@ -3,11 +3,10 @@ import useSWR from "swr";
 import { listSocialPosts } from "@/features/social/api";
 import { useTikTokPosts } from "@/features/tiktok/hooks";
 import { useYouTubePosts } from "@/features/youtube/hooks";
-import { socialPostsToPublications } from "./social-mapper";
+import { mergePublicationFeeds, socialPostsToPublications } from "./social-mapper";
 import type { UnifiedPublication } from "./types";
 
-/** Instagram e Facebook vêm do sistema de publicação social novo (`/v1/social/posts`), que guarda a
- * mídia, a rede e o link reais de cada destino. TikTok/YouTube seguem pelos feeds próprios. */
+/** All four networks may have posts in the social composer with media stored on destinations. */
 function useSocialFeed(workspaceId: string, enabled: boolean) {
   return useSWR(enabled ? ["social-feed", workspaceId] : null, () => listSocialPosts(workspaceId));
 }
@@ -20,8 +19,10 @@ export function useUnifiedPublications(workspaceId: string, enabled = true) {
   const youtube = useYouTubePosts(workspaceId, enabled);
 
   const data = useMemo<UnifiedPublication[] | undefined>(() => {
-    if (tiktok.data === undefined && social.data === undefined && youtube.data === undefined) return undefined;
-    const unified: UnifiedPublication[] = [
+    // Wait for the feeds to settle: applying a source query too early used the empty legacy
+    // summary, then never reapplied the real video when the social feed arrived.
+    if ([tiktok, social, youtube].some(feed => feed.data === undefined && !feed.error)) return undefined;
+    const legacy: UnifiedPublication[] = [
       ...(tiktok.data ?? []).map((post): UnifiedPublication => ({
         id: post.publicationId,
         network: "tiktok",
@@ -35,8 +36,6 @@ export function useUnifiedPublications(workspaceId: string, enabled = true) {
         publishedAt: post.publishedAt,
         cancelledAt: post.cancelledAt,
       })),
-      // Instagram + Facebook: uma linha por rede, com a mídia/rede/link reais do destino.
-      ...socialPostsToPublications(social.data?.posts ?? [], ["instagram", "facebook"]),
       ...(youtube.data ?? []).map((post): UnifiedPublication => ({
         id: post.publicationId,
         network: "youtube",
@@ -51,8 +50,8 @@ export function useUnifiedPublications(workspaceId: string, enabled = true) {
         cancelledAt: post.cancelledAt,
       })),
     ];
-    return unified.sort((a, b) => (b.scheduledAt ?? b.publishedAt ?? b.createdAt).localeCompare(a.scheduledAt ?? a.publishedAt ?? a.createdAt));
-  }, [tiktok.data, social.data, youtube.data]);
+    return mergePublicationFeeds(legacy, socialPostsToPublications(social.data?.posts ?? []));
+  }, [tiktok.data, tiktok.error, social.data, social.error, youtube.data, youtube.error]);
 
   const error = tiktok.error ?? social.error ?? youtube.error;
   const isLoading = enabled && data === undefined && !error;

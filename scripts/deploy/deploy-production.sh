@@ -106,11 +106,11 @@ rollback() {
   echo "ROLLBACK: $1"
   # On the first gateway rollout there is no previous gateway image to restore. Stop the new
   # service before restoring the old compose; retain the encrypted volume for investigation.
-  if ! docker image inspect "zuno-social-provider-gateway:rollback-$STAMP" >/dev/null 2>&1; then
+  if echo "$SERVICES" | grep -q social-provider-gateway && ! docker image inspect "zuno-social-provider-gateway:rollback-$STAMP" >/dev/null 2>&1; then
     $COMPOSE stop social-provider-gateway >/dev/null 2>&1 || true
   fi
   # Same for the first marketplaces worker rollout: nothing older to restore, so it is stopped.
-  if ! docker image inspect "zuno-marketplaces-worker:rollback-$STAMP" >/dev/null 2>&1; then
+  if echo "$SERVICES" | grep -q marketplaces-worker && ! docker image inspect "zuno-marketplaces-worker:rollback-$STAMP" >/dev/null 2>&1; then
     $COMPOSE stop marketplaces-worker >/dev/null 2>&1 || true
   fi
   if echo "$SERVICES" | grep -q meetings-worker && ! docker image inspect "zuno-meetings-worker:rollback-$STAMP" >/dev/null 2>&1; then

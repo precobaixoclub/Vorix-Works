@@ -26,7 +26,7 @@ import { useTikTokCreatorInfo, useTikTokOAuthStatus, useTikTokPosts } from "@/fe
 import { EMPTY_TIKTOK_OPTIONS, TikTokPostSettings, tiktokPostingBlocker } from "@/features/tiktok/TikTokPostSettings";
 import { scheduleYouTubePost } from "@/features/youtube/api";
 import { useYouTubeOAuthStatus, useYouTubePosts } from "@/features/youtube/hooks";
-import type { YouTubePrivacyStatus } from "@/features/youtube/types";
+import type { YouTubeConnectedAccount, YouTubePrivacyStatus } from "@/features/youtube/types";
 import { formatDateTime } from "@/lib/format";
 
 const DEFAULT_TIMEZONE = "America/Sao_Paulo";
@@ -110,18 +110,22 @@ export default function PublishPage() {
     youtube: youtubeOAuth?.connected ?? false,
   };
 
+  // Com mais de um canal autorizado, usa o conectado/renovado por último: autorizações antigas
+  // (ex.: feitas com um cliente OAuth anterior) continuam listadas, mas não renovam mais o token.
+  const youtubeAccount = latestActiveAccount(youtubeOAuth?.accounts);
+
   const accountLabelByPlatform: Partial<Record<Platform, string>> = {
     tiktok: tiktokOAuth?.accounts.find((account) => account.status === "active")?.displayName,
     instagram: metaOAuth?.accounts.find((account) => account.providerId === "instagram" && account.status === "active")?.displayName,
     facebook: metaOAuth?.accounts.find((account) => account.providerId === "facebook" && account.status === "active")?.displayName,
-    youtube: youtubeOAuth?.accounts.find((account) => account.status === "active")?.displayName,
+    youtube: youtubeAccount?.displayName,
   };
 
   const credentialReferenceByPlatform: Partial<Record<Platform, string>> = {
     tiktok: tiktokOAuth?.accounts.find((account) => account.status === "active")?.credentialReferenceId,
     instagram: metaOAuth?.accounts.find((account) => account.providerId === "instagram" && account.status === "active")?.credentialReferenceId,
     facebook: metaOAuth?.accounts.find((account) => account.providerId === "facebook" && account.status === "active")?.credentialReferenceId,
-    youtube: youtubeOAuth?.accounts.find((account) => account.status === "active")?.credentialReferenceId,
+    youtube: youtubeAccount?.credentialReferenceId,
   };
   const tiktokCredential = credentialReferenceByPlatform.tiktok;
   const { data: creatorInfo, error: creatorError, isValidating: creatorLoading, mutate: refreshCreator } = useTikTokCreatorInfo(workspace.id, tiktokCredential, selected.has("tiktok"));
@@ -509,3 +513,6 @@ function ContentThumb({ post }: { post: UnifiedPublication }) {
 function sourceKey(post: UnifiedPublication): string { return `${post.network}:${post.id}`; }
 function titleOf(post: UnifiedPublication): string { return post.text.split(/\r?\n/).map((line) => line.trim()).find(Boolean)?.slice(0, 120) || "Publicação sem legenda"; }
 function messageOf(cause: unknown): string { return cause instanceof Error ? cause.message : "Não foi possível concluir a operação."; }
+function latestActiveAccount(accounts: readonly YouTubeConnectedAccount[] | undefined): YouTubeConnectedAccount | undefined {
+  return (accounts ?? []).filter((account) => account.status === "active").reduce<YouTubeConnectedAccount | undefined>((latest, account) => (!latest || (account.connectedAt ?? "") > (latest.connectedAt ?? "") ? account : latest), undefined);
+}

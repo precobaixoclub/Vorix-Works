@@ -10,7 +10,6 @@ agendadas com foto/vídeo e descrição.
 2. Adicione os produtos **Login Kit** e **Content Posting API**.
 3. Solicite os escopos:
    - `user.info.basic` — nome/avatar da conta conectada;
-   - `video.upload` — preparar a mídia;
    - `video.publish` — publicar direto no perfil (Direct Post).
 4. Cadastre a **Redirect URI** exatamente igual à do painel, por exemplo
    `https://app.seudominio.com/tiktok/callback` (em desenvolvimento, `http://localhost:3001/tiktok/callback`).
@@ -60,7 +59,8 @@ TikTok → GET  {TIKTOK_OAUTH_REDIRECT_URI}?code&state         (página do front
 frontend → POST /v1/publication-providers/tiktok/oauth/callback { state, code }
 ```
 
-O `state` é de uso único, expira em 10 minutos e usa PKCE (`S256`). No callback a API troca o
+O `state` é de uso único e expira em 10 minutos. Login Kit Web usa PKCE desligado por padrão
+(`TIKTOK_PKCE_ENABLED=true` habilita `S256` quando aplicável). No callback a API troca o
 código por tokens e grava três coisas: o segredo (access/refresh token) no Secret Manager, a
 `PublicationCredentialReference` (só metadados) e a credencial governada com escopos e auditoria.
 
@@ -78,6 +78,7 @@ dev/test/sandbox, **não** para tokens reais de cliente em produção.
 | `POST` | `/v1/publication-providers/tiktok/oauth/callback` | `publication:admin` |
 | `POST` | `/v1/publication-providers/tiktok/oauth/disconnect` | `publication:admin` |
 | `GET` | `/v1/tiktok/posts?workspaceId=` | `publication:read` |
+| `GET` | `/v1/tiktok/creator-info?workspaceId=&credentialReferenceId=` | `publication:read` |
 | `POST` | `/v1/tiktok/posts` | `publication:create` |
 | `POST` | `/v1/tiktok/posts/:id/cancel` | `publication:cancel` |
 | `POST` | `/v1/tiktok/posts/run-due` | `publication:operate` |
@@ -92,7 +93,13 @@ POST /v1/tiktok/posts
   "videoUrl": "https://cdn.seudominio.com/video.mp4",
   "scheduledAt": "2026-03-01T18:00:00.000Z",
   "timezone": "America/Sao_Paulo",
-  "privacyLevel": "PUBLIC_TO_EVERYONE"
+  "privacyLevel": "SELF_ONLY",
+  "credentialReferenceId": "tiktok:tenant-1:workspace-1:conta",
+  "videoDurationSec": 30,
+  "musicUsageAccepted": true,
+  "commercialContent": true,
+  "brandOrganic": true,
+  "brandContent": false
 }
 ```
 
@@ -101,6 +108,31 @@ Para carrossel de fotos, troque `videoUrl` por `imageUrls: ["https://...", "http
 públicas** — endereços privados/internos são recusados para evitar SSRF. Sem uma URL pública em
 mãos, use `POST /v1/publication-media/upload` primeiro (ver `docs/media-upload.md`) para enviar o
 arquivo direto do computador do cliente e obter a URL.
+
+## Requisitos da tela de publicação
+
+A tela consulta `creator-info` ao selecionar TikTok e usa o apelido, a privacidade, os bloqueios
+de interação e o limite de duração atuais. Não há privacidade pré-selecionada; no Sandbox,
+opções diferentes de “Só eu” ficam indisponíveis. Duet/Stitch aparecem somente para vídeos.
+O navegador lê a duração do vídeo antes de habilitar o envio; a API e o provider validam essa
+duração contra o limite da conta. O provider consulta as restrições novamente no disparo do agendamento.
+
+Antes de confirmar, o usuário aceita a Confirmação de Uso de Músicas do TikTok. Conteúdo
+comercial começa desligado. Ao ativá-lo, é obrigatório indicar marca própria e/ou parceria
+com terceiros. Parceria paga não permite “Só eu” e inclui a Política de Conteúdo de Marca
+na declaração. A API guarda escolhas e horário do aceite no artifact; envia os campos
+`brand_organic_toggle`/`brand_content_toggle` no `post_info` oficial para fotos e vídeos.
+
+Um `publish_id` confirma somente o recebimento do envio. Enquanto o TikTok processa, o
+resultado fica em reconciliação, sem receipt e sem outro upload. O feed consulta status;
+a interface atualiza a cada 15 segundos enquanto houver posts em processamento. Somente
+`PUBLISH_COMPLETE` confirma publicação. Erros de status não autorizam reenviar o conteúdo.
+
+Na revisão, demonstre Login Kit, conteúdo original, prévia, escolha manual da privacidade,
+identificação comercial/aceite e resultado no TikTok. O fluxo usa `video.publish`; não solicita
+`video.upload` nem implementa envio como rascunho. Remova permissões desnecessárias no portal
+quando ele permitir. Referências: [UX](https://developers.tiktok.com/docs/en/content-sharing-guidelines),
+[creator info](https://developers.tiktok.com/docs/en/content-posting-api-reference-query-creator-info).
 
 ## 5. Como o agendamento dispara
 

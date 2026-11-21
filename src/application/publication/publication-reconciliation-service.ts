@@ -12,19 +12,21 @@ export type PublicationReconciliationDeps = {
 export class PublicationReconciliationService {
   constructor(private readonly deps: PublicationReconciliationDeps) {}
 
-  async reconcile(input: { tenantId: string; workspaceId: string; publicationId?: string; providerIds?: readonly string[] }): Promise<{ confirmed: number; inconclusive: number; notPublished: number }> {
+  async reconcile(input: { tenantId: string; workspaceId: string; publicationId?: string; providerIds?: readonly string[]; limit?: number }): Promise<{ confirmed: number; inconclusive: number; notPublished: number }> {
     const reconciliations = await this.deps.repository.listReconciliations({ tenantId: input.tenantId, workspaceId: input.workspaceId, status: "pending" });
     let confirmed = 0;
     let inconclusive = 0;
     let notPublished = 0;
-    for (const reconciliation of reconciliations.filter((item) => (!input.publicationId || item.publicationId === input.publicationId) && (!input.providerIds || input.providerIds.includes(item.providerId)))) {
+    for (const reconciliation of reconciliations.filter((item) => (!input.publicationId || item.publicationId === input.publicationId) && (!input.providerIds || input.providerIds.includes(item.providerId)) && (item.providerId !== "tiktok" || item.providerRequestId)).slice(0, input.limit ?? Infinity)) {
       const provider = this.deps.providerRegistry.resolve(reconciliation.providerId);
       if (!provider.descriptor.supportsStatusLookup) {
         await this.deps.repository.updateReconciliationStatus({ id: reconciliation.id, status: "inconclusive" });
         inconclusive += 1;
         continue;
       }
-      const secret = await this.deps.secretResolver.resolve({ tenantId: reconciliation.tenantId, workspaceId: reconciliation.workspaceId, providerId: reconciliation.providerId });
+      const detail = await this.deps.repository.getDetail(reconciliation.publicationId);
+      const credentialReferenceId = detail?.outbox.find(item => item.outboxMessageId === reconciliation.outboxMessageId)?.credentialReferenceId;
+      const secret = await this.deps.secretResolver.resolve({ tenantId: reconciliation.tenantId, workspaceId: reconciliation.workspaceId, providerId: reconciliation.providerId, credentialReferenceId });
       const status = await provider.getStatus({ idempotencyKey: reconciliation.idempotencyKey, providerRequestId: reconciliation.providerRequestId, secret });
       if (status.kind === "published") {
         const detail = await this.deps.repository.getDetail(reconciliation.publicationId);
@@ -41,6 +43,7 @@ export class PublicationReconciliationService {
             workspaceId: reconciliation.workspaceId,
             provider: reconciliation.providerId,
             providerPublicationId: status.providerPublicationId,
+            providerRequestId: reconciliation.providerRequestId,
             channel: target?.channel ?? "instagram",
             publishedAt: status.publishedAt,
             status: target?.mode === "dry_run" ? "dry_run" : "published",
@@ -66,7 +69,8 @@ export class PublicationReconciliationService {
           notPublished += 1;
         }
       } else {
-        await this.deps.repository.updateReconciliationStatus({ id: reconciliation.id, status: "inconclusive" });
+        // TikTok may process for minutes. Retain its lookup intent so the next read can confirm it.
+        if (reconciliation.providerId !== "tiktok") await this.deps.repository.updateReconciliationStatus({ id: reconciliation.id, status: "inconclusive" });
         inconclusive += 1;
       }
     }

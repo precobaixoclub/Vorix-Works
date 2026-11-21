@@ -50,6 +50,19 @@ export type TikTokPost = {
 
 export type TikTokPrivacyLevel = "PUBLIC_TO_EVERYONE" | "MUTUAL_FOLLOW_FRIENDS" | "FOLLOWER_OF_CREATOR" | "SELF_ONLY";
 
+export type TikTokCreatorInfo = {
+  credentialReferenceId: string;
+  creatorNickname: string;
+  creatorUsername: string;
+  creatorAvatarUrl?: string;
+  privacyLevelOptions: TikTokPrivacyLevel[];
+  commentDisabled: boolean;
+  duetDisabled: boolean;
+  stitchDisabled: boolean;
+  maxVideoPostDurationSec: number;
+  sandbox: boolean;
+};
+
 export type SchedulePostInput = {
   workspaceId: string;
   description: string;
@@ -64,6 +77,11 @@ export type SchedulePostInput = {
   disableDuet?: boolean;
   disableStitch?: boolean;
   autoAddMusic?: boolean;
+  musicUsageAccepted: boolean;
+  commercialContent?: boolean;
+  brandOrganic?: boolean;
+  brandContent?: boolean;
+  videoDurationSec?: number;
   credentialReferenceId?: string;
 };
 

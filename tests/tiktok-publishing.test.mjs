@@ -13,6 +13,9 @@ function jsonResponse(body, status = 200, headers = {}) {
   return new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json", ...headers } });
 }
 
+const creatorData = { creator_nickname: "Vorix Works", creator_username: "vorixworks", privacy_level_options: ["PUBLIC_TO_EVERYONE", "SELF_ONLY"], comment_disabled: false, duet_disabled: false, stitch_disabled: true, max_video_post_duration_sec: 180 };
+function creatorResponse(overrides = {}) { return jsonResponse({ data: { ...creatorData, ...overrides }, error: { code: "ok" } }); }
+
 function publishRequest(overrides = {}) {
   return {
     tenantId: "tenant-1",
@@ -33,7 +36,7 @@ function publishRequest(overrides = {}) {
 }
 
 function videoArtifact(description = "Promo da semana") {
-  return { artifactId: "a1", artifactType: "video", schemaId: "inline.tiktok.post", schemaVersion: 1, checksum: "inline", payload: { description, videoUrl: "https://cdn.test/video.mp4" } };
+  return { artifactId: "a1", artifactType: "video", schemaId: "inline.tiktok.post", schemaVersion: 1, checksum: "inline", payload: { description, videoUrl: "https://cdn.test/video.mp4", privacyLevel: "PUBLIC_TO_EVERYONE", musicUsageAccepted: true, videoDurationSec: 12.5 } };
 }
 
 test("TikTok OAuth: cada workspace conecta a própria conta e o token fica só no secret store", async () => {
@@ -138,6 +141,7 @@ test("TikTok Provider: vídeo com descrição vira DIRECT_POST e receipt confirm
   const provider = new TikTokContentPostingProvider({ apiBaseUrl: "https://open.tiktokapis.test", statusPollAttempts: 1 }, async (url, init) => {
     const href = String(url);
     calls.push({ href, body: JSON.parse(String(init.body)) });
+    if (href.endsWith("/creator_info/query/")) return creatorResponse();
     if (href.endsWith("/v2/post/publish/video/init/")) return jsonResponse({ data: { publish_id: "publish-1" }, error: { code: "ok" } });
     if (href.endsWith("/v2/post/publish/status/fetch/")) return jsonResponse({ data: { status: "PUBLISH_COMPLETE", publicaly_available_post_id: ["7300"] }, error: { code: "ok" } });
     return jsonResponse({ error: { code: "unexpected" } }, 400);
@@ -165,18 +169,20 @@ test("TikTok Provider: foto usa content/init com PHOTO e mídia ausente é rejei
   const calls = [];
   const provider = new TikTokContentPostingProvider({ apiBaseUrl: "https://open.tiktokapis.test", statusPollAttempts: 0 }, async (url, init) => {
     calls.push({ href: String(url), body: JSON.parse(String(init.body)) });
+    if (String(url).endsWith("/creator_info/query/")) return creatorResponse();
     return jsonResponse({ data: { publish_id: "publish-photo" }, error: { code: "ok" } });
   });
 
-  const photo = { artifactId: "a2", artifactType: "image", schemaId: "inline.tiktok.post", schemaVersion: 1, checksum: "inline", payload: { description: "Novidades", imageUrls: ["https://cdn.test/1.jpg", "https://cdn.test/2.jpg"], photoCoverIndex: 1 } };
+  const photo = { artifactId: "a2", artifactType: "image", schemaId: "inline.tiktok.post", schemaVersion: 1, checksum: "inline", payload: { description: "Novidades", imageUrls: ["https://cdn.test/1.jpg", "https://cdn.test/2.jpg"], photoCoverIndex: 1, privacyLevel: "SELF_ONLY", musicUsageAccepted: true } };
   const result = await provider.publish(publishRequest({ content: { artifacts: [photo] } }));
-  assert.equal(result.kind, "published");
-  assert.equal(calls[0].href.endsWith("/v2/post/publish/content/init/"), true);
-  assert.equal(calls[0].body.media_type, "PHOTO");
-  assert.equal(calls[0].body.post_mode, "DIRECT_POST");
-  assert.equal(calls[0].body.post_info.description, "Novidades");
-  assert.deepEqual(calls[0].body.source_info.photo_images, ["https://cdn.test/1.jpg", "https://cdn.test/2.jpg"]);
-  assert.equal(calls[0].body.source_info.photo_cover_index, 1);
+  assert.equal(result.kind, "unknown_outcome");
+  assert.equal(result.providerRequestId, "publish-photo");
+  const init = calls.find(call => call.href.endsWith("/v2/post/publish/content/init/"));
+  assert.equal(init.body.media_type, "PHOTO");
+  assert.equal(init.body.post_mode, "DIRECT_POST");
+  assert.equal(init.body.post_info.description, "Novidades");
+  assert.deepEqual(init.body.source_info.photo_images, ["https://cdn.test/1.jpg", "https://cdn.test/2.jpg"]);
+  assert.equal(init.body.source_info.photo_cover_index, 1);
 
   const empty = await provider.publish(publishRequest({ content: { artifacts: [{ payload: { description: "sem mídia" } }] } }));
   assert.equal(empty.kind, "rejected");
@@ -186,6 +192,7 @@ test("TikTok Provider: foto usa content/init com PHOTO e mídia ausente é rejei
 test("TikTok Provider: token expirado é renovado uma vez e erros mapeiam categorias corretas", async () => {
   let attempt = 0;
   const provider = new TikTokContentPostingProvider({ apiBaseUrl: "https://open.tiktokapis.test", statusPollAttempts: 0 }, async (url, init) => {
+    if (String(url).endsWith("/creator_info/query/")) return creatorResponse();
     if (String(url).endsWith("/v2/post/publish/video/init/")) {
       attempt += 1;
       if (attempt === 1) return jsonResponse({ error: { code: "access_token_invalid", message: "expired" } }, 401);
@@ -196,7 +203,7 @@ test("TikTok Provider: token expirado é renovado uma vez e erros mapeiam catego
   }, async () => "renewed-token");
 
   const result = await provider.publish(publishRequest({ content: { artifacts: [videoArtifact()] } }));
-  assert.equal(result.kind, "published");
+  assert.equal(result.kind, "unknown_outcome");
   assert.equal(attempt, 2);
 
   const rateLimited = new TikTokContentPostingProvider({ statusPollAttempts: 0 }, async () => jsonResponse({ error: { code: "spam_risk_too_many_posts", message: "slow down" } }, 429, { "retry-after": "60" }));
@@ -219,7 +226,7 @@ test("TikTok: descrição e mídia são lidas de caption/snake_case sem quebrar 
   assert.equal(post.description, "Texto legado");
   assert.equal(post.videoUrl, "https://cdn.test/v.mp4");
   assert.equal(post.disableComment, true);
-  assert.equal(post.autoAddMusic, true);
+  assert.equal(post.autoAddMusic, false);
 });
 
 test("TikTok: canário multi-provider libera tiktok por tenant e produção não exige binding canário", () => {

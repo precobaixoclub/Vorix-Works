@@ -2,8 +2,9 @@
 # Deploy de produção do Vorix (host único, docker compose) — procedimento OFICIAL e automatizado.
 #
 # Uso (no host, como root):
-#   sh scripts/deploy/deploy-production.sh <tarball-do-commit.tgz> <sha> [api|web|meetings|all]
+#   sh scripts/deploy/deploy-production.sh <tarball-do-commit.tgz> <sha> [api|web|publishing|meetings|all]
 #     api (padrão) = zuno-api + vorix-worker + marketplaces-worker; web = zuno-web;
+#     publishing = api + web, sem reiniciar gateway ou Meetings;
 #     meetings = meetings-worker + meetings-recorder; all = todos (em sequência).
 #     Com gravação ou conexão de conta em andamento, `meetings` aborta e `all` pula os dois.
 #
@@ -47,6 +48,7 @@ cd "$ROOT"
 case "$TARGET" in
   api) SERVICES="zuno-api vorix-worker marketplaces-worker" ;;
   web) SERVICES="zuno-web" ;;
+  publishing) SERVICES="zuno-api vorix-worker marketplaces-worker zuno-web" ;;
   meetings) SERVICES="meetings-worker meetings-recorder" ;;
   all) SERVICES="zuno-api vorix-worker marketplaces-worker social-provider-gateway zuno-web meetings-worker meetings-recorder" ;;
   *) echo "alvo inválido: $TARGET"; echo DEPLOY_FAILED; exit 2 ;;
@@ -141,7 +143,7 @@ rollback() {
   for service in meetings-worker meetings-recorder; do
     echo "$SERVICES" | grep -q "$service" && docker image inspect "$(image_of "$service"):rollback-$STAMP" >/dev/null 2>&1 && RESTORE_SERVICES="$RESTORE_SERVICES $service"
   done
-  case "$TARGET" in api) RESTORE_SERVICES="zuno-api vorix-worker$(docker image inspect zuno-marketplaces-worker:rollback-$STAMP >/dev/null 2>&1 && echo ' marketplaces-worker')" ;; web) RESTORE_SERVICES="zuno-web" ;; meetings) RESTORE_SERVICES=$(echo "$RESTORE_SERVICES" | grep -o "meetings-[a-z]*" | tr '\n' ' ') ;; esac
+  case "$TARGET" in api) RESTORE_SERVICES="zuno-api vorix-worker$(docker image inspect zuno-marketplaces-worker:rollback-$STAMP >/dev/null 2>&1 && echo ' marketplaces-worker')" ;; web) RESTORE_SERVICES="zuno-web" ;; publishing) RESTORE_SERVICES="zuno-api vorix-worker marketplaces-worker zuno-web" ;; meetings) RESTORE_SERVICES=$(echo "$RESTORE_SERVICES" | grep -o "meetings-[a-z]*" | tr '\n' ' ') ;; esac
   [ -n "$(echo "$RESTORE_SERVICES" | tr -d " ")" ] || { echo "ROLLED_BACK (nada anterior a restaurar)"; echo DEPLOY_FAILED; exit 1; }
   $COMPOSE up -d --no-build $RESTORE_SERVICES
   echo "ROLLED_BACK (banco não é revertido: migrations são aditivas; dump em deploy_backups/db-pre-$SHA-$STAMP.sql.gz)"

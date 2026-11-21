@@ -3,6 +3,7 @@ import type { PublicationProviderAdapterPort, PublicationProviderAdapterPublishR
 import type { PublicationResolvedSecret } from "../../application/publication/publication-secret-resolver.js";
 import type { PublicationProviderCallResult, PublicationProviderDescriptor, PublicationReceipt } from "../../domain/publication/publication.model.js";
 import { checksumPublicationPayload } from "../../application/publication/publication-utils.js";
+import { parseTikTokCreatorInfo, TikTokPostingError, validateTikTokPostChoices } from "./tiktok-posting-requirements.js";
 
 /**
  * Content Posting API do TikTok (`/v2/post/publish/...`) em modo DIRECT_POST com `PULL_FROM_URL`:
@@ -41,6 +42,11 @@ export type TikTokPostContent = {
   disableDuet: boolean;
   disableStitch: boolean;
   autoAddMusic: boolean;
+  musicUsageAccepted: boolean;
+  commercialContent: boolean;
+  brandOrganic: boolean;
+  brandContent: boolean;
+  videoDurationSec?: number;
 };
 
 export class TikTokContentPostingProvider implements PublicationProviderAdapterPort {
@@ -103,10 +109,33 @@ export class TikTokContentPostingProvider implements PublicationProviderAdapterP
       return { kind: "rejected", errorCode: "TIKTOK_MEDIA_MISSING", safeMessage: "Publicação TikTok exige videoUrl ou ao menos uma imagem." };
     }
 
+    // Recheck at dispatch as settings/limits can change after scheduling or rendering the UI.
+    try {
+      validateTikTokPostChoices(post);
+      let creatorResponse = await this.request(`${this.baseUrl()}/v2/post/publish/creator_info/query/`, accessToken, {});
+      let creatorJson = await safeJson(creatorResponse);
+      if (isAuthError(creatorResponse, creatorJson) && this.refreshAccessToken && request.secret?.credentialReferenceId) {
+        const refreshed = await this.refreshAccessToken({ tenantId: request.tenantId, workspaceId: request.workspaceId, credentialReferenceId: request.secret.credentialReferenceId });
+        if (refreshed) { accessToken = refreshed; creatorResponse = await this.request(`${this.baseUrl()}/v2/post/publish/creator_info/query/`, accessToken, {}); creatorJson = await safeJson(creatorResponse); }
+      }
+      if (!creatorResponse.ok || errorCodeOf(creatorJson) !== "ok") return mapTikTokError(creatorResponse, creatorJson);
+      const creator = parseTikTokCreatorInfo(creatorJson);
+      validateTikTokPostChoices(post, creator);
+      post.disableComment ||= creator.commentDisabled;
+      post.disableDuet ||= creator.duetDisabled;
+      post.disableStitch ||= creator.stitchDisabled;
+    } catch (error) {
+      if (!(error instanceof TikTokPostingError)) throw error;
+      this.recordCall(startedAt, error.code);
+      return { kind: "rejected", errorCode: error.code, safeMessage: error.message };
+    }
+
     const endpoint = post.videoUrl ? "/v2/post/publish/video/init/" : "/v2/post/publish/content/init/";
     const body = post.videoUrl ? buildVideoBody(post, this.privacyLevel(post)) : buildPhotoBody(post, this.privacyLevel(post));
 
-    let response = await this.request(`${this.baseUrl()}${endpoint}`, accessToken, body);
+    let response: Response;
+    try { response = await this.request(`${this.baseUrl()}${endpoint}`, accessToken, body); }
+    catch { return { kind: "unknown_outcome", safeMessage: "A conexão com o TikTok foi interrompida durante o envio. Confira o resultado antes de tentar novamente.", errorCode: "TIKTOK_INIT_UNKNOWN" }; }
     let json = await safeJson(response);
 
     if (isAuthError(response, json) && this.refreshAccessToken && request.secret?.credentialReferenceId) {
@@ -114,7 +143,8 @@ export class TikTokContentPostingProvider implements PublicationProviderAdapterP
       if (refreshed) {
         this.telemetry = { ...this.telemetry, tokenRefreshes: this.telemetry.tokenRefreshes + 1 };
         accessToken = refreshed;
-        response = await this.request(`${this.baseUrl()}${endpoint}`, accessToken, body);
+        try { response = await this.request(`${this.baseUrl()}${endpoint}`, accessToken, body); }
+        catch { return { kind: "unknown_outcome", safeMessage: "A conexão com o TikTok foi interrompida durante o envio. Confira o resultado antes de tentar novamente.", errorCode: "TIKTOK_INIT_UNKNOWN" }; }
         json = await safeJson(response);
       }
     }
@@ -131,19 +161,21 @@ export class TikTokContentPostingProvider implements PublicationProviderAdapterP
       return { kind: "unknown_outcome", safeMessage: "TikTok retornou sucesso sem publish_id.", statusCode: response.status, rawResponseReference: "tiktok:publish:missing_publish_id" };
     }
 
-    const confirmation = await this.pollStatus(publishId, accessToken);
+    // Once init has succeeded, status/network errors must never cause another init/upload.
+    const confirmation = await this.pollStatus(publishId, accessToken).catch(() => undefined);
     if (confirmation?.kind === "failed") {
       this.recordCall(startedAt, confirmation.errorCode);
       return { kind: "permanent_failure", errorCode: confirmation.errorCode, safeMessage: confirmation.safeMessage, statusCode: response.status, rawResponseReference: "tiktok:publish:status_failed" };
     }
 
+    if (!confirmation) return { kind: "unknown_outcome", providerRequestId: publishId, errorCode: "TIKTOK_PROCESSING", safeMessage: "O TikTok está processando a publicação. A confirmação será consultada sem reenviar o conteúdo.", statusCode: response.status };
     this.recordCall(startedAt);
     return {
       kind: "published",
       providerPublicationId: confirmation?.postId ?? publishId,
       providerRequestId: publishId,
       publishedAt: new Date().toISOString(),
-      url: confirmation?.postId ? `https://www.tiktok.com/video/${confirmation.postId}` : undefined,
+      url: confirmation.postId ? `https://www.tiktok.com/video/${confirmation.postId}` : "https://www.tiktok.com/",
       statusCode: response.status,
       rawResponseReference: "tiktok:publish",
     };
@@ -163,14 +195,14 @@ export class TikTokContentPostingProvider implements PublicationProviderAdapterP
     const status = stringField(data, "status");
     if (status === "PUBLISH_COMPLETE") {
       const postId = firstPublicPostId(data) ?? publishId;
-      return { kind: "published", providerPublicationId: postId, publishedAt: new Date().toISOString(), url: `https://www.tiktok.com/video/${postId}` };
+      return { kind: "published", providerPublicationId: postId, publishedAt: new Date().toISOString(), url: firstPublicPostId(data) ? `https://www.tiktok.com/video/${postId}` : "https://www.tiktok.com/" };
     }
     if (status === "FAILED") return { kind: "not_found", safeMessage: `Publicação TikTok falhou: ${stringField(data, "fail_reason") ?? "motivo não informado"}.` };
     return { kind: "inconclusive", safeMessage: `Publicação TikTok em processamento (${status ?? "desconhecido"}).` };
   }
 
   async verifyReceipt(receipt: PublicationReceipt, secret?: PublicationResolvedSecret): Promise<PublicationReceiptVerificationResult> {
-    const status = await this.getStatus({ idempotencyKey: receipt.idempotencyKey, providerPublicationId: receipt.providerPublicationId, secret });
+    const status = await this.getStatus({ idempotencyKey: receipt.idempotencyKey, providerRequestId: receipt.providerRequestId, providerPublicationId: receipt.providerPublicationId, secret });
     if (status.kind !== "published") return { verificationStatus: "mismatch", externalStatus: status.kind, checksum: receipt.checksum, detailsCode: "TIKTOK_RECEIPT_NOT_CONFIRMED" };
     const checksum = receipt.checksum || checksumPublicationPayload({ id: receipt.providerPublicationId, url: status.url });
     return { verificationStatus: "verified", externalStatus: "published", checksum };
@@ -198,7 +230,7 @@ export class TikTokContentPostingProvider implements PublicationProviderAdapterP
   }
 
   private privacyLevel(post: TikTokPostContent): string {
-    return post.privacyLevel || this.config.defaultPrivacyLevel || "PUBLIC_TO_EVERYONE";
+    return post.privacyLevel;
   }
 
   private baseUrl(): string {
@@ -244,6 +276,8 @@ function buildVideoBody(post: TikTokPostContent, privacyLevel: string): Record<s
       disable_duet: post.disableDuet,
       disable_comment: post.disableComment,
       disable_stitch: post.disableStitch,
+      brand_content_toggle: post.brandContent,
+      brand_organic_toggle: post.brandOrganic,
     },
     source_info: { source: "PULL_FROM_URL", video_url: post.videoUrl },
   };
@@ -259,6 +293,8 @@ function buildPhotoBody(post: TikTokPostContent, privacyLevel: string): Record<s
       privacy_level: privacyLevel,
       disable_comment: post.disableComment,
       auto_add_music: post.autoAddMusic,
+      brand_content_toggle: post.brandContent,
+      brand_organic_toggle: post.brandOrganic,
     },
     source_info: {
       source: "PULL_FROM_URL",
@@ -298,11 +334,16 @@ export function extractTikTokPost(content: Record<string, unknown>, assets: read
     videoUrl,
     photoUrls,
     privacyLevel,
-    photoCoverIndex: photoCoverIndex >= 0 && photoCoverIndex < Math.max(photoUrls.length, 1) ? photoCoverIndex : 0,
-    disableComment: firstBoolean(payloads, ["disableComment", "disable_comment"]) ?? false,
-    disableDuet: firstBoolean(payloads, ["disableDuet", "disable_duet"]) ?? false,
-    disableStitch: firstBoolean(payloads, ["disableStitch", "disable_stitch"]) ?? false,
-    autoAddMusic: firstBoolean(payloads, ["autoAddMusic", "auto_add_music"]) ?? true,
+    photoCoverIndex: Number.isInteger(photoCoverIndex) && photoCoverIndex >= 0 && photoCoverIndex < Math.max(photoUrls.length, 1) ? photoCoverIndex : 0,
+    disableComment: firstBoolean(payloads, ["disableComment", "disable_comment"]) ?? true,
+    disableDuet: firstBoolean(payloads, ["disableDuet", "disable_duet"]) ?? true,
+    disableStitch: firstBoolean(payloads, ["disableStitch", "disable_stitch"]) ?? true,
+    autoAddMusic: firstBoolean(payloads, ["autoAddMusic", "auto_add_music"]) ?? false,
+    musicUsageAccepted: firstBoolean(payloads, ["musicUsageAccepted"]) ?? false,
+    commercialContent: firstBoolean(payloads, ["commercialContent"]) ?? false,
+    brandOrganic: firstBoolean(payloads, ["brandOrganic", "brand_organic_toggle"]) ?? false,
+    brandContent: firstBoolean(payloads, ["brandContent", "brand_content_toggle"]) ?? false,
+    videoDurationSec: firstNumber(payloads, ["videoDurationSec"]),
   };
 }
 
@@ -333,7 +374,7 @@ function firstNumber(payloads: readonly Record<string, unknown>[], keys: readonl
   for (const payload of payloads) {
     for (const key of keys) {
       const value = payload[key];
-      if (typeof value === "number" && Number.isInteger(value)) return value;
+      if (typeof value === "number" && Number.isFinite(value)) return value;
     }
   }
   return undefined;

@@ -1,12 +1,15 @@
 import { expect, test, type Page, type Route } from "@playwright/test";
 import { loginCookie, mockConversasBackend, WORKSPACE_ID } from "./fixtures/mock-backend";
 import { TINY_JPEG_BASE64 } from "./fixtures/media-fixtures";
+import { readFileSync } from "node:fs";
 
 const IMAGE = `https://studio-fixture.test/uploads/assets/tenant-qa/${WORKSPACE_ID}/autopilot/${"original-".repeat(25)}.jpg?exp=9999999999&sig=preview`;
 const ART = `<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1350"><defs><radialGradient id="g"><stop stop-color="#6c33ac"/><stop offset="1" stop-color="#101019"/></radialGradient></defs><rect width="1080" height="1350" fill="#101019"/><circle cx="900" cy="150" r="470" fill="url(#g)"/><rect width="14" height="1350" fill="#9e3dff"/><text x="90" y="160" fill="#a47aff" font-size="27" font-family="Arial" letter-spacing="7">ATENDIMENTO COM CONTEXTO</text><g fill="white" font-family="Arial" font-size="112" font-weight="bold"><text x="85" y="390">A conversa</text><text x="85" y="520">acabou.</text><text x="85" y="685">O contexto</text><text x="85" y="815">precisa ficar.</text></g><rect x="90" y="880" width="550" height="9" rx="4" fill="#9e3dff"/><text x="90" y="1220" fill="white" font-size="28" font-family="Arial" letter-spacing="3">VORIX WORKS</text></svg>`;
 const TITLE = "A conversa acabou. O contexto precisa ficar.";
 const CAPTION = `${TITLE}\n\nConsulte o que já foi dito antes de responder. #Vorix`;
-type Calls = { posts: Record<string, unknown>[]; uploads: number; fail?: boolean; failTarget?: string; resultState?: string; failedHistory?: boolean };
+type Calls = { posts: Record<string, unknown>[]; uploads: number; fail?: boolean; failTarget?: string; resultState?: string; failedHistory?: boolean; creatorBlocked?: boolean; publicCreator?: boolean; durationLimit?: number };
+const VIDEO_URL = "https://studio-fixture.test/tiktok-two-seconds.mp4";
+const VIDEO = readFileSync("e2e/fixtures/tiktok-two-seconds.mp4");
 const ok = (route: Route, data: unknown, status = 200) => route.fulfill({ status, contentType: "application/json", body: JSON.stringify({ ok: true, data }) });
 
 async function setup(page: Page, calls: Calls) {
@@ -15,16 +18,21 @@ async function setup(page: Page, calls: Calls) {
   await page.context().addCookies([{ name: "zuno_csrf_token", value: "studio-test-csrf", url: "http://localhost:3001" }]);
   await mockConversasBackend(page);
   await page.route("https://studio-fixture.test/**", route => route.fulfill({ contentType: "image/svg+xml", body: ART }));
+  await page.route(VIDEO_URL, route => route.fulfill({ contentType: "video/mp4", body: VIDEO }));
   await page.route("**/v1/**", async route => {
     const request = route.request(), path = new URL(request.url()).pathname;
     if (path === "/v1/solutions") return ok(route, { solutions: [{ key: "marketing", name: "Marketing", internal: false }] });
+    if (path === "/v1/tiktok/creator-info") {
+      if (calls.creatorBlocked) return route.fulfill({ status: 409, contentType: "application/json", body: JSON.stringify({ ok: false, error: { code: "spam_risk_too_many_posts", message: "Esta conta atingiu o limite de publicações. Tente mais tarde." } }) });
+      return ok(route, { credentialReferenceId: "credential-tiktok", creatorNickname: "Vorix Works ao vivo", creatorUsername: "vorixworks", privacyLevelOptions: calls.publicCreator ? ["PUBLIC_TO_EVERYONE", "SELF_ONLY"] : ["FOLLOWER_OF_CREATOR", "SELF_ONLY"], commentDisabled: true, duetDisabled: true, stitchDisabled: true, maxVideoPostDurationSec: calls.durationLimit ?? 60, sandbox: !calls.publicCreator });
+    }
     if (path.includes("/publication-providers/") && path.endsWith("/oauth/status")) {
       const network = path.split("/")[3];
       const accounts = network === "meta" ? ["instagram", "facebook"] : network === "tiktok" ? ["tiktok"] : [];
       return ok(route, { configured: true, connected: accounts.length > 0, accounts: accounts.map(providerId => ({ providerId, credentialReferenceId: `credential-${providerId}`, status: "active", displayName: providerId === "instagram" ? "@vorixworks_oficial" : "Vorix Works", scopes: [] })), telemetry: {} });
     }
     if (path === "/v1/social/posts") return ok(route, { posts: [{ id: "post-original", state: "PUBLISHED", createdAt: "2026-11-19T14:41:00Z", requiresApproval: false, destinations: ["instagram", "facebook"].map(network => ({ id: `dest-${network}`, network, state: "PUBLISHED", format: "feed_image", caption: CAPTION, media: [{ kind: "image", url: IMAGE }], publishedAt: "2026-11-19T14:41:00Z" })), history: [] }] });
-    if (path === "/v1/publication-media/upload") { calls.uploads++; return ok(route, { url: IMAGE + `&upload=${calls.uploads}`, sizeBytes: 1024, contentType: "image/jpeg" }); }
+    if (path === "/v1/publication-media/upload") { calls.uploads++; const video = request.postDataBuffer()?.includes(Buffer.from("video/mp4")); return ok(route, { url: video ? VIDEO_URL : IMAGE + `&upload=${calls.uploads}`, sizeBytes: 1024, contentType: video ? "video/mp4" : "image/jpeg" }); }
     if (path === "/v1/publications/new-post") return ok(route, { failures: [{ code: "url_ownership_unverified", message: "Please review our URL ownership verification rules" }], attempts: [] });
     if (["/v1/instagram/posts", "/v1/tiktok/posts", "/v1/youtube/posts"].includes(path)) {
       if (request.method() === "GET") return ok(route, calls.failedHistory && path === "/v1/tiktok/posts" ? [{ publicationId: "new-post", state: "failed", description: CAPTION, media: { imageUrls: [IMAGE] }, createdAt: new Date().toISOString() }] : []);
@@ -113,12 +121,89 @@ test("TikTok exige privacidade explícita e mantém conteúdo quando o envio fal
   await expect(page.getByRole("switch", { name: "Permitir comentários" })).not.toBeChecked();
   await page.getByRole("combobox", { name: "Quem pode ver?" }).click();
   await page.getByRole("option", { name: "Só eu", exact: true }).click();
+  await page.getByRole("checkbox", { name: /Ao publicar, concordo/ }).check();
   await page.getByRole("button", { name: "Publicar agora", exact: true }).last().click();
   await page.getByRole("button", { name: "Confirmar publicação" }).click();
   await expect(page.locator('[role="alert"][data-tone="error"]')).toContainText("Revise sua conta");
   await expect(page.locator("#publish-feedback")).toBeInViewport();
   await expect(page.getByLabel("A legenda que acompanha")).toHaveValue(CAPTION);
   expect(calls.posts[0]).toMatchObject({ privacyLevel: "SELF_ONLY", disableComment: true, disableDuet: true, disableStitch: true });
+});
+
+test("TikTok usa permissões atuais, esconde Duet/Stitch em fotos e exige declaração comercial", async ({ page }, testInfo) => {
+  const calls: Calls = { posts: [], uploads: 0 };
+  await setup(page, calls);
+  await useLibrary(page);
+  await page.getByRole("checkbox", { name: "Selecionar TikTok" }).click();
+  await expect(page.getByText("Publicando como")).toContainText("Vorix Works ao vivo");
+  await expect(page.getByRole("switch", { name: /Permitir comentários/ })).toBeDisabled();
+  await expect(page.getByRole("switch", { name: "Permitir Duet" })).toHaveCount(0);
+  await expect(page.getByRole("switch", { name: "Permitir Stitch" })).toHaveCount(0);
+  await page.getByRole("combobox", { name: "Quem pode ver?" }).click();
+  await expect(page.getByRole("option", { name: "Todos", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("option", { name: "Seguidores", exact: true })).toBeDisabled();
+  await page.getByRole("option", { name: "Só eu", exact: true }).click();
+  await page.getByRole("switch", { name: "Este conteúdo promove uma marca, produto ou serviço" }).check();
+  await page.getByRole("checkbox", { name: /Ao publicar, concordo/ }).check();
+  await expect(page.getByRole("button", { name: "Publicar agora", exact: true }).last()).toBeDisabled();
+  await page.getByRole("checkbox", { name: /Sua marca/ }).check();
+  await expect(page.getByRole("checkbox", { name: /Ao publicar, concordo/ })).not.toBeChecked();
+  await expect(page.getByRole("checkbox", { name: /Parceria com outra marca/ })).toBeDisabled();
+  await expect(page.getByText("Sua publicação será identificada como “Conteúdo promocional”.")).toBeVisible();
+  await page.getByRole("checkbox", { name: /Ao publicar, concordo/ }).check();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.screenshot({ path: testInfo.outputPath("tiktok-review-ready.png"), fullPage: true });
+  await page.getByRole("button", { name: "Publicar agora", exact: true }).last().click();
+  expect(calls.posts).toHaveLength(0);
+  await page.getByRole("button", { name: "Confirmar publicação" }).click();
+  await expect.poll(() => calls.posts.length).toBe(1);
+  expect(calls.posts[0]).toMatchObject({ privacyLevel: "SELF_ONLY", musicUsageAccepted: true, commercialContent: true, brandOrganic: true, brandContent: false, disableComment: true });
+});
+
+test("TikTok bloqueia postagem quando a consulta da conta retorna limite e permite atualizar", async ({ page }) => {
+  const calls: Calls = { posts: [], uploads: 0, creatorBlocked: true };
+  await setup(page, calls);
+  await useLibrary(page);
+  await page.getByRole("checkbox", { name: "Selecionar TikTok" }).click();
+  await expect(page.getByRole("alert").filter({ hasText: "atingiu o limite" })).toBeVisible();
+  await expect(page.getByRole("combobox", { name: "Quem pode ver?" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Publicar agora", exact: true }).last()).toBeDisabled();
+  expect(calls.posts).toHaveLength(0);
+  calls.creatorBlocked = false;
+  await page.getByRole("button", { name: "Atualizar permissões" }).click();
+  await expect(page.getByRole("combobox", { name: "Quem pode ver?" })).toBeEnabled();
+});
+
+test("TikTok parceria paga muda a declaração e não permite privacidade Só eu", async ({ page }) => {
+  await setup(page, { posts: [], uploads: 0, publicCreator: true });
+  await useLibrary(page);
+  await page.getByRole("checkbox", { name: "Selecionar TikTok" }).click();
+  await page.getByRole("switch", { name: "Este conteúdo promove uma marca, produto ou serviço" }).check();
+  await page.getByRole("checkbox", { name: /Parceria com outra marca/ }).check();
+  await expect(page.getByRole("link", { name: "Política de Conteúdo de Marca" })).toHaveAttribute("href", "https://www.tiktok.com/legal/page/global/bc-policy/en");
+  await expect(page.getByText("Sua publicação será identificada como “Parceria paga”.")).toBeVisible();
+  await page.getByRole("combobox", { name: "Quem pode ver?" }).click();
+  await expect(page.getByRole("option", { name: "Só eu", exact: true })).toBeDisabled();
+  await page.getByRole("option", { name: "Todos", exact: true }).click();
+  await page.getByRole("checkbox", { name: /Ao publicar, concordo/ }).check();
+  await expect(page.getByRole("button", { name: "Publicar agora", exact: true }).last()).toBeEnabled();
+});
+
+test("TikTok verifica duração real do vídeo e bloqueia interações desativadas pela conta", async ({ page }) => {
+  const calls: Calls = { posts: [], uploads: 0, durationLimit: 1 };
+  await setup(page, calls);
+  await page.getByRole("checkbox", { name: "Selecionar TikTok" }).click();
+  await page.getByRole("button", { name: "Vídeo", exact: true }).click();
+  await page.locator('input[type="file"][aria-label="Adicionar vídeo"]').setInputFiles({ name: "video.mp4", mimeType: "video/mp4", buffer: VIDEO });
+  await page.getByLabel("A legenda que acompanha").fill("Vídeo original de demonstração");
+  await page.getByRole("combobox", { name: "Quem pode ver?" }).click();
+  await page.getByRole("option", { name: "Só eu", exact: true }).click();
+  await page.getByRole("checkbox", { name: /Ao publicar, concordo/ }).check();
+  await expect(page.getByText("Limite desta conta:")).toContainText("Seu vídeo: 2 segundos");
+  await expect(page.getByRole("switch", { name: /Permitir Duet/ })).toBeDisabled();
+  await expect(page.getByRole("switch", { name: /Permitir Stitch/ })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Publicar agora", exact: true }).last()).toBeDisabled();
+  expect(calls.posts).toHaveLength(0);
 });
 
 test("celular abre a prévia sem perder mídia ou legenda", async ({ page }, testInfo) => {
@@ -160,6 +245,7 @@ test("HTTP 200 com publicação falhada exibe o motivo real e preserva o conteú
   await page.getByRole("checkbox", { name: "Selecionar TikTok" }).click();
   await page.getByRole("combobox", { name: "Quem pode ver?" }).click();
   await page.getByRole("option", { name: "Só eu", exact: true }).click();
+  await page.getByRole("checkbox", { name: /Ao publicar, concordo/ }).check();
   await page.getByRole("button", { name: "Publicar agora", exact: true }).last().click();
   await page.getByRole("button", { name: "Confirmar publicação" }).click();
   await expect(page.locator('#publish-feedback[data-tone="error"]')).toContainText("O domínio dos arquivos ainda não está validado no TikTok");

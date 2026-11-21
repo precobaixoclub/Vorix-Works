@@ -10,6 +10,9 @@ import type { OperationalCircuitBreaker } from "../../../../application/operatio
 import type { PublicationProviderPolicy } from "../../../../application/publication/publication-provider-policy.js";
 import type { PublicationPlan, PublicationPolicy, PublicationProvider } from "../../../../domain/publication/publication.model.js";
 import type { TikTokOAuthService } from "../../../../infrastructure/publication/tiktok-oauth-service.js";
+import { TikTokPostingError, validateTikTokPostChoices } from "../../../../infrastructure/publication/tiktok-posting-requirements.js";
+import { PublicationReconciliationService } from "../../../../application/publication/publication-reconciliation-service.js";
+import { AppError } from "../../http/app-error.js";
 import { requirePermission } from "../../http/require-principal.js";
 import { successEnvelope } from "../../http/response-envelope.js";
 
@@ -54,13 +57,18 @@ type SchedulePostBody = {
   disableDuet?: boolean;
   disableStitch?: boolean;
   autoAddMusic?: boolean;
+  musicUsageAccepted?: boolean;
+  commercialContent?: boolean;
+  brandOrganic?: boolean;
+  brandContent?: boolean;
+  videoDurationSec?: number;
   credentialReferenceId?: string;
   idempotencyKey?: string;
 };
 
 const SCHEDULE_POST_BODY_SCHEMA = {
   type: "object",
-  required: ["workspaceId", "description"],
+  required: ["workspaceId", "description", "privacyLevel", "musicUsageAccepted", "credentialReferenceId"],
   properties: {
     workspaceId: { type: "string", minLength: 1 },
     description: { type: "string", minLength: 1, maxLength: 4000 },
@@ -75,6 +83,11 @@ const SCHEDULE_POST_BODY_SCHEMA = {
     disableDuet: { type: "boolean" },
     disableStitch: { type: "boolean" },
     autoAddMusic: { type: "boolean" },
+    musicUsageAccepted: { type: "boolean", const: true },
+    commercialContent: { type: "boolean" },
+    brandOrganic: { type: "boolean" },
+    brandContent: { type: "boolean" },
+    videoDurationSec: { type: "number", exclusiveMinimum: 0 },
     credentialReferenceId: { type: "string", minLength: 1 },
     idempotencyKey: { type: "string", minLength: 1 },
   },
@@ -90,6 +103,14 @@ export async function registerTikTokRoutes(app: FastifyInstance, deps: TikTokRou
     providerCircuitBreaker: deps.providerCircuitBreaker,
     concurrency: { maxWorkers: 2, maxConcurrentPublications: 4, maxPerProvider: 2, maxPerTenant: 2, lockTtlMs: 60_000 },
   };
+  const reconciliation = new PublicationReconciliationService({ repository: deps.publicationRepository, providerRegistry: deps.providerRegistry, secretResolver: deps.secretResolver, idGenerator: deps.idGenerator });
+
+  app.get("/tiktok/creator-info", { schema: { querystring: { type: "object", required: ["workspaceId", "credentialReferenceId"], properties: { workspaceId: { type: "string", minLength: 1 }, credentialReferenceId: { type: "string", minLength: 1 } } } } }, async (request, reply) => {
+    const principal = requirePermission(request, "publication:read");
+    const query = request.query as { workspaceId: string; credentialReferenceId: string };
+    reply.header("Cache-Control", "no-store");
+    return successEnvelope(await postingAction(() => deps.tiktokOAuthService.creatorInfo({ ...query, tenantId: principal.tenantId })), request.id);
+  });
 
   app.get("/publication-providers/tiktok/oauth/status", { schema: { querystring: WORKSPACE_QUERY_SCHEMA } }, async (request) => {
     const principal = requirePermission(request, "publication:read");
@@ -134,11 +155,14 @@ export async function registerTikTokRoutes(app: FastifyInstance, deps: TikTokRou
   app.get("/tiktok/posts", { schema: { querystring: WORKSPACE_QUERY_SCHEMA } }, async (request) => {
     const principal = requirePermission(request, "publication:read");
     const { workspaceId } = request.query as { workspaceId: string };
+    // Status-only reconciliation: never reuploads content or retries init.
+    await reconciliation.reconcile({ tenantId: principal.tenantId, workspaceId, providerIds: ["tiktok"], limit: 5 }).catch(() => undefined);
     const plans = (await deps.publicationRepository.listPlans({ tenantId: principal.tenantId, workspaceId })).filter(isTikTokPlan);
+    const pending = await deps.publicationRepository.listReconciliations({ tenantId: principal.tenantId, workspaceId, status: "pending" });
     const schedules = await deps.publicationRepository.listSchedules({ tenantId: principal.tenantId, workspaceId });
     const posts = plans.map((plan) => ({
       publicationId: plan.id,
-      state: plan.state,
+      state: plan.state === "unknown_outcome" && pending.some(item => item.publicationId === plan.id && item.providerRequestId) ? "publishing" : plan.state,
       description: descriptionOf(plan),
       media: mediaOf(plan),
       scheduledAt: schedules.find((schedule) => schedule.publicationId === plan.id)?.scheduledAt ?? plan.scheduledAt,
@@ -155,6 +179,12 @@ export async function registerTikTokRoutes(app: FastifyInstance, deps: TikTokRou
     const principal = requirePermission(request, "publication:create");
     const body = request.body as SchedulePostBody;
     const media = requireMedia(body);
+    await postingAction(async () => {
+      validateTikTokPostChoices(body);
+      const creator = await deps.tiktokOAuthService.creatorInfo({ tenantId: principal.tenantId, workspaceId: body.workspaceId, credentialReferenceId: body.credentialReferenceId! });
+      validateTikTokPostChoices(body, creator);
+      if (creator.sandbox && body.privacyLevel !== "SELF_ONLY") throw new TikTokPostingError("TIKTOK_SANDBOX_PRIVACY", "Neste ambiente de teste, selecione “Só eu” para publicar.");
+    });
     if (body.scheduledAt && Number.isNaN(Date.parse(body.scheduledAt))) throw new Error("TIKTOK_SCHEDULED_AT_INVALID: scheduledAt deve ser uma data ISO-8601.");
 
     // Mesmo portão de ambiente/canário que a rota genérica de publicação já aplica — antes, esta
@@ -181,12 +211,18 @@ export async function registerTikTokRoutes(app: FastifyInstance, deps: TikTokRou
           title: body.title,
           videoUrl: media.videoUrl,
           imageUrls: media.imageUrls,
-          privacyLevel: body.privacyLevel ?? "PUBLIC_TO_EVERYONE",
+          privacyLevel: body.privacyLevel,
           photoCoverIndex: body.photoCoverIndex ?? 0,
-          disableComment: body.disableComment ?? false,
-          disableDuet: body.disableDuet ?? false,
-          disableStitch: body.disableStitch ?? false,
-          autoAddMusic: body.autoAddMusic ?? true,
+          disableComment: body.disableComment ?? true,
+          disableDuet: body.disableDuet ?? true,
+          disableStitch: body.disableStitch ?? true,
+          autoAddMusic: body.autoAddMusic ?? false,
+          musicUsageAccepted: body.musicUsageAccepted,
+          musicUsageAcceptedAt: new Date().toISOString(),
+          commercialContent: body.commercialContent ?? false,
+          brandOrganic: body.brandOrganic ?? false,
+          brandContent: body.brandContent ?? false,
+          videoDurationSec: body.videoDurationSec,
           credentialReferenceId: body.credentialReferenceId,
         },
       }],
@@ -222,7 +258,8 @@ export async function registerTikTokRoutes(app: FastifyInstance, deps: TikTokRou
     await enqueuePublication(orchestratorDeps, { tenantId: principal.tenantId, workspaceId: body.workspaceId, publicationId: detail.plan.id });
     await new PublicationWorker(orchestratorDeps, "tiktok-publish-worker").runUntilIdle(1, { tenantId: principal.tenantId, workspaceId: body.workspaceId });
     const published = await deps.publicationRepository.getDetail(detail.plan.id);
-    return successEnvelope({ publicationId: detail.plan.id, state: published?.plan.state ?? detail.plan.state, receipts: published?.receipts ?? [] }, request.id);
+    const processing = published?.plan.state === "unknown_outcome" && published.reconciliations.some(item => item.status === "pending" && item.providerRequestId);
+    return successEnvelope({ publicationId: detail.plan.id, state: processing ? "publishing" : published?.plan.state ?? detail.plan.state, receipts: published?.receipts ?? [] }, request.id);
   });
 
   app.post("/tiktok/posts/:id/cancel", { schema: { params: ID_PARAMS_SCHEMA, body: { type: "object", required: ["workspaceId"], properties: { workspaceId: { type: "string" } } } } }, async (request) => {
@@ -240,6 +277,14 @@ export async function registerTikTokRoutes(app: FastifyInstance, deps: TikTokRou
     const processed = await new PublicationWorker(orchestratorDeps, "tiktok-due-worker").runUntilIdle(100, { tenantId: principal.tenantId, workspaceId: body.workspaceId });
     return successEnvelope({ enqueued, processed }, request.id);
   });
+}
+
+async function postingAction<T>(action: () => Promise<T>): Promise<T> {
+  try { return await action(); }
+  catch (error) {
+    if (error instanceof TikTokPostingError) throw new AppError({ code: error.code, message: error.message, statusCode: error.statusCode });
+    throw error;
+  }
 }
 
 function requireMedia(body: SchedulePostBody): { videoUrl?: string; imageUrls?: readonly string[] } {

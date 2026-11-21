@@ -14,7 +14,6 @@ import { ChannelIcon } from "@/components/ChannelIcon";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Switch } from "@/components/ui/switch";
 import { useCurrentWorkspace } from "@/contexts/workspace-context";
 import { uploadPublicationMedia } from "@/features/media-upload/api";
 import { scheduleMetaPost } from "@/features/meta/api";
@@ -23,8 +22,8 @@ import { cancelUnifiedPublication } from "@/features/publication-history/api";
 import { useUnifiedPublications } from "@/features/publication-history/hooks";
 import { contentTypeOf, derivePublicationStatus, type UnifiedPublication } from "@/features/publication-history/types";
 import { scheduleTikTokPost } from "@/features/tiktok/api";
-import { useTikTokOAuthStatus, useTikTokPosts } from "@/features/tiktok/hooks";
-import type { TikTokPrivacyLevel } from "@/features/tiktok/types";
+import { useTikTokCreatorInfo, useTikTokOAuthStatus, useTikTokPosts } from "@/features/tiktok/hooks";
+import { EMPTY_TIKTOK_OPTIONS, TikTokPostSettings, tiktokPostingBlocker } from "@/features/tiktok/TikTokPostSettings";
 import { scheduleYouTubePost } from "@/features/youtube/api";
 import { useYouTubeOAuthStatus, useYouTubePosts } from "@/features/youtube/hooks";
 import type { YouTubePrivacyStatus } from "@/features/youtube/types";
@@ -55,13 +54,6 @@ const PLATFORMS: readonly { id: Platform; label: string }[] = [
 const META_PLACEMENTS: readonly { id: MetaPlacement; label: string }[] = [
   { id: "feed", label: "Feed" },
   { id: "story", label: "Story" },
-];
-
-const TIKTOK_PRIVACY_OPTIONS: readonly { value: TikTokPrivacyLevel; label: string }[] = [
-  { value: "PUBLIC_TO_EVERYONE", label: "Todos" },
-  { value: "MUTUAL_FOLLOW_FRIENDS", label: "Amigos" },
-  { value: "FOLLOWER_OF_CREATOR", label: "Seguidores" },
-  { value: "SELF_ONLY", label: "Só eu" },
 ];
 
 const YOUTUBE_PRIVACY_OPTIONS: readonly { value: YouTubePrivacyStatus; label: string }[] = [
@@ -96,11 +88,8 @@ export default function PublishPage() {
   const [scheduledAt, setScheduledAt] = useState("");
   const [timezone, setTimezone] = useState(DEFAULT_TIMEZONE);
 
-  const [tiktokPrivacy, setTiktokPrivacy] = useState<TikTokPrivacyLevel | "">("");
-  const [tiktokDisableComment, setTiktokDisableComment] = useState(true);
-  const [tiktokDisableDuet, setTiktokDisableDuet] = useState(true);
-  const [tiktokDisableStitch, setTiktokDisableStitch] = useState(true);
-  const [tiktokAutoAddMusic, setTiktokAutoAddMusic] = useState(false);
+  const [tiktokOptions, setTiktokOptions] = useState({ ...EMPTY_TIKTOK_OPTIONS });
+  const [videoDuration, setVideoDuration] = useState<{ url: string; seconds?: number; error?: boolean }>();
   const [youtubePrivacy, setYouTubePrivacy] = useState<YouTubePrivacyStatus>("public");
   const [libraryOpen, setLibraryOpen] = useState(false);
   const [librarySearch, setLibrarySearch] = useState("");
@@ -134,6 +123,34 @@ export default function PublishPage() {
     facebook: metaOAuth?.accounts.find((account) => account.providerId === "facebook" && account.status === "active")?.credentialReferenceId,
     youtube: youtubeOAuth?.accounts.find((account) => account.status === "active")?.credentialReferenceId,
   };
+  const tiktokCredential = credentialReferenceByPlatform.tiktok;
+  const { data: creatorInfo, error: creatorError, isValidating: creatorLoading, mutate: refreshCreator } = useTikTokCreatorInfo(workspace.id, tiktokCredential, selected.has("tiktok"));
+  if (creatorInfo && !creatorError) accountLabelByPlatform.tiktok = creatorInfo.creatorNickname;
+
+  useEffect(() => { setTiktokOptions({ ...EMPTY_TIKTOK_OPTIONS }); }, [workspace.id, tiktokCredential]);
+  useEffect(() => {
+    if (!creatorInfo) return;
+    setTiktokOptions(current => ({ ...current,
+      privacyLevel: creatorInfo.privacyLevelOptions.includes(current.privacyLevel as typeof creatorInfo.privacyLevelOptions[number]) ? current.privacyLevel : "",
+      disableComment: current.disableComment || creatorInfo.commentDisabled,
+      disableDuet: current.disableDuet || creatorInfo.duetDisabled,
+      disableStitch: current.disableStitch || creatorInfo.stitchDisabled,
+    }));
+  }, [creatorInfo]);
+  useEffect(() => { setTiktokOptions(current => ({ ...current, musicUsageAccepted: false })); }, [videoUrl, imageUrls, caption]);
+  useEffect(() => {
+    if (!videoUrl || mediaKind !== "video" || !selected.has("tiktok")) return;
+    let cancelled = false;
+    const video = document.createElement("video");
+    const done = (seconds?: number) => { if (!cancelled) setVideoDuration({ url: videoUrl, seconds, error: !seconds }); };
+    video.preload = "metadata";
+    const timeout = window.setTimeout(() => done(), 20_000);
+    video.onloadedmetadata = () => { clearTimeout(timeout); done(Number.isFinite(video.duration) ? video.duration : undefined); };
+    video.onerror = () => { clearTimeout(timeout); done(); };
+    video.src = videoUrl;
+    return () => { cancelled = true; clearTimeout(timeout); video.onloadedmetadata = null; video.onerror = null; video.removeAttribute("src"); video.load(); };
+  }, [videoUrl, mediaKind, selected.has("tiktok")]);
+  const videoDurationSec = videoDuration?.url === videoUrl ? videoDuration.seconds : undefined;
 
   const selectedMetaPlacements = META_PLACEMENTS.map((item) => item.id).filter((item) => metaPlacements.has(item));
   const hasMetaSelection = selected.has("instagram") || selected.has("facebook");
@@ -265,11 +282,9 @@ export default function PublishPage() {
             imageUrls: mediaKind === "image" ? images : undefined,
             scheduledAt: scheduledAtIso,
             timezone: scheduledAtIso ? timezone : undefined,
-            privacyLevel: tiktokPrivacy || undefined,
-            disableComment: tiktokDisableComment,
-            disableDuet: tiktokDisableDuet,
-            disableStitch: tiktokDisableStitch,
-            autoAddMusic: tiktokAutoAddMusic,
+            ...tiktokOptions,
+            privacyLevel: tiktokOptions.privacyLevel || undefined,
+            videoDurationSec: mediaKind === "video" ? videoDurationSec : undefined,
             credentialReferenceId: credentialReferenceByPlatform.tiktok,
           }),
         });
@@ -379,7 +394,8 @@ export default function PublishPage() {
   let scheduleDate: Date | undefined;
   try { if (scheduledAt) scheduleDate = zonedToUtc(scheduledAt, timezone); } catch { /* Invalid input is shown before submission. */ }
   const scheduleValid = publishTiming === "now" || Boolean(scheduleDate && Number.isFinite(scheduleDate.getTime()) && scheduleDate.getTime() > Date.now());
-  const blocker = !hasMedia ? "Adicione uma imagem ou vídeo para começar." : selected.size === 0 ? "Selecione as contas que receberão o post." : !caption.trim() ? "Escreva a legenda da publicação." : youtubeNeedsVideo ? "YouTube Shorts precisa de um vídeo." : !scheduleValid ? "Escolha uma data e um horário no futuro." : selected.has("tiktok") && !tiktokPrivacy ? "Escolha a privacidade do TikTok." : undefined;
+  const tiktokBlocker = creatorError ? messageOf(creatorError) : creatorLoading ? "Atualizando as permissões da conta TikTok…" : mediaKind === "video" && videoDuration?.url === videoUrl && videoDuration.error ? "Não foi possível verificar o vídeo. Envie o arquivo novamente." : tiktokPostingBlocker(tiktokOptions, creatorInfo, mediaKind === "video", videoDurationSec);
+  const blocker = !hasMedia ? "Adicione uma imagem ou vídeo para começar." : selected.size === 0 ? "Selecione as contas que receberão o post." : !caption.trim() ? "Escreva a legenda da publicação." : youtubeNeedsVideo ? "YouTube Shorts precisa de um vídeo." : !scheduleValid ? "Escolha uma data e um horário no futuro." : selected.has("tiktok") ? tiktokBlocker : undefined;
   const canSubmit = !busy && !uploading && !blocker;
   const destinationLabel = selectedPlatforms.map((item) => item.label).join(", ");
   const previewProps = { network: previewNetwork, onNetworkChange: setPreviewNetwork, caption, images: previewPlacement === "story" && (previewNetwork === "instagram" || previewNetwork === "facebook") ? images.slice(0, 1) : images, videoUrl, thumbnailUrl, mediaKind, accountLabel: accountLabelByPlatform[previewNetwork] || workspace.name, placement: previewPlacement, onPlacementChange: setPreviewPlacement, showPlacements: feedSelected && storySelected };
@@ -447,11 +463,7 @@ export default function PublishPage() {
                 <div><label htmlFor="publish-scheduled-at" className={styles.label}>Data e horário</label><Input id="publish-scheduled-at" type="datetime-local" required disabled={busy} value={scheduledAt} onChange={(event) => setScheduledAt(event.target.value)} /></div>
                 <div><label htmlFor="publish-timezone" className={styles.label}>Fuso horário</label><Select value={timezone} onValueChange={setTimezone} disabled={busy}><SelectTrigger id="publish-timezone"><SelectValue /></SelectTrigger><SelectContent>{TIMEZONE_OPTIONS.map((value) => <SelectItem key={value} value={value}>{value === "America/Sao_Paulo" ? "Brasília (São Paulo)" : value.replace("America/", "").replaceAll("_", " ")}</SelectItem>)}</SelectContent></Select></div>
               </div> : null}
-              {selected.has("tiktok") ? <div className={styles.networkSettings}>
-                <p className={styles.settingsTitle}>Opções do TikTok</p>
-                <label htmlFor="tiktok-privacy" className={styles.label}>Quem pode ver?</label><Select value={tiktokPrivacy} onValueChange={(value) => setTiktokPrivacy(value as TikTokPrivacyLevel)} disabled={busy}><SelectTrigger id="tiktok-privacy"><SelectValue placeholder="Selecione a privacidade" /></SelectTrigger><SelectContent>{TIKTOK_PRIVACY_OPTIONS.map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}</SelectContent></Select>
-                <div className={styles.switchGrid}><SwitchLine id="tiktok-comment" checked={!tiktokDisableComment} onChange={(value) => setTiktokDisableComment(!value)} label="Permitir comentários" /><SwitchLine id="tiktok-duet" checked={!tiktokDisableDuet} onChange={(value) => setTiktokDisableDuet(!value)} label="Permitir Duet" /><SwitchLine id="tiktok-stitch" checked={!tiktokDisableStitch} onChange={(value) => setTiktokDisableStitch(!value)} label="Permitir Stitch" /><SwitchLine id="tiktok-auto-music" checked={tiktokAutoAddMusic} onChange={setTiktokAutoAddMusic} label="Adicionar música automaticamente" /></div>
-              </div> : null}
+              {selected.has("tiktok") ? <TikTokPostSettings value={tiktokOptions} onChange={setTiktokOptions} creator={creatorInfo} loading={creatorLoading} error={creatorError ? messageOf(creatorError) : undefined} retry={() => { void refreshCreator(); }} video={mediaKind === "video"} duration={videoDurationSec} busy={busy} /> : null}
               {selected.has("youtube") ? <div className={styles.networkSettings}><p className={styles.settingsTitle}>Opções do YouTube Shorts</p><label htmlFor="youtube-privacy" className={styles.label}>Visibilidade</label><Select value={youtubePrivacy} onValueChange={(value) => setYouTubePrivacy(value as YouTubePrivacyStatus)} disabled={busy}><SelectTrigger id="youtube-privacy"><SelectValue /></SelectTrigger><SelectContent>{YOUTUBE_PRIVACY_OPTIONS.map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}</SelectContent></Select></div> : null}
             </section>
           </div>
@@ -480,10 +492,6 @@ export default function PublishPage() {
       <ConfirmDialog open={Boolean(postPendingCancel)} title="Cancelar publicação" description={postPendingCancel ? `Cancelar a publicação “${titleOf(postPendingCancel)}”?` : ""} confirmLabel="Cancelar publicação" cancelLabel="Voltar" variant="danger" busy={busy} onConfirm={confirmCancelPost} onCancel={() => setPostPendingCancel(undefined)} />
     </main>
   );
-}
-
-function SwitchLine({ id, checked, onChange, label }: { id: string; checked: boolean; onChange: (value: boolean) => void; label: string }) {
-  return <label htmlFor={id} className={styles.switchRow}><span>{label}</span><Switch id={id} checked={checked} onCheckedChange={onChange} /></label>;
 }
 
 function ContentThumb({ post }: { post: UnifiedPublication }) {

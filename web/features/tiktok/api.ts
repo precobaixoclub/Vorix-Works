@@ -1,4 +1,9 @@
 import { apiClient } from "@/lib/api-client";
+import type { TikTokCreatorInfo } from "./types";
+
+export function getTikTokCreatorInfo(workspaceId: string, credentialReferenceId: string): Promise<TikTokCreatorInfo> {
+  return apiClient.get(`/v1/tiktok/creator-info?workspaceId=${encodeURIComponent(workspaceId)}&credentialReferenceId=${encodeURIComponent(credentialReferenceId)}`);
+}
 import type { SchedulePostInput, SchedulePostResult, TikTokOAuthBegin, TikTokOAuthComplete, TikTokOAuthStatus, TikTokPost } from "./types";
 
 export function getTikTokOAuthStatus(workspaceId: string): Promise<TikTokOAuthStatus> {

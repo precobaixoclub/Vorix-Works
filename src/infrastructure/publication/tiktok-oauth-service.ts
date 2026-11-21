@@ -7,6 +7,7 @@ import type { PublicationRepositoryPort } from "../../application/ports/publicat
 import type { PublicationSecretStoragePort } from "../../application/publication/publication-secret-store.js";
 import type { AuditContext } from "../../domain/credential/credential.model.js";
 import type { PublicationCredentialReference } from "../../domain/publication/publication.model.js";
+import { parseTikTokCreatorInfo, TikTokPostingError, type TikTokCreatorInfo } from "./tiktok-posting-requirements.js";
 
 /**
  * OAuth 2.0 (Login Kit) do TikTok para a Content Posting API. Cada cliente (tenant + workspace)
@@ -230,6 +231,26 @@ export class TikTokOAuthService {
     };
   }
 
+  /** Only profile/restriction data leaves this method; tokens stay in the scoped secret store. */
+  async creatorInfo(input: { tenantId: string; workspaceId: string; credentialReferenceId: string }): Promise<TikTokCreatorInfo & { credentialReferenceId: string; sandbox: boolean }> {
+    const references = await this.input.repository.listCredentialReferences({ tenantId: input.tenantId, workspaceId: input.workspaceId, providerId: "tiktok" });
+    if (!references.some(ref => ref.credentialReferenceId === input.credentialReferenceId && ref.status === "active")) throw new TikTokPostingError("TIKTOK_ACCOUNT_NOT_CONNECTED", "Conecte uma conta TikTok neste espaço de trabalho.", 404);
+    const secret = await this.input.secretStore.get({ ...input, providerId: "tiktok" });
+    let token = secret?.value.accessToken;
+    if (!token) throw new TikTokPostingError("TIKTOK_ACCOUNT_NOT_CONNECTED", "Reconecte sua conta TikTok em Integrações.", 409);
+    const query = (accessToken: string) => this.http()(`${this.apiBaseUrl()}/v2/post/publish/creator_info/query/`, {
+      method: "POST", headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json; charset=UTF-8" }, body: "{}", signal: AbortSignal.timeout(15_000),
+    });
+    let response = await query(token);
+    let json = await safeJson(response);
+    if (response.status === 401 || (json.error as { code?: string } | undefined)?.code === "access_token_invalid") {
+      const renewed = await this.refresh(input);
+      if (renewed) { token = renewed; response = await query(token); json = await safeJson(response); }
+    }
+    const info = parseTikTokCreatorInfo(json);
+    return { ...info, credentialReferenceId: input.credentialReferenceId, sandbox: this.input.config.clientKey?.startsWith("sb") ?? false };
+  }
+
   /** Revoga o token no TikTok e marca a credencial como revogada. */
   async disconnect(input: { tenantId: string; workspaceId: string; credentialReferenceId: string; actor?: CredentialGovernanceActor; context?: AuditContext; reason?: string }): Promise<boolean> {
     const references = await this.input.repository.listCredentialReferences({ tenantId: input.tenantId, workspaceId: input.workspaceId, providerId: "tiktok" });
@@ -411,7 +432,7 @@ async function safeJson(response: Response): Promise<Record<string, unknown>> {
   }
 }
 
-export const TIKTOK_REQUIRED_SCOPES = ["user.info.basic", "video.publish", "video.upload"] as const;
+export const TIKTOK_REQUIRED_SCOPES = ["user.info.basic", "video.publish"] as const;
 
 export function createDisabledTikTokOAuthService(input: { repository: PublicationRepositoryPort; secretStore: PublicationSecretStoragePort }): TikTokOAuthService {
   return new TikTokOAuthService({ config: { enabled: false, scopes: TIKTOK_REQUIRED_SCOPES }, repository: input.repository, secretStore: input.secretStore });

@@ -114,6 +114,7 @@ test("TikTok exige privacidade explícita e mantém conteúdo quando o envio fal
   await page.getByRole("button", { name: "Publicar agora", exact: true }).last().click();
   await page.getByRole("button", { name: "Confirmar publicação" }).click();
   await expect(page.locator('[role="alert"][data-tone="error"]')).toContainText("Revise sua conta");
+  await expect(page.locator("#publish-feedback")).toBeInViewport();
   await expect(page.getByLabel("A legenda que acompanha")).toHaveValue(CAPTION);
   expect(calls.posts[0]).toMatchObject({ privacyLevel: "SELF_ONLY", disableComment: true, disableDuet: true, disableStitch: true });
 });
@@ -144,6 +145,7 @@ test("sucesso parcial mantém a legenda e as imagens para revisar os destinos co
   await page.getByRole("button", { name: "Publicar agora", exact: true }).last().click();
   await page.getByRole("button", { name: "Confirmar publicação" }).click();
   await expect(page.locator('[data-tone="warning"]')).toContainText("Facebook Feed: Não foi possível publicar");
+  await expect(page.locator("#publish-feedback")).toBeInViewport();
   await expect(page.getByLabel("A legenda que acompanha")).toHaveValue(CAPTION);
   await expect(page.getByAltText("Imagem 1 da publicação")).toBeVisible();
   expect(calls.posts).toHaveLength(2);

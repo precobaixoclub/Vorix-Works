@@ -122,9 +122,9 @@
 .primaryButton:hover:not(:disabled) { filter: brightness(1.12); transform: translateY(-1px); }
 .primaryButton:disabled { opacity: .45; cursor: not-allowed; box-shadow: none; }
 .feedback { margin-bottom: 20px; padding: 14px 16px; border: 1px solid hsl(var(--border)); border-radius: 12px; font-size: 14px; line-height: 1.6; overflow-wrap: anywhere; }
-.feedback[data-tone="error"] { color: #fb8c9c; border-color: #fb8c9c40; background: #fb8c9c0a; }
-.feedback[data-tone="success"] { color: #65d8ad; border-color: #65d8ad40; background: #65d8ad0a; }
-.feedback[data-tone="warning"] { color: #e9bd65; border-color: #e9bd6540; background: #e9bd650a; }
+.feedback[data-tone="error"] { color: hsl(var(--destructive)); border-color: hsl(var(--destructive) / .3); background: hsl(var(--destructive) / .06); }
+.feedback[data-tone="success"] { color: hsl(var(--success)); border-color: hsl(var(--success) / .3); background: hsl(var(--success) / .06); }
+.feedback[data-tone="warning"] { color: hsl(var(--warning)); border-color: hsl(var(--warning) / .3); background: hsl(var(--warning) / .06); }
 .mobilePreview { display: none; }
 .libraryGrid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; max-height: 60vh; overflow-y: auto; padding: 2px; }
 .libraryItem { overflow: hidden; min-width: 0; border: 1px solid hsl(var(--border)); border-radius: 12px; text-align: left; background: hsl(var(--background)); }

@@ -109,6 +109,10 @@ export default function PublishPage() {
   const [confirmPublishOpen, setConfirmPublishOpen] = useState(false);
   const [postPendingCancel, setPostPendingCancel] = useState<UnifiedPublication | undefined>();
 
+  useEffect(() => {
+    if (feedback) document.getElementById("publish-feedback")?.scrollIntoView({ block: "center", behavior: "instant" });
+  }, [feedback]);
+
   const connectedByPlatform: Record<Platform, boolean> = {
     tiktok: tiktokOAuth?.connected ?? false,
     instagram: (metaOAuth?.accounts ?? []).some((account) => account.providerId === "instagram" && account.status === "active"),
@@ -382,7 +386,7 @@ export default function PublishPage() {
         </nav>
       </header>
 
-      {feedback ? <div role={feedback.tone === "error" ? "alert" : "status"} className={styles.feedback} data-tone={feedback.tone}>{feedback.message}</div> : null}
+      {feedback ? <div id="publish-feedback" role={feedback.tone === "error" ? "alert" : "status"} className={styles.feedback} data-tone={feedback.tone}>{feedback.message}</div> : null}
 
       <form onSubmit={(event) => { event.preventDefault(); if (canSubmit) setConfirmPublishOpen(true); }} aria-label="Criar publicação">
         <div className={styles.workbench}>

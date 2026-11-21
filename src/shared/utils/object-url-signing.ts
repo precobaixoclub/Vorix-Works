@@ -171,7 +171,10 @@ export function classifyObjectKeyOwner(objectKey: string): ObjectKeyOwner | unde
   }
   const scoped = segments[0] === "assets" ? segments.slice(1) : segments;
   const isProductImage = segments[0] === "assets" && scoped.length === 4 && scoped[2] === "products" && /^[A-Za-z0-9_-]+\.(?:jpg|png|webp)$/.test(scoped[3]!);
-  if ((scoped.length === 3 || isProductImage) && ID.test(scoped[0]!) && scoped[0]!.startsWith("tenant-") && ID.test(scoped[1]!)) {
+  // Autopilot publications keep their original images in this workspace-scoped subfolder.
+  // Recognize that exact image layout so previews can be signed without opening other folders.
+  const isAutopilotImage = segments[0] === "assets" && scoped.length === 4 && scoped[2] === "autopilot" && /^[A-Za-z0-9_-]+\.(?:jpe?g|png|webp)$/.test(scoped[3]!);
+  if ((scoped.length === 3 || isProductImage || isAutopilotImage) && ID.test(scoped[0]!) && scoped[0]!.startsWith("tenant-") && ID.test(scoped[1]!)) {
     return { kind: "workspace", tenantId: scoped[0]!, workspaceId: scoped[1]! };
   }
   return undefined;

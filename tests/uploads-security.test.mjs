@@ -63,6 +63,7 @@ before(async () => {
   wsB1 = (await repo.create({ tenantId: "tenant-B", name: "B1" })).id;
   const files = {
     [`assets/tenant-A/${wsA1}/a.png`]: "A1",
+    [`assets/tenant-A/${wsA1}/autopilot/vwx002-1795097071851.jpg`]: "autopilot-A1",
     [`assets/tenant-A/${wsA2}/a2.png`]: "A2",
     [`assets/tenant-A/${wsB1}/forged.png`]: "forged",
     [`assets/tenant-B/${wsB1}/b.png`]: "B1",
@@ -104,6 +105,19 @@ test("B: mesmo tenant no prefixo, mas workspace de OUTRO tenant → 404", async 
   assert.equal(response.statusCode, 404);
   const unknownWorkspace = await sign("tenant-A", canonical("assets/tenant-A/workspace-nao-existe/a.png"));
   assert.equal(unknownWorkspace.statusCode, 404);
+});
+
+test("Autopilot: preview da imagem original abre para o dono e continua privado entre tenants/workspaces", async () => {
+  const key = `assets/tenant-A/${wsA1}/autopilot/vwx002-1795097071851.jpg`;
+  assert.equal((await app.inject({ method: "GET", url: pathOf(canonical(key)) })).statusCode, 404);
+  const signed = await sign("tenant-A", canonical(key));
+  assert.equal(signed.statusCode, 200, signed.body);
+  const read = await app.inject({ method: "GET", url: pathOf(signed.json().data.url) });
+  assert.equal(read.statusCode, 200);
+  assert.equal(read.body, "autopilot-A1");
+  assert.match(read.headers["cache-control"], /^private/);
+  assert.equal((await sign("tenant-B", canonical(key))).statusCode, 404);
+  assert.equal((await sign("tenant-A", canonical(`assets/tenant-A/${wsB1}/autopilot/forged.jpg`))).statusCode, 404);
 });
 
 test("C: outro tenant → 404 (nunca 403), e a resposta JSON não assina a chave alheia", async () => {
@@ -249,12 +263,22 @@ test("Respostas JSON: só as chaves do próprio tenant saem assinadas; as alheia
     publicBaseUrl: BASE,
     authorize: createObjectKeyReadAuthorizer({ workspaceRepository: app.zunoContainer.workspaceRepository, qaTenantIds: [] }),
   });
-  mini.get("/x", async () => ({ mine: canonical("gpt-creative-engine/tenant-A/final.jpg"), theirs: canonical("gpt-creative-engine/tenant-B/final.jpg"), external: "https://other.example/x.png" }));
+  mini.get("/x", async () => ({ mine: canonical("gpt-creative-engine/tenant-A/final.jpg"), theirs: canonical("gpt-creative-engine/tenant-B/final.jpg"), external: "https://other.example/x.png", media: [
+    { url: canonical(`assets/tenant-A/${wsA1}/autopilot/vwx002-1795097071851.jpg`) },
+    { url: canonical(`assets/tenant-B/${wsB1}/autopilot/other.jpg`) },
+    { url: canonical(`assets/tenant-A/${wsB1}/autopilot/forged.jpg`) },
+  ] }));
   const response = await mini.inject({ method: "GET", url: "/x" });
   const data = response.json();
   assert.match(data.mine, /\?exp=\d+&sig=/);
   assert.equal(data.theirs, canonical("gpt-creative-engine/tenant-B/final.jpg"));
   assert.equal(data.external, "https://other.example/x.png");
+  assert.match(data.media[0].url, /\?exp=\d+&sig=/);
+  const preview = await app.inject({ method: "GET", url: pathOf(data.media[0].url) });
+  assert.equal(preview.statusCode, 200);
+  assert.equal(preview.body, "autopilot-A1");
+  assert.equal(data.media[1].url, canonical(`assets/tenant-B/${wsB1}/autopilot/other.jpg`));
+  assert.equal(data.media[2].url, canonical(`assets/tenant-A/${wsB1}/autopilot/forged.jpg`));
   await mini.close();
 });
 
@@ -266,7 +290,13 @@ test("classifyObjectKeyOwner: layout do storage → dono (workspace, tenant, QA,
   assert.equal(classifyObjectKeyOwner("random/file.png"), undefined);
   assert.equal(classifyObjectKeyOwner("assets/not-a-tenant/ws/a.png"), undefined);
   assert.deepEqual(classifyObjectKeyOwner("assets/tenant-A/ws-1/products/photo.jpg"), { kind: "workspace", tenantId: "tenant-A", workspaceId: "ws-1" });
+  for (const extension of ["jpg", "jpeg", "png", "webp"]) {
+    assert.deepEqual(classifyObjectKeyOwner(`assets/tenant-A/ws-1/autopilot/vwx002-1795097071851.${extension}`), { kind: "workspace", tenantId: "tenant-A", workspaceId: "ws-1" });
+  }
   for (const key of ["assets/tenant-A/ws-1/private/photo.jpg", "assets/tenant-A/ws-1/products/../photo.jpg", "assets/tenant-A/ws-1/products/photo.svg", "assets/tenant-A/ws-1/products/nested/photo.jpg"]) {
+    assert.equal(classifyObjectKeyOwner(key), undefined, key);
+  }
+  for (const key of ["assets/not-a-tenant/ws-1/autopilot/photo.jpg", "tenant-A/ws-1/autopilot/photo.jpg", "assets/tenant-A/ws-1/autopilot/../photo.jpg", "assets/tenant-A/ws-1/autopilot/photo.svg", "assets/tenant-A/ws-1/autopilot/nested/photo.jpg", "assets/tenant-A/ws-1/autopilot/.env.jpg"]) {
     assert.equal(classifyObjectKeyOwner(key), undefined, key);
   }
 });

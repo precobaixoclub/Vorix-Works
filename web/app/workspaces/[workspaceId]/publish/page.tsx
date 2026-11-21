@@ -114,6 +114,10 @@ export default function PublishPage() {
   const facebookAccount = pickWorkspaceAccount(metaOAuth?.accounts.filter((account) => account.providerId === "facebook"), chosenIds("facebook"), (account) => account.providerSubjectId);
   const youtubeAccount = pickWorkspaceAccount(youtubeOAuth?.accounts, chosenIds("youtube"), (account) => account.channelId);
 
+  // Enquanto as contas da workspace ou a autorização carregam, não afirma "não conectada".
+  const oauthByPlatform = { tiktok: tiktokOAuth, instagram: metaOAuth, facebook: metaOAuth, youtube: youtubeOAuth };
+  const checkingAccount = (platform: Platform) => oauthByPlatform[platform] === undefined || (platform !== "tiktok" && socialAccounts === undefined);
+
   const connectedByPlatform: Record<Platform, boolean> = {
     tiktok: tiktokOAuth?.connected ?? false,
     instagram: Boolean(instagramAccount),
@@ -184,7 +188,7 @@ export default function PublishPage() {
     const connectionStatus = { tiktok: tiktokOAuth, instagram: metaOAuth, facebook: metaOAuth, youtube: youtubeOAuth };
     // A cached content feed can arrive before OAuth status on client navigation. Wait before
     // consuming the query, or the original network will never become selected.
-    if (network && PLATFORMS.some(platform => platform.id === network) && connectionStatus[network] === undefined) return;
+    if (network && PLATFORMS.some(platform => platform.id === network) && (connectionStatus[network] === undefined || (network !== "tiktok" && socialAccounts === undefined))) return;
     if (source) {
       const post = unified.find((item) => sourceKey(item) === source);
       if (post) applyContent(post);
@@ -194,7 +198,7 @@ export default function PublishPage() {
       setPreviewNetwork(network);
     }
     setQueryApplied(true);
-  }, [queryApplied, unified, connectedByPlatform, tiktokOAuth, metaOAuth, youtubeOAuth]);
+  }, [queryApplied, unified, connectedByPlatform, tiktokOAuth, metaOAuth, youtubeOAuth, socialAccounts]);
 
   function applyContent(post: UnifiedPublication) {
     setFeedback(undefined);
@@ -441,10 +445,10 @@ export default function PublishPage() {
                 {PLATFORMS.map((platform) => <div key={platform.id} className={styles.account} data-selected={selected.has(platform.id)}>
                   <button type="button" role="checkbox" aria-checked={selected.has(platform.id)} aria-label={`Selecionar ${platform.label}`} disabled={!connectedByPlatform[platform.id] || busy} className={styles.accountButton} onClick={() => { togglePlatform(platform.id); setPreviewNetwork(platform.id); }}>
                     <span className={styles.accountIcon}><ChannelIcon channel={platform.id} /></span>
-                    <span className={styles.accountCopy}><span className={styles.accountName}>{platform.label}</span><span className={styles.accountLabel}>{connectedByPlatform[platform.id] ? accountLabelByPlatform[platform.id] || "Conta conectada" : "Conta não conectada"}</span></span>
+                    <span className={styles.accountCopy}><span className={styles.accountName}>{platform.label}</span><span className={styles.accountLabel}>{connectedByPlatform[platform.id] ? accountLabelByPlatform[platform.id] || "Conta conectada" : checkingAccount(platform.id) ? "Verificando conta…" : "Conta não conectada"}</span></span>
                     <span className={styles.check} aria-hidden>{selected.has(platform.id) ? <Check /> : null}</span>
                   </button>
-                  {!connectedByPlatform[platform.id] ? <Link href={`/workspaces/${workspace.id}/social/integrations`} className={styles.connect}>Conectar conta</Link> : null}
+                  {!connectedByPlatform[platform.id] && !checkingAccount(platform.id) ? <Link href={`/workspaces/${workspace.id}/social/integrations`} className={styles.connect}>Conectar conta</Link> : null}
                 </div>)}
               </div>
               {hasMetaSelection ? <div className={styles.placement}><span>Publicar no</span><div className={styles.segmented}>{META_PLACEMENTS.map((item) => <button key={item.id} type="button" aria-pressed={metaPlacements.has(item.id)} disabled={busy} onClick={() => { const next = new Set(metaPlacements); if (next.has(item.id) && next.size > 1) next.delete(item.id); else next.add(item.id); setMetaPlacements(next); setPreviewPlacement(next.has(item.id) ? item.id : [...next][0]); }}>{item.label === "Story" ? "Stories" : item.label}</button>)}</div></div> : null}

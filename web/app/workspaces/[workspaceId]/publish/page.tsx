@@ -2,21 +2,19 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { Button } from "@/components/Button";
-import { Card } from "@/components/Card";
+import { CalendarDays, Check, Clock3, Eye, ImageIcon, ImagePlus, Library, Loader2, Send, Sparkles, UsersRound, Video, Zap } from "lucide-react";
+import { Input, Textarea } from "@/components/Field";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { StudioMedia } from "@/features/publishing-studio/StudioMedia";
+import { StudioPreview } from "@/features/publishing-studio/StudioPreview";
+import styles from "@/features/publishing-studio/studio.module.css";
+import { zonedToUtc } from "@/features/social/presentation";
 import { ChannelIcon } from "@/components/ChannelIcon";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
-import { Input, Label, Textarea } from "@/components/Field";
-import { PageHeader } from "@/components/PageHeader";
-import { PostPreview } from "@/components/PostPreview";
-import { ProgressivePanel } from "@/components/ScreenGuide";
-import { SearchableCombo } from "@/components/SearchableCombo";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { useCurrentWorkspace } from "@/contexts/workspace-context";
-import { cn } from "@/lib/utils";
 import { uploadPublicationMedia } from "@/features/media-upload/api";
 import { scheduleMetaPost } from "@/features/meta/api";
 import { useMetaOAuthStatus, useMetaPosts } from "@/features/meta/hooks";
@@ -97,13 +95,18 @@ export default function PublishPage() {
   const [scheduledAt, setScheduledAt] = useState("");
   const [timezone, setTimezone] = useState(DEFAULT_TIMEZONE);
 
-  const [tiktokPrivacy, setTiktokPrivacy] = useState<TikTokPrivacyLevel>("PUBLIC_TO_EVERYONE");
-  const [tiktokDisableComment, setTiktokDisableComment] = useState(false);
-  const [tiktokDisableDuet, setTiktokDisableDuet] = useState(false);
-  const [tiktokDisableStitch, setTiktokDisableStitch] = useState(false);
-  const [tiktokAutoAddMusic, setTiktokAutoAddMusic] = useState(true);
+  const [tiktokPrivacy, setTiktokPrivacy] = useState<TikTokPrivacyLevel | "">("");
+  const [tiktokDisableComment, setTiktokDisableComment] = useState(true);
+  const [tiktokDisableDuet, setTiktokDisableDuet] = useState(true);
+  const [tiktokDisableStitch, setTiktokDisableStitch] = useState(true);
+  const [tiktokAutoAddMusic, setTiktokAutoAddMusic] = useState(false);
   const [youtubePrivacy, setYouTubePrivacy] = useState<YouTubePrivacyStatus>("public");
-  const [networkOptionsOpen, setNetworkOptionsOpen] = useState(false);
+  const [libraryOpen, setLibraryOpen] = useState(false);
+  const [librarySearch, setLibrarySearch] = useState("");
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [previewNetwork, setPreviewNetwork] = useState<Platform>("instagram");
+  const [previewPlacement, setPreviewPlacement] = useState<MetaPlacement>("feed");
+  const [confirmPublishOpen, setConfirmPublishOpen] = useState(false);
   const [postPendingCancel, setPostPendingCancel] = useState<UnifiedPublication | undefined>();
 
   const connectedByPlatform: Record<Platform, boolean> = {
@@ -114,10 +117,10 @@ export default function PublishPage() {
   };
 
   const accountLabelByPlatform: Partial<Record<Platform, string>> = {
-    tiktok: tiktokOAuth?.accounts[0]?.displayName,
-    instagram: metaOAuth?.accounts.find((account) => account.providerId === "instagram")?.displayName,
-    facebook: metaOAuth?.accounts.find((account) => account.providerId === "facebook")?.displayName,
-    youtube: youtubeOAuth?.accounts[0]?.displayName,
+    tiktok: tiktokOAuth?.accounts.find((account) => account.status === "active")?.displayName,
+    instagram: metaOAuth?.accounts.find((account) => account.providerId === "instagram" && account.status === "active")?.displayName,
+    facebook: metaOAuth?.accounts.find((account) => account.providerId === "facebook" && account.status === "active")?.displayName,
+    youtube: youtubeOAuth?.accounts.find((account) => account.status === "active")?.displayName,
   };
 
   const credentialReferenceByPlatform: Partial<Record<Platform, string>> = {
@@ -139,7 +142,6 @@ export default function PublishPage() {
   const recentPublications = (unified ?? []).slice(0, 3);
   const mostRecent = unified?.[0];
   const selectedSource = useMemo(() => unified?.find((post) => sourceKey(post) === selectedSourceId), [selectedSourceId, unified]);
-  const contentLibraryItems = useMemo(() => (unified ?? []).slice(0, 20).map((post) => ({ id: sourceKey(post), label: titleOf(post) })), [unified]);
 
   useEffect(() => {
     if (queryApplied || !unified) return;
@@ -152,11 +154,13 @@ export default function PublishPage() {
     }
     if (network && PLATFORMS.some((platform) => platform.id === network) && connectedByPlatform[network]) {
       setSelected((current) => new Set([...current, network]));
+      setPreviewNetwork(network);
     }
     setQueryApplied(true);
   }, [queryApplied, unified, connectedByPlatform]);
 
   function applyContent(post: UnifiedPublication) {
+    setFeedback(undefined);
     setSelectedSourceId(sourceKey(post));
     setCaption(post.text);
     setImageUrls(post.media.imageUrls.join("\n"));
@@ -190,7 +194,7 @@ export default function PublishPage() {
     }
   }
 
-  async function uploadImageFiles(files: FileList | null) {
+  async function uploadImageFiles(files: readonly File[]) {
     if (!files || files.length === 0) return;
     setUploading(true);
     setFeedback(undefined);
@@ -218,9 +222,13 @@ export default function PublishPage() {
     }
   }
 
-  async function submitPost(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  async function submitPost() {
+    if (busy || uploading || blocker) return;
     setFeedback(undefined);
+    if (publishTiming === "schedule" && zonedToUtc(scheduledAt, timezone).getTime() <= Date.now()) {
+      setFeedback({ tone: "error", message: "Escolha uma data e um horário no futuro." });
+      return;
+    }
 
     if (!hasMedia) {
       setFeedback({ tone: "error", message: mediaKind === "video" ? "Envie um vídeo para publicar." : "Escolha ou envie ao menos uma imagem." });
@@ -236,7 +244,7 @@ export default function PublishPage() {
     }
 
     setBusy(true);
-    const scheduledAtIso = publishTiming === "schedule" && scheduledAt ? new Date(scheduledAt).toISOString() : undefined;
+    const scheduledAtIso = publishTiming === "schedule" && scheduledAt ? zonedToUtc(scheduledAt, timezone).toISOString() : undefined;
     const targets = PLATFORMS.filter((platform) => selected.has(platform.id));
     const skippedSummaries: string[] = [];
     const publicationTasks: { label: string; run: () => Promise<unknown> }[] = [];
@@ -252,7 +260,7 @@ export default function PublishPage() {
             imageUrls: mediaKind === "image" ? images : undefined,
             scheduledAt: scheduledAtIso,
             timezone: scheduledAtIso ? timezone : undefined,
-            privacyLevel: tiktokPrivacy,
+            privacyLevel: tiktokPrivacy || undefined,
             disableComment: tiktokDisableComment,
             disableDuet: tiktokDisableDuet,
             disableStitch: tiktokDisableStitch,
@@ -320,7 +328,7 @@ export default function PublishPage() {
     const tone = fulfilledCount === 0 ? "error" : fulfilledCount === outcomes.length && skippedSummaries.length === 0 ? "success" : "warning";
     setFeedback({ tone, message: summary });
 
-    if (outcomes.some((outcome) => outcome.status === "fulfilled")) {
+    if (fulfilledCount === outcomes.length && skippedSummaries.length === 0) {
       setCaption("");
       setVideoUrl("");
       setImageUrls("");
@@ -328,8 +336,8 @@ export default function PublishPage() {
       setScheduledAt("");
       setPublishTiming("now");
       setSelectedSourceId("");
-      await Promise.all([mutateTikTokPosts(), mutateMetaPosts(), mutateYouTubePosts(), mutateUnified()]);
     }
+    if (fulfilledCount > 0) await Promise.allSettled([mutateTikTokPosts(), mutateMetaPosts(), mutateYouTubePosts(), mutateUnified()]);
     setBusy(false);
   }
 
@@ -348,391 +356,127 @@ export default function PublishPage() {
     }
   }
 
+  const library = useMemo(() => Array.from(new Map((unified ?? []).map((post) => [post.id, post])).values()), [unified]);
+  const filteredLibrary = library.filter((post) => titleOf(post).toLocaleLowerCase("pt-BR").includes(librarySearch.toLocaleLowerCase("pt-BR")));
+  const selectedPlatforms = PLATFORMS.filter((platform) => selected.has(platform.id));
+  let scheduleDate: Date | undefined;
+  try { if (scheduledAt) scheduleDate = zonedToUtc(scheduledAt, timezone); } catch { /* Invalid input is shown before submission. */ }
+  const scheduleValid = publishTiming === "now" || Boolean(scheduleDate && Number.isFinite(scheduleDate.getTime()) && scheduleDate.getTime() > Date.now());
+  const blocker = !hasMedia ? "Adicione uma imagem ou vídeo para começar." : selected.size === 0 ? "Selecione as contas que receberão o post." : !caption.trim() ? "Escreva a legenda da publicação." : youtubeNeedsVideo ? "YouTube Shorts precisa de um vídeo." : !scheduleValid ? "Escolha uma data e um horário no futuro." : selected.has("tiktok") && !tiktokPrivacy ? "Escolha a privacidade do TikTok." : undefined;
+  const canSubmit = !busy && !uploading && !blocker;
+  const destinationLabel = selectedPlatforms.map((item) => item.label).join(", ");
+  const previewProps = { network: previewNetwork, onNetworkChange: setPreviewNetwork, caption, images: previewPlacement === "story" && (previewNetwork === "instagram" || previewNetwork === "facebook") ? images.slice(0, 1) : images, videoUrl, thumbnailUrl, mediaKind, accountLabel: accountLabelByPlatform[previewNetwork] || workspace.name, placement: previewPlacement, onPlacementChange: setPreviewPlacement, showPlacements: feedSelected && storySelected };
+
   return (
-    <main className="mx-auto max-w-7xl px-3 py-5 sm:px-6 sm:py-8">
-      <PageHeader
-        title="Publicar"
-        description="Escolha um conteúdo, selecione as redes e publique agora ou agende."
-        actions={
-          <>
-            <Link href={`/workspaces/${workspace.id}/calendar`} className="text-sm font-medium text-primary hover:underline">Ver calendário</Link>
-            <Link href={`/workspaces/${workspace.id}/campaigns`} className="text-sm font-medium text-primary hover:underline">Ver todos os conteúdos</Link>
-          </>
-        }
-      />
+    <main className={styles.studio}>
+      <header className={styles.header}>
+        <div>
+          <p className={styles.eyebrow}><Sparkles size={14} aria-hidden />Seu conteúdo vai mais longe</p>
+          <h1 className={styles.heading}>Vamos publicar?</h1>
+          <p className={styles.subtitle}>Uma ideia. Suas redes. Tudo no lugar.</p>
+        </div>
+        <nav className={styles.headerActions} aria-label="Atalhos de publicação">
+          <Link className={styles.quietButton} href={`/workspaces/${workspace.id}/campaigns`}><Library aria-hidden />Conteúdos</Link>
+          <Link className={styles.quietButton} href={`/workspaces/${workspace.id}/calendar`}><CalendarDays aria-hidden />Calendário</Link>
+          <button type="button" className={`${styles.quietButton} ${styles.mobilePreview}`} onClick={() => setPreviewOpen(true)}><Eye aria-hidden />Prévia</button>
+        </nav>
+      </header>
 
-      {feedback ? (
-        <Card
-          className={cn(
-            "mb-6 p-4",
-            feedback.tone === "success" && "border-status-active/30 bg-status-active-bg",
-            feedback.tone === "warning" && "border-warning/30 bg-warning-bg",
-            feedback.tone === "error" && "border-danger/30 bg-danger-bg",
-          )}
-        >
-          <p className={cn(
-            "text-sm",
-            feedback.tone === "success" && "text-status-active",
-            feedback.tone === "warning" && "text-warning",
-            feedback.tone === "error" && "text-danger",
-          )}>{feedback.message}</p>
-        </Card>
-      ) : null}
+      {feedback ? <div role={feedback.tone === "error" ? "alert" : "status"} className={styles.feedback} data-tone={feedback.tone}>{feedback.message}</div> : null}
 
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_340px] xl:grid-cols-[minmax(0,1fr)_380px]">
-        <form className="space-y-5" onSubmit={submitPost}>
-          <Card className="p-4 sm:p-5">
-            <SectionTitle step="1" title="Escolher conteúdo" />
-            <div className="mt-4 grid gap-3">
-              {mostRecent ? (
-                <button type="button" onClick={() => applyContent(mostRecent)} className="flex min-w-0 items-center gap-3 rounded-xl border border-border bg-card p-3 text-left hover:border-primary">
-                  <ContentThumb post={mostRecent} />
-                  <div className="min-w-0 flex-1">
-                    <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Peça mais recente</p>
-                    <p className="line-clamp-2 text-sm font-semibold text-foreground">{titleOf(mostRecent)}</p>
-                    <p className="mt-1 text-xs text-muted-foreground">{formatDateTime(mostRecent.createdAt)}</p>
-                  </div>
-                  <span className="text-xs font-medium text-primary">Usar</span>
-                </button>
-              ) : null}
-
-              {unified && unified.length > 0 ? (
-                <div>
-                  <Label htmlFor="existing-content">Selecionar conteúdo existente</Label>
-                  <SearchableCombo
-                    items={contentLibraryItems}
-                    value={selectedSourceId}
-                    onValueChange={(value) => {
-                      const post = unified.find((item) => sourceKey(item) === value);
-                      if (post) applyContent(post);
-                    }}
-                    placeholder="Escolher da biblioteca"
-                    searchPlaceholder="Buscar conteúdo..."
-                    emptyText="Nenhum conteúdo encontrado."
-                  />
-                </div>
-              ) : null}
-
-              <div className="rounded-lg bg-muted/40 p-3">
-                <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Ou enviar agora</p>
-                <ToggleGroup
-                  type="single"
-                  variant="outline"
-                  className="mb-3 justify-start"
-                  value={mediaKind}
-                  onValueChange={(value) => value && setMediaKind(value as "image" | "video")}
-                >
-                  <ToggleGroupItem value="image" disabled={selected.has("youtube")} className="px-4">Imagem/carrossel</ToggleGroupItem>
-                  <ToggleGroupItem value="video" className="px-4">Vídeo</ToggleGroupItem>
-                </ToggleGroup>
-                {selected.has("youtube") ? <p className="mb-3 text-xs text-muted-foreground">YouTube Shorts só publica vídeo.</p> : null}
-                {mediaKind === "video" ? (
-                  <MediaUploadPanel id="publish-video-file" label="Vídeo" helper="MP4 ou MOV. Para Shorts, prefira vídeo vertical curto." accept="video/mp4,video/quicktime" uploading={uploading} urls={videoUrl.trim() ? [videoUrl.trim()] : []} onPick={(files) => files?.[0] && uploadVideoFile(files[0])} onRemove={() => setVideoUrl("")} />
-                ) : (
-                  <MediaUploadPanel id="publish-image-files" label={storyOnly ? "Imagem" : "Imagens"} helper={storyOnly ? "Envie uma imagem JPG, PNG ou WEBP." : "Envie uma ou mais imagens. Feed usa todas; Story usa só a primeira."} accept="image/jpeg,image/png,image/webp" multiple={!storyOnly} uploading={uploading} urls={images} onPick={uploadImageFiles} onRemove={(url) => setImageUrls((current) => current.split(/[\n,]/).map((item) => item.trim()).filter((item) => item && item !== url).join("\n"))} />
-                )}
-                {mediaKind === "video" ? (
-                  <MediaUploadPanel id="publish-thumbnail-file" label="Capa do vídeo" helper="Opcional. Use JPG se quiser definir uma capa." accept="image/jpeg" uploading={uploading} urls={thumbnailUrl.trim() ? [thumbnailUrl.trim()] : []} onPick={(files) => files?.[0] && uploadThumbnailFile(files[0])} onRemove={() => setThumbnailUrl("")} />
-                ) : null}
+      <form onSubmit={(event) => { event.preventDefault(); if (canSubmit) setConfirmPublishOpen(true); }} aria-label="Criar publicação">
+        <div className={styles.workbench}>
+          <div className={styles.editor}>
+            <section className={`${styles.panel} ${styles.panelBody}`} aria-labelledby="publish-accounts-heading">
+              <div className={styles.sectionHead}><h2 id="publish-accounts-heading" className={styles.sectionTitle}><UsersRound aria-hidden />Onde vamos publicar?</h2><span className={styles.sectionNote}>{selected.size > 0 ? `${selected.size} ${selected.size === 1 ? "rede selecionada" : "redes selecionadas"}` : "Selecione suas contas"}</span></div>
+              <div className={styles.accountGrid}>
+                {PLATFORMS.map((platform) => <div key={platform.id} className={styles.account} data-selected={selected.has(platform.id)}>
+                  <button type="button" role="checkbox" aria-checked={selected.has(platform.id)} aria-label={`Selecionar ${platform.label}`} disabled={!connectedByPlatform[platform.id] || busy} className={styles.accountButton} onClick={() => { togglePlatform(platform.id); setPreviewNetwork(platform.id); }}>
+                    <span className={styles.accountIcon}><ChannelIcon channel={platform.id} /></span>
+                    <span className={styles.accountCopy}><span className={styles.accountName}>{platform.label}</span><span className={styles.accountLabel}>{connectedByPlatform[platform.id] ? accountLabelByPlatform[platform.id] || "Conta conectada" : "Conta não conectada"}</span></span>
+                    <span className={styles.check} aria-hidden>{selected.has(platform.id) ? <Check /> : null}</span>
+                  </button>
+                  {!connectedByPlatform[platform.id] ? <Link href={`/workspaces/${workspace.id}/social/integrations`} className={styles.connect}>Conectar conta</Link> : null}
+                </div>)}
               </div>
-            </div>
-          </Card>
+              {hasMetaSelection ? <div className={styles.placement}><span>Publicar no</span><div className={styles.segmented}>{META_PLACEMENTS.map((item) => <button key={item.id} type="button" aria-pressed={metaPlacements.has(item.id)} disabled={busy} onClick={() => { const next = new Set(metaPlacements); if (next.has(item.id) && next.size > 1) next.delete(item.id); else next.add(item.id); setMetaPlacements(next); setPreviewPlacement(next.has(item.id) ? item.id : [...next][0]); }}>{item.label === "Story" ? "Stories" : item.label}</button>)}</div></div> : null}
+              {hasStoryUnsupported ? <p className={`${styles.helper} mt-3`}>Stories serão enviados ao Instagram e Facebook. TikTok e YouTube recebem uma publicação normal.</p> : null}
+            </section>
 
-          <Card className="p-4 sm:p-5">
-            <SectionTitle step="2" title="Onde publicar?" />
-            <div className="mt-4 grid gap-3 sm:grid-cols-2">
-              {PLATFORMS.map((platform) => (
-                <NetworkChoice
-                  key={platform.id}
-                  platform={platform}
-                  connected={connectedByPlatform[platform.id]}
-                  selected={selected.has(platform.id)}
-                  accountLabel={accountLabelByPlatform[platform.id]}
-                  workspaceId={workspace.id}
-                  onToggle={() => togglePlatform(platform.id)}
-                />
-              ))}
-            </div>
-
-            {hasMetaSelection ? (
-              <div className="mt-4 rounded-lg bg-muted/40 p-3">
-                <Label htmlFor="publish-placement">Opções de Meta</Label>
-                <ToggleGroup
-                  id="publish-placement"
-                  type="multiple"
-                  variant="outline"
-                  className="mt-2 justify-start"
-                  value={selectedMetaPlacements}
-                  onValueChange={(next: string[]) => { if (next.length > 0) setMetaPlacements(new Set(next as MetaPlacement[])); }}
-                >
-                  {META_PLACEMENTS.map((item) => (
-                    <ToggleGroupItem key={item.id} value={item.id} className="flex-1 px-4 sm:flex-none">
-                      {item.label}
-                    </ToggleGroupItem>
-                  ))}
-                </ToggleGroup>
-                {storySelected ? <p className="mt-2 text-xs text-muted-foreground">Story usa somente o formato permitido pela rede. Feed continua com legenda e carrossel quando aplicavel.</p> : null}
-                {hasStoryUnsupported ? <p className="mt-1 text-xs text-muted-foreground">Story vale só para Instagram/Facebook; TikTok e YouTube seguem como publicação normal.</p> : null}
+            <section className={`${styles.panel} ${styles.panelBody}`} aria-labelledby="publish-content-heading">
+              <div className={styles.sectionHead}><h2 id="publish-content-heading" className={styles.sectionTitle}><ImagePlus aria-hidden />O que vamos compartilhar?</h2><button type="button" disabled={busy || uploading} className={styles.textButton} onClick={() => setLibraryOpen(true)}>Escolher da biblioteca</button></div>
+              <div className={styles.mediaTabs}>
+                <div className={styles.segmented} aria-label="Tipo de conteúdo"><button type="button" aria-pressed={mediaKind === "image"} disabled={selected.has("youtube") || busy || uploading} onClick={() => setMediaKind("image")}><ImageIcon aria-hidden />Imagem</button><button type="button" aria-pressed={mediaKind === "video"} disabled={busy || uploading} onClick={() => setMediaKind("video")}><Video aria-hidden />Vídeo</button></div>
+                <span className={styles.sectionNote}>{selectedSource ? "Conteúdo da biblioteca" : mediaKind === "image" && images.length > 1 ? "Carrossel" : "Novo conteúdo"}</span>
               </div>
-            ) : null}
-          </Card>
-
-          <Card className="p-4 sm:p-5">
-            <SectionTitle step="3" title="Legenda" />
-            <div className="mt-4">
-              <Label htmlFor="publish-caption">Legenda/copy</Label>
-              <Textarea id="publish-caption" required rows={5} maxLength={2200} value={caption} onChange={(event) => setCaption(event.target.value)} />
-            </div>
-          </Card>
-
-          <Card className="p-4 sm:p-5">
-            <SectionTitle step="4" title="Quando publicar?" />
-            <div className="mt-4 grid gap-3 sm:grid-cols-2">
-              <button type="button" onClick={() => { setPublishTiming("now"); setScheduledAt(""); }} className={timingClass(publishTiming === "now")}>
-                <span className="text-sm font-semibold">Publicar agora</span>
-                <span className="text-xs text-muted-foreground">Enviar assim que confirmar.</span>
-              </button>
-              <button type="button" onClick={() => setPublishTiming("schedule")} className={timingClass(publishTiming === "schedule")}>
-                <span className="text-sm font-semibold">Agendar</span>
-                <span className="text-xs text-muted-foreground">Definir data e horário.</span>
-              </button>
-            </div>
-            {publishTiming === "schedule" ? (
-              <div className="mt-4 grid gap-4 md:grid-cols-2">
-                <div>
-                  <Label htmlFor="publish-scheduled-at">Data e horário</Label>
-                  <Input id="publish-scheduled-at" type="datetime-local" required value={scheduledAt} onChange={(event) => setScheduledAt(event.target.value)} />
-                </div>
-                <div>
-                  <Label htmlFor="publish-timezone">Fuso horário</Label>
-                  <SearchableCombo
-                    items={TIMEZONE_OPTIONS.map((item) => ({ id: item, label: item }))}
-                    value={timezone}
-                    onValueChange={setTimezone}
-                    placeholder="Selecione o fuso"
-                    searchPlaceholder="Buscar fuso..."
-                    emptyText="Fuso não encontrado."
-                  />
-                </div>
+              {mediaKind === "image" ? <StudioMedia kind="image" urls={images} uploading={uploading || busy} onPick={uploadImageFiles} onRemove={(index) => { setImageUrls(images.filter((_, itemIndex) => itemIndex !== index).join("\n")); setSelectedSourceId(""); }} /> : <StudioMedia kind="video" urls={videoUrl ? [videoUrl] : []} uploading={uploading || busy} onPick={(files) => { if (files[0]) void uploadVideoFile(files[0]); }} onRemove={() => { setVideoUrl(""); setSelectedSourceId(""); }} />}
+              {mediaKind === "video" ? <details className="mt-4"><summary className="cursor-pointer text-sm text-muted-foreground">Personalizar a capa do vídeo</summary><div className="mt-3"><StudioMedia kind="image" cover urls={thumbnailUrl ? [thumbnailUrl] : []} uploading={uploading || busy} onPick={(files) => { if (files[0]) void uploadThumbnailFile(files[0]); }} onRemove={() => setThumbnailUrl("")} /></div></details> : null}
+              {!hasMedia && mostRecent ? <div className={styles.reuse}><ContentThumb post={mostRecent} /><div className={styles.reuseCopy}><span className={styles.sectionNote}>Continuar com seu último conteúdo</span><p>{titleOf(mostRecent)}</p></div><button type="button" className={styles.textButton} disabled={busy || uploading} onClick={() => applyContent(mostRecent)}>Usar</button></div> : null}
+              {selected.has("youtube") ? <p className={`${styles.helper} mt-3`}>Para Shorts, use um vídeo vertical ou quadrado de até 3 minutos.</p> : null}
+              <div className={styles.captionArea}>
+                <div className={styles.labelRow}><label htmlFor="publish-caption" className="text-sm font-semibold">A legenda que acompanha</label><span className={styles.sectionNote}>{caption.length.toLocaleString("pt-BR")} / 2.200</span></div>
+                <Textarea id="publish-caption" className={styles.captionInput} required rows={5} maxLength={2200} disabled={busy} value={caption} placeholder="Conte a história por trás do seu conteúdo…" onChange={(event) => setCaption(event.target.value)} />
+                <div className={styles.captionBottom}><p className={styles.helper}>A mesma legenda nas redes selecionadas.</p><span className="text-sm text-muted-foreground" aria-hidden>#</span></div>
               </div>
-            ) : null}
-          </Card>
+            </section>
 
-          {(selected.has("tiktok") || selected.has("youtube")) ? (
-            <ProgressivePanel title="Opções da rede" description="Privacidade, música automática e interações quando a rede suporta." open={networkOptionsOpen} onToggle={() => setNetworkOptionsOpen(!networkOptionsOpen)}>
-              <div className="grid gap-3">
-                {selected.has("tiktok") ? (
-                  <div className="rounded-lg bg-muted/40 p-3">
-                    <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">TikTok</p>
-                    <div className="grid gap-3 sm:grid-cols-2">
-                      <div>
-                        <Label htmlFor="tiktok-privacy">Quem pode ver</Label>
-                        <Select value={tiktokPrivacy} onValueChange={(value) => setTiktokPrivacy(value as TikTokPrivacyLevel)}>
-                          <SelectTrigger id="tiktok-privacy">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {TIKTOK_PRIVACY_OPTIONS.map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div className="flex flex-col justify-end gap-2">
-                        <SwitchLine id="tiktok-auto-music" checked={tiktokAutoAddMusic} onChange={setTiktokAutoAddMusic} label="Adicionar música automaticamente" />
-                        <SwitchLine id="tiktok-disable-comment" checked={tiktokDisableComment} onChange={setTiktokDisableComment} label="Desativar comentários" />
-                        <SwitchLine id="tiktok-disable-duet" checked={tiktokDisableDuet} onChange={setTiktokDisableDuet} label="Desativar Duet" />
-                        <SwitchLine id="tiktok-disable-stitch" checked={tiktokDisableStitch} onChange={setTiktokDisableStitch} label="Desativar Stitch" />
-                      </div>
-                    </div>
-                  </div>
-                ) : null}
-                {selected.has("youtube") ? (
-                  <div className="rounded-lg bg-muted/40 p-3">
-                    <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">YouTube</p>
-                    <Label htmlFor="youtube-privacy">Visibilidade</Label>
-                    <Select value={youtubePrivacy} onValueChange={(value) => setYouTubePrivacy(value as YouTubePrivacyStatus)}>
-                      <SelectTrigger id="youtube-privacy">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {YOUTUBE_PRIVACY_OPTIONS.map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                ) : null}
+            <section className={`${styles.panel} ${styles.panelBody}`} aria-labelledby="publish-timing-heading">
+              <div className={styles.sectionHead}><h2 id="publish-timing-heading" className={styles.sectionTitle}><Clock3 aria-hidden />O momento certo</h2><span className={styles.sectionNote}>Você decide quando</span></div>
+              <div className={styles.timingGrid}>
+                <button type="button" className={styles.timing} aria-pressed={publishTiming === "now"} disabled={busy} onClick={() => { setPublishTiming("now"); setScheduledAt(""); }}><Zap aria-hidden /><span><strong>Publicar agora</strong><small>Pronto? Envie para suas redes.</small></span></button>
+                <button type="button" className={styles.timing} aria-pressed={publishTiming === "schedule"} disabled={busy} onClick={() => setPublishTiming("schedule")}><CalendarDays aria-hidden /><span><strong>Agendar</strong><small>Escolha o melhor dia e horário.</small></span></button>
               </div>
-            </ProgressivePanel>
-          ) : null}
-
-          <div className="sticky bottom-16 z-20 rounded-2xl border border-border bg-card/95 p-3 shadow-md backdrop-blur md:bottom-4">
-            <Button type="submit" className="w-full" disabled={busy || uploading || selected.size === 0 || !hasMedia || (publishTiming === "schedule" && !scheduledAt)}>
-              {publishTiming === "schedule" ? "Agendar publicação" : "Publicar agora"}
-            </Button>
+              {publishTiming === "schedule" ? <div className={styles.scheduleFields}>
+                <div><label htmlFor="publish-scheduled-at" className={styles.label}>Data e horário</label><Input id="publish-scheduled-at" type="datetime-local" required disabled={busy} value={scheduledAt} onChange={(event) => setScheduledAt(event.target.value)} /></div>
+                <div><label htmlFor="publish-timezone" className={styles.label}>Fuso horário</label><Select value={timezone} onValueChange={setTimezone} disabled={busy}><SelectTrigger id="publish-timezone"><SelectValue /></SelectTrigger><SelectContent>{TIMEZONE_OPTIONS.map((value) => <SelectItem key={value} value={value}>{value === "America/Sao_Paulo" ? "Brasília (São Paulo)" : value.replace("America/", "").replaceAll("_", " ")}</SelectItem>)}</SelectContent></Select></div>
+              </div> : null}
+              {selected.has("tiktok") ? <div className={styles.networkSettings}>
+                <p className={styles.settingsTitle}>Opções do TikTok</p>
+                <label htmlFor="tiktok-privacy" className={styles.label}>Quem pode ver?</label><Select value={tiktokPrivacy} onValueChange={(value) => setTiktokPrivacy(value as TikTokPrivacyLevel)} disabled={busy}><SelectTrigger id="tiktok-privacy"><SelectValue placeholder="Selecione a privacidade" /></SelectTrigger><SelectContent>{TIKTOK_PRIVACY_OPTIONS.map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}</SelectContent></Select>
+                <div className={styles.switchGrid}><SwitchLine id="tiktok-comment" checked={!tiktokDisableComment} onChange={(value) => setTiktokDisableComment(!value)} label="Permitir comentários" /><SwitchLine id="tiktok-duet" checked={!tiktokDisableDuet} onChange={(value) => setTiktokDisableDuet(!value)} label="Permitir Duet" /><SwitchLine id="tiktok-stitch" checked={!tiktokDisableStitch} onChange={(value) => setTiktokDisableStitch(!value)} label="Permitir Stitch" /><SwitchLine id="tiktok-auto-music" checked={tiktokAutoAddMusic} onChange={setTiktokAutoAddMusic} label="Adicionar música automaticamente" /></div>
+              </div> : null}
+              {selected.has("youtube") ? <div className={styles.networkSettings}><p className={styles.settingsTitle}>Opções do YouTube Shorts</p><label htmlFor="youtube-privacy" className={styles.label}>Visibilidade</label><Select value={youtubePrivacy} onValueChange={(value) => setYouTubePrivacy(value as YouTubePrivacyStatus)} disabled={busy}><SelectTrigger id="youtube-privacy"><SelectValue /></SelectTrigger><SelectContent>{YOUTUBE_PRIVACY_OPTIONS.map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}</SelectContent></Select></div> : null}
+            </section>
           </div>
-        </form>
 
-        <aside className="space-y-5 lg:sticky lg:top-5 lg:self-start">
-          <Card className="p-4 sm:p-5">
-            <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Preview</p>
-            {selected.size === 0 ? (
-              <p className="text-sm text-muted-foreground">Selecione uma rede conectada para ver a prévia.</p>
-            ) : (
-              <div className="flex flex-col gap-5">
-                {PLATFORMS.filter((platform) => selected.has(platform.id)).flatMap((platform) => {
-                  if (platform.id === "instagram" || platform.id === "facebook") {
-                    return selectedMetaPlacements.map((metaPlacement) => (
-                      <PostPreview key={`${platform.id}-${metaPlacement}`} network={platform.id} placement={metaPlacement} caption={metaPlacement === "story" ? "" : caption} mediaKind={mediaKind} imageUrls={metaPlacement === "story" ? images.slice(0, 1) : images} videoUrl={videoUrl.trim() || undefined} thumbnailUrl={thumbnailUrl.trim() || undefined} accountLabel={`${accountLabelByPlatform[platform.id] ?? platform.label} · ${metaPlacement === "story" ? "Story" : "Feed"}`} />
-                    ));
-                  }
-                  return <PostPreview key={platform.id} network={platform.id} placement="feed" caption={caption} mediaKind={mediaKind} imageUrls={images} videoUrl={videoUrl.trim() || undefined} thumbnailUrl={thumbnailUrl.trim() || undefined} autoAddMusic={platform.id === "tiktok" ? tiktokAutoAddMusic : undefined} accountLabel={accountLabelByPlatform[platform.id]} />;
-                })}
-              </div>
-            )}
-          </Card>
+          <aside className={styles.aside} aria-label="Prévia e atividade">
+            <StudioPreview {...previewProps} />
+            <section className={`${styles.panel} ${styles.recent}`}>
+              <div className={styles.sectionHead}><h2 className="text-sm font-semibold">Últimas publicações</h2><Link href={`/workspaces/${workspace.id}/campaigns`} className={styles.textButton}>Ver todas</Link></div>
+              {recentPublications.length === 0 ? <p className={styles.helper}>Seus próximos posts começam aqui.</p> : recentPublications.slice(0, 2).map((post) => <div key={sourceKey(post)} className={styles.recentItem}><ContentThumb post={post} /><div className={styles.recentCopy}><p>{titleOf(post)}</p><small>{formatDateTime(post.publishedAt ?? post.scheduledAt ?? post.createdAt)}</small></div><div className="flex shrink-0 flex-col items-end gap-2"><StatusBadge status={derivePublicationStatus(post)} />{derivePublicationStatus(post) === "scheduled" ? <button type="button" disabled={busy} className="text-xs text-muted-foreground" onClick={() => setPostPendingCancel(post)}>Cancelar</button> : null}</div></div>)}
+            </section>
+          </aside>
+        </div>
 
-          <Card className="p-4 sm:p-5">
-            <div className="mb-3 flex items-center justify-between gap-3">
-              <p className="text-sm font-semibold text-foreground">Publicações recentes</p>
-              <Link href={`/workspaces/${workspace.id}/campaigns`} className="text-xs font-medium text-primary hover:underline">Ver todos</Link>
-            </div>
-            {recentPublications.length === 0 ? (
-              <p className="text-sm text-muted-foreground">Nenhuma publicação ainda.</p>
-            ) : (
-              <div className="space-y-3">
-                {recentPublications.map((post) => <RecentPublicationCard key={`${post.network}-${post.id}`} post={post} busy={busy} onCancel={() => setPostPendingCancel(post)} />)}
-              </div>
-            )}
-          </Card>
-        </aside>
-      </div>
+        <footer className={styles.actionBar}>
+          <div className={styles.actionSummary}><strong>{busy ? "Preparando sua publicação…" : uploading ? "Enviando seus arquivos…" : blocker ? "Seu próximo post começa aqui" : publishTiming === "schedule" ? "Tudo pronto para agendar" : "Tudo pronto para publicar"}</strong><small role="status">{busy ? "Aguarde a confirmação de envio." : uploading ? "Aguarde o upload terminar." : blocker || `${selected.size} ${selected.size === 1 ? "rede" : "redes"} · ${destinationLabel}`}</small></div>
+          <button type="submit" className={styles.primaryButton} disabled={!canSubmit}>{busy || uploading ? <Loader2 className={styles.spin} aria-hidden /> : publishTiming === "schedule" ? <CalendarDays aria-hidden /> : <Send aria-hidden />}{busy ? "Enviando…" : publishTiming === "schedule" ? "Agendar publicação" : "Publicar agora"}</button>
+        </footer>
+      </form>
 
-      <ConfirmDialog
-        open={Boolean(postPendingCancel)}
-        title="Cancelar publicação"
-        description={postPendingCancel ? `Tem certeza que deseja cancelar a publicação "${titleOf(postPendingCancel)}"? Esta ação não pode ser desfeita.` : ""}
-        confirmLabel="Cancelar publicação"
-        cancelLabel="Voltar"
-        variant="danger"
-        busy={busy}
-        onConfirm={confirmCancelPost}
-        onCancel={() => setPostPendingCancel(undefined)}
-      />
+      <Dialog open={libraryOpen} onOpenChange={setLibraryOpen}><DialogContent className="max-h-[90dvh] w-[calc(100%-2rem)] max-w-2xl overflow-hidden rounded-2xl"><DialogHeader><DialogTitle>Escolha seu conteúdo</DialogTitle><DialogDescription>Reutilize uma publicação e ajuste o que quiser antes de enviar.</DialogDescription></DialogHeader><Input aria-label="Buscar na biblioteca" placeholder="Buscar por título ou legenda…" value={librarySearch} onChange={(event) => setLibrarySearch(event.target.value)} /><div className={styles.libraryGrid}>{filteredLibrary.map((post) => <button key={post.id} type="button" className={styles.libraryItem} onClick={() => { applyContent(post); setLibraryOpen(false); }}><span className={styles.libraryArt}>{post.media.imageUrls[0] || post.media.thumbnailUrl ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={post.media.imageUrls[0] || post.media.thumbnailUrl} alt="" />
+      ) : <Video className="text-muted-foreground" />}<span className="sr-only">Usar conteúdo: </span></span><strong>{titleOf(post)}</strong><small>{formatDateTime(post.createdAt)}</small></button>)}</div>{filteredLibrary.length === 0 ? <p className="py-10 text-center text-sm text-muted-foreground">{unified === undefined ? "Carregando sua biblioteca…" : "Nenhum conteúdo encontrado."}</p> : null}</DialogContent></Dialog>
+      <Dialog open={previewOpen} onOpenChange={setPreviewOpen}><DialogContent className="max-h-[90dvh] w-[calc(100%-2rem)] max-w-md overflow-y-auto rounded-2xl p-0"><DialogHeader className="sr-only"><DialogTitle>Prévia da publicação</DialogTitle><DialogDescription>Confira o conteúdo na rede selecionada.</DialogDescription></DialogHeader><StudioPreview {...previewProps} /></DialogContent></Dialog>
+      <ConfirmDialog open={confirmPublishOpen} title={publishTiming === "schedule" ? "Agendar esta publicação?" : "Publicar este conteúdo?"} description={`${publishTiming === "schedule" && scheduleDate ? `Agendamento para ${new Intl.DateTimeFormat("pt-BR", { timeZone: timezone, dateStyle: "short", timeStyle: "short" }).format(scheduleDate)} (${timezone}).` : "O envio começa assim que você confirmar."} Contas: ${selectedPlatforms.map((platform) => `${platform.label} (${accountLabelByPlatform[platform.id] || "conta conectada"})`).join(", ")}.`} confirmLabel={publishTiming === "schedule" ? "Confirmar agendamento" : "Confirmar publicação"} cancelLabel="Continuar editando" busy={busy} onConfirm={() => { setConfirmPublishOpen(false); void submitPost(); }} onCancel={() => setConfirmPublishOpen(false)} />
+      <ConfirmDialog open={Boolean(postPendingCancel)} title="Cancelar publicação" description={postPendingCancel ? `Cancelar a publicação “${titleOf(postPendingCancel)}”?` : ""} confirmLabel="Cancelar publicação" cancelLabel="Voltar" variant="danger" busy={busy} onConfirm={confirmCancelPost} onCancel={() => setPostPendingCancel(undefined)} />
     </main>
   );
 }
 
-function SectionTitle({ step, title }: { step: string; title: string }) {
-  return (
-    <div className="flex items-center gap-3">
-      <span className="flex h-8 w-8 items-center justify-center rounded-full bg-primary text-sm font-semibold text-primary-foreground">{step}</span>
-      <h2 className="text-base font-semibold text-foreground">{title}</h2>
-    </div>
-  );
-}
-
-function NetworkChoice({ platform, connected, selected, accountLabel, workspaceId, onToggle }: { platform: { id: Platform; label: string }; connected: boolean; selected: boolean; accountLabel?: string; workspaceId: string; onToggle: () => void }) {
-  return (
-    <div className={`rounded-xl border p-3 ${selected ? "border-primary bg-primary/10" : "border-border bg-card"}`}>
-      <button type="button" onClick={onToggle} disabled={!connected} className="flex w-full items-start gap-3 text-left disabled:cursor-not-allowed">
-        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-card text-foreground">
-          <ChannelIcon channel={platform.id} label={platform.label} />
-        </span>
-        <span className="min-w-0 flex-1">
-          <span className="block text-sm font-semibold text-foreground">{platform.label}</span>
-          <span className="mt-0.5 block truncate text-xs text-muted-foreground">{connected ? accountLabel ?? "Conta conectada" : "Não conectado"}</span>
-        </span>
-        <span className={`mt-1 h-4 w-4 rounded border ${selected ? "border-primary bg-primary" : "border-border bg-card"}`} />
-      </button>
-      {!connected ? <Link href={`/workspaces/${workspaceId}/connections`} className="mt-3 inline-flex text-xs font-medium text-primary hover:underline">Conectar</Link> : null}
-    </div>
-  );
+function SwitchLine({ id, checked, onChange, label }: { id: string; checked: boolean; onChange: (value: boolean) => void; label: string }) {
+  return <label htmlFor={id} className={styles.switchRow}><span>{label}</span><Switch id={id} checked={checked} onCheckedChange={onChange} /></label>;
 }
 
 function ContentThumb({ post }: { post: UnifiedPublication }) {
-  const image = post.media.imageUrls[0] ?? post.media.thumbnailUrl;
-  return (
-    <span className="flex h-14 w-14 shrink-0 overflow-hidden rounded-xl bg-card">
-      {image ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img src={image} alt="" className="h-full w-full object-cover" />
-      ) : (
-        <span className="flex h-full w-full items-center justify-center text-lg text-muted-foreground">{contentTypeOf(post) === "video" ? "▶" : "▧"}</span>
-      )}
-    </span>
-  );
+  const image = post.media.imageUrls[0] || post.media.thumbnailUrl;
+  return <span className={styles.thumb}>{image ? (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img src={image} alt="" />
+  ) : <Video size={18} />}</span>;
 }
 
-function MediaUploadPanel({ id, label, helper, accept, multiple, uploading, urls, onPick, onRemove }: { id: string; label: string; helper: string; accept: string; multiple?: boolean; uploading: boolean; urls: readonly string[]; onPick: (files: FileList | null) => void; onRemove: (url: string) => void }) {
-  return (
-    <div className="mt-3">
-      <Label htmlFor={id}>{label}</Label>
-      <div className="rounded-lg border border-border bg-card p-3">
-        <input id={id} type="file" accept={accept} multiple={multiple} disabled={uploading} onChange={(event) => { onPick(event.target.files); event.currentTarget.value = ""; }} className="w-full text-sm text-foreground file:mr-3 file:rounded-md file:border-0 file:bg-primary/10 file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-primary" />
-        <p className="mt-2 text-xs text-muted-foreground">{uploading ? "Enviando arquivo..." : helper}</p>
-        {urls.length > 0 ? (
-          <div className="mt-3 grid gap-2">
-            {urls.map((url) => (
-              <div key={url} className="flex flex-col gap-3 rounded-md border border-border bg-background p-2 sm:flex-row sm:items-center">
-                {isImageUrl(url) ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={url} alt="" className="h-32 w-full rounded object-contain sm:h-14 sm:w-14 sm:object-cover" />
-                ) : (
-                  <div className="flex h-14 w-full items-center justify-center rounded bg-muted text-lg sm:w-14">▶</div>
-                )}
-                <p className="min-w-0 flex-1 truncate text-xs text-muted-foreground">{url}</p>
-                <button type="button" className="min-h-9 text-left text-xs font-medium text-destructive hover:text-destructive/80 sm:text-center" onClick={() => onRemove(url)}>Remover</button>
-              </div>
-            ))}
-          </div>
-        ) : null}
-      </div>
-    </div>
-  );
-}
-
-function RecentPublicationCard({ post, busy, onCancel }: { post: UnifiedPublication; busy: boolean; onCancel: () => void }) {
-  const status = derivePublicationStatus(post);
-  const when = post.scheduledAt ? `${formatDateTime(post.scheduledAt)}${post.timezone ? ` (${post.timezone})` : ""}` : "Imediato";
-
-  return (
-    <div className="rounded-xl border border-border bg-card p-3">
-      <div className="mb-2 flex items-start justify-between gap-2">
-        <div className="min-w-0">
-          <p className="truncate text-sm font-semibold text-foreground">{titleOf(post)}</p>
-          <p className="mt-0.5 text-xs text-muted-foreground">{when}</p>
-        </div>
-        <StatusBadge status={status} />
-      </div>
-      {status === "published" || status === "cancelled" ? null : <Button variant="secondary" disabled={busy} onClick={onCancel} className="mt-2 w-full">Cancelar</Button>}
-    </div>
-  );
-}
-
-function timingClass(active: boolean) {
-  return `flex flex-col gap-1 rounded-xl border p-3 text-left transition ${active ? "border-primary bg-primary/10 text-foreground" : "border-border bg-card text-foreground hover:border-primary/60"}`;
-}
-
-function SwitchLine({ id, checked, onChange, label }: { id: string; checked: boolean; onChange: (value: boolean) => void; label: string }) {
-  return (
-    <label htmlFor={id} className="flex items-center justify-between gap-3 text-sm text-foreground">
-      <span>{label}</span>
-      <Switch id={id} checked={checked} onCheckedChange={onChange} />
-    </label>
-  );
-}
-
-function isImageUrl(url: string): boolean {
-  return /\.(jpe?g|png|webp)(?:\?|#|$)/i.test(url);
-}
-
-function sourceKey(post: UnifiedPublication): string {
-  return `${post.network}:${post.id}`;
-}
-
-function titleOf(post: UnifiedPublication): string {
-  const firstLine = post.text.split(/\r?\n/).map((line) => line.trim()).find(Boolean);
-  return firstLine ? firstLine.slice(0, 96) : `${post.network} · ${contentTypeOf(post)}`;
-}
-
-function messageOf(cause: unknown): string {
-  return cause instanceof Error ? cause.message : "Não foi possível concluir a operação.";
-}
+function sourceKey(post: UnifiedPublication): string { return `${post.network}:${post.id}`; }
+function titleOf(post: UnifiedPublication): string { return post.text.split(/\r?\n/).map((line) => line.trim()).find(Boolean)?.slice(0, 120) || "Publicação sem legenda"; }
+function messageOf(cause: unknown): string { return cause instanceof Error ? cause.message : "Não foi possível concluir a operação."; }

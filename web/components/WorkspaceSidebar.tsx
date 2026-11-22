@@ -122,17 +122,21 @@ export function WorkspaceSidebar({ workspaceId }: { workspaceId: string }) {
             href={`${base}${navigation.featured.href}`}
             aria-current={isItemActive(navigation.featured) ? "page" : undefined}
             className={cn(
-              "mb-3 flex w-full items-center gap-2.5 rounded-md border px-2.5 py-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/40",
-              isItemActive(navigation.featured) ? "border-amber-500 bg-amber-500/20" : "border-amber-500/50 bg-amber-500/10 hover:bg-amber-500/20",
+              // Tem cara de BOTÃO: fundo âmbar sólido em degradê, borda, sombra, seta e resposta ao clique.
+              "group mb-3 flex w-full items-center gap-2.5 rounded-lg border px-2.5 py-2.5 shadow-sm transition-all hover:-translate-y-px hover:shadow-md active:translate-y-0 active:shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/60",
+              isItemActive(navigation.featured)
+                ? "border-amber-400 bg-gradient-to-r from-amber-500 to-amber-400 text-amber-950 ring-2 ring-amber-400/40"
+                : "border-amber-500/70 bg-gradient-to-r from-amber-500/35 to-amber-500/15 text-foreground hover:from-amber-500/50 hover:to-amber-500/25",
             )}
           >
-            <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-amber-500/25 text-amber-600 dark:text-amber-300">
+            <span className={cn("flex h-8 w-8 shrink-0 items-center justify-center rounded-md", isItemActive(navigation.featured) ? "bg-amber-950/15 text-amber-950" : "bg-amber-500 text-amber-950")}>
               <NavIcon id={navigation.featured.icon} className="h-4 w-4" />
             </span>
-            <span className="min-w-0">
-              <span className="block truncate text-[13px] font-semibold text-foreground">{navigation.featured.label}</span>
-              <span className="block truncate text-[11px] text-muted-foreground">{navigation.featured.hint}</span>
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-[13px] font-semibold">{navigation.featured.label}</span>
+              <span className={cn("block truncate text-[11px]", isItemActive(navigation.featured) ? "text-amber-950/75" : "text-muted-foreground")}>{navigation.featured.hint}</span>
             </span>
+            <ChevronRight className="h-4 w-4 shrink-0 opacity-70 transition-transform group-hover:translate-x-0.5" aria-hidden="true" />
           </Link>
         )
       ) : null}

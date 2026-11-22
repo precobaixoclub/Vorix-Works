@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronDown, Film, GalleryHorizontal, ImageIcon, ImagePlus, Plus, Trash2, X, type LucideIcon } from "lucide-react";
+import { ChevronDown, Film, GalleryHorizontal, ImageIcon, ImagePlus, Plus, Sparkles, Trash2, X, type LucideIcon } from "lucide-react";
 import { useRef, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/Button";
@@ -53,7 +53,7 @@ export function IdeaEditor({ workspaceId, idea, categories, onClose, onSave }: {
   const [targetAudience, setTargetAudience] = useState(idea && idea.targetAudience !== "Público da marca" ? idea.targetAudience : "");
   const [commercialObjective, setCommercialObjective] = useState(idea && idea.commercialObjective !== "Engajar e atrair clientes" ? idea.commercialObjective : "");
   const [creativePrompt, setCreativePrompt] = useState(idea?.creativePrompt ?? "");
-  const [moreOpen, setMoreOpen] = useState(Boolean(idea?.creativePrompt || targetAudience || commercialObjective));
+  const [moreOpen, setMoreOpen] = useState(Boolean(targetAudience || commercialObjective));
   const [uploading, setUploading] = useState(false);
   const [dragging, setDragging] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -207,6 +207,22 @@ export function IdeaEditor({ workspaceId, idea, categories, onClose, onSave }: {
             <input ref={fileInput} type="file" accept="image/jpeg,image/png,image/webp" multiple className="hidden" onChange={(event) => void addFiles(event.target.files)} />
           </section>
 
+          <section className="rounded-xl border border-primary/40 bg-primary/5 p-4">
+            <div className="mb-1.5 flex items-center justify-between gap-2">
+              <p className="flex items-center gap-2 text-sm font-medium text-foreground"><Sparkles className="h-4 w-4 text-primary" aria-hidden="true" /> Prompt para a IA</p>
+              <span className="text-xs tabular-nums text-muted-foreground">{creativePrompt.length}/8000</span>
+            </div>
+            <p className="mb-2 text-xs text-muted-foreground">Descreva como a arte deve ficar: cena, clima, cores, o que destacar e o que evitar. A IA segue este prompt junto com as imagens de referência e a identidade da sua marca.</p>
+            <Textarea
+              value={creativePrompt}
+              onChange={(event) => setCreativePrompt(event.target.value)}
+              rows={5}
+              maxLength={8000}
+              placeholder="Ex.: usar a foto do casal como fundo em tela cheia, tons quentes e luz de fim de tarde, título grande em serifa no rodapé, logo pequena no topo, sem bordas grossas."
+              className="bg-background"
+            />
+          </section>
+
           <FieldBlock label="Texto da arte" hint="A frase principal que aparece na imagem. Vazio = usa o título.">
             <Textarea value={keyMessage} onChange={(event) => setKeyMessage(event.target.value)} rows={2} maxLength={400} placeholder="Ex.: Cliente que espera, desiste." />
           </FieldBlock>
@@ -272,9 +288,6 @@ export function IdeaEditor({ workspaceId, idea, categories, onClose, onSave }: {
                   <FieldBlock label="Público-alvo"><Input value={targetAudience} onChange={(event) => setTargetAudience(event.target.value)} maxLength={300} placeholder="Ex.: noivas que casam em 2027" /></FieldBlock>
                   <FieldBlock label="Objetivo"><Input value={commercialObjective} onChange={(event) => setCommercialObjective(event.target.value)} maxLength={300} placeholder="Ex.: gerar orçamentos" /></FieldBlock>
                 </div>
-                <FieldBlock label="Direção de arte" hint="Como a arte deve ficar: cena, clima, cores, o que evitar.">
-                  <Textarea value={creativePrompt} onChange={(event) => setCreativePrompt(event.target.value)} rows={4} maxLength={8000} placeholder="Ex.: usar a foto do casal como fundo, tons quentes, título grande em serifa, logo pequena no topo." />
-                </FieldBlock>
               </div>
             ) : null}
           </section>

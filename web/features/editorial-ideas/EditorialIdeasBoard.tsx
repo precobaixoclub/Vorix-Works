@@ -766,7 +766,7 @@ function EditorialIdeaDetail({ idea, busy, onClose, onEdit, onDelete, onToggleUs
           <DetailBlock label="Público-alvo"><p className="text-sm text-foreground">{idea.targetAudience}</p></DetailBlock>
         </div>
         {idea.creativePrompt || (idea.visualDirection && idea.approach !== "Cadastro manual") ? (
-          <DetailBlock label="Direção de arte"><p className="whitespace-pre-wrap text-sm text-foreground">{idea.creativePrompt ?? idea.visualDirection}</p></DetailBlock>
+          <DetailBlock label="Prompt para a IA"><p className="whitespace-pre-wrap text-sm text-foreground">{idea.creativePrompt ?? idea.visualDirection}</p></DetailBlock>
         ) : null}
         <DetailBlock label="Calendário">
           <div className="flex flex-wrap items-center gap-2">

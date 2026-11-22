@@ -35,7 +35,7 @@ export const SOLUTION_HOME_PATH: Record<SolutionKey, string> = {
   site:"/site",
   conversations: "",
   meetings: "/meetings",
-  marketing: "/production",
+  marketing: "/ideias",
 };
 
 /** Primeiro segmento da rota (depois de `/workspaces/:id`) → solução dona da tela. */

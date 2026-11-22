@@ -15,6 +15,8 @@ import {
   MoreHorizontal,
   Pencil,
   Plus,
+  Power,
+  PowerOff,
   RotateCcw,
   Sparkles,
   Trash2,
@@ -60,19 +62,21 @@ import {
   type EditorialIdeaStatus,
 } from "./api";
 import { IdeaEditor } from "./IdeaEditor";
+import { IdeasHubTabs } from "./IdeasHubTabs";
 import { blueprintToIdeaInput, clearLocalTankIdeas, readLocalTankIdeas } from "./local-tank-migration";
 import { referenceThumb } from "./reference-images";
 
 type View = "grid" | "list" | "calendar";
 const PAGE = 24;
-const BUCKETS: EditorialIdeaBucket[] = ["pending", "used"];
+const BUCKETS: EditorialIdeaBucket[] = ["pending", "used", "inactive"];
 const FORMAT_ICON: Record<EditorialIdeaFormat, LucideIcon> = { single_image: ImageIcon, carousel: GalleryHorizontal, video: Film };
 
 const BUCKET_TONE: Record<EditorialIdeaBucket, string> = {
   pending: "bg-emerald-500 text-white",
   used: "bg-zinc-700 text-zinc-100",
+  inactive: "bg-amber-500 text-black",
 };
-const BUCKET_PILL_LABEL: Record<EditorialIdeaBucket, string> = { pending: "Pendente", used: "Usada" };
+const BUCKET_PILL_LABEL: Record<EditorialIdeaBucket, string> = { pending: "Pendente", used: "Usada", inactive: "Inativa" };
 
 const WEEKDAY = new Intl.DateTimeFormat("pt-BR", { weekday: "short", day: "2-digit", month: "2-digit", timeZone: "UTC" });
 const formatDay = (date?: string) => (date ? WEEKDAY.format(new Date(`${date}T00:00:00Z`)) : "—");
@@ -81,7 +85,7 @@ const formatDay = (date?: string) => (date ? WEEKDAY.format(new Date(`${date}T00
 function createBlockedReason(idea: EditorialIdea): string | null {
   if (idea.format === "video") return "Ideias de vídeo trazem o roteiro pronto para gravar; o gerador automático faz imagem e carrossel.";
   if (idea.status === "in_production") return "Esta ideia já está sendo criada. Acompanhe na Produção.";
-  if (idea.status === "archived") return "Ideia arquivada. Volte para pendente antes de criar o post.";
+  if (idea.status === "archived") return "Ideia inativa. Reative antes de criar o post.";
   return null;
 }
 
@@ -185,7 +189,7 @@ export function EditorialIdeasBoard({ workspaceId, openNew = false }: { workspac
 
   const categories = useMemo(() => [...new Set((ideas ?? []).map((idea) => idea.category))].sort((a, b) => a.localeCompare(b, "pt-BR")), [ideas]);
   const bucketCount = useMemo(() => {
-    const count: Record<EditorialIdeaBucket, number> = { pending: 0, used: 0 };
+    const count: Record<EditorialIdeaBucket, number> = { pending: 0, used: 0, inactive: 0 };
     for (const idea of ideas ?? []) count[editorialBucketOf(idea.status)] += 1;
     return count;
   }, [ideas]);
@@ -267,6 +271,19 @@ export function EditorialIdeasBoard({ workspaceId, openNew = false }: { workspac
     }
   }
 
+  async function onToggleActive(idea: EditorialIdea) {
+    const reactivate = idea.status === "archived";
+    setBusy(`status:${idea.id}`);
+    try {
+      replace(await updateEditorialIdea(workspaceId, idea.id, reactivate ? { status: "available", executionRunId: null } : { status: "archived", scheduledDate: null }));
+      toast.success(reactivate ? "Ideia reativada: voltou para Pendentes." : "Ideia inativada: o piloto automático não vai usar.");
+    } catch (cause) {
+      toast.error(cause instanceof Error ? cause.message : "Não foi possível mudar a ideia.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
   async function onSave(input: EditorialIdeaInput) {
     if (editing && editing !== "new") {
       replace(await saveEditorialIdea(workspaceId, editing.id, input));
@@ -325,6 +342,8 @@ export function EditorialIdeasBoard({ workspaceId, openNew = false }: { workspac
   );
 
   const header = (
+    <>
+    <IdeasHubTabs workspaceId={workspaceId} active="ideas" />
     <PageHeader
       title="Bolsão de ideias"
       description="Suas ideias de post num lugar só. Cadastre uma por vez com imagens de referência, ou importe várias por planilha."
@@ -352,6 +371,7 @@ export function EditorialIdeasBoard({ workspaceId, openNew = false }: { workspac
         </>
       }
     />
+    </>
   );
 
   const editor = editing ? (
@@ -487,7 +507,16 @@ export function EditorialIdeasBoard({ workspaceId, openNew = false }: { workspac
       ) : view === "grid" ? (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {shown.map((idea) => (
-            <IdeaCard key={idea.id} idea={idea} busy={busy} onOpen={() => setSelectedId(idea.id)} onEdit={() => setEditing(idea)} onCreate={() => void onGenerate(idea)} />
+            <IdeaCard
+              key={idea.id}
+              idea={idea}
+              busy={busy}
+              onOpen={() => setSelectedId(idea.id)}
+              onEdit={() => setEditing(idea)}
+              onToggleActive={() => void onToggleActive(idea)}
+              onDelete={() => setDeleting(idea)}
+              onCreate={() => void onGenerate(idea)}
+            />
           ))}
         </div>
       ) : (
@@ -518,8 +547,8 @@ export function EditorialIdeasBoard({ workspaceId, openNew = false }: { workspac
                   <TableCell className="hidden text-right text-sm tabular-nums text-muted-foreground lg:table-cell">{formatDay(idea.scheduledDate)}</TableCell>
                   <TableCell className="text-right" onClick={(event) => event.stopPropagation()}>
                     <div className="flex justify-end gap-1">
-                      <Button size="sm" variant="ghost" aria-label="Editar" onClick={() => setEditing(idea)}><Pencil className="h-4 w-4" aria-hidden="true" /></Button>
-                      {idea.format === "video" ? null : <CreatePostButton idea={idea} busy={busy} size="sm" onCreate={() => void onGenerate(idea)} />}
+                      <IdeaActions idea={idea} onEdit={() => setEditing(idea)} onToggleActive={() => void onToggleActive(idea)} onDelete={() => setDeleting(idea)} />
+                      {idea.format === "video" || idea.status === "archived" ? null : <CreatePostButton idea={idea} busy={busy} size="sm" onCreate={() => void onGenerate(idea)} />}
                     </div>
                   </TableCell>
                 </TableRow>
@@ -543,6 +572,7 @@ export function EditorialIdeasBoard({ workspaceId, openNew = false }: { workspac
           onEdit={() => setEditing(selected)}
           onDelete={() => setDeleting(selected)}
           onToggleUsed={() => void onPatch(selected, selected.status === "available" ? { status: "published" } : { status: "available", executionRunId: null }, "status")}
+          onToggleActive={() => void onToggleActive(selected)}
           onScheduleChange={(scheduledDate) => void onPatch(selected, { scheduledDate }, "date")}
           onGenerate={() => void onGenerate(selected)}
         />
@@ -617,7 +647,7 @@ function Thumb({ idea, className, large }: { idea: EditorialIdea; className?: st
   );
 }
 
-function IdeaCard({ idea, busy, onOpen, onEdit, onCreate }: { idea: EditorialIdea; busy: string | null; onOpen: () => void; onEdit: () => void; onCreate: () => void }) {
+function IdeaCard({ idea, busy, onOpen, onEdit, onToggleActive, onDelete, onCreate }: { idea: EditorialIdea; busy: string | null; onOpen: () => void; onEdit: () => void; onToggleActive: () => void; onDelete: () => void; onCreate: () => void }) {
   const Icon = FORMAT_ICON[idea.format];
   const refs = idea.referenceImages?.length ?? 0;
   return (
@@ -643,8 +673,8 @@ function IdeaCard({ idea, busy, onOpen, onEdit, onCreate }: { idea: EditorialIde
         <div className="mt-auto flex items-center justify-between gap-2 pt-3">
           <span className="text-xs tabular-nums text-muted-foreground">{idea.status !== "available" ? `Usada ${new Date(idea.statusChangedAt).toLocaleDateString("pt-BR")}` : idea.scheduledDate ? formatDay(idea.scheduledDate) : ""}</span>
           <div className="flex gap-1">
-            <Button size="sm" variant="ghost" aria-label="Editar ideia" onClick={onEdit}><Pencil className="h-4 w-4" aria-hidden="true" /></Button>
-            {idea.format === "video" ? <Button size="sm" variant="secondary" onClick={onOpen}>Ver roteiro</Button> : <CreatePostButton idea={idea} busy={busy} size="sm" onCreate={onCreate} />}
+            <IdeaActions idea={idea} onEdit={onEdit} onToggleActive={onToggleActive} onDelete={onDelete} />
+            {idea.status === "archived" ? null : idea.format === "video" ? <Button size="sm" variant="secondary" onClick={onOpen}>Ver roteiro</Button> : <CreatePostButton idea={idea} busy={busy} size="sm" onCreate={onCreate} />}
           </div>
         </div>
       </div>
@@ -652,13 +682,14 @@ function IdeaCard({ idea, busy, onOpen, onEdit, onCreate }: { idea: EditorialIde
   );
 }
 
-function EditorialIdeaDetail({ idea, busy, onClose, onEdit, onDelete, onToggleUsed, onScheduleChange, onGenerate }: {
+function EditorialIdeaDetail({ idea, busy, onClose, onEdit, onDelete, onToggleUsed, onToggleActive, onScheduleChange, onGenerate }: {
   idea: EditorialIdea;
   busy: string | null;
   onClose: () => void;
   onEdit: () => void;
   onDelete: () => void;
   onToggleUsed: () => void;
+  onToggleActive: () => void;
   onScheduleChange: (date: string | null) => void;
   onGenerate: () => void;
 }) {
@@ -684,10 +715,15 @@ function EditorialIdeaDetail({ idea, busy, onClose, onEdit, onDelete, onToggleUs
       defaultWidthPercent={62}
       footer={
         <div className="flex flex-wrap items-center gap-2">
-          {idea.format === "video" ? null : <CreatePostButton idea={idea} busy={busy} onCreate={onGenerate} />}
+          {idea.format === "video" || idea.status === "archived" ? null : <CreatePostButton idea={idea} busy={busy} onCreate={onGenerate} />}
           <Button variant="secondary" onClick={onEdit}><Pencil className="h-4 w-4" aria-hidden="true" /> Editar</Button>
-          <Button variant="ghost" disabled={busy === `status:${idea.id}`} onClick={onToggleUsed}>
-            {idea.status === "available" ? <><CheckCircle2 className="h-4 w-4" aria-hidden="true" /> Marcar como usada</> : <><RotateCcw className="h-4 w-4" aria-hidden="true" /> Voltar para pendente</>}
+          {idea.status === "archived" ? null : (
+            <Button variant="ghost" disabled={busy === `status:${idea.id}`} onClick={onToggleUsed}>
+              {idea.status === "available" ? <><CheckCircle2 className="h-4 w-4" aria-hidden="true" /> Marcar como usada</> : <><RotateCcw className="h-4 w-4" aria-hidden="true" /> Voltar para pendente</>}
+            </Button>
+          )}
+          <Button variant="ghost" disabled={busy === `status:${idea.id}`} onClick={onToggleActive}>
+            {idea.status === "archived" ? <><Power className="h-4 w-4" aria-hidden="true" /> Reativar</> : <><PowerOff className="h-4 w-4" aria-hidden="true" /> Inativar</>}
           </Button>
           <Button variant="ghost" onClick={() => { void navigator.clipboard.writeText(idea.caption).then(() => toast.success("Legenda copiada.")); }}>Copiar legenda</Button>
           <Button variant="ghost" className="ml-auto text-destructive hover:text-destructive" onClick={onDelete}><Trash2 className="h-4 w-4" aria-hidden="true" /> Excluir</Button>
@@ -741,6 +777,26 @@ function EditorialIdeaDetail({ idea, busy, onClose, onEdit, onDelete, onToggleUs
         </DetailBlock>
       </div>
     </DetailModal>
+  );
+}
+
+/** Menu "⋯" da ideia: editar, inativar/reativar e excluir. */
+function IdeaActions({ idea, onEdit, onToggleActive, onDelete }: { idea: EditorialIdea; onEdit: () => void; onToggleActive: () => void; onDelete: () => void }) {
+  const [open, setOpen] = useState(false);
+  const run = (action: () => void) => () => { setOpen(false); action(); };
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button size="sm" variant="ghost" aria-label={`Ações da ideia ${idea.title}`}><MoreHorizontal className="h-4 w-4" aria-hidden="true" /></Button>
+      </PopoverTrigger>
+      <PopoverContent align="end" className="w-48 p-1">
+        <MenuItem icon={Pencil} onClick={run(onEdit)}>Editar</MenuItem>
+        <MenuItem icon={idea.status === "archived" ? Power : PowerOff} onClick={run(onToggleActive)}>{idea.status === "archived" ? "Reativar" : "Inativar"}</MenuItem>
+        <button type="button" onClick={run(onDelete)} className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm text-destructive hover:bg-destructive/10">
+          <Trash2 className="h-4 w-4" aria-hidden="true" /> Excluir
+        </button>
+      </PopoverContent>
+    </Popover>
   );
 }
 

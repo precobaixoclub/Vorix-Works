@@ -61,11 +61,14 @@ export type EditorialIdeaInput = {
   referenceImages?: string[];
 };
 
-/** O bolsão só tem duas situações para quem olha: dá para usar (Pendente) ou já virou post (Usada). */
-export type EditorialIdeaBucket = "pending" | "used";
-export const EDITORIAL_BUCKET_LABEL: Record<EditorialIdeaBucket, string> = { pending: "Pendentes", used: "Usadas" };
+/** Situações do bolsão para quem olha: dá para usar (Pendente), já virou post (Usada) ou foi tirada
+ * de uso por você (Inativa — o piloto automático e o calendário ignoram). */
+export type EditorialIdeaBucket = "pending" | "used" | "inactive";
+export const EDITORIAL_BUCKET_LABEL: Record<EditorialIdeaBucket, string> = { pending: "Pendentes", used: "Usadas", inactive: "Inativas" };
 export function editorialBucketOf(status: EditorialIdeaStatus): EditorialIdeaBucket {
-  return status === "available" ? "pending" : "used";
+  if (status === "available") return "pending";
+  if (status === "archived") return "inactive";
+  return "used";
 }
 
 export type EditorialGenerationBrief = { name: string; objective: string; ideaText: string; targetAudience: string; format: "single_image" | "carousel" };

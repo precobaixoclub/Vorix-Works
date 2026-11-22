@@ -22,8 +22,9 @@ export type SolutionNavigation = {
   home: WorkspaceNavItem;
   /** Ação principal em destaque no topo da sidebar (ex.: "Novo conteúdo"). */
   primaryAction?: WorkspaceNavItem & { cta: string };
-  /** Atalho em destaque logo abaixo da ação principal (ex.: Bolsão de ideias). */
-  featured?: WorkspaceNavItem & { hint: string };
+  /** Atalho em destaque logo abaixo da ação principal (ex.: Bolsão de ideias). `alsoActiveOn` marca o
+   * destaque como ativo em outras rotas do mesmo lugar (ex.: a aba "Em produção" do bolsão). */
+  featured?: WorkspaceNavItem & { hint: string; alsoActiveOn?: readonly string[] };
   sections: readonly WorkspaceNavSection[];
   /** Área técnica, só para owner/admin (ver `canUseBackstage`). */
   backstage: readonly WorkspaceNavItem[];
@@ -35,10 +36,11 @@ export type SolutionNavigation = {
 export const SETTINGS_NAV: readonly WorkspaceNavItem[] = [{ href: "/settings", label: "Configurações", icon: "settings" }] as const;
 
 const CONVERSATIONS_HOME: WorkspaceNavItem = { href: "", label: "Início", icon: "home" };
-const MARKETING_HOME: WorkspaceNavItem = { href: "/production", label: "Produção", icon: "production" };
 const CREATE_NAV_ITEM: WorkspaceNavItem = { href: "/create", label: "Criar", icon: "create" };
-/** Bolsão de ideias do workspace: pautas prontas para virar post (EditorialIdeasBoard). */
+/** Bolsão de ideias do workspace: as ideias de post e, na aba "Em produção", a fila da IA. É também
+ * o início do Marketing — Bolsão e Produção são um lugar só. */
 const IDEAS_NAV_ITEM: WorkspaceNavItem = { href: "/ideias", label: "Bolsão de ideias", icon: "ideas" };
+const MARKETING_HOME: WorkspaceNavItem = IDEAS_NAV_ITEM;
 const MEETINGS_HOME: WorkspaceNavItem = { href: "/meetings", label: "Início", icon: "home" };
 const MEETINGS_CENTRAL: WorkspaceNavItem = { href: "/meetings/central", label: "Reuniões", icon: "meetings" };
 const MEETINGS_RECORDINGS: WorkspaceNavItem = { href: "/meetings/recordings", label: "Gravações", icon: "recordings" };
@@ -145,7 +147,7 @@ export const SOLUTION_NAVIGATION: Readonly<Record<SolutionKey, SolutionNavigatio
   marketing: {
     home: MARKETING_HOME,
     primaryAction: { ...CREATE_NAV_ITEM, cta: "Novo conteúdo" },
-    featured: { ...IDEAS_NAV_ITEM, hint: "Ideias de post prontas" },
+    featured: { ...IDEAS_NAV_ITEM, hint: "Ideias e posts em produção", alsoActiveOn: ["/production"] },
     sections: [
       {
         label: "CONTEÚDO",
@@ -166,7 +168,7 @@ export const SOLUTION_NAVIGATION: Readonly<Record<SolutionKey, SolutionNavigatio
       },
     ],
     backstage: MARKETING_BACKSTAGE,
-    mobilePrimary: [MARKETING_HOME, CREATE_NAV_ITEM, IDEAS_NAV_ITEM, { href: "/campaigns", label: "Conteúdos", icon: "content" }],
+    mobilePrimary: [MARKETING_HOME, CREATE_NAV_ITEM, { href: "/campaigns", label: "Conteúdos", icon: "content" }, { href: "/calendar", label: "Calendário", icon: "calendar" }],
     mobileMenu: [
       {
         label: "Redes sociais",
@@ -225,6 +227,8 @@ export function buildRouteLabels(base: string, available: readonly SolutionKey[]
     if (navigation.featured) add(navigation.featured);
     navigation.sections.forEach((section) => section.items.forEach(add));
     navigation.backstage.forEach(add);
+    // Telas fora da sidebar que fazem parte de um item dela (ex.: a aba "Em produção" do Bolsão).
+    if (key === "marketing") labels[`${base}/production`] ??= "Em produção";
   }
   SETTINGS_NAV.forEach(add);
   // Subpáginas de configurações não estão na sidebar — sem isto o breadcrumb mostraria o slug ("Users").

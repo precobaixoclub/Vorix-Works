@@ -130,6 +130,6 @@ describe("navegação por solução", () => {
     expect(labels[`${BASE}/settings`]).toBe("Configurações");
     // Sem a solução, o breadcrumb não revela nem o nome da tela do Marketing.
     expect(labels[`${BASE}/production`]).toBeUndefined();
-    expect(buildRouteLabels(BASE, ["conversations", "marketing"])[`${BASE}/production`]).toBe("Produção");
+    expect(buildRouteLabels(BASE, ["conversations", "marketing"])[`${BASE}/production`]).toBe("Em produção");
   });
 });

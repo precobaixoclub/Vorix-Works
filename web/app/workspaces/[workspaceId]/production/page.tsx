@@ -29,7 +29,7 @@ import { TablePagination, usePagination } from "@/components/ui/table-pagination
 import { useDebounce } from "@/hooks/useDebounce";
 import { useSortedRows } from "@/hooks/useSortedRows";
 import { useCreativeEngineWorkspaceStatus } from "@/features/creative-engine-entitlement/hooks";
-import { IdeasPoolBanner } from "@/features/editorial-ideas/IdeasPoolBanner";
+import { IdeasHubTabs } from "@/features/editorial-ideas/IdeasHubTabs";
 
 const CHANNELS: ProductionChannel[] = ["instagram", "facebook", "tiktok", "youtube"];
 const FORMATS: ProductionFormat[] = ["single_image", "carousel", "video"];
@@ -861,21 +861,19 @@ export default function ProductionLinePage() {
 
   return (
     <main className="mx-auto max-w-6xl px-3 py-5 sm:px-6 sm:py-8">
+      <IdeasHubTabs workspaceId={workspace.id} active="production" inProduction={runsByTab.in_progress?.length} />
       <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="min-w-0">
-          <h1 className="text-2xl font-semibold text-foreground">Produção</h1>
-          <p className="mt-1 text-sm text-muted-foreground">Acompanhe os posts que a IA está criando e os que já ficaram prontos. As ideias ficam no Bolsão.</p>
+          <h1 className="text-2xl font-semibold text-foreground">Em produção</h1>
+          <p className="mt-1 text-sm text-muted-foreground">Os posts que a IA está criando a partir das suas ideias e os que já ficaram prontos para revisar.</p>
         </div>
         <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
-          <Link href={`/workspaces/${workspace.id}/ideias?nova=1`}><Button className="w-full sm:w-auto">+ Nova ideia</Button></Link>
           <Link href={`/workspaces/${workspace.id}/knowledge?tab=guidelines`} className="relative">
-            <Button variant="secondary" className="w-full">{hasGuidelines ? "Editar prompt" : "Configurar prompt"}</Button>
+            <Button variant="secondary" className="w-full">{hasGuidelines ? "Editar prompt da IA" : "Configurar prompt da IA"}</Button>
             {!hasGuidelines ? <span className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full bg-warning" aria-hidden="true" /> : null}
           </Link>
         </div>
       </div>
-
-      <IdeasPoolBanner workspaceId={workspace.id} className="mb-4" />
 
       <div className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border border-border bg-card px-3 py-1.5 text-xs text-muted-foreground">
         <span>Prompt: <strong className="font-semibold text-foreground">{hasGuidelines ? "configurado" : "pendente"}</strong></span>

@@ -32,6 +32,8 @@ export function WorkspaceSidebar({ workspaceId }: { workspaceId: string }) {
 
   function isItemActive(item: WorkspaceNavItem): boolean {
     const href = `${base}${item.href}`;
+    const also = item === navigation.featured ? navigation.featured.alsoActiveOn ?? [] : [];
+    if (also.some((path) => pathname.startsWith(`${base}${path}`))) return true;
     // A home de cada solução só fica ativa nela mesma (`/meetings` é prefixo das outras telas do Meetings).
     return item.href === "" || item.href === navigation.home.href ? pathname === href : pathname.startsWith(href);
   }
@@ -136,7 +138,8 @@ export function WorkspaceSidebar({ workspaceId }: { workspaceId: string }) {
       ) : null}
 
       <div className={cn("flex flex-1 flex-col gap-3 overflow-y-auto overflow-x-hidden", !collapsed && "pr-1")}>
-        <div className="flex flex-col gap-1">{renderLink(navigation.home)}</div>
+        {/* Quando o destaque JÁ é o início (Marketing: Bolsão de ideias), não repete o mesmo link. */}
+        {navigation.featured?.href !== navigation.home.href ? <div className="flex flex-col gap-1">{renderLink(navigation.home)}</div> : null}
 
         {navigation.sections.map((section) => (
           <div key={section.label} className="flex flex-col gap-1">

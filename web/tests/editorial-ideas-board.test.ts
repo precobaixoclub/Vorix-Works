@@ -22,10 +22,11 @@ const blueprint = (overrides: Partial<ContentBlueprint> = {}): ContentBlueprint 
   ...overrides,
 });
 
-describe("bolsão: só duas situações", () => {
-  it("disponível é Pendente; qualquer outra coisa já virou post e é Usada", () => {
+describe("bolsão: pendente, usada ou inativa", () => {
+  it("disponível é Pendente, inativada é Inativa e o resto já virou post (Usada)", () => {
     expect(editorialBucketOf("available")).toBe("pending");
-    for (const status of ["in_production", "produced", "approved", "published", "archived"] as const) expect(editorialBucketOf(status)).toBe("used");
+    expect(editorialBucketOf("archived")).toBe("inactive");
+    for (const status of ["in_production", "produced", "approved", "published"] as const) expect(editorialBucketOf(status)).toBe("used");
   });
 });
 

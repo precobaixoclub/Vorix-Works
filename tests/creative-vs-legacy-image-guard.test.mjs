@@ -43,7 +43,7 @@ test("motor LEGADO (sem authorizedVisibleTitle): comportamento inalterado — ai
   await provider.execute({
     taskType: "image_generation",
     prompt: PLAN_DERIVED_PROMPT,
-    model: "gpt-image-1",
+    model: "gpt-image-2.6-sunburst",
     context: {},
   });
 
@@ -62,7 +62,7 @@ test("motor GPT (mesmo prompt, mesmo tipo de dado): preserva headline/CTA verbat
   await provider.execute({
     taskType: "image_generation",
     prompt: PLAN_DERIVED_PROMPT,
-    model: "gpt-image-1",
+    model: "gpt-image-2.6-sunburst",
     context: {
       creativeGuard: { preservedAssetRoles: [], confirmedFacts: [] },
     },
@@ -84,7 +84,7 @@ test("negativo: o motor GPT nunca aplica a guarda legada mesmo se o caller tenta
       provider.execute({
         taskType: "image_generation",
         prompt: PLAN_DERIVED_PROMPT,
-        model: "gpt-image-1",
+        model: "gpt-image-2.6-sunburst",
         context: {
           creativeGuard: { preservedAssetRoles: [], confirmedFacts: [] },
           authorizedVisibleTitle: "Ofertas que somem rápido",
@@ -102,7 +102,7 @@ test("negativo: o motor legado nunca lê context.creativeGuard (não teria efeit
   await provider.execute({
     taskType: "image_generation",
     prompt: PLAN_DERIVED_PROMPT,
-    model: "gpt-image-1",
+    model: "gpt-image-2.6-sunburst",
     context: {
       creativeGuard: { preservedAssetRoles: ["logo"], confirmedFacts: ["Preço atual: R$ 39,99"] },
     },

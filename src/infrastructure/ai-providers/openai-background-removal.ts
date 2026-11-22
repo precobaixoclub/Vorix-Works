@@ -1,3 +1,5 @@
+import { DEFAULT_GPT_IMAGE_MODEL, getGptImageModel, unsupportedGptImageModelMessage } from "../../shared/utils/gpt-image-models.js";
+
 const DEFAULT_BASE_URL = "https://api.openai.com";
 
 /** Prompt fixo, nunca customizável pelo caller — a única tarefa aqui é isolar o que já existe,
@@ -11,11 +13,13 @@ const REMOVE_BACKGROUND_PROMPT =
 export type OpenAiBackgroundRemovalConfig = {
   apiBaseUrl?: string;
   getApiKey: () => Promise<string | undefined>;
+  /** Modelo do catálogo (`OPENAI_IMAGE_MODEL`); precisa aceitar fundo transparente. */
+  modelId?: string;
 };
 
 /**
  * Mesmo recurso que o usuário já usa manualmente no ChatGPT ("remove o fundo desta imagem") —
- * `POST /v1/images/edits` do `gpt-image-1` aceita uma imagem real de entrada e `background:
+ * `POST /v1/images/edits` dos modelos GPT Image aceita uma imagem real de entrada e `background:
  * "transparent"`, devolvendo um PNG com canal alfa de verdade. Nunca registra o resultado como
  * Asset por conta própria — devolve só o buffer processado; quem chama decide se usa (ver
  * `assets.route.ts`, sempre com confirmação explícita do usuário antes de salvar como logo
@@ -31,11 +35,16 @@ export async function removeImageBackgroundViaAI(
     throw new Error("OPENAI_BACKGROUND_REMOVAL_NOT_CONFIGURED: nenhuma API key da OpenAI configurada neste servidor.");
   }
 
+  const model = getGptImageModel(config.modelId ?? DEFAULT_GPT_IMAGE_MODEL);
+  if (!model) throw new Error(`OPENAI_BACKGROUND_REMOVAL_NOT_CONFIGURED: ${unsupportedGptImageModelMessage(config.modelId)}`);
+  if (!model.transparentBackground) throw new Error(`OPENAI_BACKGROUND_REMOVAL_NOT_CONFIGURED: o modelo ${model.id} não gera fundo transparente.`);
+
   const baseUrl = config.apiBaseUrl ?? DEFAULT_BASE_URL;
   const formData = new FormData();
-  formData.append("model", "gpt-image-1");
+  formData.append("model", model.id);
   formData.append("prompt", REMOVE_BACKGROUND_PROMPT);
-  formData.append("size", "1024x1024");
+  // "auto": mantém a proporção da logo enviada (antes era sempre um quadrado 1024x1024).
+  formData.append("size", "auto");
   formData.append("quality", "high");
   formData.append("background", "transparent");
   formData.append("n", "1");

@@ -8,7 +8,19 @@ function fakeMediaProvider(generateImpl) {
     calls,
     async generate(request) {
       calls.push(request);
-      return generateImpl ? generateImpl(request) : { ok: true, mediaUrl: "https://example.com/out.png" };
+      return generateImpl
+        ? generateImpl(request)
+        : {
+            ok: true,
+            mediaUrl: "https://example.com/out.png",
+            audit: {
+              model: request.modelId,
+              endpoint: "generations",
+              params: { size: request.params.size, quality: request.params.quality },
+              usage: { inputTextTokens: 1000, inputImageTokens: 0, outputImageTokens: 6000, outputTextTokens: 0, totalTokens: 7000 },
+              costUsd: 0.185,
+            },
+          };
     },
   };
 }
@@ -17,7 +29,7 @@ function baseRequest(context = {}) {
   return {
     taskType: "image_generation",
     prompt: 'Headline (desenhar exatamente este texto): "Ofertas imperdíveis"\nCTA (desenhar exatamente este texto): "Confira agora"',
-    model: "gpt-image-1",
+    model: "gpt-image-2.6-sunburst",
     context: {
       creativeGuard: { preservedAssetRoles: [], confirmedFacts: [] },
       ...context,
@@ -25,10 +37,10 @@ function baseRequest(context = {}) {
   };
 }
 
-test("OpenAiCreativeImageProvider: modelo padrão é gpt-image-1, profile.id é openai-creative-image", () => {
+test("OpenAiCreativeImageProvider: modelo padrão é gpt-image-2.6-sunburst (catálogo), profile.id é openai-creative-image", () => {
   const provider = new OpenAiCreativeImageProvider(fakeMediaProvider());
   assert.equal(provider.profile.id, "openai-creative-image");
-  assert.equal(provider.profile.models[0].id, "gpt-image-1");
+  assert.equal(provider.profile.models[0].id, "gpt-image-2.6-sunburst");
 });
 
 test("OpenAiCreativeImageProvider: só suporta image_generation", async () => {
@@ -81,42 +93,54 @@ test("OpenAiCreativeImageProvider: envia o prompt guardado (guarda factual) pres
   assert.match(sentPrompt, /Preço atual: R\$ 39,99/);
   assert.doesNotMatch(sentPrompt, /IGNORE/);
   assert.doesNotMatch(sentPrompt, /NÃO PODE conter nenhum texto/i);
-  assert.equal(media.calls[0].params.size, "1024x1536");
+  // Canvas EXATO 4:5 (1088x1360): nada é cortado depois e o prompt não fala em corte.
+  assert.equal(media.calls[0].params.size, "1088x1360");
   assert.equal(media.calls[0].params.targetAspectRatio, "4:5");
+  assert.doesNotMatch(sentPrompt, /cortada automaticamente/);
 });
 
-// Auditoria de custo urgente — achado crítico: antes desta correção, `response.cost.estimated`
-// era SEMPRE 0 aqui, nunca contabilizando o passo mais caro do pipeline em nenhum total de custo
-// do motor (confirmado em produção: 47 chamadas reais de image_generation, custo médio $0.000000).
-
-test("OpenAiCreativeImageProvider: response.cost.estimated NUNCA é zero — geração de imagem é o passo mais caro do pipeline", async () => {
+// Custo REAL: soma do `usage` devolvido pela OpenAI × preço oficial do catálogo (nunca 0 fixo,
+// nunca a tabela estimada do antigo gpt-image-1).
+test("OpenAiCreativeImageProvider: custo e tokens vêm do consumo real informado pelo adaptador", async () => {
   const media = fakeMediaProvider();
   const provider = new OpenAiCreativeImageProvider(media);
   const response = await provider.execute(baseRequest({ imageAspectRatio: "4:5" }));
-  assert.ok(response.cost.estimated > 0, `esperava custo > 0, veio ${response.cost.estimated}`);
+  assert.equal(response.cost.estimated, 0.185);
+  assert.deepEqual(response.tokens, { input: 1000, output: 6000, total: 7000 });
+  const content = JSON.parse(response.content);
+  assert.equal(content.imageAudit.model, "gpt-image-2.6-sunburst");
+  assert.deepEqual(content.imageAudit.canvas, { size: "1088x1360", width: 1088, height: 1360, exact: true });
 });
 
-// Auditoria de token (pedido explícito do usuário: "gastava um caminhão de token pra criar uma
-// única imagem") — default mudou de "high" pra "medium" (~4x mais barato em tokens de saída, ver
-// `gpt-image-1-pricing.ts`); "high" continua disponível, mas só com opt-in explícito.
-test("OpenAiCreativeImageProvider: default de quality agora é 'medium' — 'high' só com opt-in explícito, e custa mais", async () => {
+test("OpenAiCreativeImageProvider: qualidade padrão é 'high' e a configuração manda (quality/complexity)", async () => {
   const media = fakeMediaProvider();
-  const defaultQuality = new OpenAiCreativeImageProvider(media);
-  const explicitHigh = new OpenAiCreativeImageProvider(fakeMediaProvider(), { quality: "high" });
-
-  const defaultResponse = await defaultQuality.execute(baseRequest({ imageAspectRatio: "4:5" }));
-  const highResponse = await explicitHigh.execute(baseRequest({ imageAspectRatio: "4:5" }));
-
-  assert.equal(media.calls[0].params.quality, "medium");
-  assert.ok(defaultResponse.cost.estimated < highResponse.cost.estimated);
+  await new OpenAiCreativeImageProvider(media).execute(baseRequest({ imageAspectRatio: "1:1" }));
+  assert.equal(media.calls[0].params.quality, "high");
+  assert.equal("complexity" in media.calls[0].params, false);
+  assert.equal(media.calls[0].params.size, "1088x1088", "1:1 nunca vira 4:5 em silêncio");
+  const configured = fakeMediaProvider();
+  await new OpenAiCreativeImageProvider(configured, { quality: "xhigh", complexity: "medium" }).execute(baseRequest({ imageAspectRatio: "9:16" }));
+  assert.equal(configured.calls[0].params.quality, "xhigh");
+  assert.equal(configured.calls[0].params.complexity, "medium");
+  assert.equal(configured.calls[0].params.size, "1152x2048");
 });
 
-test("OpenAiCreativeImageProvider: com imageCount > 1, o custo estimado é multiplicado pelo número real de imagens geradas", async () => {
+test("OpenAiCreativeImageProvider: com imageCount > 1, o custo é a soma real de cada imagem gerada", async () => {
   const media = fakeMediaProvider();
   const provider = new OpenAiCreativeImageProvider(media);
-  const oneImage = await provider.execute(baseRequest({ imageAspectRatio: "4:5", imageCount: 1 }));
   const threeImages = await provider.execute(baseRequest({ imageAspectRatio: "4:5", imageCount: 3 }));
-  assert.ok(Math.abs(threeImages.cost.estimated - oneImage.cost.estimated * 3) < 0.0001);
+  assert.ok(Math.abs(threeImages.cost.estimated - 0.185 * 3) < 0.000001);
+  assert.equal(media.calls.length, 3);
+});
+
+test("OpenAiCreativeImageProvider: nível rápido usa o modelo rápido da configuração; modelo fora do catálogo falha sem trocar", async () => {
+  const media = fakeMediaProvider();
+  const provider = new OpenAiCreativeImageProvider(media, { fastModelId: "gpt-image-2.6-flare" });
+  await provider.execute({ ...baseRequest({ imageModelTier: "fast" }), model: undefined });
+  assert.equal(media.calls[0].modelId, "gpt-image-2.6-flare");
+  const unknown = fakeMediaProvider();
+  await assert.rejects(() => new OpenAiCreativeImageProvider(unknown).execute({ ...baseRequest(), model: "gpt-image-1" }), /não está no catálogo/);
+  assert.equal(unknown.calls.length, 0, "nenhuma chamada sai com modelo desconhecido");
 });
 
 test("OpenAiCreativeImageProvider: propaga falha do mediaProvider.generate() como erro explícito", async () => {

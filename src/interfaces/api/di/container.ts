@@ -896,7 +896,7 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
   });
   const removeImageBackground = (input: { imageBuffer: Buffer; contentType: string }) =>
     removeImageBackgroundViaAI(
-      { apiBaseUrl: config?.mediaProviders.openaiApiBaseUrl, getApiKey: resolveMediaProviderKey(config?.mediaProviders.openaiApiKey, "ai-provider:openai") },
+      { apiBaseUrl: config?.mediaProviders.openaiApiBaseUrl, getApiKey: resolveMediaProviderKey(config?.mediaProviders.openaiApiKey, "ai-provider:openai"), modelId: config?.mediaProviders.openaiImageModel },
       input,
     );
   const imageDescriber = new OpenAiVisionDescriber({
@@ -957,7 +957,7 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
     : new InMemoryIcaroLogger();
   const icaro = new IcaroAIBrain({
     providers: [
-      new OpenAiIcaroImageProvider(openaiImageProvider),
+      new OpenAiIcaroImageProvider(openaiImageProvider, { modelId: config?.mediaProviders.openaiImageModel }),
       new OpenAiIcaroTextProvider({
         apiBaseUrl: config?.mediaProviders.openaiApiBaseUrl,
         getApiKey: resolveMediaProviderKey(config?.mediaProviders.openaiApiKey, "ai-provider:openai"),
@@ -986,7 +986,7 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
     : new InMemoryIcaroLogger();
   const creativeIcaro = new IcaroAIBrain({
     providers: [
-      new OpenAiCreativeImageProvider(openaiImageProvider),
+      new OpenAiCreativeImageProvider(openaiImageProvider, { modelId: config?.mediaProviders.openaiImageModel, fastModelId: config?.mediaProviders.openaiImageFastModel, quality: config?.mediaProviders.openaiImageQuality, complexity: config?.mediaProviders.openaiImageComplexity }),
       new OpenAiIcaroTextProvider({
         apiBaseUrl: config?.mediaProviders.openaiApiBaseUrl,
         getApiKey: resolveMediaProviderKey(config?.mediaProviders.openaiApiKey, "ai-provider:openai"),

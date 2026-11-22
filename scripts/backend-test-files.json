@@ -170,7 +170,7 @@
   "tests/run-gpt-creative-prototype.test.mjs",
   "tests/creative-engine-persistence.test.mjs",
   "tests/creative-engine-image-guard.test.mjs",
-  "tests/gpt-image-1-pricing.test.mjs",
+  "tests/gpt-image-models.test.mjs",
   "tests/openai-creative-image-provider.test.mjs",
   "tests/meta-graph-client.test.mjs",
   "tests/meta-ads-oauth-service.test.mjs",

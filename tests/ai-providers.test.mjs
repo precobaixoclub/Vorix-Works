@@ -15,7 +15,7 @@ const IMAGE_OPERATION_TYPE = {
   capability: "image_generation",
   creditsCost: 2,
   defaultProviderCode: "openai",
-  defaultModelId: "gpt-image-1",
+  defaultModelId: "gpt-image-2.6-sunburst",
   active: true,
   createdAt: "2026-01-01T00:00:00Z",
   updatedAt: "2026-01-01T00:00:00Z",
@@ -136,7 +136,7 @@ test("MediaGenerationService: bloqueia quando o provider está desabilitado em a
 test("MediaGenerationService: gera com sucesso, calcula custo real pela pricing do modelo e a receita pelo % de lucro do tenant", async () => {
   const billing = { tenantId: "t1", subscriptionStatus: "trial", monthlyCreditsQuota: 100, creditsExtra: 0, priceMultiplier: 2 };
   const { repo: billingRepo, usageMap } = makeBillingRepo(billing);
-  const models = [{ id: "m1", providerCode: "openai", modelId: "gpt-image-1", capability: "image_generation", active: true, pricing: { kind: "per_image", usdPerImage: 0.04 } }];
+  const models = [{ id: "m1", providerCode: "openai", modelId: "gpt-image-2.6-sunburst", capability: "image_generation", active: true, pricing: { kind: "per_image", usdPerImage: 0.04 } }];
   const { repo: aiProvidersRepo, generationLedger } = makeAiProvidersRepo(IMAGE_OPERATION_TYPE, models);
   const openai = fakeAdapter("openai", "image_generation", async () => ({ ok: true, mediaUrl: "https://cdn/x.png", billableUnits: 1, latencyMs: 20 }));
   const registry = createDefaultAiMediaProviderRegistry([openai]);
@@ -160,7 +160,7 @@ test("MediaGenerationService: gera com sucesso, calcula custo real pela pricing 
 test("MediaGenerationService: tenant com priceMultiplier 1 (0% de lucro) tem receita estimada igual ao custo", async () => {
   const billing = { tenantId: "t1", subscriptionStatus: "trial", monthlyCreditsQuota: 100, creditsExtra: 0, priceMultiplier: 1 };
   const { repo: billingRepo } = makeBillingRepo(billing);
-  const models = [{ id: "m1", providerCode: "openai", modelId: "gpt-image-1", capability: "image_generation", active: true, pricing: { kind: "per_image", usdPerImage: 0.04 } }];
+  const models = [{ id: "m1", providerCode: "openai", modelId: "gpt-image-2.6-sunburst", capability: "image_generation", active: true, pricing: { kind: "per_image", usdPerImage: 0.04 } }];
   const { repo: aiProvidersRepo, generationLedger } = makeAiProvidersRepo(IMAGE_OPERATION_TYPE, models);
   const openai = fakeAdapter("openai", "image_generation", async () => ({ ok: true, mediaUrl: "https://cdn/x.png", billableUnits: 1, latencyMs: 20 }));
   const registry = createDefaultAiMediaProviderRegistry([openai]);
@@ -205,7 +205,7 @@ test("OpenAiImageProviderAdapter: sucesso com url direta", async () => {
   const httpClient = async () => jsonResponse(200, { data: [{ url: "https://openai/img.png" }] });
   const adapter = new OpenAiImageProviderAdapter({ enabled: true, getApiKey: async () => "sk-test", persistGeneratedImage: async () => { throw new Error("não deveria chamar"); } }, httpClient);
 
-  const result = await adapter.generate({ operationTypeCode: "image_generation", modelId: "gpt-image-1", prompt: "um gato", tenantId: "t1", params: {}, timeoutMs: 5000 });
+  const result = await adapter.generate({ operationTypeCode: "image_generation", modelId: "gpt-image-2.6-sunburst", prompt: "um gato", tenantId: "t1", params: {}, timeoutMs: 5000 });
   assert.equal(result.ok, true);
   assert.equal(result.mediaUrl, "https://openai/img.png");
   assert.equal(result.billableUnits, 1);
@@ -216,7 +216,7 @@ test("OpenAiImageProviderAdapter: sucesso com b64_json faz upload via persistGen
   let persisted;
   const adapter = new OpenAiImageProviderAdapter({ enabled: true, getApiKey: async () => "sk-test", persistGeneratedImage: async (input) => { persisted = input; return "https://s3/generated.png"; } }, httpClient);
 
-  const result = await adapter.generate({ operationTypeCode: "image_generation", modelId: "gpt-image-1", prompt: "um gato", tenantId: "t1", params: {}, timeoutMs: 5000 });
+  const result = await adapter.generate({ operationTypeCode: "image_generation", modelId: "gpt-image-2.6-sunburst", prompt: "um gato", tenantId: "t1", params: {}, timeoutMs: 5000 });
   assert.equal(result.ok, true);
   assert.equal(result.mediaUrl, "https://s3/generated.png");
   assert.equal(persisted.base64, "AAAA");
@@ -228,7 +228,7 @@ test("OpenAiImageProviderAdapter: com targetAspectRatio, corta pra proporção r
   let persisted;
   const adapter = new OpenAiImageProviderAdapter({ enabled: true, getApiKey: async () => "sk-test", persistGeneratedImage: async (input) => { persisted = input; return "https://s3/generated.png"; } }, httpClient);
 
-  const result = await adapter.generate({ operationTypeCode: "image_generation", modelId: "gpt-image-1", prompt: "um gato", tenantId: "t1", params: { targetAspectRatio: "9:16" }, timeoutMs: 5000 });
+  const result = await adapter.generate({ operationTypeCode: "image_generation", modelId: "gpt-image-2.6-sunburst", prompt: "um gato", tenantId: "t1", params: { targetAspectRatio: "9:16" }, timeoutMs: 5000 });
 
   assert.equal(result.ok, true);
   const persistedBuffer = Buffer.from(persisted.base64, "base64");
@@ -243,7 +243,7 @@ test("OpenAiImageProviderAdapter: sem targetAspectRatio, persiste o base64 origi
   let persisted;
   const adapter = new OpenAiImageProviderAdapter({ enabled: true, getApiKey: async () => "sk-test", persistGeneratedImage: async (input) => { persisted = input; return "https://s3/generated.png"; } }, httpClient);
 
-  await adapter.generate({ operationTypeCode: "image_generation", modelId: "gpt-image-1", prompt: "um gato", tenantId: "t1", params: {}, timeoutMs: 5000 });
+  await adapter.generate({ operationTypeCode: "image_generation", modelId: "gpt-image-2.6-sunburst", prompt: "um gato", tenantId: "t1", params: {}, timeoutMs: 5000 });
 
   assert.equal(persisted.base64, "AAAA");
 });
@@ -256,7 +256,7 @@ test("OpenAiImageProviderAdapter: falha ao hospedar b64_json (Object Storage nã
     persistGeneratedImage: async () => { throw new Error("OBJECT_STORAGE_NOT_CONFIGURED: upload de mídia não está habilitado neste servidor."); },
   }, httpClient);
 
-  const result = await adapter.generate({ operationTypeCode: "image_generation", modelId: "gpt-image-1", prompt: "um gato", tenantId: "t1", params: {}, timeoutMs: 5000 });
+  const result = await adapter.generate({ operationTypeCode: "image_generation", modelId: "gpt-image-2.6-sunburst", prompt: "um gato", tenantId: "t1", params: {}, timeoutMs: 5000 });
   assert.equal(result.ok, false);
   assert.equal(result.category, "internal_error");
   assert.match(result.message, /OBJECT_STORAGE_NOT_CONFIGURED/, "preserva o motivo real, não generaliza para 'falha de conexão com a OpenAI'");
@@ -267,7 +267,7 @@ test("OpenAiImageProviderAdapter: sem API key retorna not_configured sem chamar 
   const httpClient = async () => { called = true; return jsonResponse(200, {}); };
   const adapter = new OpenAiImageProviderAdapter({ enabled: true, getApiKey: async () => undefined, persistGeneratedImage: async () => "x" }, httpClient);
 
-  const result = await adapter.generate({ operationTypeCode: "image_generation", modelId: "gpt-image-1", prompt: "x", tenantId: "t1", params: {}, timeoutMs: 5000 });
+  const result = await adapter.generate({ operationTypeCode: "image_generation", modelId: "gpt-image-2.6-sunburst", prompt: "x", tenantId: "t1", params: {}, timeoutMs: 5000 });
   assert.equal(result.ok, false);
   assert.equal(result.category, "not_configured");
   assert.equal(called, false);
@@ -283,7 +283,7 @@ test("OpenAiImageProviderAdapter: sem referenceImageBuffer chama /generations co
   };
   const adapter = new OpenAiImageProviderAdapter({ enabled: true, getApiKey: async () => "sk-test", persistGeneratedImage: async () => { throw new Error("não deveria chamar"); } }, httpClient);
 
-  await adapter.generate({ operationTypeCode: "image_generation", modelId: "gpt-image-1", prompt: "um gato", tenantId: "t1", params: {}, timeoutMs: 5000 });
+  await adapter.generate({ operationTypeCode: "image_generation", modelId: "gpt-image-2.6-sunburst", prompt: "um gato", tenantId: "t1", params: {}, timeoutMs: 5000 });
   assert.match(capturedUrl, /\/v1\/images\/generations$/);
   assert.equal(capturedInit.headers["content-type"], "application/json");
   assert.equal(JSON.parse(capturedInit.body).prompt, "um gato");
@@ -302,7 +302,7 @@ test("OpenAiImageProviderAdapter: com referenceImageBuffer chama /edits com mult
   const referenceImageBuffer = Buffer.from([137, 80, 78, 71]);
   const result = await adapter.generate({
     operationTypeCode: "image_generation",
-    modelId: "gpt-image-1",
+    modelId: "gpt-image-2.6-sunburst",
     prompt: "um tênis igual ao da referência",
     tenantId: "t1",
     params: { referenceImageBuffer },
@@ -323,7 +323,7 @@ test("OpenAiImageProviderAdapter: com referenceImageBuffer chama /edits com mult
 test("OpenAiImageProviderAdapter: 401 vira authentication_failed", async () => {
   const httpClient = async () => jsonResponse(401, {});
   const adapter = new OpenAiImageProviderAdapter({ enabled: true, getApiKey: async () => "sk-test", persistGeneratedImage: async () => "x" }, httpClient);
-  const result = await adapter.generate({ operationTypeCode: "image_generation", modelId: "gpt-image-1", prompt: "x", tenantId: "t1", params: {}, timeoutMs: 5000 });
+  const result = await adapter.generate({ operationTypeCode: "image_generation", modelId: "gpt-image-2.6-sunburst", prompt: "x", tenantId: "t1", params: {}, timeoutMs: 5000 });
   assert.equal(result.ok, false);
   assert.equal(result.category, "authentication_failed");
 });

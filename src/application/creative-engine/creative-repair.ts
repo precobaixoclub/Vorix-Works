@@ -11,7 +11,7 @@ import type { CreativeQualityIssue, CreativeQualityIssueCode } from "./evaluate-
 
 // Auditoria de custo urgente — reduzido de 2 para 1 de propósito: cada rodada de reparo é um novo
 // plano (chamada de texto) + uma nova imagem (o passo mais caro, ~$0.25/imagem em 4:5/9:16 com
-// qualidade "high" — ver `gpt-image-1-pricing.ts`) + uma nova rodada dos dois gates (técnico e
+// qualidade "high" — custo real em `shared/utils/gpt-image-models.ts`) + uma nova rodada dos dois gates (técnico e
 // Visual Quality Score). Com 2 rounds, o pior caso de uma peça chegava a 3 imagens geradas; com 1,
 // no máximo 2 — o pipeline nunca gasta mais que o dobro do custo de uma peça só por reparo, nunca
 // um múltiplo maior sem limite explícito. Ver relatório da auditoria de custo para o cálculo

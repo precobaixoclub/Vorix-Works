@@ -204,7 +204,7 @@ export type CreativeEngineCostBreakdown = {
   /** Exploração barata de 2-3 direções antes do plano (`explore-creative-directions.ts`). */
   directionExploration: number;
   /** Toda geração de imagem — inicial + cada rodada de reparo. Historicamente o passo mais caro
-   * do pipeline (ver `gpt-image-1-pricing.ts`), e o único que nunca era contabilizado antes desta
+   * do pipeline (custo real: `shared/utils/gpt-image-models.ts`), e o único que nunca era contabilizado antes desta
    * auditoria (`OpenAiCreativeImageProvider` sempre devolvia custo $0). */
   imageGeneration: number;
   /** ETAPA 3 (Rodada 4) — a análise de visão da imagem BASE (texto espúrio/fantasma, regiões

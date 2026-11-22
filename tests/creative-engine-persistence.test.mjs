@@ -112,7 +112,7 @@ test("PostgresCreativeEngineRunRepository: create()/getByExecutionRunId() — cr
     engineMode: "gpt",
     planningTemplate: "content_request-gpt-creative-v3",
     directorModel: "gpt-4o",
-    imageModel: "gpt-image-1",
+    imageModel: "gpt-image-2.6-sunburst",
     generationMethod: "edit",
     creativeContext,
     creativePlan,
@@ -261,7 +261,7 @@ test("PostgresIcaroLogger: persiste Timeout/Error com a mensagem real, mas ignor
     specialistId: "gpt-creative-director",
     executionId: "exec-run-timeout-1",
     providerId: "openai-creative-image",
-    modelId: "gpt-image-1",
+    modelId: "gpt-image-2.6-sunburst",
     attempt: 1,
   });
 

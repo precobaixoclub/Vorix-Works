@@ -1,3 +1,4 @@
+import { DEFAULT_GPT_IMAGE_FAST_MODEL, DEFAULT_GPT_IMAGE_MODEL, DEFAULT_GPT_IMAGE_QUALITY, isGptImageComplexity, isGptImageQuality, type GptImageComplexity, type GptImageQuality } from "../../../shared/utils/gpt-image-models.js";
 import type { PersistenceDriver } from "../../../infrastructure/storage/build-platform-repositories.js";
 import type { AuthPrincipal } from "../../../domain/identity/identity.model.js";
 import { isModelRegisteredAndActive } from "../../../application/ai-gateway/model-registry.js";
@@ -109,6 +110,12 @@ export type ApiConfig = {
     openaiApiKey?: string;
     openaiApiBaseUrl?: string;
     openaiImageModel: string;
+    /** Modelo rápido (iteração/edição rápida) — `OPENAI_IMAGE_FAST_MODEL`. */
+    openaiImageFastModel: string;
+    /** Qualidade padrão das gerações do motor — `OPENAI_IMAGE_QUALITY`. */
+    openaiImageQuality: GptImageQuality;
+    /** `complexity` da família 2.6 — `OPENAI_IMAGE_COMPLEXITY` (vazio = padrão do modelo). */
+    openaiImageComplexity?: GptImageComplexity;
     googleEnabled: boolean;
     googleApiKey?: string;
     googleApiBaseUrl?: string;
@@ -514,7 +521,14 @@ export function loadApiConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
   const openaiEnabled = env.OPENAI_IMAGE_ENABLED?.trim() === "true";
   const openaiApiKey = env.OPENAI_API_KEY?.trim() || undefined;
   const openaiApiBaseUrl = env.OPENAI_API_BASE_URL?.trim() || undefined;
-  const openaiImageModel = env.OPENAI_IMAGE_MODEL?.trim() || "gpt-image-1";
+  // Modelos de imagem: catálogo validado em `shared/utils/gpt-image-models.ts`. Um valor fora do
+  // catálogo NÃO derruba a API — a geração falha com mensagem clara, sem trocar de modelo em silêncio.
+  const openaiImageModel = env.OPENAI_IMAGE_MODEL?.trim() || DEFAULT_GPT_IMAGE_MODEL;
+  const openaiImageFastModel = env.OPENAI_IMAGE_FAST_MODEL?.trim() || DEFAULT_GPT_IMAGE_FAST_MODEL;
+  const rawImageQuality = env.OPENAI_IMAGE_QUALITY?.trim();
+  const openaiImageQuality: GptImageQuality = isGptImageQuality(rawImageQuality) ? rawImageQuality : DEFAULT_GPT_IMAGE_QUALITY;
+  const rawImageComplexity = env.OPENAI_IMAGE_COMPLEXITY?.trim();
+  const openaiImageComplexity: GptImageComplexity | undefined = isGptImageComplexity(rawImageComplexity) ? rawImageComplexity : undefined;
   const googleEnabled = env.GOOGLE_VEO_ENABLED?.trim() === "true";
   const googleApiKey = env.GOOGLE_AI_API_KEY?.trim() || undefined;
   const googleApiBaseUrl = env.GOOGLE_AI_API_BASE_URL?.trim() || undefined;
@@ -577,6 +591,9 @@ export function loadApiConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
       openaiApiKey,
       openaiApiBaseUrl,
       openaiImageModel,
+      openaiImageFastModel,
+      openaiImageQuality,
+      openaiImageComplexity,
       googleEnabled,
       googleApiKey,
       googleApiBaseUrl,

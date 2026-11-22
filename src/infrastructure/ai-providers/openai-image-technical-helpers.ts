@@ -66,7 +66,7 @@ export function resolveOpenAiImageSize(aspectRatio: string | undefined): "1024x1
 // dentro da área que sobrevive ao corte — sem isto, mesmo cortando depois, o modelo ainda tenta
 // desenhar a "proporção errada" dentro do canvas certo, arriscando cortar o próprio produto/rosto
 // se ele ficou desenhado perto da borda que o corte remove.
-export function resolveCropAwareCompositionHint(aspectRatio: string | undefined, nativeSize: "1024x1024" | "1024x1536" | "1536x1024"): string | undefined {
+export function resolveCropAwareCompositionHint(aspectRatio: string | undefined, nativeSize: string): string | undefined {
   const normalized = (aspectRatio ?? "").trim();
   if (normalized !== "9:16" && normalized !== "4:5" && normalized !== "16:9") return undefined;
   const [nativeWidth, nativeHeight] = nativeSize.split("x");

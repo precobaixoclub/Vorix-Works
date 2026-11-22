@@ -17,7 +17,7 @@ function baseRequest(context = {}) {
   return {
     taskType: "image_generation",
     prompt: "Prompt base de geração de imagem.",
-    model: "gpt-image-1",
+    model: "gpt-image-2.6-sunburst",
     timeoutMs: 30_000,
     context: { clientId: "tenant-1", workspaceId: "workspace-1", imageCount: 1, ...context },
   };
@@ -79,16 +79,15 @@ test("OpenAiIcaroImageProvider: sem referenceProductFidelity, nenhuma menção a
   assert.equal(media.calls[0].prompt.includes("PRODUCT FIDELITY"), false);
 });
 
-test("OpenAiIcaroImageProvider: imageAspectRatio 9:16 vira regra de enquadramento (regressão do pillarboxing achado ao vivo), repetida 2x", async () => {
+test("OpenAiIcaroImageProvider: 9:16 já nasce no canvas exato (1152x2048) — sem regra de corte no prompt", async () => {
   const media = fakeMediaProvider(async () => ({ ok: true, mediaUrl: "https://x/img.png", billableUnits: 1, latencyMs: 1 }));
   const provider = new OpenAiIcaroImageProvider(media);
 
   await provider.execute(baseRequest({ imageAspectRatio: "9:16" }));
 
   const sentPrompt = media.calls[0].prompt;
-  assert.match(sentPrompt, /REGRA DE ENQUADRAMENTO IGUALMENTE OBRIGATÓRIA/);
-  assert.match(sentPrompt, /cortada automaticamente.*1024x1536/);
-  assert.equal(sentPrompt.split("REGRA DE ENQUADRAMENTO IGUALMENTE OBRIGATÓRIA").length - 1, 2);
+  assert.equal(sentPrompt.includes("REGRA DE ENQUADRAMENTO"), false);
+  assert.equal(media.calls[0].params.size, "1152x2048");
   assert.equal(media.calls[0].params.targetAspectRatio, "9:16");
 });
 
@@ -147,13 +146,13 @@ test("OpenAiIcaroImageProvider: sem authorizedBackgroundOnly, nenhuma regra de p
 // única imagem") — achado crítico: `response.cost.estimated` era SEMPRE 0 neste motor legado,
 // então a geração de imagem (o passo mais caro) nunca entrava em `icaro_ai_calls`. Mesma correção
 // já aplicada no motor GPT (`openai-creative-image-provider.ts`).
-test("OpenAiIcaroImageProvider: response.cost.estimated NUNCA é zero — mesma correção de auditoria do motor GPT", async () => {
-  const media = fakeMediaProvider(async () => ({ ok: true, mediaUrl: "https://x/img.png", billableUnits: 1, latencyMs: 1 }));
+test("OpenAiIcaroImageProvider: custo vem do consumo real informado pelo adaptador (nunca tabela estimada)", async () => {
+  const media = fakeMediaProvider(async () => ({ ok: true, mediaUrl: "https://x/img.png", billableUnits: 1, latencyMs: 1, audit: { model: "gpt-image-2.6-sunburst", endpoint: "generations", params: {}, costUsd: 0.2 } }));
   const provider = new OpenAiIcaroImageProvider(media);
 
   const response = await provider.execute(baseRequest());
 
-  assert.ok(response.cost.estimated > 0, `esperava custo > 0, veio ${response.cost.estimated}`);
+  assert.equal(response.cost.estimated, 0.2);
 });
 
 test("OpenAiIcaroImageProvider: com imageCount > 1, o custo estimado é multiplicado pelo número real de imagens geradas", async () => {

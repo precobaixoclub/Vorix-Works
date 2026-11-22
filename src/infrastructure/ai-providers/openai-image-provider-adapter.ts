@@ -6,6 +6,7 @@ import type {
   AiMediaProviderDescriptor,
 } from "../../application/ports/ai-media-provider-adapter.port.js";
 import { cropToTargetAspectRatio } from "../image-processing/aspect-ratio-crop.js";
+import { computeGptImageCostUsd, getGptImageModel, isGptImageComplexity, parseGptImageUsage, unsupportedGptImageModelMessage } from "../../shared/utils/gpt-image-models.js";
 
 export type OpenAiImageProviderConfig = {
   apiBaseUrl?: string;
@@ -29,9 +30,14 @@ const CACHE_TTL_MS = 60_000;
 const MAX_PROMPT_LENGTH = 32_000;
 
 /**
- * Adapter OpenAI (`gpt-image-1`) — só capability `image_generation`. Documentação estável e bem
- * conhecida (`POST /v1/images/generations`), diferente do Kwai/Veo — nenhuma ressalva de "não
- * verificado contra API real" aqui.
+ * Adapter OpenAI de imagem (família GPT Image, ver `shared/utils/gpt-image-models.ts`) — só
+ * capability `image_generation`, via `POST /v1/images/generations` ou `/v1/images/edits`.
+ *
+ * Regras de segurança desta camada:
+ * - respeita `enabled` (`OPENAI_IMAGE_ENABLED`): desligado = nenhuma chamada paga sai daqui;
+ * - só chama modelos do catálogo validado — modelo desconhecido falha com mensagem clara, nunca é
+ *   trocado em silêncio por outro;
+ * - devolve modelo, parâmetros, consumo real (`usage`) e custo calculado em `audit`.
  */
 export class OpenAiImageProviderAdapter implements AiMediaProviderAdapterPort {
   readonly descriptor: AiMediaProviderDescriptor;
@@ -71,16 +77,28 @@ export class OpenAiImageProviderAdapter implements AiMediaProviderAdapterPort {
 
   private async generateInternal(request: AiMediaGenerationRequest): Promise<AiMediaGenerationResult> {
     const startedAt = Date.now();
+    if (!this.config.enabled) {
+      return { ok: false, category: "not_configured", message: "Geração de imagem da OpenAI está desligada neste servidor (OPENAI_IMAGE_ENABLED).", latencyMs: 0 };
+    }
+    const modelSpec = getGptImageModel(request.modelId);
+    if (!modelSpec) {
+      return { ok: false, category: "invalid_request", message: unsupportedGptImageModelMessage(request.modelId), latencyMs: 0 };
+    }
     const apiKey = await this.resolveApiKey();
     if (!apiKey) {
       return { ok: false, category: "not_configured", message: "OpenAiImageProviderAdapter sem API key configurada.", latencyMs: 0 };
     }
 
     const size = typeof request.params.size === "string" ? request.params.size : "1024x1024";
-    // "high" (suportado pelo `gpt-image-1`) — sem isto a OpenAI usava a qualidade padrão dela
-    // silenciosamente; peça pedida explicitamente para ficar "extremamente profissional" precisa
-    // do parâmetro pedido, não só de um prompt melhor.
-    const quality = typeof request.params.quality === "string" ? request.params.quality : "high";
+    // Qualidade sempre explícita — sem isto a OpenAI usaria a padrão dela em silêncio.
+    const requestedQuality = typeof request.params.quality === "string" ? request.params.quality : "high";
+    if (!(modelSpec.qualities as readonly string[]).includes(requestedQuality)) {
+      return { ok: false, category: "invalid_request", message: `Qualidade "${requestedQuality}" não é aceita por ${modelSpec.id} (${modelSpec.qualities.join(", ")}).`, latencyMs: 0 };
+    }
+    const quality = requestedQuality;
+    // `complexity` (família 2.6): quanto o modelo planeja antes de desenhar. Só enviado quando o
+    // modelo aceita e o chamador pede; omitido = padrão do modelo ("high").
+    const complexity = modelSpec.complexity && isGptImageComplexity(request.params.complexity) ? request.params.complexity : undefined;
     const baseUrl = this.config.apiBaseUrl ?? DEFAULT_BASE_URL;
     const prompt = truncatePrompt(request.prompt, MAX_PROMPT_LENGTH);
     // Achado ao vivo (comparado com o fluxo do próprio usuário no ChatGPT, que anexa a foto real
@@ -90,8 +108,8 @@ export class OpenAiImageProviderAdapter implements AiMediaProviderAdapterPort {
     // /v1/images/edits` (multipart, aceita uma imagem de entrada real) em vez de `/generations`
     // (só texto) — o modelo passa a enxergar o produto de verdade, não uma paráfrase dele.
     const referenceImageBuffer = Buffer.isBuffer(request.params.referenceImageBuffer) ? (request.params.referenceImageBuffer as Buffer) : undefined;
-    // `background` do gpt-image-1 ("opaque" | "transparent" | "auto"). Só enviado quando o
-    // chamador pede explicitamente — sem ele vale o padrão "auto" da OpenAI (comportamento anterior).
+    // `background` ("opaque" | "transparent" | "auto"). Só enviado quando o chamador pede
+    // explicitamente — sem ele vale o padrão "auto" da OpenAI.
     const background = request.params.background === "opaque" || request.params.background === "transparent" || request.params.background === "auto" ? request.params.background : undefined;
 
     try {
@@ -103,13 +121,13 @@ export class OpenAiImageProviderAdapter implements AiMediaProviderAdapterPort {
             headers: { authorization: `Bearer ${apiKey}` },
             // Sem "content-type" de propósito — o `fetch`/`undici` calcula o boundary do
             // multipart automaticamente a partir do `FormData`; setar manualmente quebra o parse.
-            body: buildEditsFormData({ modelId: request.modelId, prompt, size, quality, referenceImageBuffer, background }),
+            body: buildEditsFormData({ modelId: modelSpec.id, prompt, size, quality, complexity, referenceImageBuffer, background }),
             signal: controller.signal,
           })
         : await this.httpClient(`${baseUrl}/v1/images/generations`, {
             method: "POST",
             headers: { "content-type": "application/json", authorization: `Bearer ${apiKey}` },
-            body: JSON.stringify({ model: request.modelId, prompt, size, quality, n: 1, ...(background ? { background } : {}) }),
+            body: JSON.stringify({ model: modelSpec.id, prompt, size, quality, n: 1, ...(complexity ? { complexity } : {}), ...(background ? { background } : {}) }),
             signal: controller.signal,
           });
       clearTimeout(timeout);
@@ -117,20 +135,25 @@ export class OpenAiImageProviderAdapter implements AiMediaProviderAdapterPort {
 
       if (!response.ok) return { ok: false, ...(await classifyOpenAiError(response)), latencyMs };
 
-      const body = (await response.json()) as { data?: Array<{ b64_json?: string; url?: string }> };
+      const body = (await response.json()) as { data?: Array<{ b64_json?: string; url?: string }>; usage?: unknown; size?: string; quality?: string };
+      const usage = parseGptImageUsage(body.usage);
+      const audit = {
+        model: modelSpec.id,
+        endpoint: referenceImageBuffer ? ("edits" as const) : ("generations" as const),
+        params: { size, quality, ...(complexity ? { complexity } : {}), ...(background ? { background } : {}), promptChars: prompt.length },
+        ...(usage ? { usage, costUsd: computeGptImageCostUsd(modelSpec, usage) } : {}),
+      };
       const image = body.data?.[0];
       if (!image) return { ok: false, category: "invalid_request", message: "OpenAI não retornou nenhuma imagem.", latencyMs };
 
       let mediaUrl = image.url;
       if (!mediaUrl && image.b64_json) {
-        // `gpt-image-1` só devolve `b64_json` (nunca `url`) — precisa do Object Storage configurado
+        // Os modelos GPT Image só devolvem `b64_json` (nunca `url`) — precisa do Object Storage configurado
         // para virar uma URL pública. Erro isolado do bloco de rede acima para não virar
         // "Falha de conexão com a OpenAI" e esconder um problema de configuração local.
         try {
-          // Corta pra proporção real ANTES de persistir (ver `resolveOpenAiImageSize` em
-          // `openai-icaro-image-provider.ts`) — `size` só chega no tamanho suportado mais próximo,
-          // nunca a proporção exata pedida (ex.: 9:16). Sem isto, pillarboxing/letterboxing
-          // (achado ao vivo) fica permanentemente salvo no arquivo final.
+          // Rede de segurança: se o canvas devolvido não tiver a proporção pedida, corta antes de
+          // persistir. Com tamanho exato (catálogo 2.6) a proporção já bate e nada é cortado.
           const targetAspectRatio = typeof request.params.targetAspectRatio === "string" ? request.params.targetAspectRatio : undefined;
           const rawBuffer = Buffer.from(image.b64_json, "base64");
           const croppedBuffer = await cropToTargetAspectRatio(rawBuffer, targetAspectRatio);
@@ -147,7 +170,7 @@ export class OpenAiImageProviderAdapter implements AiMediaProviderAdapterPort {
       }
       if (!mediaUrl) return { ok: false, category: "invalid_request", message: "OpenAI retornou uma imagem sem URL nem b64_json.", latencyMs };
 
-      return { ok: true, mediaUrl, billableUnits: 1, latencyMs };
+      return { ok: true, mediaUrl, billableUnits: 1, latencyMs, audit };
     } catch (error) {
       const latencyMs = Date.now() - startedAt;
       if (error instanceof Error && error.name === "AbortError") {
@@ -167,13 +190,15 @@ export class OpenAiImageProviderAdapter implements AiMediaProviderAdapterPort {
   }
 }
 
-function buildEditsFormData(input: { modelId: string; prompt: string; size: string; quality: string; referenceImageBuffer: Buffer; background?: string }): FormData {
+function buildEditsFormData(input: { modelId: string; prompt: string; size: string; quality: string; complexity?: string; referenceImageBuffer: Buffer; background?: string }): FormData {
   const formData = new FormData();
   formData.append("model", input.modelId);
   formData.append("prompt", input.prompt);
   formData.append("size", input.size);
   formData.append("quality", input.quality);
   formData.append("n", "1");
+  // Família 2.6: a documentação manda omitir `input_fidelity` nas edições — nunca enviado.
+  if (input.complexity) formData.append("complexity", input.complexity);
   if (input.background) formData.append("background", input.background);
   formData.append("image", new Blob([input.referenceImageBuffer], { type: "image/png" }), "reference.png");
   return formData;

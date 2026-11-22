@@ -23,7 +23,7 @@ test("removeImageBackgroundViaAI: sucesso devolve o buffer decodificado do b64_j
   assert.deepEqual(result, expected);
 });
 
-test("removeImageBackgroundViaAI: chama POST /v1/images/edits com background=transparent, model gpt-image-1 e a imagem original no multipart", async () => {
+test("removeImageBackgroundViaAI: chama POST /v1/images/edits com background=transparent, modelo do catálogo (padrão 2.6 sunburst) e a imagem original no multipart", async () => {
   let capturedUrl;
   let capturedInit;
   const httpClient = async (url, init) => {
@@ -37,7 +37,7 @@ test("removeImageBackgroundViaAI: chama POST /v1/images/edits com background=tra
   assert.equal(capturedInit.method, "POST");
   assert.equal(capturedInit.headers.authorization, "Bearer sk-test");
   assert.ok(capturedInit.body instanceof FormData);
-  assert.equal(capturedInit.body.get("model"), "gpt-image-1");
+  assert.equal(capturedInit.body.get("model"), "gpt-image-2.6-sunburst");
   assert.equal(capturedInit.body.get("background"), "transparent");
   assert.ok(capturedInit.body.get("image"), "envia a imagem original no campo multipart");
 });

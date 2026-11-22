@@ -30,6 +30,15 @@ export type AiMediaGenerationSuccess = {
    * para calcular `providerCostUsd`. Nunca exposto ao cliente. */
   billableUnits: number;
   latencyMs: number;
+  /** Auditoria da chamada (aditivo, opcional): modelo e parâmetros efetivamente enviados, consumo
+   * real devolvido pelo provedor e custo calculado a partir dele. Ausente = provedor não informa. */
+  audit?: {
+    model: string;
+    endpoint: "generations" | "edits";
+    params: Record<string, string | number>;
+    usage?: { inputTextTokens: number; inputImageTokens: number; outputImageTokens: number; outputTextTokens: number; totalTokens: number };
+    costUsd?: number;
+  };
 };
 
 export type AiMediaGenerationFailureCategory =

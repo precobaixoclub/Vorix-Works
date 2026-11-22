@@ -29,7 +29,7 @@ function makeAdapter(httpClient, overrides = {}) {
 function baseRequest(overrides = {}) {
   return {
     operationTypeCode: "image_generation",
-    modelId: "gpt-image-1",
+    modelId: "gpt-image-2.6-sunburst",
     prompt: "um gato",
     tenantId: "tenant-1",
     params: { size: "1024x1024", quality: "medium" },
@@ -130,4 +130,58 @@ test("generate(): background explícito vai no corpo de /images/generations; sem
   await adapter.generate(baseRequest());
   assert.equal(bodies[0].background, "opaque");
   assert.equal("background" in bodies[1], false);
+});
+
+// Fase 1 da evolução do motor criativo (22/11/2026): o gpt-image-1 deixou de existir na conta; o
+// adaptador passa a respeitar o flag de habilitação, só chamar modelos do catálogo validado (sem
+// troca silenciosa) e devolver modelo/parâmetros/consumo/custo reais para auditoria.
+test("generate(): com OPENAI_IMAGE_ENABLED desligado nenhuma chamada paga sai", async () => {
+  let called = false;
+  const adapter = makeAdapter(async () => { called = true; return jsonResponse(200, {}); }, { enabled: false });
+  const result = await adapter.generate(baseRequest());
+  assert.equal(result.ok, false);
+  assert.equal(result.category, "not_configured");
+  assert.match(result.message, /OPENAI_IMAGE_ENABLED/);
+  assert.equal(called, false);
+});
+
+test("generate(): modelo fora do catálogo (ex.: gpt-image-1 descontinuado) falha com mensagem clara, sem trocar de modelo", async () => {
+  let called = false;
+  const adapter = makeAdapter(async () => { called = true; return jsonResponse(200, {}); });
+  const result = await adapter.generate(baseRequest({ modelId: "gpt-image-1" }));
+  assert.equal(result.ok, false);
+  assert.equal(result.category, "invalid_request");
+  assert.match(result.message, /não está no catálogo/);
+  assert.equal(called, false);
+});
+
+test("generate(): qualidade não aceita pelo modelo é recusada antes da chamada", async () => {
+  const adapter = makeAdapter(async () => { throw new Error("não deveria chamar"); });
+  const result = await adapter.generate(baseRequest({ params: { size: "1088x1360", quality: "ultra" } }));
+  assert.equal(result.category, "invalid_request");
+});
+
+test("generate(): envia complexity só quando pedido e devolve auditoria com custo real do usage", async () => {
+  const bodies = [];
+  const adapter = makeAdapter(async (_url, init) => {
+    bodies.push(JSON.parse(init.body));
+    return jsonResponse(200, {
+      data: [{ b64_json: Buffer.from("fake-png").toString("base64") }],
+      usage: { input_tokens: 1200, input_tokens_details: { text_tokens: 1200, image_tokens: 0 }, output_tokens: 6000, output_tokens_details: { image_tokens: 6000, text_tokens: 0 }, total_tokens: 7200 },
+    });
+  });
+  const withComplexity = await adapter.generate(baseRequest({ params: { size: "1088x1360", quality: "high", complexity: "medium" } }));
+  const without = await adapter.generate(baseRequest({ params: { size: "1088x1360", quality: "high" } }));
+  assert.equal(bodies[0].model, "gpt-image-2.6-sunburst");
+  assert.equal(bodies[0].size, "1088x1360");
+  assert.equal(bodies[0].complexity, "medium");
+  assert.equal("complexity" in bodies[1], false);
+  assert.equal("input_fidelity" in bodies[0], false);
+  assert.equal(withComplexity.ok, true);
+  assert.equal(withComplexity.audit.model, "gpt-image-2.6-sunburst");
+  assert.equal(withComplexity.audit.endpoint, "generations");
+  assert.deepEqual(withComplexity.audit.usage, { inputTextTokens: 1200, inputImageTokens: 0, outputImageTokens: 6000, outputTextTokens: 0, totalTokens: 7200 });
+  // 1200 × $5/1M + 6000 × $30/1M = 0,006 + 0,18
+  assert.equal(withComplexity.audit.costUsd, 0.186);
+  assert.equal(without.audit.params.complexity, undefined);
 });

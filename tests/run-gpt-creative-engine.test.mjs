@@ -621,7 +621,7 @@ test("runGptCreativeEngine: exploração de direções falha (best-effort) — p
 // Auditoria de custo urgente — costBreakdown por etapa + teto de gasto por execução
 // (`maxBudgetUsd`). Achado crítico que motivou esta auditoria: `image_generation` nunca entrava
 // em NENHUM total de custo do motor (o provider real sempre devolvia $0 — corrigido em
-// `openai-creative-image-provider.ts`/`gpt-image-1-pricing.ts`); estes testes usam mocks com
+// `openai-creative-image-provider.ts`/`gpt-image-models.ts`); estes testes usam mocks com
 // custo DISTINGUÍVEL por categoria pra travar que agora TODAS as chamadas pagas são contabilizadas.
 
 test("runGptCreativeEngine: costBreakdown soma corretamente por categoria (director/exploração/imagem/gate técnico/Visual Quality Score)", () => withFakeFetch(async () => {

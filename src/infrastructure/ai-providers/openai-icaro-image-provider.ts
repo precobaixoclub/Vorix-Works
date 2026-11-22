@@ -1,8 +1,8 @@
 import type { AIProviderPort, AIProviderProfile, AIProviderRequest, AIProviderResponse } from "../../application/ports/ai-provider.port.js";
 import type { AiMediaProviderAdapterPort } from "../../application/ports/ai-media-provider-adapter.port.js";
-import { fetchAsBuffer, resolveCropAwareCompositionHint, resolveOpenAiImageSize, throwMediaGenerationFailure } from "./openai-image-technical-helpers.js";
+import { fetchAsBuffer, resolveCropAwareCompositionHint, throwMediaGenerationFailure } from "./openai-image-technical-helpers.js";
 import { buildGuardedPrompt } from "./legacy-pedro-image-guard.js";
-import { estimateGptImage1CostUsd } from "./gpt-image-1-pricing.js";
+import { DEFAULT_GPT_IMAGE_MODEL, getGptImageModel, resolveGptImageCanvas, unsupportedGptImageModelMessage } from "../../shared/utils/gpt-image-models.js";
 
 export type OpenAiIcaroImageProviderConfig = {
   modelId?: string;
@@ -33,7 +33,7 @@ export class OpenAiIcaroImageProvider implements AIProviderPort {
     private readonly mediaProvider: AiMediaProviderAdapterPort,
     private readonly config: OpenAiIcaroImageProviderConfig = {},
   ) {
-    const modelId = config.modelId ?? "gpt-image-1";
+    const modelId = config.modelId ?? DEFAULT_GPT_IMAGE_MODEL;
     this.profile = {
       id: "openai-icaro-image",
       name: "OpenAI (imagem, via Ícaro)",
@@ -76,8 +76,11 @@ export class OpenAiIcaroImageProvider implements AIProviderPort {
     const cleanZones = typeof request.context?.authorizedCleanZones === "string" ? request.context.authorizedCleanZones.trim() : undefined;
     const backgroundOnly = typeof request.context?.authorizedBackgroundOnly === "string" ? request.context.authorizedBackgroundOnly.trim() : undefined;
     const imageAspectRatio = typeof request.context?.imageAspectRatio === "string" ? request.context.imageAspectRatio : undefined;
-    const size = resolveOpenAiImageSize(imageAspectRatio);
-    const finalPrompt = buildGuardedPrompt(request.prompt, authorizedTitle, brandColors, productFidelity, cleanZones, resolveCropAwareCompositionHint(imageAspectRatio, size), backgroundOnly);
+    const modelSpec = getGptImageModel(modelId);
+    if (!modelSpec) throwMediaGenerationFailure("invalid_request", unsupportedGptImageModelMessage(modelId));
+    const canvas = resolveGptImageCanvas(modelSpec!, imageAspectRatio);
+    const size = canvas.size;
+    const finalPrompt = buildGuardedPrompt(request.prompt, authorizedTitle, brandColors, productFidelity, cleanZones, canvas.exact ? undefined : resolveCropAwareCompositionHint(imageAspectRatio, size), backgroundOnly);
     // Baixa a foto de referência UMA vez (mesma referência vale para todas as imagens do
     // carrossel) — best-effort: se o download falhar, segue com geração só-texto em vez de travar
     // a peça inteira por causa da referência.
@@ -86,6 +89,7 @@ export class OpenAiIcaroImageProvider implements AIProviderPort {
 
     const quality = "high" as const;
     const images: Array<{ uri: string; mimeType: string }> = [];
+    let costUsd = 0;
     for (let index = 0; index < imageCount; index += 1) {
       const result = await this.mediaProvider.generate({
         operationTypeCode: "image_generation",
@@ -100,19 +104,11 @@ export class OpenAiIcaroImageProvider implements AIProviderPort {
         throwMediaGenerationFailure(result.category, result.message);
       }
       images.push({ uri: result.mediaUrl, mimeType: "image/png" });
+      costUsd += result.audit?.costUsd ?? 0;
     }
 
-    // Auditoria de custo (pedido explícito do usuário) — achado crítico: antes desta correção,
-    // `cost.estimated` era SEMPRE 0 aqui, então a geração de imagem (o passo mais caro do motor
-    // legado) nunca entrava em `icaro_ai_calls`. Mesma estimativa usada pelo motor GPT
-    // (`openai-creative-image-provider.ts`) — ver `gpt-image-1-pricing.ts` pra fonte dos números.
-    const perImageCostUsd = estimateGptImage1CostUsd({
-      size,
-      quality,
-      promptChars: finalPrompt.length,
-      hasReferenceImage: Boolean(referenceImageBuffer),
-    });
-    const totalCostUsd = perImageCostUsd * images.length;
+    // Custo REAL (soma do `usage` devolvido pela OpenAI × preço oficial do catálogo).
+    const totalCostUsd = Math.round(costUsd * 1_000_000) / 1_000_000;
 
     return {
       content: JSON.stringify({ images }),

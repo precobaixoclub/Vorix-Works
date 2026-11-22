@@ -27,6 +27,7 @@ import {
 } from "@/features/meta-ads/api";
 import { useMetaAdAccounts, useMetaAdCampaignTree } from "@/features/meta-ads/hooks";
 import type { MetaAdCampaign, MetaAdEntity, MetaAdEntityStatus, MetaAdSet } from "@/features/meta-ads/types";
+import { MetaAdsConnectionCard } from "@/features/meta-ads/MetaAdsConnectionCard";
 import { AudiencesTab } from "./audiences-tab";
 import { PixelsTab } from "./pixels-tab";
 
@@ -34,6 +35,7 @@ const TABS = [
   { key: "campaigns", label: "Campanhas" },
   { key: "audiences", label: "Públicos" },
   { key: "pixels", label: "Pixels" },
+  { key: "connection", label: "Conexão" },
 ] as const;
 type TabKey = (typeof TABS)[number]["key"];
 
@@ -166,12 +168,8 @@ export default function MetaAdsPage() {
   if (accounts.length === 0) {
     return (
       <main className="mx-auto max-w-6xl px-3 py-5 sm:px-6 sm:py-8">
-        <PageHeader title="Anúncios" description="Campanhas de Facebook/Instagram gerenciadas através da Marketing API." />
-        <EmptyState
-          title="Nenhuma conta de anúncio conectada"
-          description="Conecte uma conta do Meta Ads para ver e sincronizar campanhas aqui."
-          action={<Link href={`/workspaces/${workspace.id}/connections`}><Button>Ir para Conexões</Button></Link>}
-        />
+        <PageHeader title="Anúncios" description="Campanhas de Facebook/Instagram deste espaço de trabalho. Conecte a conta de anúncios aqui mesmo para começar." />
+        <MetaAdsConnectionCard workspaceId={workspace.id} returnPath={`/workspaces/${workspace.id}/meta-ads`} />
       </main>
     );
   }
@@ -242,6 +240,8 @@ export default function MetaAdsPage() {
           )
         ) : activeTab === "audiences" ? (
           activeAccount ? <AudiencesTab workspaceId={workspace.id} adAccount={activeAccount} /> : null
+        ) : activeTab === "connection" ? (
+          <MetaAdsConnectionCard workspaceId={workspace.id} returnPath={`/workspaces/${workspace.id}/meta-ads`} />
         ) : activeAccount ? (
           <PixelsTab workspaceId={workspace.id} adAccount={activeAccount} />
         ) : null}

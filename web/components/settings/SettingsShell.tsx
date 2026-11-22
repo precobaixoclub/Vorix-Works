@@ -2,7 +2,7 @@
 
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect } from "react";
-import { Boxes, CreditCard, Globe, Headset, Mic, Palette, PlugZap, Scale, Settings, ShoppingBag, SlidersHorizontal, Store, Target, UsersRound, Workflow } from "lucide-react";
+import { Boxes, CreditCard, Globe, Headset, Mic, PlugZap, Scale, Settings, ShoppingBag, SlidersHorizontal, Store, Target, UsersRound, Workflow } from "lucide-react";
 import { PageHeader } from "@/components/PageHeader";
 import { PageSubnav } from "@/components/PageSubnav";
 import { useCurrentWorkspace } from "@/contexts/workspace-context";
@@ -23,7 +23,9 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
   { value: "site-address", label: "Endereço e domínio", href: "/site?section=dominio", icon: Globe, solutions: ["site"] },
   { value: "site-selling", label: "Como vender pelo site", href: "/site?section=loja", icon: ShoppingBag, solutions: ["site"] },
   { value: "site-products", label: "Produtos", href: "/site/products", icon: Boxes, solutions: ["site"] },
-  { value: "integrations", label: "Integrações", href: "/connections", icon: PlugZap, solutions: ["conversations", "marketing"] },
+  // No Marketing, Integrações e Marca já estão no menu principal (Redes sociais → Integrações; Marca)
+  // e a conexão de anúncios fica dentro de Anúncios — repetir aqui só confundia.
+  { value: "integrations", label: "Integrações", href: "/connections", icon: PlugZap, solutions: ["conversations"] },
   { value: "attendance", label: "Atendimento", href: "/settings/attendance", icon: Headset, solutions: ["conversations"] },
   { value: "products", label: "Produtos", href: "/products", icon: Boxes, solutions: ["conversations"] },
   { value: "commercial", label: "Regras comerciais", href: "/settings/commercial", icon: Scale, solutions: ["conversations"] },
@@ -33,7 +35,6 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
   { value: "meetings-preferences", label: "Preferências", href: "/meetings/settings", icon: SlidersHorizontal, solutions: ["meetings"] },
   { value: "meetings-integrations", label: "Agendas conectadas", href: "/meetings/integrations", icon: PlugZap, solutions: ["meetings"] },
   { value: "meetings-recorder", label: "Contas de gravação", href: "/meetings/recorder-accounts", icon: Mic, solutions: ["meetings"] },
-  { value: "brand", label: "Marca", href: "/knowledge", icon: Palette, solutions: ["marketing"] },
 ];
 
 /** Seções visíveis: a Conta sempre; as de solução só para a solução ativa (e contratada). */

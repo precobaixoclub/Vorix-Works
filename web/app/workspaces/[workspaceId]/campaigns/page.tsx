@@ -2,11 +2,11 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { AlignLeft, GalleryHorizontal, ImageIcon, MoreHorizontal, Video } from "lucide-react";
+import { AlignLeft, ExternalLink, GalleryHorizontal, ImageIcon, LayoutGrid, List, MoreHorizontal, Video } from "lucide-react";
 import { Button } from "@/components/Button";
 import { ChannelIcon, channelLabel } from "@/components/ChannelIcon";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
-import { DetailBlock as ModalDetailBlock, DetailModal } from "@/components/DetailModal";
+import { DetailBlock, DetailModal } from "@/components/DetailModal";
 import { EmptyState } from "@/components/EmptyState";
 import { ErrorState } from "@/components/ErrorState";
 import { Input } from "@/components/Field";
@@ -19,8 +19,10 @@ import { StatusBadge } from "@/components/StatusBadge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { TablePagination, usePagination } from "@/components/ui/table-pagination";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useCurrentWorkspace } from "@/contexts/workspace-context";
 import { cancelUnifiedPublication } from "@/features/publication-history/api";
+import { groupPublications, publicationDate, type ContentGroup } from "@/features/publication-history/content-groups";
 import { useUnifiedPublications } from "@/features/publication-history/hooks";
 import {
   contentTypeOf,
@@ -34,30 +36,29 @@ import {
 import { useDebounce } from "@/hooks/useDebounce";
 import { useSortedRows } from "@/hooks/useSortedRows";
 import { formatDateTime } from "@/lib/format";
+import { cn } from "@/lib/utils";
 
 const NETWORK_LABEL: Record<PublicationNetwork, string> = { tiktok: "TikTok", instagram: "Instagram", facebook: "Facebook", youtube: "YouTube Shorts" };
-const NETWORK_ICON: Record<PublicationNetwork, string> = { tiktok: "♪", instagram: "◎", facebook: "f", youtube: "▶" };
 const FORMAT_LABEL: Record<PublicationContentType, string> = { image: "Imagem", video: "Vídeo", carousel: "Carrossel", text: "Texto" };
-const FORMAT_ICON: Record<PublicationContentType, string> = { image: "▧", video: "▶", carousel: "▦", text: "¶" };
-// Um tom por formato, dentro do vocabulário fechado (emerald/sky/violet/amber/rose/primary) —
-// gradiente de dois estágios na MESMA cor, nunca um degradê multicolorido (achado de auditoria:
-// a versão anterior misturava sky/indigo/emerald/rose/orange/teal/cyan/slate/zinc numa única tela).
+// Um tom por formato, dentro do vocabulário fechado — gradiente de dois estágios na MESMA cor.
 const FORMAT_GRADIENT: Record<PublicationContentType, string> = {
   image: "from-sky-500/60 to-sky-600/60",
   video: "from-rose-500/60 to-rose-600/60",
   carousel: "from-emerald-500/60 to-emerald-600/60",
   text: "from-violet-500/60 to-violet-600/60",
 };
+/** Cor do pontinho de resultado em cada ícone de rede. */
+const STATUS_DOT: Record<PublicationDisplayStatus, string> = {
+  published: "bg-emerald-500",
+  scheduled: "bg-sky-500",
+  publishing: "bg-amber-500",
+  failed: "bg-destructive",
+  cancelled: "bg-muted-foreground",
+  draft: "bg-muted-foreground",
+};
 
 // Ordinal usado só para ordenar a coluna Status da tabela — não é exibido.
-const STATUS_ORDER: Record<PublicationDisplayStatus, number> = {
-  draft: 0,
-  scheduled: 1,
-  publishing: 2,
-  published: 3,
-  failed: 4,
-  cancelled: 5,
-};
+const STATUS_ORDER: Record<PublicationDisplayStatus, number> = { draft: 0, scheduled: 1, publishing: 2, published: 3, failed: 4, cancelled: 5 };
 
 const NETWORK_FILTERS: Array<{ value: PublicationNetwork | "all"; label: string }> = [
   { value: "all", label: "Todas as redes" },
@@ -86,7 +87,7 @@ const FORMAT_FILTERS: Array<{ value: PublicationContentType | "all"; label: stri
 
 type DateFilter = "all" | "upcoming" | "past" | "this_month";
 type ViewMode = "grid" | "list";
-type PublicationSortKey = "title" | "network" | "format" | "status" | "date";
+type ContentSortKey = "title" | "networks" | "format" | "status" | "date";
 
 const DATE_FILTERS: Array<{ value: DateFilter; label: string }> = [
   { value: "all", label: "Qualquer data" },
@@ -106,6 +107,11 @@ function matchesDate(iso: string | undefined, filter: DateFilter): boolean {
   return true;
 }
 
+/**
+ * Biblioteca de conteúdos: UM card por peça, mesmo quando ela saiu em várias redes (antes cada rede
+ * virava um card duplicado). Os ícones mostram onde a peça foi; o detalhe traz data, hora e
+ * resultado de cada rede.
+ */
 export default function ContentsPage() {
   const workspace = useCurrentWorkspace();
   const [search, setSearch] = useState("");
@@ -115,77 +121,58 @@ export default function ContentsPage() {
   const [dateFilter, setDateFilter] = useState<DateFilter>("all");
   const [viewMode, setViewMode] = useState<ViewMode>("grid");
   const [busyId, setBusyId] = useState<string | undefined>();
-  const [selectedPost, setSelectedPost] = useState<UnifiedPublication | undefined>();
+  const [selectedKey, setSelectedKey] = useState<string | undefined>();
   const [pendingCancel, setPendingCancel] = useState<UnifiedPublication | undefined>();
   const { data: publications, isLoading, error, mutate } = useUnifiedPublications(workspace.id);
 
   const debouncedSearch = useDebounce(search, 300);
+  const groups = useMemo(() => groupPublications(publications ?? []), [publications]);
 
-  const stats = useMemo(() => {
-    const statuses = (publications ?? []).map((publication) => derivePublicationStatus(publication));
-    return {
-      total: statuses.length,
-      published: statuses.filter((status) => status === "published").length,
-      scheduled: statuses.filter((status) => status === "scheduled").length,
-      failed: statuses.filter((status) => status === "failed").length,
-      cancelled: statuses.filter((status) => status === "cancelled").length,
-    };
-  }, [publications]);
+  const stats = useMemo(() => ({
+    total: groups.length,
+    published: groups.filter((group) => group.status === "published").length,
+    scheduled: groups.filter((group) => group.posts.some((post) => derivePublicationStatus(post) === "scheduled")).length,
+    failed: groups.filter((group) => group.posts.some((post) => derivePublicationStatus(post) === "failed")).length,
+    cancelled: groups.filter((group) => group.status === "cancelled").length,
+  }), [groups]);
 
-  const activeFilterCount = [
-    networkFilter !== "all",
-    statusFilter !== "all",
-    formatFilter !== "all",
-    dateFilter !== "all",
-    search.trim() !== "",
-  ].filter(Boolean).length;
+  const activeFilterCount = [networkFilter !== "all", statusFilter !== "all", formatFilter !== "all", dateFilter !== "all", search.trim() !== ""].filter(Boolean).length;
 
-  // 1 — filtro (busca debounced: o Input recebe `search` cru, o filtro lê `debouncedSearch`)
   const filtered = useMemo(() => {
     const query = debouncedSearch.trim().toLowerCase();
-    return (publications ?? [])
-      .filter((publication) => (networkFilter === "all" ? true : publication.network === networkFilter))
-      .filter((publication) => (statusFilter === "all" ? true : derivePublicationStatus(publication) === statusFilter))
-      .filter((publication) => (formatFilter === "all" ? true : contentTypeOf(publication) === formatFilter))
-      .filter((publication) => matchesDate(publication.scheduledAt ?? publication.publishedAt ?? publication.createdAt, dateFilter))
-      .filter((publication) => (query ? titleOf(publication).toLowerCase().includes(query) || publication.text.toLowerCase().includes(query) : true));
-  }, [publications, networkFilter, statusFilter, formatFilter, dateFilter, debouncedSearch]);
+    return groups
+      .filter((group) => (networkFilter === "all" ? true : group.networks.includes(networkFilter)))
+      .filter((group) => (statusFilter === "all" ? true : statusFilter === "published" ? group.status === "published" : group.posts.some((post) => derivePublicationStatus(post) === statusFilter)))
+      .filter((group) => (formatFilter === "all" ? true : contentTypeOf(group.primary) === formatFilter))
+      .filter((group) => matchesDate(group.date, dateFilter))
+      .filter((group) => (query ? titleOf(group.primary).toLowerCase().includes(query) || group.primary.text.toLowerCase().includes(query) : true));
+  }, [groups, networkFilter, statusFilter, formatFilter, dateFilter, debouncedSearch]);
 
-  // 2 — ordenação da lista INTEIRA (antes de paginar; só usada pela visão "Lista")
-  const { sorted, sort, onSort } = useSortedRows<UnifiedPublication, PublicationSortKey>(
+  const { sorted, sort, onSort } = useSortedRows<ContentGroup, ContentSortKey>(
     filtered,
     {
-      title: (post) => titleOf(post).toLowerCase(),
-      network: (post) => NETWORK_LABEL[post.network].toLowerCase(),
-      format: (post) => FORMAT_LABEL[contentTypeOf(post)].toLowerCase(),
-      status: (post) => STATUS_ORDER[derivePublicationStatus(post)] ?? 0,
-      date: (post) => {
-        const iso = publicationDate(post);
-        if (!iso) return null;
-        const time = new Date(iso).getTime();
+      title: (group) => titleOf(group.primary).toLowerCase(),
+      networks: (group) => group.networks.length,
+      format: (group) => FORMAT_LABEL[contentTypeOf(group.primary)].toLowerCase(),
+      status: (group) => STATUS_ORDER[group.status] ?? 0,
+      date: (group) => {
+        const time = group.date ? new Date(group.date).getTime() : Number.NaN;
         return Number.isNaN(time) ? null : time;
       },
     },
     { key: "date", dir: "desc" },
   );
 
-  // 3 — paginação adaptativa à altura da viewport (só usada pela visão "Lista")
-  const {
-    currentPage, totalPages, paginatedItems, setCurrentPage, resetPage,
-    totalItems, pageSize, containerRef, availableHeight,
-  } = usePagination(sorted, { auto: true });
+  const { currentPage, totalPages, paginatedItems, setCurrentPage, resetPage, totalItems, pageSize, containerRef, availableHeight } = usePagination(sorted, { auto: true });
+  useEffect(() => { resetPage(); }, [debouncedSearch, networkFilter, statusFilter, formatFilter, dateFilter, sort, resetPage]);
 
-  // 4 — reset de página ao mudar filtro OU ordenação
-  useEffect(() => {
-    resetPage();
-  }, [debouncedSearch, networkFilter, statusFilter, formatFilter, dateFilter, sort, resetPage]);
+  const selected = selectedKey ? groups.find((group) => group.key === selectedKey) : undefined;
 
   async function cancel(post: UnifiedPublication) {
     setBusyId(post.id);
     try {
       await cancelUnifiedPublication(workspace.id, post.network, post.id);
       await mutate();
-      setSelectedPost(undefined);
       setPendingCancel(undefined);
     } finally {
       setBusyId(undefined);
@@ -196,12 +183,12 @@ export default function ContentsPage() {
     <main className="mx-auto max-w-7xl px-3 py-5 sm:px-6 sm:py-8">
       <PageHeader
         title="Conteúdos"
-        description="Veja, filtre e reutilize tudo que já foi criado ou publicado."
+        description="Cada peça aparece uma vez, com o ícone das redes em que saiu. Abra para ver data, hora e resultado de cada rede."
         actions={
           <>
-            <div className="inline-flex rounded-lg border border-border bg-card p-1">
-              <button type="button" onClick={() => setViewMode("grid")} className={viewModeButtonClass(viewMode === "grid")}>Grid</button>
-              <button type="button" onClick={() => setViewMode("list")} className={viewModeButtonClass(viewMode === "list")}>Lista</button>
+            <div className="inline-flex rounded-lg border border-border bg-card p-1" role="group" aria-label="Visualização">
+              <button type="button" aria-label="Grade" aria-pressed={viewMode === "grid"} onClick={() => setViewMode("grid")} className={viewModeButtonClass(viewMode === "grid")}><LayoutGrid className="h-4 w-4" aria-hidden /></button>
+              <button type="button" aria-label="Lista" aria-pressed={viewMode === "list"} onClick={() => setViewMode("list")} className={viewModeButtonClass(viewMode === "list")}><List className="h-4 w-4" aria-hidden /></button>
             </div>
             <Link href={`/workspaces/${workspace.id}/create`}><Button variant="secondary">Criar conteúdo</Button></Link>
           </>
@@ -210,7 +197,7 @@ export default function ContentsPage() {
 
       <div className="mb-5">
         <StatsGrid>
-          <StatCard label="Total" value={stats.total} active={statusFilter === "all"} onClick={() => setStatusFilter("all")} />
+          <StatCard label="Conteúdos" value={stats.total} active={statusFilter === "all"} onClick={() => setStatusFilter("all")} />
           <StatCard label="Publicados" value={stats.published} active={statusFilter === "published"} onClick={() => setStatusFilter("published")} />
           <StatCard label="Agendados" value={stats.scheduled} active={statusFilter === "scheduled"} onClick={() => setStatusFilter("scheduled")} />
           <StatCard label="Com erro" value={stats.failed} active={statusFilter === "failed"} onClick={() => setStatusFilter("failed")} />
@@ -229,18 +216,7 @@ export default function ContentsPage() {
           </div>
           {activeFilterCount > 0 ? (
             <div className="mt-2 flex justify-end">
-              <Button
-                variant="ghost"
-                onClick={() => {
-                  setSearch("");
-                  setNetworkFilter("all");
-                  setStatusFilter("all");
-                  setFormatFilter("all");
-                  setDateFilter("all");
-                }}
-              >
-                Limpar filtros
-              </Button>
+              <Button variant="ghost" onClick={() => { setSearch(""); setNetworkFilter("all"); setStatusFilter("all"); setFormatFilter("all"); setDateFilter("all"); }}>Limpar filtros</Button>
             </div>
           ) : null}
         </CardContent>
@@ -250,43 +226,27 @@ export default function ContentsPage() {
         <div className="flex justify-center py-14"><Spinner /></div>
       ) : error ? (
         <ErrorState error={error} onRetry={() => mutate()} />
+      ) : groups.length === 0 ? (
+        <EmptyState
+          title="Nenhum conteúdo ainda"
+          description="Quando algo for publicado ou agendado, a biblioteca aparece aqui."
+          action={<Link href={`/workspaces/${workspace.id}/create`}><Button variant="secondary">Criar conteúdo</Button></Link>}
+        />
+      ) : filtered.length === 0 ? (
+        <div className="rounded-2xl border border-dashed border-border py-14 text-center text-sm text-muted-foreground">Nenhum conteúdo corresponde aos filtros aplicados.</div>
       ) : viewMode === "grid" ? (
-        !publications || publications.length === 0 ? (
-          <EmptyState
-            title="Nenhum conteúdo ainda"
-            description="Quando algo for publicado ou agendado, a biblioteca aparece aqui."
-            action={<Link href={`/workspaces/${workspace.id}/create`}><Button variant="secondary">Criar conteúdo</Button></Link>}
-          />
-        ) : filtered.length === 0 ? (
-          <div className="rounded-2xl border border-dashed border-border py-14 text-center text-sm text-muted-foreground">
-            Nenhum conteúdo corresponde aos filtros aplicados.
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-            {filtered.map((post) => (
-              <PublicationCard key={`${post.network}-${post.id}`} workspaceId={workspace.id} post={post} busy={busyId === post.id} onOpen={() => setSelectedPost(post)} onCancel={() => setPendingCancel(post)} />
-            ))}
-          </div>
-        )
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+          {sorted.map((group) => (
+            <ContentCard key={group.key} workspaceId={workspace.id} group={group} onOpen={() => setSelectedKey(group.key)} />
+          ))}
+        </div>
       ) : (
-        <ListCard
-          ref={containerRef}
-          availableHeight={availableHeight}
-          footer={
-            <TablePagination
-              currentPage={currentPage}
-              totalPages={totalPages}
-              totalItems={totalItems}
-              pageSize={pageSize}
-              onPageChange={setCurrentPage}
-            />
-          }
-        >
+        <ListCard ref={containerRef} availableHeight={availableHeight} footer={<TablePagination currentPage={currentPage} totalPages={totalPages} totalItems={totalItems} pageSize={pageSize} onPageChange={setCurrentPage} />}>
           <Table>
             <TableHeader>
               <TableRow>
                 <SortableHead columnKey="title" sort={sort} onSort={onSort}>Conteúdo</SortableHead>
-                <SortableHead columnKey="network" sort={sort} onSort={onSort}>Rede</SortableHead>
+                <SortableHead columnKey="networks" sort={sort} onSort={onSort}>Redes</SortableHead>
                 <SortableHead columnKey="format" sort={sort} onSort={onSort}>Formato</SortableHead>
                 <SortableHead columnKey="status" sort={sort} onSort={onSort}>Status</SortableHead>
                 <SortableHead columnKey="date" sort={sort} onSort={onSort} align="right">Data</SortableHead>
@@ -294,66 +254,54 @@ export default function ContentsPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {paginatedItems.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
-                    {!publications || publications.length === 0
-                      ? "Nenhum conteúdo ainda"
-                      : "Nenhum conteúdo corresponde aos filtros aplicados."}
-                  </TableCell>
-                </TableRow>
-              ) : (
-                paginatedItems.map((post) => {
-                  const format = contentTypeOf(post);
-                  const status = derivePublicationStatus(post);
-                  const thumbnail = post.media.imageUrls[0] ?? post.media.thumbnailUrl;
-                  const when = publicationDate(post);
-                  return (
-                    <TableRow key={`${post.network}-${post.id}`}>
-                      <TableCell>
-                        <button type="button" onClick={() => setSelectedPost(post)} className="flex min-w-0 items-center gap-3 text-left">
-                          <span className={`flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-gradient-to-br ${FORMAT_GRADIENT[format]}`}>
-                            {thumbnail ? (
-                              // eslint-disable-next-line @next/next/no-img-element
-                              <img src={thumbnail} alt="" className="h-full w-full object-cover" />
-                            ) : (
-                              <FormatIcon format={format} className="h-5 w-5 text-primary-foreground/80" />
-                            )}
-                          </span>
-                          <span className="min-w-0 truncate font-medium text-foreground">{titleOf(post)}</span>
-                        </button>
-                      </TableCell>
-                      <TableCell><NetworkBadge network={post.network} /></TableCell>
-                      <TableCell className="text-muted-foreground">{FORMAT_LABEL[format]}</TableCell>
-                      <TableCell><StatusBadge status={status} /></TableCell>
-                      <TableCell className="text-right text-muted-foreground">{when ? formatDateTime(when) : "—"}</TableCell>
-                      <TableCell>
-                        <div className="flex items-center justify-end">
-                          <ActionsMenu workspaceId={workspace.id} post={post} busy={busyId === post.id} onOpen={() => setSelectedPost(post)} onCancel={() => setPendingCancel(post)} />
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  );
-                })
-              )}
+              {paginatedItems.map((group) => {
+                const format = contentTypeOf(group.primary);
+                const thumbnail = group.primary.media.imageUrls[0] ?? group.primary.media.thumbnailUrl;
+                return (
+                  <TableRow key={group.key}>
+                    <TableCell>
+                      <button type="button" onClick={() => setSelectedKey(group.key)} className="flex min-w-0 items-center gap-3 text-left">
+                        <span className={`flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-gradient-to-br ${FORMAT_GRADIENT[format]}`}>
+                          {thumbnail ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img src={thumbnail} alt="" className="h-full w-full object-cover" />
+                          ) : (
+                            <FormatIcon format={format} className="h-5 w-5 text-primary-foreground/80" />
+                          )}
+                        </span>
+                        <span className="min-w-0 truncate font-medium text-foreground">{titleOf(group.primary)}</span>
+                      </button>
+                    </TableCell>
+                    <TableCell><NetworkIcons group={group} /></TableCell>
+                    <TableCell className="text-muted-foreground">{FORMAT_LABEL[format]}</TableCell>
+                    <TableCell><StatusBadge status={group.status} /></TableCell>
+                    <TableCell className="text-right text-muted-foreground">{group.date ? formatDateTime(group.date) : "—"}</TableCell>
+                    <TableCell>
+                      <div className="flex items-center justify-end">
+                        <ActionsMenu workspaceId={workspace.id} group={group} onOpen={() => setSelectedKey(group.key)} />
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
             </TableBody>
           </Table>
         </ListCard>
       )}
 
-      {selectedPost ? (
-        <PublicationDetailModal workspaceId={workspace.id} post={selectedPost} busy={busyId === selectedPost.id} onCancel={() => setPendingCancel(selectedPost)} onClose={() => setSelectedPost(undefined)} />
+      {selected ? (
+        <ContentDetailModal workspaceId={workspace.id} group={selected} busyId={busyId} onCancel={setPendingCancel} onClose={() => setSelectedKey(undefined)} />
       ) : null}
       <ConfirmDialog
         open={!!pendingCancel}
         title="Cancelar agendamento"
-        description={pendingCancel ? `Tem certeza que deseja cancelar "${titleOf(pendingCancel)}"? A publicação agendada não vai mais sair.` : ""}
+        description={pendingCancel ? `Cancelar o agendamento no ${NETWORK_LABEL[pendingCancel.network]}? A publicação nessa rede não vai mais sair.` : ""}
         confirmLabel="Cancelar agendamento"
         cancelLabel="Voltar"
         variant="danger"
         busy={!!pendingCancel && busyId === pendingCancel.id}
         onCancel={() => setPendingCancel(undefined)}
-        onConfirm={() => pendingCancel ? cancel(pendingCancel) : undefined}
+        onConfirm={() => (pendingCancel ? cancel(pendingCancel) : undefined)}
       />
     </main>
   );
@@ -372,7 +320,7 @@ function StatCard({ label, value, active, onClick }: { label: string; value: num
   );
 }
 
-function FilterSelect<T extends string>({ label, value, onChange, options }: { label: string; value: T; onChange: (value: string) => void; options: Array<{ value: string; label: string }> }) {
+function FilterSelect({ label, value, onChange, options }: { label: string; value: string; onChange: (value: string) => void; options: Array<{ value: string; label: string }> }) {
   return (
     <label className="min-w-0">
       <span className="sr-only">{label}</span>
@@ -388,11 +336,33 @@ function FormatIcon({ format, className }: { format: PublicationContentType; cla
   return <Icon className={className} aria-hidden />;
 }
 
-function PublicationCard({ workspaceId, post, busy, onOpen, onCancel }: { workspaceId: string; post: UnifiedPublication; busy: boolean; onOpen: () => void; onCancel: () => void }) {
+/** Um ícone por rede onde a peça saiu, com o pontinho do resultado daquela rede. */
+function NetworkIcons({ group, onDark = false }: { group: ContentGroup; onDark?: boolean }) {
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      {group.posts.map((post) => {
+        const status = derivePublicationStatus(post);
+        return (
+          <Tooltip key={`${post.network}-${post.id}`}>
+            <TooltipTrigger asChild>
+              <span className={cn("relative inline-flex h-7 w-7 items-center justify-center rounded-full", onDark ? "bg-black/55 text-white backdrop-blur" : "bg-muted text-foreground")}>
+                <ChannelIcon channel={post.network} label={NETWORK_LABEL[post.network]} />
+                <span className={cn("absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full ring-2", onDark ? "ring-black/60" : "ring-card", STATUS_DOT[status])} aria-hidden />
+              </span>
+            </TooltipTrigger>
+            <TooltipContent>{NETWORK_LABEL[post.network]}: {PUBLICATION_DISPLAY_STATUS_LABEL[status]}</TooltipContent>
+          </Tooltip>
+        );
+      })}
+    </span>
+  );
+}
+
+function ContentCard({ workspaceId, group, onOpen }: { workspaceId: string; group: ContentGroup; onOpen: () => void }) {
+  const post = group.primary;
   const format = contentTypeOf(post);
-  const status = derivePublicationStatus(post);
   const thumbnail = post.media.imageUrls[0] ?? post.media.thumbnailUrl;
-  const when = publicationDate(post);
+  const failedCount = group.posts.filter((item) => derivePublicationStatus(item) === "failed").length;
 
   return (
     <article className="group min-w-0 overflow-hidden rounded-2xl border border-border bg-card/55 transition hover:border-primary/70 hover:shadow-lg">
@@ -405,47 +375,43 @@ function PublicationCard({ workspaceId, post, busy, onOpen, onCancel }: { worksp
         ) : (
           <FormatIcon format={format} className="h-12 w-12 text-primary-foreground/75 drop-shadow" />
         )}
-        <span className="absolute left-3 top-3 rounded-full bg-black/45 px-2.5 py-1 text-xs font-medium text-primary-foreground backdrop-blur">
-          <ChannelIcon channel={post.network} label={NETWORK_LABEL[post.network]} showLabel />
-        </span>
-        <span className="absolute right-3 top-3"><StatusBadge status={status} /></span>
+        <span className="absolute left-3 top-3"><NetworkIcons group={group} onDark /></span>
+        <span className="absolute right-3 top-3"><StatusBadge status={group.status} /></span>
+        {failedCount > 0 && group.status !== "failed" ? (
+          <span className="absolute bottom-3 left-3 rounded-full bg-destructive px-2 py-0.5 text-xs font-medium text-destructive-foreground">Falhou em {failedCount} rede{failedCount > 1 ? "s" : ""}</span>
+        ) : null}
       </button>
       <div className="p-3">
         <div className="flex min-w-0 items-start justify-between gap-2">
           <button type="button" onClick={onOpen} className="min-w-0 text-left">
             <h2 className="line-clamp-2 text-sm font-semibold text-foreground">{titleOf(post)}</h2>
-            <p className="mt-1 text-xs text-muted-foreground">{when ? formatDateTime(when) : "Sem data"} · {FORMAT_LABEL[format]}</p>
+            <p className="mt-1 text-xs text-muted-foreground">{group.date ? formatDateTime(group.date) : "Sem data"} · {FORMAT_LABEL[format]}</p>
           </button>
-          <ActionsMenu workspaceId={workspaceId} post={post} busy={busy} onOpen={onOpen} onCancel={onCancel} />
+          <ActionsMenu workspaceId={workspaceId} group={group} onOpen={onOpen} />
         </div>
       </div>
     </article>
   );
 }
 
-function ActionsMenu({ workspaceId, post, busy, onOpen, onCancel }: { workspaceId: string; post: UnifiedPublication; busy: boolean; onOpen: () => void; onCancel: () => void }) {
-  const status = derivePublicationStatus(post);
+function ActionsMenu({ workspaceId, group, onOpen }: { workspaceId: string; group: ContentGroup; onOpen: () => void }) {
   return (
     <details className="relative shrink-0">
       <summary className="flex h-9 w-9 cursor-pointer list-none items-center justify-center rounded-full text-muted-foreground hover:bg-muted hover:text-foreground" aria-label="Abrir menu">
         <MoreHorizontal className="h-4 w-4" aria-hidden />
       </summary>
-      <div className="absolute right-0 z-20 mt-1 w-48 rounded-xl border border-border bg-popover p-1 text-popover-foreground shadow-md">
-        <button type="button" onClick={onOpen} className="w-full rounded-lg px-3 py-2 text-left text-sm text-foreground hover:bg-muted">Abrir</button>
-        <Link href={publishAgainHref(workspaceId, post)} className="block rounded-lg px-3 py-2 text-sm text-foreground hover:bg-muted">Publicar novamente</Link>
-        {status === "scheduled" ? (
-          <button type="button" disabled={busy} onClick={onCancel} className="w-full rounded-lg px-3 py-2 text-left text-sm text-danger hover:bg-danger-bg disabled:opacity-60">Cancelar agendamento</button>
-        ) : null}
+      <div className="absolute right-0 z-20 mt-1 w-52 rounded-xl border border-border bg-popover p-1 text-popover-foreground shadow-md">
+        <button type="button" onClick={onOpen} className="w-full rounded-lg px-3 py-2 text-left text-sm text-foreground hover:bg-muted">Ver detalhes</button>
+        <Link href={publishAgainHref(workspaceId, group.primary)} className="block rounded-lg px-3 py-2 text-sm text-foreground hover:bg-muted">Publicar novamente</Link>
       </div>
     </details>
   );
 }
 
-function PublicationDetailModal({ workspaceId, post, busy, onClose, onCancel }: { workspaceId: string; post: UnifiedPublication; busy: boolean; onClose: () => void; onCancel: () => void }) {
+function ContentDetailModal({ workspaceId, group, busyId, onClose, onCancel }: { workspaceId: string; group: ContentGroup; busyId?: string; onClose: () => void; onCancel: (post: UnifiedPublication) => void }) {
+  const post = group.primary;
   const format = contentTypeOf(post);
-  const status = derivePublicationStatus(post);
   const thumbnail = post.media.imageUrls[0] ?? post.media.thumbnailUrl;
-  const when = publicationDate(post);
 
   return (
     <DetailModal
@@ -454,28 +420,54 @@ function PublicationDetailModal({ workspaceId, post, busy, onClose, onCancel }: 
       eyebrow="Conteúdo"
       title={titleOf(post)}
       description={
-        <div className="flex flex-wrap gap-2">
-          <NetworkBadge network={post.network} />
-          <StatusBadge status={status} />
+        <div className="flex flex-wrap items-center gap-2">
+          <StatusBadge status={group.status} />
           <span className="rounded-full bg-muted px-2.5 py-0.5 text-xs font-medium text-muted-foreground">{FORMAT_LABEL[format]}</span>
+          <span className="rounded-full bg-muted px-2.5 py-0.5 text-xs font-medium text-muted-foreground">{group.posts.length} rede{group.posts.length > 1 ? "s" : ""}</span>
           {post.placement === "story" ? <span className="rounded-full bg-muted px-2.5 py-0.5 text-xs font-medium text-muted-foreground">Story</span> : null}
         </div>
       }
-      srDescription="Detalhes do conteúdo publicado ou agendado."
+      srDescription="Detalhes do conteúdo e o resultado em cada rede."
       widthStorageKey="vorix.contents.detail.width"
       defaultWidthPercent={62}
       footer={
         <div className="flex flex-wrap gap-2">
           <Link href={publishAgainHref(workspaceId, post)}><Button>Publicar novamente</Button></Link>
-          {post.externalUrl ? <a href={post.externalUrl} target="_blank" rel="noreferrer"><Button variant="secondary">Ver publicação</Button></a> : null}
-          {status === "scheduled" ? <Button variant="secondary" disabled={busy} onClick={onCancel}>Cancelar agendamento</Button> : null}
         </div>
       }
     >
       <div className="space-y-6">
+        <DetailBlock label="Onde saiu">
+          <ul className="divide-y divide-border overflow-hidden rounded-xl border border-border">
+            {group.posts.map((item) => {
+              const status = derivePublicationStatus(item);
+              const when = publicationDate(item);
+              return (
+                <li key={`${item.network}-${item.id}`} className="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3">
+                  <span className="flex min-w-36 items-center gap-2 text-sm font-medium text-foreground">
+                    <ChannelIcon channel={item.network} label={NETWORK_LABEL[item.network]} /> {NETWORK_LABEL[item.network]}
+                  </span>
+                  <StatusBadge status={status} />
+                  <span className="text-sm tabular-nums text-muted-foreground">
+                    {status === "scheduled" ? "Agendado para " : status === "published" ? "Publicado em " : ""}{when ? formatDateTime(when) : "Sem data"}
+                  </span>
+                  <span className="ml-auto flex gap-2">
+                    {item.externalUrl ? (
+                      <a href={item.externalUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-sm font-medium text-primary hover:underline">
+                        Ver na rede <ExternalLink className="h-3.5 w-3.5" aria-hidden />
+                      </a>
+                    ) : null}
+                    {status === "scheduled" ? <Button size="sm" variant="ghost" disabled={busyId === item.id} onClick={() => onCancel(item)}>Cancelar</Button> : null}
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+        </DetailBlock>
         {post.media.videoUrl ? (
           <video src={post.media.videoUrl} poster={post.media.thumbnailUrl} controls playsInline preload="metadata" aria-label="Vídeo do conteúdo" className="mx-auto max-h-[60vh] w-full rounded-xl border border-border bg-black object-contain" />
         ) : thumbnail ? (
+          // Peça inteira sem corte (`object-contain`): Stories 9:16 não podem ser cortados.
           // eslint-disable-next-line @next/next/no-img-element
           <img src={thumbnail} alt="" className="mx-auto max-h-[60vh] w-full rounded-xl border border-border object-contain" />
         ) : (
@@ -483,96 +475,21 @@ function PublicationDetailModal({ workspaceId, post, busy, onClose, onCancel }: 
             <FormatIcon format={format} className="h-14 w-14 text-primary-foreground/75" />
           </div>
         )}
-        <ModalDetailBlock label="Legenda">
+        <DetailBlock label="Legenda">
           <p className="whitespace-pre-wrap break-words text-sm text-foreground">{post.text || "Sem legenda"}</p>
-        </ModalDetailBlock>
-        <div className="grid gap-4 md:grid-cols-2">
-          <ModalDetailBlock label={status === "scheduled" ? "Agendado para" : status === "published" ? "Publicado em" : "Data"}>
-            <p className="text-sm text-foreground">{when ? formatDateTime(when) : "Sem data"}</p>
-          </ModalDetailBlock>
-          <ModalDetailBlock label="Histórico">
-            <p className="text-sm text-foreground">{PUBLICATION_DISPLAY_STATUS_LABEL[status]}</p>
-            {post.timezone ? <p className="mt-1 text-xs text-muted-foreground">{post.timezone}</p> : null}
-          </ModalDetailBlock>
-        </div>
+        </DetailBlock>
       </div>
     </DetailModal>
-  );
-
-  return (
-    <div className="fixed inset-0 z-50">
-      <button type="button" className="absolute inset-0 bg-black/55" aria-label="Fechar detalhe" onClick={onClose} />
-      <aside className="absolute inset-y-0 right-0 flex w-full max-w-xl flex-col overflow-y-auto border-l border-border bg-card p-4 shadow-lg sm:p-6">
-        <div className="mb-4 flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary">Conteúdo</p>
-            <h2 className="mt-2 text-2xl font-semibold text-foreground">{titleOf(post)}</h2>
-          </div>
-          <button type="button" onClick={onClose} className="rounded-full px-3 py-1 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/20">Fechar</button>
-        </div>
-
-        {thumbnail ? (
-          // Peça inteira sem corte (mesmo achado ao vivo do review/page.tsx — `object-cover` numa
-          // caixa de proporção fixa cortava peças que não são exatamente 4:3, ex.: Stories 9:16).
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={thumbnail} alt="" className="mx-auto mb-5 max-h-[60vh] w-full rounded-2xl border border-border object-contain" />
-        ) : (
-          <div className={`relative mb-5 flex aspect-[4/3] items-center justify-center overflow-hidden rounded-2xl bg-gradient-to-br ${FORMAT_GRADIENT[format]}`}>
-            <span className="text-6xl text-primary-foreground/75" aria-hidden>{FORMAT_ICON[format]}</span>
-          </div>
-        )}
-
-        <div className="mb-5 flex flex-wrap gap-2">
-          <NetworkBadge network={post.network} />
-          <StatusBadge status={status} />
-          <span className="rounded-full bg-muted px-2.5 py-0.5 text-xs font-medium text-muted-foreground">{FORMAT_LABEL[format]}</span>
-          {post.placement === "story" ? <span className="rounded-full bg-muted px-2.5 py-0.5 text-xs font-medium text-muted-foreground">Story</span> : null}
-        </div>
-
-        <div className="space-y-4">
-          <DetailBlock label="Legenda" value={post.text || "Sem legenda"} />
-          <DetailBlock label={status === "scheduled" ? "Agendado para" : status === "published" ? "Publicado em" : "Data"} value={when ? formatDateTime(when) : "Sem data"} />
-          {post.timezone ? <DetailBlock label="Fuso" value={post.timezone ?? ""} /> : null}
-          <DetailBlock label="Histórico" value={PUBLICATION_DISPLAY_STATUS_LABEL[status]} />
-        </div>
-
-        <div className="mt-6 flex flex-wrap gap-2">
-          <Link href={publishAgainHref(workspaceId, post)}><Button>Publicar novamente</Button></Link>
-          {status === "scheduled" ? <Button variant="secondary" disabled={busy} onClick={onCancel}>Cancelar agendamento</Button> : null}
-        </div>
-      </aside>
-    </div>
-  );
-}
-
-function DetailBlock({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-xl border border-border bg-card p-3">
-      <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{label}</p>
-      <p className="mt-1 whitespace-pre-wrap break-words text-sm text-foreground">{value}</p>
-    </div>
-  );
-}
-
-function NetworkBadge({ network }: { network: PublicationNetwork }) {
-  return (
-    <span className="rounded-full bg-muted px-2.5 py-0.5 text-xs font-medium text-muted-foreground">
-      <ChannelIcon channel={network} label={NETWORK_LABEL[network]} showLabel />
-    </span>
   );
 }
 
 function viewModeButtonClass(active: boolean) {
-  return `rounded-md px-3 py-1.5 text-xs font-medium transition ${active ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`;
+  return `flex h-8 w-9 items-center justify-center rounded-md transition ${active ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`;
 }
 
 function titleOf(post: UnifiedPublication): string {
   const firstLine = post.text.split(/\r?\n/).map((line) => line.trim()).find(Boolean);
   return firstLine ? firstLine.slice(0, 96) : `${channelLabel(post.network)} · ${FORMAT_LABEL[contentTypeOf(post)]}`;
-}
-
-function publicationDate(post: UnifiedPublication): string | undefined {
-  return post.scheduledAt ?? post.publishedAt ?? post.createdAt;
 }
 
 function publishAgainHref(workspaceId: string, post: UnifiedPublication): string {

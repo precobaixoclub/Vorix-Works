@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
-import { usePathname } from "next/navigation";
-import { AtSign, Megaphone, Music2, PlaySquare, type LucideIcon } from "lucide-react";
+import { useEffect, useState } from "react";
+import { usePathname, useRouter } from "next/navigation";
+import { AtSign, type LucideIcon } from "lucide-react";
 import { Button } from "@/components/Button";
 import { Card } from "@/components/Card";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
@@ -10,18 +10,9 @@ import { SettingsShell } from "@/components/settings/SettingsShell";
 import { StatusBadge } from "@/components/StatusBadge";
 import { useCurrentWorkspace } from "@/contexts/workspace-context";
 import { META_RETURN_PATH_KEY } from "@/app/instagram/callback/page";
-import { META_ADS_RETURN_PATH_KEY } from "@/app/meta-ads/callback/page";
-import { TIKTOK_RETURN_PATH_KEY } from "@/app/tiktok/callback/page";
-import { YOUTUBE_RETURN_PATH_KEY } from "@/app/youtube/callback/page";
 import { beginMetaOAuth, disconnectMetaAccount } from "@/features/meta/api";
 import { useMetaOAuthStatus } from "@/features/meta/hooks";
 import { useActiveSolution } from "@/features/solutions/hooks";
-import { beginMetaAdsOAuth, disconnectMetaAdsAccount } from "@/features/meta-ads/api";
-import { useMetaAdAccounts, useMetaAdsOAuthStatus } from "@/features/meta-ads/hooks";
-import { beginTikTokOAuth, disconnectTikTokAccount } from "@/features/tiktok/api";
-import { useTikTokOAuthStatus } from "@/features/tiktok/hooks";
-import { beginYouTubeOAuth, disconnectYouTubeAccount } from "@/features/youtube/api";
-import { useYouTubeOAuthStatus } from "@/features/youtube/hooks";
 
 type HumanConnectionStatus = "connected" | "needs_attention" | "disconnected" | "syncing";
 type AccountRow = { id: string; label: string; detail?: string; status: string };
@@ -30,77 +21,23 @@ export default function ConnectionsPage() {
   const workspace = useCurrentWorkspace();
   const [feedback, setFeedback] = useState<string | undefined>();
   const pathname = usePathname();
-  const { active, available } = useActiveSolution(pathname, `/workspaces/${workspace.id}`);
-  const showMarketing = active === "marketing" && available.includes("marketing");
+  const router = useRouter();
+  const { active } = useActiveSolution(pathname, `/workspaces/${workspace.id}`);
 
-  // A conexão Meta é COMPARTILHADA (Core): é ela que liga o Instagram Direct do Vorix Conversas.
-  // TikTok, YouTube e Meta Ads são só do Vorix Marketing.
+  // No Vorix Marketing as redes ficam em Redes sociais → Integrações (uma conta por espaço de
+  // trabalho) e o Meta Ads dentro de Anúncios. Esta tela segue só para o Instagram Direct do Conversas.
+  useEffect(() => {
+    if (active === "marketing") router.replace(`/workspaces/${workspace.id}/social/integrations`);
+  }, [active, router, workspace.id]);
+  if (active === "marketing") return null;
+
   return (
-    <SettingsShell
-      active="integrations"
-      title="Integrações"
-      description={showMarketing ? "Contas conectadas ao Vorix para atender, publicar e medir conteúdos. O WhatsApp fica em Conversas." : "Contas conectadas ao Vorix. O WhatsApp é conectado direto em Conversas."}
-    >
-
+    <SettingsShell active="integrations" title="Integrações" description="Contas conectadas ao Vorix. O WhatsApp é conectado direto em Conversas.">
       {feedback ? <Card className="mb-6 border-primary/30 bg-primary/5 p-4"><p className="text-sm text-foreground">{feedback}</p></Card> : null}
-
       <div className="grid gap-4">
-        <MetaConnection workspaceId={workspace.id} onFeedback={setFeedback} hasMarketing={showMarketing} />
-        {showMarketing ? (
-          <>
-            <MetaAdsConnection workspaceId={workspace.id} onFeedback={setFeedback} />
-            <TikTokConnection workspaceId={workspace.id} onFeedback={setFeedback} />
-            <YouTubeConnection workspaceId={workspace.id} onFeedback={setFeedback} />
-          </>
-        ) : null}
+        <MetaConnection workspaceId={workspace.id} onFeedback={setFeedback} hasMarketing={false} />
       </div>
     </SettingsShell>
-  );
-}
-
-function TikTokConnection({ workspaceId, onFeedback }: { workspaceId: string; onFeedback: (message: string | undefined) => void }) {
-  const { data: oauth, mutate } = useTikTokOAuthStatus(workspaceId);
-  const [busy, setBusy] = useState(false);
-  const accounts = oauth?.accounts.filter((account) => account.status !== "revoked") ?? [];
-
-  async function connect() {
-    setBusy(true);
-    onFeedback(undefined);
-    try {
-      const result = await beginTikTokOAuth(workspaceId);
-      window.sessionStorage.setItem(TIKTOK_RETURN_PATH_KEY, `/workspaces/${workspaceId}/connections`);
-      window.location.assign(result.authorizationUrl);
-    } catch (cause) {
-      onFeedback(messageOf(cause));
-      setBusy(false);
-    }
-  }
-
-  async function disconnect(credentialReferenceId: string) {
-    setBusy(true);
-    onFeedback(undefined);
-    try {
-      await disconnectTikTokAccount(workspaceId, credentialReferenceId);
-      await mutate();
-      onFeedback("Conta do TikTok desconectada.");
-    } catch (cause) {
-      onFeedback(messageOf(cause));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <ConnectionCard
-      icon={Music2}
-      name="TikTok"
-      description="Conta autorizada para publicar vídeos e fotos no TikTok."
-      configured={oauth?.configured !== false}
-      busy={busy}
-      accounts={accounts.map((account) => ({ id: account.credentialReferenceId, label: account.displayName ?? "Conta TikTok", status: account.status }))}
-      onConnect={connect}
-      onDisconnect={disconnect}
-    />
   );
 }
 
@@ -149,165 +86,6 @@ function MetaConnection({ workspaceId, onFeedback, hasMarketing }: { workspaceId
         detail: account.providerId === "instagram" ? "Instagram profissional" : "Página do Facebook",
         status: account.status,
       }))}
-      onConnect={connect}
-      onDisconnect={disconnect}
-    />
-  );
-}
-
-/**
- * DELIBERADAMENTE não reusa `ConnectionCard` — ali cada linha da lista é uma identidade
- * desconectável (uma Página, um canal). Aqui a conexão é UMA credencial (`meta_ads:...`), e as
- * "contas de anúncio" descobertas embaixo dela não são desconectáveis individualmente — só a
- * conexão inteira é. Mesmo visual, estrutura de dados diferente.
- */
-function MetaAdsConnection({ workspaceId, onFeedback }: { workspaceId: string; onFeedback: (message: string | undefined) => void }) {
-  const { data: oauth, mutate } = useMetaAdsOAuthStatus(workspaceId);
-  const [busy, setBusy] = useState(false);
-  const [confirmDisconnect, setConfirmDisconnect] = useState(false);
-  const references = oauth?.credentialReferences.filter((reference) => reference.status !== "revoked") ?? [];
-  const activeReference = references.find((reference) => reference.status === "active");
-  const { data: accountsData } = useMetaAdAccounts(workspaceId, Boolean(activeReference));
-  const accounts = accountsData?.accounts.filter((account) => account.isActive) ?? [];
-
-  const connected = Boolean(activeReference);
-  const configured = oauth?.configured !== false;
-  const humanStatus: HumanConnectionStatus = busy ? "syncing" : connected ? "connected" : references.length > 0 ? "needs_attention" : "disconnected";
-  const statusText = !configured
-    ? "Integração ainda não configurada no servidor."
-    : humanStatus === "connected"
-      ? `${accounts.length} conta${accounts.length === 1 ? "" : "s"} de anúncio encontrada${accounts.length === 1 ? "" : "s"}`
-      : humanStatus === "needs_attention"
-        ? "Reconecte para voltar a sincronizar."
-        : "Nenhuma conta conectada.";
-
-  async function connect() {
-    setBusy(true);
-    onFeedback(undefined);
-    try {
-      const result = await beginMetaAdsOAuth(workspaceId);
-      window.sessionStorage.setItem(META_ADS_RETURN_PATH_KEY, `/workspaces/${workspaceId}/connections`);
-      window.location.assign(result.authorizationUrl);
-    } catch (cause) {
-      onFeedback(messageOf(cause));
-      setBusy(false);
-    }
-  }
-
-  async function disconnect(credentialReferenceId: string) {
-    setBusy(true);
-    onFeedback(undefined);
-    try {
-      await disconnectMetaAdsAccount(workspaceId, credentialReferenceId);
-      await mutate();
-      onFeedback("Conexão de anúncios do Meta desconectada.");
-    } catch (cause) {
-      onFeedback(messageOf(cause));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <Card className="overflow-hidden p-0">
-      <div className="flex flex-col gap-4 p-4 sm:flex-row sm:items-start sm:justify-between sm:p-5">
-        <div className="flex min-w-0 gap-3">
-          <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-primary/10 text-primary">
-            <Megaphone className="h-5 w-5" aria-hidden="true" />
-          </span>
-          <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-2">
-              <h2 className="text-base font-semibold text-foreground">Meta Ads</h2>
-              <StatusBadge status={humanStatus} />
-            </div>
-            <p className="mt-1 text-sm text-muted-foreground">Conexão para sincronizar e gerenciar campanhas de anúncios do Facebook/Instagram.</p>
-            <p className="mt-2 text-xs text-muted-foreground">{statusText}</p>
-          </div>
-        </div>
-        <div className="flex shrink-0 flex-wrap gap-2">
-          {activeReference ? (
-            <Button variant="secondary" disabled={busy} onClick={() => setConfirmDisconnect(true)}>Desconectar</Button>
-          ) : (
-            <Button disabled={busy || !configured} onClick={connect}>{humanStatus === "needs_attention" ? "Reconectar" : "Conectar"}</Button>
-          )}
-        </div>
-      </div>
-
-      {accounts.length > 0 ? (
-        <div className="border-t border-border bg-card/70 p-3 sm:p-4">
-          <div className="grid gap-2">
-            {accounts.map((account) => (
-              <div key={account.id} className="flex flex-col gap-3 rounded-xl border border-border bg-card px-3 py-2 sm:flex-row sm:items-center sm:justify-between">
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-medium text-foreground">{account.name}</p>
-                  <p className="mt-0.5 truncate text-xs text-muted-foreground">{account.currency}{account.businessName ? ` · ${account.businessName}` : ""}</p>
-                </div>
-                <StatusBadge status={account.accountStatus === 1 ? "connected" : "needs_attention"} />
-              </div>
-            ))}
-          </div>
-        </div>
-      ) : null}
-
-      {activeReference ? (
-        <ConfirmDialog
-          open={confirmDisconnect}
-          title="Desconectar Meta Ads?"
-          description={`Isso desconecta a integração de Meta Ads deste workspace${accounts.length > 0 ? ` e para de sincronizar ${accounts.length} conta${accounts.length === 1 ? "" : "s"} de anúncio` : ""}. Campanhas deixarão de ser gerenciadas por aqui até você reconectar.`}
-          confirmLabel="Desconectar"
-          variant="danger"
-          busy={busy}
-          onConfirm={async () => {
-            await disconnect(activeReference.credentialReferenceId);
-            setConfirmDisconnect(false);
-          }}
-          onCancel={() => setConfirmDisconnect(false)}
-        />
-      ) : null}
-    </Card>
-  );
-}
-
-function YouTubeConnection({ workspaceId, onFeedback }: { workspaceId: string; onFeedback: (message: string | undefined) => void }) {
-  const { data: oauth, mutate } = useYouTubeOAuthStatus(workspaceId);
-  const [busy, setBusy] = useState(false);
-  const accounts = oauth?.accounts.filter((account) => account.status !== "revoked") ?? [];
-
-  async function connect() {
-    setBusy(true);
-    onFeedback(undefined);
-    try {
-      const result = await beginYouTubeOAuth(workspaceId);
-      window.sessionStorage.setItem(YOUTUBE_RETURN_PATH_KEY, `/workspaces/${workspaceId}/connections`);
-      window.location.assign(result.authorizationUrl);
-    } catch (cause) {
-      onFeedback(messageOf(cause));
-      setBusy(false);
-    }
-  }
-
-  async function disconnect(credentialReferenceId: string) {
-    setBusy(true);
-    onFeedback(undefined);
-    try {
-      await disconnectYouTubeAccount(workspaceId, credentialReferenceId);
-      await mutate();
-      onFeedback("Canal do YouTube desconectado.");
-    } catch (cause) {
-      onFeedback(messageOf(cause));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <ConnectionCard
-      icon={PlaySquare}
-      name="YouTube Shorts"
-      description="Canal autorizado para publicar Shorts em video."
-      configured={oauth?.configured !== false}
-      busy={busy}
-      accounts={accounts.map((account) => ({ id: account.credentialReferenceId, label: account.displayName ?? "Canal do YouTube", status: account.status }))}
       onConnect={connect}
       onDisconnect={disconnect}
     />

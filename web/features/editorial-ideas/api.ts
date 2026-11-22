@@ -38,8 +38,35 @@ export type EditorialIdea = {
   executionRunId?: string;
   /** Prompt criativo específico desta pauta (opcional): orienta a arte/narrativa do motor criativo. */
   creativePrompt?: string;
+  /** Imagens de referência da ideia (URLs já assinadas para exibir): a arte parte delas. */
+  referenceImages?: string[];
   statusChangedAt: string;
+  createdAt?: string;
 };
+
+/** O que a tela envia ao cadastrar/editar uma ideia (só título e formato são obrigatórios). */
+export type EditorialIdeaInput = {
+  title: string;
+  format: EditorialIdeaFormat;
+  category?: string;
+  keyMessage?: string;
+  caption?: string;
+  cta?: string;
+  targetAudience?: string;
+  commercialObjective?: string;
+  visualDirection?: string;
+  creativePrompt?: string;
+  carouselScript?: { headline: string; body: string }[];
+  priority?: "high" | "normal";
+  referenceImages?: string[];
+};
+
+/** O bolsão só tem duas situações para quem olha: dá para usar (Pendente) ou já virou post (Usada). */
+export type EditorialIdeaBucket = "pending" | "used";
+export const EDITORIAL_BUCKET_LABEL: Record<EditorialIdeaBucket, string> = { pending: "Pendentes", used: "Usadas" };
+export function editorialBucketOf(status: EditorialIdeaStatus): EditorialIdeaBucket {
+  return status === "available" ? "pending" : "used";
+}
 
 export type EditorialGenerationBrief = { name: string; objective: string; ideaText: string; targetAudience: string; format: "single_image" | "carousel" };
 
@@ -67,6 +94,18 @@ export async function downloadEditorialTemplate(): Promise<void> {
 /** Importa a planilha CSV preenchida no padrão do modelo. */
 export function importEditorialSpreadsheet(workspaceId: string, csv: string): Promise<{ created: number; skipped: number; total: number }> {
   return apiClient.post(`/v1/editorial-ideas/import-spreadsheet`, { workspaceId, csv });
+}
+
+export function createEditorialIdea(workspaceId: string, idea: EditorialIdeaInput): Promise<EditorialIdea> {
+  return apiClient.post<EditorialIdea>(`/v1/editorial-ideas`, { workspaceId, idea });
+}
+
+export function saveEditorialIdea(workspaceId: string, id: string, idea: EditorialIdeaInput): Promise<EditorialIdea> {
+  return apiClient.put<EditorialIdea>(`/v1/editorial-ideas/${encodeURIComponent(id)}`, { workspaceId, idea });
+}
+
+export function deleteEditorialIdea(workspaceId: string, id: string): Promise<{ deleted: boolean }> {
+  return apiClient.delete<{ deleted: boolean }>(`/v1/editorial-ideas/${encodeURIComponent(id)}?${q(workspaceId)}`);
 }
 
 export function updateEditorialIdea(workspaceId: string, id: string, patch: { status?: EditorialIdeaStatus; scheduledDate?: string | null; executionRunId?: string | null; creativePrompt?: string | null }): Promise<EditorialIdea> {

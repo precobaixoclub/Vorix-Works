@@ -8,10 +8,14 @@ import {
   EditorialPackError,
   isGeneratableFormat,
   isIsoDate,
+  nextManualExternalId,
   normalizeCreativePrompt,
   parseEditorialPack,
+  parseManualEditorialIdea,
+  type EditorialIdeaContent,
   type EditorialIdeaStatus,
 } from "../../../../domain/editorial/editorial-idea.model.js";
+import { classifyObjectKeyOwner, isObjectUrlSigningConfigured, parseOwnedObjectUrl, stripObjectUrlSignature } from "../../../../shared/utils/object-url-signing.js";
 import { buildEditorialTemplateCsv, editorialCsvToPack } from "../../../../domain/editorial/editorial-spreadsheet.js";
 import { NotFoundError, ValidationError } from "../../http/app-error.js";
 import { requirePermission } from "../../http/require-principal.js";
@@ -64,6 +68,35 @@ const CALENDAR_BODY_SCHEMA = {
     days: { type: "integer", minimum: 7, maximum: 92 },
   },
 } as const;
+
+const MANUAL_IDEA_BODY_SCHEMA = {
+  type: "object",
+  required: ["workspaceId", "idea"],
+  additionalProperties: false,
+  properties: { workspaceId: { type: "string", minLength: 1 }, idea: { type: "object" } },
+} as const;
+
+function packMessage(error: unknown): never {
+  if (error instanceof EditorialPackError) throw new ValidationError(error.message.replace(/^EDITORIAL_PACK_INVALID:\s*/, ""));
+  throw error;
+}
+
+/**
+ * Imagens de referência só podem ser arquivos do storage DESTE workspace (enviados pela tela). Ficam
+ * gravadas sem assinatura: a resposta JSON autenticada assina na hora para o navegador.
+ */
+function ownReferenceImages(content: EditorialIdeaContent, tenantId: string, workspaceId: string): EditorialIdeaContent {
+  if (!content.referenceImages?.length || !isObjectUrlSigningConfigured()) return content;
+  const referenceImages = content.referenceImages.map((url) => {
+    const parsed = parseOwnedObjectUrl(url);
+    const owner = parsed ? classifyObjectKeyOwner(parsed.key) : undefined;
+    if (!owner || owner.kind !== "workspace" || owner.tenantId !== tenantId || owner.workspaceId !== workspaceId) {
+      throw new ValidationError("Imagem de referência inválida: envie a imagem pelo botão da própria ideia.");
+    }
+    return stripObjectUrlSignature(url);
+  });
+  return { ...content, referenceImages };
+}
 
 /** Hoje no fuso de São Paulo (AAAA-MM-DD): o calendário editorial é da equipe, não do servidor. */
 function todayInSaoPaulo(now: Date): string {
@@ -125,6 +158,55 @@ export async function registerEditorialIdeasRoutes(app: FastifyInstance, deps: E
     }
     const result = await deps.editorialIdeaRepository.importMany({ tenantId: principal.tenantId, workspaceId, ideas });
     return successEnvelope({ ...result, total: ideas.length }, request.id);
+  });
+
+  // Cadastro manual de UMA ideia pela tela. Código automático (IDEIA-001…), estado "Disponível".
+  app.post("/editorial-ideas", { schema: { body: MANUAL_IDEA_BODY_SCHEMA } }, async (request) => {
+    const principal = requirePermission(request, "asset:update");
+    const { workspaceId, idea } = request.body as { workspaceId: string; idea: unknown };
+    await assertWorkspaceBelongsToTenant(deps.workspaceRepository, { tenantId: principal.tenantId, workspaceId });
+    const existing = await deps.editorialIdeaRepository.listByWorkspace(workspaceId);
+    const externalId = nextManualExternalId(existing.map((item) => item.externalId));
+    let content: EditorialIdeaContent;
+    try {
+      content = parseManualEditorialIdea(idea, externalId);
+    } catch (error) {
+      packMessage(error);
+    }
+    content = ownReferenceImages(content, principal.tenantId, workspaceId);
+    await deps.editorialIdeaRepository.importMany({ tenantId: principal.tenantId, workspaceId, ideas: [content] });
+    const created = (await deps.editorialIdeaRepository.listByWorkspace(workspaceId)).find((item) => item.externalId === externalId);
+    if (!created) throw new ValidationError("Não foi possível cadastrar a ideia. Tente de novo.");
+    return successEnvelope(created, request.id);
+  });
+
+  // Edição do conteúdo pela tela (mesmas regras do cadastro manual). Código, estado e data ficam.
+  app.put("/editorial-ideas/:id", { schema: { params: ID_PARAMS_SCHEMA, body: MANUAL_IDEA_BODY_SCHEMA } }, async (request) => {
+    const principal = requirePermission(request, "asset:update");
+    const { id } = request.params as { id: string };
+    const { workspaceId, idea } = request.body as { workspaceId: string; idea: unknown };
+    await assertWorkspaceBelongsToTenant(deps.workspaceRepository, { tenantId: principal.tenantId, workspaceId });
+    const current = await deps.editorialIdeaRepository.get(workspaceId, id);
+    if (!current) throw new NotFoundError("Pauta não encontrada neste workspace.");
+    let content: EditorialIdeaContent;
+    try {
+      content = parseManualEditorialIdea(idea, current.externalId);
+    } catch (error) {
+      packMessage(error);
+    }
+    const { externalId: _externalId, suggestedDate: _suggested, ...patch } = ownReferenceImages(content, principal.tenantId, workspaceId);
+    const updated = await deps.editorialIdeaRepository.replaceContent(workspaceId, id, patch);
+    if (!updated) throw new NotFoundError("Pauta não encontrada neste workspace.");
+    return successEnvelope(updated, request.id);
+  });
+
+  app.delete("/editorial-ideas/:id", { schema: { params: ID_PARAMS_SCHEMA, querystring: WORKSPACE_QUERY_SCHEMA } }, async (request) => {
+    const principal = requirePermission(request, "asset:update");
+    const { id } = request.params as { id: string };
+    const { workspaceId } = request.query as { workspaceId: string };
+    await assertWorkspaceBelongsToTenant(deps.workspaceRepository, { tenantId: principal.tenantId, workspaceId });
+    if (!(await deps.editorialIdeaRepository.delete(workspaceId, id))) throw new NotFoundError("Pauta não encontrada neste workspace.");
+    return successEnvelope({ deleted: true }, request.id);
   });
 
   app.patch("/editorial-ideas/:id", { schema: { params: ID_PARAMS_SCHEMA, body: UPDATE_BODY_SCHEMA } }, async (request) => {

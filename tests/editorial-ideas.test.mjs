@@ -6,8 +6,10 @@ import {
   buildEditorialCalendar,
   buildEditorialGenerationBrief,
   businessDays,
+  nextManualExternalId,
   normalizeCreativePrompt,
   parseEditorialPack,
+  parseManualEditorialIdea,
 } from "../dist/domain/editorial/editorial-idea.model.js";
 import { InMemoryEditorialIdeaRepository } from "../dist/infrastructure/storage/in-memory-editorial-idea-repository.js";
 import { InMemoryWorkspaceRepository } from "../dist/infrastructure/storage/in-memory-workspace-repository.js";
@@ -186,6 +188,53 @@ test("API: prompt criativo — grava pelo PATCH, chega ao brief, remove com null
   assert.equal(removed.json().data.creativePrompt, undefined);
   const briefAfter = (await ctx.app.inject({ method: "GET", url: `/editorial-ideas/${first.id}/brief?workspaceId=${ctx.workspaceA.id}` })).json().data;
   assert.doesNotMatch(briefAfter.ideaText, /PROMPT CRIATIVO ESPECÍFICO/);
+  await ctx.app.close();
+});
+
+test("cadastro manual: só título e formato obrigatórios, código automático, padrões derivados", () => {
+  assert.equal(nextManualExternalId([]), "IDEIA-001");
+  assert.equal(nextManualExternalId(["VWX-001", "IDEIA-002", "IDEIA-010"]), "IDEIA-011");
+  const parsed = parseManualEditorialIdea({ title: "  Promoção de fone  ", format: "single_image", referenceImages: ["https://x.test/a.jpg", "https://x.test/a.jpg"] }, "IDEIA-001");
+  assert.equal(parsed.title, "Promoção de fone");
+  assert.equal(parsed.keyMessage, "Promoção de fone");
+  assert.equal(parsed.category, "Geral");
+  assert.deepEqual(parsed.referenceImages, ["https://x.test/a.jpg"], "imagem repetida entra uma vez só");
+  assert.throws(() => parseManualEditorialIdea({ title: "", format: "single_image" }, "IDEIA-001"), /título/);
+  assert.throws(() => parseManualEditorialIdea({ title: "x", format: "carousel" }, "IDEIA-001"), /2 a 10 telas/);
+  assert.throws(() => parseManualEditorialIdea({ title: "x", format: "single_image", referenceImages: Array.from({ length: 7 }, (_, i) => `https://x.test/${i}.jpg`) }, "IDEIA-001"), /no máximo 6/);
+  assert.throws(() => parseManualEditorialIdea({ title: "x", format: "single_image", referenceImages: ["javascript:alert(1)"] }, "IDEIA-001"), /inválida/);
+  assert.ok(parseManualEditorialIdea({ title: "Roteiro", format: "video" }, "IDEIA-001"), "vídeo manual pode entrar sem cenas");
+  const brief = buildEditorialGenerationBrief(parsed);
+  assert.match(brief.ideaText, /imagens de referência/);
+});
+
+test("API: cadastrar, editar e excluir ideia manual — sempre presa ao workspace", async () => {
+  const ctx = await api();
+  const created = await ctx.app.inject({ method: "POST", url: "/editorial-ideas", payload: { workspaceId: ctx.workspaceA.id, idea: { title: "Casal no altar", format: "carousel", carouselScript: [{ headline: "1", body: "a" }, { headline: "2", body: "b" }] } } });
+  assert.equal(created.statusCode, 200);
+  const first = created.json().data;
+  assert.equal(first.externalId, "IDEIA-001");
+  assert.equal(first.status, "available");
+  const second = (await ctx.app.inject({ method: "POST", url: "/editorial-ideas", payload: { workspaceId: ctx.workspaceA.id, idea: { title: "Outra", format: "single_image" } } })).json().data;
+  assert.equal(second.externalId, "IDEIA-002");
+  assert.equal((await ctx.app.inject({ method: "POST", url: "/editorial-ideas", payload: { workspaceId: ctx.workspaceA.id, idea: { title: "", format: "single_image" } } })).statusCode, 400);
+  assert.equal((await ctx.app.inject({ method: "POST", url: "/editorial-ideas", payload: { workspaceId: ctx.workspaceB.id, idea: { title: "x", format: "single_image" } } })).statusCode, 404);
+
+  await ctx.app.inject({ method: "PATCH", url: `/editorial-ideas/${first.id}`, payload: { workspaceId: ctx.workspaceA.id, status: "published", scheduledDate: "2026-11-25" } });
+  const edited = await ctx.app.inject({ method: "PUT", url: `/editorial-ideas/${first.id}`, payload: { workspaceId: ctx.workspaceA.id, idea: { title: "Casal no altar (v2)", format: "single_image", caption: "Legenda nova" } } });
+  assert.equal(edited.statusCode, 200);
+  const data = edited.json().data;
+  assert.equal(data.title, "Casal no altar (v2)");
+  assert.equal(data.carouselScript, undefined, "trocar para imagem única descarta as telas");
+  assert.equal(data.externalId, "IDEIA-001");
+  assert.equal(data.status, "published", "editar não muda o estado");
+  assert.equal(data.scheduledDate, "2026-11-25", "editar não tira do calendário");
+  assert.equal((await ctx.app.inject({ method: "PUT", url: `/editorial-ideas/${first.id}`, payload: { workspaceId: ctx.workspaceA2.id, idea: { title: "x", format: "single_image" } } })).statusCode, 404);
+
+  assert.equal((await ctx.app.inject({ method: "DELETE", url: `/editorial-ideas/${first.id}?workspaceId=${ctx.workspaceA2.id}` })).statusCode, 404, "outro workspace não exclui");
+  assert.equal((await ctx.app.inject({ method: "DELETE", url: `/editorial-ideas/${first.id}?workspaceId=${ctx.workspaceA.id}` })).statusCode, 200);
+  const left = (await ctx.app.inject({ method: "GET", url: `/editorial-ideas?workspaceId=${ctx.workspaceA.id}` })).json().data;
+  assert.deepEqual(left.map((item) => item.externalId), ["IDEIA-002"]);
   await ctx.app.close();
 });
 

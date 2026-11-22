@@ -54,6 +54,9 @@ export type EditorialIdeaContent = {
    * (entra no `ideaText` do brief), sem desrespeitar as regras globais de identidade e veracidade.
    * Opcional — pautas sem prompt seguem o comportamento padrão do motor. */
   creativePrompt?: string;
+  /** Imagens de referência da pauta (URLs canônicas do storage do workspace, até 6): a arte usa
+   * estas imagens — nunca banco de fotos genérico — quando presentes. */
+  referenceImages?: readonly string[];
 };
 
 export type EditorialIdea = EditorialIdeaContent & {
@@ -187,6 +190,83 @@ export function parseEditorialPack(input: unknown): EditorialIdeaContent[] {
 }
 
 // ---------------------------------------------------------------------------------------------
+// Cadastro manual (uma ideia por vez, pela tela)
+// ---------------------------------------------------------------------------------------------
+
+export const EDITORIAL_REFERENCE_IMAGES_MAX = 6;
+export const MANUAL_EXTERNAL_ID_PREFIX = "IDEIA";
+
+function optionalText(item: Record<string, unknown>, field: string, max: number, fallback: string): string {
+  const value = item[field];
+  if (value === undefined || value === null) return fallback;
+  if (typeof value !== "string") throw new EditorialPackError(`campo "${field}" precisa ser texto.`);
+  const trimmed = value.trim();
+  if (trimmed.length > max) throw new EditorialPackError(`campo "${field}" passa de ${max} caracteres.`);
+  return trimmed || fallback;
+}
+
+/** Lista de imagens de referência: só URLs http(s), sem repetição, no máximo 6. */
+export function normalizeReferenceImages(value: unknown): string[] {
+  if (value === undefined || value === null) return [];
+  if (!Array.isArray(value)) throw new EditorialPackError("imagens de referência precisam ser uma lista.");
+  const urls = [...new Set(value.map((url) => (typeof url === "string" ? url.trim() : "")).filter(Boolean))];
+  if (urls.length > EDITORIAL_REFERENCE_IMAGES_MAX) throw new EditorialPackError(`no máximo ${EDITORIAL_REFERENCE_IMAGES_MAX} imagens de referência por ideia.`);
+  for (const url of urls) {
+    if (url.length > 2000 || !/^https?:\/\//i.test(url)) throw new EditorialPackError("imagem de referência inválida.");
+  }
+  return urls;
+}
+
+/** Próximo código de ideia manual do workspace (IDEIA-001, IDEIA-002…), sem colidir com os existentes. */
+export function nextManualExternalId(existing: readonly string[]): string {
+  const pattern = new RegExp(`^${MANUAL_EXTERNAL_ID_PREFIX}-(\\d+)$`);
+  const max = existing.reduce((highest, id) => Math.max(highest, Number(pattern.exec(id)?.[1] ?? 0)), 0);
+  return `${MANUAL_EXTERNAL_ID_PREFIX}-${String(max + 1).padStart(3, "0")}`;
+}
+
+/**
+ * Ideia cadastrada à mão. Diferente do pacote importado, só o essencial é obrigatório (título e
+ * formato; carrossel precisa das telas): o resto ganha um padrão derivado do próprio título, para
+ * cadastrar rápido sem formulário gigante. Vídeo pode entrar sem roteiro de cenas.
+ */
+export function parseManualEditorialIdea(input: unknown, externalId: string): EditorialIdeaContent {
+  if (!input || typeof input !== "object") throw new EditorialPackError("ideia inválida.");
+  const item = input as Record<string, unknown>;
+  if (typeof item.title !== "string" || !item.title.trim()) throw new EditorialPackError("dê um título para a ideia.");
+  const title = text(item, "title", LIMITS.title, "ideia");
+  const format = item.format;
+  if (!EDITORIAL_IDEA_FORMATS.includes(format as EditorialIdeaFormat)) throw new EditorialPackError(`formato "${String(format)}" inválido.`);
+  const priority = item.priority ?? "normal";
+  if (!EDITORIAL_IDEA_PRIORITIES.includes(priority as EditorialIdeaPriority)) throw new EditorialPackError(`prioridade "${String(priority)}" inválida.`);
+  const carouselScript = format === "carousel" ? slides(item.carouselScript, "ideia") : undefined;
+  if (format === "carousel" && !carouselScript) throw new EditorialPackError("carrossel precisa de 2 a 10 telas.");
+  const videoScript = format === "video" && item.videoScript ? scenes(item.videoScript, "ideia") : undefined;
+  const keyMessage = optionalText(item, "keyMessage", LIMITS.keyMessage, title);
+  const creativePrompt = normalizeCreativePrompt(item.creativePrompt);
+  const referenceImages = normalizeReferenceImages(item.referenceImages);
+  return {
+    externalId,
+    title,
+    category: optionalText(item, "category", LIMITS.category, "Geral"),
+    commercialObjective: optionalText(item, "commercialObjective", LIMITS.commercialObjective, "Engajar e atrair clientes"),
+    targetAudience: optionalText(item, "targetAudience", LIMITS.targetAudience, "Público da marca"),
+    concept: optionalText(item, "concept", LIMITS.concept, keyMessage),
+    keyMessage,
+    format: format as EditorialIdeaFormat,
+    approach: optionalText(item, "approach", LIMITS.approach, "Cadastro manual"),
+    visualDirection: optionalText(item, "visualDirection", LIMITS.visualDirection, referenceImages.length ? "Usar as imagens de referência da ideia." : "Seguir a identidade visual da marca."),
+    narrativeStructure: optionalText(item, "narrativeStructure", LIMITS.narrativeStructure, keyMessage),
+    ...(carouselScript ? { carouselScript } : {}),
+    ...(videoScript ? { videoScript } : {}),
+    caption: optionalText(item, "caption", LIMITS.caption, keyMessage),
+    cta: optionalText(item, "cta", LIMITS.cta, "Saiba mais no link da bio"),
+    priority: priority as EditorialIdeaPriority,
+    ...(creativePrompt ? { creativePrompt } : {}),
+    ...(referenceImages.length ? { referenceImages } : {}),
+  };
+}
+
+// ---------------------------------------------------------------------------------------------
 // Calendário editorial
 // ---------------------------------------------------------------------------------------------
 
@@ -272,7 +352,10 @@ export const EDITORIAL_IDEA_TEXT_BUDGET = 8000;
 export function buildEditorialGenerationBrief(idea: EditorialIdeaContent): EditorialGenerationBrief {
   if (!isGeneratableFormat(idea.format)) throw new Error("EDITORIAL_FORMAT_NOT_GENERATABLE: pautas de vídeo seguem para produção manual.");
   // O fecho (CTA e a regra de não inventar nada) sempre vai inteiro; quem encolhe é o miolo.
-  const closing = `CTA: ${idea.cta}\nUse apenas capacidades reais da Vorix; não invente números, preços, integrações ou depoimentos.`;
+  const references = idea.referenceImages?.length
+    ? "\nUse as imagens de referência anexadas como base visual da arte (não troque por banco de fotos genérico)."
+    : "";
+  const closing = `CTA: ${idea.cta}\nUse apenas capacidades reais da marca; não invente números, preços, integrações ou depoimentos.${references}`;
   const structure = idea.carouselScript
     ? `Telas: ${idea.carouselScript.map((slide, index) => `${index + 1}) ${slide.headline} — ${slide.body}`).join(" ")}`
     : `Estrutura: ${idea.narrativeStructure}`;

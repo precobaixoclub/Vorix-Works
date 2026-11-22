@@ -268,9 +268,10 @@ export default function ProductionLinePage() {
   const workspace = useCurrentWorkspace();
   const searchParams = useSearchParams();
   const router = useRouter();
-  // Link antigo (?mode=pautas): o bolsão agora tem página própria.
+  // As ideias moram só no Bolsão: links antigos do planejamento (?mode=configure|pautas) vão para lá.
   useEffect(() => {
-    if (searchParams.get("mode") === "pautas") router.replace(`/workspaces/${workspace.id}/ideias`);
+    const legacy = searchParams.get("mode");
+    if (legacy === "pautas" || legacy === "configure") router.replace(`/workspaces/${workspace.id}/ideias`);
   }, [searchParams, router, workspace.id]);
   const [config, setConfig] = useState<ProductionLineConfig>(DEFAULT_PRODUCTION_CONFIG);
   const [selectedBlueprintId, setSelectedBlueprintId] = useState(DEFAULT_PRODUCTION_CONFIG.blueprints[0]?.id ?? "");
@@ -863,10 +864,10 @@ export default function ProductionLinePage() {
       <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="min-w-0">
           <h1 className="text-2xl font-semibold text-foreground">Produção</h1>
-          <p className="mt-1 text-sm text-muted-foreground">Acompanhe a fila e abasteça o planejamento de conteúdo.</p>
+          <p className="mt-1 text-sm text-muted-foreground">Acompanhe os posts que a IA está criando e os que já ficaram prontos. As ideias ficam no Bolsão.</p>
         </div>
         <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
-          <Button className="w-full sm:w-auto" onClick={() => { setMode("configure"); addBlueprint(); }}>+ Nova ideia</Button>
+          <Link href={`/workspaces/${workspace.id}/ideias?nova=1`}><Button className="w-full sm:w-auto">+ Nova ideia</Button></Link>
           <Link href={`/workspaces/${workspace.id}/knowledge?tab=guidelines`} className="relative">
             <Button variant="secondary" className="w-full">{hasGuidelines ? "Editar prompt" : "Configurar prompt"}</Button>
             {!hasGuidelines ? <span className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full bg-warning" aria-hidden="true" /> : null}
@@ -876,12 +877,8 @@ export default function ProductionLinePage() {
 
       <IdeasPoolBanner workspaceId={workspace.id} className="mb-4" />
 
-      <ProductionModeTabs mode={mode} onChange={setMode} queueCount={totalQueueRuns} tankCount={pendingIdeaCount} ideasHref={`/workspaces/${workspace.id}/ideias`} />
-
       <div className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border border-border bg-card px-3 py-1.5 text-xs text-muted-foreground">
         <span>Prompt: <strong className="font-semibold text-foreground">{hasGuidelines ? "configurado" : "pendente"}</strong></span>
-        <span>Agenda: <strong className="font-semibold text-foreground">{rotinaAtiva ? "planejada" : "sem itens"}</strong></span>
-        {rotinaAtiva && nextSlot ? <span className="hidden sm:inline">Próximo horário planejado: <strong className="font-semibold text-foreground">{nextSlot}</strong></span> : null}
       </div>
 
       <div className="mb-4">

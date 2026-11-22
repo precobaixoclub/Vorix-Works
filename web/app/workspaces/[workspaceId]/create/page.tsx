@@ -15,6 +15,7 @@ import { IdeasPoolBanner } from "@/features/editorial-ideas/IdeasPoolBanner";
 import { useAssets } from "@/features/assets/hooks";
 import type { Asset, AssetMaterialType } from "@/features/assets/types";
 import { uploadPublicationMedia } from "@/features/media-upload/api";
+import { createEditorialIdea } from "@/features/editorial-ideas/api";
 import { CHANNEL_LABEL } from "@/features/production-line/defaults";
 import {
   deriveObjective,
@@ -25,8 +26,7 @@ import {
   waitForExecutionRunTerminal,
 } from "@/features/production-line/api";
 import { recordGeneration } from "@/features/production-line/generation-log";
-import { readProductionConfig, writeProductionConfig } from "@/features/production-line/storage";
-import type { ContentBlueprint, ProductionAspectRatio, ProductionChannel, ProductionFormat, ReferenceAssetRole } from "@/features/production-line/types";
+import type { ProductionAspectRatio, ProductionChannel, ProductionFormat, ReferenceAssetRole } from "@/features/production-line/types";
 import { useProductionSettings } from "@/features/production-settings/hooks";
 import { useTenantCredits } from "@/features/workspace/hooks";
 import { useCreativeEngineWorkspaceStatus } from "@/features/creative-engine-entitlement/hooks";
@@ -233,31 +233,7 @@ export default function CreatePage() {
       }
 
       const blueprintId = newId("blueprint");
-      const usedAt = detail.run.state === "failed" ? undefined : new Date().toISOString();
-      const blueprint: ContentBlueprint = {
-        id: blueprintId,
-        name,
-        format,
-        ideaText,
-        objective: derivedObjective,
-        theme: "",
-        captionDirection: "",
-        creativeDirection: "",
-        targetAudience: targetAudience.trim() || undefined,
-        mediaCount: format === "carousel" ? 3 : 1,
-        channels,
-        approvalMode: "manual",
-        sourceLinks: [],
-        referenceImages,
-        referenceAssetRoles: referenceRoles,
-        aspectRatio,
-        forbiddenElements: forbiddenElements.trim() || undefined,
-        status: usedAt ? "used" : "available",
-        productionMode: "routine",
-        usedAt,
-      };
-      const config = readProductionConfig(workspace.id);
-      writeProductionConfig(workspace.id, { ...config, blueprints: [...config.blueprints, blueprint] });
+      // A geração direta não cria ideia: o Bolsão guarda só o que a pessoa quis guardar.
 
       if (detail.run.state === "failed") {
         const { message } = extractExecutionRunFailure(detail);
@@ -282,51 +258,36 @@ export default function CreatePage() {
   }
 
   /**
-   * "Guardar no tanque" — reaproveita exatamente os mesmos campos de `handleGenerate` (mesma
-   * validação de tamanho, mesmo mapeamento pra `ContentBlueprint`), mas nunca chama
-   * `generateFromIdea`: só grava a ideia como pendente (`status: "available"`,
-   * `productionMode: "routine"`) pra entrar no sorteio da rotina automática — sem gastar
-   * geração/crédito agora. Logo e diretrizes do workspace continuam se aplicando sozinhas na hora
-   * que a rotina (ou "Abrir" no tanque) efetivamente gerar a peça; não são um campo por ideia.
+   * "Guardar no bolsão" — guarda a ideia como pendente no Bolsão de ideias do workspace (o único
+   * lugar das ideias), sem gerar agora nem gastar crédito. As imagens anexadas viram as imagens de
+   * referência da ideia.
    */
-  function handleSaveToTank() {
+  async function handleSaveToTank() {
     setError(null);
     setTankMessage(null);
     setSavingToTank(true);
     try {
-      const name = ideaText.trim().slice(0, 60) || "Ideia sem nome";
-      const derivedObjective = deriveObjective(objective.trim() || undefined, ideaText);
-      const blueprint: ContentBlueprint = {
-        id: newId("blueprint"),
-        name,
+      const firstLine = ideaText.trim().split(/\r?\n/)[0] ?? "";
+      const title = firstLine.slice(0, 120) || "Ideia sem nome";
+      const created = await createEditorialIdea(workspace.id, {
+        title,
         format,
-        ideaText,
-        objective: derivedObjective,
-        theme: "",
-        captionDirection: "",
-        creativeDirection: "",
-        targetAudience: targetAudience.trim() || undefined,
-        mediaCount: format === "carousel" ? 3 : 1,
-        channels,
-        approvalMode: "manual",
-        sourceLinks: [],
-        referenceImages,
-        referenceAssetRoles: referenceRoles,
-        aspectRatio,
-        forbiddenElements: forbiddenElements.trim() || undefined,
-        status: "available",
-        productionMode: "routine",
-      };
-      const config = readProductionConfig(workspace.id);
-      writeProductionConfig(workspace.id, { ...config, blueprints: [...config.blueprints, blueprint] });
-
-      setTankMessage(`"${name}" guardada no planejamento de produção.`);
+        keyMessage: ideaText.trim().slice(0, 400),
+        creativePrompt: [ideaText.trim(), forbiddenElements.trim() ? `Evitar: ${forbiddenElements.trim()}` : ""].filter(Boolean).join(" — ").slice(0, 8000),
+        ...(objective.trim() ? { commercialObjective: objective.trim().slice(0, 300) } : {}),
+        ...(targetAudience.trim() ? { targetAudience: targetAudience.trim().slice(0, 300) } : {}),
+        ...(format === "carousel" ? { format: "single_image" as const } : {}),
+        referenceImages: referenceImages.slice(0, 6),
+      });
+      setTankMessage(`"${created.title}" guardada no Bolsão de ideias como pendente.`);
       setIdeaText("");
       setObjective("");
       setTargetAudience("");
       setForbiddenElements("");
       setReferenceImages([]);
       setReferenceRoles({});
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Não foi possível guardar a ideia no bolsão.");
     } finally {
       setSavingToTank(false);
     }
@@ -612,7 +573,7 @@ export default function CreatePage() {
           {tankMessage ? (
             <div className="rounded-xl bg-primary/10 px-4 py-3 text-sm text-primary">
               <p>{tankMessage}</p>
-              <Link href={`/workspaces/${workspace.id}/production?mode=configure`} className="mt-1.5 inline-block font-medium underline">Ver planejamento →</Link>
+              <Link href={`/workspaces/${workspace.id}/ideias`} className="mt-1.5 inline-block font-medium underline">Ver no Bolsão de ideias →</Link>
             </div>
           ) : null}
 
@@ -627,8 +588,8 @@ export default function CreatePage() {
           <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border/60 pt-4">
             <p className="text-xs text-muted-foreground/70">{credits ? `Você tem ${credits.remainingCredits.toLocaleString("pt-BR")} créditos disponíveis.` : "Chama a IA de verdade — gera custo real."}</p>
             <div className="flex flex-wrap gap-2">
-              <Button variant="secondary" size="lg" loading={savingToTank} disabled={!canSaveToTank} onClick={handleSaveToTank} title="Guarda a ideia sem gerar agora para usar no planejamento de produção.">
-                Guardar no planejamento
+              <Button variant="secondary" size="lg" loading={savingToTank} disabled={!canSaveToTank} onClick={() => void handleSaveToTank()} title="Guarda a ideia no Bolsão sem gerar agora.">
+                Guardar no bolsão
               </Button>
               <Button size="xl" loading={status === "generating" || status === "retrying"} disabled={!canGenerate} onClick={handleGenerate}>
                 {status === "retrying" ? "Tentando de novo…" : "Gerar conteúdo"}

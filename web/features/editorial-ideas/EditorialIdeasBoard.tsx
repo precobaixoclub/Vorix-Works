@@ -1,73 +1,88 @@
 "use client";
 
+import {
+  CalendarDays,
+  CheckCircle2,
+  Download,
+  Film,
+  FileJson,
+  GalleryHorizontal,
+  ImageIcon,
+  Images,
+  LayoutGrid,
+  Lightbulb,
+  List,
+  MoreHorizontal,
+  Pencil,
+  Plus,
+  RotateCcw,
+  Sparkles,
+  Trash2,
+  Upload,
+  type LucideIcon,
+} from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/Button";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { DetailBlock, DetailModal } from "@/components/DetailModal";
-import { EmptyState } from "@/components/EmptyState";
 import { ErrorState } from "@/components/ErrorState";
 import { Input } from "@/components/Field";
-import { ListCard } from "@/components/ListCard";
 import { PageHeader } from "@/components/PageHeader";
-import { SortableHead } from "@/components/SortableHead";
-import { StatsGrid } from "@/components/StatsGrid";
 import { Card, CardContent } from "@/components/ui/card";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Textarea } from "@/components/ui/textarea";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { TablePagination, usePagination } from "@/components/ui/table-pagination";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { getExecutionRun } from "@/features/execution/api";
 import { generateFromIdea } from "@/features/production-line/api";
 import { useDebounce } from "@/hooks/useDebounce";
-import { useSortedRows } from "@/hooks/useSortedRows";
+import { cn } from "@/lib/utils";
 import {
   buildEditorialCalendar,
-  EDITORIAL_FORMAT_LABEL,
-  EDITORIAL_STATUS_LABEL,
-  EDITORIAL_STATUS_ORDER,
+  createEditorialIdea,
+  deleteEditorialIdea,
   downloadEditorialTemplate,
+  EDITORIAL_BUCKET_LABEL,
+  EDITORIAL_FORMAT_LABEL,
+  editorialBucketOf,
   getEditorialBrief,
   importEditorialPack,
   importEditorialSpreadsheet,
   listEditorialIdeas,
+  saveEditorialIdea,
   updateEditorialIdea,
   type EditorialIdea,
+  type EditorialIdeaBucket,
   type EditorialIdeaFormat,
+  type EditorialIdeaInput,
   type EditorialIdeaStatus,
 } from "./api";
+import { IdeaEditor } from "./IdeaEditor";
+import { blueprintToIdeaInput, clearLocalTankIdeas, readLocalTankIdeas } from "./local-tank-migration";
+import { referenceThumb } from "./reference-images";
 
-type View = "list" | "calendar";
-type SortKey = "id" | "title" | "category" | "status" | "date";
+type View = "grid" | "list" | "calendar";
+const PAGE = 24;
+const BUCKETS: EditorialIdeaBucket[] = ["pending", "used"];
+const FORMAT_ICON: Record<EditorialIdeaFormat, LucideIcon> = { single_image: ImageIcon, carousel: GalleryHorizontal, video: Film };
 
-const STATUS_TONE: Record<EditorialIdeaStatus, string> = {
-  available: "bg-muted text-muted-foreground",
-  in_production: "bg-sky-500/15 text-sky-600 dark:text-sky-300",
-  produced: "bg-violet-500/15 text-violet-600 dark:text-violet-300",
-  approved: "bg-emerald-500/15 text-emerald-600 dark:text-emerald-300",
-  published: "bg-primary/15 text-primary",
-  archived: "bg-muted text-muted-foreground line-through",
+const BUCKET_TONE: Record<EditorialIdeaBucket, string> = {
+  pending: "bg-emerald-500 text-white",
+  used: "bg-zinc-700 text-zinc-100",
 };
+const BUCKET_PILL_LABEL: Record<EditorialIdeaBucket, string> = { pending: "Pendente", used: "Usada" };
 
 const WEEKDAY = new Intl.DateTimeFormat("pt-BR", { weekday: "short", day: "2-digit", month: "2-digit", timeZone: "UTC" });
 const formatDay = (date?: string) => (date ? WEEKDAY.format(new Date(`${date}T00:00:00Z`)) : "—");
-
-function todayIso(): string {
-  const now = new Date();
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
-}
 
 /** Por que esta ideia não pode virar post agora (`null` = pode). */
 function createBlockedReason(idea: EditorialIdea): string | null {
   if (idea.format === "video") return "Ideias de vídeo trazem o roteiro pronto para gravar; o gerador automático faz imagem e carrossel.";
   if (idea.status === "in_production") return "Esta ideia já está sendo criada. Acompanhe na Produção.";
-  if (idea.status === "archived") return "Ideia arquivada. Mude o estado para Disponível antes de criar o post.";
+  if (idea.status === "archived") return "Ideia arquivada. Volte para pendente antes de criar o post.";
   return null;
-}
-
-function StatusPill({ status }: { status: EditorialIdeaStatus }) {
-  return <span className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium ${STATUS_TONE[status]}`}>{EDITORIAL_STATUS_LABEL[status]}</span>;
 }
 
 /** Estado editorial derivado da execução real do motor criativo (nunca adivinhado). */
@@ -78,21 +93,30 @@ function statusFromRun(state: string): EditorialIdeaStatus | "failed" | undefine
   return undefined;
 }
 
+function StatusPill({ status, className }: { status: EditorialIdeaStatus; className?: string }) {
+  const bucket = editorialBucketOf(status);
+  return <span className={cn("inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold", BUCKET_TONE[bucket], className)}>{BUCKET_PILL_LABEL[bucket]}</span>;
+}
+
 /**
- * Bolsão de pautas editoriais do workspace: acervo importado, estado editorial compartilhado,
- * calendário de 30 dias e envio de uma pauta por vez ao motor criativo existente. Nada é gerado
- * nem publicado sozinho — a peça gerada segue para a Revisão de sempre.
+ * Bolsão de ideias do workspace: tudo o que está cadastrado aparece de cara, separado em Pendentes
+ * (prontas para usar), Em andamento e Usadas. Cadastro manual ideia por ideia — com imagens de
+ * referência que viram a base da arte — ou em lote por planilha. Nada é gerado nem publicado
+ * sozinho a partir daqui: "Criar post" manda a ideia ao motor criativo e a peça segue para Revisão.
  */
-export function EditorialIdeasBoard({ workspaceId }: { workspaceId: string }) {
+export function EditorialIdeasBoard({ workspaceId, openNew = false }: { workspaceId: string; openNew?: boolean }) {
   const [ideas, setIdeas] = useState<EditorialIdea[] | null>(null);
   const [error, setError] = useState<unknown>(null);
-  const [view, setView] = useState<View>("list");
+  const [view, setView] = useState<View>("grid");
+  const [bucket, setBucket] = useState<EditorialIdeaBucket>("pending");
   const [search, setSearch] = useState("");
-  const debouncedSearch = useDebounce(search, 300);
-  const [statusFilter, setStatusFilter] = useState<EditorialIdeaStatus | "all">("all");
-  const [categoryFilter, setCategoryFilter] = useState<string>("all");
+  const debouncedSearch = useDebounce(search, 250);
+  const [categoryFilter, setCategoryFilter] = useState("all");
   const [formatFilter, setFormatFilter] = useState<EditorialIdeaFormat | "all">("all");
+  const [limit, setLimit] = useState(PAGE);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [editing, setEditing] = useState<EditorialIdea | "new" | null>(openNew ? "new" : null);
+  const [deleting, setDeleting] = useState<EditorialIdea | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const sheetInput = useRef<HTMLInputElement>(null);
@@ -106,10 +130,39 @@ export function EditorialIdeasBoard({ workspaceId }: { workspaceId: string }) {
     }
   }, [workspaceId]);
 
+  // Ideias antigas da Produção (guardadas só no navegador) sobem para o bolsão sozinhas, uma vez.
+  const migrating = useRef(false);
+  useEffect(() => {
+    if (!ideas || migrating.current) return;
+    const local = readLocalTankIdeas(workspaceId);
+    if (local.length === 0) return;
+    migrating.current = true;
+    void (async () => {
+      const migrated: string[] = [];
+      for (const old of local) {
+        try {
+          let created: EditorialIdea;
+          try {
+            created = await createEditorialIdea(workspaceId, blueprintToIdeaInput(old, true));
+          } catch {
+            created = await createEditorialIdea(workspaceId, blueprintToIdeaInput(old, false));
+          }
+          if (old.status === "used") await updateEditorialIdea(workspaceId, created.id, { status: "published" });
+          migrated.push(old.id);
+        } catch { /* fica no navegador; tenta de novo na próxima visita */ }
+      }
+      clearLocalTankIdeas(workspaceId, migrated);
+      if (migrated.length) {
+        toast.success(`${migrated.length} ideia(s) da Produção agora estão no bolsão.`);
+        await load();
+      }
+    })();
+  }, [ideas, workspaceId, load]);
+
   useEffect(() => { void load(); }, [load]);
 
-  // Pautas em produção acompanham a execução real: aguardando aprovação = produzida, concluída =
-  // aprovada; falha volta a pauta para disponível.
+  // Ideias em produção acompanham a execução real: aguardando aprovação = produzida, concluída =
+  // aprovada; falha volta a ideia para disponível.
   const syncedRuns = useRef(new Set<string>());
   useEffect(() => {
     if (!ideas) return;
@@ -124,57 +177,56 @@ export function EditorialIdeasBoard({ workspaceId }: { workspaceId: string }) {
           const next = statusFromRun(detail.run.state);
           if (next === "failed") updates.push(await updateEditorialIdea(workspaceId, idea.id, { status: "available", executionRunId: null }));
           else if (next) updates.push(await updateEditorialIdea(workspaceId, idea.id, { status: next }));
-        } catch { /* execução indisponível: a pauta continua como está */ }
+        } catch { /* execução indisponível: a ideia continua como está */ }
       }
       if (updates.length) setIdeas((current) => current?.map((idea) => updates.find((update) => update.id === idea.id) ?? idea) ?? current);
     })();
   }, [ideas, workspaceId]);
 
-  const categories = useMemo(() => [...new Set((ideas ?? []).map((idea) => idea.category))].sort(), [ideas]);
-  const stats = useMemo(() => {
-    const count = Object.fromEntries(EDITORIAL_STATUS_ORDER.map((status) => [status, 0])) as Record<EditorialIdeaStatus, number>;
-    for (const idea of ideas ?? []) count[idea.status] += 1;
+  const categories = useMemo(() => [...new Set((ideas ?? []).map((idea) => idea.category))].sort((a, b) => a.localeCompare(b, "pt-BR")), [ideas]);
+  const bucketCount = useMemo(() => {
+    const count: Record<EditorialIdeaBucket, number> = { pending: 0, used: 0 };
+    for (const idea of ideas ?? []) count[editorialBucketOf(idea.status)] += 1;
     return count;
   }, [ideas]);
+  const pendingWithoutReference = useMemo(() => (ideas ?? []).filter((idea) => idea.status === "available" && idea.format !== "video" && !idea.referenceImages?.length).length, [ideas]);
 
   const visible = useMemo(() => {
     const query = debouncedSearch.trim().toLowerCase();
-    return (ideas ?? []).filter((idea) =>
-      (statusFilter === "all" || idea.status === statusFilter)
-      && (categoryFilter === "all" || idea.category === categoryFilter)
-      && (formatFilter === "all" || idea.format === formatFilter)
-      && (!query || `${idea.externalId} ${idea.title} ${idea.concept} ${idea.approach}`.toLowerCase().includes(query)));
-  }, [ideas, debouncedSearch, statusFilter, categoryFilter, formatFilter]);
-
-  const { sorted, sort, onSort } = useSortedRows<EditorialIdea, SortKey>(
-    visible,
-    {
-      id: (idea) => idea.externalId,
-      title: (idea) => idea.title.toLowerCase(),
-      category: (idea) => idea.category,
-      status: (idea) => EDITORIAL_STATUS_ORDER.indexOf(idea.status),
-      date: (idea) => idea.scheduledDate ?? idea.suggestedDate ?? "9999",
-    },
-    { key: "date", dir: "asc" },
-  );
-  const { currentPage, totalPages, paginatedItems, setCurrentPage, resetPage, totalItems, pageSize, containerRef, availableHeight } = usePagination(sorted, { auto: true });
-  useEffect(() => { resetPage(); }, [debouncedSearch, statusFilter, categoryFilter, formatFilter, sort, resetPage]);
+    return (ideas ?? [])
+      .filter((idea) =>
+        editorialBucketOf(idea.status) === bucket
+        && (categoryFilter === "all" || idea.category === categoryFilter)
+        && (formatFilter === "all" || idea.format === formatFilter)
+        && (!query || `${idea.externalId} ${idea.title} ${idea.keyMessage} ${idea.category}`.toLowerCase().includes(query)))
+      .sort((a, b) =>
+        bucket === "used"
+          ? b.statusChangedAt.localeCompare(a.statusChangedAt)
+          : (a.priority === b.priority ? 0 : a.priority === "high" ? -1 : 1)
+            || (a.scheduledDate ?? "9999").localeCompare(b.scheduledDate ?? "9999")
+            || (b.createdAt ?? "").localeCompare(a.createdAt ?? "")
+            || a.externalId.localeCompare(b.externalId));
+  }, [ideas, debouncedSearch, bucket, categoryFilter, formatFilter]);
+  useEffect(() => { setLimit(PAGE); }, [debouncedSearch, bucket, categoryFilter, formatFilter]);
 
   const selected = ideas?.find((idea) => idea.id === selectedId) ?? null;
   const replace = (updated: EditorialIdea) => setIdeas((current) => current?.map((idea) => (idea.id === updated.id ? updated : idea)) ?? current);
 
-  async function onImportFile(file: File) {
-    setBusy("import");
+  async function runImport(kind: "json" | "sheet", file: File) {
+    setBusy(`import-${kind}`);
     try {
-      const pack = JSON.parse(await file.text()) as unknown;
-      const result = await importEditorialPack(workspaceId, pack);
+      const result = kind === "json"
+        ? await importEditorialPack(workspaceId, JSON.parse(await file.text()) as unknown)
+        : await importEditorialSpreadsheet(workspaceId, await file.text());
       toast.success(`${result.created} ideia(s) importada(s)${result.skipped ? `; ${result.skipped} já existiam e foram mantidas` : ""}.`);
+      setBucket("pending");
       await load();
     } catch (cause) {
-      toast.error(cause instanceof SyntaxError ? "O arquivo não é um JSON válido." : cause instanceof Error ? cause.message : "Não foi possível importar o pacote.");
+      toast.error(cause instanceof SyntaxError ? "O arquivo não é um JSON válido." : cause instanceof Error ? cause.message : "Não foi possível importar.");
     } finally {
       setBusy(null);
       if (fileInput.current) fileInput.current.value = "";
+      if (sheetInput.current) sheetInput.current.value = "";
     }
   }
 
@@ -182,25 +234,11 @@ export function EditorialIdeasBoard({ workspaceId }: { workspaceId: string }) {
     setBusy("template");
     try {
       await downloadEditorialTemplate();
-      toast.success("Modelo baixado. Preencha no padrão Vorix (inclusive com outra IA) e importe a planilha.");
+      toast.success("Modelo baixado. Preencha (pode ser com outra IA) e use Importar planilha.");
     } catch (cause) {
       toast.error(cause instanceof Error ? cause.message : "Não foi possível baixar o modelo.");
     } finally {
       setBusy(null);
-    }
-  }
-
-  async function onImportSheet(file: File) {
-    setBusy("import-sheet");
-    try {
-      const result = await importEditorialSpreadsheet(workspaceId, await file.text());
-      toast.success(`${result.created} ideia(s) importada(s)${result.skipped ? `; ${result.skipped} já existiam e foram mantidas` : ""}.`);
-      await load();
-    } catch (cause) {
-      toast.error(cause instanceof Error ? cause.message : "Não foi possível importar a planilha.");
-    } finally {
-      setBusy(null);
-      if (sheetInput.current) sheetInput.current.value = "";
     }
   }
 
@@ -218,37 +256,42 @@ export function EditorialIdeasBoard({ workspaceId }: { workspaceId: string }) {
     }
   }
 
-  async function onStatusChange(idea: EditorialIdea, status: EditorialIdeaStatus) {
-    setBusy(`status:${idea.id}`);
+  async function onPatch(idea: EditorialIdea, patch: Parameters<typeof updateEditorialIdea>[2], key: string) {
+    setBusy(`${key}:${idea.id}`);
     try {
-      replace(await updateEditorialIdea(workspaceId, idea.id, { status }));
+      replace(await updateEditorialIdea(workspaceId, idea.id, patch));
     } catch (cause) {
-      toast.error(cause instanceof Error ? cause.message : "Não foi possível mudar o estado.");
+      toast.error(cause instanceof Error ? cause.message : "Não foi possível salvar.");
     } finally {
       setBusy(null);
     }
   }
 
-  async function onScheduleChange(idea: EditorialIdea, scheduledDate: string | null) {
-    setBusy(`date:${idea.id}`);
-    try {
-      replace(await updateEditorialIdea(workspaceId, idea.id, { scheduledDate }));
-    } catch (cause) {
-      toast.error(cause instanceof Error ? cause.message : "Não foi possível mudar a data.");
-    } finally {
-      setBusy(null);
+  async function onSave(input: EditorialIdeaInput) {
+    if (editing && editing !== "new") {
+      replace(await saveEditorialIdea(workspaceId, editing.id, input));
+      toast.success("Ideia atualizada.");
+    } else {
+      const created = await createEditorialIdea(workspaceId, input);
+      setIdeas((current) => [created, ...(current ?? [])]);
+      setBucket("pending");
+      toast.success(`Ideia ${created.externalId} cadastrada.`);
     }
+    setEditing(null);
   }
 
-  async function onPromptChange(idea: EditorialIdea, creativePrompt: string | null) {
-    setBusy(`prompt:${idea.id}`);
+  async function onDelete(idea: EditorialIdea) {
+    setBusy(`delete:${idea.id}`);
     try {
-      replace(await updateEditorialIdea(workspaceId, idea.id, { creativePrompt }));
-      toast.success(creativePrompt ? "Prompt criativo salvo." : "Prompt criativo removido.");
+      await deleteEditorialIdea(workspaceId, idea.id);
+      setIdeas((current) => current?.filter((item) => item.id !== idea.id) ?? current);
+      if (selectedId === idea.id) setSelectedId(null);
+      toast.success("Ideia excluída.");
     } catch (cause) {
-      toast.error(cause instanceof Error ? cause.message : "Não foi possível salvar o prompt criativo.");
+      toast.error(cause instanceof Error ? cause.message : "Não foi possível excluir.");
     } finally {
       setBusy(null);
+      setDeleting(null);
     }
   }
 
@@ -256,7 +299,14 @@ export function EditorialIdeasBoard({ workspaceId }: { workspaceId: string }) {
     setBusy(`generate:${idea.id}`);
     try {
       const brief = await getEditorialBrief(workspaceId, idea.id);
-      const run = await generateFromIdea({ workspaceId, ...brief, channel: "instagram", aspectRatio: "4:5" });
+      const references = idea.referenceImages ?? [];
+      const run = await generateFromIdea({
+        workspaceId,
+        ...brief,
+        channel: "instagram",
+        aspectRatio: "4:5",
+        ...(references.length ? { referenceImages: references, referenceAssets: references.map((url) => ({ url, role: "product_photo" as const })) } : {}),
+      });
       syncedRuns.current.delete(run.executionRunId);
       replace(await updateEditorialIdea(workspaceId, idea.id, { status: "in_production", executionRunId: run.executionRunId }));
       toast.success("Post em criação! Acompanhe na Produção — ele vai para a Revisão antes de qualquer publicação.");
@@ -267,136 +317,160 @@ export function EditorialIdeasBoard({ workspaceId }: { workspaceId: string }) {
     }
   }
 
+  const hiddenInputs = (
+    <>
+      <input ref={fileInput} type="file" accept="application/json,.json" className="hidden" onChange={(event) => { const file = event.target.files?.[0]; if (file) void runImport("json", file); }} />
+      <input ref={sheetInput} type="file" accept=".csv,text/csv" className="hidden" onChange={(event) => { const file = event.target.files?.[0]; if (file) void runImport("sheet", file); }} />
+    </>
+  );
+
   const header = (
     <PageHeader
       title="Bolsão de ideias"
-      description="Ideias de post prontas, com texto, legenda e roteiro. Escolha uma, clique em Criar post e revise antes de publicar."
+      description="Suas ideias de post num lugar só. Cadastre uma por vez com imagens de referência, ou importe várias por planilha."
       actions={
         <>
-          <input ref={fileInput} type="file" accept="application/json,.json" className="hidden" onChange={(event) => { const file = event.target.files?.[0]; if (file) void onImportFile(file); }} />
-          <input ref={sheetInput} type="file" accept=".csv,text/csv" className="hidden" onChange={(event) => { const file = event.target.files?.[0]; if (file) void onImportSheet(file); }} />
-          <Button variant="ghost" disabled={busy === "template"} onClick={() => void onDownloadTemplate()}>{busy === "template" ? "Baixando…" : "Baixar modelo (planilha)"}</Button>
-          <Button variant="ghost" disabled={busy === "import-sheet"} onClick={() => sheetInput.current?.click()}>{busy === "import-sheet" ? "Importando…" : "Importar planilha"}</Button>
-          <Button variant="ghost" disabled={busy === "import"} onClick={() => fileInput.current?.click()}>{busy === "import" ? "Importando…" : "Importar JSON"}</Button>
-          <Button variant="secondary" disabled={busy === "calendar" || !ideas?.length} onClick={() => void onBuildCalendar()}>{busy === "calendar" ? "Montando…" : "Planejar próximos 30 dias"}</Button>
+          {hiddenInputs}
+          <Button variant="ghost" disabled={busy === "template"} onClick={() => void onDownloadTemplate()}>
+            <Download className="h-4 w-4" aria-hidden="true" /> {busy === "template" ? "Baixando…" : "Modelo de planilha"}
+          </Button>
+          <Button variant="secondary" disabled={busy === "import-sheet"} onClick={() => sheetInput.current?.click()}>
+            <Upload className="h-4 w-4" aria-hidden="true" /> {busy === "import-sheet" ? "Importando…" : "Importar planilha"}
+          </Button>
+          <Button onClick={() => setEditing("new")}>
+            <Plus className="h-4 w-4" aria-hidden="true" /> Nova ideia
+          </Button>
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button variant="ghost" aria-label="Mais ações"><MoreHorizontal className="h-4 w-4" aria-hidden="true" /></Button>
+            </PopoverTrigger>
+            <PopoverContent align="end" className="w-60 p-1">
+              <MenuItem icon={CalendarDays} disabled={busy === "calendar" || !bucketCount.pending} onClick={() => void onBuildCalendar()}>Planejar próximos 30 dias</MenuItem>
+              <MenuItem icon={FileJson} disabled={busy === "import-json"} onClick={() => fileInput.current?.click()}>Importar pacote JSON</MenuItem>
+            </PopoverContent>
+          </Popover>
         </>
       }
     />
   );
 
+  const editor = editing ? (
+    <IdeaEditor
+      key={editing === "new" ? "new" : editing.id}
+      workspaceId={workspaceId}
+      idea={editing === "new" ? undefined : editing}
+      categories={categories}
+      onClose={() => setEditing(null)}
+      onSave={onSave}
+    />
+  ) : null;
+
   if (error && !ideas) return <>{header}<ErrorState error={error} onRetry={() => void load()} /></>;
-  if (!ideas) return <>{header}<div className="space-y-3"><Skeleton className="h-20 w-full" /><Skeleton className="h-64 w-full" /></div></>;
+  if (!ideas) {
+    return (
+      <>
+        {header}
+        <Skeleton className="mb-4 h-11 w-full max-w-xl" />
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">{Array.from({ length: 8 }, (_, index) => <Skeleton key={index} className="h-72 w-full rounded-xl" />)}</div>
+      </>
+    );
+  }
+
   if (ideas.length === 0) {
     return (
       <>
         {header}
-        <EmptyState
-          title="Nenhuma ideia neste workspace ainda"
-          description="Baixe o modelo de planilha, preencha no padrão Vorix (pode ser com outra IA) e importe. Importar de novo nunca duplica ideias."
-          action={<div className="flex flex-wrap justify-center gap-2"><Button variant="secondary" disabled={busy === "template"} onClick={() => void onDownloadTemplate()}>Baixar modelo</Button><Button disabled={busy === "import-sheet"} onClick={() => sheetInput.current?.click()}>Importar planilha</Button></div>}
-        />
+        <section className="rounded-2xl border border-dashed border-border bg-card/50 px-4 py-10 sm:px-10">
+          <div className="mx-auto max-w-2xl text-center">
+            <span className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/15 text-primary"><Lightbulb className="h-6 w-6" aria-hidden="true" /></span>
+            <h2 className="text-xl font-semibold text-foreground">Seu bolsão está vazio</h2>
+            <p className="mt-2 text-sm text-muted-foreground">Comece cadastrando uma ideia. Anexe fotos de referência (produto, cliente, tela) para a arte sair com a cara da sua marca.</p>
+          </div>
+          <div className="mx-auto mt-8 grid max-w-3xl gap-3 sm:grid-cols-3">
+            <StartTile icon={Plus} title="Cadastrar ideia" description="Uma por vez, com imagens de referência." primary onClick={() => setEditing("new")} />
+            <StartTile icon={Upload} title="Importar planilha" description="Várias ideias de uma vez, em CSV." disabled={busy === "import-sheet"} onClick={() => sheetInput.current?.click()} />
+            <StartTile icon={Download} title="Baixar modelo" description="Planilha no padrão para preencher." disabled={busy === "template"} onClick={() => void onDownloadTemplate()} />
+          </div>
+        </section>
+        {editor}
       </>
     );
   }
 
   const scheduled = ideas.filter((idea) => idea.scheduledDate && idea.status !== "archived").sort((a, b) => a.scheduledDate!.localeCompare(b.scheduledDate!));
-  const today = todayIso();
-  const upNext = scheduled.filter((idea) => idea.scheduledDate! >= today && idea.status === "available").slice(0, 5);
-  const categoryCount = (category: string) => ideas.filter((idea) => idea.category === category).length;
+  const shown = visible.slice(0, limit);
 
   return (
     <>
       {header}
 
-      <ol className="mb-5 grid gap-2 sm:grid-cols-3">
-        {[
-          ["Escolha uma ideia", "Use as sugestões da semana ou filtre por assunto."],
-          ["Clique em Criar post", "O Vorix monta a arte com a identidade da sua marca."],
-          ["Revise e publique", "Nada é publicado sem a sua aprovação na Revisão."],
-        ].map(([title, description], index) => (
-          <li key={title} className="flex gap-3 rounded-lg border border-border bg-card p-3">
-            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary/15 text-xs font-semibold tabular-nums text-primary">{index + 1}</span>
-            <span><span className="block text-sm font-medium text-foreground">{title}</span><span className="block text-xs text-muted-foreground">{description}</span></span>
-          </li>
-        ))}
-      </ol>
-
-      {upNext.length ? (
-        <section className="mb-5">
-          <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2">
-            <h2 className="text-base font-semibold text-foreground">Sugestões para os próximos dias</h2>
-            <button type="button" onClick={() => setView("calendar")} className="text-sm text-primary hover:underline">Ver calendário completo</button>
-          </div>
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-            {upNext.map((idea) => (
-              <IdeaCard key={idea.id} idea={idea} busy={busy} onOpen={() => setSelectedId(idea.id)} onCreate={() => void onGenerate(idea)} />
-            ))}
-          </div>
-        </section>
-      ) : null}
-
-      <div className="mb-4 flex flex-wrap gap-2" role="group" aria-label="Filtrar por assunto">
-        {["all", ...categories].map((category) => (
+      <div className="mb-4 flex flex-wrap items-center gap-2 overflow-x-auto" role="tablist" aria-label="Situação das ideias">
+        {BUCKETS.map((item) => (
           <button
-            key={category}
+            key={item}
             type="button"
-            onClick={() => setCategoryFilter(category)}
-            aria-pressed={categoryFilter === category}
-            className={`rounded-full border px-3 py-1 text-sm transition-colors ${categoryFilter === category ? "border-primary bg-primary text-primary-foreground" : "border-border bg-card text-muted-foreground hover:text-foreground"}`}
+            role="tab"
+            aria-selected={bucket === item}
+            onClick={() => setBucket(item)}
+            className={cn(
+              "inline-flex min-h-9 items-center gap-2 rounded-full border px-4 text-sm font-medium transition-colors",
+              bucket === item ? "border-primary bg-primary text-primary-foreground" : "border-border bg-card text-muted-foreground hover:text-foreground",
+            )}
           >
-            {category === "all" ? "Todas" : category} <span className="tabular-nums opacity-70">{category === "all" ? ideas.length : categoryCount(category)}</span>
+            {EDITORIAL_BUCKET_LABEL[item]}
+            <span className={cn("rounded-full px-1.5 text-xs tabular-nums", bucket === item ? "bg-primary-foreground/20" : "bg-muted")}>{bucketCount[item]}</span>
           </button>
         ))}
       </div>
 
-      <StatsGrid className="mb-4">
-        {EDITORIAL_STATUS_ORDER.filter((status) => status !== "archived").map((status) => (
-          <Card key={status}><CardContent className="p-4">
-            <p className="text-sm text-muted-foreground">{EDITORIAL_STATUS_LABEL[status]}</p>
-            <p className="text-2xl font-semibold tabular-nums text-foreground">{stats[status]}</p>
-          </CardContent></Card>
-        ))}
-      </StatsGrid>
+      {bucket === "pending" && pendingWithoutReference > 0 ? (
+        <p className="mb-4 flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-800 dark:text-amber-200">
+          <Images className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+          {pendingWithoutReference} ideia(s) pendente(s) sem imagem de referência. Anexe uma foto para a arte sair com a cara da marca.
+        </p>
+      ) : null}
 
-      <Card className="mb-4">
-        <CardContent className="p-4">
-          <div className="flex flex-wrap items-end gap-x-4 gap-y-3">
-            <div className="min-w-56 flex-1">
-              <Input type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar ideia por palavra (ex.: CRM, reunião, site)" />
-            </div>
-            <Select value={statusFilter} onValueChange={(value: EditorialIdeaStatus | "all") => setStatusFilter(value)}>
-              <SelectTrigger className="w-40"><SelectValue placeholder="Estado" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Todos os estados</SelectItem>
-                {EDITORIAL_STATUS_ORDER.map((status) => <SelectItem key={status} value={status}>{EDITORIAL_STATUS_LABEL[status]}</SelectItem>)}
-              </SelectContent>
-            </Select>
-            <Select value={formatFilter} onValueChange={(value: EditorialIdeaFormat | "all") => setFormatFilter(value)}>
-              <SelectTrigger className="w-40"><SelectValue placeholder="Formato" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Todos os formatos</SelectItem>
-                {(Object.keys(EDITORIAL_FORMAT_LABEL) as EditorialIdeaFormat[]).map((format) => <SelectItem key={format} value={format}>{EDITORIAL_FORMAT_LABEL[format]}</SelectItem>)}
-              </SelectContent>
-            </Select>
-            <div className="inline-flex rounded-lg border border-border bg-card p-1">
-              {(["list", "calendar"] as const).map((option) => (
-                <button key={option} type="button" onClick={() => setView(option)} className={`min-h-8 rounded-md px-3 text-sm font-medium ${view === option ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}>
-                  {option === "list" ? "Lista" : "Calendário"}
+      <div className="mb-5 flex flex-wrap items-center gap-2">
+        <div className="min-w-48 flex-1">
+          <Input type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar por título, texto ou código" />
+        </div>
+        <Select value={categoryFilter} onValueChange={setCategoryFilter}>
+          <SelectTrigger className="w-44"><SelectValue placeholder="Assunto" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Todos os assuntos</SelectItem>
+            {categories.map((category) => <SelectItem key={category} value={category}>{category}</SelectItem>)}
+          </SelectContent>
+        </Select>
+        <Select value={formatFilter} onValueChange={(value: EditorialIdeaFormat | "all") => setFormatFilter(value)}>
+          <SelectTrigger className="w-40"><SelectValue placeholder="Formato" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Todos os formatos</SelectItem>
+            {(Object.keys(EDITORIAL_FORMAT_LABEL) as EditorialIdeaFormat[]).map((format) => <SelectItem key={format} value={format}>{EDITORIAL_FORMAT_LABEL[format]}</SelectItem>)}
+          </SelectContent>
+        </Select>
+        <div className="inline-flex rounded-lg border border-border bg-card p-1" role="group" aria-label="Visualização">
+          {([["grid", LayoutGrid, "Cards"], ["list", List, "Lista"], ["calendar", CalendarDays, "Calendário"]] as const).map(([option, Icon, label]) => (
+            <Tooltip key={option}>
+              <TooltipTrigger asChild>
+                <button type="button" aria-label={label} aria-pressed={view === option} onClick={() => setView(option)} className={cn("flex h-8 w-9 items-center justify-center rounded-md", view === option ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground")}>
+                  <Icon className="h-4 w-4" aria-hidden="true" />
                 </button>
-              ))}
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+              </TooltipTrigger>
+              <TooltipContent>{label}</TooltipContent>
+            </Tooltip>
+          ))}
+        </div>
+      </div>
 
       {view === "calendar" ? (
         scheduled.length === 0 ? (
-          <EmptyState title="Nenhuma ideia no calendário" description="Planeje os próximos 30 dias: uma ideia por dia útil, alternando assuntos e formatos." action={<Button onClick={() => void onBuildCalendar()}>Planejar próximos 30 dias</Button>} />
+          <EmptyBox title="Nenhuma ideia no calendário" description="Planeje os próximos 30 dias: uma ideia pendente por dia útil, alternando assuntos e formatos." action={<Button onClick={() => void onBuildCalendar()}>Planejar próximos 30 dias</Button>} />
         ) : (
           <Card><CardContent className="divide-y divide-border p-0">
             {scheduled.map((idea) => (
               <button key={idea.id} type="button" onClick={() => setSelectedId(idea.id)} className="flex w-full flex-wrap items-center gap-x-4 gap-y-1 px-4 py-3 text-left hover:bg-muted/50">
                 <span className="w-24 shrink-0 text-sm font-medium tabular-nums text-foreground">{formatDay(idea.scheduledDate)}</span>
+                <Thumb idea={idea} className="h-10 w-10 rounded-md" />
                 <span className="min-w-0 flex-1 truncate text-sm text-foreground">{idea.title}</span>
                 <span className="text-xs text-muted-foreground">{idea.category} · {EDITORIAL_FORMAT_LABEL[idea.format]}</span>
                 <StatusPill status={idea.status} />
@@ -404,76 +478,193 @@ export function EditorialIdeasBoard({ workspaceId }: { workspaceId: string }) {
             ))}
           </CardContent></Card>
         )
+      ) : visible.length === 0 ? (
+        <EmptyBox
+          title={bucket === "pending" && bucketCount.pending === 0 ? "Nenhuma ideia pendente" : "Nada com esses filtros"}
+          description={bucket === "pending" && bucketCount.pending === 0 ? "Todas as ideias já foram usadas ou estão em andamento. Cadastre novas para continuar postando." : "Limpe a busca ou escolha outro assunto/formato."}
+          action={bucket === "pending" ? <Button onClick={() => setEditing("new")}><Plus className="h-4 w-4" aria-hidden="true" /> Nova ideia</Button> : undefined}
+        />
+      ) : view === "grid" ? (
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+          {shown.map((idea) => (
+            <IdeaCard key={idea.id} idea={idea} busy={busy} onOpen={() => setSelectedId(idea.id)} onEdit={() => setEditing(idea)} onCreate={() => void onGenerate(idea)} />
+          ))}
+        </div>
       ) : (
-        <ListCard ref={containerRef} availableHeight={availableHeight} footer={<TablePagination currentPage={currentPage} totalPages={totalPages} totalItems={totalItems} pageSize={pageSize} onPageChange={setCurrentPage} />}>
+        <Card className="overflow-hidden">
           <Table>
             <TableHeader>
               <TableRow>
-                <SortableHead columnKey="id" sort={sort} onSort={onSort}>Código</SortableHead>
-                <SortableHead columnKey="title" sort={sort} onSort={onSort}>Ideia</SortableHead>
-                <SortableHead columnKey="category" sort={sort} onSort={onSort}>Assunto</SortableHead>
-                <TableHead>Formato</TableHead>
-                <SortableHead columnKey="status" sort={sort} onSort={onSort}>Estado</SortableHead>
-                <SortableHead columnKey="date" sort={sort} onSort={onSort} align="right">Data</SortableHead>
+                <TableHead className="w-14" />
+                <TableHead>Ideia</TableHead>
+                <TableHead className="hidden md:table-cell">Assunto</TableHead>
+                <TableHead className="hidden sm:table-cell">Formato</TableHead>
+                <TableHead>Estado</TableHead>
+                <TableHead className="hidden text-right lg:table-cell">Data</TableHead>
                 <TableHead className="text-right">Ação</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {paginatedItems.length === 0 ? (
-                <TableRow><TableCell colSpan={7} className="py-8 text-center text-muted-foreground">Nenhuma ideia com esses filtros. Limpe a busca ou escolha outro assunto.</TableCell></TableRow>
-              ) : paginatedItems.map((idea) => (
+              {shown.map((idea) => (
                 <TableRow key={idea.id} className="cursor-pointer" onClick={() => setSelectedId(idea.id)}>
-                  <TableCell className="tabular-nums text-muted-foreground">{idea.externalId}</TableCell>
+                  <TableCell><Thumb idea={idea} className="h-10 w-10 rounded-md" /></TableCell>
                   <TableCell className="max-w-md">
                     <p className="truncate font-medium text-foreground">{idea.title}</p>
-                    <p className="truncate text-xs text-muted-foreground">{idea.approach}{idea.priority === "high" ? " · Prioridade alta" : ""}</p>
+                    <p className="truncate text-xs text-muted-foreground">{idea.externalId}{idea.priority === "high" ? " · Prioridade alta" : ""}</p>
                   </TableCell>
-                  <TableCell className="text-sm text-muted-foreground">{idea.category}</TableCell>
-                  <TableCell className="text-sm text-muted-foreground">{EDITORIAL_FORMAT_LABEL[idea.format]}</TableCell>
+                  <TableCell className="hidden text-sm text-muted-foreground md:table-cell">{idea.category}</TableCell>
+                  <TableCell className="hidden text-sm text-muted-foreground sm:table-cell">{EDITORIAL_FORMAT_LABEL[idea.format]}</TableCell>
                   <TableCell><StatusPill status={idea.status} /></TableCell>
-                  <TableCell className="text-right text-sm tabular-nums text-muted-foreground">{idea.scheduledDate ? formatDay(idea.scheduledDate) : idea.suggestedDate ? `sugerida ${formatDay(idea.suggestedDate)}` : "—"}</TableCell>
+                  <TableCell className="hidden text-right text-sm tabular-nums text-muted-foreground lg:table-cell">{formatDay(idea.scheduledDate)}</TableCell>
                   <TableCell className="text-right" onClick={(event) => event.stopPropagation()}>
-                    {idea.format === "video"
-                      ? <Button size="sm" variant="ghost" onClick={() => setSelectedId(idea.id)}>Ver roteiro</Button>
-                      : <CreatePostButton idea={idea} busy={busy} size="sm" onCreate={() => void onGenerate(idea)} />}
+                    <div className="flex justify-end gap-1">
+                      <Button size="sm" variant="ghost" aria-label="Editar" onClick={() => setEditing(idea)}><Pencil className="h-4 w-4" aria-hidden="true" /></Button>
+                      {idea.format === "video" ? null : <CreatePostButton idea={idea} busy={busy} size="sm" onCreate={() => void onGenerate(idea)} />}
+                    </div>
                   </TableCell>
                 </TableRow>
               ))}
             </TableBody>
           </Table>
-        </ListCard>
+        </Card>
       )}
+
+      {view !== "calendar" && visible.length > limit ? (
+        <div className="mt-5 flex justify-center">
+          <Button variant="secondary" onClick={() => setLimit((current) => current + PAGE)}>Mostrar mais ({visible.length - limit})</Button>
+        </div>
+      ) : null}
 
       {selected ? (
         <EditorialIdeaDetail
           idea={selected}
           busy={busy}
           onClose={() => setSelectedId(null)}
-          onStatusChange={(status) => void onStatusChange(selected, status)}
-          onScheduleChange={(date) => void onScheduleChange(selected, date)}
-          onPromptChange={(prompt) => void onPromptChange(selected, prompt)}
+          onEdit={() => setEditing(selected)}
+          onDelete={() => setDeleting(selected)}
+          onToggleUsed={() => void onPatch(selected, selected.status === "available" ? { status: "published" } : { status: "available", executionRunId: null }, "status")}
+          onScheduleChange={(scheduledDate) => void onPatch(selected, { scheduledDate }, "date")}
           onGenerate={() => void onGenerate(selected)}
         />
       ) : null}
+
+      {editor}
+
+      <ConfirmDialog
+        open={Boolean(deleting)}
+        title="Excluir esta ideia?"
+        description={deleting ? `"${deleting.title}" sai do bolsão. Posts já criados ou publicados com ela continuam onde estão.` : ""}
+        confirmLabel="Excluir"
+        variant="danger"
+        busy={Boolean(deleting && busy === `delete:${deleting.id}`)}
+        onConfirm={() => (deleting ? onDelete(deleting) : undefined)}
+        onCancel={() => setDeleting(null)}
+      />
     </>
   );
 }
 
-function EditorialIdeaDetail({ idea, busy, onClose, onStatusChange, onScheduleChange, onPromptChange, onGenerate }: {
+function MenuItem({ icon: Icon, children, onClick, disabled }: { icon: LucideIcon; children: React.ReactNode; onClick: () => void; disabled?: boolean }) {
+  return (
+    <button type="button" disabled={disabled} onClick={onClick} className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm text-foreground hover:bg-muted disabled:opacity-50">
+      <Icon className="h-4 w-4 text-muted-foreground" aria-hidden="true" /> {children}
+    </button>
+  );
+}
+
+function StartTile({ icon: Icon, title, description, onClick, primary, disabled }: { icon: LucideIcon; title: string; description: string; onClick: () => void; primary?: boolean; disabled?: boolean }) {
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={onClick}
+      className={cn(
+        "flex flex-col items-start gap-3 rounded-xl border p-4 text-left transition-colors disabled:opacity-60",
+        primary ? "border-primary bg-primary/10 hover:bg-primary/15" : "border-border bg-card hover:border-primary/50",
+      )}
+    >
+      <span className={cn("flex h-9 w-9 items-center justify-center rounded-lg", primary ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground")}><Icon className="h-4 w-4" aria-hidden="true" /></span>
+      <span>
+        <span className="block text-sm font-semibold text-foreground">{title}</span>
+        <span className="block text-xs text-muted-foreground">{description}</span>
+      </span>
+    </button>
+  );
+}
+
+function EmptyBox({ title, description, action }: { title: string; description: string; action?: React.ReactNode }) {
+  return (
+    <div className="rounded-xl border border-dashed border-border bg-card/50 px-4 py-12 text-center">
+      <p className="font-medium text-foreground">{title}</p>
+      <p className="mx-auto mt-1 max-w-md text-sm text-muted-foreground">{description}</p>
+      {action ? <div className="mt-4 flex justify-center">{action}</div> : null}
+    </div>
+  );
+}
+
+/** Capa da ideia: 1ª imagem de referência; sem imagem, um bloco com o ícone do formato. */
+function Thumb({ idea, className, large }: { idea: EditorialIdea; className?: string; large?: boolean }) {
+  const cover = idea.referenceImages?.[0];
+  const Icon = FORMAT_ICON[idea.format];
+  if (cover) {
+    // eslint-disable-next-line @next/next/no-img-element
+    return <img src={referenceThumb(cover, large ? 480 : 160)} alt="" loading="lazy" className={cn("object-cover", className)} />;
+  }
+  return (
+    <span className={cn("flex items-center justify-center bg-gradient-to-br from-primary/25 via-primary/10 to-muted text-primary", className)}>
+      <Icon className={large ? "h-8 w-8" : "h-4 w-4"} aria-hidden="true" />
+    </span>
+  );
+}
+
+function IdeaCard({ idea, busy, onOpen, onEdit, onCreate }: { idea: EditorialIdea; busy: string | null; onOpen: () => void; onEdit: () => void; onCreate: () => void }) {
+  const Icon = FORMAT_ICON[idea.format];
+  const refs = idea.referenceImages?.length ?? 0;
+  return (
+    <article className="group flex flex-col overflow-hidden rounded-xl border border-border bg-card transition-shadow hover:border-primary/40 hover:shadow-lg hover:shadow-primary/5">
+      <button type="button" onClick={onOpen} className="relative block aspect-[4/3] w-full overflow-hidden text-left" aria-label={`Abrir ${idea.title}`}>
+        <Thumb idea={idea} large className="h-full w-full transition-transform duration-300 group-hover:scale-[1.03]" />
+        <span className="absolute inset-x-0 top-0 flex items-start justify-between gap-2 p-2.5">
+          <StatusPill status={idea.status} className="shadow-sm backdrop-blur" />
+          <span className="inline-flex items-center gap-1 rounded-full bg-black/60 px-2 py-0.5 text-xs font-medium text-white backdrop-blur">
+            <Icon className="h-3 w-3" aria-hidden="true" /> {EDITORIAL_FORMAT_LABEL[idea.format]}
+          </span>
+        </span>
+        <span className="absolute inset-x-0 bottom-0 flex items-end justify-between gap-2 p-2.5">
+          {refs > 1 ? <span className="inline-flex items-center gap-1 rounded-full bg-black/60 px-2 py-0.5 text-xs text-white"><Images className="h-3 w-3" aria-hidden="true" /> {refs}</span> : <span />}
+          {idea.priority === "high" ? <span className="rounded-full bg-amber-500 px-2 py-0.5 text-xs font-semibold text-black">Prioridade</span> : null}
+        </span>
+        {!refs && idea.format !== "video" ? <span className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/50 to-transparent p-2.5 pt-6 text-xs text-white/90">Sem imagem de referência</span> : null}
+      </button>
+      <div className="flex flex-1 flex-col gap-1.5 p-4">
+        <p className="truncate text-xs text-muted-foreground">{idea.externalId} · {idea.category}</p>
+        <button type="button" onClick={onOpen} className="line-clamp-2 text-left text-sm font-semibold leading-snug text-foreground hover:underline">{idea.title}</button>
+        {idea.keyMessage && idea.keyMessage !== idea.title ? <p className="line-clamp-2 text-xs text-muted-foreground">{idea.keyMessage}</p> : null}
+        <div className="mt-auto flex items-center justify-between gap-2 pt-3">
+          <span className="text-xs tabular-nums text-muted-foreground">{idea.status !== "available" ? `Usada ${new Date(idea.statusChangedAt).toLocaleDateString("pt-BR")}` : idea.scheduledDate ? formatDay(idea.scheduledDate) : ""}</span>
+          <div className="flex gap-1">
+            <Button size="sm" variant="ghost" aria-label="Editar ideia" onClick={onEdit}><Pencil className="h-4 w-4" aria-hidden="true" /></Button>
+            {idea.format === "video" ? <Button size="sm" variant="secondary" onClick={onOpen}>Ver roteiro</Button> : <CreatePostButton idea={idea} busy={busy} size="sm" onCreate={onCreate} />}
+          </div>
+        </div>
+      </div>
+    </article>
+  );
+}
+
+function EditorialIdeaDetail({ idea, busy, onClose, onEdit, onDelete, onToggleUsed, onScheduleChange, onGenerate }: {
   idea: EditorialIdea;
   busy: string | null;
   onClose: () => void;
-  onStatusChange: (status: EditorialIdeaStatus) => void;
+  onEdit: () => void;
+  onDelete: () => void;
+  onToggleUsed: () => void;
   onScheduleChange: (date: string | null) => void;
-  onPromptChange: (prompt: string | null) => void;
   onGenerate: () => void;
 }) {
   const [date, setDate] = useState(idea.scheduledDate ?? "");
   useEffect(() => { setDate(idea.scheduledDate ?? ""); }, [idea.scheduledDate]);
-  const [prompt, setPrompt] = useState(idea.creativePrompt ?? "");
-  useEffect(() => { setPrompt(idea.creativePrompt ?? ""); }, [idea.creativePrompt, idea.id]);
-  const promptBusy = busy === `prompt:${idea.id}`;
-  const promptDirty = prompt.trim() !== (idea.creativePrompt ?? "");
+  const refs = idea.referenceImages ?? [];
 
   return (
     <DetailModal
@@ -485,59 +676,44 @@ function EditorialIdeaDetail({ idea, busy, onClose, onStatusChange, onScheduleCh
         <div className="flex flex-wrap gap-2">
           <StatusPill status={idea.status} />
           <span className="rounded-full bg-muted px-2.5 py-0.5 text-xs font-medium text-muted-foreground">{EDITORIAL_FORMAT_LABEL[idea.format]}</span>
-          <span className="rounded-full bg-muted px-2.5 py-0.5 text-xs font-medium text-muted-foreground">{idea.approach}</span>
-          {idea.priority === "high" ? <span className="rounded-full bg-amber-500/15 px-2.5 py-0.5 text-xs font-medium text-amber-600 dark:text-amber-300">Prioridade alta</span> : null}
+          {idea.priority === "high" ? <span className="rounded-full bg-amber-500/15 px-2.5 py-0.5 text-xs font-medium text-amber-700 dark:text-amber-300">Prioridade alta</span> : null}
         </div>
       }
-      srDescription="Proposta criativa completa da pauta editorial."
+      srDescription="Detalhes da ideia do bolsão."
       widthStorageKey="vorix.editorial-ideas.detail.width"
       defaultWidthPercent={62}
       footer={
         <div className="flex flex-wrap items-center gap-2">
-          <CreatePostButton idea={idea} busy={busy} onCreate={onGenerate} />
-          <Select value={idea.status} onValueChange={(value: EditorialIdeaStatus) => onStatusChange(value)}>
-            <SelectTrigger className="w-40" disabled={busy === `status:${idea.id}`}><SelectValue /></SelectTrigger>
-            <SelectContent>{EDITORIAL_STATUS_ORDER.map((status) => <SelectItem key={status} value={status}>{EDITORIAL_STATUS_LABEL[status]}</SelectItem>)}</SelectContent>
-          </Select>
-          <Button variant="secondary" onClick={() => { void navigator.clipboard.writeText(idea.caption).then(() => toast.success("Legenda copiada.")); }}>Copiar legenda</Button>
+          {idea.format === "video" ? null : <CreatePostButton idea={idea} busy={busy} onCreate={onGenerate} />}
+          <Button variant="secondary" onClick={onEdit}><Pencil className="h-4 w-4" aria-hidden="true" /> Editar</Button>
+          <Button variant="ghost" disabled={busy === `status:${idea.id}`} onClick={onToggleUsed}>
+            {idea.status === "available" ? <><CheckCircle2 className="h-4 w-4" aria-hidden="true" /> Marcar como usada</> : <><RotateCcw className="h-4 w-4" aria-hidden="true" /> Voltar para pendente</>}
+          </Button>
+          <Button variant="ghost" onClick={() => { void navigator.clipboard.writeText(idea.caption).then(() => toast.success("Legenda copiada.")); }}>Copiar legenda</Button>
+          <Button variant="ghost" className="ml-auto text-destructive hover:text-destructive" onClick={onDelete}><Trash2 className="h-4 w-4" aria-hidden="true" /> Excluir</Button>
         </div>
       }
     >
       <div className="space-y-6">
-        <div className="grid gap-4 md:grid-cols-2">
-          <DetailBlock label="Objetivo comercial"><p className="text-sm text-foreground">{idea.commercialObjective}</p></DetailBlock>
-          <DetailBlock label="Público-alvo"><p className="text-sm text-foreground">{idea.targetAudience}</p></DetailBlock>
-        </div>
-        <DetailBlock label="Conceito criativo"><p className="text-sm text-foreground">{idea.concept}</p></DetailBlock>
-        <DetailBlock label="Mensagem principal"><p className="text-sm font-medium text-foreground">{idea.keyMessage}</p></DetailBlock>
-        <div className="grid gap-4 md:grid-cols-2">
-          <DetailBlock label="Direção visual"><p className="text-sm text-foreground">{idea.visualDirection}</p></DetailBlock>
-          <DetailBlock label="Estrutura narrativa"><p className="text-sm text-foreground">{idea.narrativeStructure}</p></DetailBlock>
-        </div>
-        <DetailBlock label="Prompt criativo específico">
-          <p className="mb-2 text-xs text-muted-foreground">
-            Opcional. Quando preenchido, orienta a composição e a narrativa da arte desta pauta no motor criativo — sem desrespeitar a identidade da marca nem inventar recursos. Vazio = o motor usa o padrão.
-          </p>
-          <Textarea
-            value={prompt}
-            onChange={(event) => setPrompt(event.target.value)}
-            rows={6}
-            maxLength={8000}
-            disabled={promptBusy}
-            placeholder="Ex.: fotografia editorial hiper-realista, cena de escritório com close no gesto humano e um elemento digital simbólico; roxo como acento; logo oficial pequeno; sem botão de CTA na arte…"
-            className="min-h-32 font-mono text-xs"
-          />
-          <div className="mt-2 flex flex-wrap items-center gap-2">
-            <Button size="sm" disabled={!promptDirty || promptBusy || !prompt.trim()} onClick={() => onPromptChange(prompt.trim())}>{promptBusy ? "Salvando…" : "Salvar prompt"}</Button>
-            <Button size="sm" variant="secondary" disabled={!prompt.trim()} onClick={() => { void navigator.clipboard.writeText(prompt).then(() => toast.success("Prompt copiado.")); }}>Copiar</Button>
-            <Button size="sm" variant="ghost" disabled={!idea.creativePrompt || promptBusy} onClick={() => { setPrompt(""); onPromptChange(null); }}>Remover</Button>
-            <span className="ml-auto text-xs tabular-nums text-muted-foreground">{prompt.length}/8000</span>
-          </div>
+        <DetailBlock label={`Imagens de referência (${refs.length})`} action={<Button size="sm" variant="ghost" onClick={onEdit}>{refs.length ? "Trocar" : "Adicionar"}</Button>}>
+          {refs.length ? (
+            <div className="grid grid-cols-3 gap-2 sm:grid-cols-6">
+              {refs.map((url, index) => (
+                <a key={url} href={url} target="_blank" rel="noreferrer" className="block aspect-square overflow-hidden rounded-lg border border-border">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={referenceThumb(url, 160)} alt={`Referência ${index + 1}`} className="h-full w-full object-cover" />
+                </a>
+              ))}
+            </div>
+          ) : (
+            <p className="flex items-center gap-2 text-sm text-muted-foreground"><Sparkles className="h-4 w-4" aria-hidden="true" /> Sem imagens. Anexe fotos para a arte partir delas.</p>
+          )}
         </DetailBlock>
+        <DetailBlock label="Texto da arte"><p className="text-sm font-medium text-foreground">{idea.keyMessage}</p></DetailBlock>
         {idea.carouselScript ? (
-          <DetailBlock label="Roteiro do carrossel">
+          <DetailBlock label="Telas do carrossel">
             <ol className="space-y-2">{idea.carouselScript.map((slide, index) => (
-              <li key={index} className="text-sm"><span className="font-medium tabular-nums text-foreground">{index + 1}. {slide.headline}</span><span className="block text-muted-foreground">{slide.body}</span></li>
+              <li key={index} className="text-sm"><span className="font-medium tabular-nums text-foreground">{index + 1}. {slide.headline}</span>{slide.body && slide.body !== slide.headline ? <span className="block text-muted-foreground">{slide.body}</span> : null}</li>
             ))}</ol>
           </DetailBlock>
         ) : null}
@@ -548,18 +724,21 @@ function EditorialIdeaDetail({ idea, busy, onClose, onStatusChange, onScheduleCh
             ))}</ol>
           </DetailBlock>
         ) : null}
-        <DetailBlock label="Legenda completa"><p className="whitespace-pre-wrap break-words text-sm text-foreground">{idea.caption}</p></DetailBlock>
+        <DetailBlock label="Legenda"><p className="whitespace-pre-wrap break-words text-sm text-foreground">{idea.caption}</p></DetailBlock>
         <div className="grid gap-4 md:grid-cols-2">
           <DetailBlock label="Chamada para ação"><p className="text-sm text-foreground">{idea.cta}</p></DetailBlock>
-          <DetailBlock label="Calendário">
-            <p className="mb-2 text-xs text-muted-foreground">Data sugerida: {formatDay(idea.suggestedDate)}</p>
-            <div className="flex flex-wrap items-center gap-2">
-              <Input type="date" value={date} onChange={(event) => setDate(event.target.value)} className="w-44" />
-              <Button variant="secondary" disabled={!date || date === idea.scheduledDate || busy === `date:${idea.id}`} onClick={() => onScheduleChange(date)}>Agendar</Button>
-              {idea.scheduledDate ? <Button variant="ghost" disabled={busy === `date:${idea.id}`} onClick={() => onScheduleChange(null)}>Tirar do calendário</Button> : null}
-            </div>
-          </DetailBlock>
+          <DetailBlock label="Público-alvo"><p className="text-sm text-foreground">{idea.targetAudience}</p></DetailBlock>
         </div>
+        {idea.creativePrompt || (idea.visualDirection && idea.approach !== "Cadastro manual") ? (
+          <DetailBlock label="Direção de arte"><p className="whitespace-pre-wrap text-sm text-foreground">{idea.creativePrompt ?? idea.visualDirection}</p></DetailBlock>
+        ) : null}
+        <DetailBlock label="Calendário">
+          <div className="flex flex-wrap items-center gap-2">
+            <Input type="date" value={date} onChange={(event) => setDate(event.target.value)} className="w-44" />
+            <Button variant="secondary" disabled={!date || date === idea.scheduledDate || busy === `date:${idea.id}`} onClick={() => onScheduleChange(date)}>Agendar</Button>
+            {idea.scheduledDate ? <Button variant="ghost" disabled={busy === `date:${idea.id}`} onClick={() => onScheduleChange(null)}>Tirar do calendário</Button> : null}
+          </div>
+        </DetailBlock>
       </div>
     </DetailModal>
   );
@@ -572,20 +751,4 @@ function CreatePostButton({ idea, busy, onCreate, size }: { idea: EditorialIdea;
   const button = <Button size={size} disabled={Boolean(blocked) || Boolean(busy?.startsWith("generate:"))} onClick={onCreate}>{creating ? "Criando…" : "Criar post"}</Button>;
   if (!blocked) return button;
   return <Tooltip><TooltipTrigger asChild><span tabIndex={0} className="inline-flex">{button}</span></TooltipTrigger><TooltipContent>{blocked}</TooltipContent></Tooltip>;
-}
-
-function IdeaCard({ idea, busy, onOpen, onCreate }: { idea: EditorialIdea; busy: string | null; onOpen: () => void; onCreate: () => void }) {
-  return (
-    <Card className="flex flex-col">
-      <CardContent className="flex flex-1 flex-col gap-2 p-4">
-        <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{formatDay(idea.scheduledDate)} · {EDITORIAL_FORMAT_LABEL[idea.format]}</p>
-        <button type="button" onClick={onOpen} className="text-left text-sm font-medium text-foreground hover:underline">{idea.title}</button>
-        <p className="text-xs text-muted-foreground">{idea.category}</p>
-        <div className="mt-auto flex flex-wrap gap-2 pt-2">
-          {idea.format === "video" ? <Button size="sm" onClick={onOpen}>Ver roteiro</Button> : <CreatePostButton idea={idea} busy={busy} size="sm" onCreate={onCreate} />}
-          <Button size="sm" variant="ghost" onClick={onOpen}>Ver ideia</Button>
-        </div>
-      </CardContent>
-    </Card>
-  );
 }

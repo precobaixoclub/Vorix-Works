@@ -105,7 +105,7 @@ function StatusPill({ status, className }: { status: EditorialIdeaStatus; classN
 /**
  * Bolsão de ideias do workspace: tudo o que está cadastrado aparece de cara, separado em Pendentes
  * (prontas para usar), Em andamento e Usadas. Cadastro manual ideia por ideia — com imagens de
- * referência que viram a base da arte — ou em lote por planilha. Nada é gerado nem publicado
+ * referência que viram a base da arte — ou em lote por arquivo CSV. Nada é gerado nem publicado
  * sozinho a partir daqui: "Criar post" manda a ideia ao motor criativo e a peça segue para Revisão.
  */
 export function EditorialIdeasBoard({ workspaceId, openNew = false }: { workspaceId: string; openNew?: boolean }) {
@@ -238,7 +238,7 @@ export function EditorialIdeasBoard({ workspaceId, openNew = false }: { workspac
     setBusy("template");
     try {
       await downloadEditorialTemplate();
-      toast.success("Modelo baixado. Preencha (pode ser com outra IA) e use Importar planilha.");
+      toast.success("Modelo CSV baixado. Preencha (pode ser com outra IA), salve como .csv e use Importar CSV.");
     } catch (cause) {
       toast.error(cause instanceof Error ? cause.message : "Não foi possível baixar o modelo.");
     } finally {
@@ -346,15 +346,15 @@ export function EditorialIdeasBoard({ workspaceId, openNew = false }: { workspac
     <IdeasHubTabs workspaceId={workspaceId} active="ideas" />
     <PageHeader
       title="Bolsão de ideias"
-      description="Suas ideias de post num lugar só. Cadastre uma por vez com imagens de referência, ou importe várias por planilha."
+      description="Suas ideias de post num lugar só. Cadastre uma por vez com imagens de referência, ou importe várias de uma vez por arquivo CSV (baixe o modelo CSV, preencha e importe)."
       actions={
         <>
           {hiddenInputs}
           <Button variant="ghost" disabled={busy === "template"} onClick={() => void onDownloadTemplate()}>
-            <Download className="h-4 w-4" aria-hidden="true" /> {busy === "template" ? "Baixando…" : "Modelo de planilha"}
+            <Download className="h-4 w-4" aria-hidden="true" /> {busy === "template" ? "Baixando…" : "Baixar modelo CSV"}
           </Button>
           <Button variant="secondary" disabled={busy === "import-sheet"} onClick={() => sheetInput.current?.click()}>
-            <Upload className="h-4 w-4" aria-hidden="true" /> {busy === "import-sheet" ? "Importando…" : "Importar planilha"}
+            <Upload className="h-4 w-4" aria-hidden="true" /> {busy === "import-sheet" ? "Importando…" : "Importar CSV"}
           </Button>
           <Button onClick={() => setEditing("new")}>
             <Plus className="h-4 w-4" aria-hidden="true" /> Nova ideia
@@ -408,8 +408,8 @@ export function EditorialIdeasBoard({ workspaceId, openNew = false }: { workspac
           </div>
           <div className="mx-auto mt-8 grid max-w-3xl gap-3 sm:grid-cols-3">
             <StartTile icon={Plus} title="Cadastrar ideia" description="Uma por vez, com imagens de referência." primary onClick={() => setEditing("new")} />
-            <StartTile icon={Upload} title="Importar planilha" description="Várias ideias de uma vez, em CSV." disabled={busy === "import-sheet"} onClick={() => sheetInput.current?.click()} />
-            <StartTile icon={Download} title="Baixar modelo" description="Planilha no padrão para preencher." disabled={busy === "template"} onClick={() => void onDownloadTemplate()} />
+            <StartTile icon={Upload} title="Importar CSV" description="Várias ideias de uma vez, num arquivo .csv no padrão do modelo." disabled={busy === "import-sheet"} onClick={() => sheetInput.current?.click()} />
+            <StartTile icon={Download} title="Baixar modelo CSV" description="Arquivo .csv no padrão que o sistema espera." disabled={busy === "template"} onClick={() => void onDownloadTemplate()} />
           </div>
         </section>
         {editor}

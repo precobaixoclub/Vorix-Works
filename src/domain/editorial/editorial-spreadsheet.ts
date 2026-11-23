@@ -126,7 +126,7 @@ function parseCsv(text: string): string[][] {
     else if (char === "\n" || char === "\r") { if (char === "\r" && clean[i + 1] === "\n") i += 1; if (started || cells.length) pushRow(); }
     else cell += char;
   }
-  if (quoted) throw new EditorialPackError("a planilha tem aspas que não fecham.");
+  if (quoted) throw new EditorialPackError("o arquivo CSV tem aspas que não fecham.");
   if (started || cells.length) pushRow();
   return records;
 }
@@ -158,7 +158,7 @@ function decodeScenes(value: string): PackIdea[] | undefined {
  */
 export function editorialCsvToPack(csvText: string): { schema: string; ideas: PackIdea[] } {
   const records = parseCsv(csvText);
-  if (records.length < 2) throw new EditorialPackError("a planilha precisa do cabeçalho e de pelo menos uma pauta.");
+  if (records.length < 2) throw new EditorialPackError("o arquivo CSV precisa do cabeçalho e de pelo menos uma ideia.");
   const headers = records[0]!.map((header) => header.trim().toLowerCase());
   const indexOf = new Map<string, number>();
   headers.forEach((header, index) => { if (!indexOf.has(header)) indexOf.set(header, index); });
@@ -166,7 +166,7 @@ export function editorialCsvToPack(csvText: string): { schema: string; ideas: Pa
   if (missing.length > 0) throw new EditorialPackError(`faltam colunas obrigatórias no cabeçalho: ${missing.join(", ")}.`);
 
   const dataRows = records.slice(1);
-  if (dataRows.length > EDITORIAL_SHEET_MAX_ROWS) throw new EditorialPackError(`no máximo ${EDITORIAL_SHEET_MAX_ROWS} pautas por planilha.`);
+  if (dataRows.length > EDITORIAL_SHEET_MAX_ROWS) throw new EditorialPackError(`no máximo ${EDITORIAL_SHEET_MAX_ROWS} ideias por arquivo CSV.`);
 
   const cellAt = (row: string[], column: EditorialSheetColumn): string => {
     const index = indexOf.get(column.toLowerCase());

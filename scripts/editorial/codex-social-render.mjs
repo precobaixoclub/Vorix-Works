@@ -112,16 +112,28 @@ export async function prepareLogo(logo) {
   const pixels = await sharp(trimmed.data).ensureAlpha().raw().toBuffer();
   let weight = 0;
   let luminance = 0;
+  const samples = [];
   for (let index = 0; index < pixels.length; index += 4) {
     const alpha = pixels[index + 3] / 255;
     if (alpha < 0.5) continue;
+    const value = relativeLuminance(pixels[index], pixels[index + 1], pixels[index + 2]);
     weight += alpha;
-    luminance += alpha * relativeLuminance(pixels[index], pixels[index + 1], pixels[index + 2]);
+    luminance += alpha * value;
+    samples.push(value);
   }
+  samples.sort((a, b) => a - b);
+  const quantile = (q) => samples.length ? samples[Math.min(samples.length - 1, Math.floor(q * samples.length))] : 0.5;
   return {
     png: trimmed.data, width: trimmed.info.width, height: trimmed.info.height, aspect: trimmed.info.width / trimmed.info.height,
-    luminance: weight ? luminance / weight : 0.5, knockedOut, variant: logo.variant ?? "PRIMARY", backgrounds: logo.backgrounds ?? [],
+    // Tons claro e escuro da própria logo: logo bicolor (contorno vivo + miolo escuro) é legível pelo tom que contrasta.
+    luminance: weight ? luminance / weight : 0.5, tones: [quantile(0.15), quantile(0.85)],
+    knockedOut, variant: logo.variant ?? "PRIMARY", backgrounds: logo.backgrounds ?? [],
   };
+}
+
+/** Legibilidade da logo sobre um fundo: o melhor contraste entre os tons dominantes dela e o fundo. */
+export function logoLegibility(logo, backgroundLuminance) {
+  return Math.max(...(logo.tones ?? [logo.luminance]).map((tone) => contrastRatio(tone, backgroundLuminance)));
 }
 
 /** Rótulo do cadastro incoerente com o arquivo (ex.: "para fundo escuro" mas a arte é escura). */
@@ -356,7 +368,7 @@ export async function renderArt(request) {
   // O rótulo do cadastro é conferido com a cor real do arquivo: versão "para fundo escuro" que é escura
   // (ou vice-versa) não conta como compatível e vira aviso no relatório.
   const assetWarnings = logos.filter((logo) => mislabeled(logo)).map((logo) => `versão ${logo.variant} da logo está cadastrada para fundo ${logo.backgrounds.includes("DARK") ? "escuro, mas é escura" : "claro, mas é clara"}`);
-  const ranked = logos.map((logo) => ({ logo, contrast: contrastRatio(logo.luminance, background.mean), compatible: !mislabeled(logo) && (logo.backgrounds.length === 0 || logo.backgrounds.includes(tone)) }))
+  const ranked = logos.map((logo) => ({ logo, contrast: logoLegibility(logo, background.mean), compatible: !mislabeled(logo) && (logo.backgrounds.length === 0 || logo.backgrounds.includes(tone)) }))
     .sort((a, b) => (Number(b.compatible) * 2 + Math.min(b.contrast, MIN_LOGO_CONTRAST + 1.5)) - (Number(a.compatible) * 2 + Math.min(a.contrast, MIN_LOGO_CONTRAST + 1.5)));
   const chosen = ranked[0];
   const box = { w: Math.round(Math.min(plan.logo.w, plan.logo.h * chosen.logo.aspect)), h: Math.round(Math.min(plan.logo.h, plan.logo.w / chosen.logo.aspect)) };
@@ -371,14 +383,15 @@ export async function renderArt(request) {
   if (treatment === "plate") {
     const plate = Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${rect.w + 36}" height="${rect.h + 28}"><rect width="100%" height="100%" rx="14" fill="${chosen.logo.luminance > 0.4 ? darkest : lightest}"/></svg>`);
     layers.push({ input: plate, left: rect.x - 18, top: rect.y - 14 });
-    logoContrast = contrastRatio(chosen.logo.luminance, hexLuminance(chosen.logo.luminance > 0.4 ? darkest : lightest));
+    logoContrast = logoLegibility(chosen.logo, hexLuminance(chosen.logo.luminance > 0.4 ? darkest : lightest));
   } else if (treatment === "shadow" || treatment === "halo") {
     const glow = await logoGlow(chosen.logo.png, rect, glowRgb, treatment);
     layers.push({ input: glow.input, left: glow.left, top: glow.top });
     const glowLum = relativeLuminance(...glowRgb);
-    logoContrast = contrastRatio(chosen.logo.luminance, background.mean * (1 - glow.strength) + glowLum * glow.strength);
+    logoContrast = logoLegibility(chosen.logo, background.mean * (1 - glow.strength) + glowLum * glow.strength);
   }
-  if (logoContrast < 1.6) throw new Error(`QUALITY_LOGO_CONTRAST: logo ficaria ilegível (contraste ${logoContrast.toFixed(2)})`);
+  // Logo pouco legível não derruba a peça (a marca perderia o horário): vira aviso no relatório de qualidade.
+  const legibilityWarnings = logoContrast < 1.6 ? [`logo pouco legível mesmo com halo (contraste ${logoContrast.toFixed(2)})`] : [];
   layers.push({ input: await sharp(chosen.logo.png).resize(rect.w, rect.h, { fit: "contain", background: "#00000000" }).png().toBuffer(), left: rect.x, top: rect.y });
 
   // Texto (satori), na área planejada.
@@ -407,7 +420,7 @@ export async function renderArt(request) {
       logo: { variant: chosen.logo.variant, placement: plan.placement, fixedByBrand: Boolean(fixedPlacement), treatment, contrast: round(logoContrast), rawContrast: round(chosen.contrast), knockedOut: chosen.logo.knockedOut, rect },
       protectedAreas: protectedRects.map((area) => ({ kind: area.kind, x: Math.round(area.x), y: Math.round(area.y), w: Math.round(area.w), h: Math.round(area.h) })),
       issues: textContrast < 3 ? [`contraste do texto ${round(textContrast)}:1`] : [],
-      warnings: [...assetWarnings, ...(chosen.contrast < MIN_LOGO_CONTRAST ? [`logo com contraste ${round(chosen.contrast)}:1 sem tratamento — falta uma versão oficial adequada a este fundo`] : [])],
+      warnings: [...assetWarnings, ...legibilityWarnings, ...(chosen.contrast < MIN_LOGO_CONTRAST ? [`logo com contraste ${round(chosen.contrast)}:1 sem tratamento — falta uma versão oficial adequada a este fundo`] : [])],
     },
   };
 }

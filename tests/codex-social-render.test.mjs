@@ -134,3 +134,10 @@ test("cadastro incoerente: versão 'para fundo escuro' que é escura não é tra
   assert.ok(result.quality.warnings.some((warning) => /falta uma versão oficial/.test(warning)));
   assert.notEqual(result.quality.logo.treatment, "plate", "sem caixa mesmo assim");
 });
+
+test("logo bicolor (contorno vivo e miolo escuro) sobre fundo escuro é legível: sem halo e sem recusa", async () => {
+  const badge = `<svg xmlns="http://www.w3.org/2000/svg" width="400" height="400"><circle cx="200" cy="200" r="180" fill="#0B1028" stroke="#00E86F" stroke-width="44"/></svg>`;
+  const data = (await sharp(Buffer.from(badge)).png().toBuffer()).toString("base64");
+  const result = await renderArt({ ...TEXT, profile: PROFILE_DARK, base: await base("#0B1028"), layout: "top", logoPlacement: "bottom_right", logos: [{ data, variant: "PRIMARY", backgrounds: ["LIGHT", "DARK"] }] });
+  assert.equal(result.quality.logo.treatment, "none", `contraste ${result.quality.logo.contrast}`);
+});

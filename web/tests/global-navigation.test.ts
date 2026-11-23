@@ -41,12 +41,23 @@ describe("menu global — áreas por ferramenta contratada", () => {
   });
 });
 
+/** Telas que continuam existindo, mas são abertas por dentro de "Criar conteúdo" (Fase 4). */
+const INSIDE_CREATE: Record<string, string> = {
+  "/social/compose": "→ encaminha para Criar conteúdo › Publicar conteúdo pronto (mesmo compositor)",
+  "/publish": "→ link \"estúdio avançado\" dentro de Publicar conteúdo pronto (opções exclusivas de TikTok/YouTube/Story)",
+};
+
 describe("menu global — nenhuma tela existente se perde", () => {
   it("toda tela dos menus antigos (todas as ferramentas) continua alcançável no menu global", () => {
     const reachable = new Set(buildGlobalNavigation(ALL).flatMap((area) => [area.href, ...area.items.map((item) => item.href)]));
     for (const [key, navigation] of Object.entries(SOLUTION_NAVIGATION)) {
       const old = [navigation.home, ...(navigation.primaryAction ? [navigation.primaryAction] : []), ...(navigation.featured ? [navigation.featured] : []), ...navigation.sections.flatMap((section) => section.items)];
-      for (const item of old) expect(reachable.has(item.href), `${key}: ${item.label} (${item.href})`).toBe(true);
+      for (const item of old) {
+        // Fase 4: estas duas telas saíram do menu e passaram a ser abertas por dentro de "Criar conteúdo".
+        const via = INSIDE_CREATE[item.href];
+        if (via) expect(reachable.has("/create"), `${item.href} ${via}`).toBe(true);
+        else expect(reachable.has(item.href), `${key}: ${item.label} (${item.href})`).toBe(true);
+      }
     }
   });
 
@@ -232,5 +243,20 @@ describe("Fase 2 — lista do seletor de espaços", () => {
     expect(workspaceInitials("Casa da Maria")).toBe("CM");
     expect(workspaceInitials("ângulo")).toBe("ÂN");
     expect(workspaceInitials("")).toBe("?");
+  });
+});
+
+describe("Fase 4 — Marketing com uma porta única de criação", () => {
+  const marketing = () => buildGlobalNavigation(["marketing"]).find((area) => area.key === "marketing")!;
+  it("menu do Marketing: Criar conteúdo e Revisão no lugar de Publicar/Criar publicação", () => {
+    expect(marketing().items.map((item) => item.label)).toEqual(["Bolsão de ideias", "Criar conteúdo", "Revisão", "Conteúdos", "Calendário", "Publicações", "Anúncios", "Integrações", "Marca"]);
+    expect(marketing().items.some((item) => item.href === "/publish" || item.href === "/social/compose")).toBe(false);
+  });
+  it("compositor e estúdio avançado acendem Criar conteúdo; Em produção continua no Bolsão", () => {
+    expect(activeGlobalItem(`${BASE}/social/compose`, BASE, marketing())).toBe("/create");
+    expect(activeGlobalItem(`${BASE}/publish`, BASE, marketing())).toBe("/create");
+    expect(activeGlobalItem(`${BASE}/production`, BASE, marketing())).toBe("/ideias");
+    expect(activeGlobalItem(`${BASE}/review`, BASE, marketing())).toBe("/review");
+    expect(activeGlobalArea(`${BASE}/publish`, BASE, buildGlobalNavigation(["marketing"]))).toBe("marketing");
   });
 });

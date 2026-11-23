@@ -34,7 +34,7 @@ export type SolutionNavigation = {
 export const SETTINGS_NAV: readonly WorkspaceNavItem[] = [{ href: "/settings", label: "Configurações", icon: "settings" }] as const;
 
 const CONVERSATIONS_HOME: WorkspaceNavItem = { href: "", label: "Início", icon: "home" };
-const CREATE_NAV_ITEM: WorkspaceNavItem = { href: "/create", label: "Criar", icon: "create" };
+const CREATE_NAV_ITEM: WorkspaceNavItem = { href: "/create", label: "Criar conteúdo", icon: "create" };
 /** Bolsão de ideias do workspace: as ideias de post e, na aba "Em produção", a fila da IA. É também
  * o início do Marketing — Bolsão e Produção são um lugar só. */
 const IDEAS_NAV_ITEM: WorkspaceNavItem = { href: "/ideias", label: "Bolsão de ideias", icon: "ideas" };
@@ -167,7 +167,10 @@ export function buildRouteLabels(base: string, available: readonly SolutionKey[]
     navigation.sections.forEach((section) => section.items.forEach(add));
     navigation.backstage.forEach(add);
     // Telas fora da sidebar que fazem parte de um item dela (ex.: a aba "Em produção" do Bolsão).
-    if (key === "marketing") labels[`${base}/production`] ??= "Em produção";
+    if (key === "marketing") {
+      labels[`${base}/production`] ??= "Em produção";
+      labels[`${base}/review`] ??= "Revisão";
+    }
   }
   SETTINGS_NAV.forEach(add);
   // Subpáginas de configurações não estão na sidebar — sem isto o breadcrumb mostraria o slug ("Users").

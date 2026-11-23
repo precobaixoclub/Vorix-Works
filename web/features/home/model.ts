@@ -42,9 +42,10 @@ export function createOptions(available: readonly SolutionKey[], can: Can): Crea
   const has = (key: SolutionKey) => available.includes(key);
   const options: CreateOption[] = [];
   if (has("marketing")) {
-    options.push({ key: "content", label: "Conteúdo", description: "Criar um post com a IA", href: "/create", icon: "create" });
+    // Fase 4: cada opção abre direto o fluxo certo de "Criar conteúdo".
+    options.push({ key: "content", label: "Conteúdo com IA", description: "Criar arte e legenda com a IA", href: "/create?modo=ia", icon: "create" });
     options.push({ key: "idea", label: "Ideia de conteúdo", description: "Guardar no Bolsão de ideias", href: "/ideias?nova=1", icon: "ideas" });
-    if (can("marketing:social_publish") || can("marketing:social_schedule")) options.push({ key: "post", label: "Publicação", description: "Publicar ou agendar nas redes", href: "/social/compose", icon: "publish" });
+    if (can("marketing:social_publish") || can("marketing:social_schedule")) options.push({ key: "post", label: "Publicação pronta", description: "Enviar mídia e publicar ou agendar", href: "/create?modo=pronto", icon: "publish" });
   }
   if (has("conversations")) {
     if (can("deal:manage")) options.push({ key: "deal", label: "Oportunidade", description: "Abrir no funil de vendas", href: "/deals", icon: "deals" });

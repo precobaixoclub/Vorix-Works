@@ -38,7 +38,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { getExecutionRun } from "@/features/execution/api";
-import { generateFromIdea } from "@/features/production-line/api";
+import { startIdeaProduction } from "./produce";
 import { useDebounce } from "@/hooks/useDebounce";
 import { cn } from "@/lib/utils";
 import {
@@ -49,7 +49,6 @@ import {
   EDITORIAL_BUCKET_LABEL,
   EDITORIAL_FORMAT_LABEL,
   editorialBucketOf,
-  getEditorialBrief,
   importEditorialPack,
   importEditorialSpreadsheet,
   listEditorialIdeas,
@@ -315,17 +314,10 @@ export function EditorialIdeasBoard({ workspaceId, openNew = false }: { workspac
   async function onGenerate(idea: EditorialIdea) {
     setBusy(`generate:${idea.id}`);
     try {
-      const brief = await getEditorialBrief(workspaceId, idea.id);
-      const references = idea.referenceImages ?? [];
-      const run = await generateFromIdea({
-        workspaceId,
-        ...brief,
-        channel: "instagram",
-        aspectRatio: "4:5",
-        ...(references.length ? { referenceImages: references, referenceAssets: references.map((url) => ({ url, role: "product_photo" as const })) } : {}),
-      });
+      // Mesmo caminho de "Criar conteúdo" (Fase 4): briefing completo + referências + motor de sempre.
+      const run = await startIdeaProduction(workspaceId, idea);
       syncedRuns.current.delete(run.executionRunId);
-      replace(await updateEditorialIdea(workspaceId, idea.id, { status: "in_production", executionRunId: run.executionRunId }));
+      replace(run.idea);
       toast.success("Post em criação! Acompanhe na Produção — ele vai para a Revisão antes de qualquer publicação.");
     } catch (cause) {
       toast.error(cause instanceof Error ? cause.message : "Não foi possível criar o post com esta ideia.");

@@ -48,13 +48,14 @@ const SITE_SALES_ITEMS: readonly WorkspaceNavItem[] = [
 
 const MARKETING_ITEMS: readonly WorkspaceNavItem[] = [
   { href: "/ideias", label: "Bolsão de ideias", icon: "ideas" },
-  { href: "/create", label: "Novo conteúdo", icon: "create" },
+  // Fase 4: porta única de criação e publicação ("Criar com IA" e "Publicar conteúdo pronto").
+  // O compositor (/social/compose) e o estúdio avançado (/publish) são abertos por dentro dela.
+  { href: "/create", label: "Criar conteúdo", icon: "create" },
+  { href: "/review", label: "Revisão", icon: "production" },
   { href: "/campaigns", label: "Conteúdos", icon: "content" },
   { href: "/calendar", label: "Calendário", icon: "calendar" },
-  { href: "/publish", label: "Publicar", icon: "publish" },
+  { href: "/social/calendar", label: "Publicações", icon: "publish" },
   { href: "/meta-ads", label: "Anúncios", icon: "ads" },
-  { href: "/social/compose", label: "Criar publicação", icon: "publish" },
-  { href: "/social/calendar", label: "Publicações", icon: "calendar" },
   { href: "/social/integrations", label: "Integrações", icon: "connections" },
   { href: "/knowledge", label: "Marca", icon: "brand" },
 ];
@@ -131,12 +132,16 @@ export function activeGlobalArea(pathname: string, base: string, areas: readonly
   return undefined;
 }
 
+/** Telas que pertencem a um item do menu sem estar nele: a aba "Em produção" do Bolsão e, desde a
+ * Fase 4, o compositor e o estúdio avançado (abertos por dentro de "Criar conteúdo"). */
+const ITEM_ALIASES: Readonly<Record<string, string>> = { "/production": "/ideias", "/social/compose": "/create", "/publish": "/create" };
+
 /** Subitem ativo: o de prefixo mais longo que casa com a rota (ex.: `/meetings/agenda` vence `/meetings`). */
 export function activeGlobalItem(pathname: string, base: string, area: GlobalArea | undefined): string | undefined {
   if (!area) return undefined;
   const relative = pathname.slice(base.length).replace(/\/$/, "");
   return [...area.items]
-    .filter((item) => matchesPrefix(relative, item.href) || (item.href === "/ideias" && matchesPrefix(relative, "/production")))
+    .filter((item) => matchesPrefix(relative, item.href) || Object.entries(ITEM_ALIASES).some(([alias, target]) => item.href === target && matchesPrefix(relative, alias)))
     .sort((a, b) => b.href.length - a.href.length)[0]?.href;
 }
 

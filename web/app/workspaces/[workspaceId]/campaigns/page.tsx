@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { AlignLeft, ExternalLink, GalleryHorizontal, ImageIcon, LayoutGrid, List, MoreHorizontal, Video } from "lucide-react";
 import { Button } from "@/components/Button";
 import { ChannelIcon, channelLabel } from "@/components/ChannelIcon";
@@ -116,7 +117,12 @@ export default function ContentsPage() {
   const workspace = useCurrentWorkspace();
   const [search, setSearch] = useState("");
   const [networkFilter, setNetworkFilter] = useState<PublicationNetwork | "all">("all");
-  const [statusFilter, setStatusFilter] = useState<PublicationDisplayStatus | "all">("all");
+  // Fase 4: a jornada de "Criar conteúdo" abre a biblioteca já filtrada (?status=published|failed|…).
+  const searchParams = useSearchParams();
+  const [statusFilter, setStatusFilter] = useState<PublicationDisplayStatus | "all">(() => {
+    const requested = searchParams.get("status");
+    return STATUS_FILTERS.some((option) => option.value === requested) ? (requested as PublicationDisplayStatus) : "all";
+  });
   const [formatFilter, setFormatFilter] = useState<PublicationContentType | "all">("all");
   const [dateFilter, setDateFilter] = useState<DateFilter>("all");
   const [viewMode, setViewMode] = useState<ViewMode>("grid");

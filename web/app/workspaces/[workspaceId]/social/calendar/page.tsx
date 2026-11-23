@@ -84,7 +84,7 @@ function SocialCalendar() {
       <PageHeader
         title="Calendário de publicações"
         description="Acompanhe o que está agendado e o resultado em cada rede."
-        actions={<Button asChild><Link href={`/workspaces/${workspace.id}/social/compose`}><Plus className="h-4 w-4" /> Criar publicação</Link></Button>}
+        actions={<Button asChild><Link href={`/workspaces/${workspace.id}/create?modo=pronto`}><Plus className="h-4 w-4" /> Criar publicação</Link></Button>}
       />
 
       <Card className="mb-4 flex flex-wrap items-center justify-between gap-3 p-3">
@@ -103,7 +103,7 @@ function SocialCalendar() {
       {posts.error ? <ErrorState error={posts.error} onRetry={() => void posts.mutate()} /> : null}
       {!posts.data && !posts.error ? <Skeleton className="h-[480px] w-full rounded-xl" /> : null}
       {posts.data && posts.data.posts.length === 0 ? (
-        <EmptyState icon={<CalendarDays />} title="Nenhuma publicação neste mês" description="Crie uma publicação para Instagram, Facebook ou TikTok e acompanhe tudo por aqui." action={<Button asChild><Link href={`/workspaces/${workspace.id}/social/compose`}>Crie sua primeira publicação</Link></Button>} />
+        <EmptyState icon={<CalendarDays />} title="Nenhuma publicação neste mês" description="Crie uma publicação para Instagram, Facebook ou TikTok e acompanhe tudo por aqui." action={<Button asChild><Link href={`/workspaces/${workspace.id}/create?modo=pronto`}>Crie sua primeira publicação</Link></Button>} />
       ) : null}
 
       {posts.data && posts.data.posts.length > 0 && view === "month" ? (

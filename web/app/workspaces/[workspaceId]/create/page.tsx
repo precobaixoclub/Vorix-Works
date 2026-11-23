@@ -1,9 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { ChevronRight, FolderOpen, ImageIcon, Paperclip, Video, X } from "lucide-react";
+import { ChevronRight, FolderOpen, ImageIcon, Lock, Paperclip, Sparkles, Upload, Video, X } from "lucide-react";
+import useSWR from "swr";
 import { Button } from "@/components/Button";
 import { Card } from "@/components/ui/card";
 import { Input, Label } from "@/components/Field";
@@ -11,7 +12,13 @@ import { Modal } from "@/components/Modal";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import { useCurrentWorkspace } from "@/contexts/workspace-context";
-import { IdeasPoolBanner } from "@/features/editorial-ideas/IdeasPoolBanner";
+import { IdeaPicker } from "@/features/editorial-ideas/IdeaPicker";
+import { listEditorialIdeas, type EditorialIdea } from "@/features/editorial-ideas/api";
+import { ContentPipeline } from "@/components/marketing/ContentPipeline";
+import { SocialComposer } from "@/features/social/SocialComposer";
+import { listSocialPosts } from "@/features/social/api";
+import { useMyAccess } from "@/features/auth/access";
+import { createHref, resolveCreateMode, type CreateMode } from "@/features/marketing/create-routes";
 import { useAssets } from "@/features/assets/hooks";
 import type { Asset, AssetMaterialType } from "@/features/assets/types";
 import { uploadPublicationMedia } from "@/features/media-upload/api";
@@ -89,7 +96,101 @@ function isChannel(value: string | null): value is ProductionChannel {
  * exatamente a mesma chamada de geração (`generateFromIdea`/poll/retry) e o mesmo tanque local que
  * já existiam — nenhuma mudança de API, Creative Engine, banco ou regra de negócio.
  */
-export default function CreatePage() {
+/**
+ * "Criar conteúdo" (Reorganização de UX — Fase 4): a porta única do Marketing para criar e
+ * publicar. Duas opções que convergem para a mesma revisão e publicação:
+ * - Criar com IA: a partir de uma ideia do Bolsão ou de uma ideia nova → motor criativo de sempre →
+ *   Revisão (arte, legenda, aprovar ou pedir ajuste) → publicar/agendar no compositor.
+ * - Publicar conteúdo pronto: o compositor multi-rede (antes em `/social/compose`).
+ * Links antigos continuam valendo: `?draft=`/`?format=` abrem a IA; `?media=`/`?caption=` o compositor.
+ */
+export default function CreateHubPage() {
+  return (
+    <Suspense fallback={null}>
+      <CreateHub />
+    </Suspense>
+  );
+}
+
+const MODES: { mode: CreateMode; title: string; description: string; icon: typeof Sparkles }[] = [
+  { mode: "ia", title: "Criar com IA", description: "Escolha uma ideia do Bolsão ou descreva uma nova. A IA cria arte e legenda com a identidade da sua marca; você revisa antes de publicar.", icon: Sparkles },
+  { mode: "pronto", title: "Publicar conteúdo pronto", description: "Envie imagem, carrossel ou vídeo, escreva a legenda, escolha as redes e publique agora ou agende.", icon: Upload },
+];
+
+function CreateHub() {
+  const workspace = useCurrentWorkspace();
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const mode = resolveCreateMode(new URLSearchParams(searchParams.toString()));
+  const { can, access } = useMyAccess();
+  const canPublish = can("marketing:social_publish") || can("marketing:social_schedule");
+  const ideas = useSWR(["create-hub-ideas", workspace.id], () => listEditorialIdeas(workspace.id), { revalidateOnFocus: true });
+  const posts = useSWR(access && can("marketing:social_read") ? ["social-feed", workspace.id] : null, () => listSocialPosts(workspace.id));
+  const base = `/workspaces/${workspace.id}`;
+  const step = mode === "pronto" ? 3 : 1;
+
+  return (
+    <main className="mx-auto w-full max-w-6xl px-3 py-5 sm:px-6 sm:py-8" data-testid="create-hub">
+      <div className="mb-4 flex flex-col gap-1">
+        <h1 className="font-display text-2xl font-semibold text-foreground sm:text-3xl">Criar conteúdo</h1>
+        <p className="text-sm text-muted-foreground">Crie com IA ou publique um conteúdo pronto. Tudo passa por uma prévia antes de ir ao ar.</p>
+        <ol className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs" aria-label="Etapas">
+          {["Criar", "Revisar", "Publicar ou agendar"].map((label, index) => (
+            <li key={label} className="flex items-center gap-2">
+              {index > 0 ? <ChevronRight aria-hidden="true" className="h-3 w-3 text-muted-foreground/60" /> : null}
+              <span className={cn("inline-flex items-center gap-1.5 font-medium", mode && index + 1 === step ? "text-foreground" : "text-muted-foreground")}>
+                <span className={cn("flex h-5 w-5 items-center justify-center rounded-full text-[10px] tabular-nums", mode && index + 1 === step ? "bg-primary text-primary-foreground dark:bg-primary-glow dark:text-background" : "bg-muted")}>{index + 1}</span>
+                {label}
+              </span>
+            </li>
+          ))}
+        </ol>
+      </div>
+
+      <div className="mb-5">
+        <ContentPipeline base={base} ideas={ideas.data} posts={posts.data?.posts} />
+      </div>
+
+      <div role="tablist" aria-label="Como você quer criar" className={cn("mb-5 grid gap-3", mode ? "grid-cols-2" : "sm:grid-cols-2")} data-testid="create-modes">
+        {MODES.map((option) => {
+          const Icon = option.icon;
+          const active = mode === option.mode;
+          const blocked = option.mode === "pronto" && access !== undefined && !canPublish;
+          return (
+            <button
+              key={option.mode}
+              type="button"
+              role="tab"
+              aria-selected={active}
+              data-mode={option.mode}
+              onClick={() => { if (!active) router.push(createHref(workspace.id, option.mode)); }}
+              className={cn(
+                "flex min-w-0 items-start gap-3 rounded-2xl border text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/45",
+                mode ? "min-h-[52px] items-center p-3" : "min-h-[120px] p-4 sm:p-5",
+                active ? "border-solution/60 bg-solution/10" : "border-border/70 bg-card hover:border-solution/45 hover:bg-muted/40",
+              )}
+            >
+              <span aria-hidden="true" className={cn("flex shrink-0 items-center justify-center rounded-xl", mode ? "h-8 w-8" : "h-10 w-10", active ? "bg-solution/20 text-solution" : "bg-muted text-foreground")}><Icon className="h-[18px] w-[18px]" /></span>
+              <span className="min-w-0">
+                <span className={cn("block font-semibold text-foreground", mode ? "text-sm" : "text-base")}>{option.title}</span>
+                {mode ? null : <span className="mt-1 block text-sm text-muted-foreground">{option.description}</span>}
+                {!mode && blocked ? <span className="mt-2 inline-flex items-center gap-1 text-xs text-muted-foreground"><Lock className="h-3 w-3" /> Seu perfil pode montar o post, mas não publicar nem agendar.</span> : null}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+
+      {mode === "ia" ? (
+        <AiCreateFlow ideas={ideas.data} ideasLoading={ideas.isLoading} ideasError={Boolean(ideas.error)} onIdeasChanged={() => void ideas.mutate()} />
+      ) : mode === "pronto" ? (
+        <SocialComposer embedded />
+      ) : null}
+    </main>
+  );
+}
+
+function AiCreateFlow({ ideas, ideasLoading, ideasError, onIdeasChanged }: { ideas: readonly EditorialIdea[] | undefined; ideasLoading: boolean; ideasError: boolean; onIdeasChanged: () => void }) {
   const workspace = useCurrentWorkspace();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -280,6 +381,7 @@ export default function CreatePage() {
         referenceImages: referenceImages.slice(0, 6),
       });
       setTankMessage(`"${created.title}" guardada no Bolsão de ideias como pendente.`);
+      onIdeasChanged();
       setIdeaText("");
       setObjective("");
       setTargetAudience("");
@@ -353,14 +455,11 @@ export default function CreatePage() {
   );
 
   return (
-    <main className="mx-auto max-w-6xl px-3 py-5 sm:px-6 sm:py-8">
+    <div data-testid="ai-create">
       <div className="flex flex-col gap-6 lg:grid lg:grid-cols-[minmax(0,1fr)_300px] lg:items-start">
         <div className="min-w-0 space-y-5">
-          <div>
-            <h1 className="font-display text-2xl font-semibold text-foreground sm:text-3xl">Criar conteúdo</h1>
-            <p className="mt-1 text-sm text-muted-foreground">Descreva sua ideia, envie referências e deixe a IA montar a criação.</p>
-          </div>
-          <IdeasPoolBanner workspaceId={workspace.id} />
+          <IdeaPicker workspaceId={workspace.id} ideas={ideas} loading={ideasLoading} error={ideasError} creativeEngineEnabled={creativeEngineEnabled} onChanged={onIdeasChanged} />
+          <p className="flex items-center gap-3 text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground"><span className="h-px flex-1 bg-border" />ou descreva uma nova ideia<span className="h-px flex-1 bg-border" /></p>
 
           <Card
             className={cn("p-5 transition-colors sm:p-7", dragOver && "ring-2 ring-primary")}
@@ -621,6 +720,6 @@ export default function CreatePage() {
           )}
         </Modal>
       ) : null}
-    </main>
+    </div>
   );
 }

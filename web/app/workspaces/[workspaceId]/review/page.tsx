@@ -11,6 +11,7 @@ import { PageHeader } from "@/components/PageHeader";
 import { Spinner } from "@/components/Spinner";
 import { Textarea } from "@/components/Field";
 import { useCurrentWorkspace } from "@/contexts/workspace-context";
+import { publishFromReviewHref } from "@/features/marketing/create-routes";
 import { decideExecutionGate } from "@/features/execution/api";
 import { useExecutionRun, useExecutionRuns } from "@/features/execution/hooks";
 import type { ExecutionRun, ExecutionRunDetail, ExecutionRunState } from "@/features/execution/types";
@@ -454,9 +455,6 @@ function CopyButton({ text, label }: { text: string; label: string }) {
 }
 
 function socialComposeHref(workspaceId: string, runId: string, mediaUrls: readonly string[], caption: string): string {
-  const params = new URLSearchParams();
-  for (const url of mediaUrls) params.append("media", url);
-  if (caption && caption !== "Sem descrição.") params.set("caption", caption);
-  params.set("source", runId);
-  return `/workspaces/${workspaceId}/social/compose?${params.toString()}`;
+  // Fase 4: publicar uma peça aprovada abre "Criar conteúdo › Publicar conteúdo pronto" já preenchido.
+  return publishFromReviewHref(workspaceId, runId, mediaUrls, caption);
 }

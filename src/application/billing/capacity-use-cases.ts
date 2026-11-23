@@ -128,7 +128,7 @@ export async function previewCapacityChange(deps: CapacityUseCaseDeps, input: Ca
   const subscription = await deps.subscriptionRepository.getActiveByTenant(input.tenantId);
   const items = subscription ? await deps.subscriptionItemRepository.listBySubscription(subscription.id) : [];
   const addons = await deps.addonDefinitionRepository.listActive();
-  const current = resolveCommercialCapacity(planVersion, addons, items);
+  const current = resolveCommercialCapacity(planVersion, addons, items, subscription?.billingInterval ?? "monthly");
 
   const requirement: CapacityRequirement = { users: input.users, whatsappConnections: input.whatsappConnections, workspaces: input.workspaces, concurrentRecordings: input.concurrentRecordings ?? current.concurrentRecordings };
   const interval = subscription?.billingInterval ?? "monthly";

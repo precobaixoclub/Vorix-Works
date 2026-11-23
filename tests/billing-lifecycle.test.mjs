@@ -193,3 +193,60 @@ test("modo somente-leitura: assinatura past_due bloqueia assertCanUse/assertWith
   await assert.rejects(() => assertCanUse(deps, { tenantId, capability: "crm" }), /ENTITLEMENT_ACCOUNT_READ_ONLY/);
   await assert.rejects(() => assertWithinLimit(deps, { tenantId, resource: "contacts" }), /ENTITLEMENT_ACCOUNT_READ_ONLY/);
 });
+
+/** Gateway que registra o VALOR enviado — o Mercado Pago cobra exatamente o `transaction_amount` da assinatura. */
+function spyProvider(providerId) {
+  const sandbox = new SandboxBillingProvider();
+  const calls = [];
+  const record = (name) => async (input) => { calls.push({ name, amount: input.amount }); return sandbox[name](input); };
+  return {
+    calls,
+    provider: Object.assign(Object.create(sandbox), {
+      providerId,
+      changeSubscription: record("changeSubscription"),
+      addSubscriptionItem: record("addSubscriptionItem"),
+      updateSubscriptionItemQuantity: record("updateSubscriptionItemQuantity"),
+      removeSubscriptionItem: record("removeSubscriptionItem"),
+    }),
+  };
+}
+
+async function makeYearlySubscriber(deps, tenantId, planCode, billingProvider) {
+  await deps.platformBillingRepository.ensureTenantBilling({ tenantId, now: new Date().toISOString() });
+  const planVersion = await deps.planVersionRepository.getActiveVersion(planCode);
+  return deps.subscriptionRepository.create({
+    tenantId, planVersionId: planVersion.id, status: "active", billingProvider,
+    billingInterval: "yearly", providerCustomerId: "cus_y", providerSubscriptionId: `sub-${tenantId}`,
+  });
+}
+
+test("assinante ANUAL: troca de plano e adicionais enviam ao gateway o valor ANUAL (antes ia o mensal — cobrança 10x menor)", async () => {
+  const deps = lifecycleDeps();
+  const spy = spyProvider("mercadopago");
+  deps.billingProvider = spy.provider;
+  const tenantId = "tenant-lifecycle-yearly";
+  await makeYearlySubscriber(deps, tenantId, "START", "mercadopago");
+  const pro = await deps.planVersionRepository.getActiveVersion("PRO");
+
+  await changePlan(deps, { tenantId, newPlanCode: "PRO", billingInterval: "yearly" });
+  assert.equal(spy.calls.at(-1).amount, pro.yearlyPriceUsd, "plano anual novo = preço anual do PRO");
+
+  await purchaseAddon(deps, { tenantId, addonCode: "extra_user", quantity: 1, billingInterval: "yearly" });
+  const added = spy.calls.at(-1);
+  assert.ok(added.amount > pro.yearlyPriceUsd, `base anual + adicional (enviado ${added.amount})`);
+
+  const subscription = await deps.subscriptionRepository.getActiveByTenant(tenantId);
+  const [item] = await deps.subscriptionItemRepository.listBySubscription(subscription.id);
+  await removeAddon(deps, { tenantId, subscriptionItemId: item.id });
+  assert.equal(spy.calls.at(-1).amount, pro.yearlyPriceUsd, "sem o adicional volta ao preço anual do PRO");
+});
+
+test("Mercado Pago: trocar mensal <-> anual pela troca de plano é recusado (o gateway só muda o valor, não a periodicidade)", async () => {
+  const deps = lifecycleDeps();
+  const spy = spyProvider("mercadopago");
+  deps.billingProvider = spy.provider;
+  const tenantId = "tenant-lifecycle-interval";
+  await makeYearlySubscriber(deps, tenantId, "START", "mercadopago");
+  await assert.rejects(() => changePlan(deps, { tenantId, newPlanCode: "PRO", billingInterval: "monthly" }), /CHANGE_PLAN_INTERVAL_NOT_SUPPORTED/);
+  assert.equal(spy.calls.length, 0, "nenhuma chamada ao gateway");
+});

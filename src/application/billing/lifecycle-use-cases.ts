@@ -78,6 +78,12 @@ export async function changePlan(deps: LifecycleUseCaseDeps, input: ChangePlanIn
     throw new Error("CHANGE_PLAN_NO_PROVIDER_SUBSCRIPTION: assinatura sem vínculo com o gateway de pagamento.");
   }
 
+  // Mercado Pago só reescreve o VALOR da assinatura (preapproval), nunca a periodicidade: trocar mensal
+  // <-> anual por aqui cobraria o preço anual todo mês (ou o mensal uma vez por ano).
+  if (input.billingInterval !== subscription.billingInterval && deps.billingProvider.providerId === "mercadopago") {
+    throw new Error("CHANGE_PLAN_INTERVAL_NOT_SUPPORTED: para trocar entre mensal e anual, cancele a assinatura atual e assine de novo no novo ciclo.");
+  }
+
   const overages = await detectDowngradeOverage(deps, input);
   if (overages.length > 0) {
     throw Object.assign(
@@ -101,7 +107,7 @@ export async function changePlan(deps: LifecycleUseCaseDeps, input: ChangePlanIn
   // catálogo de preço nativo (Mercado Pago); Stripe/Sandbox ignoram `amount`/`currency`.
   const existingItems = await deps.subscriptionItemRepository.listBySubscription(subscription.id);
   const allAddons = await deps.addonDefinitionRepository.listActive();
-  const projectedCapacity = resolveCommercialCapacity(newPlanVersion, allAddons, existingItems);
+  const projectedCapacity = resolveCommercialCapacity(newPlanVersion, allAddons, existingItems, input.billingInterval);
 
   const result = await deps.billingProvider.changeSubscription({
     providerSubscriptionId: subscription.providerSubscriptionId,
@@ -179,7 +185,7 @@ export async function purchaseAddon(deps: LifecycleUseCaseDeps, input: PurchaseA
   // quando incrementando (congelado, nunca reescrito — mesma regra do `upsertIncrement` abaixo),
   // ou o preço atual do catálogo quando é a primeira compra deste addon.
   const allAddons = await deps.addonDefinitionRepository.listActive();
-  const currentCapacity = resolveCommercialCapacity(planVersion, allAddons, existingItems);
+  const currentCapacity = resolveCommercialCapacity(planVersion, allAddons, existingItems, subscription.billingInterval);
   const unitPriceForDelta = existing ? existing.unitPriceUsd : input.billingInterval === "monthly" ? addon.monthlyPriceUsd : addon.yearlyPriceUsd;
   const projectedTotalMonthlyAmount = currentCapacity.totalMonthlyAmount + input.quantity * unitPriceForDelta;
 
@@ -262,7 +268,7 @@ export async function removeAddon(deps: LifecycleUseCaseDeps, input: { tenantId:
     // dentro do provider (seção 4 do pedido).
     const allAddons = await deps.addonDefinitionRepository.listActive();
     const projectedCapacity = planVersion
-      ? resolveCommercialCapacity(planVersion, allAddons, items.filter((candidate) => candidate.id !== item.id))
+      ? resolveCommercialCapacity(planVersion, allAddons, items.filter((candidate) => candidate.id !== item.id), subscription.billingInterval)
       : undefined;
     const result = await deps.billingProvider.removeSubscriptionItem({
       providerItemId: item.providerItemId,

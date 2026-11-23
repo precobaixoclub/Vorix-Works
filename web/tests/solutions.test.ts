@@ -26,9 +26,14 @@ describe("routeOwner", () => {
     expect(isRouteBlocked("site", ["site"])).toBe(false);
   });
   it("classifica as telas do Vorix Conversas", () => {
-    for (const path of ["", "/conversas", "/kanban", "/contacts", "/deals", "/tasks", "/proposals", "/results", "/deals/abc"]) {
+    for (const path of ["/conversas", "/kanban", "/contacts", "/deals", "/tasks", "/proposals", "/results", "/deals/abc"]) {
       expect(routeOwner(`${BASE}${path}`, BASE)).toBe("conversations");
     }
+  });
+
+  it("o Início unificado (raiz do workspace) é de todas as ferramentas — nunca bloqueado (Fase 3)", () => {
+    expect(routeOwner(BASE, BASE)).toBe("core");
+    expect(isRouteBlocked(routeOwner(BASE, BASE), ["meetings"])).toBe(false);
   });
 
   it("classifica as telas do Vorix Marketing, inclusive o bastidor", () => {
@@ -87,7 +92,7 @@ describe("navegação por solução", () => {
 
   it("o menu do Conversas não tem nenhuma tela do Marketing", () => {
     for (const href of hrefsOf("conversations")) {
-      if (settingsHrefs.includes(href)) continue;
+      if (settingsHrefs.includes(href) || href === "") continue; // "" = Início unificado (core)
       expect(routeOwner(`${BASE}${href}`, BASE), href).toBe("conversations");
     }
     expect(SOLUTION_NAVIGATION.conversations.primaryAction).toBeUndefined();
@@ -117,7 +122,7 @@ describe("navegação por solução", () => {
   });
 
   it("a home de cada solução pertence à própria solução", () => {
-    expect(routeOwner(`${BASE}${SOLUTION_HOME_PATH.conversations}`, BASE)).toBe("conversations");
+    expect(routeOwner(`${BASE}${SOLUTION_HOME_PATH.conversations}`, BASE)).toBe("core"); // Início unificado
     expect(routeOwner(`${BASE}${SOLUTION_HOME_PATH.marketing}`, BASE)).toBe("marketing");
     expect(routeOwner(`${BASE}${SOLUTION_HOME_PATH.meetings}`, BASE)).toBe("meetings");
   });

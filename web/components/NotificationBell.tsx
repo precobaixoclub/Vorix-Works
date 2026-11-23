@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Bell, Check, CheckCheck } from "lucide-react";
 import { Button } from "@/components/Button";
@@ -18,6 +18,9 @@ import { cn } from "@/lib/utils";
  * backend real (`/v1/notifications/*`), persistência, contagem de não lidas de verdade e tempo
  * real via SSE.
  */
+/** Evento para abrir o sino de fora (ex.: atalho do Início). */
+export const OPEN_NOTIFICATIONS_EVENT = "vorix:open-notifications";
+
 export function NotificationBell({ workspaceId }: { workspaceId: string }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -27,6 +30,13 @@ export function NotificationBell({ workspaceId }: { workspaceId: string }) {
   const { data: activeData, mutate: mutateActive } = useNotifications(workspaceId);
   const { data: historyData, isLoading: historyLoading } = useNotificationHistory(workspaceId, open && tab === "history");
   useNotificationsRealtime(workspaceId);
+
+  // O Início (Fase 3) abre este mesmo sino pelo atalho "Notificações" — uma central só.
+  useEffect(() => {
+    const openFromHome = () => { setTab("active"); setOpen(true); };
+    window.addEventListener(OPEN_NOTIFICATIONS_EVENT, openFromHome);
+    return () => window.removeEventListener(OPEN_NOTIFICATIONS_EVENT, openFromHome);
+  }, []);
 
   const active = activeData?.notifications ?? [];
   const history = historyData?.notifications ?? [];

@@ -93,8 +93,9 @@ const MARKETING_MATCH = [
 export function buildGlobalNavigation(available: readonly SolutionKey[]): GlobalArea[] {
   const has = (key: SolutionKey) => available.includes(key);
   const areas: GlobalArea[] = [];
+  // Fase 3: todo workspace tem o Início unificado (central de todas as ferramentas contratadas).
+  areas.push({ key: "home", label: "Início", icon: "home", href: "", items: [], match: [""] });
   if (has("conversations")) {
-    areas.push({ key: "home", label: "Início", icon: "home", href: "", items: [], match: [""] });
     areas.push({ key: "conversations", label: "Conversas", icon: "conversas", href: "/conversas", items: CONVERSATIONS_ITEMS, match: ["/conversas", "/kanban", "/radar"] });
   }
   if (has("conversations") || has("site")) {

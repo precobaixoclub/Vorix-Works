@@ -70,10 +70,11 @@ const MARKETING_SEGMENTS: ReadonlySet<string> = new Set([
 /** Vorix Meetings: tudo sob `/meetings` (início, Central, gravações, detalhe). */
 const MEETINGS_SEGMENTS: ReadonlySet<string> = new Set(["meetings"]);
 
-const CONVERSATIONS_SEGMENTS: ReadonlySet<string> = new Set(["", "conversas", "kanban", "radar", "contacts", "deals", "tasks", "proposals", "results", "reports", "performance", "products"]);
+const CONVERSATIONS_SEGMENTS: ReadonlySet<string> = new Set(["conversas", "kanban", "radar", "contacts", "deals", "tasks", "proposals", "results", "reports", "performance", "products"]);
 
 /** Telas do Core (conta/workspace): não pertencem a uma solução — mantêm a que já estava ativa. */
-const CORE_SEGMENTS: ReadonlySet<string> = new Set(["settings", "connections", "onboarding"]);
+// "" = Início unificado (Fase 3 da Reorganização de UX): é de todas as ferramentas, não só do Conversas.
+const CORE_SEGMENTS: ReadonlySet<string> = new Set(["", "settings", "connections", "onboarding"]);
 
 export type RouteOwner = SolutionKey | "core";
 

@@ -17,20 +17,20 @@ describe("menu global — áreas por ferramenta contratada", () => {
     expect(keys(["conversations"])).toEqual(["home", "conversations", "sales", "results", "settings"]);
   });
 
-  it("só Meetings: Reuniões e Configurações (sem Início do Conversas, sem Vendas)", () => {
-    expect(keys(["meetings"])).toEqual(["meetings", "settings"]);
+  it("só Meetings: Início (unificado, Fase 3), Reuniões e Configurações — sem Vendas", () => {
+    expect(keys(["meetings"])).toEqual(["home", "meetings", "settings"]);
   });
 
   it("só Site: Vendas aponta para as oportunidades e propostas do próprio Site", () => {
     const areas = buildGlobalNavigation(["site"]);
-    expect(areas.map((area) => area.key)).toEqual(["sales", "site", "settings"]);
+    expect(areas.map((area) => area.key)).toEqual(["home", "sales", "site", "settings"]);
     const sales = areas.find((area) => area.key === "sales")!;
     expect(sales.href).toBe("/site/oportunidades");
     expect(sales.items.map((item) => item.href)).toEqual(["/site/oportunidades", "/site/propostas"]);
   });
 
   it("cada tela de uma área pertence à ferramenta que a área exige (o guarda do servidor continua valendo)", () => {
-    const requires: Record<string, SolutionKey | "core" | "sales"> = { home: "conversations", conversations: "conversations", sales: "sales", marketing: "marketing", site: "site", meetings: "meetings", results: "conversations", settings: "core" };
+    const requires: Record<string, SolutionKey | "core" | "sales"> = { home: "core", conversations: "conversations", sales: "sales", marketing: "marketing", site: "site", meetings: "meetings", results: "conversations", settings: "core" };
     for (const area of buildGlobalNavigation(ALL)) {
       for (const href of [area.href, ...area.items.map((item) => item.href)]) {
         const owner = routeOwner(`${BASE}${href}`, BASE);
@@ -143,9 +143,9 @@ describe("Fase 2 — barra inferior do celular", () => {
     expect(bar(["conversations"])).toEqual(["home", "conversations", "sales", "results"]);
     expect(bar(["conversations", "marketing"])).toEqual(["home", "conversations", "marketing", "sales", "results"]);
     expect(bar(["conversations", "marketing", "site"])).toEqual(["home", "conversations", "marketing", "site", "sales"]);
-    expect(bar(["site"])).toEqual(["site", "sales"]);
-    expect(bar(["meetings"])).toEqual(["meetings"]);
-    expect(bar(["marketing", "meetings"])).toEqual(["marketing", "meetings"]);
+    expect(bar(["site"])).toEqual(["home", "site", "sales"]);
+    expect(bar(["meetings"])).toEqual(["home", "meetings"]);
+    expect(bar(["marketing", "meetings"])).toEqual(["home", "marketing", "meetings"]);
   });
 
   it.each(COMBOS.map((combo) => [combo.join("+") || "(nenhuma)", combo] as const))("%s: barra ⊂ menu, sem repetição, sem Configurações, no máximo 5", (_label, combo) => {
@@ -159,7 +159,9 @@ describe("Fase 2 — barra inferior do celular", () => {
     if (!combo.includes("marketing")) expect(keysInBar).not.toContain("marketing");
     if (!combo.includes("site")) expect(keysInBar).not.toContain("site");
     if (!combo.includes("meetings")) expect(keysInBar).not.toContain("meetings");
-    if (!combo.includes("conversations")) expect(keysInBar.filter((key) => key === "home" || key === "conversations" || key === "results")).toEqual([]);
+    if (!combo.includes("conversations")) expect(keysInBar.filter((key) => key === "conversations" || key === "results")).toEqual([]);
+    // Fase 3: o Início unificado existe em toda conta e é sempre o primeiro botão.
+    expect(keysInBar[0]).toBe("home");
   });
 });
 
@@ -195,9 +197,9 @@ describe("Fase 2 — destino ao trocar de espaço de trabalho", () => {
     }
   });
 
-  it("conta sem Conversas: fora de uma área conhecida vai direto à primeira ferramenta (sem redirecionar pela raiz)", () => {
-    expect(to("/onboarding", buildGlobalNavigation(["meetings"]))).toBe("/workspaces/ws-2/meetings");
-    expect(to("/ideias", buildGlobalNavigation(["site"]))).toBe("/workspaces/ws-2/site/oportunidades");
+  it("fora de uma área conhecida vai ao Início unificado do outro espaço (Fase 3: existe em toda conta)", () => {
+    expect(to("/onboarding", buildGlobalNavigation(["meetings"]))).toBe("/workspaces/ws-2");
+    expect(to("/ideias", buildGlobalNavigation(["site"]))).toBe("/workspaces/ws-2");
   });
 });
 

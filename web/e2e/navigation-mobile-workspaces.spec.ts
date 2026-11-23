@@ -71,15 +71,15 @@ test.describe("celular", () => {
     expect(Math.min(...widths)).toBeGreaterThan(60);
   });
 
-  test("conta só com Reuniões: nada de Conversas/Marketing; link de Marketing mostra 'Página não disponível'", async ({ page }) => {
+  test("conta só com Reuniões (Início unificado da Fase 3 + Reuniões): nada de Conversas/Marketing; link de Marketing mostra 'Página não disponível'", async ({ page }) => {
     await setup(page, ["meetings"]);
     // A API mockada não tem dados de Reuniões; a tela bloqueada do Marketing mostra o menu do mesmo jeito.
     await page.goto(`${base()}/ideias`);
     await expect(page.getByTestId("solution-blocked")).toBeVisible();
-    await expect.poll(() => barLabels(page)).toEqual(["Reuniões", "Menu"]);
+    await expect.poll(() => barLabels(page)).toEqual(["Início", "Reuniões", "Menu"]);
     await bar(page).getByRole("button", { name: /menu/i }).click();
     const menu = page.getByRole("dialog", { name: "Menu" });
-    await expect(menu.locator("[data-area]")).toHaveText(["Reuniões", "Configurações"]);
+    await expect(menu.locator("[data-area]")).toHaveText(["Início", "Reuniões", "Configurações"]);
     await expect(menu.locator("[data-area='meetings']")).toHaveAttribute("href", `${base()}/meetings`);
     await page.keyboard.press("Escape");
   });

@@ -14,7 +14,7 @@ import { WorkspaceSidebar } from "@/components/WorkspaceSidebar";
 import { WorkspaceTopBar } from "@/components/WorkspaceTopBar";
 import { canUseBackstage, isBackstagePath as isBackstageRoute } from "@/components/workspace-navigation";
 import { useActiveSolution, useSolutions } from "@/features/solutions/hooks";
-import { isRouteBlocked, routeOwner, SOLUTION_HOME_PATH } from "@/lib/solutions";
+import { isRouteBlocked, routeOwner } from "@/lib/solutions";
 import { useAuth } from "@/contexts/auth-context";
 import { SidebarProvider } from "@/contexts/sidebar-context";
 import { WorkspaceProvider } from "@/contexts/workspace-context";
@@ -43,8 +43,8 @@ function WorkspaceShell({ children }: { children: React.ReactNode }) {
   const { data: workspace, isLoading, error } = useWorkspace(params.workspaceId);
   const { available: availableSolutions, isLoading: solutionsLoading } = useSolutions();
 
-  // Conta sem Conversas (ex.: só Meetings): a home do workspace é do Conversas, então vai para a
-  // home da primeira solução disponível. Hook antes de qualquer return antecipado.
+  // Fase 3 (Reorganização de UX): o Início é unificado e vale para toda conta — não há mais
+  // redirecionamento da raiz para a primeira ferramenta quando a conta não tem Conversas.
   const homeBase = `/workspaces/${params.workspaceId}`;
   // Vorix DS 2.0 — acento da solução ativa (Conversas verde · Meetings violeta) em toda a área.
   const { active: activeSolution } = useActiveSolution(pathname, homeBase);
@@ -53,10 +53,6 @@ function WorkspaceShell({ children }: { children: React.ReactNode }) {
     document.documentElement.dataset.solution = activeSolution;
     return () => { delete document.documentElement.dataset.solution; };
   }, [activeSolution]);
-  const shouldLeaveHome = workspace?.status === "active" && !solutionsLoading && pathname === homeBase && availableSolutions.length > 0 && !availableSolutions.includes("conversations");
-  useEffect(() => {
-    if (shouldLeaveHome) router.replace(`${homeBase}${SOLUTION_HOME_PATH[availableSolutions[0]!]}`);
-  }, [shouldLeaveHome, homeBase, availableSolutions, router]);
 
   if (isLoading) {
     return (

@@ -26,9 +26,14 @@ describe("routeOwner", () => {
     expect(isRouteBlocked("site", ["site"])).toBe(false);
   });
   it("classifica as telas do Vorix Conversas", () => {
-    for (const path of ["/conversas", "/kanban", "/contacts", "/deals", "/tasks", "/proposals", "/results", "/deals/abc"]) {
+    for (const path of ["/conversas", "/kanban", "/contacts", "/deals", "/tasks", "/proposals", "/performance", "/reports", "/deals/abc"]) {
       expect(routeOwner(`${BASE}${path}`, BASE)).toBe("conversations");
     }
+  });
+
+  it("Resultados é a central de indicadores de todas as ferramentas — nunca bloqueado (Fase 12)", () => {
+    expect(routeOwner(`${BASE}/results`, BASE)).toBe("core");
+    expect(isRouteBlocked(routeOwner(`${BASE}/results`, BASE), ["meetings"])).toBe(false);
   });
 
   it("o Início unificado (raiz do workspace) é de todas as ferramentas — nunca bloqueado (Fase 3)", () => {
@@ -92,7 +97,7 @@ describe("navegação por solução", () => {
 
   it("o menu do Conversas não tem nenhuma tela do Marketing", () => {
     for (const href of hrefsOf("conversations")) {
-      if (settingsHrefs.includes(href) || href === "") continue; // "" = Início unificado (core)
+      if (settingsHrefs.includes(href) || href === "" || href === "/results") continue; // "" = Início unificado; /results = Resultados (core, Fase 12)
       expect(routeOwner(`${BASE}${href}`, BASE), href).toBe("conversations");
     }
     expect(SOLUTION_NAVIGATION.conversations.primaryAction).toBeUndefined();

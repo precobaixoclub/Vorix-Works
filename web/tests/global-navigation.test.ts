@@ -17,13 +17,15 @@ describe("menu global — áreas por ferramenta contratada", () => {
     expect(keys(["conversations"])).toEqual(["home", "conversations", "sales", "results", "settings"]);
   });
 
-  it("só Meetings: Início (unificado, Fase 3), Reuniões e Configurações — sem Vendas", () => {
-    expect(keys(["meetings"])).toEqual(["home", "meetings", "settings"]);
+  it("só Meetings: Início (unificado, Fase 3), Reuniões, Resultados (Fase 12) e Configurações — sem Vendas", () => {
+    expect(keys(["meetings"])).toEqual(["home", "meetings", "results", "settings"]);
+    // Fase 12: sem Conversas, Resultados tem só o Painel (sem Desempenho comercial e Relatórios).
+    expect(buildGlobalNavigation(["meetings"]).find((area) => area.key === "results")!.items).toEqual([]);
   });
 
   it("só Site: Vendas aponta para as oportunidades e propostas do próprio Site", () => {
     const areas = buildGlobalNavigation(["site"]);
-    expect(areas.map((area) => area.key)).toEqual(["home", "sales", "site", "settings"]);
+    expect(areas.map((area) => area.key)).toEqual(["home", "sales", "site", "results", "settings"]);
     const sales = areas.find((area) => area.key === "sales")!;
     expect(sales.href).toBe("/site/oportunidades");
     // Fase 7: produtos e pedidos também ficam em Vendas (rotas do próprio Site numa conta só com Site).
@@ -31,7 +33,7 @@ describe("menu global — áreas por ferramenta contratada", () => {
   });
 
   it("cada tela de uma área pertence à ferramenta que a área exige (o guarda do servidor continua valendo)", () => {
-    const requires: Record<string, SolutionKey | "core" | "sales"> = { home: "core", conversations: "conversations", sales: "sales", marketing: "marketing", site: "site", meetings: "meetings", results: "conversations", settings: "core" };
+    const requires: Record<string, SolutionKey | "core" | "sales"> = { home: "core", conversations: "conversations", sales: "sales", marketing: "marketing", site: "site", meetings: "meetings", results: "core", settings: "core" };
     for (const area of buildGlobalNavigation(ALL)) {
       for (const href of [area.href, ...area.items.map((item) => item.href)]) {
         const owner = routeOwner(`${BASE}${href}`, BASE);
@@ -43,6 +45,8 @@ describe("menu global — áreas por ferramenta contratada", () => {
         else if (area.key === "settings" && href === "/settings/attendance") expect(owner, href).toBe("conversations");
         // Fase 9: Configurações › Reuniões abre as preferências, que continuam sendo tela do Reuniões.
         else if (area.key === "settings" && href === "/meetings/settings") expect(owner, href).toBe("meetings");
+        // Fase 12: Resultados é do Core; os relatórios detalhados do comercial continuam do Conversas.
+        else if (area.key === "results" && (href === "/performance" || href === "/reports")) expect(owner, href).toBe("conversations");
         else expect(owner, `${area.key} ${href}`).toBe(requires[area.key]);
       }
     }
@@ -168,9 +172,10 @@ describe("Fase 2 — barra inferior do celular", () => {
     expect(bar(["conversations"])).toEqual(["home", "conversations", "sales", "results"]);
     expect(bar(["conversations", "marketing"])).toEqual(["home", "conversations", "marketing", "sales", "results"]);
     expect(bar(["conversations", "marketing", "site"])).toEqual(["home", "conversations", "marketing", "site", "sales"]);
-    expect(bar(["site"])).toEqual(["home", "site", "sales"]);
-    expect(bar(["meetings"])).toEqual(["home", "meetings"]);
-    expect(bar(["marketing", "meetings"])).toEqual(["home", "marketing", "meetings"]);
+    // Fase 12: Resultados existe para toda conta e ocupa a vaga livre (regra da Fase 2).
+    expect(bar(["site"])).toEqual(["home", "site", "sales", "results"]);
+    expect(bar(["meetings"])).toEqual(["home", "meetings", "results"]);
+    expect(bar(["marketing", "meetings"])).toEqual(["home", "marketing", "meetings", "results"]);
   });
 
   it.each(COMBOS.map((combo) => [combo.join("+") || "(nenhuma)", combo] as const))("%s: barra ⊂ menu, sem repetição, sem Configurações, no máximo 5", (_label, combo) => {
@@ -184,7 +189,7 @@ describe("Fase 2 — barra inferior do celular", () => {
     if (!combo.includes("marketing")) expect(keysInBar).not.toContain("marketing");
     if (!combo.includes("site")) expect(keysInBar).not.toContain("site");
     if (!combo.includes("meetings")) expect(keysInBar).not.toContain("meetings");
-    if (!combo.includes("conversations")) expect(keysInBar.filter((key) => key === "conversations" || key === "results")).toEqual([]);
+    if (!combo.includes("conversations")) expect(keysInBar).not.toContain("conversations");
     // Fase 3: o Início unificado existe em toda conta e é sempre o primeiro botão.
     expect(keysInBar[0]).toBe("home");
   });

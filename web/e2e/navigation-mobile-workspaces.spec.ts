@@ -76,10 +76,11 @@ test.describe("celular", () => {
     // A API mockada não tem dados de Reuniões; a tela bloqueada do Marketing mostra o menu do mesmo jeito.
     await page.goto(`${base()}/ideias`);
     await expect(page.getByTestId("solution-blocked")).toBeVisible();
-    await expect.poll(() => barLabels(page)).toEqual(["Início", "Reuniões", "Menu"]);
+// Fase 12: Resultados (central de indicadores) existe para toda conta com alguma ferramenta.
+    await expect.poll(() => barLabels(page)).toEqual(["Início", "Reuniões", "Resultados", "Menu"]);
     await bar(page).getByRole("button", { name: /menu/i }).click();
     const menu = page.getByRole("dialog", { name: "Menu" });
-    await expect(menu.locator("[data-area]")).toHaveText(["Início", "Reuniões", "Configurações"]);
+    await expect(menu.locator("[data-area]")).toHaveText(["Início", "Reuniões", "Resultados", "Configurações"]);
     await expect(menu.locator("[data-area='meetings']")).toHaveAttribute("href", `${base()}/meetings`);
     await page.keyboard.press("Escape");
   });

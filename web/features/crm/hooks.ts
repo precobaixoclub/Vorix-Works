@@ -44,8 +44,8 @@ export function useContactActivity(contactId: string | undefined, workspaceId: s
   return useSWR(contactId ? ["contact-activity", contactId, workspaceId] : null, () => getContactActivity(contactId!, workspaceId));
 }
 
-export function usePipelines(workspaceId: string) {
-  return useSWR(["pipelines", workspaceId], () => listPipelines(workspaceId));
+export function usePipelines(workspaceId: string, enabled = true) {
+  return useSWR(enabled ? ["pipelines", workspaceId] : null, () => listPipelines(workspaceId));
 }
 
 export function usePipelineStages(pipelineId: string | undefined, workspaceId: string) {
@@ -136,9 +136,9 @@ export function useAutomationRunLogs(ruleId: string | undefined, workspaceId: st
   return useSWR(ruleId ? ["automation-run-logs", ruleId, workspaceId] : null, () => listAutomationRunLogs(ruleId!, workspaceId));
 }
 
-export function useCommercialMetrics(workspaceId: string, params?: CommercialMetricsParams) {
+export function useCommercialMetrics(workspaceId: string, params?: CommercialMetricsParams, enabled = true) {
   return useSWR(
-    ["commercial-metrics", workspaceId, params?.pipelineId, params?.ownerUserId, params?.teamId, params?.origin, params?.dateFrom, params?.dateTo],
+    enabled ? ["commercial-metrics", workspaceId, params?.pipelineId, params?.ownerUserId, params?.teamId, params?.origin, params?.dateFrom, params?.dateTo] : null,
     () => getCommercialMetrics(workspaceId, params),
   );
 }

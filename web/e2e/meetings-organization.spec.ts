@@ -395,7 +395,8 @@ test.describe("Fase 9 — Reuniões", () => {
   test("workspace só com Reuniões: menu enxuto e telas funcionando", async ({ page }) => {
     await setup(page, { solutions: ["meetings"] });
     await page.goto(`${base()}/meetings`);
-    await expect(nav(page).locator("[data-area]")).toHaveText(["Início", "Reuniões", "Configurações"]);
+// Fase 12: Resultados (central de indicadores) existe para toda conta com alguma ferramenta.
+    await expect(nav(page).locator("[data-area]")).toHaveText(["Início", "Reuniões", "Resultados", "Configurações"]);
     await expect(page.getByTestId("upcoming-meetings").getByTestId("upcoming-row")).toHaveCount(2);
   });
 

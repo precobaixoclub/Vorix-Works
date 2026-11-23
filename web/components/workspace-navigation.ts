@@ -198,6 +198,8 @@ export function buildRouteLabels(base: string, available: readonly SolutionKey[]
     }
   }
   SETTINGS_NAV.forEach(add);
+  // Fase 12: Resultados é de todas as ferramentas (não só do Conversas).
+  if (available.length) labels[`${base}/results`] ??= "Resultados";
   // Subpáginas de configurações não estão na sidebar — sem isto o breadcrumb mostraria o slug ("Users").
   for (const [slug, label] of Object.entries(SETTINGS_SUBPAGE_LABELS)) labels[`${base}/settings/${slug}`] ??= label;
   return labels;

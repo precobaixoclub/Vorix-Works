@@ -121,9 +121,11 @@ const MEETINGS_ITEMS: readonly WorkspaceNavItem[] = [
   { href: "/meetings/recorder-accounts", label: "Contas de gravação", icon: "recordings", section: "Configurações" },
 ];
 
-const RESULTS_ITEMS: readonly WorkspaceNavItem[] = [
-  { href: "/results", label: "Painel", icon: "results" },
-  { href: "/performance", label: "Desempenho", icon: "analytics" },
+/** Resultados (Fase 12): o Painel reúne os indicadores de todas as ferramentas contratadas; os
+ * relatórios detalhados do comercial (Desempenho, Relatórios) continuam onde estavam. */
+const RESULTS_PANEL: WorkspaceNavItem = { href: "/results", label: "Painel", icon: "results" };
+const RESULTS_COMMERCIAL_ITEMS: readonly WorkspaceNavItem[] = [
+  { href: "/performance", label: "Desempenho comercial", icon: "analytics" },
   { href: "/reports", label: "Relatórios", icon: "reports" },
 ];
 
@@ -152,7 +154,7 @@ export function buildGlobalNavigation(available: readonly SolutionKey[], can?: (
   if (has("marketing")) areas.push({ key: "marketing", label: "Marketing", icon: "marketing", href: "/ideias", items: MARKETING_ITEMS, match: MARKETING_MATCH });
   if (has("site")) areas.push({ key: "site", label: "Meu site", icon: "site", href: "/site", items: SITE_ITEMS, match: ["/site", "/commerce"] });
   if (has("meetings")) areas.push({ key: "meetings", label: "Reuniões", icon: "meetings", href: "/meetings", items: MEETINGS_ITEMS, match: ["/meetings"] });
-  if (has("conversations")) areas.push({ key: "results", label: "Resultados", icon: "results", href: "/results", items: RESULTS_ITEMS, match: ["/results", "/performance", "/reports"] });
+  if (available.length) areas.push({ key: "results", label: "Resultados", icon: "results", href: "/results", items: has("conversations") ? [RESULTS_PANEL, ...RESULTS_COMMERCIAL_ITEMS] : [], match: ["/results", "/performance", "/reports"] });
   areas.push({ key: "settings", label: "Configurações", icon: "settings", href: "/settings", items: settingsItems(has), match: ["/settings", "/connections", "/social/integrations", "/social/connect", "/knowledge"] });
   return areas;
 }

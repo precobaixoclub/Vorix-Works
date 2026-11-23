@@ -328,7 +328,8 @@ test.describe("Início unificado — desktop", () => {
     await page.goto(base());
     await expect(page).toHaveURL(new RegExp(`${base()}$`));
     await expect.poll(() => summaryIds(page)).toEqual(["meetings-upcoming"]);
-    await expect(page.locator("nav[aria-label='Menu principal'] [data-area]")).toHaveText(["Início", "Reuniões", "Configurações"]);
+// Fase 12: Resultados (central de indicadores) existe para toda conta com alguma ferramenta.
+    await expect(page.locator("nav[aria-label='Menu principal'] [data-area]")).toHaveText(["Início", "Reuniões", "Resultados", "Configurações"]);
     await expect(page.getByTestId("home-detailed-toggle")).toHaveCount(0);
     await expect(page.getByTestId("activity-list")).toContainText("Reunião concluída");
     expect(requests.some((request) => ["/v1/dashboard", "/v1/tasks", "/v1/social/posts", "/v1/commerce/orders", "/v1/inbox/conversations"].includes(request.path))).toBe(false);

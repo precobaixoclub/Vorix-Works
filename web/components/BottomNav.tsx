@@ -4,7 +4,7 @@ import Link from "next/link";
 import { ChevronDown, ChevronRight, X } from "lucide-react";
 import { Fragment, useEffect, useRef, useState } from "react";
 import { NavIcon } from "@/components/NavIcon";
-import { MARKETING_BACKSTAGE_NAV, type WorkspaceNavItem } from "@/components/workspace-navigation";
+import type { WorkspaceNavItem } from "@/components/workspace-navigation";
 import type { GlobalArea } from "@/components/global-navigation";
 import { useGlobalNavigation } from "@/components/use-global-navigation";
 import { useCurrentWorkspace } from "@/contexts/workspace-context";
@@ -19,7 +19,7 @@ import { cn } from "@/lib/utils";
  */
 export function BottomNav({ workspaceId }: { workspaceId: string }) {
   const workspace = useCurrentWorkspace();
-  const { pathname, base, areas, barAreas, activeKey, activeItem, isLoading, canSeeBackstage, isBackstageActive, expanded, toggleArea } = useGlobalNavigation(workspaceId);
+  const { pathname, base, areas, barAreas, activeKey, activeItem, isLoading, canSeeBackstage, isBackstageActive, backstageItems, expanded, toggleArea } = useGlobalNavigation(workspaceId);
   const [menuOpen, setMenuOpen] = useState(false);
   const [backstageOpen, setBackstageOpen] = useState(isBackstageActive);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -206,7 +206,7 @@ export function BottomNav({ workspaceId }: { workspaceId: string }) {
                     <span>Operação técnica</span>
                     <ChevronRight aria-hidden="true" className={cn("h-4 w-4 transition-transform duration-150", backstageOpen ? "rotate-90" : "")} />
                   </button>
-                  {backstageOpen ? <div className="mt-1 flex flex-col gap-0.5">{MARKETING_BACKSTAGE_NAV.map((item) => renderItem(item, pathname.startsWith(`${base}${item.href}`)))}</div> : null}
+                  {backstageOpen ? <div className="mt-1 flex flex-col gap-0.5">{backstageItems.map((item) => renderItem(item, pathname.startsWith(`${base}${item.href}`)))}</div> : null}
                 </div>
               ) : null}
             </div>

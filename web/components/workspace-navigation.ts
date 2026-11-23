@@ -68,6 +68,24 @@ export const MARKETING_BACKSTAGE_NAV: readonly WorkspaceNavItem[] = [
   { href: "/operations", label: "Operação", icon: "operations" },
 ] as const;
 
+/**
+ * Fase 11 — ferramentas INTERNAS da plataforma dentro do bastidor: "Operação" mostra saúde do
+ * cofre de segredos, trava de produção e plano de backup, que são da Vorix inteira, não do cliente.
+ * Só o admin da plataforma vê (menu e rota). As demais telas do bastidor usam dados do próprio
+ * workspace e seguem para owner/admin.
+ */
+export const PLATFORM_ONLY_BACKSTAGE: readonly string[] = ["/operations"];
+
+/** Itens do bastidor que esta pessoa pode ver. */
+export function backstageItemsFor(isPlatformAdmin: boolean): readonly WorkspaceNavItem[] {
+  return isPlatformAdmin ? MARKETING_BACKSTAGE_NAV : MARKETING_BACKSTAGE_NAV.filter((item) => !PLATFORM_ONLY_BACKSTAGE.includes(item.href));
+}
+
+/** `true` quando a rota é uma ferramenta interna da plataforma (só admin da Vorix). */
+export function isPlatformOnlyPath(pathname: string, base: string): boolean {
+  return PLATFORM_ONLY_BACKSTAGE.some((href) => pathname === `${base}${href}` || pathname.startsWith(`${base}${href}/`));
+}
+
 export const SOLUTION_NAVIGATION: Readonly<Record<SolutionKey, SolutionNavigation>> = {
   site:{home:{href:"/site",label:"Meu site",icon:"home"},sections:[{label:"SITE",items:[{href:"/site",label:"Editor do site",icon:"settings"},{href:"/site/products",label:"Produtos",icon:"products"},{href:"/site/pedidos",label:"Pedidos",icon:"orders"},{href:"/site/analytics",label:"Analytics",icon:"analytics"}]},{label:"VENDAS",items:[{href:"/site/oportunidades",label:"Oportunidades",icon:"deals"},{href:"/site/propostas",label:"Propostas",icon:"proposals"}]}],backstage:[]},
   conversations: {

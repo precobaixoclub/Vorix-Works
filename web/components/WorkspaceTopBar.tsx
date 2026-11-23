@@ -119,7 +119,7 @@ export function WorkspaceTopBar({ workspaceId, name, status, hideBreadcrumb }: {
                 </Link>
                 {isPlatformAdmin ? (
                   <Link href="/admin" onClick={() => setMenuOpen(false)} className="flex h-8 items-center gap-2 rounded-md px-2 text-sm text-foreground hover:bg-surface-2">
-                    <ShieldCheck className="h-4 w-4 text-muted-foreground" /> Administração da plataforma
+                    <ShieldCheck className="h-4 w-4 text-muted-foreground" /> Administração da Vorix
                   </Link>
                 ) : null}
               </div>

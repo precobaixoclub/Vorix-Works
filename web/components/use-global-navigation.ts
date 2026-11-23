@@ -3,7 +3,7 @@
 import { usePathname } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/contexts/auth-context";
-import { MARKETING_BACKSTAGE_NAV, canUseBackstage } from "@/components/workspace-navigation";
+import { MARKETING_BACKSTAGE_NAV, backstageItemsFor, canUseBackstage } from "@/components/workspace-navigation";
 import { activeGlobalArea, activeGlobalItem, buildGlobalNavigation, mobileBarAreas, type GlobalAreaKey } from "@/components/global-navigation";
 import { useSolutions } from "@/features/solutions/hooks";
 import { useMyAccess } from "@/features/auth/access";
@@ -27,6 +27,8 @@ export function useGlobalNavigation(workspaceId: string) {
   const activeItem = activeGlobalItem(pathname, base, activeArea);
   const canSeeBackstage = state.status === "authenticated" && canUseBackstage(state.role) && available.includes("marketing");
   const isBackstageActive = MARKETING_BACKSTAGE_NAV.some((item) => pathname.startsWith(`${base}${item.href}`));
+  // Fase 11: "Operação" (infraestrutura da plataforma) só para o admin da Vorix.
+  const backstageItems = backstageItemsFor(state.status === "authenticated" && state.user.isPlatformAdmin === true);
 
   // Áreas com as telas abertas: a ativa sempre; as outras, quando a pessoa toca na seta (sem navegar).
   const [expanded, setExpanded] = useState<ReadonlySet<GlobalAreaKey>>(() => new Set(activeKey ? [activeKey] : []));
@@ -42,5 +44,5 @@ export function useGlobalNavigation(workspaceId: string) {
     });
   }, []);
 
-  return { pathname, base, areas, barAreas, activeKey, activeArea, activeItem, isLoading, canSeeBackstage, isBackstageActive, expanded, toggleArea };
+  return { pathname, base, areas, barAreas, activeKey, activeArea, activeItem, isLoading, canSeeBackstage, isBackstageActive, backstageItems, expanded, toggleArea };
 }

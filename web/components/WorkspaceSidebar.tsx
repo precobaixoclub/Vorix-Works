@@ -8,7 +8,7 @@ import { NavIcon } from "@/components/NavIcon";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useSidebarState } from "@/contexts/sidebar-context";
 import { cn } from "@/lib/utils";
-import { MARKETING_BACKSTAGE_NAV, type WorkspaceNavItem } from "@/components/workspace-navigation";
+import type { WorkspaceNavItem } from "@/components/workspace-navigation";
 import type { GlobalArea } from "@/components/global-navigation";
 import { useGlobalNavigation } from "@/components/use-global-navigation";
 
@@ -21,7 +21,7 @@ import { useGlobalNavigation } from "@/components/use-global-navigation";
 export function WorkspaceSidebar({ workspaceId }: { workspaceId: string }) {
   const { collapsed, toggle } = useSidebarState();
   // Mesmo estado do menu do celular (BottomNav): áreas, permissões e área ativa nunca divergem.
-  const { pathname, base, areas, activeKey, activeItem, isLoading, canSeeBackstage, isBackstageActive, expanded, toggleArea } = useGlobalNavigation(workspaceId);
+  const { pathname, base, areas, activeKey, activeItem, isLoading, canSeeBackstage, isBackstageActive, backstageItems, expanded, toggleArea } = useGlobalNavigation(workspaceId);
   const [backstageOpen, setBackstageOpen] = useState(isBackstageActive);
 
   useEffect(() => {
@@ -146,7 +146,7 @@ export function WorkspaceSidebar({ workspaceId }: { workspaceId: string }) {
             ) : null}
             {collapsed || backstageOpen ? (
               <div className="mt-1 flex flex-col gap-0.5">
-                {MARKETING_BACKSTAGE_NAV.map((item) => withTooltip(item.label, renderItem(item, pathname.startsWith(`${base}${item.href}`)), item.href))}
+                {backstageItems.map((item) => withTooltip(item.label, renderItem(item, pathname.startsWith(`${base}${item.href}`)), item.href))}
               </div>
             ) : null}
           </div>

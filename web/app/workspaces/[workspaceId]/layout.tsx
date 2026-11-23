@@ -12,7 +12,7 @@ import { WorkspaceReadOnlyBanner } from "@/components/WorkspaceReadOnlyBanner";
 import { TrialCountdownBanner, TrialExpiredGate } from "@/components/TrialGate";
 import { WorkspaceSidebar } from "@/components/WorkspaceSidebar";
 import { WorkspaceTopBar } from "@/components/WorkspaceTopBar";
-import { canUseBackstage, isBackstagePath as isBackstageRoute } from "@/components/workspace-navigation";
+import { canUseBackstage, isBackstagePath as isBackstageRoute, isPlatformOnlyPath } from "@/components/workspace-navigation";
 import { useActiveSolution, useSolutions } from "@/features/solutions/hooks";
 import { isRouteBlocked, routeOwner } from "@/lib/solutions";
 import { classifyWorkspaceError, WORKSPACE_LOAD_MESSAGE } from "@/lib/workspace-load-error";
@@ -85,6 +85,9 @@ function WorkspaceShell({ children }: { children: React.ReactNode }) {
   }
   const isBackstagePath = isBackstageRoute(pathname, base);
   const canSeeBackstage = state.status === "authenticated" && canUseBackstage(state.role);
+  // Fase 11: ferramenta interna da plataforma — nem o dono do workspace monta a tela (o servidor
+  // continua sendo a proteção real; isto evita expor e consultar dados da Vorix inteira).
+  const platformOnlyBlocked = isPlatformOnlyPath(pathname, base) && !(state.status === "authenticated" && state.user.isPlatformAdmin === true);
 
   // Guarda de SOLUÇÃO: uma tela do Vorix Marketing não é renderizada para quem não tem a solução
   // (nem enquanto a lista de soluções ainda carrega). A API barra do mesmo jeito (403) — isto só
@@ -105,6 +108,10 @@ function WorkspaceShell({ children }: { children: React.ReactNode }) {
         description="Esta área não faz parte do que está disponível para a sua conta."
         action={<Button variant="secondary" onClick={() => router.push(base)}>Voltar para o início</Button>}
       />
+    </main>
+  ) : platformOnlyBlocked ? (
+    <main className="mx-auto flex min-h-[60dvh] max-w-3xl items-center justify-center px-3 py-10 sm:px-6" data-testid="platform-only">
+      <EmptyState title="Área da administração da Vorix" description="Esta ferramenta mostra a operação da plataforma inteira e fica disponível só para a equipe da Vorix." action={<Button variant="secondary" onClick={() => router.push(base)}>Voltar para o início</Button>} />
     </main>
   ) : isBackstagePath && !canSeeBackstage ? (
     <main className="mx-auto flex min-h-[60dvh] max-w-3xl items-center justify-center px-3 py-10 sm:px-6">

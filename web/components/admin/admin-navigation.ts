@@ -2,8 +2,9 @@ import { Bot, Cpu, CreditCard, Globe, Mail, Mic, Share2, Video } from "lucide-re
 import type { HubItem } from "@/components/HubPage";
 
 /**
- * Navegação do admin da plataforma: três destinos só. "Visão geral" (números da plataforma e
- * aquisição), "Clientes" (tudo de UM cliente) e "Configurações" (o que vale para todos).
+ * Navegação da Administração da Vorix (Fase 11): ambiente SEPARADO do cliente, só para admin da
+ * plataforma (`isPlatformAdmin`; o backend barra com `requirePlatformAdmin`). As telas são as que já
+ * existiam, agora em categorias com acesso direto — sem páginas vazias para completar categorias.
  */
 export const ADMIN_SETTINGS_ITEMS: HubItem[] = [
   { id: "ai-providers", title: "Provedores de IA", tagline: "Inteligência artificial", description: "Chaves e modelos da OpenAI e do Gemini usados pela IA da plataforma.", icon: Bot, route: "/admin/ai-providers", accent: "violet" },
@@ -18,13 +19,44 @@ export const ADMIN_SETTINGS_ITEMS: HubItem[] = [
 
 export const ADMIN_SETTINGS_HREF = "/admin/configuracoes";
 
-export const ADMIN_NAVIGATION: { href: string; label: string; matches: (pathname: string) => boolean }[] = [
-  { href: "/admin", label: "Visão geral", matches: (pathname) => pathname === "/admin" || pathname.startsWith("/admin/growth") },
-  { href: "/admin/tenants", label: "Clientes", matches: (pathname) => pathname.startsWith("/admin/tenants") },
-  { href: ADMIN_SETTINGS_HREF, label: "Configurações", matches: (pathname) => isAdminSettingsPage(pathname) || pathname.startsWith(ADMIN_SETTINGS_HREF) },
+export type AdminNavItem = { href: string; label: string; matches: (pathname: string) => boolean };
+export type AdminNavGroup = { label: string; items: AdminNavItem[] };
+
+const exact = (href: string): AdminNavItem["matches"] => (pathname) => pathname === href || pathname.startsWith(`${href}/`);
+const setting = (id: string, label: string): AdminNavItem => {
+  const route = ADMIN_SETTINGS_ITEMS.find((item) => item.id === id)!.route;
+  return { href: route, label, matches: exact(route) };
+};
+
+export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
+  {
+    label: "Plataforma",
+    items: [
+      { href: "/admin", label: "Visão geral", matches: (pathname) => pathname === "/admin" },
+      { href: "/admin/growth", label: "Aquisição e receita", matches: exact("/admin/growth") },
+    ],
+  },
+  { label: "Clientes", items: [{ href: "/admin/tenants", label: "Empresas e planos", matches: exact("/admin/tenants") }] },
+  { label: "Inteligência artificial", items: [setting("ai-providers", "Provedores de IA"), setting("ai-gateway", "Gateway de IA")] },
+  { label: "Cobrança e avisos", items: [setting("billing", "Cobrança (Mercado Pago)"), setting("email-notifications", "Notificações por e-mail")] },
+  {
+    label: "Ferramentas",
+    items: [
+      setting("meetings-bots", "Reuniões: contas de gravação"),
+      setting("meetings-transcription", "Reuniões: transcrição"),
+      setting("social", "Marketing: integrações sociais"),
+      { ...setting("site", "Site: preços e modelos"), matches: (pathname) => exact("/admin/site")(pathname) || pathname.startsWith("/admin/site-commerce") },
+    ],
+  },
+  { label: "Configurações", items: [{ href: ADMIN_SETTINGS_HREF, label: "Todas as configurações", matches: exact(ADMIN_SETTINGS_HREF) }] },
 ];
 
 /** Uma das telas de configuração (abre com o atalho "← Configurações"). */
 export function isAdminSettingsPage(pathname: string): boolean {
   return ADMIN_SETTINGS_ITEMS.some((item) => pathname === item.route || pathname.startsWith(`${item.route}/`)) || pathname.startsWith("/admin/site-commerce");
+}
+
+/** Item ativo do menu: o de rota mais específica que casa. */
+export function activeAdminItem(pathname: string): string | undefined {
+  return ADMIN_NAV_GROUPS.flatMap((group) => group.items).filter((item) => item.matches(pathname)).sort((a, b) => b.href.length - a.href.length)[0]?.href;
 }

@@ -15,6 +15,7 @@ import { WorkspaceTopBar } from "@/components/WorkspaceTopBar";
 import { canUseBackstage, isBackstagePath as isBackstageRoute } from "@/components/workspace-navigation";
 import { useActiveSolution, useSolutions } from "@/features/solutions/hooks";
 import { isRouteBlocked, routeOwner } from "@/lib/solutions";
+import { classifyWorkspaceError, WORKSPACE_LOAD_MESSAGE } from "@/lib/workspace-load-error";
 import { useAuth } from "@/contexts/auth-context";
 import { SidebarProvider } from "@/contexts/sidebar-context";
 import { WorkspaceProvider } from "@/contexts/workspace-context";
@@ -40,7 +41,7 @@ function WorkspaceShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const { state } = useAuth();
-  const { data: workspace, isLoading, error } = useWorkspace(params.workspaceId);
+  const { data: workspace, isLoading, error, mutate: retryWorkspace } = useWorkspace(params.workspaceId);
   const { available: availableSolutions, isLoading: solutionsLoading } = useSolutions();
 
   // Fase 3 (Reorganização de UX): o Início é unificado e vale para toda conta — não há mais
@@ -63,11 +64,16 @@ function WorkspaceShell({ children }: { children: React.ReactNode }) {
   }
 
   if (error || !workspace) {
+    // Fase 6: só 404/403 é "não encontrado"; limite de requisições, rede ou falha temporária
+    // mostram o motivo real e permitem tentar de novo (antes tudo virava "não encontrado").
+    const problem = error ? classifyWorkspaceError(error) : "not_found";
+    const message = WORKSPACE_LOAD_MESSAGE[problem];
     return (
-      <div className="flex min-h-dvh items-center justify-center px-4">
+      <div className="flex min-h-dvh items-center justify-center px-4" data-testid="workspace-load-error" data-problem={problem}>
         <EmptyState
-          title="Espaço de Trabalho não encontrado"
-          description="Ele pode ter sido removido, arquivado ou você não tem acesso a ele."
+          title={message.title}
+          description={message.description}
+          action={message.retry ? <Button onClick={() => void retryWorkspace()}>Tentar de novo</Button> : <Button variant="secondary" onClick={() => router.push("/workspaces")}>Ver meus espaços de trabalho</Button>}
         />
       </div>
     );

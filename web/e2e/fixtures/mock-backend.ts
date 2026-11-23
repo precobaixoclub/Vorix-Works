@@ -18,6 +18,7 @@ const CONVERSATIONS = [
   {
     id: "conv-media",
     connectionId: "conn-1",
+    chatType: "direct",
     contactId: "contact-1",
     status: "open",
     assignedUserId: undefined,
@@ -32,6 +33,7 @@ const CONVERSATIONS = [
   {
     id: "conv-text",
     connectionId: "conn-1",
+    chatType: "direct",
     contactId: "contact-2",
     status: "pending",
     assignedUserId: "user-qa",
@@ -46,6 +48,7 @@ const CONVERSATIONS = [
   {
     id: "conv-resolved",
     connectionId: "conn-1",
+    chatType: "direct",
     contactId: "contact-3",
     status: "resolved",
     assignedUserId: "user-qa",

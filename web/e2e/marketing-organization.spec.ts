@@ -146,7 +146,8 @@ test.describe("Fase 5 — desktop", () => {
     await expect(marketing.locator("a")).toHaveText(["Bolsão de ideias", "Criar conteúdo", "Revisão", "Conteúdos", "Calendário", "Anúncios"]);
     await expect(marketing.locator("a[aria-current='page']")).toHaveText("Calendário");
     await nav.getByRole("button", { name: "Mostrar telas de Configurações" }).click();
-    await expect(nav.locator("[data-area-items='settings'] a")).toHaveText(["Geral", "Marca e identidade", "Redes sociais"]);
+    // Fase 6: a conta também tem Conversas, então "Atendimento e canais" aparece junto.
+    await expect(nav.locator("[data-area-items='settings'] a")).toHaveText(["Geral", "Atendimento e canais", "Marca e identidade", "Redes sociais"]);
     await expect(nav.getByRole("button", { name: "Operação técnica" })).toBeVisible();
   });
 
@@ -204,7 +205,8 @@ test.describe("Fase 5 — desktop", () => {
     await setup(page, { solutions: ["conversations"] });
     await page.goto(`${base()}/settings/marca`);
     await expect(page.getByTestId("solution-blocked")).toBeVisible();
-    await expect(page.locator("nav[aria-label='Menu principal'] [data-area-items='settings']")).toHaveCount(0);
+    // Fase 6: Configurações tem "Atendimento e canais" (Conversas), mas nunca Marca e identidade.
+    await expect(page.locator("nav[aria-label='Menu principal'] [data-area-items='settings'] a", { hasText: "Marca e identidade" })).toHaveCount(0);
   });
 
   test("troca de workspace: calendário sem dados da empresa anterior", async ({ page }) => {

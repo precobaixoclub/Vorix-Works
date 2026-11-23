@@ -55,9 +55,10 @@ test("painel de detalhes abre via botão Detalhes e fecha", async ({ page }) => 
   await page.goto(`/workspaces/${WORKSPACE_ID}/conversas`);
   await page.getByText("Carla Mendes").click();
   await page.getByRole("button", { name: "Detalhes" }).click();
-  await expect(page.getByText("Contexto")).toBeVisible();
+  // Fase 6: o painel passou a se chamar "Informações do contato" (antes "Contexto").
+  await expect(page.getByText("Informações do contato")).toBeVisible();
   await page.getByRole("button", { name: "Fechar detalhes" }).click();
-  await expect(page.getByText("Contexto")).toBeHidden();
+  await expect(page.getByText("Informações do contato")).toBeHidden();
 });
 
 test("mensagem de texto com falha mostra Tentar novamente", async ({ page }) => {

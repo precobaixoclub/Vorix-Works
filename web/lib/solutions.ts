@@ -85,6 +85,9 @@ export function routeOwner(pathname: string, workspaceBase: string): RouteOwner 
   const segment = segments[0] ?? "";
   // Fase 5: Configurações › Marca e identidade é do Marketing (mesma tela que era /knowledge).
   if (segment === "settings" && segments[1] === "marca") return "marketing";
+  // Fase 6: Configurações › Atendimento e canais é do Conversas (abre com o contexto certo mesmo
+  // vindo de outra ferramenta, em vez de cair na tela Geral).
+  if (segment === "settings" && segments[1] === "attendance") return "conversations";
   if(segment==="site")return "site";
   if(segment==="commerce")return "site";
   if (MARKETING_SEGMENTS.has(segment)) return "marketing";

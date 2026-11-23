@@ -49,6 +49,7 @@ import { ApiError } from "@/lib/api-error";
 import { formatDateTime, formatRelativeTime } from "@/lib/format";
 import { canOperateWorkspace } from "@/lib/rbac";
 import { cn } from "@/lib/utils";
+import { OperationsNow } from "@/components/inbox/OperationsNow";
 
 /**
  * Radar de Sentimento (réplica adaptada do CMDesk, pedido explícito do usuário) — conversas em
@@ -178,6 +179,9 @@ function RadarView() {
         description="Conversas em risco, detectadas por palavras-chave e sinais do atendimento. O score do Radar é atualizado a cada mensagem; o diagnóstico da IA é gerado à parte e consome créditos."
         actions={<CreditsIndicator credits={credits} href={plansHref} />}
       />
+
+      {/* Fase 6: o que está acontecendo agora no atendimento (números do servidor, mesmos do Início). */}
+      <OperationsNow workspaceId={workspace.id} />
 
       {banner ? (
         <Card className="mb-3 border-amber-200 bg-amber-50 p-4 dark:border-amber-400/20 dark:bg-amber-400/10">

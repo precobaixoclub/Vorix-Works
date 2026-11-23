@@ -96,9 +96,10 @@ test.describe("celular", () => {
     const before = page.url();
     await menu.getByRole("button", { name: "Mostrar telas de Vendas" }).click();
     expect(page.url()).toBe(before);
-    await expect(menu.locator("[data-area-items='sales'] a")).toHaveText(["Oportunidades", "Contatos", "Produtos", "Tarefas", "Propostas", "Oportunidades do site", "Propostas do site"]);
-    await menu.locator("[data-area-items='sales'] a", { hasText: /^Contatos$/ }).click();
-    await expect(page).toHaveURL(new RegExp(`${base()}/contacts$`));
+    // Fase 6: Contatos foi para Conversas (Atendimento); Vendas fica com a gestão comercial.
+    await expect(menu.locator("[data-area-items='sales'] a")).toHaveText(["Oportunidades", "Produtos", "Tarefas", "Propostas", "Oportunidades do site", "Propostas do site"]);
+    await menu.locator("[data-area-items='sales'] a", { hasText: /^Tarefas$/ }).click();
+    await expect(page).toHaveURL(new RegExp(`${base()}/tasks$`));
     await expect(menu).toBeHidden();
     // Área fora da barra: o botão Menu fica aceso.
     await expect(bar(page).getByRole("button", { name: /menu/i })).toHaveAttribute("data-active", "true");
@@ -259,8 +260,9 @@ test.describe("sem regressão da Fase 1 (desktop)", () => {
     await expect(nav.locator("[data-area-items='meetings'] a")).toHaveCount(8);
     await page.goBack();
     await expect(page).toHaveURL(new RegExp(`${base()}/contacts$`));
-    await expect(nav.locator("[data-area='sales']")).toHaveAttribute("data-active", "true");
-    await expect(nav.locator("[data-area-items='sales'] a[aria-current='page']")).toHaveText("Contatos");
+    // Fase 6: Contatos pertence a Conversas › Atendimento.
+    await expect(nav.locator("[data-area='conversations']")).toHaveAttribute("data-active", "true");
+    await expect(nav.locator("[data-area-items='conversations'] a[aria-current='page']")).toHaveText("Contatos");
     await nav.locator("[data-area='marketing']").click();
     await expect(page).toHaveURL(new RegExp(`${base()}/ideias$`));
   });

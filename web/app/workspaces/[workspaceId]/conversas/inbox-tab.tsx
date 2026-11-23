@@ -1,4 +1,6 @@
 "use client";
+
+import { activeQuickView, applyQuickView, QUICK_VIEWS, quickViewCounts, type QuickViewKey } from "@/features/inbox/quick-views";
 import { contactLabel } from "@/features/crm/contact-presentation";
 
 
@@ -163,7 +165,7 @@ export function AttendanceModuleToggle({ workspaceId, active }: { workspaceId: s
   const query = carryParams.toString();
   const items: { href: string; value: "lista" | "kanban"; label: string }[] = [
     { href: `/workspaces/${workspaceId}/conversas${query ? `?${query}` : ""}`, value: "lista", label: "Lista" },
-    { href: `/workspaces/${workspaceId}/kanban${query ? `?${query}` : ""}`, value: "kanban", label: "Kanban" },
+    { href: `/workspaces/${workspaceId}/kanban${query ? `?${query}` : ""}`, value: "kanban", label: "Quadro" },
   ];
   return (
     <div className="inline-flex shrink-0 items-center gap-0.5 rounded-full border border-border bg-muted/40 p-0.5">
@@ -171,6 +173,8 @@ export function AttendanceModuleToggle({ workspaceId, active }: { workspaceId: s
         <Link
           key={item.value}
           href={item.href}
+          aria-current={active === item.value ? "page" : undefined}
+          title={item.value === "kanban" ? "Atendimentos por fase da equipe" : "Lista de conversas"}
           className={cn(
             "rounded-full px-2.5 py-1 text-xs font-medium transition-colors",
             active === item.value ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
@@ -279,6 +283,8 @@ export function InboxFilterBar({
   sections,
   inlineSections = [],
   quickChips = false,
+  quickCounts,
+  onApplyFilters,
   filters,
   onFilterChange,
   onClearFilters,
@@ -292,6 +298,10 @@ export function InboxFilterBar({
   sections: readonly InboxFilterSection[];
   inlineSections?: readonly InboxFilterSection[];
   quickChips?: boolean;
+  /** Fase 6: contagem por vista rápida (sobre a lista já carregada). */
+  quickCounts?: Record<QuickViewKey, number>;
+  /** Fase 6: aplica vários filtros de uma vez (vistas rápidas). */
+  onApplyFilters?: (next: InboxFilterState) => void;
   filters: InboxFilterState;
   onFilterChange: <K extends keyof InboxFilterState>(key: K, value: InboxFilterState[K]) => void;
   onClearFilters: () => void;
@@ -346,49 +356,33 @@ export function InboxFilterBar({
   return (
     <div className="space-y-1.5">
       {quickChips ? (
-        <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5">
-          <button
-            type="button"
-            onClick={onClearFilters}
-            className={cn(
-              "flex h-7 shrink-0 items-center gap-1 rounded-full px-3 text-xs font-medium transition-colors duration-150",
-              activeCount === 0
-                ? "bg-primary text-primary-foreground dark:bg-primary-glow dark:text-background"
-                : "bg-muted text-muted-foreground hover:bg-muted/80",
-            )}
-          >
-            Todos
-          </button>
-          <button
-            type="button"
-            onClick={() => onFilterChange("owner", filters.owner === "me" ? "all" : "me")}
-            className={cn(
-              "flex h-7 shrink-0 items-center gap-1 rounded-full px-3 text-xs font-medium transition-colors duration-150",
-              filters.owner === "me" ? "bg-primary text-primary-foreground dark:bg-primary-glow dark:text-background" : "bg-muted text-muted-foreground hover:bg-muted/80",
-            )}
-          >
-            Minhas
-          </button>
-          <button
-            type="button"
-            onClick={() => onFilterChange("read", filters.read === "unread" ? "all" : "unread")}
-            className={cn(
-              "flex h-7 shrink-0 items-center gap-1 rounded-full px-3 text-xs font-medium transition-colors duration-150",
-              filters.read === "unread" ? "bg-primary text-primary-foreground dark:bg-primary-glow dark:text-background" : "bg-muted text-muted-foreground hover:bg-muted/80",
-            )}
-          >
-            Não lidas
-          </button>
-          <button
-            type="button"
-            onClick={() => onFilterChange("urgent", !filters.urgent)}
-            className={cn(
-              "flex h-7 shrink-0 items-center gap-1 rounded-full px-3 text-xs font-medium transition-colors duration-150",
-              filters.urgent ? "bg-destructive text-destructive-foreground" : "bg-muted text-muted-foreground hover:bg-muted/80",
-            )}
-          >
-            <Flame className="h-3.5 w-3.5" /> Urgentes
-          </button>
+        // Fase 6: vistas rápidas com contagem — combinações dos filtros reais (`quick-views.ts`).
+        <div className="-mx-0.5 flex items-center gap-1.5 overflow-x-auto px-0.5 pb-0.5" role="tablist" aria-label="Vistas rápidas" data-testid="inbox-quick-views">
+          {QUICK_VIEWS.map((view) => {
+            const active = activeQuickView(filters) === view.key;
+            const count = quickCounts?.[view.key];
+            return (
+              <button
+                key={view.key}
+                type="button"
+                role="tab"
+                aria-selected={active}
+                title={view.hint}
+                data-view={view.key}
+                onClick={() => (onApplyFilters ? onApplyFilters(applyQuickView(filters, view.key)) : view.key === "all" ? onClearFilters() : undefined)}
+                className={cn(
+                  "flex min-h-[36px] shrink-0 items-center gap-1.5 rounded-full px-3 text-xs font-medium transition-colors duration-150 md:min-h-[30px]",
+                  active
+                    ? view.key === "urgent" ? "bg-destructive text-destructive-foreground" : "bg-primary text-primary-foreground dark:bg-primary-glow dark:text-background"
+                    : "bg-muted text-muted-foreground hover:bg-muted/80",
+                )}
+              >
+                {view.key === "urgent" ? <Flame className="h-3.5 w-3.5" /> : null}
+                {view.label}
+                {count !== undefined ? <span className={cn("tabular-nums", active ? "opacity-90" : "text-muted-foreground/80")}>{count}</span> : null}
+              </button>
+            );
+          })}
         </div>
       ) : null}
 
@@ -605,7 +599,7 @@ export function InboxTab({ workspaceId }: { workspaceId: string }) {
   // client-side sobre a MESMA lista buscada uma vez com `filter: "all"` (mesmo padrão que o Kanban
   // já usava antes desta mudança, ver `KanbanBoard`). Nunca mais um fetch novo por clique de
   // filtro (seção 32 do pedido: "não fazer requisição a cada clique").
-  const { filters, search: urlSearch, setFilter, setSearch: setUrlSearch, clearFilters } = useInboxFilterState();
+  const { filters, search: urlSearch, setFilter, setFilters, setSearch: setUrlSearch, clearFilters } = useInboxFilterState();
   // Busca: o INPUT reage instantaneamente (filtragem é local, sem custo de rede — não precisa
   // esperar debounce pra "sentir" a busca), só a ESCRITA na URL é debounced (evita empilhar
   // `router.replace` a cada tecla). Resincroniza quando a URL muda por fora (voltar do navegador,
@@ -660,6 +654,9 @@ export function InboxTab({ workspaceId }: { workspaceId: string }) {
       return haystack.includes(term);
     });
   }, [conversations, currentUserId, filters, members, searchInput]);
+
+  // Fase 6: contagem das vistas rápidas sobre a lista já carregada (nenhuma consulta nova).
+  const quickCounts = useMemo(() => quickViewCounts(conversations, filters, currentUserId), [conversations, filters, currentUserId]);
 
   useEffect(() => {
     if (selectedConversationId) setMobileView("conversation");
@@ -718,6 +715,8 @@ export function InboxTab({ workspaceId }: { workspaceId: string }) {
             onRetry={() => mutate()}
             filters={filters}
             onFilterChange={setFilter}
+            onApplyFilters={setFilters}
+            quickCounts={quickCounts}
             onClearFilters={clearFilters}
             search={searchInput}
             onSearchChange={setSearchInput}
@@ -825,6 +824,8 @@ function ConversationListPane({
   onRetry,
   filters,
   onFilterChange,
+  onApplyFilters,
+  quickCounts,
   onClearFilters,
   search,
   onSearchChange,
@@ -847,6 +848,8 @@ function ConversationListPane({
   onRetry: () => void;
   filters: InboxFilterState;
   onFilterChange: <K extends keyof InboxFilterState>(key: K, value: InboxFilterState[K]) => void;
+  onApplyFilters: (next: InboxFilterState) => void;
+  quickCounts: Record<QuickViewKey, number>;
   onClearFilters: () => void;
   search: string;
   onSearchChange: (value: string) => void;
@@ -882,6 +885,8 @@ function ConversationListPane({
           workspaceId={workspaceId}
           sections={CONVERSAS_FILTER_SECTIONS}
           quickChips
+          quickCounts={quickCounts}
+          onApplyFilters={onApplyFilters}
           filters={filters}
           onFilterChange={onFilterChange}
           onClearFilters={onClearFilters}
@@ -962,6 +967,9 @@ export function ConversationListItem({
     <div
       role="button"
       tabIndex={0}
+      aria-current={selected ? "true" : undefined}
+      data-conversation={conversation.id}
+      data-unread={conversation.unreadCount > 0 ? "true" : undefined}
       onClick={onSelect}
       onKeyDown={(event) => {
         if (event.key === "Enter" || event.key === " ") {
@@ -970,8 +978,9 @@ export function ConversationListItem({
         }
       }}
       className={cn(
-        "group flex w-full cursor-pointer gap-3 border-b border-border/60 px-3 py-3 text-left transition-colors duration-150 hover:bg-muted/50",
-        selected && "bg-muted/80",
+        "group relative flex w-full cursor-pointer gap-3 border-b border-border/60 px-3 py-3 text-left transition-colors duration-150 hover:bg-muted/50",
+        // Fase 6: destaque claro da conversa aberta (fundo + faixa lateral na cor da ferramenta).
+        selected && "bg-muted/80 before:absolute before:inset-y-0 before:left-0 before:w-[3px] before:bg-solution",
         conversation.unreadCount > 0 && "conversation-unread",
       )}
     >
@@ -2315,7 +2324,7 @@ function ConversationActionsMenu({
   return (
     <Popover>
       <PopoverTrigger asChild>
-        <Button variant="ghost" size="icon" aria-label="Mais ações">
+        <Button variant="ghost" size="icon" aria-label="Mais ações" data-testid="conversation-actions">
           <MoreHorizontal className="h-4 w-4" />
         </Button>
       </PopoverTrigger>
@@ -3157,11 +3166,14 @@ function ContactContextPane({
   const contextAvatarProps = avatarPropsFor(conversation);
   const { state: authState } = useAuth();
   const currentUserId = authState.status === "authenticated" ? authState.user.id : undefined;
+  // Fase 6: equipe atual (mesma consulta/cache da lista) para a seção Atendimento.
+  const { data: paneTeams } = useTeams(workspaceId);
+  const team = conversation.currentTeamId ? teamLabel(conversation.currentTeamId, paneTeams ?? []) : undefined;
   return (
     <aside className="flex h-full min-h-0 flex-col bg-card">
       <div className="flex items-center justify-between gap-2 border-b border-border px-4 py-3">
         <div className="min-w-0">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Contexto</p>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Informações do contato</p>
           <p className="truncate text-sm font-semibold text-foreground">{conversationTitle(conversation)}</p>
         </div>
         <div className="flex items-center gap-1">
@@ -3174,8 +3186,9 @@ function ContactContextPane({
         </div>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto p-4">
-        <div className="mb-4 flex items-center gap-3">
+      <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-4" data-testid="contact-pane">
+        <PaneSection title="Identificação" testId="pane-identity">
+        <div className="mb-3 flex items-center gap-3">
           <InboxAvatar
             workspaceId={workspaceId}
             kind={contextAvatarProps.kind}
@@ -3191,16 +3204,29 @@ function ContactContextPane({
             <p className="truncate text-xs text-muted-foreground">{conversationSubtitle(conversation)}</p>
           </div>
         </div>
+        <div className="flex flex-wrap gap-1.5 text-[11px]">
+          <span className="inline-flex items-center gap-1 rounded-full border border-border px-2 py-0.5 text-muted-foreground"><ChannelIcon provider={conversation.connectionProvider} className="h-3 w-3" /> {channelLabelFor(conversation)}</span>
+          {(conversation.tags ?? []).map((tag) => <span key={tag.id} className="rounded-full bg-muted px-2 py-0.5 text-foreground">{tag.name}</span>)}
+          {conversation.isUrgent ? <span className="rounded-full bg-destructive/10 px-2 py-0.5 font-medium text-destructive">Urgente</span> : null}
+        </div>
+        </PaneSection>
 
-        <div className="mb-4 grid grid-cols-2 gap-2 text-xs">
+        <PaneSection title="Atendimento" testId="pane-attendance">
+        <div className="mb-3 grid grid-cols-2 gap-2 text-xs">
           <div className="rounded-lg border border-border bg-muted/30 p-2">
             <p className="text-muted-foreground">Responsável</p>
             <p className="mt-0.5 truncate font-medium text-foreground">{agentLabel(conversation.assignedUserId, undefined, members)}</p>
           </div>
           <div className="rounded-lg border border-border bg-muted/30 p-2">
-            <p className="text-muted-foreground">Status</p>
+            <p className="text-muted-foreground">Situação</p>
             <p className="mt-0.5 truncate font-medium text-foreground">{statusLabelFor(conversation.status)}</p>
           </div>
+          {team ? (
+            <div className="rounded-lg border border-border bg-muted/30 p-2">
+              <p className="text-muted-foreground">Equipe</p>
+              <p className="mt-0.5 truncate font-medium text-foreground">{team}</p>
+            </div>
+          ) : null}
           {conversation.triageStatus === "completed" && conversation.triageOption ? (
             <div className="rounded-lg border border-border bg-muted/30 p-2">
               <p className="text-muted-foreground">Escolha no menu</p>
@@ -3221,7 +3247,19 @@ function ContactContextPane({
           ) : null}
         </div>
 
-        <AttendanceHistorySection workspaceId={workspaceId} conversationId={conversation.id} members={members} currentUserId={currentUserId} />
+        <p className="mb-2 text-[11px] text-muted-foreground">Para assumir, transferir ou encerrar, use as ações no topo da conversa.</p>
+        <details className="group rounded-lg border border-border/70" data-testid="pane-history">
+          <summary className="flex min-h-[40px] cursor-pointer list-none items-center justify-between px-3 text-xs font-semibold text-foreground">
+            Histórico de atendimentos <span aria-hidden="true" className="text-muted-foreground transition-transform group-open:rotate-180">⌄</span>
+          </summary>
+          <div className="border-t border-border/70 p-2">
+            <AttendanceHistorySection workspaceId={workspaceId} conversationId={conversation.id} members={members} currentUserId={currentUserId} />
+          </div>
+        </details>
+        </PaneSection>
+
+        {conversation.chatType === "direct" ? (
+        <PaneSection title="Relacionamento" testId="pane-relationship">
 
         {conversation.chatType === "direct" && conversation.crmContactId ? (
           // Bug real corrigido (auditoria, "Jornada Comercial Integrada" — item P0): antes levava
@@ -3233,7 +3271,7 @@ function ContactContextPane({
           // pessoal a clicar") — era um `<Link>` puro (texto azul sublinhado, sem chrome nenhum),
           // fácil de nunca notar no meio de cards com borda. Vira botão de verdade (`asChild`
           // preserva a navegação real do Next `<Link>`, nunca um `onClick` com `router.push`).
-          <Button asChild variant="secondary" className="mb-4 w-full">
+          <Button asChild variant="secondary" className="mb-3 w-full">
             <Link href={`/workspaces/${workspaceId}/contacts?contactId=${conversation.crmContactId}`}>
               <ExternalLink className="h-3.5 w-3.5" />
               Abrir contato completo
@@ -3246,8 +3284,20 @@ function ContactContextPane({
         {conversation.chatType === "direct" ? (
           <CrmContextSection workspaceId={workspaceId} conversation={conversation} members={members} onLinked={onConversationChanged} />
         ) : null}
+        </PaneSection>
+        ) : null}
       </div>
     </aside>
+  );
+}
+
+/** Seção do painel do contato (Fase 6): título discreto e conteúdo; a mesma linguagem em todas. */
+function PaneSection({ title, testId, children }: { title: string; testId: string; children: React.ReactNode }) {
+  return (
+    <section aria-label={title} data-testid={testId} className="rounded-xl border border-border/70 p-3">
+      <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">{title}</h3>
+      {children}
+    </section>
   );
 }
 

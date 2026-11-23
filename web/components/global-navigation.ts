@@ -28,14 +28,16 @@ export type GlobalArea = {
 };
 
 const CONVERSATIONS_ITEMS: readonly WorkspaceNavItem[] = [
-  { href: "/conversas", label: "Caixa de entrada", icon: "conversas" },
-  { href: "/kanban", label: "Kanban", icon: "kanban" },
-  { href: "/radar", label: "Radar", icon: "radar" },
+  // Fase 6: a operação de atendimento num lugar só. Contatos saiu de Vendas (o atendente usa o tempo
+  // todo); a gestão comercial continua em Vendas e será reorganizada na Fase 7.
+  { href: "/conversas", label: "Caixa de entrada", icon: "conversas", section: "Atendimento" },
+  { href: "/kanban", label: "Atendimentos", icon: "kanban", section: "Atendimento" },
+  { href: "/contacts", label: "Contatos", icon: "contacts", section: "Atendimento" },
+  { href: "/radar", label: "Radar", icon: "radar", section: "Acompanhamento" },
 ];
 
 const SALES_ITEMS: readonly WorkspaceNavItem[] = [
   { href: "/deals", label: "Oportunidades", icon: "deals" },
-  { href: "/contacts", label: "Contatos", icon: "contacts" },
   { href: "/products", label: "Produtos", icon: "products" },
   { href: "/tasks", label: "Tarefas", icon: "tasks" },
   { href: "/proposals", label: "Propostas", icon: "proposals" },
@@ -58,12 +60,19 @@ const MARKETING_ITEMS: readonly WorkspaceNavItem[] = [
   { href: "/meta-ads", label: "Anúncios", icon: "ads", section: "Publicação" },
 ];
 
-/** Configurações com destinos do Marketing (Fase 5): Marca e identidade e Conexões › Redes sociais. */
+/** Configurações com destinos das ferramentas: Atendimento e canais (Conversas, Fase 6), Marca e
+ * identidade e Redes sociais (Marketing, Fase 5). Só "Geral" sozinho não vira submenu. */
+const SETTINGS_GENERAL: WorkspaceNavItem = { href: "/settings", label: "Geral", icon: "settings" };
+const SETTINGS_CONVERSATIONS_ITEMS: readonly WorkspaceNavItem[] = [{ href: "/settings/attendance", label: "Atendimento e canais", icon: "conversas" }];
 const SETTINGS_MARKETING_ITEMS: readonly WorkspaceNavItem[] = [
-  { href: "/settings", label: "Geral", icon: "settings" },
   { href: "/settings/marca", label: "Marca e identidade", icon: "brand" },
   { href: "/social/integrations", label: "Redes sociais", icon: "connections" },
 ];
+
+function settingsItems(has: (key: SolutionKey) => boolean): WorkspaceNavItem[] {
+  const extra = [...(has("conversations") ? SETTINGS_CONVERSATIONS_ITEMS : []), ...(has("marketing") ? SETTINGS_MARKETING_ITEMS : [])];
+  return extra.length ? [SETTINGS_GENERAL, ...extra] : [];
+}
 
 const SITE_ITEMS: readonly WorkspaceNavItem[] = [
   { href: "/site", label: "Editor do site", icon: "settings" },
@@ -102,20 +111,20 @@ export function buildGlobalNavigation(available: readonly SolutionKey[]): Global
   // Fase 3: todo workspace tem o Início unificado (central de todas as ferramentas contratadas).
   areas.push({ key: "home", label: "Início", icon: "home", href: "", items: [], match: [""] });
   if (has("conversations")) {
-    areas.push({ key: "conversations", label: "Conversas", icon: "conversas", href: "/conversas", items: CONVERSATIONS_ITEMS, match: ["/conversas", "/kanban", "/radar"] });
+    areas.push({ key: "conversations", label: "Conversas", icon: "conversas", href: "/conversas", items: CONVERSATIONS_ITEMS, match: ["/conversas", "/kanban", "/radar", "/contacts"] });
   }
   if (has("conversations") || has("site")) {
     // Com as duas ferramentas, as vendas que chegam pelo Site continuam acessíveis aqui (telas próprias).
     const items = has("conversations")
       ? [...SALES_ITEMS, ...(has("site") ? SITE_SALES_ITEMS.map((item) => ({ ...item, label: `${item.label} do site` })) : [])]
       : SITE_SALES_ITEMS;
-    areas.push({ key: "sales", label: "Vendas", icon: "deals", href: items[0]!.href, items, match: ["/deals", "/contacts", "/products", "/tasks", "/proposals", "/site/oportunidades", "/site/propostas"] });
+    areas.push({ key: "sales", label: "Vendas", icon: "deals", href: items[0]!.href, items, match: ["/deals", "/products", "/tasks", "/proposals", "/site/oportunidades", "/site/propostas"] });
   }
   if (has("marketing")) areas.push({ key: "marketing", label: "Marketing", icon: "marketing", href: "/ideias", items: MARKETING_ITEMS, match: MARKETING_MATCH });
   if (has("site")) areas.push({ key: "site", label: "Meu site", icon: "site", href: "/site", items: SITE_ITEMS, match: ["/site", "/commerce"] });
   if (has("meetings")) areas.push({ key: "meetings", label: "Reuniões", icon: "meetings", href: "/meetings", items: MEETINGS_ITEMS, match: ["/meetings"] });
   if (has("conversations")) areas.push({ key: "results", label: "Resultados", icon: "results", href: "/results", items: RESULTS_ITEMS, match: ["/results", "/performance", "/reports"] });
-  areas.push({ key: "settings", label: "Configurações", icon: "settings", href: "/settings", items: has("marketing") ? SETTINGS_MARKETING_ITEMS : [], match: ["/settings", "/connections", "/social/integrations", "/social/connect", "/knowledge"] });
+  areas.push({ key: "settings", label: "Configurações", icon: "settings", href: "/settings", items: settingsItems(has), match: ["/settings", "/connections", "/social/integrations", "/social/connect", "/knowledge"] });
   return areas;
 }
 

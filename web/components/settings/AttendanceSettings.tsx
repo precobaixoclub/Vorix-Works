@@ -71,7 +71,7 @@ export default function AttendanceSettings() {
   }
 
   return (
-    <SettingsShell active="attendance" title="Atendimento" description="Como os atendimentos de Conversas são finalizados e medidos.">
+    <SettingsShell active="attendance" title="Atendimento e canais" description="Como os atendimentos são encerrados e avaliados. Canais e regras de atendimento estão no menu ao lado.">
       <div className="mx-auto w-full max-w-3xl space-y-4">
         <SlaSettings workspaceId={workspace.id} />
         <Card>

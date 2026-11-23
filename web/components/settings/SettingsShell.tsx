@@ -28,7 +28,10 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
   { value: "brand", label: "Marca e identidade", href: "/settings/marca", icon: Palette, solutions: ["marketing"] },
   { value: "social", label: "Redes sociais", href: "/social/integrations", icon: Share2, solutions: ["marketing"] },
   { value: "integrations", label: "Integrações", href: "/connections", icon: PlugZap, solutions: ["conversations"] },
-  { value: "attendance", label: "Atendimento", href: "/settings/attendance", icon: Headset, solutions: ["conversations"] },
+  // Fase 6: "Atendimento e canais" — as três telas que já existiam, num grupo só.
+  { value: "attendance", label: "Encerramento e avaliação", href: "/settings/attendance", icon: Headset, solutions: ["conversations"] },
+  { value: "channels", label: "Canais de atendimento", href: "/conversas?aba=canais", icon: PlugZap, solutions: ["conversations"] },
+  { value: "service-rules", label: "Regras de atendimento", href: "/conversas?aba=regras", icon: SlidersHorizontal, solutions: ["conversations"] },
   { value: "products", label: "Produtos", href: "/products", icon: Boxes, solutions: ["conversations"] },
   { value: "commercial", label: "Regras comerciais", href: "/settings/commercial", icon: Scale, solutions: ["conversations"] },
   { value: "goals", label: "Metas", href: "/settings/goals", icon: Target, solutions: ["conversations"] },

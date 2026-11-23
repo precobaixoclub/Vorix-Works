@@ -38,6 +38,8 @@ describe("menu global — áreas por ferramenta contratada", () => {
         // Fase 5: Configurações › Marca e identidade / Redes sociais continuam sendo telas do Marketing
         // (o guarda de solução segue valendo) — só mudaram de lugar no menu.
         else if (area.key === "settings" && (href === "/settings/marca" || href === "/social/integrations")) expect(owner, href).toBe("marketing");
+        // Fase 6: Configurações › Atendimento e canais é tela do Conversas.
+        else if (area.key === "settings" && href === "/settings/attendance") expect(owner, href).toBe("conversations");
         else expect(owner, `${area.key} ${href}`).toBe(requires[area.key]);
       }
     }
@@ -85,7 +87,7 @@ describe("menu global — área e tela ativas", () => {
     ["/radar", "conversations"],
     ["/deals", "sales"],
     ["/deals/deal-1", "sales"],
-    ["/contacts", "sales"],
+    ["/contacts", "conversations"], // Fase 6: Contatos é do atendimento
     ["/products", "sales"],
     ["/proposals", "sales"],
     ["/site/oportunidades", "sales"],
@@ -276,8 +278,9 @@ describe("Fase 5 — menu definitivo do Marketing", () => {
     ]);
   });
   it("Configurações ganha Marca e identidade e Redes sociais só quando há Marketing", () => {
-    expect(settings.items.map((item) => item.href)).toEqual(["/settings", "/settings/marca", "/social/integrations"]);
-    expect(buildGlobalNavigation(["conversations"]).find((area) => area.key === "settings")!.items).toEqual([]);
+    expect(settings.items.map((item) => item.href)).toEqual(["/settings", "/settings/attendance", "/settings/marca", "/social/integrations"]);
+    expect(buildGlobalNavigation(["marketing"]).find((area) => area.key === "settings")!.items.map((item) => item.href)).toEqual(["/settings", "/settings/marca", "/social/integrations"]);
+    expect(buildGlobalNavigation(["site"]).find((area) => area.key === "settings")!.items).toEqual([]);
   });
   it("rotas antigas e novas acendem o lugar certo", () => {
     const at = (path: string) => activeGlobalArea(`${BASE}${path}`, BASE, areas);
@@ -291,5 +294,31 @@ describe("Fase 5 — menu definitivo do Marketing", () => {
     expect(activeGlobalItem(`${BASE}/settings/users`, BASE, settings)).toBe("/settings");
     expect(routeOwner(`${BASE}/settings/marca`, BASE)).toBe("marketing");
     expect(routeOwner(`${BASE}/settings/users`, BASE)).toBe("core");
+  });
+});
+
+describe("Fase 6 — Conversas organizado", () => {
+  const areas = buildGlobalNavigation(ALL);
+  const conversations = areas.find((area) => area.key === "conversations")!;
+  const sales = areas.find((area) => area.key === "sales")!;
+  it("Atendimento (Caixa de entrada, Atendimentos, Contatos) e Acompanhamento (Radar)", () => {
+    expect(conversations.items.map((item) => [item.section, item.label, item.href])).toEqual([
+      ["Atendimento", "Caixa de entrada", "/conversas"],
+      ["Atendimento", "Atendimentos", "/kanban"],
+      ["Atendimento", "Contatos", "/contacts"],
+      ["Acompanhamento", "Radar", "/radar"],
+    ]);
+  });
+  it("Vendas sem Contatos (fica para a Fase 7 a reorganização comercial); nenhuma tela some", () => {
+    expect(sales.items.some((item) => item.href === "/contacts")).toBe(false);
+    expect(activeGlobalArea(`${BASE}/contacts`, BASE, areas)).toBe("conversations");
+    expect(activeGlobalArea(`${BASE}/contacts/c1`, BASE, areas)).toBe("conversations");
+    expect(activeGlobalItem(`${BASE}/contacts`, BASE, conversations)).toBe("/contacts");
+    expect(activeGlobalArea(`${BASE}/deals`, BASE, areas)).toBe("sales");
+  });
+  it("Configurações › Atendimento e canais é do Conversas e só aparece com Conversas", () => {
+    expect(buildGlobalNavigation(["conversations"]).find((area) => area.key === "settings")!.items.map((item) => item.label)).toEqual(["Geral", "Atendimento e canais"]);
+    expect(routeOwner(`${BASE}/settings/attendance`, BASE)).toBe("conversations");
+    expect(activeGlobalArea(`${BASE}/settings/attendance`, BASE, areas)).toBe("settings");
   });
 });

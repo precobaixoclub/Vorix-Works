@@ -150,7 +150,22 @@ export function useInboxFilterState() {
     });
   }, [updateParams]);
 
-  return { filters, search, setFilter, setSearch, clearFilters };
+  /** Troca vários filtros de uma vez (vistas rápidas, Fase 6) — um único `replace` na URL. */
+  const setFilters = useCallback(
+    (next: InboxFilterState) => {
+      updateParams((params) => {
+        for (const key of Object.keys(URL_KEYS) as (keyof InboxFilterState)[]) {
+          const value = next[key];
+          const isDefault = value === DEFAULT_INBOX_FILTERS[key] || value === "" || value === false;
+          if (isDefault) params.delete(URL_KEYS[key]);
+          else params.set(URL_KEYS[key], key === "urgent" ? "1" : String(value));
+        }
+      });
+    },
+    [updateParams],
+  );
+
+  return { filters, search, setFilter, setFilters, setSearch, clearFilters };
 }
 
 export function countActiveInboxFilters(filters: InboxFilterState): number {

@@ -1,8 +1,14 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useSyncExternalStore } from "react";
 import useSWR, { useSWRConfig } from "swr";
 import { getApiBaseUrl } from "@/lib/api-error";
 import { getChannelRouting, getConversationsServiceTime, getInboxMetrics, getInboxModuleStatus, listInboxClosureTypes, listInboxConnections, listInboxConversationAttendances, listInboxConversationEvents, listInboxConversationMessages, listInboxConversations, listInboxMembers, listInboxQuickReplies, getInboxServiceSettings, listInboxTags, listKanbanPhases, mintInboxStreamToken } from "./api";
 import type { InboxConversationFilter } from "./types";
+import { createCoalescer, fallbackInterval, isConversationListKey, isConversationMessagesKey, isRealtimeHealthy, reconnectDelayMs, REALTIME_COALESCE_MS, setRealtimeHealthy, subscribeRealtimeHealth } from "./realtime";
+
+/** `true` enquanto o tempo real (SSE) deste workspace está conectado (Fase 6). */
+export function useRealtimeHealthy(workspaceId: string): boolean {
+  return useSyncExternalStore(subscribeRealtimeHealth, () => isRealtimeHealthy(workspaceId), () => false);
+}
 
 /**
  * Fase 10 (Pre-Pilot Hardening) — sinal de feature flag que TODA tela que fala com `/v1/inbox/*`
@@ -73,23 +79,27 @@ export function useInboxMetrics(workspaceId: string, params?: { dateFrom?: strin
 }
 
 export function useInboxConversations(workspaceId: string, filter: InboxConversationFilter = "all", contactId?: string) {
-  return useSWR(["inbox-conversations", workspaceId, filter, contactId], () => listInboxConversations(workspaceId, filter, contactId), { refreshInterval: 30_000 });
+  // Fase 6: com o tempo real conectado, o polling vira rede de segurança (90s); sem ele, 30s como antes.
+  const realtime = useRealtimeHealthy(workspaceId);
+  return useSWR(["inbox-conversations", workspaceId, filter, contactId], () => listInboxConversations(workspaceId, filter, contactId), { refreshInterval: fallbackInterval(30_000, realtime) });
 }
 
 /** `limit` cresce com "Carregar mensagens anteriores" (50 → 100 → ...): a mesma chave continua
  * sendo revalidada pelo SSE/polling, sem gerenciar páginas separadas. */
 export function useInboxConversationMessages(workspaceId: string, conversationId: string | undefined, limit = 50) {
+  const realtime = useRealtimeHealthy(workspaceId);
   return useSWR(conversationId ? ["inbox-conversation-messages", workspaceId, conversationId, limit] : null, () => listInboxConversationMessages(workspaceId, conversationId!, limit), {
     keepPreviousData: true,
-    refreshInterval: 20_000,
+    refreshInterval: fallbackInterval(20_000, realtime),
   });
 }
 
 /** Fase 4 — timeline de eventos operacionais ("assumiu o atendimento", "IA pausada"...), separada
  * das mensagens; a UI intercala as duas por `createdAt`. */
 export function useInboxConversationEvents(workspaceId: string, conversationId: string | undefined) {
+  const realtime = useRealtimeHealthy(workspaceId);
   return useSWR(conversationId ? ["inbox-conversation-events", workspaceId, conversationId] : null, () => listInboxConversationEvents(workspaceId, conversationId!), {
-    refreshInterval: 20_000,
+    refreshInterval: fallbackInterval(20_000, realtime),
   });
 }
 
@@ -100,10 +110,7 @@ export function useInboxMembers(workspaceId: string) {
 }
 
 /** A chave das mensagens inclui o `limit` (histórico carregado); revalida qualquer página aberta. */
-const messagesKeyMatcher = (workspaceId: string, conversationId: string) => (key: unknown) =>
-  Array.isArray(key) && key[0] === "inbox-conversation-messages" && key[1] === workspaceId && key[2] === conversationId;
-
-const ALL_FILTERS = ["all", "mine", "unassigned", "unread", "urgent", "open", "pending", "resolved"] as const;
+const messagesKeyMatcher = (workspaceId: string, conversationId: string) => (key: unknown) => isConversationMessagesKey(key, workspaceId, conversationId);
 
 const REALTIME_EVENT_TYPES = ["message.created", "message.updated", "conversation.updated", "connection.status_changed"] as const;
 
@@ -135,16 +142,36 @@ export function useInboxRealtime(workspaceId: string, conversationId: string | u
     let source: EventSource | undefined;
     let retryTimeout: ReturnType<typeof setTimeout> | undefined;
     let closed = false;
+    let attempt = 0;
+    // Conversa cujo detalhe precisa ser buscado de novo na próxima rodada agrupada.
+    let touchedConversation: string | undefined;
+
+    // Fase 6: UMA busca por janela, não uma por evento (rajadas de mensagens/álbuns), e o matcher
+    // por prefixo pega TODAS as listas do workspace (a chave de 3 partes antiga nunca batia).
+    const lists = createCoalescer(() => void mutate((key) => isConversationListKey(key, workspaceId)), REALTIME_COALESCE_MS);
+    const detail = createCoalescer(() => {
+      const target = touchedConversation;
+      touchedConversation = undefined;
+      if (target && target === conversationIdRef.current) {
+        void mutate(messagesKeyMatcher(workspaceId, target));
+        void mutate(["inbox-conversation-events", workspaceId, target]);
+      }
+    }, REALTIME_COALESCE_MS);
 
     function revalidateEverythingRelevant() {
-      for (const filterValue of ALL_FILTERS) {
-        void mutate(["inbox-conversations", workspaceId, filterValue]);
+      lists.schedule();
+      if (conversationIdRef.current) {
+        touchedConversation = conversationIdRef.current;
+        detail.schedule();
       }
-      const currentConversationId = conversationIdRef.current;
-      if (currentConversationId) {
-        void mutate(messagesKeyMatcher(workspaceId, currentConversationId));
-        void mutate(["inbox-conversation-events", workspaceId, currentConversationId]);
-      }
+    }
+
+    function retry() {
+      if (closed) return;
+      setRealtimeHealthy(workspaceId, false);
+      // Espera crescente (5s → 60s): uma API fora do ar não recebe uma rajada de reconexões.
+      retryTimeout = setTimeout(connect, reconnectDelayMs(attempt));
+      attempt += 1;
     }
 
     async function connect() {
@@ -153,9 +180,9 @@ export function useInboxRealtime(workspaceId: string, conversationId: string | u
       try {
         streamToken = (await mintInboxStreamToken()).streamToken;
       } catch {
-        // Sem permissão, módulo desligado, API fora do ar, etc. — mesmo backoff do erro de conexão
-        // abaixo; nunca deixa o hook "morto" silenciosamente, só tenta de novo mais tarde.
-        if (!closed) retryTimeout = setTimeout(connect, 5_000);
+        // Sem permissão, módulo desligado, API fora do ar, etc. — nunca deixa o hook "morto"
+        // silenciosamente, só tenta de novo mais tarde (com espera crescente).
+        retry();
         return;
       }
       if (closed) return; // desmontou/mudou de workspace enquanto o mint estava em voo
@@ -166,7 +193,11 @@ export function useInboxRealtime(workspaceId: string, conversationId: string | u
       // Conexão nova OU reconexão depois de uma queda — nos dois casos, pode ter havido mudanças
       // que o SSE nunca vai reenviar retroativamente (ele não é fila persistente). Buscar o estado
       // atual pela API de novo é a única forma correta de "recuperar" depois de uma queda.
-      source.onopen = () => revalidateEverythingRelevant();
+      source.onopen = () => {
+        attempt = 0;
+        setRealtimeHealthy(workspaceId, true);
+        revalidateEverythingRelevant();
+      };
 
       for (const type of REALTIME_EVENT_TYPES) {
         source.addEventListener(type, (event: MessageEvent<string>) => {
@@ -176,12 +207,10 @@ export function useInboxRealtime(workspaceId: string, conversationId: string | u
           } catch {
             return;
           }
-          for (const filterValue of ALL_FILTERS) {
-            void mutate(["inbox-conversations", workspaceId, filterValue]);
-          }
+          lists.schedule();
           if (payload.conversationId && payload.conversationId === conversationIdRef.current) {
-            void mutate(messagesKeyMatcher(workspaceId, payload.conversationId));
-            void mutate(["inbox-conversation-events", workspaceId, payload.conversationId]);
+            touchedConversation = payload.conversationId;
+            detail.schedule();
           }
         });
       }
@@ -191,7 +220,7 @@ export function useInboxRealtime(workspaceId: string, conversationId: string | u
         // O `streamToken` desta tentativa já era de curta duração por design (60s) — mesmo que o
         // erro seja "token expirou no meio da conexão", a única ação correta é mintar um novo, nunca
         // tentar reusar/renovar o mesmo.
-        if (!closed) retryTimeout = setTimeout(connect, 5_000);
+        retry();
       };
     }
 
@@ -199,6 +228,9 @@ export function useInboxRealtime(workspaceId: string, conversationId: string | u
     return () => {
       closed = true;
       source?.close();
+      lists.cancel();
+      detail.cancel();
+      setRealtimeHealthy(workspaceId, false);
       if (retryTimeout) clearTimeout(retryTimeout);
     };
   }, [workspaceId, mutate]);

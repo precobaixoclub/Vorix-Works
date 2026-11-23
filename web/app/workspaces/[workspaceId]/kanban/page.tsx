@@ -57,7 +57,7 @@ export default function KanbanPage() {
       <div className="flex h-full items-center justify-center px-4">
         <EmptyState
           icon={<KanbanSquare className="h-5 w-5" />}
-          title="Kanban de atendimento indisponível"
+          title="Quadro de atendimentos indisponível"
           description="O atendimento por canais está temporariamente indisponível neste ambiente."
           action={<Button variant="secondary" onClick={() => router.push(`/workspaces/${workspace.id}`)}>Voltar para Início</Button>}
         />
@@ -98,7 +98,7 @@ export default function KanbanPage() {
          cima competia como um segundo scroll sem altura travada; ver também `layout.tsx`). */}
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex min-w-0 items-center gap-2">
-          <h1 className="truncate text-lg font-semibold text-foreground">Kanban de atendimento</h1>
+          <h1 className="truncate text-lg font-semibold text-foreground">Atendimentos</h1>
           <AttendanceModuleToggle workspaceId={workspace.id} active="kanban" />
         </div>
         <SearchableCombo

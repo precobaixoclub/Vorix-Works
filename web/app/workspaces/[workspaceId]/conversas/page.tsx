@@ -1,8 +1,7 @@
 "use client";
 
 import { MessagesSquare, PlugZap } from "lucide-react";
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/Button";
 import { EmptyState } from "@/components/EmptyState";
 import { Spinner } from "@/components/Spinner";
@@ -13,18 +12,28 @@ import { ConversasHeader } from "./conversas-header";
 import { InboxTab } from "./inbox-tab";
 import { ServiceSettingsPanel } from "./service-settings-panel";
 
+// Fase 6: nomes claros e aba no endereço (`?aba=canais|regras`) — link direto, Configurações ›
+// Atendimento e canais e o Voltar do navegador levam à aba certa.
 const TABS = [
-  { key: "inbox", label: "Inbox" },
+  { key: "inbox", label: "Caixa de entrada" },
   { key: "connections", label: "Canais" },
-  { key: "settings", label: "Regras" },
+  { key: "settings", label: "Regras de atendimento" },
 ] as const;
+const TAB_PARAM: Record<string, string> = { connections: "canais", settings: "regras" };
 
 type TabKey = (typeof TABS)[number]["key"];
 
 export default function ConversasPage() {
   const workspace = useCurrentWorkspace();
   const router = useRouter();
-  const [activeTab, setActiveTab] = useState<TabKey>("inbox");
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const aba = searchParams.get("aba");
+  const activeTab: TabKey = aba === "canais" ? "connections" : aba === "regras" ? "settings" : "inbox";
+  function setActiveTab(tab: TabKey) {
+    // Trocar de aba não leva a conversa aberta nem os filtros da caixa de entrada para Canais/Regras.
+    router.push(tab === "inbox" ? pathname : `${pathname}?aba=${TAB_PARAM[tab]}`);
+  }
   const { data: status, isLoading: statusLoading } = useInboxModuleStatus();
   // Achado real do usuário: quem abre Conversas pela primeira vez, sem nenhum canal CONECTADO
   // ainda, não tinha nenhum sinal de que precisava ir em "Canais" conectar um número — só via uma

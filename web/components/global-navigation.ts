@@ -138,3 +138,57 @@ export function activeGlobalItem(pathname: string, base: string, area: GlobalAre
     .filter((item) => matchesPrefix(relative, item.href) || (item.href === "/ideias" && matchesPrefix(relative, "/production")))
     .sort((a, b) => b.href.length - a.href.length)[0]?.href;
 }
+
+// ---------------------------------------------------------------------------------------------
+// Fase 2 — navegação mobile e troca de workspace. Mesmas áreas (e mesmas regras de ferramenta
+// contratada) do menu lateral: o celular só escolhe QUAIS áreas ficam na barra de baixo.
+
+/** Áreas com acesso direto na barra inferior, na ordem. */
+const MOBILE_BAR_PRIMARY: readonly GlobalAreaKey[] = ["home", "conversations", "marketing", "site", "meetings"];
+/** Quando a conta não tem alguma das principais, estas ocupam a vaga (sem botão vazio). */
+const MOBILE_BAR_FILL: readonly GlobalAreaKey[] = ["sales", "results"];
+export const MOBILE_BAR_SLOTS = 5;
+
+/** Áreas da barra inferior do celular (além do botão "Menu"). Nunca inclui Configurações. */
+export function mobileBarAreas(areas: readonly GlobalArea[]): GlobalArea[] {
+  const pick = (keys: readonly GlobalAreaKey[]) => keys.map((key) => areas.find((area) => area.key === key)).filter((area): area is GlobalArea => Boolean(area));
+  return [...pick(MOBILE_BAR_PRIMARY), ...pick(MOBILE_BAR_FILL)].slice(0, MOBILE_BAR_SLOTS);
+}
+
+/**
+ * Destino ao trocar de workspace: a MESMA área/tela de lista no outro workspace (sem perder o
+ * contexto de onde a pessoa estava), mas nunca um registro, filtro ou busca do workspace anterior —
+ * só o caminho da tela de lista, sem `?query` nem `#hash` nem id de registro. Sem área reconhecida
+ * (ou área que a conta não tem), vai para a primeira área disponível — sem passar pela raiz, que
+ * redirecionaria de novo numa conta sem Conversas.
+ */
+export function workspaceSwitchHref(pathname: string, currentBase: string, targetWorkspaceId: string, areas: readonly GlobalArea[]): string {
+  const target = `/workspaces/${targetWorkspaceId}`;
+  const key = activeGlobalArea(pathname.split(/[?#]/)[0]!, currentBase, areas);
+  const area = areas.find((candidate) => candidate.key === key);
+  if (area) return `${target}${activeGlobalItem(pathname, currentBase, area) ?? area.href}`;
+  const first = areas.find((candidate) => candidate.key !== "settings");
+  return `${target}${first?.href ?? ""}`;
+}
+
+/** Texto comparável: sem acento e sem diferença de maiúsculas. */
+function normalize(text: string): string {
+  return text.normalize("NFD").replace(/[̀-ͯ]/g, "").toLocaleLowerCase("pt-BR").trim();
+}
+
+/** A partir de quantos espaços o seletor mostra a busca. */
+export const WORKSPACE_SEARCH_MIN = 6;
+
+/** Lista do seletor: o workspace atual primeiro, os outros em ordem alfabética; a busca ignora acento/caixa. */
+export function organizeWorkspaces<T extends { id: string; name: string }>(workspaces: readonly T[], currentId: string, query = ""): T[] {
+  const needle = normalize(query);
+  const matches = needle ? workspaces.filter((workspace) => normalize(workspace.name).includes(needle)) : [...workspaces];
+  return matches.sort((a, b) => (a.id === currentId ? -1 : b.id === currentId ? 1 : a.name.localeCompare(b.name, "pt-BR", { sensitivity: "base" })));
+}
+
+/** Iniciais para o selo do workspace (ex.: "Rumo ao Altar" → "RA"). */
+export function workspaceInitials(name: string): string {
+  const words = name.replace(/[^\p{L}\p{N}\s]/gu, " ").split(/\s+/).filter((word) => word.length > 0 && !/^(de|da|do|das|dos|e|a|o|ao|em)$/i.test(word));
+  const letters = (words.length > 1 ? [words[0]!, words[1]!] : [words[0] ?? "?"]).map((word) => word[0]!.toLocaleUpperCase("pt-BR"));
+  return words.length === 1 ? (words[0]!.slice(0, 2).toLocaleUpperCase("pt-BR")) : letters.join("");
+}

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { SOLUTION_NAVIGATION } from "../components/workspace-navigation";
+import { buildGlobalNavigation } from "../components/global-navigation";
 import { routeOwner } from "../lib/solutions";
 import {
   allowedActions,
@@ -196,7 +197,7 @@ describe("Navegação", () => {
   it("Marketing tem a seção Redes sociais e /social pertence ao Marketing", () => {
     const section = SOLUTION_NAVIGATION.marketing.sections.find((item) => item.label === "REDES SOCIAIS");
     expect(section?.items.map((item) => item.href)).toEqual(["/social/compose", "/social/calendar", "/social/integrations"]);
-    expect(SOLUTION_NAVIGATION.marketing.mobileMenu.some((group) => group.items.some((item) => item.href === "/social/integrations"))).toBe(true);
+    expect(buildGlobalNavigation(["marketing"]).find((area) => area.key === "marketing")?.items.some((item) => item.href === "/social/integrations")).toBe(true);
     expect(routeOwner("/workspaces/ws-1/social/compose", "/workspaces/ws-1")).toBe("marketing");
   });
 });

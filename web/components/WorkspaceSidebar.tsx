@@ -1,18 +1,16 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
 import { ChevronDown, ChevronLeft, ChevronRight } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { Logo } from "@/components/Logo";
 import { NavIcon } from "@/components/NavIcon";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { useAuth } from "@/contexts/auth-context";
 import { useSidebarState } from "@/contexts/sidebar-context";
 import { cn } from "@/lib/utils";
-import { MARKETING_BACKSTAGE_NAV, canUseBackstage, type WorkspaceNavItem } from "@/components/workspace-navigation";
-import { activeGlobalArea, activeGlobalItem, buildGlobalNavigation, type GlobalArea, type GlobalAreaKey } from "@/components/global-navigation";
-import { useSolutions } from "@/features/solutions/hooks";
+import { MARKETING_BACKSTAGE_NAV, type WorkspaceNavItem } from "@/components/workspace-navigation";
+import type { GlobalArea } from "@/components/global-navigation";
+import { useGlobalNavigation } from "@/components/use-global-navigation";
 
 /**
  * Menu principal permanente do workspace (Reorganização de UX — Fase 1): todas as áreas da conta
@@ -21,36 +19,14 @@ import { useSolutions } from "@/features/solutions/hooks";
  * logo abaixo dela. Todos os links levam o workspace atual na URL — nunca outro workspace.
  */
 export function WorkspaceSidebar({ workspaceId }: { workspaceId: string }) {
-  const pathname = usePathname();
-  const { state } = useAuth();
   const { collapsed, toggle } = useSidebarState();
-  const base = `/workspaces/${workspaceId}`;
-  const { available, isLoading } = useSolutions();
-  const areas = useMemo(() => buildGlobalNavigation(available), [available]);
-  const activeKey = activeGlobalArea(pathname, base, areas);
-  const activeItem = activeGlobalItem(pathname, base, areas.find((area) => area.key === activeKey));
-  const canSeeBackstage = state.status === "authenticated" && canUseBackstage(state.role) && available.includes("marketing");
-  const isBackstagePathActive = MARKETING_BACKSTAGE_NAV.some((item) => pathname.startsWith(`${base}${item.href}`));
-  const [backstageOpen, setBackstageOpen] = useState(isBackstagePathActive);
-  // Áreas com as telas abertas: a ativa sempre; as outras, quando a pessoa clica na seta.
-  const [expanded, setExpanded] = useState<ReadonlySet<GlobalAreaKey>>(() => new Set(activeKey ? [activeKey] : []));
+  // Mesmo estado do menu do celular (BottomNav): áreas, permissões e área ativa nunca divergem.
+  const { pathname, base, areas, activeKey, activeItem, isLoading, canSeeBackstage, isBackstageActive, expanded, toggleArea } = useGlobalNavigation(workspaceId);
+  const [backstageOpen, setBackstageOpen] = useState(isBackstageActive);
 
   useEffect(() => {
-    if (isBackstagePathActive) setBackstageOpen(true);
-  }, [isBackstagePathActive]);
-
-  useEffect(() => {
-    if (activeKey) setExpanded((current) => (current.has(activeKey) ? current : new Set([...current, activeKey])));
-  }, [activeKey]);
-
-  function toggleArea(key: GlobalAreaKey) {
-    setExpanded((current) => {
-      const next = new Set(current);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      return next;
-    });
-  }
+    if (isBackstageActive) setBackstageOpen(true);
+  }, [isBackstageActive]);
 
   function withTooltip(label: string, node: React.ReactElement, key: string) {
     if (!collapsed) return node;

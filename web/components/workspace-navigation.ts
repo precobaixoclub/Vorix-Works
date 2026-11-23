@@ -28,8 +28,6 @@ export type SolutionNavigation = {
   sections: readonly WorkspaceNavSection[];
   /** Área técnica, só para owner/admin (ver `canUseBackstage`). */
   backstage: readonly WorkspaceNavItem[];
-  mobilePrimary: readonly WorkspaceNavItem[];
-  mobileMenu: readonly WorkspaceNavSection[];
 };
 
 /** Configurações é do Core: aparece em toda solução, sempre no mesmo lugar. */
@@ -67,7 +65,7 @@ export const MARKETING_BACKSTAGE_NAV: readonly WorkspaceNavItem[] = [
 ] as const;
 
 export const SOLUTION_NAVIGATION: Readonly<Record<SolutionKey, SolutionNavigation>> = {
-  site:{home:{href:"/site",label:"Meu site",icon:"home"},sections:[{label:"SITE",items:[{href:"/site",label:"Editor do site",icon:"settings"},{href:"/site/products",label:"Produtos",icon:"products"},{href:"/site/pedidos",label:"Pedidos",icon:"orders"},{href:"/site/analytics",label:"Analytics",icon:"analytics"}]},{label:"VENDAS",items:[{href:"/site/oportunidades",label:"Oportunidades",icon:"deals"},{href:"/site/propostas",label:"Propostas",icon:"proposals"}]}],backstage:[],mobilePrimary:[{href:"/site",label:"Meu site",icon:"home"},{href:"/site/products",label:"Produtos",icon:"products"},{href:"/site/pedidos",label:"Pedidos",icon:"orders"},{href:"/site/analytics",label:"Analytics",icon:"analytics"}],mobileMenu:[{label:"Vendas",items:[{href:"/site/oportunidades",label:"Oportunidades",icon:"deals"},{href:"/site/propostas",label:"Propostas",icon:"proposals"}]}]},
+  site:{home:{href:"/site",label:"Meu site",icon:"home"},sections:[{label:"SITE",items:[{href:"/site",label:"Editor do site",icon:"settings"},{href:"/site/products",label:"Produtos",icon:"products"},{href:"/site/pedidos",label:"Pedidos",icon:"orders"},{href:"/site/analytics",label:"Analytics",icon:"analytics"}]},{label:"VENDAS",items:[{href:"/site/oportunidades",label:"Oportunidades",icon:"deals"},{href:"/site/propostas",label:"Propostas",icon:"proposals"}]}],backstage:[]},
   conversations: {
     home: CONVERSATIONS_HOME,
     sections: [
@@ -99,41 +97,6 @@ export const SOLUTION_NAVIGATION: Readonly<Record<SolutionKey, SolutionNavigatio
       },
     ],
     backstage: [],
-    mobilePrimary: [
-      CONVERSATIONS_HOME,
-      { href: "/conversas", label: "Conversas", icon: "conversas" },
-      { href: "/deals", label: "Oportunidades", icon: "deals" },
-      { href: "/contacts", label: "Contatos", icon: "contacts" },
-    ],
-    mobileMenu: [
-      {
-        label: "Atendimento",
-        items: [
-          { href: "/kanban", label: "Kanban", icon: "kanban" },
-          { href: "/radar", label: "Radar", icon: "radar" },
-        ],
-      },
-      {
-        label: "Comercial",
-        items: [
-          { href: "/products", label: "Produtos", icon: "products" },
-          { href: "/tasks", label: "Tarefas", icon: "tasks" },
-          { href: "/proposals", label: "Propostas", icon: "proposals" },
-          { href: "/performance", label: "Desempenho", icon: "analytics" },
-        ],
-      },
-      {
-        label: "Resultados",
-        items: [
-          { href: "/results", label: "Painel", icon: "results" },
-          { href: "/reports", label: "Relatórios", icon: "reports" },
-        ],
-      },
-      {
-        label: "Conta",
-        items: [{ href: "/settings", label: "Configurações", icon: "settings" }],
-      },
-    ],
   },
   meetings: {
     home: MEETINGS_HOME,
@@ -142,8 +105,6 @@ export const SOLUTION_NAVIGATION: Readonly<Record<SolutionKey, SolutionNavigatio
       { label: "CONFIGURAÇÕES", items: [MEETINGS_SETTINGS, MEETINGS_INTEGRATIONS, MEETINGS_RECORDER_ACCOUNTS] },
     ],
     backstage: [],
-    mobilePrimary: [MEETINGS_HOME, MEETINGS_AGENDA, MEETINGS_CENTRAL, MEETINGS_RECORDINGS],
-    mobileMenu: [{ label: "Meetings", items: [MEETINGS_ASK] }, { label: "Configurações do Meetings", items: [MEETINGS_SETTINGS, MEETINGS_INTEGRATIONS, MEETINGS_RECORDER_ACCOUNTS] }, { label: "Conta", items: [{ href: "/settings", label: "Configurações", icon: "settings" }] }],
   },
   marketing: {
     home: MARKETING_HOME,
@@ -169,29 +130,6 @@ export const SOLUTION_NAVIGATION: Readonly<Record<SolutionKey, SolutionNavigatio
       },
     ],
     backstage: MARKETING_BACKSTAGE_NAV,
-    mobilePrimary: [MARKETING_HOME, CREATE_NAV_ITEM, { href: "/campaigns", label: "Conteúdos", icon: "content" }, { href: "/calendar", label: "Calendário", icon: "calendar" }],
-    mobileMenu: [
-      {
-        label: "Redes sociais",
-        items: [SOCIAL_COMPOSE, SOCIAL_CALENDAR, SOCIAL_INTEGRATIONS],
-      },
-      {
-        label: "Conteúdo",
-        items: [
-          { href: "/calendar", label: "Calendário", icon: "calendar" },
-          { href: "/publish", label: "Publicar", icon: "publish" },
-          { href: "/meta-ads", label: "Anúncios", icon: "ads" },
-        ],
-      },
-      {
-        label: "Marca",
-        items: [{ href: "/knowledge", label: "Marca", icon: "brand" }],
-      },
-      {
-        label: "Conta",
-        items: [{ href: "/settings", label: "Configurações", icon: "settings" }],
-      },
-    ],
   },
 };
 

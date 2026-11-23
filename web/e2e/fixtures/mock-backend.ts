@@ -86,7 +86,11 @@ async function fulfillJson(route: Route, data: unknown, status = 200) {
 }
 
 export async function loginCookie(context: BrowserContext, baseURL = "http://localhost:3001") {
-  await context.addCookies([{ name: "zuno_refresh_token", value: "qa-fixture-token", url: baseURL }]);
+  // O front só tenta o refresh silencioso quando o cookie CSRF (legível) existe — sem ele cai no /login.
+  await context.addCookies([
+    { name: "zuno_refresh_token", value: "qa-fixture-token", url: baseURL },
+    { name: "zuno_csrf_token", value: "qa-fixture-csrf", url: baseURL },
+  ]);
 }
 
 export async function mockConversasBackend(page: Page) {

@@ -81,7 +81,7 @@ describe("resolveActiveSolution", () => {
 describe("navegação por solução", () => {
   const hrefsOf = (key: "conversations" | "meetings" | "marketing") => {
     const nav = SOLUTION_NAVIGATION[key];
-    return [nav.home, ...(nav.primaryAction ? [nav.primaryAction] : []), ...nav.sections.flatMap((section) => section.items), ...nav.backstage, ...nav.mobilePrimary, ...nav.mobileMenu.flatMap((section) => section.items)].map((item) => item.href);
+    return [nav.home, ...(nav.primaryAction ? [nav.primaryAction] : []), ...nav.sections.flatMap((section) => section.items), ...nav.backstage].map((item) => item.href);
   };
   const settingsHrefs = SETTINGS_NAV.map((item) => item.href);
 

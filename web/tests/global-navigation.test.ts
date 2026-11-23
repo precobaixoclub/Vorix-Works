@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { activeGlobalArea, activeGlobalItem, buildGlobalNavigation } from "../components/global-navigation";
+import { MOBILE_BAR_SLOTS, WORKSPACE_SEARCH_MIN, activeGlobalArea, activeGlobalItem, buildGlobalNavigation, mobileBarAreas, organizeWorkspaces, workspaceInitials, workspaceSwitchHref } from "../components/global-navigation";
 import { MARKETING_BACKSTAGE_NAV, SOLUTION_NAVIGATION } from "../components/workspace-navigation";
 import { routeOwner, type SolutionKey } from "../lib/solutions";
 
@@ -125,5 +125,110 @@ describe("menu global — área e tela ativas", () => {
 
   it("bastidor técnico continua mapeado para o Marketing", () => {
     for (const item of MARKETING_BACKSTAGE_NAV) expect(activeGlobalArea(`${BASE}${item.href}`, BASE, areas)).toBe("marketing");
+  });
+});
+
+// ---------------------------------------------------------------- Fase 2
+
+/** Todas as combinações de ferramentas contratadas (16). */
+const COMBOS: SolutionKey[][] = Array.from({ length: 16 }, (_, mask) => ALL.filter((_, index) => mask & (1 << index)));
+const bar = (available: SolutionKey[]) => mobileBarAreas(buildGlobalNavigation(available)).map((area) => area.key);
+
+describe("Fase 2 — barra inferior do celular", () => {
+  it("conta completa: Início, Conversas, Marketing, Meu site, Reuniões (Vendas/Resultados/Configurações no Menu)", () => {
+    expect(bar(ALL)).toEqual(["home", "conversations", "marketing", "site", "meetings"]);
+  });
+
+  it("vaga de ferramenta não contratada é ocupada por Vendas/Resultados — nunca botão vazio", () => {
+    expect(bar(["conversations"])).toEqual(["home", "conversations", "sales", "results"]);
+    expect(bar(["conversations", "marketing"])).toEqual(["home", "conversations", "marketing", "sales", "results"]);
+    expect(bar(["conversations", "marketing", "site"])).toEqual(["home", "conversations", "marketing", "site", "sales"]);
+    expect(bar(["site"])).toEqual(["site", "sales"]);
+    expect(bar(["meetings"])).toEqual(["meetings"]);
+    expect(bar(["marketing", "meetings"])).toEqual(["marketing", "meetings"]);
+  });
+
+  it.each(COMBOS.map((combo) => [combo.join("+") || "(nenhuma)", combo] as const))("%s: barra ⊂ menu, sem repetição, sem Configurações, no máximo 5", (_label, combo) => {
+    const areas = buildGlobalNavigation(combo).map((area) => area.key);
+    const keysInBar = bar(combo);
+    expect(keysInBar.length).toBeLessThanOrEqual(MOBILE_BAR_SLOTS);
+    expect(new Set(keysInBar).size).toBe(keysInBar.length);
+    expect(keysInBar).not.toContain("settings");
+    for (const key of keysInBar) expect(areas).toContain(key);
+    // Nenhuma ferramenta sem contrato aparece na barra.
+    if (!combo.includes("marketing")) expect(keysInBar).not.toContain("marketing");
+    if (!combo.includes("site")) expect(keysInBar).not.toContain("site");
+    if (!combo.includes("meetings")) expect(keysInBar).not.toContain("meetings");
+    if (!combo.includes("conversations")) expect(keysInBar.filter((key) => key === "home" || key === "conversations" || key === "results")).toEqual([]);
+  });
+});
+
+describe("Fase 2 — destino ao trocar de espaço de trabalho", () => {
+  const areas = buildGlobalNavigation(ALL);
+  const to = (path: string, available = areas) => workspaceSwitchHref(`${BASE}${path}`, BASE, "ws-2", available);
+  const cases: Array<[string, string]> = [
+    ["", "/workspaces/ws-2"],
+    ["/conversas", "/workspaces/ws-2/conversas"],
+    ["/deals", "/workspaces/ws-2/deals"],
+    ["/deals/deal-123", "/workspaces/ws-2/deals"],
+    ["/contacts/contact-9/edit", "/workspaces/ws-2/contacts"],
+    ["/meetings/agenda", "/workspaces/ws-2/meetings/agenda"],
+    ["/meetings/central/meeting-77", "/workspaces/ws-2/meetings/central"],
+    ["/production", "/workspaces/ws-2/ideias"],
+    ["/campaigns/cmp-1", "/workspaces/ws-2/campaigns"],
+    ["/site/pedidos/order-5", "/workspaces/ws-2/site/pedidos"],
+    ["/site/oportunidades", "/workspaces/ws-2/site/oportunidades"],
+    ["/settings/users", "/workspaces/ws-2/settings"],
+    ["/runtime", "/workspaces/ws-2/ideias"],
+    ["/onboarding", "/workspaces/ws-2"],
+  ];
+  it.each(cases)("%s → %s", (path, expected) => {
+    expect(to(path)).toBe(expected);
+  });
+
+  it("nunca leva o id do workspace anterior, query nem hash", () => {
+    for (const [path] of cases) {
+      const href = workspaceSwitchHref(`${BASE}${path}?filtro=ganhos#lista`, BASE, "ws-2", areas);
+      expect(href.startsWith("/workspaces/ws-2")).toBe(true);
+      expect(href).not.toContain("ws-1");
+      expect(href).not.toMatch(/[?#]/);
+    }
+  });
+
+  it("conta sem Conversas: fora de uma área conhecida vai direto à primeira ferramenta (sem redirecionar pela raiz)", () => {
+    expect(to("/onboarding", buildGlobalNavigation(["meetings"]))).toBe("/workspaces/ws-2/meetings");
+    expect(to("/ideias", buildGlobalNavigation(["site"]))).toBe("/workspaces/ws-2/site/oportunidades");
+  });
+});
+
+describe("Fase 2 — lista do seletor de espaços", () => {
+  const list = [
+    { id: "b", name: "Rumo ao Altar" },
+    { id: "a", name: "Vorix Works" },
+    { id: "c", name: "Casamento São Paulo" },
+    { id: "d", name: "aurora Eventos" },
+    { id: "e", name: "Ângulo Arquitetura" },
+  ];
+  it("atual primeiro, os demais em ordem alfabética (acentos e caixa não atrapalham)", () => {
+    expect(organizeWorkspaces(list, "a").map((item) => item.name)).toEqual(["Vorix Works", "Ângulo Arquitetura", "aurora Eventos", "Casamento São Paulo", "Rumo ao Altar"]);
+  });
+  it("busca ignora acento e maiúsculas e não altera a lista original", () => {
+    const copy = [...list];
+    expect(organizeWorkspaces(list, "a", "SAO").map((item) => item.id)).toEqual(["c"]);
+    expect(organizeWorkspaces(list, "a", "angulo").map((item) => item.id)).toEqual(["e"]);
+    expect(organizeWorkspaces(list, "a", "nada disso")).toEqual([]);
+    expect(organizeWorkspaces(list, "a", "  ").length).toBe(list.length);
+    expect(list).toEqual(copy);
+  });
+  it("busca só aparece com vários espaços", () => {
+    expect(WORKSPACE_SEARCH_MIN).toBeGreaterThan(2);
+  });
+  it("iniciais do selo", () => {
+    expect(workspaceInitials("Rumo ao Altar")).toBe("RA");
+    expect(workspaceInitials("Vorix Works")).toBe("VW");
+    expect(workspaceInitials("CMKV")).toBe("CM");
+    expect(workspaceInitials("Casa da Maria")).toBe("CM");
+    expect(workspaceInitials("ângulo")).toBe("ÂN");
+    expect(workspaceInitials("")).toBe("?");
   });
 });

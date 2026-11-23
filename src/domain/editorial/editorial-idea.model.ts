@@ -7,6 +7,8 @@
  * pauta e a envia ao motor criativo; a publicação continua passando pela aprovação de sempre.
  */
 
+import { DIRECTIVE_CTA_PREFIX, DIRECTIVE_PROMPT_END, DIRECTIVE_PROMPT_HEADER, formatArtTextBlock, splitArtTextLines } from "../../shared/utils/creative-directive.js";
+
 export const EDITORIAL_IDEA_STATUSES = ["available", "in_production", "produced", "approved", "published", "archived"] as const;
 export type EditorialIdeaStatus = (typeof EDITORIAL_IDEA_STATUSES)[number];
 
@@ -355,29 +357,34 @@ export function buildEditorialGenerationBrief(idea: EditorialIdeaContent): Edito
   const references = idea.referenceImages?.length
     ? "\nUse as imagens de referência anexadas como base visual da arte (não troque por banco de fotos genérico)."
     : "";
-  const closing = `CTA: ${idea.cta}\nUse apenas capacidades reais da marca; não invente números, preços, integrações ou depoimentos.${references}`;
+  const closing = `${DIRECTIVE_CTA_PREFIX} ${idea.cta}\nUse apenas capacidades reais da marca; não invente números, preços, integrações ou depoimentos.${references}`;
   const structure = idea.carouselScript
     ? `Telas: ${idea.carouselScript.map((slide, index) => `${index + 1}) ${slide.headline} — ${slide.body}`).join(" ")}`
-    : `Estrutura: ${idea.narrativeStructure}`;
-  // Com prompt próprio: ele é a direção dominante de composição/narrativa. Um cabeçalho curto
-  // preserva o vínculo com a pauta (id, título, mensagem, roteiro); o prompt vem logo em seguida.
-  // Sem prompt: comportamento padrão (conceito + direção visual da pauta).
+    : idea.narrativeStructure.trim() && idea.narrativeStructure.trim() !== idea.keyMessage.trim()
+      ? `Estrutura: ${idea.narrativeStructure}`
+      : "";
+  // Texto da arte linha a linha (imagem única): o motor valida que nenhuma linha some do plano
+  // (`shared/utils/creative-directive.ts`). No carrossel o texto vem das telas.
+  const artText = idea.carouselScript ? `Mensagem principal: ${idea.keyMessage}` : formatArtTextBlock(splitArtTextLines(idea.keyMessage));
+  // Com prompt próprio: ele é a diretiva do cliente (cena, objetos, posições), íntegra e com início e
+  // fim marcados. Sem prompt: comportamento padrão (conceito + direção visual da pauta).
   const body = idea.creativePrompt
     ? [
         `Pauta ${idea.externalId} — ${idea.title}`,
-        `Mensagem principal: ${idea.keyMessage}`,
+        artText,
         structure,
         "",
-        "PROMPT CRIATIVO ESPECÍFICO (direção dominante de arte e narrativa):",
+        DIRECTIVE_PROMPT_HEADER,
         idea.creativePrompt,
-      ].join("\n")
+        DIRECTIVE_PROMPT_END,
+      ].filter((line, index) => line !== "" || index === 3).join("\n")
     : [
         `Pauta ${idea.externalId} — ${idea.title}`,
-        `Mensagem principal: ${idea.keyMessage}`,
+        artText,
         structure,
         `Conceito: ${idea.concept}`,
         `Direção visual: ${idea.visualDirection}`,
-      ].join("\n");
+      ].filter(Boolean).join("\n");
   return {
     name: clip(idea.title, 200),
     objective: clip(idea.commercialObjective, 300),

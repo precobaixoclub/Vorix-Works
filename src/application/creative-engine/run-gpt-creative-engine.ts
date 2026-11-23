@@ -24,6 +24,7 @@ import {
   type CreativePlanTextZone,
 } from "../../shared/utils/gpt-creative-plan.types.js";
 import { exploreCreativeDirections, type CreativeDirectionExploration } from "./explore-creative-directions.js";
+import { parseCreativeDirective } from "../../shared/utils/creative-directive.js";
 import type { CreativeEngineImageGuardInput } from "../../shared/utils/creative-engine-image-guard.js";
 import { resolveProductRenderMode, type AssetSuitabilityScore, type ProductRenderModeDecision } from "../../shared/utils/product-asset.types.js";
 import {
@@ -475,6 +476,7 @@ async function requestRepairedPlan(
   executionId: string,
   correlationId: string,
   track: (response: IcaroAIResponse | undefined) => void,
+  parseOptions: CreativePlanParseOptions = {},
 ): Promise<{ plan?: CreativePlan; response?: IcaroAIResponse }> {
   const repairPrompt = buildCreativePlanRepairPrompt(previousPlan, context, instructions);
   let lastResponse: IcaroAIResponse | undefined;
@@ -496,7 +498,8 @@ async function requestRepairedPlan(
     lastResponse = repairResponse;
     if (repairResponse.status === "completed") {
       try {
-        const plan = parseCreativePlan(extractJson(String(repairResponse.content ?? ""), "GPT Creative Plan Repair"));
+        // Reparo nunca pode "consertar" a peça descartando o texto/CTA do cliente (Fase 2).
+        const plan = parseCreativePlan(extractJson(String(repairResponse.content ?? ""), "GPT Creative Plan Repair"), { creativeDirective: parseOptions.creativeDirective });
         if (plan) return { plan, response: repairResponse };
       } catch {
         // tenta de novo (ou desiste, se for a última tentativa)
@@ -886,7 +889,11 @@ export async function runGptCreativeEngine(deps: GptCreativeEngineDeps, input: G
   // `context.recentHistory`, evitar repetir o conceito visual de peças recentes — ponto 10). Best-
   // effort: `undefined` (chamada falhou/resposta incompleta) segue direto pro plano SEM âncora,
   // comportamento idêntico ao motor antes desta etapa existir.
-  chosenCreativeDirection = budgetExceeded()
+  // Fase 2 — diretiva do cliente: quando o pedido já descreve a cena (prompt próprio da ideia), a
+  // exploração de "direções originais" NÃO roda: era ela que trocava a cena pedida por metáforas
+  // (constelação, reflexo no espelho). O plano executa a cena do cliente; sem diretiva, nada muda.
+  const creativeDirective = parseCreativeDirective(context.ideaText);
+  chosenCreativeDirection = budgetExceeded() || creativeDirective?.clientPrompt
     ? undefined
     : await exploreCreativeDirections(deps.creativeBrain, context, {
         specialistId: SPECIALIST_ID,
@@ -909,7 +916,7 @@ export async function runGptCreativeEngine(deps: GptCreativeEngineDeps, input: G
     chosenDirectionAnchor,
     // Modo editorial: geometria de textZones vinda do diretor é descartada (o renderer recalcula),
     // então geometria inválida não rejeita o plano nem consome a 2ª tentativa do diretor.
-    { compositionMode: input.experimentalEditorialMode ? "editorial_experimental" : "standard" },
+    { compositionMode: input.experimentalEditorialMode ? "editorial_experimental" : "standard", creativeDirective },
   );
   directorModel = planResponse?.model?.id;
   if (initialPlan?.editorialTextZoneNormalization) {
@@ -1433,7 +1440,7 @@ export async function runGptCreativeEngine(deps: GptCreativeEngineDeps, input: G
       isRepairRound = true;
       if (budgetExceeded()) return failBudgetExceeded({ creativePlan: plan, finalImagePrompt: imagePrompt, repairRounds });
 
-      const screenshotSlotRepair = await requestRepairedPlan(deps.creativeBrain, plan, context, routedScreenshot.instructions, input.executionRunId, input.creativeEngineRunId, (response) => track("director", response));
+      const screenshotSlotRepair = await requestRepairedPlan(deps.creativeBrain, plan, context, routedScreenshot.instructions, input.executionRunId, input.creativeEngineRunId, (response) => track("director", response), { creativeDirective });
       if (!screenshotSlotRepair.plan) {
         return isProviderQuotaExhausted(screenshotSlotRepair.response)
           ? fail("PROVIDER_QUOTA_EXHAUSTED: crédito/quota da OpenAI esgotado — não é possível gerar ou corrigir a peça até a conta ser regularizada.", "PROVIDER_QUOTA_EXHAUSTED", { creativePlan: plan, finalImagePrompt: imagePrompt, repairRounds })
@@ -1537,7 +1544,7 @@ export async function runGptCreativeEngine(deps: GptCreativeEngineDeps, input: G
       isRepairRound = true;
       if (budgetExceeded()) return failBudgetExceeded({ creativePlan: plan, finalImagePrompt: imagePrompt, repairRounds });
 
-      const ghostTextRepair = await requestRepairedPlan(deps.creativeBrain, plan, context, routedGhostText.instructions, input.executionRunId, input.creativeEngineRunId, (response) => track("director", response));
+      const ghostTextRepair = await requestRepairedPlan(deps.creativeBrain, plan, context, routedGhostText.instructions, input.executionRunId, input.creativeEngineRunId, (response) => track("director", response), { creativeDirective });
       if (!ghostTextRepair.plan) {
         return isProviderQuotaExhausted(ghostTextRepair.response)
           ? fail("PROVIDER_QUOTA_EXHAUSTED: crédito/quota da OpenAI esgotado — não é possível gerar ou corrigir a peça até a conta ser regularizada.", "PROVIDER_QUOTA_EXHAUSTED", { creativePlan: plan, finalImagePrompt: imagePrompt, repairRounds })
@@ -1664,7 +1671,7 @@ export async function runGptCreativeEngine(deps: GptCreativeEngineDeps, input: G
         isRepairRound = true;
         if (budgetExceeded()) return failBudgetExceeded({ creativePlan: plan, finalImagePrompt: imagePrompt, repairRounds });
 
-        const globalRepair = await requestRepairedPlan(deps.creativeBrain, plan, context, routedGlobal.instructions, input.executionRunId, input.creativeEngineRunId, (response) => track("director", response));
+        const globalRepair = await requestRepairedPlan(deps.creativeBrain, plan, context, routedGlobal.instructions, input.executionRunId, input.creativeEngineRunId, (response) => track("director", response), { creativeDirective });
         if (!globalRepair.plan) {
           return isProviderQuotaExhausted(globalRepair.response)
             ? fail("PROVIDER_QUOTA_EXHAUSTED: crédito/quota da OpenAI esgotado — não é possível gerar ou corrigir a peça até a conta ser regularizada.", "PROVIDER_QUOTA_EXHAUSTED", { creativePlan: plan, finalImagePrompt: imagePrompt, repairRounds })
@@ -1838,7 +1845,7 @@ export async function runGptCreativeEngine(deps: GptCreativeEngineDeps, input: G
           return failBudgetExceeded({ creativePlan: plan, finalImagePrompt: imagePrompt, qualityGate, visualQualityScore, repairRounds, compositionSteps: textCompositionSteps });
         }
 
-        const aestheticRepair = await requestRepairedPlan(deps.creativeBrain, plan, context, aestheticInstructions, input.executionRunId, input.creativeEngineRunId, (response) => track("director", response));
+        const aestheticRepair = await requestRepairedPlan(deps.creativeBrain, plan, context, aestheticInstructions, input.executionRunId, input.creativeEngineRunId, (response) => track("director", response), { creativeDirective });
         if (!aestheticRepair.plan) {
           // Achado real em produção (incidente de quota OpenAI): "não foi possível obter um plano
           // válido" soa como falha criativa (JSON malformado) — nunca como o que de fato aconteceu
@@ -1895,7 +1902,7 @@ export async function runGptCreativeEngine(deps: GptCreativeEngineDeps, input: G
       // (achado ao vivo em produção, ver comentário na definição da função) — nunca conta como uma
       // rodada de reparo nova (o `repairAttempt` já foi incrementado acima, pra continuar contra o
       // limite de rounds normal).
-      const gateRepair = await requestRepairedPlan(deps.creativeBrain, plan, context, routed.instructions, input.executionRunId, input.creativeEngineRunId, (response) => track("director", response));
+      const gateRepair = await requestRepairedPlan(deps.creativeBrain, plan, context, routed.instructions, input.executionRunId, input.creativeEngineRunId, (response) => track("director", response), { creativeDirective });
 
       if (!gateRepair.plan) {
         return isProviderQuotaExhausted(gateRepair.response)

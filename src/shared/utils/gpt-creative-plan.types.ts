@@ -13,6 +13,7 @@
 
 import { describeBrandIdentityForDirector, describeBrandIdentityForImage, type AppliedBrandRule, type CreativeBrandIdentity } from "./brand-identity.js";
 import { computeCropSafeMarginPct } from "./image-crop-geometry.js";
+import { buildClientSceneBriefForImage, buildDirectivePlanLines, CLIENT_SCENE_BRIEF_IMAGE_INTRO, describeDirectiveTextIssues, findDirectiveTextIssues, parseCreativeDirective, type CreativeDirective } from "./creative-directive.js";
 
 export const CREATIVE_PLAN_ASSET_ROLES = ["product_photo", "screenshot", "logo", "reference_style", "other"] as const;
 export type CreativePlanAssetRole = (typeof CREATIVE_PLAN_ASSET_ROLES)[number];
@@ -511,6 +512,10 @@ export function buildCreativePlanPrompt(context: CreativeContext, chosenDirectio
           `DIREÇÃO CRIATIVA JÁ ESCOLHIDA nesta geração (etapa de exploração anterior) — "${chosenDirection.name}": ${chosenDirection.coreIdea} (${chosenDirection.whyItFits}). Construa o plano detalhado seguindo ESTA direção — ela já é a decisão de conceito, nunca a contrarie nem proponha outra.`,
         ]
       : []),
+    ...(() => {
+      const directive = parseCreativeDirective(context.ideaText);
+      return directive ? buildDirectivePlanLines(directive) : [];
+    })(),
     ...buildWorkspaceContextLines(context),
   ];
 
@@ -690,6 +695,9 @@ export type CreativePlanParseOptions = {
   /** `editorial_experimental` ativa `normalizeEditorialTextZones`. Ausente/`standard` mantém o
    * contrato estrito histórico (qualquer zona inválida rejeita o plano inteiro). */
   compositionMode?: ImageGenerationPromptMode;
+  /** Diretiva do cliente (`creative-directive.ts`): plano que perde linha do texto da arte ou troca
+   * o CTA é rejeitado, e o diagnóstico manda o diretor corrigir exatamente isso. */
+  creativeDirective?: CreativeDirective;
 };
 
 export type CreativePlanEditorialTextZoneNormalization = {
@@ -1005,6 +1013,7 @@ export function parseCreativePlan(raw: string, options: CreativePlanParseOptions
   try {
     const parsed = JSON.parse(raw) as Record<string, unknown>;
     if (typeof parsed.headline !== "string" || typeof parsed.cta !== "string") return undefined;
+    if (findDirectiveTextIssues({ headline: parsed.headline, subheadline: typeof parsed.subheadline === "string" ? parsed.subheadline : undefined, cta: parsed.cta }, options.creativeDirective).length > 0) return undefined;
 
     const assetUsage: Record<string, string> = {};
     if (parsed.assetUsage && typeof parsed.assetUsage === "object") {
@@ -1094,6 +1103,8 @@ export function diagnoseCreativePlanInvalidity(raw: string, options: CreativePla
     const parsed = JSON.parse(raw) as Record<string, unknown>;
     if (typeof parsed.headline !== "string") return "campo \"headline\" ausente ou não é uma string.";
     if (typeof parsed.cta !== "string") return "campo \"cta\" ausente ou não é uma string (use \"\" quando a peça não tem CTA, nunca omita o campo).";
+    const directiveIssue = describeDirectiveTextIssues(findDirectiveTextIssues({ headline: parsed.headline, subheadline: typeof parsed.subheadline === "string" ? parsed.subheadline : undefined, cta: parsed.cta }, options.creativeDirective));
+    if (directiveIssue) return directiveIssue;
 
     const assetPlacements = parseAssetPlacements(parsed.assetPlacements);
     if (assetPlacements === undefined) return "campo \"assetPlacements\" inválido — algum item tem role/url/rect malformado, ou um retângulo fora dos limites do canvas (0-100) ou com largura/altura zero.";
@@ -1275,6 +1286,10 @@ function buildEditorialImageGenerationPromptFromPlan(plan: CreativePlan, context
     "All commercial text, prices, calls to action, logos, and exact offer facts will be rendered later by a deterministic compositor.",
     `Final composition format: ${context.format}.`,
   ];
+  // Fase 2: a cena que o CLIENTE descreveu chega ao modelo de imagem (antes só um resumo do plano
+  // chegava). Sem as seções de tipografia/marca, e sem nomes de marca (o renderer cuida deles).
+  const clientSceneBrief = buildClientSceneBriefForImage(parseCreativeDirective(context.ideaText)?.clientPrompt);
+  if (clientSceneBrief && !hasProductPhoto) visualLines.push(`${CLIENT_SCENE_BRIEF_IMAGE_INTRO}\n${stripBrandLiterals(clientSceneBrief)}`, "The brand profile and color rules further below still apply on top of this brief.");
 
   const artDirection = plan.artDirection;
   const visualDirection = sanitize(plan.visualDirection);
@@ -1388,6 +1403,10 @@ export function buildImageGenerationPromptFromPlan(plan: CreativePlan, context: 
     `Direção visual: ${freeText(plan.visualDirection) ?? plan.visualDirection}`,
     `Intenção de composição: ${freeText(plan.compositionIntent) ?? plan.compositionIntent}`,
   ];
+  const standardClientSceneBrief = buildClientSceneBriefForImage(parseCreativeDirective(context.ideaText)?.clientPrompt);
+  if (standardClientSceneBrief) {
+    lines.push(`CENA DESCRITA PELO CLIENTE — OBRIGATÓRIA (objetos, personagens, posições e composição; melhore só luz, profundidade, texturas e acabamento; a paleta e as regras da marca abaixo continuam valendo):\n${standardClientSceneBrief}`);
+  }
   if (imageModelTextSuppressed) {
     lines.push(
       "CONTRATO DE TEXTO DO MODELO DE IMAGEM: o modelo de imagem NAO deve desenhar nenhuma palavra, numero, preco, porcentagem, rotulo, botao, marca, pseudo-texto ou tipografia decorativa. Interprete qualquer mencao textual no plano abaixo (headline, CTA, preco, palavras, etiquetas, produtos com preco, texto integrado etc.) apenas como intencao de layout para o renderer deterministico; represente tudo com formas, luz, objetos sem marca e areas limpas sem caracteres legiveis.",

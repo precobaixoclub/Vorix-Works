@@ -1,4 +1,5 @@
 import { buildWorkspaceContextLines, CREATIVE_PLAN_RESPONSE_SCHEMA_HINT, type CreativeContext, type CreativePlan } from "../../shared/utils/gpt-creative-plan.types.js";
+import { buildDirectivePlanLines, parseCreativeDirective } from "../../shared/utils/creative-directive.js";
 import type { CreativeQualityIssue, CreativeQualityIssueCode } from "./evaluate-creative-quality-gate.js";
 
 /**
@@ -127,6 +128,11 @@ export function buildCreativePlanRepairPrompt(previousPlan: CreativePlan, contex
     ...instructions.map((instruction) => `- ${instruction}`),
     "",
     `Marca: ${context.brandName}`,
+    // Fase 2: o reparo continua preso ao brief do cliente (cena, texto da arte, CTA, marca).
+    ...(() => {
+      const directive = parseCreativeDirective(context.ideaText);
+      return directive ? buildDirectivePlanLines(directive) : [];
+    })(),
     ...buildWorkspaceContextLines(context),
     "",
     "Responda APENAS com JSON válido, sem markdown, no formato exato (mesmo schema do plano anterior):",

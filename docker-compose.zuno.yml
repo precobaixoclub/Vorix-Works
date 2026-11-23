@@ -160,6 +160,15 @@ services:
       REAL_COPY_ENABLED: "${REAL_COPY_ENABLED:-false}"
       REAL_VISUAL_ENABLED: "${REAL_VISUAL_ENABLED:-false}"
       REAL_DISTRIBUTION_ENABLED: "${REAL_DISTRIBUTION_ENABLED:-false}"
+      # Motor criativo — geração de imagem OpenAI (catálogo validado em
+      # src/shared/utils/gpt-image-models.ts). Desde a Fase 1 (2026-11-22) o flag é RESPEITADO:
+      # sem OPENAI_IMAGE_ENABLED=true nenhuma imagem é gerada. Modelo vazio = gpt-image-2.6-sunburst
+      # (rápido: gpt-image-2.6-flare); qualidade vazia = "high"; complexity vazia = padrão do modelo.
+      OPENAI_IMAGE_ENABLED: "${OPENAI_IMAGE_ENABLED:-false}"
+      OPENAI_IMAGE_MODEL: "${OPENAI_IMAGE_MODEL:-}"
+      OPENAI_IMAGE_FAST_MODEL: "${OPENAI_IMAGE_FAST_MODEL:-}"
+      OPENAI_IMAGE_QUALITY: "${OPENAI_IMAGE_QUALITY:-}"
+      OPENAI_IMAGE_COMPLEXITY: "${OPENAI_IMAGE_COMPLEXITY:-}"
       # Módulo Conversas (Fase 1) — kill switch global por padrão; sem WUZAPI/RABBITMQ configurados
       # o container usa duplos de teste (Fake/InMemory), nunca falha o boot.
       CONVERSATIONS_MODULE_ENABLED: "${CONVERSATIONS_MODULE_ENABLED:-false}"

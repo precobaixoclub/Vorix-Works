@@ -198,7 +198,7 @@ test.describe("Início unificado — desktop", () => {
     await expect(page).toHaveURL(new RegExp(`${base()}/conversas\\?conversation=conv-1$`));
     await page.goBack();
     await page.getByRole("button", { name: /Ver todas as/ }).click();
-    for (const [id, href] of [["post-post-failed", "/calendar?post=post-failed"], ["proposal-prop-1", "/proposals?proposal=prop-1"], ["meeting-meet-1", "/meetings/central/meet-1"], ["task-task-late", "/tasks"]]) {
+    for (const [id, href] of [["post-post-failed", "/calendar?post=post-failed"], ["proposal-prop-1", "/proposals?proposal=prop-1"], ["meeting-meet-1", "/meetings/central/meet-1"], ["task-task-late", "/tasks?visao=atrasadas"]]) {
       await expect(page.locator(`[data-attention='${id}'] a`)).toHaveAttribute("href", `${base()}${href}`);
     }
   });

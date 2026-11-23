@@ -36,17 +36,29 @@ const CONVERSATIONS_ITEMS: readonly WorkspaceNavItem[] = [
   { href: "/radar", label: "Radar", icon: "radar", section: "Acompanhamento" },
 ];
 
-const SALES_ITEMS: readonly WorkspaceNavItem[] = [
-  { href: "/deals", label: "Oportunidades", icon: "deals" },
-  { href: "/products", label: "Produtos", icon: "products" },
-  { href: "/tasks", label: "Tarefas", icon: "tasks" },
-  { href: "/proposals", label: "Propostas", icon: "proposals" },
-];
+/**
+ * Vendas (Fase 7). Oportunidades, propostas e produtos do Site são as MESMAS entidades do CRM (as
+ * rotas `/site/...` reexportam as mesmas telas) — por isso o menu mostra UM item de cada, nunca
+ * "Oportunidades" e "Oportunidades do site" lado a lado. Com Conversas usa as rotas do CRM; numa
+ * conta só com Site, as rotas `/site/...` (as do CRM são do Conversas e ficam bloqueadas lá).
+ * Cada item só aparece com a permissão de leitura correspondente.
+ */
+const SALES_DEALS = { label: "Oportunidades", icon: "deals", section: "Gestão comercial", permission: ["deal:read"] } as const;
+const SALES_PROPOSALS = { label: "Propostas", icon: "proposals", section: "Gestão comercial", permission: ["proposal:read"] } as const;
+const SALES_TASKS = { href: "/tasks", label: "Atividades", icon: "tasks", section: "Gestão comercial", permission: ["task:read"] } as const;
+const SALES_PRODUCTS = { label: "Produtos", icon: "products", section: "Produtos e pedidos", permission: ["product:read"] } as const;
+const SALES_ORDERS = { href: "/site/pedidos", label: "Pedidos", icon: "orders", section: "Produtos e pedidos", permission: ["order:read", "commerce:read"] } as const;
 
-const SITE_SALES_ITEMS: readonly WorkspaceNavItem[] = [
-  { href: "/site/oportunidades", label: "Oportunidades", icon: "deals" },
-  { href: "/site/propostas", label: "Propostas", icon: "proposals" },
-];
+function salesItems(has: (key: SolutionKey) => boolean): WorkspaceNavItem[] {
+  const crm = has("conversations");
+  return [
+    { ...SALES_DEALS, href: crm ? "/deals" : "/site/oportunidades" },
+    { ...SALES_PROPOSALS, href: crm ? "/proposals" : "/site/propostas" },
+    ...(crm ? [SALES_TASKS] : []),
+    { ...SALES_PRODUCTS, href: crm ? "/products" : "/site/products" },
+    ...(has("site") ? [SALES_ORDERS] : []),
+  ];
+}
 
 const MARKETING_ITEMS: readonly WorkspaceNavItem[] = [
   // Fase 5 — menu definitivo do Marketing, em dois blocos. O compositor (/social/compose) e o estúdio
@@ -75,9 +87,8 @@ function settingsItems(has: (key: SolutionKey) => boolean): WorkspaceNavItem[] {
 }
 
 const SITE_ITEMS: readonly WorkspaceNavItem[] = [
+  // Fase 7: Produtos e Pedidos ficam em Vendas; o Site cuida da loja e da experiência pública.
   { href: "/site", label: "Editor do site", icon: "settings" },
-  { href: "/site/products", label: "Produtos", icon: "products" },
-  { href: "/site/pedidos", label: "Pedidos", icon: "orders" },
   { href: "/site/analytics", label: "Analytics", icon: "analytics" },
 ];
 
@@ -105,8 +116,11 @@ const MARKETING_MATCH = [
 ] as const;
 
 /** Áreas visíveis para a conta, na ordem do menu. */
-export function buildGlobalNavigation(available: readonly SolutionKey[]): GlobalArea[] {
+export function buildGlobalNavigation(available: readonly SolutionKey[], can?: (permission: string) => boolean): GlobalArea[] {
   const has = (key: SolutionKey) => available.includes(key);
+  // Fase 7: itens com permissão só aparecem para quem pode ler aquele dado. Sem `can` (permissões
+  // ainda carregando), vale só a ferramenta contratada — o servidor barra de qualquer forma.
+  const permitted = (items: readonly WorkspaceNavItem[]) => (can ? items.filter((item) => !item.permission || item.permission.some((permission) => can(permission))) : [...items]);
   const areas: GlobalArea[] = [];
   // Fase 3: todo workspace tem o Início unificado (central de todas as ferramentas contratadas).
   areas.push({ key: "home", label: "Início", icon: "home", href: "", items: [], match: [""] });
@@ -114,11 +128,8 @@ export function buildGlobalNavigation(available: readonly SolutionKey[]): Global
     areas.push({ key: "conversations", label: "Conversas", icon: "conversas", href: "/conversas", items: CONVERSATIONS_ITEMS, match: ["/conversas", "/kanban", "/radar", "/contacts"] });
   }
   if (has("conversations") || has("site")) {
-    // Com as duas ferramentas, as vendas que chegam pelo Site continuam acessíveis aqui (telas próprias).
-    const items = has("conversations")
-      ? [...SALES_ITEMS, ...(has("site") ? SITE_SALES_ITEMS.map((item) => ({ ...item, label: `${item.label} do site` })) : [])]
-      : SITE_SALES_ITEMS;
-    areas.push({ key: "sales", label: "Vendas", icon: "deals", href: items[0]!.href, items, match: ["/deals", "/products", "/tasks", "/proposals", "/site/oportunidades", "/site/propostas"] });
+    const items = permitted(salesItems(has));
+    if (items.length) areas.push({ key: "sales", label: "Vendas", icon: "deals", href: items[0]!.href, items, match: ["/deals", "/products", "/tasks", "/proposals", "/site/oportunidades", "/site/propostas", "/site/products", "/site/pedidos"] });
   }
   if (has("marketing")) areas.push({ key: "marketing", label: "Marketing", icon: "marketing", href: "/ideias", items: MARKETING_ITEMS, match: MARKETING_MATCH });
   if (has("site")) areas.push({ key: "site", label: "Meu site", icon: "site", href: "/site", items: SITE_ITEMS, match: ["/site", "/commerce"] });

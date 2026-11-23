@@ -97,8 +97,9 @@ test.describe("celular", () => {
     await menu.getByRole("button", { name: "Mostrar telas de Vendas" }).click();
     expect(page.url()).toBe(before);
     // Fase 6: Contatos foi para Conversas (Atendimento); Vendas fica com a gestão comercial.
-    await expect(menu.locator("[data-area-items='sales'] a")).toHaveText(["Oportunidades", "Produtos", "Tarefas", "Propostas", "Oportunidades do site", "Propostas do site"]);
-    await menu.locator("[data-area-items='sales'] a", { hasText: /^Tarefas$/ }).click();
+    // Fase 7: Vendas sem itens duplicados ("do site" eram as mesmas telas) e Tarefas → Atividades.
+    await expect(menu.locator("[data-area-items='sales'] a")).toHaveText(["Oportunidades", "Propostas", "Atividades", "Produtos", "Pedidos"]);
+    await menu.locator("[data-area-items='sales'] a", { hasText: /^Atividades$/ }).click();
     await expect(page).toHaveURL(new RegExp(`${base()}/tasks$`));
     await expect(menu).toBeHidden();
     // Área fora da barra: o botão Menu fica aceso.

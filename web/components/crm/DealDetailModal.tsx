@@ -1,4 +1,9 @@
 "use client";
+
+import { originLabel, siteOrderOf } from "@/features/sales/sales-model";
+import { useSolutions } from "@/features/solutions/hooks";
+
+import Link from "next/link";
 import { contactLabel , commercialTitle} from "@/features/crm/contact-presentation";
 
 import {ReopenDealButton} from "@/components/sales/ReopenDealButton";
@@ -333,10 +338,13 @@ function DealSummary({
   onCreateProposal?: () => void;
   onOpenConversation?: () => void;
 }) {
+  // Fase 7: vínculos REAIS gravados pelo servidor (pedido que originou a oportunidade; contato).
+  const { available } = useSolutions();
+  const siteOrder = siteOrderOf(deal);
   return (
     <div className="space-y-7">
       <DetailBlock
-        label="Contexto"
+        label="Negociação e cliente"
         action={onEdit ? <Button variant="secondary" size="sm" onClick={onEdit}><Pencil className="mr-2 h-4 w-4" /> Editar</Button> : undefined}
       >
         <div className="grid gap-3 sm:grid-cols-2">
@@ -346,7 +354,7 @@ function DealSummary({
           <InfoCell label="Etapa" value={stage?.name ?? "Sem etapa"} />
           <InfoCell label="Pipeline" value={pipeline?.name ?? "Pipeline"} />
           <InfoCell label="Valor" value={formatCurrencyCents(deal.status === "won" ? deal.finalValueCents ?? deal.valueCents : deal.valueCents, deal.currency)} strong />
-          <InfoCell label="Origem" value={deal.origin ?? "—"} />
+          <InfoCell label="Origem" value={originLabel(deal.origin) ?? "Não informada"} />
           <InfoCell label="Previsão" value={formatDate(deal.expectedCloseDate)} />
           <InfoCell label="Próxima atividade" value={nextTask ? `${TASK_TYPE_LABEL[nextTask.type]} · ${nextTask.title}` : "Sem próxima atividade"} />
           <InfoCell label="Última mudança" value={formatDateTime(deal.lastStageChangedAt)} />
@@ -395,6 +403,8 @@ function DealSummary({
       <DetailBlock label="Ações contextuais">
         <div className="flex flex-wrap gap-2">
           {onOpenConversation ? <Button variant="secondary" onClick={onOpenConversation}>Abrir conversa</Button> : null}
+          {deal.contactId && available.includes("conversations") ? <Button asChild variant="secondary"><Link href={`/workspaces/${workspaceId}/contacts?contactId=${encodeURIComponent(deal.contactId)}`}>Abrir cadastro do contato</Link></Button> : null}
+          {siteOrder && available.includes("site") ? <Button asChild variant="secondary"><Link href={`/workspaces/${workspaceId}/site/pedidos?pedido=${encodeURIComponent(siteOrder.id)}`} data-testid="deal-site-order">{siteOrder.number ? `Ver pedido #${siteOrder.number}` : "Ver pedido do site"}</Link></Button> : null}
           {onCreateProposal ? <Button variant="secondary" onClick={onCreateProposal}>Criar proposta</Button> : null}
         </div>
       </DetailBlock>

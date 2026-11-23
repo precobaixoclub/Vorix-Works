@@ -1,4 +1,5 @@
 "use client";
 import ProposalsPage from "../../proposals/page";
-/** Propostas dentro do Site; esta rota só dá o contexto de navegação. */
-export default function SiteProposalsPage(){return <ProposalsPage/>;}
+import { SiteCrmRoute } from "@/components/sales/SiteCrmRoute";
+/** Propostas (as mesmas do CRM). Com Conversas, encaminha para Vendas › Propostas (Fase 7). */
+export default function SiteProposalsPage(){return <SiteCrmRoute crmPath="/proposals"><ProposalsPage/></SiteCrmRoute>;}

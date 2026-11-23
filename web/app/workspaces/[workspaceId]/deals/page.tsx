@@ -1,4 +1,6 @@
 "use client";
+
+import { originLabel } from "@/features/sales/sales-model";
 import { contactLabel , commercialTitle} from "@/features/crm/contact-presentation";
 
 import { InvoiceProposalButton } from "@/components/sales/InvoiceProposalButton";
@@ -693,7 +695,8 @@ function DealCard({
       </div>
       {deal.origin || deal.teamId ? (
         <div className="mt-2 flex flex-wrap gap-1.5 text-[11px] text-muted-foreground">
-          {deal.origin ? <span className="rounded-full bg-muted px-2 py-0.5">{deal.origin}</span> : null}
+          {/* Fase 7: origem legível (ex.: "Origem: Site (pedido da loja)"), só quando registrada. */}
+          {originLabel(deal.origin) ? <span className="rounded-full bg-muted px-2 py-0.5" data-origin={deal.origin}>Origem: {originLabel(deal.origin)}</span> : null}
           {deal.teamId ? <span className="rounded-full bg-muted px-2 py-0.5">{teamLabel(deal.teamId, teams)}</span> : null}
         </div>
       ) : null}

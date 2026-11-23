@@ -13,6 +13,8 @@ export type WorkspaceNavItem = {
   icon: NavIconId;
   /** Bloco do submenu (ex.: "Produção", "Publicação" no Marketing) — título discreto acima do grupo. */
   section?: string;
+  /** Fase 7: permissões de leitura (basta UMA) para o item aparecer no menu global. */
+  permission?: readonly string[];
 };
 
 export type WorkspaceNavSection = {

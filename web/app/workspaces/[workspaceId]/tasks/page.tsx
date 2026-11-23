@@ -36,6 +36,7 @@ import { formatDateTime, formatRelativeTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 type TaskView = "today" | "overdue" | "upcoming" | "done" | "cancelled";
+const TASK_VIEW_FROM_PARAM: Record<string, TaskView> = { hoje: "today", atrasadas: "overdue", proximas: "upcoming", concluidas: "done", canceladas: "cancelled" };
 
 const VIEW_LABEL: Record<TaskView, string> = {
   today: "Hoje",
@@ -69,7 +70,8 @@ function TasksView() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const workspace = useCurrentWorkspace();
-  const [view, setView] = useState<TaskView>("today");
+  // Fase 7: `?visao=atrasadas|hoje|proximas|concluidas|canceladas` — o Início e Vendas abrem direto a visão certa.
+  const [view, setView] = useState<TaskView>(() => TASK_VIEW_FROM_PARAM[searchParams.get("visao") ?? ""] ?? "today");
   const [search, setSearch] = useState("");
   const [ownerUserId, setOwnerUserId] = useState("");
   const [teamFilter, setTeamFilter] = useState("");
@@ -231,7 +233,7 @@ function TasksView() {
     <main className="mx-auto max-w-[1280px] px-3 py-5 sm:px-6 sm:py-8">
       <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight text-foreground">Tarefas</h1>
+          <h1 className="text-2xl font-semibold tracking-tight text-foreground">Atividades</h1>
           <p className="mt-1 max-w-2xl text-sm text-muted-foreground">Central de execução comercial: hoje, atrasadas, próximas e concluídas.</p>
         </div>
         <Button onClick={() => setCreateOpen(true)}>Nova tarefa</Button>

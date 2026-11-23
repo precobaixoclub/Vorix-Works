@@ -26,7 +26,8 @@ describe("menu global — áreas por ferramenta contratada", () => {
     expect(areas.map((area) => area.key)).toEqual(["home", "sales", "site", "settings"]);
     const sales = areas.find((area) => area.key === "sales")!;
     expect(sales.href).toBe("/site/oportunidades");
-    expect(sales.items.map((item) => item.href)).toEqual(["/site/oportunidades", "/site/propostas"]);
+    // Fase 7: produtos e pedidos também ficam em Vendas (rotas do próprio Site numa conta só com Site).
+    expect(sales.items.map((item) => item.href)).toEqual(["/site/oportunidades", "/site/propostas", "/site/products", "/site/pedidos"]);
   });
 
   it("cada tela de uma área pertence à ferramenta que a área exige (o guarda do servidor continua valendo)", () => {
@@ -52,6 +53,10 @@ const MOVED: Record<string, { target: string; why: string }> = {
   "/publish": { target: "/create", why: "→ link \"estúdio avançado\" dentro de Publicar conteúdo pronto (opções exclusivas de TikTok/YouTube/Story)" },
   "/social/calendar": { target: "/calendar", why: "→ encaminha para o Calendário único (mesmo detalhe com as ações por rede)" },
   "/knowledge": { target: "/settings/marca", why: "→ encaminha para Configurações › Marca e identidade (mesmas abas)" },
+  // Fase 7: as rotas do Site mostram as MESMAS telas do CRM; com Conversas encaminham para Vendas.
+  "/site/products": { target: "/products", why: "→ mesma tela de Produtos (Vendas)" },
+  "/site/oportunidades": { target: "/deals", why: "→ mesma tela de Oportunidades (Vendas)" },
+  "/site/propostas": { target: "/proposals", why: "→ mesma tela de Propostas (Vendas)" },
 };
 
 describe("menu global — nenhuma tela existente se perde", () => {
@@ -98,7 +103,7 @@ describe("menu global — área e tela ativas", () => {
     ["/knowledge", "settings"],
     ["/operations", "marketing"],
     ["/site", "site"],
-    ["/site/products", "site"],
+    ["/site/products", "sales"], // Fase 7: produtos em Vendas
     ["/commerce", "site"],
     ["/meetings", "meetings"],
     ["/meetings/central/meeting-1", "meetings"],
@@ -136,7 +141,8 @@ describe("menu global — área e tela ativas", () => {
     expect(activeGlobalItem(`${BASE}/production`, BASE, marketing)).toBe("/ideias");
     expect(activeGlobalItem(`${BASE}/social/calendar`, BASE, marketing)).toBe("/calendar");
     const site = areas.find((area) => area.key === "site");
-    expect(activeGlobalItem(`${BASE}/site/pedidos`, BASE, site)).toBe("/site/pedidos");
+    // Fase 7: Pedidos fica em Vendas.
+    expect(activeGlobalItem(`${BASE}/site/pedidos`, BASE, areas.find((area) => area.key === "sales"))).toBe("/site/pedidos");
     expect(activeGlobalItem(`${BASE}/site`, BASE, site)).toBe("/site");
   });
 
@@ -196,7 +202,7 @@ describe("Fase 2 — destino ao trocar de espaço de trabalho", () => {
     ["/production", "/workspaces/ws-2/ideias"],
     ["/campaigns/cmp-1", "/workspaces/ws-2/campaigns"],
     ["/site/pedidos/order-5", "/workspaces/ws-2/site/pedidos"],
-    ["/site/oportunidades", "/workspaces/ws-2/site/oportunidades"],
+    ["/site/oportunidades", "/workspaces/ws-2/deals"], // Fase 7: a mesma tela do CRM
     ["/settings/users", "/workspaces/ws-2/settings"],
     ["/runtime", "/workspaces/ws-2/ideias"],
     ["/onboarding", "/workspaces/ws-2"],
@@ -320,5 +326,42 @@ describe("Fase 6 — Conversas organizado", () => {
     expect(buildGlobalNavigation(["conversations"]).find((area) => area.key === "settings")!.items.map((item) => item.label)).toEqual(["Geral", "Atendimento e canais"]);
     expect(routeOwner(`${BASE}/settings/attendance`, BASE)).toBe("conversations");
     expect(activeGlobalArea(`${BASE}/settings/attendance`, BASE, areas)).toBe("settings");
+  });
+});
+
+describe("Fase 7 — Vendas sem duplicidade, por ferramenta e permissão", () => {
+  const sales = (available: SolutionKey[], can?: (permission: string) => boolean) => buildGlobalNavigation(available, can).find((area) => area.key === "sales");
+  it("Conversas + Site: um item de cada (nada de 'Oportunidades do site' duplicado), em dois blocos", () => {
+    expect(sales(["conversations", "site"])!.items.map((item) => [item.section, item.label, item.href])).toEqual([
+      ["Gestão comercial", "Oportunidades", "/deals"],
+      ["Gestão comercial", "Propostas", "/proposals"],
+      ["Gestão comercial", "Atividades", "/tasks"],
+      ["Produtos e pedidos", "Produtos", "/products"],
+      ["Produtos e pedidos", "Pedidos", "/site/pedidos"],
+    ]);
+    const labels = sales(["conversations", "site"])!.items.map((item) => item.label);
+    expect(new Set(labels).size).toBe(labels.length);
+  });
+  it("só Conversas: CRM completo, sem Pedidos (não há loja)", () => {
+    expect(sales(["conversations"])!.items.map((item) => item.href)).toEqual(["/deals", "/proposals", "/tasks", "/products"]);
+  });
+  it("só Site: rotas do próprio Site (as do CRM são do Conversas), sem Atividades", () => {
+    expect(sales(["site"])!.items.map((item) => item.href)).toEqual(["/site/oportunidades", "/site/propostas", "/site/products", "/site/pedidos"]);
+    for (const item of sales(["site"])!.items) expect(routeOwner(`${BASE}${item.href}`, BASE)).toBe("site");
+  });
+  it("permissões: só aparece o que a pessoa pode ler; sem nada, a área some", () => {
+    const only = (...permissions: string[]) => (permission: string) => permissions.includes(permission);
+    expect(sales(["conversations", "site"], only("deal:read", "commerce:read"))!.items.map((item) => item.label)).toEqual(["Oportunidades", "Pedidos"]);
+    expect(sales(["conversations"], only())).toBeUndefined();
+    // sem permissões carregadas, vale a ferramenta contratada (o servidor barra de qualquer forma)
+    expect(sales(["conversations"])!.items).toHaveLength(4);
+  });
+  it("Site fica com a loja (Editor e Analytics); pedidos e produtos acendem Vendas", () => {
+    const areas = buildGlobalNavigation(["conversations", "site"]);
+    expect(areas.find((area) => area.key === "site")!.items.map((item) => item.label)).toEqual(["Editor do site", "Analytics"]);
+    expect(activeGlobalArea(`${BASE}/site/pedidos`, BASE, areas)).toBe("sales");
+    expect(activeGlobalArea(`${BASE}/site/products`, BASE, areas)).toBe("sales");
+    expect(activeGlobalArea(`${BASE}/site/analytics`, BASE, areas)).toBe("site");
+    expect(activeGlobalArea(`${BASE}/site`, BASE, areas)).toBe("site");
   });
 });

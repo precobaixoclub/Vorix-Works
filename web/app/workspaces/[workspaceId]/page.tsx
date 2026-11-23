@@ -197,7 +197,7 @@ export default function WorkspaceHomePage() {
   if (tasksOn) {
     const pending = loadingOr(tasks);
     const overdue = taskList.filter((task) => isTaskOverdue(task, now)).length;
-    cards.push({ id: "sales-tasks", module: "sales", label: "Tarefas atrasadas", href: "/tasks", state: pending ?? { kind: "value", value: overdue, hint: `${taskList.length} pendente(s) no total`, tone: overdue > 0 ? "critical" : undefined } });
+    cards.push({ id: "sales-tasks", module: "sales", label: "Tarefas atrasadas", href: "/tasks?visao=atrasadas", state: pending ?? { kind: "value", value: overdue, hint: `${taskList.length} pendente(s) no total`, tone: overdue > 0 ? "critical" : undefined } });
   }
   if (marketingAccess === "no_permission") cards.push({ id: "marketing-scheduled", module: "marketing", label: "Publicações agendadas", href: "/calendar", state: { kind: "no_permission" } });
   if (marketingAccess === "visible") {

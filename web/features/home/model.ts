@@ -140,7 +140,7 @@ export function conversationAttention(input: { conversations?: readonly InboxCon
 export function salesAttention(input: { tasks?: readonly Task[]; proposalsViewed?: readonly Proposal[]; suggestions?: readonly CommercialSuggestion[]; dealsWithoutNextAction?: number; now: Date }): AttentionItem[] {
   const items: AttentionItem[] = [];
   for (const task of (input.tasks ?? []).filter((candidate) => isTaskOverdue(candidate, input.now)).slice(0, 5)) {
-    items.push({ id: `task-${task.id}`, module: "sales", title: task.title, context: "Tarefa comercial atrasada", href: "/tasks", at: task.dueAt, badge: "overdue", action: { kind: "complete_task", id: task.id } });
+    items.push({ id: `task-${task.id}`, module: "sales", title: task.title, context: "Tarefa comercial atrasada", href: "/tasks?visao=atrasadas", at: task.dueAt, badge: "overdue", action: { kind: "complete_task", id: task.id } });
   }
   for (const proposal of (input.proposalsViewed ?? []).slice(0, 3)) {
     items.push({ id: `proposal-${proposal.id}`, module: "sales", title: `Proposta "${proposal.title}" vista pelo cliente`, context: "Aguardando seu acompanhamento", href: `/proposals?proposal=${encodeURIComponent(proposal.id)}`, at: proposal.lastViewedAt ?? proposal.viewedAt });

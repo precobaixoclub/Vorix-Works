@@ -6,6 +6,7 @@ import { useAuth } from "@/contexts/auth-context";
 import { MARKETING_BACKSTAGE_NAV, canUseBackstage } from "@/components/workspace-navigation";
 import { activeGlobalArea, activeGlobalItem, buildGlobalNavigation, mobileBarAreas, type GlobalAreaKey } from "@/components/global-navigation";
 import { useSolutions } from "@/features/solutions/hooks";
+import { useMyAccess } from "@/features/auth/access";
 
 /**
  * Estado ÚNICO do menu global, usado pelo menu lateral (desktop) e pela barra inferior + "Menu"
@@ -17,7 +18,9 @@ export function useGlobalNavigation(workspaceId: string) {
   const { state } = useAuth();
   const base = `/workspaces/${workspaceId}`;
   const { available, isLoading } = useSolutions();
-  const areas = useMemo(() => buildGlobalNavigation(available), [available]);
+  const { can, access } = useMyAccess();
+  // Fase 7: com as permissões carregadas, o menu só mostra o que a pessoa pode ler.
+  const areas = useMemo(() => buildGlobalNavigation(available, access ? can : undefined), [available, access]); // eslint-disable-line react-hooks/exhaustive-deps
   const barAreas = useMemo(() => mobileBarAreas(areas), [areas]);
   const activeKey = activeGlobalArea(pathname, base, areas);
   const activeArea = areas.find((area) => area.key === activeKey);

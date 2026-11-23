@@ -43,7 +43,7 @@ export function PaginatedCatalog({card}:{card:(product:Product,onOpen:()=>void)=
  const selectStyle="min-w-0 w-full rounded-md border border-border bg-background p-2 text-sm";
  const toggle=(id:string)=>setSelected(ids=>ids.includes(id)?ids.filter(v=>v!==id):ids.length<500?[...ids,id]:ids);
  return <div className="mx-auto max-w-7xl px-3 py-6 sm:px-6">
-  <PageHeader title="Produtos" description="Seu catálogo em um só lugar: produtos, preços, estoque e operações em massa." actions={canManage?<div className="flex flex-wrap gap-2"><Button variant="secondary" onClick={()=>setOrganizing(true)}>Categorias</Button><Button onClick={()=>setEditing("new")}>Cadastrar produto</Button></div>:undefined}/>
+  <PageHeader title="Produtos" description="Seu catálogo em um só lugar: o mesmo usado no site, nas propostas e nas conversas. Produtos, preços, estoque e operações em massa." actions={canManage?<div className="flex flex-wrap gap-2"><Button variant="secondary" onClick={()=>setOrganizing(true)}>Categorias</Button><Button onClick={()=>setEditing("new")}>Cadastrar produto</Button></div>:undefined}/>
   <section aria-label="Categorias do catálogo" className="mb-4 rounded-xl border bg-card p-3">
    <div className="flex flex-wrap items-center gap-2">
     <span className="mr-1 text-sm font-semibold">Categorias</span>

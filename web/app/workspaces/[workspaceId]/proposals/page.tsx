@@ -31,6 +31,7 @@ import { useCurrentWorkspace } from "@/contexts/workspace-context";
 import { createProposal, moveDealStage, regenerateProposalLink, revokeProposalLink, sendProposal } from "@/features/crm/api";
 import { useContacts, useDeals, usePipelineStages, useProducts, useProposalTemplates, useProposalTimeline, useProposals } from "@/features/crm/hooks";
 import { useInboxConversations } from "@/features/inbox/hooks";
+import { inProposalView, PROPOSAL_VIEWS, proposalViewCounts, type ProposalViewKey } from "@/features/sales/sales-model";
 import { PROPOSAL_STATUS_LABEL, centsFromCurrencyInput, currencyInputFromCents, timelineEventLabel } from "@/features/crm/presentation";
 import type { Contact, Deal, Product, Proposal, ProposalStatus } from "@/features/crm/types";
 import { formatCurrencyCents, formatDate, formatDateTime } from "@/lib/format";
@@ -63,12 +64,15 @@ function ProposalsView() {
   const searchParams = useSearchParams();
   const workspace = useCurrentWorkspace();
   const [statusFilter, setStatusFilter] = useState<ProposalStatus | "all">("all");
+  // Fase 7: visões por situação (mesmas situações reais). A lista vem UMA vez e é filtrada aqui —
+  // trocar de visão/situação não dispara nova consulta. `?visao=` permite link direto (Início, Vendas).
+  const [proposalView, setProposalView] = useState<ProposalViewKey>(() => (PROPOSAL_VIEWS.some((item) => item.key === searchParams.get("visao")) ? (searchParams.get("visao") as ProposalViewKey) : "all"));
   const [search, setSearch] = useState("");
   const [contactFilter, setContactFilter] = useState("");
   const [dealFilter, setDealFilter] = useState("");
   const [view, setView] = useState<"proposals" | "templates">("proposals");
 
-  const { data: proposals, error, isLoading, mutate } = useProposals(workspace.id, { search, status: statusFilter === "all" ? undefined : statusFilter });
+  const { data: proposals, error, isLoading, mutate } = useProposals(workspace.id, { search });
   const { data: products } = useProducts(workspace.id, { activeOnly: true });
   const { data: templates } = useProposalTemplates(workspace.id, true);
   const { data: contacts } = useContacts(workspace.id);
@@ -126,11 +130,15 @@ function ProposalsView() {
     if (deal && !title) setTitle(`Proposta · ${commercialTitle(deal.title,"Oportunidade")}`);
   }, [contactId, dealId, dealsList, title]);
 
-  const visibleProposals = useMemo(() => {
+  const scopedProposals = useMemo(() => {
     return (proposals ?? [])
       .filter((proposal) => !contactFilter || proposal.contactId === contactFilter)
       .filter((proposal) => !dealFilter || proposal.dealId === dealFilter);
   }, [contactFilter, dealFilter, proposals]);
+  const viewCounts = useMemo(() => proposalViewCounts(scopedProposals), [scopedProposals]);
+  const visibleProposals = useMemo(() => scopedProposals
+    .filter((proposal) => inProposalView(proposal, proposalView))
+    .filter((proposal) => statusFilter === "all" || proposal.status === statusFilter), [scopedProposals, proposalView, statusFilter]);
 
   function addProductItem(productId: string) {
     const product = productsList.find((item) => item.id === productId);
@@ -265,6 +273,22 @@ function ProposalsView() {
           <p className="mt-1 max-w-2xl text-sm text-muted-foreground">Crie, envie e acompanhe propostas conectadas a contatos e oportunidades reais.</p>
         </div>
         <div className="flex flex-wrap gap-2"><Button variant="secondary" onClick={() => setView("templates")}>Modelos</Button><Button onClick={() => setCreateOpen(true)}>Nova proposta</Button></div>
+      </div>
+
+      <div className="-mx-0.5 mb-3 flex gap-1.5 overflow-x-auto px-0.5 pb-1" role="tablist" aria-label="Situação das propostas" data-testid="proposal-views">
+        {PROPOSAL_VIEWS.map((item) => (
+          <button
+            key={item.key}
+            type="button"
+            role="tab"
+            data-view={item.key}
+            aria-selected={proposalView === item.key}
+            onClick={() => { setProposalView(item.key); setStatusFilter("all"); }}
+            className={cn("flex min-h-[36px] shrink-0 items-center gap-1.5 rounded-full px-3 text-xs font-medium transition-colors", proposalView === item.key ? (item.key === "follow_up" ? "bg-warning text-background" : "bg-primary text-primary-foreground dark:bg-primary-glow dark:text-background") : "bg-muted text-muted-foreground hover:bg-muted/80")}
+          >
+            {item.label} <span className="tabular-nums opacity-80">{viewCounts[item.key]}</span>
+          </button>
+        ))}
       </div>
 
       <FilterBar summary={`${visibleProposals.length} propostas`}>

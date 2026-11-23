@@ -29,6 +29,9 @@ export type MessagingConnectionRepositoryPort = {
   /** Usado pelo worker/health monitor, que só tem `connectionId` (sem tenant/workspace) vindo do
    * evento de fila — nunca exposto a uma rota HTTP. */
   listAllActive(): Promise<MessagingConnection[]>;
+  /** Conexões em status terminal (`logged_out`/`requires_repair`) — só para a checagem SOMENTE LEITURA do
+   * monitor de saúde, que corrige o status quando o gateway confirma ao vivo que a sessão está conectada. */
+  listTerminal(): Promise<MessagingConnection[]>;
   updateStatus(id: string, input: UpdateMessagingConnectionStatusInput): Promise<MessagingConnection>;
   /** Patch: campo omitido mantém o valor atual. */
   updateSettings(id: string, input: MessagingConnectionSettingsPatch): Promise<MessagingConnection>;

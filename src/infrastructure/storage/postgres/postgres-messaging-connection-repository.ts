@@ -70,6 +70,14 @@ export class PostgresMessagingConnectionRepository implements MessagingConnectio
     return result.rows.map((row) => this.toDomain(row));
   }
 
+  async listTerminal(): Promise<MessagingConnection[]> {
+    const result = await this.pool.query<Row>(
+      "select * from messaging_connections where status = any($1::text[])",
+      [[...MESSAGING_CONNECTION_TERMINAL_STATUSES]],
+    );
+    return result.rows.map((row) => this.toDomain(row));
+  }
+
   async listAllActive(): Promise<MessagingConnection[]> {
     const result = await this.pool.query<Row>(
       "select * from messaging_connections where status <> all($1::text[])",

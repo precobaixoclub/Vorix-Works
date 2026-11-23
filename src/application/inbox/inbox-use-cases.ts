@@ -356,6 +356,22 @@ export async function reconcileConnectionsHealth(deps: InboxUseCaseDeps): Promis
     }
   }
 
+  // Conexões terminais (logout/reparo): checagem SOMENTE LEITURA — nunca reconecta, nunca pede QR, nunca
+  // grava saúde. Só corrige o status quando o gateway confirma AO VIVO que a sessão pareada está conectada
+  // (caso real 19/11/2026: o WhatsApp da Vorix voltou sozinho e o Vorix mostrou "desconectado" por dias).
+  // Eventos de fila atrasados continuam sem poder ressuscitar a conexão (`applyConnectionStateChanged`).
+  for (const connection of await deps.connectionRepository.listTerminal()) {
+    if (connection.provider !== "wuzapi" || !connection.externalSessionId || !connection.phoneNumber) continue;
+    try {
+      const live = await resolveProvider(deps, connection.provider).getConnectionStatus({ externalSessionId: connection.externalSessionId });
+      if (live.status !== "connected") continue;
+      await deps.connectionRepository.updateStatus(connection.id, { status: "connected", phoneNumber: live.phoneNumber ?? connection.phoneNumber, connectionHealth: "healthy" });
+      healthy += 1;
+    } catch {
+      // Sessão revogada ou gateway fora: nada a corrigir — permanece terminal, sem registrar falha.
+    }
+  }
+
   return { checked: connections.length, healthy, unhealthy };
 }
 

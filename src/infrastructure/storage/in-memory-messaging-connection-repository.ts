@@ -47,6 +47,10 @@ export class InMemoryMessagingConnectionRepository implements MessagingConnectio
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   }
 
+  async listTerminal(): Promise<MessagingConnection[]> {
+    return [...this.rows.values()].filter((row) => MESSAGING_CONNECTION_TERMINAL_STATUSES.includes(row.status));
+  }
+
   async listAllActive(): Promise<MessagingConnection[]> {
     return [...this.rows.values()].filter((row) => !MESSAGING_CONNECTION_TERMINAL_STATUSES.includes(row.status));
   }

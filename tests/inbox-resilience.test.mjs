@@ -317,22 +317,34 @@ test("Monitor de saúde: sucesso marca healthy e limpa erro anterior; falha tran
   assert.equal(afterSuccess.lastConnectionError, undefined, "sucesso limpa o erro anterior");
 });
 
-test("Monitor de saúde nunca checa (nem toca) conexões em status terminal — logout/revogação não pode entrar em loop", async () => {
+test("Monitor de saúde e conexão terminal: só leitura — revoga continua revogada; sessão confirmada conectada ao vivo volta a 'connected'", async () => {
+  // Caso real (19/11/2026): o WhatsApp da Vorix reconectou sozinho no gateway e o Vorix mostrou
+  // "desconectado" por dias, porque o monitor nunca olhava conexões terminais.
   const tenantId = "tenant-res-health-2";
-  const { connection } = await makeConversation(tenantId);
+  const { connection: revoked } = await makeConversation(tenantId);
+  const { connection: backOnline } = await makeConversation(tenantId);
   const connectionRepo = new PostgresMessagingConnectionRepository(db.pool);
-  await connectionRepo.updateStatus(connection.id, { status: "logged_out" });
+  for (const item of [revoked, backOnline]) await connectionRepo.updateStatus(item.id, { status: "logged_out", phoneNumber: "+5511999990000" });
 
-  const checkedSessionIds = new Set();
-  const provider = makeFakeMessagingProvider({ getConnectionStatus: async (input) => { checkedSessionIds.add(input.externalSessionId); return { status: "connected" }; } });
+  let connectCalls = 0;
+  const provider = makeFakeMessagingProvider({
+    getConnectionStatus: async (input) => (input.externalSessionId === revoked.externalSessionId ? { status: "logged_out" } : { status: "connected", phoneNumber: "+5511999990000" }),
+  });
+  provider.connect = async () => { connectCalls += 1; return {}; };
   const deps = buildDeps(tenantId, { provider });
 
   await reconcileConnectionsHealth(deps);
-  assert.equal(checkedSessionIds.has(connection.externalSessionId), false, "getConnectionStatus nunca chamado para uma sessão já revogada — nunca reautentica sozinho");
+  const stillRevoked = await deps.connectionRepository.getById(revoked.id);
+  assert.equal(stillRevoked.status, "logged_out", "sessão que o gateway confirma deslogada continua terminal");
+  assert.equal(stillRevoked.connectionHealth, "unknown", "nenhuma saúde gravada para conexão terminal");
+  const revived = await deps.connectionRepository.getById(backOnline.id);
+  assert.equal(revived.status, "connected", "o gateway confirmou ao vivo: o Vorix passa a mostrar conectado");
+  assert.equal(revived.connectionHealth, "healthy");
+  assert.equal(connectCalls, 0, "nunca reconecta/reautentica sozinho — só lê o status");
 
-  const afterTick = await deps.connectionRepository.getById(connection.id);
-  assert.equal(afterTick.status, "logged_out", "conexão terminal permanece intocada pelo monitor de saúde");
-  assert.equal(afterTick.connectionHealth, "unknown", "connectionHealth também nunca é escrito para uma conexão terminal");
+  // Evento de fila atrasado continua sem poder ressuscitar uma conexão terminal.
+  await applyConnectionStateChanged(deps, { connectionId: revoked.id, status: "connected" });
+  assert.equal((await deps.connectionRepository.getById(revoked.id)).status, "logged_out");
 });
 
 // Achado real do usuário (produção): escanear o QR do PRIMEIRO pareamento às vezes terminava em

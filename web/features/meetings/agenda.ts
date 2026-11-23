@@ -122,8 +122,8 @@ export function useAgendaEvents(workspaceId: string, from: string, to: string) {
   });
 }
 
-export function useGoogleCalendarStatus(workspaceId: string) {
-  return useSWR(["meeting-google-status", workspaceId], () => getGoogleCalendarStatus(workspaceId), MEETINGS_RETRY);
+export function useGoogleCalendarStatus(workspaceId: string, enabled = true) {
+  return useSWR(enabled ? ["meeting-google-status", workspaceId] : null, () => getGoogleCalendarStatus(workspaceId), MEETINGS_RETRY);
 }
 
 export function useGoogleCalendars(workspaceId: string, enabled: boolean) {

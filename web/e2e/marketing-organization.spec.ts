@@ -147,7 +147,8 @@ test.describe("Fase 5 — desktop", () => {
     await expect(marketing.locator("a[aria-current='page']")).toHaveText("Calendário");
     await nav.getByRole("button", { name: "Mostrar telas de Configurações" }).click();
     // Fase 6: a conta também tem Conversas, então "Atendimento e canais" aparece junto.
-    await expect(nav.locator("[data-area-items='settings'] a")).toHaveText(["Geral", "Atendimento e canais", "Marca e identidade", "Redes sociais"]);
+    // Fase 10: + Meu perfil, Integrações e Plano e cobrança, em blocos (Marca e Redes sociais continuam a um clique).
+    await expect(nav.locator("[data-area-items='settings'] a")).toHaveText(["Meu perfil", "Geral", "Atendimento e canais", "Marca e identidade", "Integrações", "Redes sociais", "Plano e cobrança"]);
     await expect(nav.getByRole("button", { name: "Operação técnica" })).toBeVisible();
   });
 

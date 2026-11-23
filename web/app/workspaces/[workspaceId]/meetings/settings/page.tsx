@@ -22,7 +22,6 @@ import {
   type AutoRecordMode, type KeywordTracker, type SummaryTemplateKey,
 } from "@/features/meetings/intelligence";
 import { ApiError } from "@/lib/api-client";
-import { MeetingPlanCard } from "@/features/meeting-plans/MeetingPlanCard";
 
 const TEMPLATE_OPTIONS: [SummaryTemplateKey, string][] = [["general", "Geral"], ["sales", "Vendas (BANT)"], ["internal", "Reunião interna"], ["one_on_one", "1:1 (líder e liderado)"], ["interview", "Entrevista de emprego"], ["support", "Atendimento / suporte"]];
 const AUTO_RECORD_OPTIONS: [AutoRecordMode, string, string][] = [
@@ -61,10 +60,14 @@ export default function MeetingsSettingsPage() {
         <span className="inline-flex min-h-[36px] items-center rounded-full bg-muted px-3 font-medium text-foreground" aria-current="page">Preferências</span>
         <Link className="inline-flex min-h-[36px] items-center rounded-full border border-border px-3 text-muted-foreground hover:bg-muted/50 hover:text-foreground" href={`/workspaces/${workspace.id}/meetings/integrations`}>Agenda e integrações</Link>
         <Link className="inline-flex min-h-[36px] items-center rounded-full border border-border px-3 text-muted-foreground hover:bg-muted/50 hover:text-foreground" href={`/workspaces/${workspace.id}/meetings/recorder-accounts`}>Contas de gravação</Link>
-        {isAdmin ? <Link className="inline-flex min-h-[36px] items-center rounded-full border border-border px-3 text-muted-foreground hover:bg-muted/50 hover:text-foreground" href={`/workspaces/${workspace.id}/settings/plano`}>Plano e cobrança</Link> : null}
+        {isAdmin ? <Link className="inline-flex min-h-[36px] items-center rounded-full border border-border px-3 text-muted-foreground hover:bg-muted/50 hover:text-foreground" href={`/workspaces/${workspace.id}/settings/plano#plano-reunioes`}>Plano e cobrança</Link> : null}
       </nav>
 
-      <MeetingPlanCard />
+      {/* Fase 10: plano, uso contratado e mudança de plano ficam em Conta e assinatura — sem controles duplicados aqui. */}
+      <Card className="flex flex-wrap items-center justify-between gap-3 p-4 text-sm" data-testid="meetings-plan-link">
+        <span className="text-muted-foreground">O plano de Reuniões, o tempo de gravação contratado e as mudanças de plano ficam em Conta e assinatura.</span>
+        <Link className="font-medium text-primary hover:underline dark:text-primary-glow" href={`/workspaces/${workspace.id}/settings/plano#plano-reunioes`}>Ver plano de Reuniões</Link>
+      </Card>
 
       {usage.data ? (
         <Card className="space-y-3 p-5">

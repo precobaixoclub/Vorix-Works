@@ -42,7 +42,7 @@ describe("Reuniões — menu (Fase 9)", () => {
 
   it("Configurações ganha Reuniões só quando a conta tem Reuniões", () => {
     const settingsOf = (solutions: Parameters<typeof buildGlobalNavigation>[0]) => buildGlobalNavigation(solutions).find((area) => area.key === "settings")!.items.map((entry) => entry.href);
-    expect(settingsOf(["meetings"])).toEqual(["/settings", "/meetings/settings"]);
+    expect(settingsOf(["meetings"])).toEqual(["/settings/perfil", "/settings", "/meetings/settings", "/settings/integracoes", "/settings/plano"]);
     expect(settingsOf(["conversations"])).not.toContain("/meetings/settings");
   });
 });

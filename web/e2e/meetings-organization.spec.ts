@@ -371,7 +371,9 @@ test.describe("Fase 9 — Reuniões", () => {
     const links = page.getByTestId("meetings-settings-links");
     await expect(links.getByRole("link", { name: "Agenda e integrações" })).toHaveAttribute("href", `${base()}/meetings/integrations`);
     await expect(links.getByRole("link", { name: "Contas de gravação" })).toHaveAttribute("href", `${base()}/meetings/recorder-accounts`);
-    await expect(links.getByRole("link", { name: "Plano e cobrança" })).toHaveAttribute("href", `${base()}/settings/plano`);
+    // Fase 10: o plano de Reuniões mora em Conta e assinatura (âncora do cartão).
+    await expect(links.getByRole("link", { name: "Plano e cobrança" })).toHaveAttribute("href", `${base()}/settings/plano#plano-reunioes`);
+    await expect(page.getByTestId("meetings-plan-link").getByRole("link")).toHaveAttribute("href", `${base()}/settings/plano#plano-reunioes`);
   });
 
   test("somente leitura: consulta tudo, sem gravar, excluir ou perguntar à IA", async ({ page }) => {

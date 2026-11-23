@@ -14,6 +14,7 @@ import { Input, Label } from "@/components/Field";
 import { Modal } from "@/components/Modal";
 import { PersonAvatar } from "@/components/DashboardKit";
 import { SettingsShell } from "@/components/settings/SettingsShell";
+import { ROLE_LABEL, ROLE_SUMMARY, accessSummary } from "@/features/settings/people";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Spinner } from "@/components/Spinner";
 import { useAuth } from "@/contexts/auth-context";
@@ -28,8 +29,6 @@ import { useInboxMembers } from "@/features/inbox/hooks";
 import { useWorkspaces } from "@/features/workspace/hooks";
 import { RBAC_COPY } from "@/lib/rbac";
 
-/** Perfis (0173): owner = Administrador, admin = Gerente, editor = Atendente; viewer é legado. */
-const ROLE_LABEL: Record<TenantRole, string> = { owner: "Administrador", admin: "Gerente", editor: "Atendente", viewer: "Visualizador" };
 const INVITE_ROLES: TenantRole[] = ["owner", "admin", "editor"];
 
 export default function UsersPage() {
@@ -121,11 +120,13 @@ export default function UsersPage() {
   return (
     <SettingsShell
       active="users"
-      title="Usuários"
-      description="Cadastre nome, e-mail e foto de quem trabalha com você e gerencie o acesso à conta."
+      title="Usuários e permissões"
+      description="Quem acessa a conta, com qual papel, em quais espaços — e o que cada papel pode fazer."
       actions={<div className="flex gap-2"><GuardedButton variant="secondary" onClick={() => setInviteOpen(true)} allowed={canManage && !inviteBlocked} blockedReason={inviteBlocked ? "Você acessa só alguns espaços: use Cadastrar usuário para escolher os espaços da pessoa." : RBAC_COPY.manageTenant}>Convidar por e-mail</GuardedButton><GuardedButton onClick={() => setProfileEditor("new")} allowed={canManage} blockedReason={RBAC_COPY.manageTenant}>Cadastrar usuário</GuardedButton></div>}
     >
       {error ? <p className="mb-4 rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</p> : null}
+
+      {members && !membersError ? <AccessOverview members={members} pendingInvites={(invites ?? []).filter((invite) => invite.status === "pending").length} /> : null}
 
       <Card className="mb-4">
         <CardHeader><p className="text-sm font-semibold text-foreground">Membros</p></CardHeader>
@@ -299,4 +300,26 @@ function workspaceSummary(ids: readonly string[] | null, options: readonly { id:
 function memberIdentity(userId: string, members: readonly { userId: string; name: string; email: string }[] | undefined) {
   const member = members?.find((item) => item.userId === userId);
   return member ? { name: member.name, email: member.email } : { name: "Membro do tenant", email: "E-mail indisponível nesta API" };
+}
+
+/** Fase 10: quem tem acesso e quem administra, sobre a MESMA lista de membros (sem consulta nova). */
+function AccessOverview({ members, pendingInvites }: { members: TenantMembership[]; pendingInvites: number }) {
+  const summary = accessSummary(members);
+  return (
+    <Card className="mb-4" data-testid="access-overview">
+      <CardHeader><p className="text-sm font-semibold text-foreground">Quem tem acesso</p></CardHeader>
+      <CardBody className="space-y-3 text-sm">
+        <div className="grid gap-2 sm:grid-cols-3">
+          <div className="rounded-lg bg-muted/35 px-3 py-2"><p className="text-xs text-muted-foreground">Pessoas ativas</p><p className="text-lg font-semibold tabular-nums text-foreground" data-testid="access-active">{summary.active}</p></div>
+          <div className="rounded-lg bg-muted/35 px-3 py-2"><p className="text-xs text-muted-foreground">Administram a conta</p><p className="text-lg font-semibold tabular-nums text-foreground" data-testid="access-admins">{summary.administrators}</p></div>
+          <div className="rounded-lg bg-muted/35 px-3 py-2"><p className="text-xs text-muted-foreground">Convites pendentes</p><p className="text-lg font-semibold tabular-nums text-foreground">{pendingInvites}</p></div>
+        </div>
+        {summary.accountOwner ? <p className="text-xs text-muted-foreground">Responsável principal pela conta: <span className="font-medium text-foreground">{summary.accountOwner}</span>{summary.disabled ? ` · ${summary.disabled} desativado(s)` : ""}</p> : null}
+        <ul className="space-y-1 text-xs text-muted-foreground" data-testid="role-summary">
+          {(["owner", "admin", "editor"] as const).map((role) => <li key={role}>{ROLE_SUMMARY[role]} <span className="tabular-nums">({summary.byRole[role]})</span></li>)}
+          {summary.byRole.viewer ? <li>{ROLE_SUMMARY.viewer} <span className="tabular-nums">({summary.byRole.viewer})</span></li> : null}
+        </ul>
+      </CardBody>
+    </Card>
+  );
 }

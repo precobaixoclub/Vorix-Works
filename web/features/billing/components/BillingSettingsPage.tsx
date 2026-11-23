@@ -137,7 +137,7 @@ export default function BillingSettingsPage({ account = false }: { account?: boo
   if (isLoading) {
     return <div className="flex items-center gap-2 px-6 py-14 text-sm text-muted-foreground"><Spinner className="h-4 w-4" /> Carregando plano e cobrança...</div>;
   }
-  if (error || !data) return <div className="mx-auto max-w-4xl px-3 py-8"><ErrorState error={error} onRetry={() => mutate()} /></div>;
+  if (error || !data) return <div className="mx-auto max-w-4xl px-3 py-8"><ErrorState error={error} onRetry={() => mutate()} /><div id="plano-reunioes" className="scroll-mt-24"><MeetingPlanCard className="mt-5" /></div></div>;
 
   const currentPlan = plans?.find((plan) => plan.code === data.planCode);
   const interval = data.billingInterval ?? "monthly";
@@ -229,7 +229,8 @@ export default function BillingSettingsPage({ account = false }: { account?: boo
 
       <CapacityCard canManage={canManage} consumption={data.consumption} virtual={data.virtual} onNeedPaymentMethod={(capacity) => void goToCheckout(data.planCode as PlatformPlanCode, interval, capacity)} />
 
-      <MeetingPlanCard className="mt-5" />
+      {/* Fase 10: o plano de Reuniões mora aqui (Conta e assinatura); Reuniões › Preferências só aponta para cá. */}
+      <div id="plano-reunioes" className="scroll-mt-24"><MeetingPlanCard className="mt-5" /></div>
 
       <Card id="comparar-planos" className="mt-5">
         <CardHeader><p className="text-sm font-semibold text-foreground">Comparar planos</p></CardHeader>

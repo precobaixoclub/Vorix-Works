@@ -2,52 +2,29 @@
 
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect } from "react";
-import { Boxes, CreditCard, Globe, Headset, Mic, Palette, PlugZap, Scale, Settings, Share2, ShoppingBag, SlidersHorizontal, Store, Target, UsersRound, Workflow } from "lucide-react";
+import { Boxes, CalendarDays, CreditCard, Globe, Headset, Mic, Palette, PlugZap, Scale, Settings, Share2, ShoppingBag, SlidersHorizontal, Store, Target, UserRound, UsersRound, Workflow, type LucideIcon } from "lucide-react";
 import { PageHeader } from "@/components/PageHeader";
-import { PageSubnav } from "@/components/PageSubnav";
 import { useCurrentWorkspace } from "@/contexts/workspace-context";
-import { useActiveSolution } from "@/features/solutions/hooks";
-import type { SolutionKey } from "@/lib/solutions";
+import { useSolutions } from "@/features/solutions/hooks";
+import { SETTINGS_CATEGORIES, SETTINGS_SECTIONS, settingsSectionFromPath, settingsSectionsFor, type SettingsSectionKey } from "@/features/settings/sections";
+import { cn } from "@/lib/utils";
 
-// "Conta" é do Core e aparece sempre. O resto pertence a UMA solução (ou a algumas) e só aparece
-// quando ela é a solução ativa: no Vorix Site não aparecem atendimento, metas ou automações do
-// Conversas, e assim por diante.
-const GLOBAL_GROUP = "Conta";
-const SOLUTION_GROUP: Record<SolutionKey, string> = { site: "Vorix Site", conversations: "Vorix Conversas", meetings: "Vorix Meetings", marketing: "Vorix Marketing" };
-type SettingsSection = { value: string; label: string; href: string; icon: typeof Settings; solutions?: readonly SolutionKey[] };
-export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
-  { value: "general", label: "Geral", href: "/settings", icon: Settings },
-  { value: "users", label: "Usuários", href: "/settings/users", icon: UsersRound },
-  { value: "teams", label: "Equipes", href: "/settings/teams", icon: UsersRound },
-  { value: "billing", label: "Plano e cobrança", href: "/settings/plano", icon: CreditCard },
-  { value: "site-address", label: "Endereço e domínio", href: "/site?section=dominio", icon: Globe, solutions: ["site"] },
-  { value: "site-selling", label: "Como vender pelo site", href: "/site?section=loja", icon: ShoppingBag, solutions: ["site"] },
-  { value: "site-products", label: "Produtos", href: "/site/products", icon: Boxes, solutions: ["site"] },
-  // Fase 5: a marca e as redes sociais do Marketing passam a morar em Configurações (o menu do
-  // Marketing fica só com produção e publicação). A conexão de anúncios continua dentro de Anúncios.
-  { value: "brand", label: "Marca e identidade", href: "/settings/marca", icon: Palette, solutions: ["marketing"] },
-  { value: "social", label: "Redes sociais", href: "/social/integrations", icon: Share2, solutions: ["marketing"] },
-  { value: "integrations", label: "Integrações", href: "/connections", icon: PlugZap, solutions: ["conversations"] },
-  // Fase 6: "Atendimento e canais" — as três telas que já existiam, num grupo só.
-  { value: "attendance", label: "Encerramento e avaliação", href: "/settings/attendance", icon: Headset, solutions: ["conversations"] },
-  { value: "channels", label: "Canais de atendimento", href: "/conversas?aba=canais", icon: PlugZap, solutions: ["conversations"] },
-  { value: "service-rules", label: "Regras de atendimento", href: "/conversas?aba=regras", icon: SlidersHorizontal, solutions: ["conversations"] },
-  { value: "products", label: "Produtos", href: "/products", icon: Boxes, solutions: ["conversations"] },
-  { value: "commercial", label: "Regras comerciais", href: "/settings/commercial", icon: Scale, solutions: ["conversations"] },
-  { value: "goals", label: "Metas", href: "/settings/goals", icon: Target, solutions: ["conversations"] },
-  { value: "automations", label: "Automações", href: "/settings/automations", icon: Workflow, solutions: ["conversations"] },
-  { value: "marketplaces", label: "Marketplaces", href: "/settings/marketplaces", icon: Store, solutions: ["site", "conversations"] },
-  { value: "meetings-preferences", label: "Preferências", href: "/meetings/settings", icon: SlidersHorizontal, solutions: ["meetings"] },
-  { value: "meetings-integrations", label: "Agenda e integrações", href: "/meetings/integrations", icon: PlugZap, solutions: ["meetings"] },
-  { value: "meetings-recorder", label: "Contas de gravação", href: "/meetings/recorder-accounts", icon: Mic, solutions: ["meetings"] },
-];
+export { SETTINGS_SECTIONS, settingsSectionsFor };
 
-/** Seções visíveis: a Conta sempre; as de solução só para a solução ativa (e contratada). */
-export function settingsSectionsFor(active: SolutionKey | undefined, available: readonly SolutionKey[]) {
-  return SETTINGS_SECTIONS.filter(({ solutions }) => !solutions || (active !== undefined && solutions.includes(active) && available.includes(active)))
-    .map((section) => ({ ...section, group: section.solutions ? SOLUTION_GROUP[active!] : GLOBAL_GROUP }));
-}
+const ICONS: Record<SettingsSectionKey, LucideIcon> = {
+  profile: UserRound, general: Settings, users: UsersRound, teams: UsersRound, brand: Palette,
+  attendance: Headset, channels: PlugZap, "service-rules": SlidersHorizontal, products: Boxes, commercial: Scale, goals: Target, automations: Workflow,
+  "site-address": Globe, "site-selling": ShoppingBag, "site-products": Boxes, marketplaces: Store,
+  "meetings-preferences": SlidersHorizontal, "meetings-recorder": Mic,
+  "integrations-hub": PlugZap, integrations: PlugZap, social: Share2, "meetings-integrations": CalendarDays,
+  billing: CreditCard,
+};
 
+/**
+ * Configurações (Fase 10): uma navegação só, em categorias — Minha conta, Espaço de trabalho, opções
+ * de cada ferramenta contratada, Integrações e Conta e assinatura. No desktop, a lista lateral com os
+ * títulos das categorias; no celular, um seletor agrupado (nada de faixa com 20 botões).
+ */
 export function SettingsShell({
   active,
   title,
@@ -64,52 +41,76 @@ export function SettingsShell({
   const workspace = useCurrentWorkspace();
   const router = useRouter();
   const pathname = usePathname();
-  const { active: activeSolution, available, isLoading: solutionsLoading, settled } = useActiveSolution(pathname, `/workspaces/${workspace.id}`);
-  // Enquanto não se sabe a solução ativa, só a Conta aparece (nada de mostrar as opções de outra solução por um instante).
-  const sections = settingsSectionsFor(solutionsLoading || !settled ? undefined : activeSolution, available);
-  const selected = SETTINGS_SECTIONS.find(section => section.value === (activeFromPath(pathname) ?? active));
-  const contextReady = !solutionsLoading && settled;
-  const allowed = !selected?.solutions || (contextReady && selected.solutions.includes(activeSolution) && available.includes(activeSolution));
+  const base = `/workspaces/${workspace.id}`;
+  const { available, isLoading } = useSolutions();
+  const ready = !isLoading;
+  const sections = settingsSectionsFor(ready ? available : undefined);
+  const current = settingsSectionFromPath(pathname, base) ?? (active as SettingsSectionKey);
+  const selected = SETTINGS_SECTIONS.find((section) => section.value === current);
+  // Tela de uma ferramenta que a conta não contratou: volta para as Configurações gerais.
+  const allowed = !selected?.solutions || (ready && sections.some((section) => section.value === selected.value));
   useEffect(() => {
-    if (contextReady && !allowed) router.replace(`/workspaces/${workspace.id}/settings`);
-  }, [contextReady, allowed, router, workspace.id]);
+    if (ready && !allowed) router.replace(`${base}/settings`);
+  }, [ready, allowed, router, base]);
 
-  function navigate(value: string) {
+  const navigate = (value: string) => {
     const item = sections.find((section) => section.value === value);
-    if (!item) return;
-    router.push(`/workspaces/${workspace.id}${item.href}`);
-  }
+    if (item) router.push(`${base}${item.href}`);
+  };
+  const categories = SETTINGS_CATEGORIES.filter((category) => sections.some((section) => section.category === category));
+  const currentVisible = sections.some((section) => section.value === current);
 
   return (
     <main className="mx-auto max-w-7xl px-3 py-5 sm:px-6 sm:py-8">
       <PageHeader
         title={title ?? "Configurações"}
-        description={description ?? "Conta, pessoas, integrações e cobrança — e as preferências de cada solução."}
+        description={description ?? "Sua conta, a empresa, as ferramentas contratadas, as integrações e a assinatura."}
         actions={actions}
       />
-      <PageSubnav
-        items={sections.map(({ value, label, icon, group }) => ({ value, label, icon, group }))}
-        value={activeFromPath(pathname) ?? active}
-        onValueChange={navigate}
-      >
-        {allowed ? children : <p role="status" className="text-sm text-muted-foreground">Abrindo as configurações do produto atual...</p>}
-      </PageSubnav>
+      <div className="flex flex-col gap-6 md:flex-row">
+        <div className="md:hidden">
+          <label htmlFor="settings-section" className="mb-1 block text-xs font-medium text-muted-foreground">Seção das configurações</label>
+          <select
+            id="settings-section"
+            value={currentVisible ? current : ""}
+            onChange={(event) => navigate(event.target.value)}
+            className="h-11 w-full rounded-lg border border-border bg-background px-3 text-sm text-foreground"
+          >
+            {currentVisible ? null : <option value="">Escolha uma seção</option>}
+            {categories.map((category) => (
+              <optgroup key={category} label={category}>
+                {sections.filter((section) => section.category === category).map((section) => <option key={section.value} value={section.value}>{section.label}</option>)}
+              </optgroup>
+            ))}
+          </select>
+        </div>
+        <nav aria-label="Navegação da seção" className="hidden md:flex md:w-60 md:shrink-0 md:flex-col" data-testid="settings-nav">
+          {categories.map((category, index) => (
+            <div key={category} data-category={category}>
+              <p className={cn("px-3 pb-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground", index > 0 && "pt-4")}>{category}</p>
+              {sections.filter((section) => section.category === category).map((section) => {
+                const Icon = ICONS[section.value];
+                const isActive = section.value === current;
+                return (
+                  <button
+                    key={section.value}
+                    type="button"
+                    onClick={() => navigate(section.value)}
+                    aria-current={isActive ? "page" : undefined}
+                    className={cn("flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm transition-colors", isActive ? "bg-muted font-medium text-foreground" : "text-muted-foreground hover:bg-muted/50 hover:text-foreground")}
+                  >
+                    <Icon className="h-4 w-4 shrink-0" />
+                    {section.label}
+                  </button>
+                );
+              })}
+            </div>
+          ))}
+        </nav>
+        <div className="min-w-0 flex-1">
+          {allowed ? children : <p role="status" className="text-sm text-muted-foreground">Esta configuração não faz parte das ferramentas contratadas. Abrindo as configurações gerais...</p>}
+        </div>
+      </div>
     </main>
   );
-}
-
-function activeFromPath(pathname: string): string | undefined {
-  if (pathname.endsWith("/settings/users")) return "users";
-  if (pathname.endsWith("/settings/teams")) return "teams";
-  if (pathname.endsWith("/connections")) return "integrations";
-  if (pathname.endsWith("/settings/products")) return "products";
-  if (pathname.endsWith("/settings/automations")) return "automations";
-  if (pathname.endsWith("/settings/commercial")) return "commercial";
-  if (pathname.endsWith("/settings/goals")) return "goals";
-  if (pathname.endsWith("/settings/attendance")) return "attendance";
-  if (pathname.endsWith("/settings/plano")) return "billing";
-  if (pathname.endsWith("/settings/marketplaces")) return "marketplaces";
-  if (pathname.endsWith("/settings/marca")) return "brand";
-  if (pathname.endsWith("/settings")) return "general";
-  return undefined;
 }

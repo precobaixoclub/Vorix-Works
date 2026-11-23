@@ -72,20 +72,32 @@ const MARKETING_ITEMS: readonly WorkspaceNavItem[] = [
   { href: "/meta-ads", label: "Anúncios", icon: "ads", section: "Publicação" },
 ];
 
-/** Configurações com destinos das ferramentas: Atendimento e canais (Conversas, Fase 6), Marca e
- * identidade e Redes sociais (Marketing, Fase 5). Só "Geral" sozinho não vira submenu. */
-const SETTINGS_GENERAL: WorkspaceNavItem = { href: "/settings", label: "Geral", icon: "settings" };
-const SETTINGS_CONVERSATIONS_ITEMS: readonly WorkspaceNavItem[] = [{ href: "/settings/attendance", label: "Atendimento e canais", icon: "conversas" }];
-// Fase 9: as preferências de Reuniões também a partir de Configurações (centralização da Fase 10).
-const SETTINGS_MEETINGS_ITEMS: readonly WorkspaceNavItem[] = [{ href: "/meetings/settings", label: "Reuniões", icon: "meetings" }];
-const SETTINGS_MARKETING_ITEMS: readonly WorkspaceNavItem[] = [
-  { href: "/settings/marca", label: "Marca e identidade", icon: "brand" },
-  { href: "/social/integrations", label: "Redes sociais", icon: "connections" },
-];
+/**
+ * Configurações (Fase 10): os destinos de um clique das fases anteriores continuam (Atendimento e
+ * canais — Fase 6, Marca e identidade e Redes sociais — Fase 5, Reuniões — Fase 9), agora em blocos:
+ * Minha conta, Espaço de trabalho, Integrações e Conta e assinatura. O resto mora na navegação da
+ * própria tela de Configurações, conforme as ferramentas contratadas.
+ */
+const SETTINGS_PROFILE: WorkspaceNavItem = { href: "/settings/perfil", label: "Meu perfil", icon: "contacts", section: "Minha conta" };
+const SETTINGS_GENERAL: WorkspaceNavItem = { href: "/settings", label: "Geral", icon: "settings", section: "Espaço de trabalho" };
+const SETTINGS_CONVERSATIONS_ITEMS: readonly WorkspaceNavItem[] = [{ href: "/settings/attendance", label: "Atendimento e canais", icon: "conversas", section: "Espaço de trabalho" }];
+const SETTINGS_BRAND: WorkspaceNavItem = { href: "/settings/marca", label: "Marca e identidade", icon: "brand", section: "Espaço de trabalho" };
+const SETTINGS_MEETINGS_ITEMS: readonly WorkspaceNavItem[] = [{ href: "/meetings/settings", label: "Reuniões", icon: "meetings", section: "Espaço de trabalho" }];
+const SETTINGS_INTEGRATIONS: WorkspaceNavItem = { href: "/settings/integracoes", label: "Integrações", icon: "connections", section: "Integrações" };
+const SETTINGS_SOCIAL: WorkspaceNavItem = { href: "/social/integrations", label: "Redes sociais", icon: "connections", section: "Integrações" };
+const SETTINGS_BILLING: WorkspaceNavItem = { href: "/settings/plano", label: "Plano e cobrança", icon: "orders", section: "Conta e assinatura" };
 
 function settingsItems(has: (key: SolutionKey) => boolean): WorkspaceNavItem[] {
-  const extra = [...(has("conversations") ? SETTINGS_CONVERSATIONS_ITEMS : []), ...(has("marketing") ? SETTINGS_MARKETING_ITEMS : []), ...(has("meetings") ? SETTINGS_MEETINGS_ITEMS : [])];
-  return extra.length ? [SETTINGS_GENERAL, ...extra] : [];
+  return [
+    SETTINGS_PROFILE,
+    SETTINGS_GENERAL,
+    ...(has("conversations") ? SETTINGS_CONVERSATIONS_ITEMS : []),
+    ...(has("marketing") ? [SETTINGS_BRAND] : []),
+    ...(has("meetings") ? SETTINGS_MEETINGS_ITEMS : []),
+    SETTINGS_INTEGRATIONS,
+    ...(has("marketing") ? [SETTINGS_SOCIAL] : []),
+    SETTINGS_BILLING,
+  ];
 }
 
 const SITE_ITEMS: readonly WorkspaceNavItem[] = [

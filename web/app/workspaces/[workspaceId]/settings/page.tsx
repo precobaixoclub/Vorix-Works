@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { usePathname, useRouter } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Button } from "@/components/Button";
 import { Card, CardBody, CardHeader } from "@/components/Card";
@@ -13,7 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch";
 import { useAuth } from "@/contexts/auth-context";
 import { useCurrentWorkspace } from "@/contexts/workspace-context";
-import { useActiveSolution } from "@/features/solutions/hooks";
+import { useSolutions } from "@/features/solutions/hooks";
 import { updateWorkspace } from "@/features/workspace/api";
 import { formatDateTime } from "@/lib/format";
 
@@ -25,10 +25,10 @@ export default function SettingsPage() {
   const workspace = useCurrentWorkspace();
   const router = useRouter();
   const { state } = useAuth();
-  const pathname = usePathname();
-  const { active, available, settled, isLoading: solutionLoading } = useActiveSolution(pathname, `/workspaces/${workspace.id}`);
-  const showMarketing = settled && !solutionLoading && active === "marketing" && available.includes("marketing");
-  const showConversations = settled && !solutionLoading && active === "conversations" && available.includes("conversations");
+  // Fase 10: as opções aparecem conforme as ferramentas CONTRATADAS (não só a "ativa" da sessão).
+  const { available, isLoading: solutionLoading } = useSolutions();
+  const showMarketing = !solutionLoading && available.includes("marketing");
+  const showConversations = !solutionLoading && available.includes("conversations");
   const [name, setName] = useState(workspace.name);
   const [kind, setKind] = useState(workspace.kind ?? "");
   const [timezone, setTimezone] = useState(workspace.settings.timezone ?? "America/Sao_Paulo");
@@ -78,13 +78,13 @@ export default function SettingsPage() {
   }
 
   return (
-    <SettingsShell active="general" title="Configurações" description="Conta, equipe e cobrança, mais as opções do produto Vorix que você está usando agora.">
+    <SettingsShell active="general" title="Configurações" description="Sua conta, a empresa, as ferramentas contratadas, as integrações e a assinatura.">
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1.35fr)_minmax(300px,0.8fr)]">
         <Card>
           <CardHeader>
             <div>
-              <p className="text-sm font-semibold text-foreground">Geral</p>
-              <p className="mt-1 text-xs text-muted-foreground">Informações reais do workspace usadas pelo produto.</p>
+              <p className="text-sm font-semibold text-foreground">Dados da empresa</p>
+              <p className="mt-1 text-xs text-muted-foreground">Nome, descrição, fuso e idioma deste espaço de trabalho.</p>
             </div>
             <StatusBadge status={workspace.status} />
           </CardHeader>

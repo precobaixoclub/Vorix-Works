@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { usePathname, useRouter } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { AtSign, type LucideIcon } from "lucide-react";
 import { Button } from "@/components/Button";
 import { Card } from "@/components/Card";
@@ -12,7 +12,7 @@ import { useCurrentWorkspace } from "@/contexts/workspace-context";
 import { META_RETURN_PATH_KEY } from "@/app/instagram/callback/page";
 import { beginMetaOAuth, disconnectMetaAccount } from "@/features/meta/api";
 import { useMetaOAuthStatus } from "@/features/meta/hooks";
-import { useActiveSolution } from "@/features/solutions/hooks";
+import { useSolutions } from "@/features/solutions/hooks";
 
 type HumanConnectionStatus = "connected" | "needs_attention" | "disconnected" | "syncing";
 type AccountRow = { id: string; label: string; detail?: string; status: string };
@@ -20,19 +20,18 @@ type AccountRow = { id: string; label: string; detail?: string; status: string }
 export default function ConnectionsPage() {
   const workspace = useCurrentWorkspace();
   const [feedback, setFeedback] = useState<string | undefined>();
-  const pathname = usePathname();
   const router = useRouter();
-  const { active } = useActiveSolution(pathname, `/workspaces/${workspace.id}`);
-
-  // No Vorix Marketing as redes ficam em Redes sociais → Integrações (uma conta por espaço de
-  // trabalho) e o Meta Ads dentro de Anúncios. Esta tela segue só para o Instagram Direct do Conversas.
+  const { available, isLoading } = useSolutions();
+  // Esta tela é o Instagram Direct do Conversas. Fase 10: só encaminha para Redes sociais quando a
+  // conta NÃO tem Conversas (antes dependia da ferramenta "ativa" da sessão).
+  const toSocial = !isLoading && !available.includes("conversations") && available.includes("marketing");
   useEffect(() => {
-    if (active === "marketing") router.replace(`/workspaces/${workspace.id}/social/integrations`);
-  }, [active, router, workspace.id]);
-  if (active === "marketing") return null;
+    if (toSocial) router.replace(`/workspaces/${workspace.id}/social/integrations`);
+  }, [toSocial, router, workspace.id]);
+  if (toSocial) return null;
 
   return (
-    <SettingsShell active="integrations" title="Integrações" description="Contas conectadas ao Vorix. O WhatsApp é conectado direto em Conversas.">
+    <SettingsShell active="integrations" title="Instagram Direct" description="Conta do Instagram usada no atendimento. O WhatsApp é conectado em Conversas › Canais.">
       {feedback ? <Card className="mb-6 border-primary/30 bg-primary/5 p-4"><p className="text-sm text-foreground">{feedback}</p></Card> : null}
       <div className="grid gap-4">
         <MetaConnection workspaceId={workspace.id} onFeedback={setFeedback} hasMarketing={false} />

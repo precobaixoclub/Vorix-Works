@@ -150,7 +150,9 @@ export function isBackstagePath(pathname: string, base: string): boolean {
  * por quem não tem a solução não ganha nem o nome da tela no breadcrumb. */
 const SETTINGS_SUBPAGE_LABELS: Record<string, string> = {
   marketplaces: "Marketplaces",
-  users: "Usuários",
+  users: "Usuários e permissões",
+  perfil: "Meu perfil",
+  integracoes: "Integrações",
   teams: "Equipes",
   plano: "Plano e cobrança",
   marca: "Marca e identidade",

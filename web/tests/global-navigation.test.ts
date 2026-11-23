@@ -286,9 +286,11 @@ describe("Fase 5 — menu definitivo do Marketing", () => {
     ]);
   });
   it("Configurações ganha Marca e identidade e Redes sociais só quando há Marketing", () => {
-    expect(settings.items.map((item) => item.href)).toEqual(["/settings", "/settings/attendance", "/settings/marca", "/social/integrations", "/meetings/settings"]);
-    expect(buildGlobalNavigation(["marketing"]).find((area) => area.key === "settings")!.items.map((item) => item.href)).toEqual(["/settings", "/settings/marca", "/social/integrations"]);
-    expect(buildGlobalNavigation(["site"]).find((area) => area.key === "settings")!.items).toEqual([]);
+    // Fase 10: + Meu perfil, Integrações e Plano e cobrança (comuns a todas as contas), em blocos.
+    expect(settings.items.map((item) => item.href)).toEqual(["/settings/perfil", "/settings", "/settings/attendance", "/settings/marca", "/meetings/settings", "/settings/integracoes", "/social/integrations", "/settings/plano"]);
+    expect(buildGlobalNavigation(["marketing"]).find((area) => area.key === "settings")!.items.map((item) => item.href)).toEqual(["/settings/perfil", "/settings", "/settings/marca", "/settings/integracoes", "/social/integrations", "/settings/plano"]);
+    // Sem Marketing: nem Marca e identidade, nem Redes sociais.
+    expect(buildGlobalNavigation(["site"]).find((area) => area.key === "settings")!.items.map((item) => item.href)).toEqual(["/settings/perfil", "/settings", "/settings/integracoes", "/settings/plano"]);
   });
   it("rotas antigas e novas acendem o lugar certo", () => {
     const at = (path: string) => activeGlobalArea(`${BASE}${path}`, BASE, areas);
@@ -325,7 +327,8 @@ describe("Fase 6 — Conversas organizado", () => {
     expect(activeGlobalArea(`${BASE}/deals`, BASE, areas)).toBe("sales");
   });
   it("Configurações › Atendimento e canais é do Conversas e só aparece com Conversas", () => {
-    expect(buildGlobalNavigation(["conversations"]).find((area) => area.key === "settings")!.items.map((item) => item.label)).toEqual(["Geral", "Atendimento e canais"]);
+    expect(buildGlobalNavigation(["conversations"]).find((area) => area.key === "settings")!.items.map((item) => item.label)).toEqual(["Meu perfil", "Geral", "Atendimento e canais", "Integrações", "Plano e cobrança"]);
+    expect(buildGlobalNavigation(["site"]).find((area) => area.key === "settings")!.items.map((item) => item.label)).not.toContain("Atendimento e canais");
     expect(routeOwner(`${BASE}/settings/attendance`, BASE)).toBe("conversations");
     expect(activeGlobalArea(`${BASE}/settings/attendance`, BASE, areas)).toBe("settings");
   });

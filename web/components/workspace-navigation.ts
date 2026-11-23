@@ -55,7 +55,8 @@ const SOCIAL_COMPOSE: WorkspaceNavItem = { href: "/social/compose", label: "Cria
 const SOCIAL_CALENDAR: WorkspaceNavItem = { href: "/social/calendar", label: "Publicações", icon: "calendar" };
 const SOCIAL_INTEGRATIONS: WorkspaceNavItem = { href: "/social/integrations", label: "Integrações", icon: "connections" };
 
-const MARKETING_BACKSTAGE: readonly WorkspaceNavItem[] = [
+/** Bastidor técnico do Marketing (owner/admin) — exportado para o menu global. */
+export const MARKETING_BACKSTAGE_NAV: readonly WorkspaceNavItem[] = [
   { href: "/planning", label: "Planejamento", icon: "planning" },
   { href: "/runtime", label: "Runtime", icon: "runtime" },
   { href: "/execution", label: "Execução", icon: "execution" },
@@ -167,7 +168,7 @@ export const SOLUTION_NAVIGATION: Readonly<Record<SolutionKey, SolutionNavigatio
         items: [{ href: "/knowledge", label: "Marca", icon: "brand" }],
       },
     ],
-    backstage: MARKETING_BACKSTAGE,
+    backstage: MARKETING_BACKSTAGE_NAV,
     mobilePrimary: [MARKETING_HOME, CREATE_NAV_ITEM, { href: "/campaigns", label: "Conteúdos", icon: "content" }, { href: "/calendar", label: "Calendário", icon: "calendar" }],
     mobileMenu: [
       {

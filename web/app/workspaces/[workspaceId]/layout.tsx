@@ -155,6 +155,7 @@ function WorkspaceShell({ children }: { children: React.ReactNode }) {
             <TrialCountdownBanner workspaceId={workspace.id} />
             <TrialExpiredGate workspaceId={workspace.id} />
             <div
+              data-workspace-content
               className={
                 isFocusPath
                   ? "mobile-chat-full min-h-0 min-w-0 flex-1 overflow-hidden bg-surface-sunken pb-16 md:pb-0"

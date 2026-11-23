@@ -2,11 +2,13 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { NavIcon } from "@/components/NavIcon";
 import { useAuth } from "@/contexts/auth-context";
 import { SOLUTION_NAVIGATION, canUseBackstage, type WorkspaceNavItem } from "@/components/workspace-navigation";
-import { useActiveSolution } from "@/features/solutions/hooks";
+import { useActiveSolution, useSolutions } from "@/features/solutions/hooks";
+import { activeGlobalArea, buildGlobalNavigation } from "@/components/global-navigation";
+import { cn } from "@/lib/utils";
 
 export function BottomNav({ workspaceId }: { workspaceId: string }) {
   const pathname = usePathname();
@@ -20,6 +22,10 @@ export function BottomNav({ workspaceId }: { workspaceId: string }) {
   const BACKSTAGE_NAV = navigation.backstage;
   const canSeeBackstage = state.status === "authenticated" && canUseBackstage(state.role) && BACKSTAGE_NAV.length > 0;
   const [menuOpen, setMenuOpen] = useState(false);
+  // Menu global (Fase 1 da reorganização): no "Mais" a pessoa troca de área com um toque, sem seletor de ferramenta.
+  const { available } = useSolutions();
+  const areas = useMemo(() => buildGlobalNavigation(available), [available]);
+  const activeArea = activeGlobalArea(pathname, base, areas);
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -102,6 +108,27 @@ export function BottomNav({ workspaceId }: { workspaceId: string }) {
           <div role="menu" className="absolute inset-x-0 bottom-0 max-h-[78dvh] overflow-y-auto rounded-t-xl border-t border-border bg-card p-4 pb-[calc(env(safe-area-inset-bottom)+16px)] shadow-2xl">
             <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-border" />
             <div className="space-y-4">
+              <div className="space-y-1" data-testid="mobile-global-nav">
+                <p className="px-3 pb-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground/70">Ir para</p>
+                <div className="grid grid-cols-2 gap-1.5">
+                  {areas.map((area) => (
+                    <Link
+                      key={area.key}
+                      href={`${base}${area.href}`}
+                      onClick={() => setMenuOpen(false)}
+                      aria-current={area.key === activeArea ? "page" : undefined}
+                      className={cn(
+                        "flex min-h-11 items-center gap-2.5 rounded-lg border px-3 text-sm font-semibold transition-colors active:bg-muted/70",
+                        area.key === activeArea ? "border-solution/50 bg-solution/10 text-foreground [&_svg]:text-solution" : "border-border/70 text-foreground hover:bg-muted",
+                      )}
+                    >
+                      <NavIcon id={area.icon} className="h-[18px] w-[18px] shrink-0" />
+                      <span className="truncate">{area.label}</span>
+                    </Link>
+                  ))}
+                </div>
+              </div>
+              {MOBILE_MENU_SECTIONS.length ? <p className="border-t border-border px-3 pb-0 pt-3 text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground/70">Nesta área</p> : null}
               {MOBILE_MENU_SECTIONS.map((section) => (
                 <div key={section.label} className="space-y-1">
                   <p className="px-3 pb-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground/70">{section.label}</p>

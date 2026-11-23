@@ -32,7 +32,9 @@ export type NavIconId =
   | "operations"
   | "meetings"
   | "recordings"
-  | "menu";
+  | "menu"
+  | "site"
+  | "marketing";
 
 const GEAR_TEETH_ANGLES = [0, 60, 120, 180, 240, 300];
 
@@ -279,6 +281,20 @@ export function NavIcon({ id, className = "h-[18px] w-[18px]" }: { id: NavIconId
           <path d="M2.6 11.2a5.4 5.4 0 0110.8 0" {...stroke} />
           <path d="M8 11.2l2.6-3.8" {...stroke} />
           <circle cx="8" cy="11.2" r="0.9" {...stroke} />
+        </svg>
+      );
+    case "site":
+      return (
+        <svg {...shared}>
+          <circle cx="8" cy="8" r="5.8" {...stroke} />
+          <path d="M2.2 8h11.6M8 2.2c1.6 1.6 2.4 3.5 2.4 5.8S9.6 12.2 8 13.8C6.4 12.2 5.6 10.3 5.6 8S6.4 3.8 8 2.2z" {...stroke} />
+        </svg>
+      );
+    case "marketing":
+      return (
+        <svg {...shared}>
+          <path d="M7.2 2.6l1.1 2.9 2.9 1.1-2.9 1.1-1.1 2.9-1.1-2.9-2.9-1.1 2.9-1.1 1.1-2.9z" {...stroke} />
+          <path d="M11.8 9.6l.6 1.4 1.4.6-1.4.6-.6 1.4-.6-1.4-1.4-.6 1.4-.6.6-1.4z" {...stroke} />
         </svg>
       );
     case "menu":

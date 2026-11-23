@@ -2,159 +2,150 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { ChevronLeft, ChevronRight } from "lucide-react";
-import { useEffect, useState } from "react";
-import { SolutionSwitcher } from "@/components/SolutionSwitcher";
+import { ChevronDown, ChevronLeft, ChevronRight } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { Logo } from "@/components/Logo";
 import { NavIcon } from "@/components/NavIcon";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useAuth } from "@/contexts/auth-context";
 import { useSidebarState } from "@/contexts/sidebar-context";
 import { cn } from "@/lib/utils";
-import { SETTINGS_NAV, SOLUTION_NAVIGATION, canUseBackstage, type WorkspaceNavItem } from "@/components/workspace-navigation";
-import { useActiveSolution } from "@/features/solutions/hooks";
+import { MARKETING_BACKSTAGE_NAV, canUseBackstage, type WorkspaceNavItem } from "@/components/workspace-navigation";
+import { activeGlobalArea, activeGlobalItem, buildGlobalNavigation, type GlobalArea, type GlobalAreaKey } from "@/components/global-navigation";
+import { useSolutions } from "@/features/solutions/hooks";
 
+/**
+ * Menu principal permanente do workspace (Reorganização de UX — Fase 1): todas as áreas da conta
+ * (Início, Conversas, Vendas, Marketing, Meu site, Reuniões, Resultados, Configurações) ficam
+ * visíveis o tempo todo; trocar de ferramenta é um clique. A área ativa abre as próprias telas
+ * logo abaixo dela. Todos os links levam o workspace atual na URL — nunca outro workspace.
+ */
 export function WorkspaceSidebar({ workspaceId }: { workspaceId: string }) {
   const pathname = usePathname();
   const { state } = useAuth();
   const { collapsed, toggle } = useSidebarState();
   const base = `/workspaces/${workspaceId}`;
-  // A navegação exibida é SÓ a da solução ativa (Conversas ou Marketing) — nunca as duas juntas.
-  const { active, solutions } = useActiveSolution(pathname, base);
-  const navigation = SOLUTION_NAVIGATION[active];
-  const BACKSTAGE_NAV = navigation.backstage;
-  const canSeeBackstage = state.status === "authenticated" && canUseBackstage(state.role) && BACKSTAGE_NAV.length > 0;
-  const isBackstagePathActive = BACKSTAGE_NAV.some((item) => pathname.startsWith(`${base}${item.href}`));
+  const { available, isLoading } = useSolutions();
+  const areas = useMemo(() => buildGlobalNavigation(available), [available]);
+  const activeKey = activeGlobalArea(pathname, base, areas);
+  const activeItem = activeGlobalItem(pathname, base, areas.find((area) => area.key === activeKey));
+  const canSeeBackstage = state.status === "authenticated" && canUseBackstage(state.role) && available.includes("marketing");
+  const isBackstagePathActive = MARKETING_BACKSTAGE_NAV.some((item) => pathname.startsWith(`${base}${item.href}`));
   const [backstageOpen, setBackstageOpen] = useState(isBackstagePathActive);
+  // Áreas com as telas abertas: a ativa sempre; as outras, quando a pessoa clica na seta.
+  const [expanded, setExpanded] = useState<ReadonlySet<GlobalAreaKey>>(() => new Set(activeKey ? [activeKey] : []));
 
   useEffect(() => {
     if (isBackstagePathActive) setBackstageOpen(true);
   }, [isBackstagePathActive]);
 
-  function isItemActive(item: WorkspaceNavItem): boolean {
-    const href = `${base}${item.href}`;
-    const also = item === navigation.featured ? navigation.featured.alsoActiveOn ?? [] : [];
-    if (also.some((path) => pathname.startsWith(`${base}${path}`))) return true;
-    // A home de cada solução só fica ativa nela mesma (`/meetings` é prefixo das outras telas do Meetings).
-    return item.href === "" || item.href === navigation.home.href ? pathname === href : pathname.startsWith(href);
+  useEffect(() => {
+    if (activeKey) setExpanded((current) => (current.has(activeKey) ? current : new Set([...current, activeKey])));
+  }, [activeKey]);
+
+  function toggleArea(key: GlobalAreaKey) {
+    setExpanded((current) => {
+      const next = new Set(current);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
   }
 
-  function renderLink(item: WorkspaceNavItem) {
-    const isActive = isItemActive(item);
-    const link = (
-      <Link
-        key={item.href}
-        href={`${base}${item.href}`}
-        aria-current={isActive ? "page" : undefined}
-        aria-label={collapsed ? item.label : undefined}
-        className={cn(
-          "group relative flex h-8 w-full min-w-0 items-center gap-2.5 rounded-md text-[13px] font-medium transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/45",
-          collapsed ? "justify-center px-0" : "px-2.5",
-          isActive
-            ? "bg-solution/10 text-foreground before:absolute before:left-0 before:top-1.5 before:h-5 before:w-[3px] before:rounded-full before:bg-solution [&_svg]:text-solution"
-            : "text-muted-foreground hover:bg-surface-2 hover:text-foreground",
-        )}
-      >
-        <NavIcon id={item.icon} className="h-4 w-4 shrink-0" />
-        {!collapsed ? <span className="truncate">{item.label}</span> : null}
-      </Link>
-    );
-
-    if (!collapsed) return link;
+  function withTooltip(label: string, node: React.ReactElement, key: string) {
+    if (!collapsed) return node;
     return (
-      <Tooltip key={item.href} delayDuration={200}>
-        <TooltipTrigger asChild>{link}</TooltipTrigger>
-        <TooltipContent side="right">{item.label}</TooltipContent>
+      <Tooltip key={key} delayDuration={200}>
+        <TooltipTrigger asChild>{node}</TooltipTrigger>
+        <TooltipContent side="right">{label}</TooltipContent>
       </Tooltip>
     );
   }
 
+  function renderArea(area: GlobalArea) {
+    const isActive = area.key === activeKey;
+    const isOpen = !collapsed && area.items.length > 0 && expanded.has(area.key);
+    const link = (
+      <Link
+        href={`${base}${area.href}`}
+        aria-current={isActive && !activeItem ? "page" : undefined}
+        aria-label={collapsed ? area.label : undefined}
+        data-area={area.key}
+        data-active={isActive ? "true" : undefined}
+        className={cn(
+          "group relative flex h-9 min-w-0 flex-1 items-center gap-2.5 rounded-md text-[13.5px] font-semibold transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/45",
+          collapsed ? "justify-center px-0" : "px-2.5",
+          isActive
+            ? "bg-solution/12 text-foreground before:absolute before:left-0 before:top-2 before:h-5 before:w-[3px] before:rounded-full before:bg-solution [&_svg]:text-solution"
+            : "text-text-secondary hover:bg-surface-2 hover:text-foreground",
+        )}
+      >
+        <NavIcon id={area.icon} className="h-[18px] w-[18px] shrink-0" />
+        {!collapsed ? <span className="truncate">{area.label}</span> : null}
+      </Link>
+    );
+    return (
+      <div key={area.key} className="flex flex-col">
+        <div className="flex items-center gap-1">
+          {withTooltip(area.label, link, area.key)}
+          {!collapsed && area.items.length > 0 ? (
+            <button
+              type="button"
+              onClick={() => toggleArea(area.key)}
+              aria-expanded={isOpen}
+              aria-label={isOpen ? `Recolher ${area.label}` : `Mostrar telas de ${area.label}`}
+              className="flex h-9 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-surface-2 hover:text-foreground"
+            >
+              <ChevronDown aria-hidden="true" className={cn("h-3.5 w-3.5 transition-transform duration-150", isOpen ? "" : "-rotate-90")} />
+            </button>
+          ) : null}
+        </div>
+        {isOpen ? (
+          <div className="mb-1 ml-[18px] mt-0.5 flex flex-col gap-0.5 border-l border-border/70 pl-2" data-area-items={area.key}>
+            {area.items.map((item) => renderItem(item, item.href === activeItem && isActive))}
+          </div>
+        ) : null}
+      </div>
+    );
+  }
+
+  function renderItem(item: WorkspaceNavItem, isActive: boolean) {
+    return (
+      <Link
+        key={item.href}
+        href={`${base}${item.href}`}
+        aria-current={isActive ? "page" : undefined}
+        className={cn(
+          "flex h-8 min-w-0 items-center gap-2 rounded-md px-2 text-[13px] font-medium transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/45",
+          isActive ? "bg-solution/10 text-foreground [&_svg]:text-solution" : "text-muted-foreground hover:bg-surface-2 hover:text-foreground",
+        )}
+      >
+        <NavIcon id={item.icon} className="h-4 w-4 shrink-0" />
+        <span className="truncate">{item.label}</span>
+      </Link>
+    );
+  }
+
+  const settings = areas.find((area) => area.key === "settings");
+  const mainAreas = areas.filter((area) => area.key !== "settings");
+
   return (
     <nav
+      aria-label="Menu principal"
       className={cn(
         "app-shell sticky top-0 hidden h-dvh shrink-0 flex-col border-r border-border/70 bg-surface-1 bg-gradient-to-b from-solution/[0.05] via-transparent to-transparent py-3 transition-[width] duration-200 ease-[var(--ease-standard)] md:flex",
-        collapsed ? "w-16 px-2" : "w-[264px] px-3",
+        collapsed ? "w-16 px-2" : "w-[248px] px-3",
       )}
     >
-      <SolutionSwitcher workspaceBase={base} active={active} solutions={solutions} collapsed={collapsed} />
+      <Link href={base} className={cn("mb-4 flex items-center gap-2 rounded-lg py-1.5", collapsed ? "justify-center px-0" : "px-2")} aria-label="Vorix — início do espaço de trabalho">
+        <Logo className="h-8 w-auto shrink-0" />
+        {!collapsed ? <span className="text-sm font-semibold tracking-wide text-foreground">Vorix</span> : null}
+      </Link>
 
-      {navigation.primaryAction ? (
-        collapsed ? (
-          <Tooltip delayDuration={200}>
-            <TooltipTrigger asChild>
-              <Link
-                href={`${base}${navigation.primaryAction.href}`}
-                aria-label={navigation.primaryAction.label}
-                className="mb-3 flex h-9 w-full items-center justify-center rounded-md bg-solution text-solution-foreground transition-[background-color,box-shadow] hover:bg-solution/90 hover:shadow-[var(--shadow-glow-solution)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/45"
-              >
-                <NavIcon id={navigation.primaryAction.icon} className="h-4 w-4" />
-              </Link>
-            </TooltipTrigger>
-            <TooltipContent side="right">{navigation.primaryAction.label}</TooltipContent>
-          </Tooltip>
-        ) : (
-          <Link
-            href={`${base}${navigation.primaryAction.href}`}
-            className="mb-3 flex h-9 w-full items-center justify-center gap-2 rounded-md bg-solution px-3 text-sm font-semibold text-solution-foreground transition-[background-color,box-shadow] hover:bg-solution/90 hover:shadow-[var(--shadow-glow-solution)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/45"
-          >
-            <NavIcon id={navigation.primaryAction.icon} className="h-4 w-4" />
-            <span>{navigation.primaryAction.cta}</span>
-          </Link>
-        )
-      ) : null}
+      <div className={cn("flex flex-1 flex-col gap-1 overflow-y-auto overflow-x-hidden", !collapsed && "pr-1")} data-testid="global-nav">
+        {isLoading ? <p className="px-2.5 text-xs text-muted-foreground">Carregando menu…</p> : mainAreas.map(renderArea)}
 
-      {navigation.featured ? (
-        collapsed ? (
-          <Tooltip delayDuration={200}>
-            <TooltipTrigger asChild>
-              <Link
-                href={`${base}${navigation.featured.href}`}
-                aria-label={navigation.featured.label}
-                aria-current={isItemActive(navigation.featured) ? "page" : undefined}
-                className="mb-3 flex h-9 w-full items-center justify-center rounded-md border border-amber-500/50 bg-amber-500/15 text-amber-600 transition-colors hover:bg-amber-500/25 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/40 dark:text-amber-300"
-              >
-                <NavIcon id={navigation.featured.icon} className="h-4 w-4" />
-              </Link>
-            </TooltipTrigger>
-            <TooltipContent side="right">{navigation.featured.label}</TooltipContent>
-          </Tooltip>
-        ) : (
-          <Link
-            href={`${base}${navigation.featured.href}`}
-            aria-current={isItemActive(navigation.featured) ? "page" : undefined}
-            className={cn(
-              // Tem cara de BOTÃO: fundo âmbar sólido em degradê, borda, sombra, seta e resposta ao clique.
-              "group mb-3 flex w-full items-center gap-2.5 rounded-lg border px-2.5 py-2.5 shadow-sm transition-all hover:-translate-y-px hover:shadow-md active:translate-y-0 active:shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/60",
-              isItemActive(navigation.featured)
-                ? "border-amber-400 bg-gradient-to-r from-amber-500 to-amber-400 text-amber-950 ring-2 ring-amber-400/40"
-                : "border-amber-500/70 bg-gradient-to-r from-amber-500/35 to-amber-500/15 text-foreground hover:from-amber-500/50 hover:to-amber-500/25",
-            )}
-          >
-            <span className={cn("flex h-8 w-8 shrink-0 items-center justify-center rounded-md", isItemActive(navigation.featured) ? "bg-amber-950/15 text-amber-950" : "bg-amber-500 text-amber-950")}>
-              <NavIcon id={navigation.featured.icon} className="h-4 w-4" />
-            </span>
-            <span className="min-w-0 flex-1">
-              <span className="block truncate text-[13px] font-semibold">{navigation.featured.label}</span>
-              <span className={cn("block truncate text-[11px]", isItemActive(navigation.featured) ? "text-amber-950/75" : "text-muted-foreground")}>{navigation.featured.hint}</span>
-            </span>
-            <ChevronRight className="h-4 w-4 shrink-0 opacity-70 transition-transform group-hover:translate-x-0.5" aria-hidden="true" />
-          </Link>
-        )
-      ) : null}
-
-      <div className={cn("flex flex-1 flex-col gap-3 overflow-y-auto overflow-x-hidden", !collapsed && "pr-1")}>
-        {/* Quando o destaque JÁ é o início (Marketing: Bolsão de ideias), não repete o mesmo link. */}
-        {navigation.featured?.href !== navigation.home.href ? <div className="flex flex-col gap-1">{renderLink(navigation.home)}</div> : null}
-
-        {navigation.sections.map((section) => (
-          <div key={section.label} className="flex flex-col gap-1">
-            {!collapsed ? (
-              <p className="px-2.5 pb-0.5 pt-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-text-disabled">{section.label}</p>
-            ) : null}
-            {section.items.map(renderLink)}
-          </div>
-        ))}
-
-        <div className="mt-1 border-t border-border/70 pt-3">{SETTINGS_NAV.map(renderLink)}</div>
+        {settings ? <div className="mt-2 border-t border-border/70 pt-2">{renderArea(settings)}</div> : null}
 
         {canSeeBackstage ? (
           <div className="mt-1 border-t border-border pt-3">
@@ -169,7 +160,11 @@ export function WorkspaceSidebar({ workspaceId }: { workspaceId: string }) {
                 <ChevronRight aria-hidden="true" className={`h-3.5 w-3.5 transition-transform duration-150 ${backstageOpen ? "rotate-90" : ""}`} />
               </button>
             ) : null}
-            {collapsed || backstageOpen ? <div className="mt-1 flex flex-col gap-1">{BACKSTAGE_NAV.map(renderLink)}</div> : null}
+            {collapsed || backstageOpen ? (
+              <div className="mt-1 flex flex-col gap-0.5">
+                {MARKETING_BACKSTAGE_NAV.map((item) => withTooltip(item.label, renderItem(item, pathname.startsWith(`${base}${item.href}`)), item.href))}
+              </div>
+            ) : null}
           </div>
         ) : null}
       </div>

@@ -12,7 +12,8 @@ async function capture(page: Page, testInfo: TestInfo, name: string) {
 
 async function fixture(page: Page, dealCount = 1) {
   await mockConversasBackend(page);
-  const contact = { id: "crm-phase3", name: "Cliente QA Fase 3", tags: [], createdAt: new Date().toISOString() };
+  // `customFields` é obrigatório no contrato atual de Contato (a API sempre envia).
+  const contact = { id: "crm-phase3", name: "Cliente QA Fase 3", tags: [], customFields: {}, createdAt: new Date().toISOString() };
   const deals = Array.from({ length: dealCount }, (_, i) => ({ id: `deal-${i}`, contactId: contact.id, pipelineId: "pipeline-qa", stageId: "stage-qa", title: `Oportunidade QA ${i + 1}`, valueCents: 10000, currency: "BRL", lastStageChangedAt: new Date().toISOString() }));
   const tasks: any[] = [];
   let denyPatch = false;
@@ -52,7 +53,7 @@ async function fixture(page: Page, dealCount = 1) {
 
 async function openConversation(page: Page) {
   await page.goto(`/workspaces/${WORKSPACE_ID}/conversas?conversation=conv-phase3`);
-  await page.getByRole("button", { name: "Detalhes", exact: true }).click();
+  await page.getByRole("button", { name: "Detalhes do contato", exact: true }).click(); // botão renomeado (antes "Detalhes")
   await expect(page.getByText("Próxima ação", { exact: true })).toBeVisible();
 }
 
@@ -142,7 +143,7 @@ test("Contact 360, Tarefas, conversa e Home compartilham a tarefa atrasada", asy
   await expect(page.getByRole("heading", { name: "Follow-up controlado Fase 3", exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Abrir conversa", exact: true }).click();
   await expect(page).toHaveURL(new RegExp("/conversas\\?conversation=conv-phase3"));
-  await page.getByRole("button", { name: "Detalhes", exact: true }).click();
+  await page.getByRole("button", { name: "Detalhes do contato", exact: true }).click(); // botão renomeado (antes "Detalhes")
   await expect(page.getByText("Follow-up controlado Fase 3", { exact: true }).last()).toBeVisible();
   await expect(page.getByText("Atrasada", { exact: true })).toBeVisible();
   await page.goto(`/workspaces/${WORKSPACE_ID}`);

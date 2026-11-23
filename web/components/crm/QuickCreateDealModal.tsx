@@ -121,7 +121,7 @@ export function QuickCreateDealModal({
     }
   }
 
-  const showMargin = settings?.visibility.canViewMargin ?? false;
+  const showMargin = settings?.visibility?.canViewMargin ?? false;
 
   return (
     <Modal title="Criar oportunidade" onClose={onClose} maxWidthClass="sm:max-w-2xl">

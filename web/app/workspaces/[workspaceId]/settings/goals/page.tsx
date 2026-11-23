@@ -38,7 +38,7 @@ export default function GoalsSettingsPage() {
   const [metric, setMetric] = useState<GoalMetric>("sales_revenue");
   const [applying, setApplying] = useState(false);
   const { data: goals, isLoading, mutate } = useGoals(workspace.id, { year });
-  const canManage = settings?.visibility.isManager ?? false;
+  const canManage = settings?.visibility?.isManager ?? false;
 
   const relevant = useMemo(() => (goals ?? []).filter((goal) => goal.scopeType === scopeType && (scopeType === "company" || goal.scopeId === scopeId) && goal.metric === metric), [goals, scopeType, scopeId, metric]);
   const byMonth = new Map(relevant.filter((goal) => goal.periodType === "monthly").map((goal) => [Number(goal.periodStart.slice(5, 7)) - 1, goal]));

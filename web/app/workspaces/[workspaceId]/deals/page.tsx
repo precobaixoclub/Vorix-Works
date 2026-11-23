@@ -367,7 +367,7 @@ function DealsView() {
       >
         <div className="relative min-w-[220px] flex-1 sm:max-w-xs">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar oportunidade ou contato" className="pl-9" />
+          <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar oportunidade ou contato" aria-label="Buscar oportunidade ou contato" className="pl-9" />
         </div>
         <Popover>
           <PopoverTrigger asChild>

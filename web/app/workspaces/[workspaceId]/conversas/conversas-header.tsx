@@ -21,7 +21,7 @@ export function ConversasHeader<T extends string>({
 }) {
   return (
     <div className="mobile-chat-hide flex h-9 shrink-0 items-center justify-between gap-3 border-b border-border bg-card px-3 sm:px-4">
-      <p className="text-sm font-semibold text-foreground">Conversas</p>
+      <h1 className="text-sm font-semibold text-foreground">Conversas</h1>
       <div className="flex items-center gap-0.5 rounded-lg bg-muted p-0.5">
         {tabs.map((tab) => (
           <button

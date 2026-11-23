@@ -82,7 +82,7 @@ export default function CommercialSettingsPage() {
     isLoading,
     mutate,
   } = useCommercialSettings(workspace.id);
-  const isManager = settings?.visibility.isManager ?? false;
+  const isManager = settings?.visibility?.isManager ?? false;
 
   return (
     <SettingsShell

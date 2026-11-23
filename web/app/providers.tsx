@@ -2,6 +2,8 @@
 
 import type { ReactNode } from "react";
 import { ThemeProvider } from "next-themes";
+import { SWRConfig } from "swr";
+import { APP_SWR_RETRY } from "@/lib/swr-retry";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Toaster } from "@/components/ui/sonner";
 
@@ -11,10 +13,13 @@ import { Toaster } from "@/components/ui/sonner";
 export function Providers({ children }: { children: ReactNode }) {
   return (
     <ThemeProvider attribute="class" defaultTheme="dark" enableSystem disableTransitionOnChange>
-      <TooltipProvider delayDuration={200}>
-        {children}
-        <Toaster position="top-right" />
-      </TooltipProvider>
+      {/* Fase 14: sem repetir 403/404 para sempre; rede/servidor/429 no máximo 3 vezes. */}
+      <SWRConfig value={APP_SWR_RETRY}>
+        <TooltipProvider delayDuration={200}>
+          {children}
+          <Toaster position="top-right" />
+        </TooltipProvider>
+      </SWRConfig>
     </ThemeProvider>
   );
 }

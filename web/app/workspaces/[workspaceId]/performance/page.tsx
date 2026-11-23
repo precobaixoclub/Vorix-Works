@@ -40,7 +40,7 @@ export default function PerformancePage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { data: settings } = useCommercialSettings(workspace.id);
-  const isManager = settings?.visibility.isManager ?? false;
+  const isManager = settings?.visibility?.isManager ?? false;
   const section = (searchParams.get("view") as Section | null) ?? "mine";
   const setSection = (value: Section) => router.replace(`?view=${value}`, { scroll: false });
   const [periodType, setPeriodType] = useState<GoalPeriod>("monthly");

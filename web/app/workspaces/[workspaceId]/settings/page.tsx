@@ -153,7 +153,7 @@ export default function SettingsPage() {
             <CardBody>
               <label className="flex items-center justify-between gap-3 text-sm text-foreground">
                 <span>Criar contato automaticamente</span>
-                <Switch checked={autoContactEnabled} onCheckedChange={toggleAutoContact} disabled={autoContactBusy} />
+                <Switch aria-label="Criar contato automaticamente" checked={autoContactEnabled} onCheckedChange={toggleAutoContact} disabled={autoContactBusy} />
               </label>
             </CardBody>
           </Card>

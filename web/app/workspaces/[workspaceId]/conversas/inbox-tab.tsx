@@ -394,7 +394,7 @@ export function InboxFilterBar({
       <div className="flex flex-wrap items-center gap-1.5">
         <div className="relative basis-full sm:min-w-[140px] sm:flex-1 sm:basis-auto">
           <Search aria-hidden="true" className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input value={search} onChange={(event) => onSearchChange(event.target.value)} placeholder="Buscar conversa" className="h-8 pl-8" />
+          <Input value={search} onChange={(event) => onSearchChange(event.target.value)} placeholder="Buscar conversa" aria-label="Buscar conversa" className="h-8 pl-8" />
         </div>
         {isInline("owner") ? (
           <SearchableCombo

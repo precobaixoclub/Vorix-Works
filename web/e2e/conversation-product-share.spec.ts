@@ -15,7 +15,8 @@ test("envia foto da variação mesmo sem capa e mostra descrição completa com 
     return route.fulfill({ json: { ok: true, data: [{ id: "lamp", name: "Lâmpada vintage", description, priceCents: 9500, currency: "BRL", hasDetailsLink: true, requiresVariant: true, variants: [{ id: "amber", label: "Âmbar", priceCents: 9500, imageUrl: `data:image/jpeg;base64,${TINY_JPEG_BASE64}` }] }] } });
   });
   await page.goto(`/workspaces/${WORKSPACE_ID}/conversas`);
-  await page.getByText("Carla Mendes", { exact: true }).first().click();
+  // A lista mostra "Nome · telefone" (contatos com telefone): localiza a conversa pelo nome.
+  await page.getByRole("button", { name: /Carla Mendes/ }).first().click();
   await page.getByRole("button", { name: "Produtos", exact: true }).click();
   const modal = page.getByRole("dialog", { name: "Produtos", exact: true });
   await modal.getByRole("button", { name: /Lâmpada vintage/ }).click();

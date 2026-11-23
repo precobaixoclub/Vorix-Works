@@ -38,8 +38,12 @@ for (const template of ["nexus", "aura", "pulse"]) {
     await expect(page.getByLabel("Cor principal", { exact: true })).toBeVisible();
     expect(state.current()?.draft.theme.template).toBe(template);
     await page.getByLabel("Cor principal", { exact: true }).fill("#543abc");
-    await page.getByRole("button", { name: "Salvar rascunho", exact: true }).click();
-    await expect.poll(() => state.writes).toEqual(["create", "save"]);
+    // O editor salva o rascunho sozinho (o botão "Salvar rascunho" foi substituído pelo salvamento
+    // automático): criou o site e depois só salvou rascunho — nenhuma publicação nem outra escrita.
+    await expect.poll(() => state.current()?.draft.theme.primary?.toLowerCase(), { timeout: 10_000 }).toBe("#543abc");
+    expect(state.writes[0]).toBe("create");
+    expect(state.writes.slice(1).every((write) => write === "save")).toBe(true);
+    expect(state.writes.length).toBeGreaterThan(1);
     expect(state.current()?.publishedAt).toBeUndefined();
     await page.reload();
     await expect(page.getByLabel("Cor principal", { exact: true })).toHaveValue("#543ABC");
@@ -54,7 +58,8 @@ test("Personalizar troca modelo existente e abre campos sem criar outro site", a
   await page.getByTestId("template-card-aura").getByRole("button", { name: "Personalizar Aura", exact: true }).click();
   await expect(page).toHaveURL(/section=aparencia/);
   await expect(page.getByLabel("Cor principal", { exact: true })).toBeVisible();
-  await page.getByRole("button", { name: "Salvar rascunho", exact: true }).click();
-  await expect.poll(() => state.writes).toEqual(["save"]);
+  // Salvamento automático do rascunho: só salvamentos, nenhum site novo criado e nada publicado.
+  await expect.poll(() => state.writes.length, { timeout: 10_000 }).toBeGreaterThan(0);
+  expect(state.writes.every((write) => write === "save")).toBe(true);
   expect(state.current()?.draft.theme.template).toBe("aura");
 });

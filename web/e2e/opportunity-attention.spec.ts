@@ -63,7 +63,8 @@ test("conversas destacam quantidade e soma no contato e na conversa aberta", asy
   await expect(notes).toHaveCount(1);
   await expect(notes.first()).toBeVisible();
   expect(fixture.summaryReads).toBe(1);
-  await page.getByText("Cleverton Marcelo", { exact: true }).first().click();
+  // A lista mostra "Nome · telefone": localiza a conversa pelo nome.
+  await page.getByRole("button", { name: /Cleverton Marcelo/ }).first().click();
   // No celular a lista fica oculta quando a conversa está aberta.
   await expect(notes).toHaveCount((page.viewportSize()?.width ?? 1366) < 768 ? 1 : 2);
   await expect(notes.last()).toBeVisible();

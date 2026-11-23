@@ -3,6 +3,9 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
+import useSWR from "swr";
+import { ConceptsExplainer } from "@/components/marketing/ConceptsExplainer";
+import { listEditorialIdeas } from "@/features/editorial-ideas/api";
 import { AlignLeft, ExternalLink, GalleryHorizontal, ImageIcon, LayoutGrid, List, MoreHorizontal, Video } from "lucide-react";
 import { Button } from "@/components/Button";
 import { ChannelIcon, channelLabel } from "@/components/ChannelIcon";
@@ -56,10 +59,11 @@ const STATUS_DOT: Record<PublicationDisplayStatus, string> = {
   failed: "bg-destructive",
   cancelled: "bg-muted-foreground",
   draft: "bg-muted-foreground",
+  awaiting_approval: "bg-violet-500",
 };
 
 // Ordinal usado só para ordenar a coluna Status da tabela — não é exibido.
-const STATUS_ORDER: Record<PublicationDisplayStatus, number> = { draft: 0, scheduled: 1, publishing: 2, published: 3, failed: 4, cancelled: 5 };
+const STATUS_ORDER: Record<PublicationDisplayStatus, number> = { draft: 0, awaiting_approval: 1, scheduled: 2, publishing: 3, published: 4, failed: 5, cancelled: 6 };
 
 const NETWORK_FILTERS: Array<{ value: PublicationNetwork | "all"; label: string }> = [
   { value: "all", label: "Todas as redes" },
@@ -72,6 +76,7 @@ const NETWORK_FILTERS: Array<{ value: PublicationNetwork | "all"; label: string 
 const STATUS_FILTERS: Array<{ value: PublicationDisplayStatus | "all"; label: string }> = [
   { value: "all", label: "Todos" },
   { value: "published", label: "Publicados" },
+  { value: "awaiting_approval", label: "Aguardando aprovação" },
   { value: "scheduled", label: "Agendados" },
   { value: "publishing", label: "Publicando" },
   { value: "failed", label: "Com erro" },
@@ -138,6 +143,7 @@ export default function ContentsPage() {
     total: groups.length,
     published: groups.filter((group) => group.status === "published").length,
     scheduled: groups.filter((group) => group.posts.some((post) => derivePublicationStatus(post) === "scheduled")).length,
+    awaitingApproval: groups.filter((group) => group.posts.some((post) => derivePublicationStatus(post) === "awaiting_approval")).length,
     failed: groups.filter((group) => group.posts.some((post) => derivePublicationStatus(post) === "failed")).length,
     cancelled: groups.filter((group) => group.status === "cancelled").length,
   }), [groups]);
@@ -189,7 +195,7 @@ export default function ContentsPage() {
     <main className="mx-auto max-w-7xl px-3 py-5 sm:px-6 sm:py-8">
       <PageHeader
         title="Conteúdos"
-        description="Cada peça aparece uma vez, com o ícone das redes em que saiu. Abra para ver data, hora e resultado de cada rede."
+        description={`Biblioteca de ${workspace.name}: cada peça aparece uma vez, com o ícone das redes em que saiu. Abra para ver data, hora e resultado de cada rede.`}
         actions={
           <>
             <div className="inline-flex rounded-lg border border-border bg-card p-1" role="group" aria-label="Visualização">
@@ -201,11 +207,15 @@ export default function ContentsPage() {
         }
       />
 
+      <ConceptsExplainer base={`/workspaces/${workspace.id}`} current="content" />
+      <ProductionStrip workspaceId={workspace.id} />
+
       <div className="mb-5">
         <StatsGrid>
           <StatCard label="Conteúdos" value={stats.total} active={statusFilter === "all"} onClick={() => setStatusFilter("all")} />
           <StatCard label="Publicados" value={stats.published} active={statusFilter === "published"} onClick={() => setStatusFilter("published")} />
           <StatCard label="Agendados" value={stats.scheduled} active={statusFilter === "scheduled"} onClick={() => setStatusFilter("scheduled")} />
+          {stats.awaitingApproval > 0 || statusFilter === "awaiting_approval" ? <StatCard label="Aguardando aprovação" value={stats.awaitingApproval} active={statusFilter === "awaiting_approval"} onClick={() => setStatusFilter("awaiting_approval")} /> : null}
           <StatCard label="Com erro" value={stats.failed} active={statusFilter === "failed"} onClick={() => setStatusFilter("failed")} />
           <StatCard label="Cancelados" value={stats.cancelled} active={statusFilter === "cancelled"} onClick={() => setStatusFilter("cancelled")} />
         </StatsGrid>
@@ -500,4 +510,22 @@ function titleOf(post: UnifiedPublication): string {
 
 function publishAgainHref(workspaceId: string, post: UnifiedPublication): string {
   return `/workspaces/${workspaceId}/publish?network=${post.network}&source=${encodeURIComponent(`${post.network}:${post.id}`)}`;
+}
+
+/**
+ * Fase 5: o que ainda está na produção (não virou publicação) mora na Revisão — a biblioteca mostra
+ * as peças publicadas/agendadas. Este atalho deixa isso claro, com os números reais do Bolsão.
+ */
+function ProductionStrip({ workspaceId }: { workspaceId: string }) {
+  const ideas = useSWR(["create-hub-ideas", workspaceId], () => listEditorialIdeas(workspaceId));
+  const inProduction = ideas.data?.filter((idea) => idea.status === "in_production").length;
+  const toReview = ideas.data?.filter((idea) => idea.status === "produced").length;
+  if (!ideas.data || (!inProduction && !toReview)) return null;
+  return (
+    <div className="mb-5 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-xl border border-dashed border-border px-3 py-2.5 text-sm" data-testid="library-production-strip">
+      <span className="text-muted-foreground">Ainda na produção:</span>
+      {toReview ? <Link href={`/workspaces/${workspaceId}/review`} className="font-medium text-foreground hover:underline">{toReview} conteúdo(s) para revisar</Link> : null}
+      {inProduction ? <Link href={`/workspaces/${workspaceId}/production`} className="font-medium text-foreground hover:underline">{inProduction} em produção</Link> : null}
+    </div>
+  );
 }

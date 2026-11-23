@@ -18,12 +18,16 @@ export type UnifiedPublication = {
   cancelledAt?: string;
   /** Link para a publicação ao vivo na rede (quando já publicada). */
   externalUrl?: string;
+  /** Fase 5: de onde veio o registro. "social" = compositor (o `id` é o do post social, que abre o
+   * detalhe com as ações por rede); ausente = feed legado por rede (TikTok/YouTube do estúdio). */
+  source?: "social";
 };
 
-export type PublicationDisplayStatus = "draft" | "scheduled" | "publishing" | "published" | "failed" | "cancelled";
+export type PublicationDisplayStatus = "draft" | "awaiting_approval" | "scheduled" | "publishing" | "published" | "failed" | "cancelled";
 
 export const PUBLICATION_DISPLAY_STATUS_LABEL: Record<PublicationDisplayStatus, string> = {
   draft: "Rascunho",
+  awaiting_approval: "Aguardando aprovação",
   scheduled: "Agendado",
   publishing: "Publicando",
   published: "Publicado",
@@ -40,6 +44,9 @@ export function derivePublicationStatus(post: Pick<UnifiedPublication, "state" |
   if (["published", "completed", "confirmed_published"].includes(state)) return "published";
   if (["failed", "unknown_outcome", "dead_lettered", "validation_failed", "confirmed_not_published", "mismatch"].includes(state)) return "failed";
   if (["cancelled", "skipped", "archived"].includes(state)) return "cancelled";
+  // Fase 5: só o estado do compositor social ("AWAITING_APPROVAL" → minúsculo). O
+  // "waiting_for_approval" do motor legado continua como antes (lá ele é só uma etapa do agendamento).
+  if (state === "awaiting_approval") return "awaiting_approval";
   if (post.scheduledAt) return "scheduled";
   if (["publishing", "in_progress", "running", "dispatched", "claimed", "pending"].includes(state)) return "publishing";
   return "draft";
@@ -52,4 +59,9 @@ export function contentTypeOf(post: Pick<UnifiedPublication, "media">): Publicat
   if (post.media.imageUrls.length > 1) return "carousel";
   if (post.media.imageUrls.length === 1) return "image";
   return "text";
+}
+
+/** Data de referência de um registro: agendamento, publicação ou criação. */
+export function publicationDateOf(post: Pick<UnifiedPublication, "scheduledAt" | "publishedAt" | "createdAt">): string | undefined {
+  return post.scheduledAt ?? post.publishedAt ?? post.createdAt;
 }

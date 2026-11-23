@@ -199,7 +199,7 @@ export default function WorkspaceHomePage() {
     const overdue = taskList.filter((task) => isTaskOverdue(task, now)).length;
     cards.push({ id: "sales-tasks", module: "sales", label: "Tarefas atrasadas", href: "/tasks", state: pending ?? { kind: "value", value: overdue, hint: `${taskList.length} pendente(s) no total`, tone: overdue > 0 ? "critical" : undefined } });
   }
-  if (marketingAccess === "no_permission") cards.push({ id: "marketing-scheduled", module: "marketing", label: "Publicações agendadas", href: "/social/calendar", state: { kind: "no_permission" } });
+  if (marketingAccess === "no_permission") cards.push({ id: "marketing-scheduled", module: "marketing", label: "Publicações agendadas", href: "/calendar", state: { kind: "no_permission" } });
   if (marketingAccess === "visible") {
     const pending = loadingOr(posts);
     const scheduled = scheduledPosts(postList, now);
@@ -208,10 +208,10 @@ export default function WorkspaceHomePage() {
       id: "marketing-scheduled",
       module: "marketing",
       label: "Publicações agendadas",
-      href: "/social/calendar",
+      href: "/calendar",
       state: pending ?? (scheduled.length ? { kind: "value", value: scheduled.length, hint: `Próxima ${relativeTime(scheduled[0]!.scheduledAt, now)} · 30 dias` } : { kind: "setup", message: "Seu calendário de publicações está vazio.", ...(can("marketing:social_publish") || can("marketing:social_schedule") ? { actionLabel: "Agendar publicação", actionHref: "/social/compose" } : {}) }),
     });
-    if (!pending && awaiting > 0) cards.push({ id: "marketing-approval", module: "marketing", label: "Aguardando aprovação", href: "/social/calendar", state: { kind: "value", value: awaiting, hint: "Publicações para revisar", tone: "attention" } });
+    if (!pending && awaiting > 0) cards.push({ id: "marketing-approval", module: "marketing", label: "Aguardando aprovação", href: "/calendar", state: { kind: "value", value: awaiting, hint: "Publicações para revisar", tone: "attention" } });
   }
   if (meetingsAccess === "no_permission") cards.push({ id: "meetings-upcoming", module: "meetings", label: "Próximas reuniões", href: "/meetings/central", state: { kind: "no_permission" } });
   if (meetingsAccess === "visible") {

@@ -47,17 +47,22 @@ const SITE_SALES_ITEMS: readonly WorkspaceNavItem[] = [
 ];
 
 const MARKETING_ITEMS: readonly WorkspaceNavItem[] = [
-  { href: "/ideias", label: "Bolsão de ideias", icon: "ideas" },
-  // Fase 4: porta única de criação e publicação ("Criar com IA" e "Publicar conteúdo pronto").
-  // O compositor (/social/compose) e o estúdio avançado (/publish) são abertos por dentro dela.
-  { href: "/create", label: "Criar conteúdo", icon: "create" },
-  { href: "/review", label: "Revisão", icon: "production" },
-  { href: "/campaigns", label: "Conteúdos", icon: "content" },
-  { href: "/calendar", label: "Calendário", icon: "calendar" },
-  { href: "/social/calendar", label: "Publicações", icon: "publish" },
-  { href: "/meta-ads", label: "Anúncios", icon: "ads" },
-  { href: "/social/integrations", label: "Integrações", icon: "connections" },
-  { href: "/knowledge", label: "Marca", icon: "brand" },
+  // Fase 5 — menu definitivo do Marketing, em dois blocos. O compositor (/social/compose) e o estúdio
+  // avançado (/publish) abrem por dentro de "Criar conteúdo"; "Publicações" virou o Calendário único;
+  // Marca e Redes sociais moram em Configurações.
+  { href: "/ideias", label: "Bolsão de ideias", icon: "ideas", section: "Produção" },
+  { href: "/create", label: "Criar conteúdo", icon: "create", section: "Produção" },
+  { href: "/review", label: "Revisão", icon: "production", section: "Produção" },
+  { href: "/campaigns", label: "Conteúdos", icon: "content", section: "Produção" },
+  { href: "/calendar", label: "Calendário", icon: "calendar", section: "Publicação" },
+  { href: "/meta-ads", label: "Anúncios", icon: "ads", section: "Publicação" },
+];
+
+/** Configurações com destinos do Marketing (Fase 5): Marca e identidade e Conexões › Redes sociais. */
+const SETTINGS_MARKETING_ITEMS: readonly WorkspaceNavItem[] = [
+  { href: "/settings", label: "Geral", icon: "settings" },
+  { href: "/settings/marca", label: "Marca e identidade", icon: "brand" },
+  { href: "/social/integrations", label: "Redes sociais", icon: "connections" },
 ];
 
 const SITE_ITEMS: readonly WorkspaceNavItem[] = [
@@ -85,7 +90,7 @@ const RESULTS_ITEMS: readonly WorkspaceNavItem[] = [
 ];
 
 const MARKETING_MATCH = [
-  "/ideias", "/production", "/create", "/campaigns", "/calendar", "/publish", "/meta-ads", "/social", "/knowledge",
+  "/ideias", "/production", "/create", "/campaigns", "/calendar", "/publish", "/meta-ads", "/social/compose", "/social/calendar",
   "/assets", "/review", "/chat", "/analytics", "/instagram", "/facebook", "/tiktok",
   ...MARKETING_BACKSTAGE_NAV.map((item) => item.href),
 ] as const;
@@ -110,7 +115,7 @@ export function buildGlobalNavigation(available: readonly SolutionKey[]): Global
   if (has("site")) areas.push({ key: "site", label: "Meu site", icon: "site", href: "/site", items: SITE_ITEMS, match: ["/site", "/commerce"] });
   if (has("meetings")) areas.push({ key: "meetings", label: "Reuniões", icon: "meetings", href: "/meetings", items: MEETINGS_ITEMS, match: ["/meetings"] });
   if (has("conversations")) areas.push({ key: "results", label: "Resultados", icon: "results", href: "/results", items: RESULTS_ITEMS, match: ["/results", "/performance", "/reports"] });
-  areas.push({ key: "settings", label: "Configurações", icon: "settings", href: "/settings", items: [], match: ["/settings", "/connections"] });
+  areas.push({ key: "settings", label: "Configurações", icon: "settings", href: "/settings", items: has("marketing") ? SETTINGS_MARKETING_ITEMS : [], match: ["/settings", "/connections", "/social/integrations", "/social/connect", "/knowledge"] });
   return areas;
 }
 
@@ -134,7 +139,7 @@ export function activeGlobalArea(pathname: string, base: string, areas: readonly
 
 /** Telas que pertencem a um item do menu sem estar nele: a aba "Em produção" do Bolsão e, desde a
  * Fase 4, o compositor e o estúdio avançado (abertos por dentro de "Criar conteúdo"). */
-const ITEM_ALIASES: Readonly<Record<string, string>> = { "/production": "/ideias", "/social/compose": "/create", "/publish": "/create" };
+const ITEM_ALIASES: Readonly<Record<string, string>> = { "/production": "/ideias", "/social/compose": "/create", "/publish": "/create", "/social/calendar": "/calendar", "/knowledge": "/settings/marca", "/social/connect": "/social/integrations" };
 
 /** Subitem ativo: o de prefixo mais longo que casa com a rota (ex.: `/meetings/agenda` vence `/meetings`). */
 export function activeGlobalItem(pathname: string, base: string, area: GlobalArea | undefined): string | undefined {

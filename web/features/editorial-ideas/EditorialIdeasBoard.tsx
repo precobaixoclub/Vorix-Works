@@ -60,6 +60,7 @@ import {
   type EditorialIdeaInput,
   type EditorialIdeaStatus,
 } from "./api";
+import { ConceptsExplainer } from "@/components/marketing/ConceptsExplainer";
 import { IdeaEditor } from "./IdeaEditor";
 import { IdeasHubTabs } from "./IdeasHubTabs";
 import { blueprintToIdeaInput, clearLocalTankIdeas, readLocalTankIdeas } from "./local-tank-migration";
@@ -363,6 +364,8 @@ export function EditorialIdeasBoard({ workspaceId, openNew = false }: { workspac
         </>
       }
     />
+    {/* Fase 5: os três conceitos do Marketing, sempre distintos. */}
+    <ConceptsExplainer base={`/workspaces/${workspaceId}`} current="idea" />
     </>
   );
 

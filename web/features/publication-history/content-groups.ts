@@ -54,7 +54,7 @@ function samePiece(a: UnifiedPublication, b: UnifiedPublication): boolean {
  */
 export function groupStatus(posts: readonly UnifiedPublication[]): PublicationDisplayStatus {
   const statuses = posts.map((post) => derivePublicationStatus(post));
-  for (const status of ["published", "publishing", "scheduled", "failed", "draft", "cancelled"] as const) {
+  for (const status of ["published", "publishing", "awaiting_approval", "scheduled", "failed", "draft", "cancelled"] as const) {
     if (statuses.includes(status)) return status;
   }
   return statuses[0] ?? "draft";

@@ -68,7 +68,7 @@ export function quickLinks(available: readonly SolutionKey[], can: Can): QuickLi
   if (has("conversations") && can("inbox:read")) links.push({ key: "conversas", label: "Abrir conversas", href: "/conversas", icon: "conversas" });
   if (has("conversations") && can("deal:read")) links.push({ key: "deals", label: "Oportunidades", href: "/deals", icon: "deals" });
   if (has("marketing")) links.push({ key: "create", label: "Criar conteúdo", href: "/create", icon: "create" });
-  if (has("marketing") && can("marketing:social_read")) links.push({ key: "calendar", label: "Calendário de publicações", href: "/social/calendar", icon: "calendar" });
+  if (has("marketing") && can("marketing:social_read")) links.push({ key: "calendar", label: "Calendário", href: "/calendar", icon: "calendar" });
   if (has("site")) links.push({ key: "site", label: "Editor do site", href: "/site", icon: "site" });
   if (has("meetings") && can("meeting:read")) links.push({ key: "meetings", label: "Reuniões", href: "/meetings/central", icon: "meetings" });
   return links;
@@ -172,7 +172,7 @@ function postNetworks(post: SocialPostView): string {
 export function socialAttention(posts: readonly SocialPostView[] | undefined): AttentionItem[] {
   const items: AttentionItem[] = [];
   for (const post of posts ?? []) {
-    const href = `/social/calendar?post=${encodeURIComponent(post.id)}`;
+    const href = `/calendar?post=${encodeURIComponent(post.id)}`;
     if (FAILED_POST_STATES.has(post.state)) {
       const problem = post.destinations.find((destination) => destination.problem)?.problem;
       const lastAttempt = post.destinations.map((destination) => destination.lastAttemptAt).filter((value): value is string => Boolean(value)).sort().pop();
@@ -233,7 +233,7 @@ export function buildActivity(input: { posts?: readonly SocialPostView[]; meetin
   const items: ActivityItem[] = [];
   for (const post of input.posts ?? []) {
     const published = post.destinations.map((destination) => destination.publishedAt).filter((at): at is string => Boolean(at)).sort().pop();
-    if (published && (post.state === "PUBLISHED" || post.state === "PARTIAL_SUCCESS")) items.push({ id: `post-${post.id}`, module: "marketing", title: "Conteúdo publicado", context: `${postLabel(post)} · ${postNetworks(post)}`, href: `/social/calendar?post=${encodeURIComponent(post.id)}`, at: published });
+    if (published && (post.state === "PUBLISHED" || post.state === "PARTIAL_SUCCESS")) items.push({ id: `post-${post.id}`, module: "marketing", title: "Conteúdo publicado", context: `${postLabel(post)} · ${postNetworks(post)}`, href: `/calendar?post=${encodeURIComponent(post.id)}`, at: published });
   }
   for (const meeting of input.meetings ?? []) {
     if (meeting.status === "completed") items.push({ id: `meeting-${meeting.id}`, module: "meetings", title: "Reunião concluída", context: meeting.title, href: `/meetings/central/${encodeURIComponent(meeting.id)}`, at: meeting.recordingEndedAt ?? meeting.statusChangedAt });

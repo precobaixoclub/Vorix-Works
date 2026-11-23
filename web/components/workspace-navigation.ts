@@ -11,6 +11,8 @@ export type WorkspaceNavItem = {
   href: string;
   label: string;
   icon: NavIconId;
+  /** Bloco do submenu (ex.: "Produção", "Publicação" no Marketing) — título discreto acima do grupo. */
+  section?: string;
 };
 
 export type WorkspaceNavSection = {
@@ -149,6 +151,7 @@ const SETTINGS_SUBPAGE_LABELS: Record<string, string> = {
   users: "Usuários",
   teams: "Equipes",
   plano: "Plano e cobrança",
+  marca: "Marca e identidade",
   commercial: "Regras comerciais",
   goals: "Metas",
   automations: "Automações",

@@ -194,10 +194,11 @@ describe("Calendário e estados", () => {
 });
 
 describe("Navegação", () => {
-  it("Marketing tem a seção Redes sociais e /social pertence ao Marketing", () => {
+  it("Redes sociais: telas do Marketing; no menu, a conexão fica em Configurações (Fase 5)", () => {
     const section = SOLUTION_NAVIGATION.marketing.sections.find((item) => item.label === "REDES SOCIAIS");
     expect(section?.items.map((item) => item.href)).toEqual(["/social/compose", "/social/calendar", "/social/integrations"]);
-    expect(buildGlobalNavigation(["marketing"]).find((area) => area.key === "marketing")?.items.some((item) => item.href === "/social/integrations")).toBe(true);
+    expect(buildGlobalNavigation(["marketing"]).find((area) => area.key === "settings")?.items.some((item) => item.href === "/social/integrations")).toBe(true);
+    expect(routeOwner("/workspaces/ws-1/social/integrations", "/workspaces/ws-1")).toBe("marketing");
     expect(routeOwner("/workspaces/ws-1/social/compose", "/workspaces/ws-1")).toBe("marketing");
   });
 });

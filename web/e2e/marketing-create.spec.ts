@@ -136,7 +136,8 @@ test.describe("Criar conteúdo — desktop", () => {
     // Menu: Criar conteúdo aceso; Publicar/Criar publicação não estão mais no menu.
     const nav = page.locator("nav[aria-label='Menu principal']");
     await expect(nav.locator("[data-area-items='marketing'] a[aria-current='page']")).toHaveText("Criar conteúdo");
-    await expect(nav.locator("[data-area-items='marketing'] a")).toHaveText(["Bolsão de ideias", "Criar conteúdo", "Revisão", "Conteúdos", "Calendário", "Publicações", "Anúncios", "Integrações", "Marca"]);
+    // Fase 5: menu definitivo (Publicações virou o Calendário único; Integrações e Marca foram para Configurações).
+    await expect(nav.locator("[data-area-items='marketing'] a")).toHaveText(["Bolsão de ideias", "Criar conteúdo", "Revisão", "Conteúdos", "Calendário", "Anúncios"]);
   });
 
   test("1. a partir do Bolsão: preserva prompt e referências, marca a ideia em produção e leva à Revisão", async ({ page }) => {
@@ -196,7 +197,7 @@ test.describe("Criar conteúdo — desktop", () => {
     await expect(page.getByLabel("Data da publicação")).toBeVisible();
     await expect(page.getByTestId("composer-summary")).toContainText(" às ");
     await page.getByRole("button", { name: "Agendar publicação" }).click();
-    await expect(page).toHaveURL(/social\/calendar\?post=post-1/);
+    await expect(page).toHaveURL(/\/calendar\?post=post-1/);
     expect(log.posts).toHaveLength(1);
     expect(log.posts[0]).toMatchObject({ workspaceId: WORKSPACE_ID, when: { mode: "schedule", timezone: "America/Sao_Paulo" }, base: { caption: "Nova coleção chegando!", media: [{ url: "https://cdn.example.test/upload-1.png", kind: "image" }] } });
     // Publicado/agendado: o rascunho some.
@@ -215,7 +216,7 @@ test.describe("Criar conteúdo — desktop", () => {
     await page.waitForTimeout(500);
     expect(log.posts).toHaveLength(1);
     await publish.click();
-    await expect(page).toHaveURL(/social\/calendar\?post=post-1/);
+    await expect(page).toHaveURL(/\/calendar\?post=post-1/);
     expect(log.posts).toHaveLength(2);
     expect(log.posts[0]!.when).toEqual({ mode: "now" });
     expect(log.posts[1]!.idempotencyKey).toBe(log.posts[0]!.idempotencyKey);

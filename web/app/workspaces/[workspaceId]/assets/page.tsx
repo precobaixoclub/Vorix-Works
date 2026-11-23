@@ -15,7 +15,7 @@ export default function AssetsRedirectPage() {
   const router = useRouter();
 
   useEffect(() => {
-    router.replace(`/workspaces/${workspace.id}/knowledge?tab=materials`);
+    router.replace(`/workspaces/${workspace.id}/settings/marca?tab=materials`);
   }, [router, workspace.id]);
 
   return (

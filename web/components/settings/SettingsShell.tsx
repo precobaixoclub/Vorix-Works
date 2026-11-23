@@ -2,7 +2,7 @@
 
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect } from "react";
-import { Boxes, CreditCard, Globe, Headset, Mic, PlugZap, Scale, Settings, ShoppingBag, SlidersHorizontal, Store, Target, UsersRound, Workflow } from "lucide-react";
+import { Boxes, CreditCard, Globe, Headset, Mic, Palette, PlugZap, Scale, Settings, Share2, ShoppingBag, SlidersHorizontal, Store, Target, UsersRound, Workflow } from "lucide-react";
 import { PageHeader } from "@/components/PageHeader";
 import { PageSubnav } from "@/components/PageSubnav";
 import { useCurrentWorkspace } from "@/contexts/workspace-context";
@@ -23,8 +23,10 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
   { value: "site-address", label: "Endereço e domínio", href: "/site?section=dominio", icon: Globe, solutions: ["site"] },
   { value: "site-selling", label: "Como vender pelo site", href: "/site?section=loja", icon: ShoppingBag, solutions: ["site"] },
   { value: "site-products", label: "Produtos", href: "/site/products", icon: Boxes, solutions: ["site"] },
-  // No Marketing, Integrações e Marca já estão no menu principal (Redes sociais → Integrações; Marca)
-  // e a conexão de anúncios fica dentro de Anúncios — repetir aqui só confundia.
+  // Fase 5: a marca e as redes sociais do Marketing passam a morar em Configurações (o menu do
+  // Marketing fica só com produção e publicação). A conexão de anúncios continua dentro de Anúncios.
+  { value: "brand", label: "Marca e identidade", href: "/settings/marca", icon: Palette, solutions: ["marketing"] },
+  { value: "social", label: "Redes sociais", href: "/social/integrations", icon: Share2, solutions: ["marketing"] },
   { value: "integrations", label: "Integrações", href: "/connections", icon: PlugZap, solutions: ["conversations"] },
   { value: "attendance", label: "Atendimento", href: "/settings/attendance", icon: Headset, solutions: ["conversations"] },
   { value: "products", label: "Produtos", href: "/products", icon: Boxes, solutions: ["conversations"] },
@@ -104,6 +106,7 @@ function activeFromPath(pathname: string): string | undefined {
   if (pathname.endsWith("/settings/attendance")) return "attendance";
   if (pathname.endsWith("/settings/plano")) return "billing";
   if (pathname.endsWith("/settings/marketplaces")) return "marketplaces";
+  if (pathname.endsWith("/settings/marca")) return "brand";
   if (pathname.endsWith("/settings")) return "general";
   return undefined;
 }

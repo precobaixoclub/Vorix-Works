@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { ChevronDown, ChevronRight, X } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import { NavIcon } from "@/components/NavIcon";
 import { MARKETING_BACKSTAGE_NAV, type WorkspaceNavItem } from "@/components/workspace-navigation";
 import type { GlobalArea } from "@/components/global-navigation";
@@ -108,7 +108,12 @@ export function BottomNav({ workspaceId }: { workspaceId: string }) {
         </div>
         {isOpen ? (
           <div className="mb-1 ml-[22px] mt-0.5 flex flex-col gap-0.5 border-l border-border/70 pl-2" data-area-items={area.key}>
-            {area.items.map((item) => renderItem(item, isActive && item.href === activeItem))}
+            {area.items.map((item, index) => (
+              <Fragment key={item.href}>
+                {item.section && item.section !== area.items[index - 1]?.section ? <p className="px-3 pb-0.5 pt-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/70" data-section={item.section}>{item.section}</p> : null}
+                {renderItem(item, isActive && item.href === activeItem)}
+              </Fragment>
+            ))}
           </div>
         ) : null}
       </div>
@@ -198,7 +203,7 @@ export function BottomNav({ workspaceId }: { workspaceId: string }) {
                     aria-expanded={backstageOpen}
                     className="flex min-h-[44px] w-full items-center justify-between rounded-lg px-3 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/80 transition-colors hover:bg-muted"
                   >
-                    <span>Bastidor</span>
+                    <span>Operação técnica</span>
                     <ChevronRight aria-hidden="true" className={cn("h-4 w-4 transition-transform duration-150", backstageOpen ? "rotate-90" : "")} />
                   </button>
                   {backstageOpen ? <div className="mt-1 flex flex-col gap-0.5">{MARKETING_BACKSTAGE_NAV.map((item) => renderItem(item, pathname.startsWith(`${base}${item.href}`)))}</div> : null}

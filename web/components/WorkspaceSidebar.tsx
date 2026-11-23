@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { ChevronDown, ChevronLeft, ChevronRight } from "lucide-react";
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { Logo } from "@/components/Logo";
 import { NavIcon } from "@/components/NavIcon";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -78,7 +78,12 @@ export function WorkspaceSidebar({ workspaceId }: { workspaceId: string }) {
         </div>
         {isOpen ? (
           <div className="mb-1 ml-[18px] mt-0.5 flex flex-col gap-0.5 border-l border-border/70 pl-2" data-area-items={area.key}>
-            {area.items.map((item) => renderItem(item, item.href === activeItem && isActive))}
+            {area.items.map((item, index) => (
+              <Fragment key={item.href}>
+                {item.section && item.section !== area.items[index - 1]?.section ? <p className="px-2 pb-0.5 pt-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/70" data-section={item.section}>{item.section}</p> : null}
+                {renderItem(item, item.href === activeItem && isActive)}
+              </Fragment>
+            ))}
           </div>
         ) : null}
       </div>
@@ -132,7 +137,7 @@ export function WorkspaceSidebar({ workspaceId }: { workspaceId: string }) {
                 aria-expanded={backstageOpen}
                 className="flex h-8 w-full items-center justify-between rounded-md px-2.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/70 transition-colors hover:bg-muted/70 hover:text-foreground"
               >
-                <span>Bastidor</span>
+                <span>Operação técnica</span>
                 <ChevronRight aria-hidden="true" className={`h-3.5 w-3.5 transition-transform duration-150 ${backstageOpen ? "rotate-90" : ""}`} />
               </button>
             ) : null}

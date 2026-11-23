@@ -17,10 +17,11 @@ import { editorialDateLabel, pickableIdeas } from "./picker-model";
  * post com ela pelo MESMO caminho do Bolsão (`startIdeaProduction`): prompt, roteiro, legenda e
  * imagens de referência da ideia são preservados. Acompanha a criação e leva à Revisão.
  */
-export function IdeaPicker({ workspaceId, ideas, loading, error, creativeEngineEnabled, onChanged }: { workspaceId: string; ideas: readonly EditorialIdea[] | undefined; loading: boolean; error: boolean; creativeEngineEnabled: boolean; onChanged: () => void }) {
+export function IdeaPicker({ workspaceId, ideas, loading, error, creativeEngineEnabled, onChanged, initialSelectedId }: { workspaceId: string; ideas: readonly EditorialIdea[] | undefined; loading: boolean; error: boolean; creativeEngineEnabled: boolean; onChanged: () => void; initialSelectedId?: string }) {
   const router = useRouter();
   const [query, setQuery] = useState("");
-  const [selectedId, setSelectedId] = useState<string | undefined>();
+  // Fase 5: "Criar com esta ideia" (Calendário/Bolsão) chega com `?ideia=` e a ideia já vem escolhida.
+  const [selectedId, setSelectedId] = useState<string | undefined>(initialSelectedId);
   const [producing, setProducing] = useState<string | undefined>();
   const [message, setMessage] = useState<{ tone: "error" | "info"; text: string } | undefined>();
   const visible = useMemo(() => pickableIdeas(ideas ?? [], query), [ideas, query]);

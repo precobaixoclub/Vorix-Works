@@ -37,6 +37,7 @@ export function socialPostsToPublications(
         return {
           // Id do post (plano) — o mesmo que cancelar/publicar-de-novo usam.
           id: post.id,
+          source: "social",
           network: destination.network,
           placement: placementOf(destination.format),
           text: destination.caption,

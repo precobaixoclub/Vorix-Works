@@ -176,7 +176,7 @@ test.describe("Início unificado — desktop", () => {
     await expect(activity).toContainText("Reunião concluída");
     await expect(activity).toContainText("Pedido #1042 recebido");
 
-    await expect(page.getByTestId("quick-links").locator("a")).toHaveText(["Abrir conversas", "Oportunidades", "Criar conteúdo", "Calendário de publicações", "Editor do site", "Reuniões"]);
+    await expect(page.getByTestId("quick-links").locator("a")).toHaveText(["Abrir conversas", "Oportunidades", "Criar conteúdo", "Calendário", "Editor do site", "Reuniões"]);
     await page.getByTestId("home-create").click();
     await expect(page.getByTestId("home-create-menu").locator("[data-create]")).toHaveCount(9);
     await page.keyboard.press("Escape");
@@ -198,7 +198,7 @@ test.describe("Início unificado — desktop", () => {
     await expect(page).toHaveURL(new RegExp(`${base()}/conversas\\?conversation=conv-1$`));
     await page.goBack();
     await page.getByRole("button", { name: /Ver todas as/ }).click();
-    for (const [id, href] of [["post-post-failed", "/social/calendar?post=post-failed"], ["proposal-prop-1", "/proposals?proposal=prop-1"], ["meeting-meet-1", "/meetings/central/meet-1"], ["task-task-late", "/tasks"]]) {
+    for (const [id, href] of [["post-post-failed", "/calendar?post=post-failed"], ["proposal-prop-1", "/proposals?proposal=prop-1"], ["meeting-meet-1", "/meetings/central/meet-1"], ["task-task-late", "/tasks"]]) {
       await expect(page.locator(`[data-attention='${id}'] a`)).toHaveAttribute("href", `${base()}${href}`);
     }
   });

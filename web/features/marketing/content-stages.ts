@@ -77,7 +77,7 @@ export function contentPipeline(input: { ideas?: readonly Pick<EditorialIdea, "s
     { key: "ideas", label: "Ideias pendentes", count: ideaCount("available"), href: "/ideias" },
     { key: "in_production", label: "Em produção", count: ideaCount("in_production"), href: "/production" },
     { key: "review", label: "Para revisar", count: sum(ideaCount("produced"), postCount("awaiting_approval")), href: "/review" },
-    { key: "scheduled", label: "Agendados", count: postCount("scheduled"), href: "/social/calendar" },
+    { key: "scheduled", label: "Agendados", count: postCount("scheduled"), href: "/calendar" },
     { key: "published", label: "Publicados", count: postCount("published"), href: "/campaigns?status=published" },
     { key: "failed", label: "Com falha", count: postCount("failed"), href: "/campaigns?status=failed" },
   ];

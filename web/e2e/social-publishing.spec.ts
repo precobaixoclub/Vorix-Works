@@ -81,14 +81,18 @@ test.beforeEach(async ({ context, page }) => {
 test("Integrações: rede conectada, reconexão necessária com publicações aguardando e rede ainda não liberada", async ({ page }) => {
   await mockSocial(page, { retried: false });
   await page.goto(`/workspaces/${WORKSPACE_ID}/social/integrations`);
-  const instagram = page.getByTestId("social-card-instagram");
-  await expect(instagram.getByText("Conectado", { exact: true })).toBeVisible();
-  await expect(instagram.getByText("@loja")).toBeVisible();
-  await expect(instagram.getByRole("button", { name: "Testar conexão" })).toBeVisible();
-  const facebook = page.getByTestId("social-card-facebook");
-  await expect(facebook.getByText("Sua conta precisa ser reconectada.")).toBeVisible();
-  await expect(facebook.getByText("3 publicações aguardando reconexão")).toBeVisible();
-  await expect(facebook.getByRole("button", { name: "Reconectar Facebook" })).toBeVisible();
+  // Desde 2854d400 Instagram + Facebook são UMA conexão Meta: um cartão só (testid da rede "instagram",
+  // que dispara o OAuth da Meta) com a situação mais grave entre as duas e as duas contas listadas.
+  const meta = page.getByTestId("social-card-instagram");
+  await expect(meta.getByText("Instagram + Facebook", { exact: true })).toBeVisible();
+  await expect(meta.getByText("Reconexão necessária")).toBeVisible();
+  await expect(meta.getByText("Sua conta precisa ser reconectada.")).toBeVisible();
+  await expect(meta.getByText("3 publicações aguardando reconexão")).toBeVisible();
+  await expect(meta.getByText("@loja")).toBeVisible();
+  await expect(meta.getByText("Loja Página")).toBeVisible();
+  await expect(meta.getByRole("button", { name: "Testar conexão" })).toHaveCount(2);
+  await expect(meta.getByRole("button", { name: "Reconectar Instagram + Facebook" })).toBeVisible();
+  await expect(page.getByTestId("social-card-facebook")).toHaveCount(0);
   const tiktok = page.getByTestId("social-card-tiktok");
   await expect(tiktok.getByText("ainda não está liberada")).toBeVisible();
   await expect(tiktok.getByRole("button", { name: /Conectar TikTok/ })).toHaveCount(0);
@@ -101,16 +105,18 @@ test("Composer: três redes, personalização por rede, prévia e agendamento", 
   await mockSocial(page, state);
   await page.goto(`/workspaces/${WORKSPACE_ID}/social/compose?media=${encodeURIComponent("https://cdn.example.test/v.mp4")}&caption=${encodeURIComponent("Lançamento da coleção")}&source=run-7`);
   await expect(page.getByLabel("Legenda")).toHaveValue("Lançamento da coleção");
-  await page.getByRole("checkbox", { name: "Instagram @loja" }).click();
-  await page.getByRole("checkbox", { name: "Facebook Loja Página" }).click();
-  await page.getByRole("checkbox", { name: "TikTok @loja" }).click();
+  // Desde 2854d400: marcar "Instagram + Facebook" publica nas duas (mesma conexão Meta).
+  await page.getByRole("checkbox", { name: "Instagram + Facebook" }).click();
+  await page.getByRole("checkbox", { name: "TikTok" }).click();
+  await expect(page.getByTestId("social-destination-facebook")).toBeVisible();
   await expect(page.getByTestId("social-destination-instagram")).toBeVisible();
   await page.getByRole("switch", { name: "Personalizar para TikTok" }).click();
   await page.getByLabel("Legenda do TikTok").fill("Corre que é lançamento!");
   await expect(page.getByTestId("social-preview")).toBeVisible();
   await page.getByRole("radio", { name: "Agendar" }).click();
   await page.getByRole("button", { name: "Agendar publicação" }).click();
-  await expect(page).toHaveURL(/social\/calendar\?post=post-1/);
+  // Fase 5: o acompanhamento abre no Calendário único, com o mesmo detalhe do post.
+  await expect(page).toHaveURL(/\/calendar\?post=post-1/);
   const created = state.created as { destinations: { accountId: string; format: string; caption?: string }[]; when: { mode: string; timezone: string }; source: { executionRunId: string } };
   expect(created.destinations).toHaveLength(3);
   expect(created.destinations.find((item) => item.accountId === "acc-tiktok")).toMatchObject({ format: "short_video", caption: "Corre que é lançamento!" });

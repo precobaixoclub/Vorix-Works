@@ -81,7 +81,10 @@ export type RouteOwner = SolutionKey | "core";
 /** Dono de uma rota do workspace. Rota desconhecida cai no Core (nunca bloqueia por engano). */
 export function routeOwner(pathname: string, workspaceBase: string): RouteOwner {
   if (!pathname.startsWith(workspaceBase)) return "core";
-  const segment = pathname.slice(workspaceBase.length).split("/").filter(Boolean)[0] ?? "";
+  const segments = pathname.slice(workspaceBase.length).split("/").filter(Boolean);
+  const segment = segments[0] ?? "";
+  // Fase 5: Configurações › Marca e identidade é do Marketing (mesma tela que era /knowledge).
+  if (segment === "settings" && segments[1] === "marca") return "marketing";
   if(segment==="site")return "site";
   if(segment==="commerce")return "site";
   if (MARKETING_SEGMENTS.has(segment)) return "marketing";

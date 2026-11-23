@@ -202,7 +202,7 @@ export function SocialComposer({ embedded = false }: { embedded?: boolean }) {
       toast.success(draft.when.mode === "now" ? "Publicação enviada. Acompanhe o status de cada rede." : "Publicação agendada.");
       clearComposerDraft(workspace.id);
       setIdempotencyKey(newKey());
-      router.push(`/workspaces/${workspace.id}/social/calendar?post=${encodeURIComponent(post.id)}`);
+      router.push(`/workspaces/${workspace.id}/calendar?post=${encodeURIComponent(post.id)}`);
     } catch (cause) {
       toast.error(messageOf(cause));
     } finally {

@@ -399,7 +399,7 @@ function AiCreateFlow({ ideas, ideasLoading, ideasError, onIdeasChanged }: { ide
     <div className="space-y-4 text-sm">
       <div>
         <p className="text-xs font-medium text-muted-foreground/70">Marca ativa</p>
-        <Link href={`/workspaces/${workspace.id}/knowledge?tab=profile`} className="mt-1.5 flex items-center gap-2 hover:underline">
+        <Link href={`/workspaces/${workspace.id}/settings/marca?tab=profile`} className="mt-1.5 flex items-center gap-2 hover:underline">
           {hasLogo ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img src={activeAssets.find((asset) => asset.kind === "logo")?.storageRef?.metadata?.url} alt="" className="h-7 w-7 rounded-md object-contain" />
@@ -419,7 +419,7 @@ function AiCreateFlow({ ideas, ideasLoading, ideasError, onIdeasChanged }: { ide
         ) : (
           <p className="mt-1 text-muted-foreground/70">Nenhuma diretriz personalizada configurada.</p>
         )}
-        <Link href={`/workspaces/${workspace.id}/knowledge?tab=guidelines`} className="text-xs font-medium text-primary hover:underline">
+        <Link href={`/workspaces/${workspace.id}/settings/marca?tab=guidelines`} className="text-xs font-medium text-primary hover:underline">
           {hasGuidelines ? "Editar" : "Configurar"}
         </Link>
       </div>
@@ -439,7 +439,7 @@ function AiCreateFlow({ ideas, ideasLoading, ideasError, onIdeasChanged }: { ide
         ) : (
           <p className="mt-1 text-muted-foreground/70">Nenhum material cadastrado ainda.</p>
         )}
-        <Link href={`/workspaces/${workspace.id}/knowledge?tab=materials`} className="text-xs font-medium text-primary hover:underline">
+        <Link href={`/workspaces/${workspace.id}/settings/marca?tab=materials`} className="text-xs font-medium text-primary hover:underline">
           Gerenciar materiais
         </Link>
       </div>
@@ -458,7 +458,7 @@ function AiCreateFlow({ ideas, ideasLoading, ideasError, onIdeasChanged }: { ide
     <div data-testid="ai-create">
       <div className="flex flex-col gap-6 lg:grid lg:grid-cols-[minmax(0,1fr)_300px] lg:items-start">
         <div className="min-w-0 space-y-5">
-          <IdeaPicker workspaceId={workspace.id} ideas={ideas} loading={ideasLoading} error={ideasError} creativeEngineEnabled={creativeEngineEnabled} onChanged={onIdeasChanged} />
+          <IdeaPicker workspaceId={workspace.id} ideas={ideas} loading={ideasLoading} error={ideasError} creativeEngineEnabled={creativeEngineEnabled} onChanged={onIdeasChanged} initialSelectedId={searchParams.get("ideia") ?? undefined} />
           <p className="flex items-center gap-3 text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground"><span className="h-px flex-1 bg-border" />ou descreva uma nova ideia<span className="h-px flex-1 bg-border" /></p>
 
           <Card

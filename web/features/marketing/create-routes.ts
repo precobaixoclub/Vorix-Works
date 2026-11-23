@@ -6,7 +6,7 @@
 export type CreateMode = "ia" | "pronto";
 
 /** Parâmetros antigos de `/create` (atalho rápido da Home e da Produção) que já indicam a criação com IA. */
-const LEGACY_AI_PARAMS = ["draft", "format", "aspectRatio", "channel"] as const;
+const LEGACY_AI_PARAMS = ["draft", "format", "aspectRatio", "channel", "ideia"] as const;
 /** Parâmetros que só o compositor usa (conteúdo vindo da Revisão). */
 const COMPOSER_PARAMS = ["media", "caption", "source"] as const;
 

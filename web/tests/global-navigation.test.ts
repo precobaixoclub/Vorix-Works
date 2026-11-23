@@ -35,16 +35,21 @@ describe("menu global — áreas por ferramenta contratada", () => {
       for (const href of [area.href, ...area.items.map((item) => item.href)]) {
         const owner = routeOwner(`${BASE}${href}`, BASE);
         if (requires[area.key] === "sales") expect(["conversations", "site"]).toContain(owner);
+        // Fase 5: Configurações › Marca e identidade / Redes sociais continuam sendo telas do Marketing
+        // (o guarda de solução segue valendo) — só mudaram de lugar no menu.
+        else if (area.key === "settings" && (href === "/settings/marca" || href === "/social/integrations")) expect(owner, href).toBe("marketing");
         else expect(owner, `${area.key} ${href}`).toBe(requires[area.key]);
       }
     }
   });
 });
 
-/** Telas que continuam existindo, mas são abertas por dentro de "Criar conteúdo" (Fase 4). */
-const INSIDE_CREATE: Record<string, string> = {
-  "/social/compose": "→ encaminha para Criar conteúdo › Publicar conteúdo pronto (mesmo compositor)",
-  "/publish": "→ link \"estúdio avançado\" dentro de Publicar conteúdo pronto (opções exclusivas de TikTok/YouTube/Story)",
+/** Telas que continuam existindo, mas saíram do menu: abrem por dentro de outro destino (Fases 4 e 5). */
+const MOVED: Record<string, { target: string; why: string }> = {
+  "/social/compose": { target: "/create", why: "→ encaminha para Criar conteúdo › Publicar conteúdo pronto (mesmo compositor)" },
+  "/publish": { target: "/create", why: "→ link \"estúdio avançado\" dentro de Publicar conteúdo pronto (opções exclusivas de TikTok/YouTube/Story)" },
+  "/social/calendar": { target: "/calendar", why: "→ encaminha para o Calendário único (mesmo detalhe com as ações por rede)" },
+  "/knowledge": { target: "/settings/marca", why: "→ encaminha para Configurações › Marca e identidade (mesmas abas)" },
 };
 
 describe("menu global — nenhuma tela existente se perde", () => {
@@ -53,9 +58,8 @@ describe("menu global — nenhuma tela existente se perde", () => {
     for (const [key, navigation] of Object.entries(SOLUTION_NAVIGATION)) {
       const old = [navigation.home, ...(navigation.primaryAction ? [navigation.primaryAction] : []), ...(navigation.featured ? [navigation.featured] : []), ...navigation.sections.flatMap((section) => section.items)];
       for (const item of old) {
-        // Fase 4: estas duas telas saíram do menu e passaram a ser abertas por dentro de "Criar conteúdo".
-        const via = INSIDE_CREATE[item.href];
-        if (via) expect(reachable.has("/create"), `${item.href} ${via}`).toBe(true);
+        const moved = MOVED[item.href];
+        if (moved) expect(reachable.has(moved.target), `${item.href} ${moved.why}`).toBe(true);
         else expect(reachable.has(item.href), `${key}: ${item.label} (${item.href})`).toBe(true);
       }
     }
@@ -89,7 +93,7 @@ describe("menu global — área e tela ativas", () => {
     ["/ideias", "marketing"],
     ["/production", "marketing"],
     ["/social/compose", "marketing"],
-    ["/knowledge", "marketing"],
+    ["/knowledge", "settings"],
     ["/operations", "marketing"],
     ["/site", "site"],
     ["/site/products", "site"],
@@ -128,7 +132,7 @@ describe("menu global — área e tela ativas", () => {
     expect(activeGlobalItem(`${BASE}/meetings`, BASE, meetings)).toBe("/meetings");
     const marketing = areas.find((area) => area.key === "marketing");
     expect(activeGlobalItem(`${BASE}/production`, BASE, marketing)).toBe("/ideias");
-    expect(activeGlobalItem(`${BASE}/social/calendar`, BASE, marketing)).toBe("/social/calendar");
+    expect(activeGlobalItem(`${BASE}/social/calendar`, BASE, marketing)).toBe("/calendar");
     const site = areas.find((area) => area.key === "site");
     expect(activeGlobalItem(`${BASE}/site/pedidos`, BASE, site)).toBe("/site/pedidos");
     expect(activeGlobalItem(`${BASE}/site`, BASE, site)).toBe("/site");
@@ -249,7 +253,7 @@ describe("Fase 2 — lista do seletor de espaços", () => {
 describe("Fase 4 — Marketing com uma porta única de criação", () => {
   const marketing = () => buildGlobalNavigation(["marketing"]).find((area) => area.key === "marketing")!;
   it("menu do Marketing: Criar conteúdo e Revisão no lugar de Publicar/Criar publicação", () => {
-    expect(marketing().items.map((item) => item.label)).toEqual(["Bolsão de ideias", "Criar conteúdo", "Revisão", "Conteúdos", "Calendário", "Publicações", "Anúncios", "Integrações", "Marca"]);
+    expect(marketing().items.map((item) => item.label)).toEqual(["Bolsão de ideias", "Criar conteúdo", "Revisão", "Conteúdos", "Calendário", "Anúncios"]);
     expect(marketing().items.some((item) => item.href === "/publish" || item.href === "/social/compose")).toBe(false);
   });
   it("compositor e estúdio avançado acendem Criar conteúdo; Em produção continua no Bolsão", () => {
@@ -258,5 +262,34 @@ describe("Fase 4 — Marketing com uma porta única de criação", () => {
     expect(activeGlobalItem(`${BASE}/production`, BASE, marketing())).toBe("/ideias");
     expect(activeGlobalItem(`${BASE}/review`, BASE, marketing())).toBe("/review");
     expect(activeGlobalArea(`${BASE}/publish`, BASE, buildGlobalNavigation(["marketing"]))).toBe("marketing");
+  });
+});
+
+describe("Fase 5 — menu definitivo do Marketing", () => {
+  const areas = buildGlobalNavigation(ALL);
+  const marketing = areas.find((area) => area.key === "marketing")!;
+  const settings = areas.find((area) => area.key === "settings")!;
+  it("Produção e Publicação em blocos; sem Publicações, Integrações nem Marca no Marketing", () => {
+    expect(marketing.items.map((item) => [item.section, item.label])).toEqual([
+      ["Produção", "Bolsão de ideias"], ["Produção", "Criar conteúdo"], ["Produção", "Revisão"], ["Produção", "Conteúdos"],
+      ["Publicação", "Calendário"], ["Publicação", "Anúncios"],
+    ]);
+  });
+  it("Configurações ganha Marca e identidade e Redes sociais só quando há Marketing", () => {
+    expect(settings.items.map((item) => item.href)).toEqual(["/settings", "/settings/marca", "/social/integrations"]);
+    expect(buildGlobalNavigation(["conversations"]).find((area) => area.key === "settings")!.items).toEqual([]);
+  });
+  it("rotas antigas e novas acendem o lugar certo", () => {
+    const at = (path: string) => activeGlobalArea(`${BASE}${path}`, BASE, areas);
+    expect(at("/settings/marca")).toBe("settings");
+    expect(at("/knowledge")).toBe("settings");
+    expect(at("/social/integrations")).toBe("settings");
+    expect(at("/social/calendar")).toBe("marketing");
+    expect(at("/calendar")).toBe("marketing");
+    expect(activeGlobalItem(`${BASE}/settings/marca`, BASE, settings)).toBe("/settings/marca");
+    expect(activeGlobalItem(`${BASE}/knowledge`, BASE, settings)).toBe("/settings/marca");
+    expect(activeGlobalItem(`${BASE}/settings/users`, BASE, settings)).toBe("/settings");
+    expect(routeOwner(`${BASE}/settings/marca`, BASE)).toBe("marketing");
+    expect(routeOwner(`${BASE}/settings/users`, BASE)).toBe("core");
   });
 });

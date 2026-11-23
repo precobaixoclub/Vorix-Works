@@ -868,7 +868,7 @@ export default function ProductionLinePage() {
           <p className="mt-1 text-sm text-muted-foreground">Os posts que a IA está criando a partir das suas ideias e os que já ficaram prontos para revisar.</p>
         </div>
         <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
-          <Link href={`/workspaces/${workspace.id}/knowledge?tab=guidelines`} className="relative">
+          <Link href={`/workspaces/${workspace.id}/settings/marca?tab=guidelines`} className="relative">
             <Button variant="secondary" className="w-full">{hasGuidelines ? "Editar prompt da IA" : "Configurar prompt da IA"}</Button>
             {!hasGuidelines ? <span className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full bg-warning" aria-hidden="true" /> : null}
           </Link>
@@ -1090,7 +1090,7 @@ function PromptSetupCard({ workspaceId, hasGuidelines, compact }: { workspaceId:
                 : "Antes de abastecer a rotina, defina como a IA deve escrever e criar visualmente: tom de voz, cores, estilo, regras do que nunca inventar e uso de materiais reais."}
           </p>
         </div>
-        <Link href={`/workspaces/${workspaceId}/knowledge?tab=guidelines`} className="shrink-0">
+        <Link href={`/workspaces/${workspaceId}/settings/marca?tab=guidelines`} className="shrink-0">
           <Button variant="secondary">{hasGuidelines ? "Editar prompt" : "Configurar prompt da IA"}</Button>
         </Link>
       </div>

@@ -33,7 +33,7 @@ describe("Fase 4 — etapas do conteúdo com nomes em português (estados reais,
       ["ideas", 2, "/ideias"],
       ["in_production", 1, "/production"],
       ["review", 2, "/review"],
-      ["scheduled", 1, "/social/calendar"],
+      ["scheduled", 1, "/calendar"],
       ["published", 1, "/campaigns?status=published"],
       ["failed", 2, "/campaigns?status=failed"],
     ]);

@@ -22,6 +22,9 @@ async function setup(page: Page, calls: Calls, query = "") {
   await page.route("**/v1/**", async route => {
     const request = route.request(), path = new URL(request.url()).pathname;
     if (path === "/v1/solutions") return ok(route, { solutions: [{ key: "marketing", name: "Marketing", internal: false }] });
+    // Contrato real de /v1/social/accounts (desde 56c083cb o estúdio casa a credencial com a conta
+    // escolhida em Integrações). Sem conta escolhida, vale a autorização ativa mais recente.
+    if (path === "/v1/social/accounts") return ok(route, { accounts: [], networks: [] });
     if (path === "/v1/tiktok/creator-info") {
       if (calls.creatorBlocked) return route.fulfill({ status: 409, contentType: "application/json", body: JSON.stringify({ ok: false, error: { code: "spam_risk_too_many_posts", message: "Esta conta atingiu o limite de publicações. Tente mais tarde." } }) });
       return ok(route, { credentialReferenceId: "credential-tiktok", creatorNickname: "Vorix Works ao vivo", creatorUsername: "vorixworks", privacyLevelOptions: calls.publicCreator ? ["PUBLIC_TO_EVERYONE", "SELF_ONLY"] : ["FOLLOWER_OF_CREATOR", "SELF_ONLY"], commentDisabled: true, duetDisabled: true, stitchDisabled: true, maxVideoPostDurationSec: calls.durationLimit ?? 60, sandbox: !calls.publicCreator });
@@ -238,7 +241,8 @@ test("Conteúdos mostra Short como vídeo reproduzível e Publicar novamente pre
   await expect(dialog.getByLabel("Vídeo do conteúdo")).toHaveAttribute("src", VIDEO_URL);
   await expect(dialog.getByLabel("Vídeo do conteúdo")).toHaveAttribute("controls", "");
   await expect(dialog.getByText("Vídeo", { exact: true })).toBeVisible();
-  await expect(dialog.getByRole("link", { name: "Ver publicação" })).toHaveAttribute("href", "https://www.youtube.com/watch?v=example");
+  // Desde cc2818c1 (conteúdo único por peça) o link é por rede: "Ver na rede".
+  await expect(dialog.getByRole("link", { name: "Ver na rede" })).toHaveAttribute("href", "https://www.youtube.com/watch?v=example");
   await dialog.getByRole("link", { name: "Publicar novamente" }).click();
   await expect(page.getByLabel("A legenda que acompanha")).toHaveValue("Meu Short original");
   await expect(page.getByLabel("Vídeo selecionado")).toHaveAttribute("src", VIDEO_URL);

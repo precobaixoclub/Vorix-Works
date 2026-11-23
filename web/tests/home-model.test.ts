@@ -117,7 +117,7 @@ describe("Início — Precisa da sua atenção", () => {
       post({ id: "s", state: "SCHEDULED" }),
     ]);
     expect(items.map((item) => item.id)).toEqual(["post-f", "post-w"]);
-    expect(items[0]).toMatchObject({ badge: "failed", context: "Token expirado", title: "Falha ao publicar: Lançamento da coleção", href: "/social/calendar?post=f" });
+    expect(items[0]).toMatchObject({ badge: "failed", context: "Token expirado", title: "Falha ao publicar: Lançamento da coleção", href: "/calendar?post=f" });
     expect(items[1]!.badge).toBeUndefined();
   });
 

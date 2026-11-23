@@ -1,3 +1,5 @@
+import { renderPlatformEmail } from "./platform-email-template.js";
+
 export const PLATFORM_EMAIL_EVENTS = [
   "account_created", "subscription_started", "plan_changed", "cancellation_requested", "subscription_cancelled",
   "payment_failed", "publication_failed", "publication_action_required",
@@ -48,7 +50,7 @@ export type PlatformEmailAlertsRepository = {
 };
 
 export type TransactionalEmailSender = {
-  send(input: { apiKey: string; job: PlatformEmailJob; text: string }): Promise<
+  send(input: { apiKey: string; job: PlatformEmailJob; text: string; html?: string }): Promise<
     { accepted: true; providerId: string } | { accepted: false; retryable: boolean; message: string }
   >;
 };
@@ -83,8 +85,8 @@ export class PlatformEmailAlerts {
       const path = job.path;
       const link = this.webOrigin && path && /^\/(admin|workspaces)\//.test(path) && !/[\\\r\n]/.test(path)
         ? new URL(path, this.webOrigin).href : undefined;
-      const text = link ? `${job.body}\n\nAbra no Vorix\n${link}` : job.body;
-      const result = await this.sender.send({ apiKey, job, text });
+      const { html, text } = renderPlatformEmail({ event: job.event, subject: job.subject, body: job.body, link, sentAt: new Date(job.createdAt) });
+      const result = await this.sender.send({ apiKey, job, text, html });
       if (result.accepted) {
         await this.repository.settle({ job, status: "accepted", providerId: result.providerId });
       } else {

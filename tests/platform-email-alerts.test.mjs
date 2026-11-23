@@ -90,6 +90,7 @@ test("admin configures email and confirmed business events are saved and deliver
     assert.ok(calls.some(call => call.body.text.includes("Plano anterior: Start\nNovo plano: Pro")));
     assert.ok(calls.some(call => call.body.text.includes("Falha confirmada pela integração")));
     assert.ok(calls.every(call => call.body.to[0] === "owner@example.com"));
+    assert.ok(calls.every(call => call.body.html?.startsWith("<!doctype html>") && call.body.html.includes(call.body.subject)), "layout HTML junto com o texto");
     const history = await app.inject({ url: `${url}/history`, headers });
     assert.equal(history.statusCode, 200);
     assert.ok(history.json().data.every(item => item.status === "accepted"));

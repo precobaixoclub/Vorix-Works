@@ -51,7 +51,6 @@ export const OWNER_PERMISSIONS: readonly string[] = [
   "analytics:rebuild",
   "analytics:alerts:update",
   "analytics:admin",
-  "system:operate",
   "asset:read",
   "asset:create",
   "asset:update",

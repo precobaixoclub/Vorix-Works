@@ -4,7 +4,7 @@ import type { OperationalHealthService, BackpressureController, BackupRestorePla
 import type { PublicationQueueJob, PublicationQueuePort } from "../../../../application/publication/publication-queue.js";
 import type { SecretManagerPort } from "../../../../application/ports/secret-manager.port.js";
 import type { SchedulingRecoveryService } from "../../../../application/scheduling/scheduling-recovery-service.js";
-import { requirePermission } from "../../http/require-principal.js";
+import { requirePlatformAdmin } from "../../http/require-principal.js";
 import { successEnvelope } from "../../http/response-envelope.js";
 import { NotFoundError } from "../../http/app-error.js";
 
@@ -31,27 +31,35 @@ export type SystemRoutesDeps = {
   idGenerator: () => string;
 };
 
+/**
+ * Operação da PLATAFORMA (saúde, prontidão, cofre de segredos, trava de produção, plano de backup,
+ * filas, circuit breakers, rate limits, SLO, auditoria e recuperação). Correção de segurança: antes
+ * exigia `system:operate`, que os papéis owner/admin de QUALQUER empresa cliente recebiam por
+ * padrão — e várias respostas trazem estado global da Vorix. Agora exige o administrador global
+ * (`isPlatformAdmin`, revalidado a cada refresh do token), o mesmo guarda de `/v1/admin/*`. O
+ * escopo por tenant das consultas continua igual (defesa em profundidade).
+ */
 export async function registerSystemRoutes(app: FastifyInstance, deps: SystemRoutesDeps): Promise<void> {
   app.get("/system/health", { schema: { querystring: WORKSPACE_QUERY_SCHEMA } }, async (request) => {
-    const principal = requirePermission(request, "system:operate");
+    const principal = requirePlatformAdmin(request);
     const { workspaceId } = request.query as { workspaceId?: string };
     return successEnvelope(await deps.healthService.systemHealth({ tenantId: principal.tenantId, workspaceId }), request.id);
   });
 
   app.get("/system/readiness", { schema: { querystring: WORKSPACE_QUERY_SCHEMA } }, async (request) => {
-    const principal = requirePermission(request, "system:operate");
+    const principal = requirePlatformAdmin(request);
     const { workspaceId } = request.query as { workspaceId?: string };
     return successEnvelope(await deps.healthService.readiness({ tenantId: principal.tenantId, workspaceId }), request.id);
   });
 
   app.get("/system/circuit-breakers", { schema: { querystring: WORKSPACE_QUERY_SCHEMA } }, async (request) => {
-    const principal = requirePermission(request, "system:operate");
+    const principal = requirePlatformAdmin(request);
     const { workspaceId } = request.query as { workspaceId?: string };
     return successEnvelope(await deps.circuitBreaker.list({ tenantId: principal.tenantId, workspaceId }), request.id);
   });
 
   app.post("/system/circuit-breakers/:id/reset", { schema: { params: { type: "object", required: ["id"], properties: { id: { type: "string" } } }, querystring: WORKSPACE_QUERY_SCHEMA } }, async (request) => {
-    const principal = requirePermission(request, "system:operate");
+    const principal = requirePlatformAdmin(request);
     const { id } = request.params as { id: string };
     const { workspaceId } = request.query as { workspaceId?: string };
     const reset = await deps.circuitBreaker.reset(id, { tenantId: principal.tenantId, workspaceId });
@@ -70,54 +78,54 @@ export async function registerSystemRoutes(app: FastifyInstance, deps: SystemRou
   });
 
   app.get("/system/rate-limits", { schema: { querystring: WORKSPACE_QUERY_SCHEMA } }, async (request) => {
-    const principal = requirePermission(request, "system:operate");
+    const principal = requirePlatformAdmin(request);
     const { routeGroup } = request.query as { routeGroup?: string };
     const buckets = await deps.rateLimiter.list({ tenantId: principal.tenantId, routeGroup, limit: 100 });
     return successEnvelope(buckets.map(toSafeRateLimitBucket), request.id);
   });
 
   app.get("/system/backpressure", { schema: { querystring: WORKSPACE_QUERY_SCHEMA } }, async (request) => {
-    const principal = requirePermission(request, "system:operate");
+    const principal = requirePlatformAdmin(request);
     const { workspaceId, activeOnly } = request.query as { workspaceId?: string; activeOnly?: boolean };
     return successEnvelope(await deps.backpressure.list({ tenantId: principal.tenantId, workspaceId, activeOnly, limit: 100 }), request.id);
   });
 
   app.get("/system/queues", { schema: { querystring: WORKSPACE_QUERY_SCHEMA } }, async (request) => {
-    const principal = requirePermission(request, "system:operate");
+    const principal = requirePlatformAdmin(request);
     const { workspaceId } = request.query as { workspaceId?: string };
     const localJobs = (await deps.publicationQueue.list()).filter((job) => job.tenantId === principal.tenantId && (workspaceId ? job.workspaceId === workspaceId : true));
     return successEnvelope({ publication: { localQueueSize: localJobs.length, localJobs: localJobs.map(toSafeQueueJob) } }, request.id);
   });
 
   app.get("/system/secrets/health", { schema: { querystring: WORKSPACE_QUERY_SCHEMA } }, async (request) => {
-    requirePermission(request, "system:operate");
+    requirePlatformAdmin(request);
     return successEnvelope(await deps.secretManager.health(), request.id);
   });
 
   app.get("/system/release-gate", async (request) => {
-    requirePermission(request, "system:operate");
+    requirePlatformAdmin(request);
     return successEnvelope(deps.productionGuard.snapshot(), request.id);
   });
 
   app.get("/system/slo", { schema: { querystring: WORKSPACE_QUERY_SCHEMA } }, async (request) => {
-    const principal = requirePermission(request, "system:operate");
+    const principal = requirePlatformAdmin(request);
     const { workspaceId } = request.query as { workspaceId?: string };
     return successEnvelope((await deps.healthService.systemHealth({ tenantId: principal.tenantId, workspaceId })).slo, request.id);
   });
 
   app.get("/system/audit", { schema: { querystring: WORKSPACE_QUERY_SCHEMA } }, async (request) => {
-    const principal = requirePermission(request, "system:operate");
+    const principal = requirePlatformAdmin(request);
     const { workspaceId } = request.query as { workspaceId?: string };
     return successEnvelope(await deps.auditRepository.list({ tenantId: principal.tenantId, workspaceId, limit: 100 }), request.id);
   });
 
   app.get("/system/backup-restore", { schema: { querystring: WORKSPACE_QUERY_SCHEMA } }, async (request) => {
-    requirePermission(request, "system:operate");
+    requirePlatformAdmin(request);
     return successEnvelope(deps.backupRestorePlanner.describePlan(), request.id);
   });
 
   app.post("/system/recovery/run", { schema: { body: { type: "object", properties: { workspaceId: { type: "string" } } } } }, async (request) => {
-    const principal = requirePermission(request, "system:operate");
+    const principal = requirePlatformAdmin(request);
     const { workspaceId } = request.body as { workspaceId?: string };
     const scheduling = workspaceId
       ? await deps.schedulingRecoveryService.recover({ tenantId: principal.tenantId, workspaceId, actor: principal, requestId: request.id })

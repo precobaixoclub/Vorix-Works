@@ -198,6 +198,8 @@ test("API operacional: readiness falha com Secret Manager de producao nao config
       PUBLICATION_CANARY_TENANT_IDS: "tenant-ops",
       PUBLICATION_CANARY_WORKSPACE_IDS: "workspace-ops",
       SECRET_MANAGER_PROVIDER: "production",
+      // Segurança: /v1/system/* exige o administrador GLOBAL da plataforma (não basta ser owner).
+      DEV_PRINCIPAL_PLATFORM_ADMIN: "true",
     }),
   });
   const ready = await app.inject({ method: "GET", url: "/readyz" });
@@ -228,7 +230,8 @@ test("API rate limit: health/livez ficam fora do limite e rotas de negocio receb
 test("API operacional: bastidor nao vaza fila, rate limits ou reset de outro tenant", async () => {
   const workspaceRepository = new InMemoryWorkspaceRepository({ idGenerator: () => "workspace-ops" });
   await workspaceRepository.create({ tenantId: "tenant-ops", name: "Operations" });
-  const app = await buildApp({ config: testConfig(), container: { workspaceRepository } });
+  // Administrador global da plataforma: mesmo com acesso, as consultas continuam no escopo do tenant.
+  const app = await buildApp({ config: testConfig({ DEV_PRINCIPAL_PLATFORM_ADMIN: "true" }), container: { workspaceRepository } });
   try {
     await app.zunoContainer.publicationQueue.enqueue({
       id: "job-owned",

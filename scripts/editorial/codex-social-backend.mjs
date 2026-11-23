@@ -117,6 +117,19 @@ async function run() {
   const idempotencyKey = `${prefix}:${slot}`;
   const existing = await c.publicationRepository.getPlanByIdempotency({ ...scope, idempotencyKey: `social:${idempotencyKey}` });
   if (existing) return { existing: summarizes(await c.social.posts.get({ ...scope, postId: existing.id })) };
+  if (mode === "report_failure") {
+    if (!request.code || !["codex_auth", "preparation"].includes(request.code)) throw new Error("Categoria de falha editorial inválida");
+    const ideas = await c.editorialIdeaRepository.listByWorkspace(workspaceId);
+    if (!ideas.some(idea => idea.status === "available" && ["single_image", "carousel"].includes(idea.format)
+      && (!idea.scheduledDate || idea.scheduledDate <= slot.slice(0, 10)))) return { reported: false };
+    const cause = request.code === "codex_auth" ? "O Codex do servidor precisa ser autorizado novamente."
+      : "A automação não conseguiu preparar ou agendar a pauta para esse horário.";
+    const localDate = slot.slice(0, 10).split("-").reverse().join("/");
+    const body = `Marca: ${workspace.name}\nHorário: ${localDate} às ${slot.slice(11)} (Brasília)\n${cause}`;
+    await db.query("select enqueue_platform_email_alert('publication_failed', $1, 'Falha na automação editorial', $2, $3)",
+      [`editorial:${workspaceId}:${slot}`, body, `/workspaces/${workspaceId}/ideias`]);
+    return { reported: true };
+  }
   const actor = await actorForPublish();
   const options = await c.social.posts.composerOptions(scope);
   const selected = accounts.map(id => options.find(account => account.accountId === id));

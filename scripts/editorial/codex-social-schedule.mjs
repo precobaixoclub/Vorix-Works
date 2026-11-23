@@ -178,15 +178,24 @@ async function runWorkspace(workspaceId) {
 }
 
 const targets = workspace ? [workspace] : workspaces;
-if (mode === "schedule") await processOutput("runuser", [...agent, "login", "status"], "", 15000);
+let loginError;
+if (mode === "schedule") {
+  try { await processOutput("runuser", [...agent, "login", "status"], "", 15000); }
+  catch (error) { loginError = error; }
+}
 for (const pair of [targets.slice(0,2), targets.slice(2)]) {
-  const results = await Promise.allSettled(pair.map(runWorkspace));
-  results.forEach((item, index) => {
-    const values = { time: new Date().toISOString(), slot, workspace: pair[index] };
-    if (item.status === "fulfilled") console.log(JSON.stringify({ ...values, ...item.value }));
-    else {
-      console.error(JSON.stringify({ ...values, error: item.reason.message.replace(/([?&]sig=)[^&\s]+/g, "$1[redacted]") }));
+  await Promise.all(pair.map(async workspaceId => {
+    const values = { slot, workspace: workspaceId };
+    try {
+      if (loginError) throw loginError;
+      console.log(JSON.stringify({ time: new Date().toISOString(), ...values, ...await runWorkspace(workspaceId) }));
+    } catch (error) {
+      console.error(JSON.stringify({ time: new Date().toISOString(), ...values, error: error.message.replace(/([?&]sig=)[^&\s]+/g, "$1[redacted]") }));
       process.exitCode = 1;
+      if (mode === "schedule") {
+        await callContainer(backend, { workspaceId, slot, action: "report_failure", code: loginError ? "codex_auth" : "preparation" })
+          .catch(() => console.error(JSON.stringify({ ...values, error: "Falha ao registrar o alerta por e-mail" })));
+      }
     }
-  });
+  }));
 }

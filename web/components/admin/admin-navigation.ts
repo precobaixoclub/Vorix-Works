@@ -1,4 +1,4 @@
-import { Bot, Cpu, CreditCard, Globe, Mic, Share2, Video } from "lucide-react";
+import { Bot, Cpu, CreditCard, Globe, Mail, Mic, Share2, Video } from "lucide-react";
 import type { HubItem } from "@/components/HubPage";
 
 /**
@@ -9,6 +9,7 @@ export const ADMIN_SETTINGS_ITEMS: HubItem[] = [
   { id: "ai-providers", title: "Provedores de IA", tagline: "Inteligência artificial", description: "Chaves e modelos da OpenAI e do Gemini usados pela IA da plataforma.", icon: Bot, route: "/admin/ai-providers", accent: "violet" },
   { id: "ai-gateway", title: "Gateway e extração de IA", tagline: "Inteligência artificial", description: "Chave da Anthropic e opções globais do gateway de IA.", icon: Cpu, route: "/admin/settings", accent: "violet" },
   { id: "billing", title: "Cobrança", tagline: "Pagamentos", description: "Credenciais do Mercado Pago usadas nas assinaturas e compras.", icon: CreditCard, route: "/admin/billing-provider", accent: "emerald" },
+  { id: "email-notifications", title: "Notificações por e-mail", tagline: "Alertas da plataforma", description: "Configure quem recebe alertas de cadastros, assinaturas e publicações.", icon: Mail, route: "/admin/email-notifications", accent: "amber" },
   { id: "meetings-bots", title: "Contas de gravação", tagline: "Vorix Meetings", description: "Contas Google que gravam as reuniões dos clientes: dono, saúde e uso.", icon: Video, route: "/admin/meetings-bots", accent: "sky" },
   { id: "meetings-transcription", title: "Transcrição de reuniões", tagline: "Vorix Meetings", description: "Motor que transcreve as gravações depois que a reunião termina.", icon: Mic, route: "/admin/meetings-transcription", accent: "sky" },
   { id: "social", title: "Integrações sociais", tagline: "Vorix Marketing", description: "Provedores de publicação por rede social, por empresa ou para todos.", icon: Share2, route: "/admin/social-providers", accent: "amber" },

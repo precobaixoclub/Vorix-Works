@@ -16,6 +16,7 @@ import { registerDiPlugin } from "./plugins/di.plugin.js";
 import { buildApiContainer, type ApiContainer } from "./di/container.js";
 import { registerV1Routes } from "./routes/v1/index.js";
 import { registerPublicationScheduler } from "./scheduler/publication-scheduler.js";
+import { registerPlatformEmailAlertsScheduler } from "./scheduler/platform-email-alerts-scheduler.js";
 import { registerSocialMaintenanceScheduler } from "./scheduler/social-maintenance-scheduler.js";
 import { registerMetaAdsSyncScheduler } from "./scheduler/meta-ads-sync-scheduler.js";
 import { registerTrialExpirationScheduler } from "./scheduler/trial-expiration-scheduler.js";
@@ -204,6 +205,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   }
 
   registerPublicationScheduler(app, container, { enabled: config.publication.schedulerEnabled, intervalMs: config.publication.schedulerIntervalMs });
+  if (container.platformEmailAlerts) registerPlatformEmailAlertsScheduler(app, container.platformEmailAlerts);
   // Social Publishing: health check das contas + reconciliação de resultados desconhecidos.
   registerSocialMaintenanceScheduler(app, container, { enabled: config.social.enabled && config.publication.schedulerEnabled, intervalMs: config.social.maintenanceIntervalMs, healthCheckMaxAgeMs: config.social.healthCheckMaxAgeMs });
   registerMetaAdsSyncScheduler(app, container, { enabled: config.metaAds.syncSchedulerEnabled, intervalMs: config.metaAds.syncSchedulerIntervalMs });

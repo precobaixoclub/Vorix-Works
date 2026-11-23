@@ -54,6 +54,7 @@ import { registerInboxRoutes } from "./inbox.route.js";
 import { registerDashboardRoutes } from "./dashboard.route.js";
 import { PostgresDashboardRepository } from "../../../../infrastructure/storage/postgres/postgres-dashboard-repository.js";
 import { registerNotificationRoutes } from "./notifications.route.js";
+import { registerAdminEmailAlertsRoutes } from "./admin-email-alerts.route.js";
 import { registerSolutionRoutes } from "./solutions.route.js";
 import { registerMeetingRoutes } from "./meetings.route.js";
 import { registerMeetingAgendaRoutes } from "./meetings-agenda.route.js";
@@ -972,6 +973,7 @@ export async function registerV1Routes(app: FastifyInstance): Promise<void> {
   // real + Postgres); no modo noop/testes, `/v1/admin/*` fica inexistente. `requirePlatformAdmin`
   // dentro das rotas cuida do 403 quando o usuário logado não é superadmin.
   if (app.zunoContainer.identity) {
+    if (app.zunoContainer.platformEmailAlerts) await registerAdminEmailAlertsRoutes(app, app.zunoContainer.platformEmailAlerts);
     const identity = app.zunoContainer.identity;
     if (!entitlementDeps) throw new Error("Admin billing dependencies unavailable");
     const contractDeps = { ...entitlementDeps, billingProvider: app.zunoContainer.billingProvider, billingEventRepository: identity.billingEventRepository, subscriptionPendingChangeRepository: identity.subscriptionPendingChangeRepository, capacityMutationRepository: identity.capacityMutationRepository, solutionEntitlementRepository: identity.solutionEntitlementRepository };

@@ -137,6 +137,10 @@ export async function signupPublicTransactional(
       }
     }
 
+    await client.query(`select enqueue_platform_email_alert('account_created', $1, 'Nova conta criada no Vorix',
+      concat_ws(E'\n', 'Nome: ' || $2::text, 'E-mail: ' || $3::text, 'Workspace: ' || $4::text), '/admin/tenants/' || $1)`,
+    [result.tenantId, result.user.name, result.user.email, workspace?.name ?? null]);
+
     await client.query("commit");
 
     // Sempre DEPOIS do commit — um evento pra um signup que acabou sendo revertido seria mentira.

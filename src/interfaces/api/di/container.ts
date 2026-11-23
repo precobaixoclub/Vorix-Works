@@ -62,6 +62,9 @@ import { InboxRealtimeSubscriber } from "../../../infrastructure/messaging/rabbi
 import { InProcessNotificationRealtimePublisher } from "../../../infrastructure/realtime/notification-event-bus.js";
 import type { NotificationRealtimePublisherPort } from "../../../application/ports/notification-realtime-publisher.port.js";
 import type { NotificationRepositoryPort } from "../../../application/ports/notification-repository.port.js";
+import { PlatformEmailAlerts } from "../../../application/notification/platform-email-alerts.js";
+import { PostgresPlatformEmailAlerts } from "../../../infrastructure/storage/postgres/postgres-platform-email-alerts.js";
+import { ResendEmailSender } from "../../../infrastructure/operations/resend-email-sender.js";
 import { WuzApiClient } from "../../../infrastructure/messaging/wuzapi/wuzapi-client.js";
 import { WuzApiMessagingProvider } from "../../../infrastructure/messaging/wuzapi/wuzapi-messaging-provider.js";
 import type { AIProviderPort } from "../../../application/ports/ai-provider.port.js";
@@ -348,6 +351,7 @@ export type ApiContainer = {
   clock: ClockPort;
   notificationRepository: NotificationRepositoryPort;
   notificationRealtimePublisher: NotificationRealtimePublisherPort;
+  platformEmailAlerts?: PlatformEmailAlerts;
   /** Social Publishing multiprovider (Vorix Marketing). Ausente quando `SOCIAL_PUBLISHING_ENABLED=false`. */
   social?: SocialPublishingModule;
   /** Acesso por SOLUÇÃO (Vorix Conversas / Vorix Marketing / futuras) — só existe com identidade
@@ -1824,8 +1828,10 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
         }
       : undefined;
 
+    const webOrigin = [config.corsOrigin].flat().find(origin => /^https?:\/\//i.test(origin));
     return {
       radar,
+      platformEmailAlerts: new PlatformEmailAlerts(new PostgresPlatformEmailAlerts(identityRepositories.pool, config.jwtSecret), new ResendEmailSender(), webOrigin),
       authPort: new JwtAuthAdapter(jwtPort),
       inboxFeatureFlags,
       inboxProvider,

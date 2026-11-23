@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, usePathname, useRouter, useSearchParams } from "next/navigation";
 import { BarChart3, ClipboardList, Download, FileText, Handshake, Info, ListChecks, MessageSquareText, Scissors, Search, Send, Share2, Sparkles, Square, UsersRound, Video } from "lucide-react";
 import { toast } from "sonner";
 import { useSWRConfig } from "swr";
@@ -24,29 +24,19 @@ import { useAuth } from "@/contexts/auth-context";
 import { useCurrentWorkspace } from "@/contexts/workspace-context";
 import { decideActionItem, deleteMeeting, getRecordingPlayback, reanalyzeMeeting, requestMeetingRecording, retranscribeMeeting, stopMeetingRecording } from "@/features/meetings/api";
 import { useMeeting, useMeetingTranscript, useRecordingCapacity } from "@/features/meetings/hooks";
+import { detailSectionsFor, groupActionItems, processingSteps, resolveDetailSection, type DetailSectionKey, type ProcessingStep } from "@/features/meetings/organization";
 import { formatBytes, formatDuration, formatTimestamp, meetingDurationSeconds, meetingWhen } from "@/features/meetings/presentation";
 import { MEETING_SOURCE_LABEL, MEETING_STATUS_LABEL, TRANSCRIPT_STATUS_LABEL, type MeetingActionItem, type MeetingAnalysisView, type MeetingDetail, type MeetingRecording } from "@/features/meetings/types";
 import { ApiError } from "@/lib/api-client";
 import { formatDateTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
-type Section = "overview" | "recording" | "transcript" | "summary" | "ask" | "speakers" | "actions" | "followup" | "crm" | "clips" | "share" | "participants" | "technical";
+type Section = DetailSectionKey;
 
-const SECTIONS = [
-  { value: "overview", label: "Visão geral", icon: Info },
-  { value: "summary", label: "Resumo IA", icon: Sparkles },
-  { value: "transcript", label: "Transcrição", icon: FileText },
-  { value: "ask", label: "Pergunte à reunião", icon: MessageSquareText },
-  { value: "actions", label: "Tarefas e decisões", icon: ListChecks },
-  { value: "followup", label: "Follow-up", icon: Send },
-  { value: "crm", label: "CRM", icon: Handshake },
-  { value: "speakers", label: "Falantes e análise", icon: BarChart3 },
-  { value: "clips", label: "Trechos e comentários", icon: Scissors },
-  { value: "share", label: "Compartilhar e exportar", icon: Share2 },
-  { value: "recording", label: "Gravação", icon: Video },
-  { value: "participants", label: "Participantes", icon: UsersRound },
-  { value: "technical", label: "Informações técnicas", icon: ClipboardList },
-];
+const SECTION_ICONS: Record<DetailSectionKey, typeof Info> = {
+  overview: Info, participants: UsersRound, recording: Video, transcript: FileText, speakers: BarChart3,
+  summary: Sparkles, actions: ListChecks, ask: MessageSquareText, followup: Send, crm: Handshake, clips: Scissors, share: Share2, technical: ClipboardList,
+};
 
 export default function MeetingDetailPage() {
   const params = useParams<{ meetingId: string }>();
@@ -55,7 +45,19 @@ export default function MeetingDetailPage() {
   const { state } = useAuth();
   const { mutate: globalMutate } = useSWRConfig();
   const { data: meeting, error, isLoading, mutate } = useMeeting(workspace.id, params.meetingId);
-  const [section, setSection] = useState<Section>("overview");
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  // Fase 9: a seção vive no endereço (`?secao=`) — dá para mandar o link direto da transcrição ou
+  // do resumo. Trocar de seção substitui o endereço: o Voltar sai da reunião.
+  const availableSections = meeting ? detailSectionsFor(meeting) : [];
+  const section: Section = resolveDetailSection(searchParams.get("secao"), availableSections);
+  const setSection = useCallback((value: Section) => {
+    const next = new URLSearchParams(searchParams.toString());
+    if (value === "overview") next.delete("secao");
+    else next.set("secao", value);
+    const query = next.toString();
+    router.replace(`${pathname}${query ? `?${query}` : ""}`, { scroll: false });
+  }, [pathname, router, searchParams]);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [busy, setBusy] = useState(false);
   const [askIdentity, setAskIdentity] = useState(false);
@@ -66,7 +68,9 @@ export default function MeetingDetailPage() {
   const capacity = useRecordingCapacity(workspace.id);
   const playerRef = useRef<HTMLMediaElement | null>(null);
   const transcriptReady = meeting?.transcript?.status === "completed";
-  const transcript = useMeetingTranscript(workspace.id, params.meetingId, Boolean(transcriptReady));
+  // Fase 9: o texto completo só é baixado quando a pessoa abre a Transcrição (visão geral, resumo
+  // e listas não precisam dele). Depois de carregado, fica em cache ao trocar de seção.
+  const transcript = useMeetingTranscript(workspace.id, params.meetingId, Boolean(transcriptReady) && section === "transcript");
   const canManage = state.status === "authenticated" && (state.role === "owner" || state.role === "admin");
   const canRecord = state.status === "authenticated" && state.role !== "viewer";
   const canAnalyze = state.status === "authenticated" && state.role !== "viewer";
@@ -80,7 +84,7 @@ export default function MeetingDetailPage() {
     player.scrollIntoView({ behavior: "smooth", block: "center" });
     player.currentTime = ms / 1000;
     void player.play().catch(() => undefined);
-  }, []);
+  }, [setSection]);
 
   async function record(humanJoinAccountEmail?: string) {
     if (!meeting) return;
@@ -238,9 +242,11 @@ export default function MeetingDetailPage() {
 
       {["queued", "starting", "waiting_admission", "recording"].includes(meeting.status) ? <LiveRecordingPanel meeting={meeting} /> : null}
 
+      {meeting.status !== "scheduled" && meeting.status !== "cancelled" ? <ProcessingTimeline steps={processingSteps(meeting)} onOpen={(key) => setSection(key === "analysis" ? "summary" : key)} canOpen={(key) => availableSections.some((item) => item.value === (key === "analysis" ? "summary" : key))} /> : null}
+
       {recording ? <RecordingPlayer workspaceId={workspace.id} meetingId={meeting.id} recording={recording} playerRef={playerRef} /> : null}
 
-      <PageSubnav items={SECTIONS} value={section} onValueChange={(value) => setSection(value as Section)}>
+      <PageSubnav items={availableSections.map((item) => ({ ...item, icon: SECTION_ICONS[item.value] }))} value={section} onValueChange={(value) => setSection(value as Section)}>
         {section === "overview" ? <Overview meeting={meeting} myUserId={state.status === "authenticated" ? state.user.id : undefined} /> : null}
         {section === "recording" ? <RecordingSection meeting={meeting} /> : null}
         {section === "transcript" ? (
@@ -268,7 +274,10 @@ export default function MeetingDetailPage() {
               <div className="relative mb-3">
                 <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                 <Input className="pl-8" placeholder="Buscar na transcrição…" value={transcriptQuery} onChange={(event) => setTranscriptQuery(event.target.value)} aria-label="Buscar na transcrição" />
-                {query ? <p className="mt-1 text-xs text-muted-foreground">{visibleSegments.length} {visibleSegments.length === 1 ? "trecho encontrado" : "trechos encontrados"}</p> : null}
+                <div className="mt-1 flex flex-wrap items-center justify-between gap-2">
+                  <p className="text-xs text-muted-foreground">{query ? `${visibleSegments.length} ${visibleSegments.length === 1 ? "trecho encontrado" : "trechos encontrados"}` : recording ? "Toque num trecho para ouvir a partir dele." : "A gravação não está disponível para tocar os trechos."}</p>
+                  <Button size="sm" variant="ghost" onClick={() => void copyTranscript(visibleSegments.map((segment) => `[${formatTimestamp(segment.startMs)}] ${segment.speaker ? `${speakerNames.get(segment.speaker) ?? segment.speaker}: ` : ""}${segment.text}`).join("\n"))}>Copiar {query ? "trechos" : "transcrição"}</Button>
+                </div>
               </div>
             ) : null}
             {transcriptReady && transcript.data ? (
@@ -306,19 +315,30 @@ export default function MeetingDetailPage() {
             {analysis?.id !== latestAnalysis?.id && analysis?.result ? <p className="text-xs text-muted-foreground">Mostrando a última análise concluída.</p> : null}
             {view ? <SummaryTemplateControl workspaceId={workspace.id} meetingId={meeting.id} insights={view} canAnalyze={canAnalyze} transcriptReady={Boolean(transcriptReady)} onChanged={refreshAll} /> : null}
             {analysis?.result ? (
+              <>
               <AIInsightCard title="Resumo da reunião" meta={formatDateTime(analysis.createdAt)} footnote="Gerado pela IA a partir da transcrição — revise antes de compartilhar.">
                 <div className="space-y-4">
                   <div>
-                    <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Resumo executivo</p>
+                    <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Síntese</p>
                     <p className="mt-1 whitespace-pre-line text-sm text-foreground">{analysis.result.executiveSummary}</p>
                   </div>
+                  <BulletList title="Principais assuntos" items={analysis.result.topics} />
                   <TemplateSections sections={analysis.result.templateSections} />
-                  <BulletList title="Tópicos" items={analysis.result.topics} />
-                  <BulletList title="Riscos" items={analysis.result.risks} />
-                  <BulletList title="Objeções" items={analysis.result.objections} />
-                  <BulletList title="Perguntas em aberto" items={analysis.result.openQuestions} />
+                  {analysis.result.risks.length || analysis.result.objections.length || analysis.result.openQuestions.length ? (
+                    <div className="space-y-3 rounded-lg border border-border/60 p-3" data-testid="summary-attention">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Pontos de atenção</p>
+                      <BulletList title="Riscos" items={analysis.result.risks} />
+                      <BulletList title="Objeções" items={analysis.result.objections} />
+                      <BulletList title="Perguntas em aberto" items={analysis.result.openQuestions} />
+                    </div>
+                  ) : null}
                 </div>
               </AIInsightCard>
+              <div className="flex flex-wrap gap-2" data-testid="summary-next">
+                <Button size="sm" variant="secondary" onClick={() => setSection("actions")}>Decisões e próximos passos{actionCount(analysis) ? ` (${actionCount(analysis)})` : ""}</Button>
+                {transcriptReady ? <Button size="sm" variant="ghost" onClick={() => setSection("transcript")}>Conferir na transcrição</Button> : null}
+              </div>
+              </>
             ) : null}
           </Card>
         ) : null}
@@ -508,12 +528,6 @@ function RecordingSection({ meeting }: { meeting: MeetingDetail }) {
   );
 }
 
-const ACTION_ITEM_TYPE_LABEL: Record<MeetingActionItem["type"], string> = {
-  decision: "Decisão",
-  task: "Tarefa",
-  next_step: "Próximo passo",
-};
-
 const ACTION_ITEM_STATUS_LABEL: Record<MeetingActionItem["status"], string> = {
   suggested: "Sugerido",
   confirmed: "Confirmado",
@@ -566,34 +580,42 @@ function ActionItemsSection({
     );
   }
 
+  const groups = groupActionItems(items);
+  const renderItem = (item: MeetingActionItem) => (
+    <li key={item.id} className="grid gap-3 px-5 py-4 text-sm lg:grid-cols-[minmax(0,1fr)_auto]">
+      <div className="min-w-0 space-y-1">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className={cn("rounded-full px-2 py-0.5 text-xs font-medium", item.status === "confirmed" ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300" : item.status === "dismissed" ? "bg-muted text-muted-foreground line-through" : "bg-primary/10 text-primary dark:text-primary-glow")}>{ACTION_ITEM_STATUS_LABEL[item.status]}</span>
+          {item.sourceTimestampMs !== undefined ? <span className="text-xs tabular-nums text-muted-foreground">{formatTimestamp(item.sourceTimestampMs)}</span> : null}
+        </div>
+        <p className={cn("text-foreground", item.status === "dismissed" && "text-muted-foreground line-through")}>{item.description}</p>
+        <p className="text-xs text-muted-foreground">
+          {[item.assigneeName ? `Responsável citado: ${item.assigneeName}` : "", item.dueDate ? `Prazo citado: ${item.dueDate}` : "", item.confidence !== undefined ? `Confiança: ${Math.round(item.confidence * 100)}%` : ""].filter(Boolean).join(" · ") || "Sem responsável ou prazo citados."}
+        </p>
+      </div>
+      <div className="flex flex-wrap items-start gap-2 lg:justify-end">
+        {canDecide && insights?.crm.available && item.type !== "decision" && item.status !== "dismissed" ? <CreateCrmTaskButton workspaceId={workspaceId} meetingId={meetingId} itemId={item.id} taskId={insights.crmTasks[item.id]} onCreated={onChanged} /> : null}
+        {canDecide && item.status === "suggested" ? (
+          <>
+            <Button variant="secondary" size="sm" loading={busyItemId === item.id} disabled={Boolean(busyItemId)} onClick={() => decide(item, "confirmed")}>Confirmar</Button>
+            <Button variant="ghost" size="sm" disabled={Boolean(busyItemId)} onClick={() => decide(item, "dismissed")}>Dispensar</Button>
+          </>
+        ) : null}
+      </div>
+    </li>
+  );
+  const blocks: [string, MeetingActionItem[]][] = [["Decisões", groups.decision], ["Tarefas", groups.task], ["Próximos passos", groups.next_step]];
   return (
     <Card className="p-0">
-      <ul className="divide-y divide-border/60" data-testid="meeting-action-items">
-        {items.map((item) => (
-          <li key={item.id} className="grid gap-3 px-5 py-4 text-sm lg:grid-cols-[minmax(0,1fr)_auto]">
-            <div className="min-w-0 space-y-1">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">{ACTION_ITEM_TYPE_LABEL[item.type]}</span>
-                <span className={cn("rounded-full px-2 py-0.5 text-xs font-medium", item.status === "confirmed" ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300" : item.status === "dismissed" ? "bg-muted text-muted-foreground line-through" : "bg-primary/10 text-primary dark:text-primary-glow")}>{ACTION_ITEM_STATUS_LABEL[item.status]}</span>
-                {item.sourceTimestampMs !== undefined ? <span className="text-xs tabular-nums text-muted-foreground">{formatTimestamp(item.sourceTimestampMs)}</span> : null}
-              </div>
-              <p className={cn("text-foreground", item.status === "dismissed" && "text-muted-foreground line-through")}>{item.description}</p>
-              <p className="text-xs text-muted-foreground">
-                {[item.assigneeName ? `Responsável: ${item.assigneeName}` : "", item.dueDate ? `Prazo: ${item.dueDate}` : "", item.confidence !== undefined ? `Confiança: ${Math.round(item.confidence * 100)}%` : ""].filter(Boolean).join(" · ") || "Aguardando decisão humana."}
-              </p>
-            </div>
-            <div className="flex flex-wrap items-start gap-2 lg:justify-end">
-              {canDecide && insights?.crm.available && item.type !== "decision" && item.status !== "dismissed" ? <CreateCrmTaskButton workspaceId={workspaceId} meetingId={meetingId} itemId={item.id} taskId={insights.crmTasks[item.id]} onCreated={onChanged} /> : null}
-              {canDecide && item.status === "suggested" ? (
-                <>
-                  <Button variant="secondary" size="sm" loading={busyItemId === item.id} disabled={Boolean(busyItemId)} onClick={() => decide(item, "confirmed")}>Confirmar</Button>
-                  <Button variant="ghost" size="sm" disabled={Boolean(busyItemId)} onClick={() => decide(item, "dismissed")}>Dispensar</Button>
-                </>
-              ) : null}
-            </div>
-          </li>
+      <p className="border-b border-border/60 px-5 py-3 text-xs text-muted-foreground" data-testid="action-items-note">Sugestões da IA a partir da transcrição. Nada vira tarefa ou decisão oficial sem a sua confirmação.</p>
+      <div data-testid="meeting-action-items">
+        {blocks.filter(([, list]) => list.length > 0).map(([title, list]) => (
+          <section key={title} aria-label={title} data-group={title}>
+            <h3 className="bg-muted/30 px-5 py-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{title} <span className="font-normal">({list.length})</span></h3>
+            <ul className="divide-y divide-border/60">{list.map(renderItem)}</ul>
+          </section>
         ))}
-      </ul>
+      </div>
     </Card>
   );
 }
@@ -676,5 +698,49 @@ function LiveRecordingPanel({ meeting }: { meeting: MeetingDetail }) {
       </div>
       <p className="mt-2 text-xs text-muted-foreground">O gravador do Vorix participa como um participante visível e a reunião está sendo gravada.{joined}{bot}</p>
     </Card>
+  );
+}
+
+function actionCount(analysis: MeetingAnalysisView): number {
+  if (analysis.actionItems?.length) return analysis.actionItems.length;
+  const result = analysis.result;
+  return result ? result.decisions.length + result.actionItems.length + result.nextSteps.length : 0;
+}
+
+async function copyTranscript(text: string) {
+  try {
+    await navigator.clipboard.writeText(text);
+    toast.success("Transcrição copiada");
+  } catch {
+    toast.error("Não foi possível copiar", { description: "Seu navegador bloqueou a área de transferência." });
+  }
+}
+
+const STEP_TONE: Record<ProcessingStep["state"], string> = {
+  done: "border-emerald-200 bg-emerald-50/60 text-emerald-800 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-200",
+  current: "border-amber-200 bg-amber-50/60 text-amber-900 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200",
+  todo: "border-border/60 text-muted-foreground",
+  failed: "border-destructive/40 bg-destructive/5 text-destructive",
+  blocked: "border-amber-300 bg-amber-50/60 text-amber-900 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200",
+};
+const STEP_MARK: Record<ProcessingStep["state"], string> = { done: "✓", current: "…", todo: "○", failed: "!", blocked: "!" };
+
+/** Gravação → Transcrição → Análise da IA, cada etapa com o estado real e o atalho para a seção. */
+function ProcessingTimeline({ steps, onOpen, canOpen }: { steps: ProcessingStep[]; onOpen: (key: ProcessingStep["key"]) => void; canOpen: (key: ProcessingStep["key"]) => boolean }) {
+  return (
+    <ol className="grid grid-cols-3 gap-2" aria-label="Andamento da reunião" data-testid="processing-timeline">
+      {steps.map((step) => (
+        <li key={step.key} data-step={step.key} data-state={step.state}>
+          <button type="button" disabled={!canOpen(step.key)} onClick={() => onOpen(step.key)} className={cn("flex h-full w-full items-start gap-1.5 rounded-xl border p-2 text-left text-xs transition-colors sm:gap-2 sm:p-3 sm:text-sm enabled:hover:brightness-95 disabled:cursor-default", STEP_TONE[step.state])} aria-current={step.state === "current" ? "step" : undefined}>
+            <span aria-hidden="true" className="w-3 shrink-0 text-center font-semibold sm:mt-0.5 sm:w-4">{STEP_MARK[step.state]}</span>
+            <span className="min-w-0">
+              <span className="block break-words font-medium">{step.label}</span>
+              <span className="hidden break-words text-xs opacity-90 sm:block">{step.detail}</span>
+              <span className="sr-only sm:hidden">{step.detail}</span>
+            </span>
+          </button>
+        </li>
+      ))}
+    </ol>
   );
 }

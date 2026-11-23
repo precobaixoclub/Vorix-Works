@@ -76,13 +76,15 @@ const MARKETING_ITEMS: readonly WorkspaceNavItem[] = [
  * identidade e Redes sociais (Marketing, Fase 5). Só "Geral" sozinho não vira submenu. */
 const SETTINGS_GENERAL: WorkspaceNavItem = { href: "/settings", label: "Geral", icon: "settings" };
 const SETTINGS_CONVERSATIONS_ITEMS: readonly WorkspaceNavItem[] = [{ href: "/settings/attendance", label: "Atendimento e canais", icon: "conversas" }];
+// Fase 9: as preferências de Reuniões também a partir de Configurações (centralização da Fase 10).
+const SETTINGS_MEETINGS_ITEMS: readonly WorkspaceNavItem[] = [{ href: "/meetings/settings", label: "Reuniões", icon: "meetings" }];
 const SETTINGS_MARKETING_ITEMS: readonly WorkspaceNavItem[] = [
   { href: "/settings/marca", label: "Marca e identidade", icon: "brand" },
   { href: "/social/integrations", label: "Redes sociais", icon: "connections" },
 ];
 
 function settingsItems(has: (key: SolutionKey) => boolean): WorkspaceNavItem[] {
-  const extra = [...(has("conversations") ? SETTINGS_CONVERSATIONS_ITEMS : []), ...(has("marketing") ? SETTINGS_MARKETING_ITEMS : [])];
+  const extra = [...(has("conversations") ? SETTINGS_CONVERSATIONS_ITEMS : []), ...(has("marketing") ? SETTINGS_MARKETING_ITEMS : []), ...(has("meetings") ? SETTINGS_MEETINGS_ITEMS : [])];
   return extra.length ? [SETTINGS_GENERAL, ...extra] : [];
 }
 
@@ -92,15 +94,19 @@ const SITE_ITEMS: readonly WorkspaceNavItem[] = [
   { href: "/site/analytics", label: "Analytics", icon: "analytics" },
 ];
 
+/**
+ * Reuniões (Fase 9): o trabalho em quatro itens — Visão geral, Agenda, Gravações (a biblioteca única;
+ * a antiga "Gravações" separada virou uma visão dela) e Análises (resultados da IA e perguntas). As
+ * telas de configuração ficam num bloco próprio e também em Configurações › Reuniões.
+ */
 const MEETINGS_ITEMS: readonly WorkspaceNavItem[] = [
-  { href: "/meetings", label: "Visão geral", icon: "home" },
-  { href: "/meetings/agenda", label: "Agenda", icon: "calendar" },
-  { href: "/meetings/central", label: "Reuniões", icon: "meetings" },
-  { href: "/meetings/recordings", label: "Gravações", icon: "recordings" },
-  { href: "/meetings/ask", label: "Pergunte às reuniões", icon: "messages" },
-  { href: "/meetings/settings", label: "Preferências", icon: "settings" },
-  { href: "/meetings/integrations", label: "Integrações", icon: "connections" },
-  { href: "/meetings/recorder-accounts", label: "Contas de gravação", icon: "recordings" },
+  { href: "/meetings", label: "Visão geral", icon: "home", section: "Reuniões" },
+  { href: "/meetings/agenda", label: "Agenda", icon: "calendar", section: "Reuniões" },
+  { href: "/meetings/central", label: "Gravações", icon: "recordings", section: "Reuniões" },
+  { href: "/meetings/ask", label: "Análises", icon: "messages", section: "Reuniões" },
+  { href: "/meetings/settings", label: "Preferências", icon: "settings", section: "Configurações" },
+  { href: "/meetings/integrations", label: "Agenda e integrações", icon: "connections", section: "Configurações" },
+  { href: "/meetings/recorder-accounts", label: "Contas de gravação", icon: "recordings", section: "Configurações" },
 ];
 
 const RESULTS_ITEMS: readonly WorkspaceNavItem[] = [
@@ -159,7 +165,7 @@ export function activeGlobalArea(pathname: string, base: string, areas: readonly
 
 /** Telas que pertencem a um item do menu sem estar nele: a aba "Em produção" do Bolsão e, desde a
  * Fase 4, o compositor e o estúdio avançado (abertos por dentro de "Criar conteúdo"). */
-const ITEM_ALIASES: Readonly<Record<string, string>> = { "/production": "/ideias", "/social/compose": "/create", "/publish": "/create", "/social/calendar": "/calendar", "/knowledge": "/settings/marca", "/social/connect": "/social/integrations" };
+const ITEM_ALIASES: Readonly<Record<string, string>> = { "/production": "/ideias", "/social/compose": "/create", "/publish": "/create", "/social/calendar": "/calendar", "/knowledge": "/settings/marca", "/social/connect": "/social/integrations", "/meetings/recordings": "/meetings/central" };
 
 /** Subitem ativo: o de prefixo mais longo que casa com a rota (ex.: `/meetings/agenda` vence `/meetings`). */
 export function activeGlobalItem(pathname: string, base: string, area: GlobalArea | undefined): string | undefined {

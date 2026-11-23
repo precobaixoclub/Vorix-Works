@@ -1,8 +1,10 @@
-"use client";
+import { redirect } from "next/navigation";
 
-import { MeetingsCentral } from "@/components/meetings/MeetingsCentral";
-
-/** Gravações — a Central com o filtro de gravação fixo; acesso às gravações sem passar pela Agenda. */
-export default function MeetingsRecordingsPage() {
-  return <MeetingsCentral mode="recordings" />;
+/**
+ * Fase 9: "Gravações" e "Reuniões" eram a MESMA lista (a Central) com um filtro fixo. Agora há uma
+ * biblioteca só, em `/meetings/central`; o endereço antigo continua valendo e abre a visão "Gravadas".
+ */
+export default async function MeetingsRecordingsRedirect({ params }: { params: Promise<{ workspaceId: string }> }) {
+  const { workspaceId } = await params;
+  redirect(`/workspaces/${encodeURIComponent(workspaceId)}/meetings/central?visao=gravadas`);
 }

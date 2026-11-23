@@ -173,7 +173,8 @@ test.describe("prova visual DS 2.0", () => {
     await page.waitForLoadState("networkidle");
     await capture(page, "meetings-detail", [VIEWPORTS[0], VIEWPORTS[2], VIEWPORTS[4]]);
     await page.setViewportSize({ width: 1440, height: 900 });
-    await page.getByRole("button", { name: "Resumo IA" }).first().click();
+    // Fase 9: a aba "Resumo IA" do detalhe agora se chama "Resumo" (grupo "Análise da IA").
+    await page.getByRole("button", { name: "Resumo", exact: true }).first().click();
     await capture(page, "meetings-summary", [VIEWPORTS[0], VIEWPORTS[4]]);
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.getByRole("button", { name: "Transcrição" }).first().click();

@@ -258,7 +258,8 @@ test.describe("sem regressão da Fase 1 (desktop)", () => {
     const before = page.url();
     await nav.getByRole("button", { name: "Mostrar telas de Reuniões" }).click();
     expect(page.url()).toBe(before);
-    await expect(nav.locator("[data-area-items='meetings'] a")).toHaveCount(8);
+    // Fase 9: Reuniões tem 7 telas no menu ("Gravações" deixou de duplicar a lista e virou visão da biblioteca).
+    await expect(nav.locator("[data-area-items='meetings'] a")).toHaveCount(7);
     await page.goBack();
     await expect(page).toHaveURL(new RegExp(`${base()}/contacts$`));
     // Fase 6: Contatos pertence a Conversas › Atendimento.

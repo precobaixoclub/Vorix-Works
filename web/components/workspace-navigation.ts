@@ -43,12 +43,12 @@ const CREATE_NAV_ITEM: WorkspaceNavItem = { href: "/create", label: "Criar conte
  * o início do Marketing — Bolsão e Produção são um lugar só. */
 const IDEAS_NAV_ITEM: WorkspaceNavItem = { href: "/ideias", label: "Bolsão de ideias", icon: "ideas" };
 const MARKETING_HOME: WorkspaceNavItem = IDEAS_NAV_ITEM;
-const MEETINGS_HOME: WorkspaceNavItem = { href: "/meetings", label: "Início", icon: "home" };
-const MEETINGS_CENTRAL: WorkspaceNavItem = { href: "/meetings/central", label: "Reuniões", icon: "meetings" };
-const MEETINGS_RECORDINGS: WorkspaceNavItem = { href: "/meetings/recordings", label: "Gravações", icon: "recordings" };
+// Fase 9: mesmos nomes do menu global (o breadcrumb usa estes rótulos).
+const MEETINGS_HOME: WorkspaceNavItem = { href: "/meetings", label: "Reuniões", icon: "home" };
+const MEETINGS_CENTRAL: WorkspaceNavItem = { href: "/meetings/central", label: "Gravações", icon: "recordings" };
 const MEETINGS_AGENDA: WorkspaceNavItem = { href: "/meetings/agenda", label: "Agenda", icon: "calendar" };
-const MEETINGS_INTEGRATIONS: WorkspaceNavItem = { href: "/meetings/integrations", label: "Integrações", icon: "connections" };
-const MEETINGS_ASK: WorkspaceNavItem = { href: "/meetings/ask", label: "Pergunte às reuniões", icon: "messages" };
+const MEETINGS_INTEGRATIONS: WorkspaceNavItem = { href: "/meetings/integrations", label: "Agenda e integrações", icon: "connections" };
+const MEETINGS_ASK: WorkspaceNavItem = { href: "/meetings/ask", label: "Análises", icon: "messages" };
 const MEETINGS_SETTINGS: WorkspaceNavItem = { href: "/meetings/settings", label: "Preferências", icon: "settings" };
 const MEETINGS_RECORDER_ACCOUNTS: WorkspaceNavItem = { href: "/meetings/recorder-accounts", label: "Contas de gravação", icon: "recordings" };
 
@@ -105,7 +105,7 @@ export const SOLUTION_NAVIGATION: Readonly<Record<SolutionKey, SolutionNavigatio
   meetings: {
     home: MEETINGS_HOME,
     sections: [
-      { label: "REUNIÕES", items: [MEETINGS_AGENDA, MEETINGS_CENTRAL, MEETINGS_RECORDINGS, MEETINGS_ASK] },
+      { label: "REUNIÕES", items: [MEETINGS_AGENDA, MEETINGS_CENTRAL, MEETINGS_ASK] },
       { label: "CONFIGURAÇÕES", items: [MEETINGS_SETTINGS, MEETINGS_INTEGRATIONS, MEETINGS_RECORDER_ACCOUNTS] },
     ],
     backstage: [],

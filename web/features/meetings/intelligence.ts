@@ -1,4 +1,5 @@
 import useSWR from "swr";
+import { MEETINGS_RETRY } from "./swr-retry";
 import { apiClient } from "@/lib/api-client";
 import { getApiBaseUrl } from "@/lib/api-error";
 import { ApiError } from "@/lib/api-client";
@@ -114,7 +115,7 @@ export async function getSharedMeeting(token: string): Promise<SharedMeeting> {
 // ── Hooks ──
 
 export function useMeetingInsights(workspaceId: string, meetingId: string, enabled = true) {
-  return useSWR(enabled ? ["meeting-insights", workspaceId, meetingId] : null, () => getMeetingInsights(workspaceId, meetingId));
+  return useSWR(enabled ? ["meeting-insights", workspaceId, meetingId] : null, () => getMeetingInsights(workspaceId, meetingId), MEETINGS_RETRY);
 }
 export function useWhatsAppChannels(workspaceId: string, enabled: boolean) {
   return useSWR(enabled ? ["meeting-whatsapp-channels", workspaceId] : null, () => listWhatsAppChannels(workspaceId));

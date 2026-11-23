@@ -1,8 +1,9 @@
 "use client";
 
+import { Suspense } from "react";
 import { MeetingsCentral } from "@/components/meetings/MeetingsCentral";
 
-/** Central de Reuniões — todas as reuniões do workspace, de qualquer origem. */
+/** Gravações — a biblioteca única de reuniões do workspace (visões por `?visao=`). */
 export default function MeetingsCentralPage() {
-  return <MeetingsCentral mode="all" />;
+  return <Suspense><MeetingsCentral /></Suspense>;
 }

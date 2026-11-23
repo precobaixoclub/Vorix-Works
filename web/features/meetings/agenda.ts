@@ -1,5 +1,6 @@
 import useSWR from "swr";
 import { apiClient } from "@/lib/api-client";
+import { MEETINGS_RETRY } from "./swr-retry";
 
 /** Agenda do Vorix Meetings — espelha `src/domain/calendar/calendar.model.ts`. */
 
@@ -114,6 +115,7 @@ export function getGoogleSyncLog(workspaceId: string) {
 
 export function useAgendaEvents(workspaceId: string, from: string, to: string) {
   return useSWR(["meeting-agenda", workspaceId, from, to], () => listAgendaEvents(workspaceId, from, to), {
+    ...MEETINGS_RETRY,
     keepPreviousData: true,
     // Edições locais pendentes de envio ao Google: a tela acompanha até sincronizar.
     refreshInterval: (data) => (data?.some((event) => event.syncState === "pending") ? 10_000 : 0),
@@ -121,7 +123,7 @@ export function useAgendaEvents(workspaceId: string, from: string, to: string) {
 }
 
 export function useGoogleCalendarStatus(workspaceId: string) {
-  return useSWR(["meeting-google-status", workspaceId], () => getGoogleCalendarStatus(workspaceId));
+  return useSWR(["meeting-google-status", workspaceId], () => getGoogleCalendarStatus(workspaceId), MEETINGS_RETRY);
 }
 
 export function useGoogleCalendars(workspaceId: string, enabled: boolean) {
@@ -129,7 +131,7 @@ export function useGoogleCalendars(workspaceId: string, enabled: boolean) {
 }
 
 export function useGoogleSyncLog(workspaceId: string, enabled: boolean) {
-  return useSWR(enabled ? ["meeting-google-log", workspaceId] : null, () => getGoogleSyncLog(workspaceId));
+  return useSWR(enabled ? ["meeting-google-log", workspaceId] : null, () => getGoogleSyncLog(workspaceId), MEETINGS_RETRY);
 }
 
 /** Retorno do OAuth do Google: guarda para onde voltar (workspace). */

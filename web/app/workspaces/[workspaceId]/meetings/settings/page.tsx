@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import useSWR from "swr";
 import { Gauge, MessageSquareWarning, Pencil, Tags, Trash2, Video } from "lucide-react";
 import { toast } from "sonner";
@@ -53,7 +54,15 @@ export default function MeetingsSettingsPage() {
 
   return (
     <main className="mx-auto max-w-[960px] space-y-6 px-3 py-5 sm:px-6 sm:py-8">
-      <PageHeader title="Preferências do Meetings" description="Como o Vorix grava, resume e acompanha as suas reuniões." />
+      <PageHeader title="Preferências de Reuniões" description="Como a Vorix grava, resume e acompanha as suas reuniões." />
+
+      {/* Fase 9: as configurações de Reuniões num lugar só — esta página e as relacionadas (Fase 10 as reúne em Configurações). */}
+      <nav aria-label="Configurações de Reuniões" className="flex flex-wrap gap-2 text-sm" data-testid="meetings-settings-links">
+        <span className="inline-flex min-h-[36px] items-center rounded-full bg-muted px-3 font-medium text-foreground" aria-current="page">Preferências</span>
+        <Link className="inline-flex min-h-[36px] items-center rounded-full border border-border px-3 text-muted-foreground hover:bg-muted/50 hover:text-foreground" href={`/workspaces/${workspace.id}/meetings/integrations`}>Agenda e integrações</Link>
+        <Link className="inline-flex min-h-[36px] items-center rounded-full border border-border px-3 text-muted-foreground hover:bg-muted/50 hover:text-foreground" href={`/workspaces/${workspace.id}/meetings/recorder-accounts`}>Contas de gravação</Link>
+        {isAdmin ? <Link className="inline-flex min-h-[36px] items-center rounded-full border border-border px-3 text-muted-foreground hover:bg-muted/50 hover:text-foreground" href={`/workspaces/${workspace.id}/settings/plano`}>Plano e cobrança</Link> : null}
+      </nav>
 
       <MeetingPlanCard />
 

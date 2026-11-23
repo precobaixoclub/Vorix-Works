@@ -41,6 +41,8 @@ describe("menu global — áreas por ferramenta contratada", () => {
         else if (area.key === "settings" && (href === "/settings/marca" || href === "/social/integrations")) expect(owner, href).toBe("marketing");
         // Fase 6: Configurações › Atendimento e canais é tela do Conversas.
         else if (area.key === "settings" && href === "/settings/attendance") expect(owner, href).toBe("conversations");
+        // Fase 9: Configurações › Reuniões abre as preferências, que continuam sendo tela do Reuniões.
+        else if (area.key === "settings" && href === "/meetings/settings") expect(owner, href).toBe("meetings");
         else expect(owner, `${area.key} ${href}`).toBe(requires[area.key]);
       }
     }
@@ -284,7 +286,7 @@ describe("Fase 5 — menu definitivo do Marketing", () => {
     ]);
   });
   it("Configurações ganha Marca e identidade e Redes sociais só quando há Marketing", () => {
-    expect(settings.items.map((item) => item.href)).toEqual(["/settings", "/settings/attendance", "/settings/marca", "/social/integrations"]);
+    expect(settings.items.map((item) => item.href)).toEqual(["/settings", "/settings/attendance", "/settings/marca", "/social/integrations", "/meetings/settings"]);
     expect(buildGlobalNavigation(["marketing"]).find((area) => area.key === "settings")!.items.map((item) => item.href)).toEqual(["/settings", "/settings/marca", "/social/integrations"]);
     expect(buildGlobalNavigation(["site"]).find((area) => area.key === "settings")!.items).toEqual([]);
   });

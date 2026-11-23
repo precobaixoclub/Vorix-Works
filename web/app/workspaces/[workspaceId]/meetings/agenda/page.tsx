@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { ChevronLeft, ChevronRight, ExternalLink, Video } from "lucide-react";
 import { toast } from "sonner";
@@ -20,6 +20,7 @@ import {
   googleEventHref,
   useGoogleCalendarStatus,
   type CalendarEvent,
+  type GoogleCalendarStatus,
 } from "@/features/meetings/agenda";
 import { ApiError } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
@@ -98,6 +99,10 @@ export default function AgendaPage() {
   const workspace = useCurrentWorkspace();
   const { state } = useAuth();
   const [view, setView] = useState<View>("week");
+  // Fase 9: no celular a grade da semana não cabe — a agenda abre em Lista (a pessoa pode trocar).
+  useEffect(() => {
+    if (window.matchMedia("(max-width: 639px)").matches) setView("list");
+  }, []);
   const [anchor, setAnchor] = useState(() => startOfDay(new Date()));
   const [editing, setEditing] = useState<{ event?: CalendarEvent; date?: string } | null>(null);
   const [selected, setSelected] = useState<CalendarEvent | null>(null);
@@ -119,15 +124,10 @@ export default function AgendaPage() {
     <main className="mx-auto max-w-[1280px] space-y-5 px-3 py-5 sm:px-6 sm:py-8">
       <PageHeader title="Agenda" description="Compromissos e reuniões. Com o Google Calendar conectado, tudo sincroniza nos dois sentidos." actions={canWrite ? <Button onClick={() => setEditing({ date: isoDate(view === "month" ? today : anchor) })}>Nova reunião</Button> : null} />
 
-      {google.data?.status === "reconnect_required" ? (
-        <Card className="flex flex-wrap items-center justify-between gap-3 border-amber-200 bg-amber-50 p-4 text-sm text-amber-900 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200" data-testid="google-reconnect-banner">
-          <span>Google Calendar precisa ser reconectado.</span>
-          <Link href={`/workspaces/${workspace.id}/meetings/integrations`} className="font-medium underline">Reconectar</Link>
-        </Card>
-      ) : null}
+      <CalendarStatusBar workspaceId={workspace.id} status={google.data} error={google.error} canWrite={canWrite} />
 
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-2">
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
           <Button variant="secondary" onClick={() => setAnchor(today)}>Hoje</Button>
           <Button variant="ghost" onClick={() => setAnchor(shift(view, anchor, -1))} aria-label="Anterior"><ChevronLeft className="h-4 w-4" /></Button>
           <Button variant="ghost" onClick={() => setAnchor(shift(view, anchor, 1))} aria-label="Próximo"><ChevronRight className="h-4 w-4" /></Button>
@@ -143,6 +143,7 @@ export default function AgendaPage() {
       </div>
 
       {error ? <ErrorState error={error} onRetry={() => mutate()} /> : null}
+      {data && view !== "list" && events.length === 0 ? <p className="rounded-lg border border-dashed border-border/70 px-4 py-3 text-center text-sm text-muted-foreground" data-testid="agenda-empty">Nenhuma reunião neste período.{canWrite ? " Use “Nova reunião” para agendar." : ""}</p> : null}
 
       <Card className={cn("overflow-hidden p-0", isLoading && !data && "opacity-60")} data-testid={`agenda-view-${view}`}>
         {view === "month" ? <MonthView anchor={anchor} byDay={byDay} today={today} onPickDay={(date) => canWrite && setEditing({ date })} onPick={setSelected} /> : null}
@@ -237,7 +238,7 @@ function TimeGrid({ days, events, byDay, today, onPick }: { days: Date[]; events
           </div>
         ))}
       </div>
-      <div className="max-h-[620px] overflow-y-auto">
+      <div className="max-h-[620px] overflow-auto">
         <div className="relative grid" style={{ gridTemplateColumns: columns }}>
           <div>{Array.from({ length: 24 }, (_, hour) => <div key={hour} style={{ height: HOUR_PX }} className="pr-2 text-right text-[11px] tabular-nums text-muted-foreground">{String(hour).padStart(2, "0")}:00</div>)}</div>
           {days.map((day) => {
@@ -316,7 +317,8 @@ function EventDetail({ workspaceId, event, googleEmail, canWrite, onClose, onEdi
         <p className="capitalize text-muted-foreground">{when} <span className="normal-case">({event.timezone})</span></p>
         {event.status !== "confirmed" ? <p className="font-medium">{event.status === "done" ? "Concluído" : "Cancelado"}</p> : null}
         {event.location ? <p><span className="text-muted-foreground">Local: </span>{event.location}</p> : null}
-        {event.meetLink ? <a href={event.meetLink} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-primary hover:underline dark:text-primary-glow"><Video className="h-4 w-4" /> {event.meetLink.replace("https://", "")}</a> : event.wantsMeetLink && event.syncState === "pending" ? <p className="text-muted-foreground">O link do Meet será gerado na sincronização com o Google.</p> : null}
+        {event.meetLink && open ? <a href={event.meetLink} target="_blank" rel="noreferrer" className="inline-flex min-h-[40px] items-center gap-2 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:opacity-90" data-testid="agenda-join"><Video className="h-4 w-4" /> Entrar na reunião</a> : null}
+        {event.meetLink ? <p className="break-all text-xs text-muted-foreground">{event.meetLink.replace("https://", "")}</p> : event.wantsMeetLink && event.syncState === "pending" ? <p className="text-muted-foreground">O link do Meet será gerado na sincronização com o Google.</p> : null}
         {event.attendees.length ? <p><span className="text-muted-foreground">Participantes: </span>{event.attendees.join(", ")}</p> : null}
         {event.description ? <p className="whitespace-pre-line">{event.description}</p> : null}
         {event.googleRecurringEventId ? <p className="text-xs text-muted-foreground">Ocorrência de um evento recorrente do Google.</p> : null}
@@ -343,5 +345,43 @@ function EventDetail({ workspaceId, event, googleEmail, canWrite, onClose, onEdi
         </div>
       </div>
     </Modal>
+  );
+}
+
+/**
+ * Situação da Google Agenda (Fase 9): conectada, não conectada, precisa reconectar, falha na
+ * sincronização ou sem permissão para alterar — com o caminho para resolver. Lê o MESMO status de
+ * antes; nada de OAuth ou sincronização muda aqui.
+ */
+function CalendarStatusBar({ workspaceId, status, error, canWrite }: { workspaceId: string; status?: GoogleCalendarStatus; error?: unknown; canWrite: boolean }) {
+  const href = `/workspaces/${workspaceId}/meetings/integrations`;
+  const tone = "flex flex-wrap items-center justify-between gap-3 rounded-xl border p-3 text-sm";
+  if (error) return <div className={cn(tone, "border-border/60 text-muted-foreground")} data-testid="calendar-status" data-state="unknown">Não foi possível consultar a Google Agenda agora. Os compromissos da Vorix continuam abaixo.</div>;
+  if (!status) return null;
+  if (status.status === "reconnect_required") {
+    return (
+      <Card className={cn(tone, "border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200")} data-testid="google-reconnect-banner" data-state="reconnect">
+        <span>Google Agenda precisa ser reconectada — a sincronização está parada.</span>
+        {canWrite ? <Link href={href} className="font-medium underline">Reconectar</Link> : null}
+      </Card>
+    );
+  }
+  if (status.status === "connected") {
+    return (
+      <div className={cn(tone, status.lastErrorMessage ? "border-amber-200 bg-amber-50/60 dark:border-amber-500/30 dark:bg-amber-500/10" : "border-border/60")} data-testid="calendar-status" data-state={status.lastErrorMessage ? "sync-error" : "connected"}>
+        <span className="min-w-0 text-muted-foreground">
+          <span className="font-medium text-foreground">Google Agenda conectada</span>{status.googleEmail ? ` · ${status.googleEmail}` : ""}
+          {status.lastErrorMessage ? <span className="block text-amber-800 dark:text-amber-200">Falha na última sincronização: {status.lastErrorMessage}</span> : status.lastSyncedAt ? <span className="block text-xs">Sincronizada em {new Date(status.lastSyncedAt).toLocaleString("pt-BR")}</span> : null}
+        </span>
+        <Link href={href} className="text-xs font-medium text-primary hover:underline dark:text-primary-glow">Agenda e integrações</Link>
+      </div>
+    );
+  }
+  return (
+    <div className={cn(tone, "border-border/60")} data-testid="calendar-status" data-state="disconnected">
+      <span className="text-muted-foreground">{status.configured === false ? "A integração com a Google Agenda não está disponível neste ambiente. A agenda da Vorix funciona normalmente." : "Google Agenda não conectada. Conecte para ver e criar reuniões nos dois lugares."}</span>
+      {status.configured !== false && canWrite ? <Link href={href} className="text-sm font-medium text-primary hover:underline dark:text-primary-glow">Conectar</Link> : null}
+      {!canWrite ? <span className="text-xs text-muted-foreground">Seu perfil permite consultar a agenda, mas não alterar.</span> : null}
+    </div>
   );
 }

@@ -40,6 +40,16 @@ export function MeetingDialogs({ workspaceId, open, onClose }: { workspaceId: st
   return null;
 }
 
+type RecorderState = "idle" | "requesting" | "recording" | "paused" | "finishing" | "uploading";
+const RECORDER_STATE_LABEL: Record<RecorderState, string> = {
+  idle: "Pronto para gravar",
+  requesting: "Solicitando permissão do microfone…",
+  recording: "Gravando…",
+  paused: "Pausado",
+  finishing: "Finalizando o arquivo…",
+  uploading: "Enviando…",
+};
+
 /** Formato que o navegador grava + extensão aceita pelo upload (Chrome/Firefox: webm/ogg; Safari: mp4). */
 function pickRecorderFormat(): { mimeType: string; extension: string; uploadType: string } | undefined {
   if (typeof MediaRecorder === "undefined") return undefined;
@@ -61,7 +71,8 @@ function InPersonRecordingDialog({ workspaceId, onClose }: { workspaceId: string
   const router = useRouter();
   const refresh = useRefreshMeetings();
   const [title, setTitle] = useState("");
-  const [state, setState] = useState<"idle" | "recording" | "paused" | "uploading">("idle");
+  // Fase 9: estados explícitos — pedindo permissão do microfone e finalizando o arquivo também aparecem.
+  const [state, setState] = useState<RecorderState>("idle");
   const [elapsed, setElapsed] = useState(0);
   const [level, setLevel] = useState(0);
   const recorderRef = useRef<MediaRecorder | null>(null);
@@ -90,6 +101,7 @@ function InPersonRecordingDialog({ workspaceId, onClose }: { workspaceId: string
 
   async function start() {
     if (!format) return;
+    setState("requesting");
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
       streamRef.current = stream;
@@ -114,6 +126,7 @@ function InPersonRecordingDialog({ workspaceId, onClose }: { workspaceId: string
       }, 250);
       setState("recording");
     } catch {
+      setState("idle");
       toast.error("Não foi possível usar o microfone", { description: "Permita o acesso ao microfone no navegador e tente de novo." });
     }
   }
@@ -136,9 +149,10 @@ function InPersonRecordingDialog({ workspaceId, onClose }: { workspaceId: string
   async function stopAndUpload() {
     const recorder = recorderRef.current;
     if (!recorder || !format) return;
-    setState("uploading");
+    setState("finishing");
     await new Promise<void>((resolve) => { recorder.onstop = () => resolve(); recorder.stop(); });
     cleanup();
+    setState("uploading");
     const blob = new Blob(chunksRef.current, { type: format.uploadType });
     const when = new Date().toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
     const fileToSend = new File([blob], `reuniao-presencial-${Date.now()}.${format.extension}`, { type: format.uploadType });
@@ -170,7 +184,7 @@ function InPersonRecordingDialog({ workspaceId, onClose }: { workspaceId: string
     <Modal title="Gravar reunião presencial" onClose={() => { if (state === "idle") onClose(); }}>
       <div className="space-y-4">
         {!format ? <p className="text-sm text-destructive">Este navegador não consegue gravar áudio. Use o Chrome, o Edge, o Firefox ou o Safari atualizado.</p> : null}
-        <p className="text-sm text-muted-foreground">Grava pelo microfone deste computador ou celular. Deixe o aparelho perto de quem fala e avise os participantes que a reunião está sendo gravada.</p>
+        <p className="text-sm text-muted-foreground">Grava pelo microfone deste computador ou celular (só áudio). Deixe o aparelho perto de quem fala e avise os participantes que a reunião está sendo gravada.</p>
         <div>
           <Label htmlFor="in-person-title">Título (opcional)</Label>
           <Input id="in-person-title" value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Visita ao cliente" disabled={state === "uploading"} />
@@ -178,18 +192,23 @@ function InPersonRecordingDialog({ workspaceId, onClose }: { workspaceId: string
         <div className="flex flex-col items-center gap-3 rounded-xl border border-border/60 py-6">
           <span className="font-mono text-3xl tabular-nums text-foreground" aria-live="polite">{String(minutes).padStart(2, "0")}:{String(seconds).padStart(2, "0")}</span>
           <div className="h-2 w-48 overflow-hidden rounded-full bg-muted" aria-hidden="true"><div className="h-full rounded-full bg-rose-500 transition-[width] duration-200" style={{ width: `${state === "recording" ? Math.max(4, level * 100) : 0}%` }} /></div>
-          <span className="text-xs text-muted-foreground">{state === "recording" ? "Gravando…" : state === "paused" ? "Pausado" : state === "uploading" ? "Enviando…" : "Pronto para gravar"}</span>
+          <span className="text-xs text-muted-foreground" data-testid="in-person-state" data-state={state}>{RECORDER_STATE_LABEL[state]}</span>
         </div>
+        <p className="text-xs text-muted-foreground">Ao encerrar, o áudio é enviado e a Vorix transcreve e resume a reunião. O resultado aparece em Gravações. Se o envio falhar, o áudio é baixado neste aparelho para você enviar depois.</p>
         <div className="flex flex-wrap justify-end gap-2">
           {state === "idle" ? (
             <>
               <Button variant="secondary" onClick={onClose}>Cancelar</Button>
               <Button onClick={() => void start()} disabled={!format}>Começar a gravar</Button>
             </>
+          ) : state === "requesting" ? (
+            <>
+              <Button disabled loading>Aguardando permissão do microfone</Button>
+            </>
           ) : (
             <>
-              <Button variant="secondary" onClick={togglePause} disabled={state === "uploading"}>{state === "paused" ? "Continuar" : "Pausar"}</Button>
-              <Button onClick={() => void stopAndUpload()} loading={state === "uploading"} disabled={state === "uploading" || elapsed < 1}>Parar e enviar</Button>
+              <Button variant="secondary" onClick={togglePause} disabled={state === "uploading" || state === "finishing"}>{state === "paused" ? "Continuar" : "Pausar"}</Button>
+              <Button onClick={() => void stopAndUpload()} loading={state === "uploading" || state === "finishing"} disabled={state === "uploading" || state === "finishing" || elapsed < 1}>Parar e enviar</Button>
             </>
           )}
         </div>

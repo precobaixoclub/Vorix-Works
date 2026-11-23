@@ -38,7 +38,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
   { value: "automations", label: "Automações", href: "/settings/automations", icon: Workflow, solutions: ["conversations"] },
   { value: "marketplaces", label: "Marketplaces", href: "/settings/marketplaces", icon: Store, solutions: ["site", "conversations"] },
   { value: "meetings-preferences", label: "Preferências", href: "/meetings/settings", icon: SlidersHorizontal, solutions: ["meetings"] },
-  { value: "meetings-integrations", label: "Agendas conectadas", href: "/meetings/integrations", icon: PlugZap, solutions: ["meetings"] },
+  { value: "meetings-integrations", label: "Agenda e integrações", href: "/meetings/integrations", icon: PlugZap, solutions: ["meetings"] },
   { value: "meetings-recorder", label: "Contas de gravação", href: "/meetings/recorder-accounts", icon: Mic, solutions: ["meetings"] },
 ];
 

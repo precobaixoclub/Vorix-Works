@@ -17,14 +17,9 @@ import {
 import { Logo } from "@/components/Logo";
 import { useAuth } from "@/contexts/auth-context";
 
+// Fase 13: a mesma lista em todas as páginas (antes a home e as demais divergiam) e sem âncora
+// quebrada ("/#marketing" não existia) — cada produto tem a sua página.
 const PRODUCTS = [
-  {
-    href: "/produtos/site",
-    name: "Vorix Site",
-    description: "Site e catálogo da empresa",
-    Icon: Globe,
-    tone: "green",
-  },
   {
     href: "/produtos/conversas",
     name: "Vorix Conversas",
@@ -33,9 +28,23 @@ const PRODUCTS = [
     tone: "green",
   },
   {
+    href: "/produtos/marketing",
+    name: "Vorix Marketing",
+    description: "Ideias, conteúdo e publicação",
+    Icon: Megaphone,
+    tone: "violet",
+  },
+  {
+    href: "/produtos/site",
+    name: "Vorix Site",
+    description: "Site, catálogo e loja da empresa",
+    Icon: Globe,
+    tone: "green",
+  },
+  {
     href: "/produtos/meetings",
     name: "Vorix Meetings",
-    description: "Reuniões inteligentes",
+    description: "Agenda, gravação e análises de reuniões",
     Icon: Video,
     tone: "violet",
   },
@@ -58,24 +67,7 @@ export function PublicHeader({
   const { state } = useAuth();
   const authenticated = state.status === "authenticated";
   const home = appearance === "home";
-  const products = home
-    ? [
-        PRODUCTS[1],
-        PRODUCTS[2],
-        {
-          href: "/#marketing",
-          name: "Vorix Marketing",
-          description: "Conteúdo e calendário · publicação em homologação",
-          Icon: Megaphone,
-          tone: "violet",
-        },
-        {
-          ...PRODUCTS[0],
-          name: "Vorix Sites & Commerce",
-          description: "Site, catálogo e operação de vendas",
-        },
-      ]
-    : PRODUCTS;
+  const products = PRODUCTS;
   const links = home
     ? [
         ["/#solucoes", "Soluções"],

@@ -776,3 +776,15 @@
 .public-meeting-plans-hero ~ .public-section ol.public-steps { list-style: none; padding: 0; margin-top: 10px; }
 @media (max-width: 760px) { .public-meeting-plans-hero ~ .public-section ol.public-steps { grid-template-columns: 1fr; } }
 @media (max-width: 1150px) { .public-meeting-plans-hero > .public-container { grid-template-columns: 1fr; } }
+
+/* Fase 13 — passos da página do Vorix Marketing. */
+.public-marketing-steps { display: grid; gap: 14px; list-style: none; padding: 0; margin: 24px 0 0; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+.public-marketing-steps li { padding: 18px; background: var(--public-surface); border: 1px solid var(--public-border); border-radius: 12px; }
+.public-marketing-steps li p { margin-top: 8px; }
+
+/* Fase 13 — acesso: dica do campo e ajuda de senha. */
+.public-auth-hint { display: block; margin-top: 6px; font-size: 12px; color: var(--public-muted, #9aa3b2); }
+.public-auth-help { margin-top: 14px; font-size: 13px; color: var(--public-muted, #9aa3b2); }
+.public-auth-help summary { cursor: pointer; color: var(--public-accent); font-weight: 600; min-height: 32px; display: flex; align-items: center; }
+.public-auth-help p { margin-top: 6px; line-height: 1.5; }
+.public-auth-help a { color: var(--public-accent); }

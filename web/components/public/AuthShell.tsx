@@ -1,6 +1,6 @@
 import Link from "next/link";
 import type { InputHTMLAttributes, ReactNode } from "react";
-import { MessageSquare, ShieldCheck, Video } from "lucide-react";
+import { Globe, Megaphone, MessageSquare, ShieldCheck, Video } from "lucide-react";
 import { Logo } from "@/components/Logo";
 
 /**
@@ -23,7 +23,9 @@ export function AuthShell({ eyebrow, title, description, children }: { eyebrow: 
           <p>{description}</p>
           <ul className="public-auth-products">
             <li className="conversations"><MessageSquare size={17} aria-hidden="true" /><span><strong>Vorix Conversas</strong><small>Atendimento e vendas</small></span></li>
-            <li className="meetings"><Video size={17} aria-hidden="true" /><span><strong>Vorix Meetings</strong><small>Reuniões inteligentes</small></span></li>
+            <li className="meetings"><Megaphone size={17} aria-hidden="true" /><span><strong>Vorix Marketing</strong><small>Ideias, conteúdo e publicação</small></span></li>
+            <li className="conversations"><Globe size={17} aria-hidden="true" /><span><strong>Vorix Site</strong><small>Site, catálogo e loja</small></span></li>
+            <li className="meetings"><Video size={17} aria-hidden="true" /><span><strong>Vorix Meetings</strong><small>Agenda, gravação e análises</small></span></li>
           </ul>
           <p className="public-auth-trust"><ShieldCheck size={15} aria-hidden="true" /> Uma conta para toda a plataforma, com isolamento por empresa.</p>
         </section>
@@ -33,11 +35,14 @@ export function AuthShell({ eyebrow, title, description, children }: { eyebrow: 
   );
 }
 
-export function AuthField({ id, label, ...input }: { id: string; label: string } & InputHTMLAttributes<HTMLInputElement>) {
+/** Campo das telas de acesso. Fase 13: dica e erro ficam ligados ao campo (leitor de tela anuncia). */
+export function AuthField({ id, label, hint, errorId, ...input }: { id: string; label: string; hint?: string; errorId?: string } & InputHTMLAttributes<HTMLInputElement>) {
+  const describedBy = [hint ? `${id}-hint` : "", errorId ?? ""].filter(Boolean).join(" ") || undefined;
   return (
     <div className="public-auth-field">
       <label htmlFor={id}>{label}</label>
-      <input id={id} {...input} />
+      <input id={id} aria-describedby={describedBy} aria-invalid={errorId ? true : undefined} {...input} />
+      {hint ? <small id={`${id}-hint`} className="public-auth-hint">{hint}</small> : null}
     </div>
   );
 }

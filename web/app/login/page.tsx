@@ -6,6 +6,7 @@ import { useState } from "react";
 import { AuthField, AuthShell } from "@/components/public/AuthShell";
 import { useAuth } from "@/contexts/auth-context";
 import { ApiError } from "@/lib/api-client";
+import { PUBLIC_CONTACT } from "@/features/public-site/catalog";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -34,11 +35,16 @@ export default function LoginPage() {
       <h2>Entrar no Vorix</h2>
       <p className="public-auth-sub">Use o e-mail e a senha da sua conta.</p>
       <form onSubmit={handleSubmit} className="public-auth-form">
-        <AuthField id="login-email" label="E-mail" type="email" autoComplete="username" required value={email} onChange={(event) => setEmail(event.target.value)} placeholder="voce@empresa.com" autoFocus />
-        <AuthField id="login-password" label="Senha" type="password" autoComplete="current-password" required value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Sua senha" />
-        {error ? <p className="public-auth-error" role="alert">{error}</p> : null}
+        <AuthField id="login-email" label="E-mail" type="email" autoComplete="username" required value={email} onChange={(event) => setEmail(event.target.value)} placeholder="voce@empresa.com" autoFocus errorId={error ? "login-error" : undefined} />
+        <AuthField id="login-password" label="Senha" type="password" autoComplete="current-password" required value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Sua senha" errorId={error ? "login-error" : undefined} />
+        {error ? <p id="login-error" className="public-auth-error" role="alert">{error}</p> : null}
         <button type="submit" className="public-button primary" disabled={submitting}>{submitting ? "Entrando..." : "Entrar"}</button>
       </form>
+      {/* Fase 13: não há redefinição de senha automática no backend — a tela diz o caminho real. */}
+      <details className="public-auth-help">
+        <summary>Esqueceu a senha?</summary>
+        <p>A redefinição de senha ainda não é feita por aqui. Se a sua conta foi criada por um administrador da empresa, peça a ele. Se você é o responsável pela conta, escreva para <a href={PUBLIC_CONTACT}>comercial@vorixworks.com</a> a partir do e-mail cadastrado.</p>
+      </details>
       <p className="public-auth-switch">Ainda não tem conta? <Link href="/signup">Criar conta</Link></p>
     </AuthShell>
   );

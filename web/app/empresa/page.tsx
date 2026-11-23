@@ -37,7 +37,7 @@ const PRINCIPLES = [
 
 export default function EmpresaPage() {
   return (
-    <main className="min-h-dvh bg-[#070b12] text-white">
+    <main id="conteudo" className="min-h-dvh bg-[#070b12] text-white">
       <TrackPageView eventName="landing_view" />
       <PublicHeader />
 
@@ -51,10 +51,11 @@ export default function EmpresaPage() {
             O cliente chama. A conversa vira contato. O contato vira oportunidade. A oportunidade vira proposta. O contexto não deveria se perder nesse caminho.
           </p>
           <div className="mt-8 flex flex-wrap gap-3">
-            <Link href="/signup">
-              <Button className="bg-[#8025f2] px-5 py-3 text-white hover:bg-[#9235ff]">Testar por 7 dias</Button>
+            {/* Fase 13: o teste com prazo vem do plano escolhido em Preços (o cadastro sozinho não inicia teste). */}
+            <Link href="/precos">
+              <Button className="bg-[#8025f2] px-5 py-3 text-white hover:bg-[#9235ff]">Ver planos e começar</Button>
             </Link>
-            <Link href="/#produto">
+            <Link href="/#produtos">
               <Button variant="secondary" className="border-white/20 bg-white/5 px-5 py-3 text-white hover:bg-white/10">Ver produto</Button>
             </Link>
           </div>
@@ -114,9 +115,9 @@ export default function EmpresaPage() {
           <p className="font-mono text-sm font-semibold uppercase tracking-[0.28em] text-[#a86aff]">Vorix</p>
           <h2 className="mt-3 font-display text-3xl font-semibold text-white sm:text-4xl">Transforme contexto em ação.</h2>
           <p className="mx-auto mt-3 max-w-2xl text-slate-300">Atenda. Negocie. Venda. Tudo conectado.</p>
-          <Link href="/signup">
+          <Link href="/precos">
             <Button className="mt-7 bg-[#8025f2] px-6 py-3 text-white hover:bg-[#9235ff]">
-              Testar por 7 dias <ArrowRight className="ml-2 h-4 w-4" />
+              Ver planos e começar <ArrowRight className="ml-2 h-4 w-4" />
             </Button>
           </Link>
         </div>

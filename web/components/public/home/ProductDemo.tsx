@@ -96,7 +96,7 @@ export function ProductDemo({
                 </p>
                 <a
                   href={
-                    product.key === "marketing" ? "/#marketing" : product.href
+                    product.key === "marketing" ? "/produtos/marketing" : product.href
                   }
                   onClick={() => setOpen(false)}
                 >

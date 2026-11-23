@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { CheckCircle2, Circle } from "lucide-react";
@@ -25,6 +26,8 @@ import {
   startOnboarding,
 } from "@/features/onboarding/api";
 import { useOnboarding } from "@/features/onboarding/hooks";
+import { firstStepsFor } from "@/features/onboarding/first-steps";
+import { useSolutions } from "@/features/solutions/hooks";
 import { ONBOARDING_GOALS, ONBOARDING_STEPS, type OnboardingGoal, type OnboardingStep } from "@/features/onboarding/types";
 
 /**
@@ -582,7 +585,7 @@ function DoneStep({ progress, onFinish, workspaceId }: { progress: { completedSt
   }
 
   return (
-    <StepCard title="Seu Vorix está pronto." description="Você pode completar o que ficou pendente a qualquer momento, direto pela Home.">
+    <StepCard title="Seu Vorix está pronto." description="Você pode completar o que ficou pendente a qualquer momento, direto pelo Início.">
       <ul className="space-y-2 text-sm">
         {checklist.map((item) => {
           const done = progress.completedSteps.includes(item.step);
@@ -594,9 +597,34 @@ function DoneStep({ progress, onFinish, workspaceId }: { progress: { completedSt
           );
         })}
       </ul>
-      <Button onClick={handleFinish} disabled={busy} className="w-full">
-        Ir para o Vorix
+      <ToolFirstStepsList workspaceId={workspaceId} />
+      <Button onClick={handleFinish} disabled={busy} loading={busy} className="w-full">
+        Ir para o Início
       </Button>
     </StepCard>
+  );
+}
+
+/** Fase 13: o que falta configurar em cada ferramenta contratada — só links, nada é conectado sozinho. */
+function ToolFirstStepsList({ workspaceId }: { workspaceId: string }) {
+  const { available } = useSolutions();
+  const tools = firstStepsFor(available);
+  if (!tools.length) return null;
+  return (
+    <section aria-labelledby="first-steps-title" className="space-y-3" data-testid="onboarding-first-steps">
+      <h2 id="first-steps-title" className="text-sm font-semibold text-foreground">Por onde começar em cada ferramenta</h2>
+      <ul className="grid gap-2 sm:grid-cols-2">
+        {tools.map((tool) => (
+          <li key={tool.tool} className="rounded-lg border border-border/70 p-3 text-sm" data-tool={tool.tool}>
+            <p className="font-medium text-foreground">{tool.title}</p>
+            <p className="text-xs text-muted-foreground">{tool.description}</p>
+            <ul className="mt-2 space-y-1">
+              {tool.steps.map((step) => <li key={step.href}><Link className="inline-flex min-h-[32px] items-center text-primary hover:underline dark:text-primary-glow" href={`/workspaces/${workspaceId}${step.href}`}>{step.label}</Link></li>)}
+            </ul>
+          </li>
+        ))}
+      </ul>
+      <p className="text-xs text-muted-foreground">Todas as conexões ficam também em Configurações › Integrações.</p>
+    </section>
   );
 }

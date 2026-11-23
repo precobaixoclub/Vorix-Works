@@ -98,13 +98,15 @@ function SignupForm() {
       {selectedPlan ? (
         <p className="public-auth-sub">Plano <strong>{PLAN_LABEL[selectedPlan]}</strong>{capacitySummary(capacity)} · <Link href="/precos#monte">Trocar</Link><br />{trialDays ? `No próximo passo você cadastra o cartão. A primeira cobrança só acontece depois de ${trialDays} dias de teste.` : trialDays === null ? "No próximo passo você cadastra o cartão e a assinatura começa na hora." : "No próximo passo você cadastra o cartão."}</p>
       ) : (
-        <p className="public-auth-sub">Teste o Vorix por 7 dias, sem cartão.</p>
+        // Fase 13: sem plano escolhido não há teste automático com prazo (o backend só inicia o teste
+        // de um plano pago escolhido) — a tela não promete dias que não existem.
+        <p className="public-auth-sub">Crie sua conta sem cartão. Para começar um teste com prazo e contratação, <Link href="/precos">escolha um plano</Link>.</p>
       )}
       <form onSubmit={handleSubmit} className="public-auth-form">
-        <AuthField id="signup-name" label="Nome" type="text" autoComplete="name" required value={name} onChange={(event) => setName(event.target.value)} placeholder="Seu nome" autoFocus />
-        <AuthField id="signup-email" label="E-mail" type="email" autoComplete="email" required value={email} onChange={(event) => setEmail(event.target.value)} placeholder="voce@empresa.com" />
-        <AuthField id="signup-password" label="Senha" type="password" autoComplete="new-password" required minLength={8} value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Mínimo 8 caracteres" />
-        {error ? <p className="public-auth-error" role="alert">{error}</p> : null}
+        <AuthField id="signup-name" label="Nome" type="text" autoComplete="name" required maxLength={120} value={name} onChange={(event) => setName(event.target.value)} placeholder="Seu nome" autoFocus />
+        <AuthField id="signup-email" label="E-mail" type="email" autoComplete="email" required value={email} onChange={(event) => setEmail(event.target.value)} placeholder="voce@empresa.com" errorId={error ? "signup-error" : undefined} />
+        <AuthField id="signup-password" label="Senha" type="password" autoComplete="new-password" required minLength={8} value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Mínimo 8 caracteres" hint="Use pelo menos 8 caracteres." errorId={error ? "signup-error" : undefined} />
+        {error ? <p id="signup-error" className="public-auth-error" role="alert">{error}{error.startsWith("Já existe") ? <> <Link href="/login">Entrar</Link></> : null}</p> : null}
         <button type="submit" className="public-button primary" disabled={submitting}>{submitting ? "Criando conta..." : selectedPlan ? "Criar conta e ir para o pagamento" : "Criar conta"}</button>
       </form>
       <p className="public-auth-switch">Já tem conta? <Link href="/login">Entrar</Link></p>

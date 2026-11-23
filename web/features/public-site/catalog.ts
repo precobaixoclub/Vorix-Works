@@ -89,7 +89,8 @@ export function formatPublicPrice(product: Pick<PublicProduct, "currency" | "mon
 }
 
 export const PUBLIC_FAQ = [
-  ["Site e loja online são produtos separados?", "Não. O Vorix Site reúne o site da empresa, o catálogo e a área de loja online. Carrinho, pagamentos e frete estão em preparação dentro desse mesmo produto."],
+  ["Site e loja online são produtos separados?", "Não. O Vorix Site reúne o site da empresa, o catálogo e a loja online. Dá para vender pelo WhatsApp, por carrinho ou com checkout online (Pix e cartão pelo Mercado Pago, depois de conectar a conta de pagamento), com frete configurável."],
+  ["O que faz o Vorix Marketing?", "Organiza as pautas no Bolsão de ideias, cria texto e arte com IA a partir da identidade da marca, passa por revisão e agenda as publicações no Instagram e no Facebook. A contratação é feita com o time comercial."],
   ["Conversas e Meetings são produtos separados?", "Sim. Cada solução tem sua própria operação. As duas compartilham a mesma conta, empresa, equipe e workspace na plataforma Vorix."],
   ["Posso contratar somente uma solução?", "Conversas, Meetings e Site são produtos públicos. O acesso depende do plano ou dos adicionais contratados para sua empresa."],
   ["Posso adicionar outro produto depois?", "A plataforma foi construída para isso. Novas soluções podem ser adicionadas à mesma empresa conforme a disponibilidade comercial, sem criar outra conta."],

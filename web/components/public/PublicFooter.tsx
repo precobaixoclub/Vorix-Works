@@ -33,7 +33,7 @@ export function PublicFooter({
               links={[
                 ["/produtos/conversas", "Vorix Conversas"],
                 ["/produtos/meetings", "Vorix Meetings"],
-                ["/#marketing", "Vorix Marketing"],
+                ["/produtos/marketing", "Vorix Marketing"],
                 ["/produtos/site", "Sites & Commerce"],
               ]}
             />

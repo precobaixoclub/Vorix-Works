@@ -13,6 +13,7 @@ const PAGES: { path: string; priority: number; changeFrequency: MetadataRoute.Si
   { path: "/produtos/conversas", priority: 0.9, changeFrequency: "weekly" },
   { path: "/produtos/meetings", priority: 0.9, changeFrequency: "weekly" },
   { path: "/produtos/site", priority: 0.8, changeFrequency: "weekly" },
+  { path: "/produtos/marketing", priority: 0.8, changeFrequency: "weekly" },
   { path: "/empresa", priority: 0.6, changeFrequency: "monthly" },
   { path: "/signup", priority: 0.7, changeFrequency: "monthly" },
   { path: "/privacy", priority: 0.3, changeFrequency: "yearly" },

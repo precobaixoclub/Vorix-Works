@@ -66,6 +66,7 @@ export function proxy(request: NextRequest) {
     pathname === "/produtos/meetings" ||
     pathname === "/produtos/meetings/planos" ||
     pathname === "/produtos/site" ||
+    pathname === "/produtos/marketing" ||
     pathname === "/healthz" ||
     pathname === "/public-og" ||
     pathname === "/privacy" ||

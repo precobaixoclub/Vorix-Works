@@ -42,6 +42,8 @@ export type SocialPublicationRouterDeps = {
 };
 
 const PROVIDER_REQUEST_PREFIX = "social-target:";
+/** Um envio sem desfecho mais novo que isto é considerado em andamento (carrossel/vídeo podem levar minutos). */
+const SOCIAL_IN_FLIGHT_WINDOW_MS = 20 * 60_000;
 
 /**
  * Provider `social` do motor de Publication. Para cada destino:
@@ -90,6 +92,11 @@ export class SocialPublicationRouter implements PublicationProviderAdapterPort {
     }
     if (destination.skippedAt) return { kind: "rejected", errorCode: "SOCIAL_DESTINATION_SKIPPED", safeMessage: "Publicação pulada." };
     if (destination.blockReason === "AWAITING_CONFIRMATION") return this.defer("SOCIAL_AWAITING_CONFIRMATION", "Aguardando confirmação para publicação atrasada.", SOCIAL_FAR_FUTURE);
+    // Trava anti-duplicação: a fila pode reentregar um destino (reserva vencida, worker reiniciado).
+    // Destino que JÁ publicou devolve o recibo sem chamar a rede — antes de limites/reauth, para
+    // nunca ficar preso esperando algo que já saiu.
+    const prior = await this.priorPublication(destination.targetId, this.now());
+    if (prior) return prior;
 
     const account = await this.deps.repository.getAccount({ tenantId: destination.tenantId, workspaceId: destination.workspaceId, id: destination.socialAccountId });
     if (!account) return this.failDestination(destination, { kind: "permanent_failure", errorCode: "SOCIAL_ACCOUNT_NOT_FOUND", safeMessage: "A conta desta publicação foi removida." }, "A conta desta publicação foi removida.");
@@ -130,6 +137,10 @@ export class SocialPublicationRouter implements PublicationProviderAdapterPort {
     const logId = this.deps.idGenerator();
     const startedAt = this.nowIso();
     try {
+      // Rechecado DENTRO da trava da conta: serializa duas entregas concorrentes do mesmo destino.
+      const repeated = await this.priorPublication(destination.targetId, now);
+      if (repeated) return repeated;
+
       const session = await this.deps.vault.load(account, resolution.providerType);
       if (!session) {
         const updated = await this.deps.accounts.applyFailure(account, { errorClass: "SESSION_INVALID", code: "CREDENTIAL_MISSING" });
@@ -171,7 +182,7 @@ export class SocialPublicationRouter implements PublicationProviderAdapterPort {
       const durationMs = Math.max(0, this.now().getTime() - Date.parse(startedAt));
 
       if (result.ok === true) {
-        await this.deps.repository.finishPublishLog({ id: logId, finishedAt: this.nowIso(), outcome: "published", durationMs });
+        await this.deps.repository.finishPublishLog({ id: logId, finishedAt: this.nowIso(), outcome: "published", durationMs, externalPostId: result.externalPostId, ...(result.externalUrl ? { externalUrl: result.externalUrl } : {}) });
         await this.deps.accounts.recordPublishSuccess(account);
         await this.deps.repository.updateDestination({ tenantId: destination.tenantId, id: destination.id, patch: { lastErrorCode: undefined, lastErrorMessage: undefined, clearBlock: true } });
         await this.deps.audit.record({ tenantId: account.tenantId, workspaceId: account.workspaceId, event: "POST_PUBLISHED", actor: SOCIAL_SYSTEM_ACTOR, resource: { type: "social_post", id: destination.publicationId }, metadata: { destinationId: destination.id, network: account.network, externalPostId: result.externalPostId } });
@@ -190,6 +201,21 @@ export class SocialPublicationRouter implements PublicationProviderAdapterPort {
     } finally {
       await this.deps.publicationRepository.releaseLock(lockKey, lockOwner).catch(() => undefined);
     }
+  }
+
+  /**
+   * Nunca publica o mesmo destino duas vezes: se um envio dele já publicou, devolve aquele recibo;
+   * se outro envio ainda está em andamento (sem desfecho, recente), adia.
+   */
+  private async priorPublication(targetId: string, now: Date): Promise<PublicationProviderCallResult | undefined> {
+    const previous = await this.deps.repository.listPublishLogForTarget({ targetId });
+    const published = previous.find((entry) => entry.outcome === "published");
+    if (published) {
+      return { kind: "published", providerPublicationId: published.externalPostId ?? `already-published:${targetId}`, publishedAt: published.finishedAt ?? published.startedAt, ...(published.externalUrl ? { url: published.externalUrl } : {}) };
+    }
+    const inFlight = previous.find((entry) => !entry.outcome && now.getTime() - Date.parse(entry.startedAt) < SOCIAL_IN_FLIGHT_WINDOW_MS);
+    if (inFlight) return this.defer("SOCIAL_PUBLISH_IN_FLIGHT", "Envio anterior deste destino ainda em andamento.", new Date(now.getTime() + 2 * 60_000).toISOString());
+    return undefined;
   }
 
   /** Verificação após timeout: a rede publicou ou não? Só então o motor decide repetir. */

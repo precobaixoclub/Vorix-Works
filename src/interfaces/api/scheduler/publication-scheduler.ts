@@ -25,7 +25,7 @@ export function registerPublicationScheduler(app: FastifyInstance, container: Ap
     providerRegistry: container.publicationProviderRegistry,
     secretResolver: container.publicationSecretResolver,
     providerCircuitBreaker: container.operationalCircuitBreaker,
-    concurrency: { maxWorkers: 2, maxConcurrentPublications: 4, maxPerProvider: 2, maxPerTenant: 2, lockTtlMs: 60_000 },
+    concurrency: { maxWorkers: 2, maxConcurrentPublications: 4, maxPerProvider: 2, maxPerTenant: 2, lockTtlMs: 15 * 60_000 },
   };
 
   let running = false;

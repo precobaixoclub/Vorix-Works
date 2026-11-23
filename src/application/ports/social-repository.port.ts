@@ -25,6 +25,9 @@ export type SocialPublishLogEntry = {
   errorCode?: string;
   durationMs?: number;
   mediaBytes?: number;
+  /** Id/URL do post na rede quando o envio publicou (base da trava anti-duplicação por destino). */
+  externalPostId?: string;
+  externalUrl?: string;
 };
 
 export type SocialAccountPatch = Partial<Pick<SocialAccount,
@@ -71,9 +74,11 @@ export type SocialRepositoryPort = {
 
   // Log operacional (limites, métricas, custo)
   appendPublishLog(entry: SocialPublishLogEntry): Promise<void>;
-  finishPublishLog(input: { id: string; finishedAt: string; outcome: SocialPublishLogEntry["outcome"]; errorCode?: string; durationMs?: number }): Promise<void>;
+  finishPublishLog(input: { id: string; finishedAt: string; outcome: SocialPublishLogEntry["outcome"]; errorCode?: string; durationMs?: number; externalPostId?: string; externalUrl?: string }): Promise<void>;
   countPublishLog(input: { socialAccountId: string; since: string; outcomes?: readonly NonNullable<SocialPublishLogEntry["outcome"]>[] }): Promise<number>;
   lastPublishLog(input: { socialAccountId: string }): Promise<SocialPublishLogEntry | undefined>;
+  /** Envios já feitos para um destino (mais recente primeiro). */
+  listPublishLogForTarget(input: { targetId: string }): Promise<SocialPublishLogEntry[]>;
   listPublishLog(input: { tenantId?: string; since: string; limit?: number }): Promise<SocialPublishLogEntry[]>;
 
   // Dedupe de notificações

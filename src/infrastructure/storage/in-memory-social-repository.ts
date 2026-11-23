@@ -169,9 +169,13 @@ export class InMemorySocialRepository implements SocialRepositoryPort {
     this.logs.set(entry.id, { ...entry });
   }
 
-  async finishPublishLog(input: { id: string; finishedAt: string; outcome: SocialPublishLogEntry["outcome"]; errorCode?: string; durationMs?: number }): Promise<void> {
+  async finishPublishLog(input: { id: string; finishedAt: string; outcome: SocialPublishLogEntry["outcome"]; errorCode?: string; durationMs?: number; externalPostId?: string; externalUrl?: string }): Promise<void> {
     const entry = this.logs.get(input.id);
-    if (entry) this.logs.set(input.id, { ...entry, finishedAt: input.finishedAt, outcome: input.outcome, ...(input.errorCode ? { errorCode: input.errorCode } : {}), ...(input.durationMs !== undefined ? { durationMs: input.durationMs } : {}) });
+    if (entry) this.logs.set(input.id, { ...entry, finishedAt: input.finishedAt, outcome: input.outcome, ...(input.errorCode ? { errorCode: input.errorCode } : {}), ...(input.durationMs !== undefined ? { durationMs: input.durationMs } : {}), ...(input.externalPostId ? { externalPostId: input.externalPostId } : {}), ...(input.externalUrl ? { externalUrl: input.externalUrl } : {}) });
+  }
+
+  async listPublishLogForTarget(input: { targetId: string }): Promise<SocialPublishLogEntry[]> {
+    return [...this.logs.values()].filter((entry) => entry.targetId === input.targetId).sort((left, right) => right.startedAt.localeCompare(left.startedAt)).map((entry) => ({ ...entry }));
   }
 
   async countPublishLog(input: { socialAccountId: string; since: string; outcomes?: readonly NonNullable<SocialPublishLogEntry["outcome"]>[] }): Promise<number> {

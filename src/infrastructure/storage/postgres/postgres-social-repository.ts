@@ -27,7 +27,7 @@ type DestinationRow = {
   music: SocialPostDestination["music"] | null; audio_mode: string; media: SocialPostDestination["media"]; scheduled_at: Date | null; timezone: string | null; block_reason: string | null; blocked_at: Date | null; skipped_at: Date | null;
   last_provider_type: string | null; last_error_code: string | null; last_error_message: string | null; created_by: string; created_at: Date; updated_at: Date;
 };
-type LogRow = { id: string; tenant_id: string; workspace_id: string; social_account_id: string; publication_id: string; target_id: string; provider_type: string; network: string; format: string; started_at: Date; finished_at: Date | null; outcome: string | null; error_code: string | null; duration_ms: number | null; media_bytes: string | null };
+type LogRow = { id: string; tenant_id: string; workspace_id: string; social_account_id: string; publication_id: string; target_id: string; provider_type: string; network: string; format: string; started_at: Date; finished_at: Date | null; outcome: string | null; error_code: string | null; duration_ms: number | null; media_bytes: string | null; external_post_id?: string | null; external_url?: string | null };
 const ACCOUNT_COLUMNS: Record<keyof SocialAccountPatch, string> = {
   providerType: "provider_type",
   username: "username",
@@ -270,8 +270,16 @@ export class PostgresSocialRepository implements SocialRepositoryPort {
     );
   }
 
-  async finishPublishLog(input: { id: string; finishedAt: string; outcome: SocialPublishLogEntry["outcome"]; errorCode?: string; durationMs?: number }): Promise<void> {
-    await this.pool.query("update social_publish_log set finished_at = $2, outcome = $3, error_code = $4, duration_ms = $5 where id = $1", [input.id, input.finishedAt, input.outcome ?? null, input.errorCode ?? null, input.durationMs ?? null]);
+  async finishPublishLog(input: { id: string; finishedAt: string; outcome: SocialPublishLogEntry["outcome"]; errorCode?: string; durationMs?: number; externalPostId?: string; externalUrl?: string }): Promise<void> {
+    await this.pool.query(
+      "update social_publish_log set finished_at = $2, outcome = $3, error_code = $4, duration_ms = $5, external_post_id = coalesce($6, external_post_id), external_url = coalesce($7, external_url) where id = $1",
+      [input.id, input.finishedAt, input.outcome ?? null, input.errorCode ?? null, input.durationMs ?? null, input.externalPostId ?? null, input.externalUrl ?? null],
+    );
+  }
+
+  async listPublishLogForTarget(input: { targetId: string }): Promise<SocialPublishLogEntry[]> {
+    const result = await this.pool.query<LogRow>("select * from social_publish_log where target_id = $1 order by started_at desc limit 50", [input.targetId]);
+    return result.rows.map(toLog);
   }
 
   async countPublishLog(input: { socialAccountId: string; since: string; outcomes?: readonly NonNullable<SocialPublishLogEntry["outcome"]>[] }): Promise<number> {
@@ -404,5 +412,7 @@ function toLog(row: LogRow): SocialPublishLogEntry {
     ...(row.error_code ? { errorCode: row.error_code } : {}),
     ...(row.duration_ms !== null ? { durationMs: row.duration_ms } : {}),
     ...(row.media_bytes !== null ? { mediaBytes: Number(row.media_bytes) } : {}),
+    ...(row.external_post_id ? { externalPostId: row.external_post_id } : {}),
+    ...(row.external_url ? { externalUrl: row.external_url } : {}),
   };
 }

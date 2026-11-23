@@ -5,6 +5,12 @@ import type { PublicationSecretResolverPort } from "./publication-secret-resolve
 import { checksumPublicationPayload, isRetryablePublicationFailure, MAX_TRANSIENT_RETRIES, providerManagesOwnCredentials } from "./publication-utils.js";
 import type { PublicationContentType, PublicationFailure, PublicationOutboxMessage, PublicationProviderCallResult, PublicationSourceArtifact } from "../../domain/publication/publication.model.js";
 
+/**
+ * Reserva de cada mensagem da fila. Precisa cobrir o lote inteiro processado em sequência: com 60s,
+ * um carrossel do Instagram (~65s) vencia a reserva e o agendador reenviava o mesmo post (22/11/2026).
+ */
+export const DEFAULT_OUTBOX_LEASE_MS = 15 * 60_000;
+
 export type PublicationDispatchDeps = {
   repository: PublicationRepositoryPort;
   providerRegistry: PublicationProviderRegistry;
@@ -21,7 +27,7 @@ export class PublicationDispatchService {
 
   async dispatchAvailable(workerId: string, filter: { tenantId?: string; workspaceId?: string; publicationId?: string } = {}): Promise<{ dispatched: number; fencingRejected: number; unknownOutcomes: number }> {
     const now = this.now();
-    const messages = await this.deps.repository.claimOutbox({ workerId, now, leaseMs: this.deps.leaseMs ?? 60_000, limit: this.deps.maxBatch ?? 10, ...filter });
+    const messages = await this.deps.repository.claimOutbox({ workerId, now, leaseMs: this.deps.leaseMs ?? DEFAULT_OUTBOX_LEASE_MS, limit: this.deps.maxBatch ?? 10, ...filter });
     let dispatched = 0;
     let fencingRejected = 0;
     let unknownOutcomes = 0;

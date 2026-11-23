@@ -6,7 +6,7 @@ import { InMemorySocialRepository } from "../dist/infrastructure/storage/in-memo
 import { InMemoryPublicationRepository } from "../dist/infrastructure/storage/in-memory-publication-repository.js";
 import { InMemoryNotificationRepository } from "../dist/infrastructure/storage/in-memory-notification-repository.js";
 import { InMemoryOperationalAuditRepository } from "../dist/infrastructure/storage/in-memory-operational-audit-repository.js";
-import { PublicationDispatchService } from "../dist/application/publication/publication-dispatch-service.js";
+import { DEFAULT_OUTBOX_LEASE_MS, PublicationDispatchService } from "../dist/application/publication/publication-dispatch-service.js";
 import { createDefaultPublicationProviderRegistry } from "../dist/application/publication/publication-provider-registry.js";
 import { FakePublicationSecretResolver } from "../dist/application/publication/publication-secret-resolver.js";
 import { InMemoryPublicationQueue } from "../dist/application/publication/publication-queue.js";
@@ -198,7 +198,7 @@ function harness(options = {}) {
     credentials.put("tenant-a", "ws-a", credentialReferenceId, { accessToken: `token-${credentialReferenceId}` });
     providers[providerType].authorized.push({ tenantId: "tenant-a", workspaceId: "ws-a", network: input.network, externalAccountId: input.externalAccountId, credentialReferenceId, username: input.username, displayName: input.displayName, status: "active" });
   }
-  return { social, providers, credentials, authorize, notificationRepository, publicationRepository, repository, auditRepository, enable, connect, compose, runDue, drain, reconcile, get, advance, now, notifications, owner };
+  return { social, providers, credentials, authorize, notificationRepository, publicationRepository, repository, auditRepository, enable, connect, compose, runDue, drain, reconcile, get, advance, now, notifications, owner, registry };
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -641,6 +641,43 @@ test("RESTART_RECOVERY: job de executor que morreu é retomado por outro; o anti
   const late = await h.publicationRepository.completeOutbox({ outboxMessageId: claimed.outboxMessageId, workerId: "dead-worker", fencingToken: claimed.fencingToken, now: h.now().toISOString() });
   assert.equal(late.committed, false);
   assert.equal((await h.get(post.id)).state, "PUBLISHED");
+});
+
+test("REENTREGA: reserva vence durante o upload (carrossel lento) e outro worker pega o mesmo destino → a rede é chamada UMA vez só", async () => {
+  // Incidente 22/11/2026: a reserva da fila era de 60s, o upload de carrossel no Instagram leva ~65s,
+  // e o mesmo post saiu 4 vezes. Aqui o 1º worker publica, perde a reserva no meio e outro reentrega.
+  const h = harness();
+  await h.enable("instagram", ["meta_official"]);
+  const account = await h.connect();
+  const post = await h.compose([{ accountId: account.id, format: "feed_image" }]);
+  const shortLease = new PublicationDispatchService({ repository: h.publicationRepository, providerRegistry: h.registry, secretResolver: new FakePublicationSecretResolver(), idGenerator: nextId, maxBatch: 1, leaseMs: 60_000, now: h.now });
+  const [claimedA] = await h.publicationRepository.claimOutbox({ workerId: "worker-a", now: h.now().toISOString(), leaseMs: 60_000, limit: 1 });
+  let claimedB;
+  h.providers.meta_official.results.push(async () => {
+    h.advance(65_000);
+    await h.publicationRepository.releaseExpiredOutbox(h.now().toISOString());
+    [claimedB] = await h.publicationRepository.claimOutbox({ workerId: "worker-b", now: h.now().toISOString(), leaseMs: 60_000, limit: 1 });
+    return { ok: true, externalPostId: "ig-unico", externalUrl: "https://social.example.test/p/unico", publishedAt: h.now().toISOString() };
+  });
+  assert.equal(await shortLease.dispatchClaimed(claimedA, "worker-a"), "fencing_rejected", "o 1º worker publicou mas perdeu a reserva");
+  assert.ok(claimedB, "outro worker pegou o mesmo destino");
+  assert.equal(await shortLease.dispatchClaimed(claimedB, "worker-b"), "dispatched");
+  assert.equal(h.providers.meta_official.calls.length, 1, "a rede NÃO recebe o post de novo");
+  const done = await h.get(post.id);
+  assert.equal(done.state, "PUBLISHED");
+  assert.equal(done.destinations[0].externalPostId, "ig-unico", "o recibo é o do envio que realmente publicou");
+});
+
+test("Reserva padrão da fila cobre upload lento: nada é reentregue enquanto o envio dura minutos", async () => {
+  const h = harness();
+  await h.enable("instagram", ["meta_official"]);
+  const account = await h.connect();
+  await h.compose([{ accountId: account.id, format: "feed_image" }]);
+  const [claimed] = await h.publicationRepository.claimOutbox({ workerId: "worker-a", now: h.now().toISOString(), leaseMs: DEFAULT_OUTBOX_LEASE_MS, limit: 1 });
+  assert.ok(claimed);
+  h.advance(5 * 60_000);
+  assert.equal(await h.publicationRepository.releaseExpiredOutbox(h.now().toISOString()), 0, "5 minutos depois a reserva ainda vale");
+  assert.ok(DEFAULT_OUTBOX_LEASE_MS >= 10 * 60_000);
 });
 
 test("Kill switch: desligar provider pausa novos jobs, preserva agendamentos, informa e retoma ao religar", async () => {

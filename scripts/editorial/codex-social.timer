@@ -1,0 +1,11 @@
+[Unit]
+Description=Preparação diária das publicações do Vorix às 12h e às 19h
+
+[Timer]
+OnCalendar=*-*-* 11,18:15:00 America/Sao_Paulo
+OnCalendar=*-*-* 12,19:05,20,45:00 America/Sao_Paulo
+AccuracySec=1s
+Persistent=false
+
+[Install]
+WantedBy=timers.target

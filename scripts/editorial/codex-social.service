@@ -1,0 +1,11 @@
+[Unit]
+Description=Produção editorial do Vorix com Codex
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/vorix-editorial
+ExecStart=/usr/bin/flock --nonblock /run/vorix-editorial.lock /usr/bin/node /opt/vorix-editorial/codex-social-schedule.mjs auto
+TimeoutStartSec=45min
+InaccessiblePaths=/opt/zuno /root /var/lib/docker

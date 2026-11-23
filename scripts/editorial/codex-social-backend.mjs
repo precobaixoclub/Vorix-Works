@@ -1,0 +1,179 @@
+import { readFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import sharp from "sharp";
+import { buildApiContainer } from "./dist/interfaces/api/di/container.js";
+import { loadApiConfig } from "./dist/interfaces/api/config/api-config.js";
+import { resolveEffectiveEntitlements } from "./dist/application/billing/entitlement-use-cases.js";
+import { hasPermission } from "./dist/domain/identity/identity.model.js";
+import { classifyObjectKeyOwner, parseOwnedObjectUrl, signForExternalPublication } from "./dist/shared/utils/object-url-signing.js";
+
+// Loaded on stdin from the host, in the Vorix API container. The renderer has no DB access.
+const tenantId = "tenant-vorix";
+// Por workspace: contas IG+FB e, opcionalmente, como aplicar a logo nesta marca.
+// logo.placement: top_left|top_center|top_right|bottom_left|bottom_center|bottom_right (fixa a posição);
+// logo.treatment: auto|none|shadow|halo|plate (auto = sem caixa, sombra suave só se faltar contraste);
+// logo.scale: 0.6–1.6. Sem configuração, vale o que as notas do Perfil da Marca dizem, senão o automático.
+const brands = new Map([
+  ["workspace-mwmumsxd-fmvh3h", { accounts: ["soc-mwmvbruu-sz6rkd12", "soc-mwmvbryk-dthxstki"], logo: {} }],
+  ["workspace-mscc9pi2-jkvwbo", { accounts: ["soc-mwk1mgoy-xhcr2duq", "soc-mwk1my6f-lbham9eo"], logo: {} }],
+  ["workspace-mwmu8kgf-uhe66l", { accounts: ["soc-mwmu9f8k-kj2covm2", "soc-mwmugp3j-hwva5nax"], logo: {} }],
+  ["workspace-cee-prelaunch-mv47cmfh", { accounts: ["soc-mwkwg3lc-zj3g4xyk", "soc-mwmuj7ud-3py2gdyo"], logo: {} }],
+]);
+const timezone = "America/Sao_Paulo";
+const prefix = "codex-editorial-v1";
+const c = buildApiContainer(loadApiConfig());
+const db = c.pool;
+const mode = request.action;
+const workspaceId = request.workspaceId;
+const scope = { tenantId, workspaceId };
+
+function requireCondition(condition, message) {
+  if (!condition) throw new Error(message);
+}
+
+async function actorForPublish() {
+  const { rows } = await db.query(`select u.id, m.role from users u join tenant_members m on m.user_id=u.id
+    where m.tenant_id=$1 and m.role='owner' and u.status='active'`, [tenantId]);
+  requireCondition(rows.length === 1 && hasPermission(rows[0].role, "marketing:social_publish"), "Responsável pelo Vorix indisponível para publicação");
+  const entitlement = await resolveEffectiveEntitlements(c.identity, tenantId);
+  requireCondition(!entitlement.readOnly && await c.solutionAccess.hasAccess(tenantId, "marketing"), "Marketing indisponível para publicação");
+  return { userId: rows[0].id, role: rows[0].role };
+}
+
+async function ownedImage(url) {
+  const key = parseOwnedObjectUrl(url)?.key;
+  const owner = key && classifyObjectKeyOwner(key);
+  requireCondition(owner?.kind === "workspace" && owner.tenantId === tenantId && owner.workspaceId === workspaceId,
+    "A imagem de referência ou a logo precisa pertencer ao workspace");
+  const response = await fetch(signForExternalPublication(url), { signal: AbortSignal.timeout(20000) });
+  requireCondition(response.ok, `Imagem do workspace indisponível (${response.status})`);
+  return sharp(Buffer.from(await response.arrayBuffer())).rotate().resize({ width: 1400, height: 1400, fit: "inside", withoutEnlargement: true }).png().toBuffer();
+}
+
+async function logoFile(url) {
+  // PNG preserva a transparência original; o renderizador decide tamanho e tratamento.
+  return ownedImage(url);
+}
+
+async function brandFor(workspace, config) {
+  const { rows } = await db.query("select profile from brand_visual_profiles where workspace_id=$1", [workspaceId]);
+  const profile = rows[0]?.profile;
+  const identity = profile?.identity;
+  // Todas as versões oficiais (com os fundos para os quais servem): o renderizador escolhe a compatível.
+  const logos = [];
+  for (const logo of [...(identity?.logos ?? [])].sort((a, b) => a.priority - b.priority)) {
+    const asset = await db.query(`select a.storage_ref->>'objectKey' as key from assets a join asset_libraries l on l.id=a.library_id
+      where a.id=$1 and l.workspace_id=$2 and a.status='active'`, [logo.assetId, workspaceId]);
+    const key = asset.rows[0]?.key;
+    if (!key) continue;
+    logos.push({ data: (await logoFile(c.objectStorage.resolvePublicUrl(key))).toString("base64"), variant: logo.variant, backgrounds: logo.backgrounds ?? [] });
+  }
+  if (!logos.length && workspace.settings?.logoUrl) {
+    // Último recurso: avatar do workspace (costuma ter fundo sólido; o renderizador remove o fundo).
+    logos.push({ data: (await logoFile(workspace.settings.logoUrl)).toString("base64"), variant: "AVATAR", backgrounds: [] });
+  }
+  requireCondition(logos.length, "Workspace sem logo oficial configurada no Perfil da Marca");
+  return { profile, name: workspace.name, logos, logoConfig: config?.logo ?? {} };
+}
+
+function compareIdeas(a, b) {
+  return (a.scheduledDate ?? "9999").localeCompare(b.scheduledDate ?? "9999")
+    || Number(b.priority === "high") - Number(a.priority === "high")
+    || (a.suggestedDate ?? "9999").localeCompare(b.suggestedDate ?? "9999")
+    || a.createdAt.localeCompare(b.createdAt) || a.externalId.localeCompare(b.externalId);
+}
+
+function summarizes(post) {
+  return { id: post.id, state: post.state, destinations: post.destinations.map(({ network, state, externalUrl, problem }) => ({ network, state, externalUrl, problem })) };
+}
+
+async function reconcile() {
+  const { rows } = await db.query(`select p.id, a.editorial_idea_id from publication_plans p
+    cross join lateral (select p.source_artifacts->0->'payload'->>'editorialIdeaId' as editorial_idea_id) a
+    join editorial_ideas e on e.id=a.editorial_idea_id and e.workspace_id=p.workspace_id
+    where p.tenant_id=$1 and p.workspace_id=$2 and p.idempotency_key like $3 and e.status in ('available','approved')`,
+  [tenantId, workspaceId, `social:${prefix}:%`]);
+  for (const row of rows) {
+    const post = await c.social.posts.get({ ...scope, postId: row.id });
+    if (post.destinations.length === 2 && post.destinations.every(destination => destination.state === "PUBLISHED")) {
+      await db.query(`update editorial_ideas set status='published',status_changed_at=now(),updated_at=now()
+        where id=$1 and workspace_id=$2 and tenant_id=$3 and status in ('available','approved')`, [row.editorial_idea_id, workspaceId, tenantId]);
+    }
+  }
+}
+
+async function run() {
+  const brandConfig = brands.get(workspaceId);
+  requireCondition(brandConfig, "Workspace fora da automação editorial");
+  const accounts = brandConfig.accounts;
+  const workspace = await c.workspaceRepository.getById(workspaceId);
+  requireCondition(workspace?.tenantId === tenantId && workspace.status === "active", "Workspace editorial indisponível");
+  if (mode === "reconcile") {
+    await reconcile();
+    return { brand: workspace.name, reconciled: true };
+  }
+  const slot = request.slot;
+  requireCondition(/^\d{4}-\d{2}-\d{2}T(?:12|19):00$/.test(slot), "Horário editorial inválido");
+  const idempotencyKey = `${prefix}:${slot}`;
+  const existing = await c.publicationRepository.getPlanByIdempotency({ ...scope, idempotencyKey: `social:${idempotencyKey}` });
+  if (existing) return { existing: summarizes(await c.social.posts.get({ ...scope, postId: existing.id })) };
+  const actor = await actorForPublish();
+  const options = await c.social.posts.composerOptions(scope);
+  const selected = accounts.map(id => options.find(account => account.accountId === id));
+  requireCondition(selected.every(account => account?.publishable), "Conta social da marca indisponível");
+
+  if (mode === "select") {
+    const ideas = (await c.editorialIdeaRepository.listByWorkspace(workspaceId)).filter(idea => idea.status === "available" && (!idea.scheduledDate || idea.scheduledDate <= slot.slice(0,10)));
+    const used = await db.query(`select distinct source_artifacts->0->'payload'->>'editorialIdeaId' as id from publication_plans
+      where tenant_id=$1 and workspace_id=$2 and idempotency_key like $3`, [tenantId,workspaceId,`social:${prefix}:%`]);
+    const usedIds = new Set(used.rows.map(row => row.id));
+    const idea = ideas.filter(item => !usedIds.has(item.id) && ["single_image", "carousel"].includes(item.format)).sort(compareIdeas)[0];
+    if (!idea) return { brand: workspace.name, empty: true, videoIdeas: ideas.filter(item => item.format === "video").length };
+    const references = await Promise.all((idea.referenceImages ?? []).map(async url => (await ownedImage(url)).toString("base64")));
+    return { idea, brand: await brandFor(workspace, brandConfig), references };
+  }
+
+  requireCondition(mode === "validate" || mode === "schedule", "Operação editorial inválida");
+  const idea = await c.editorialIdeaRepository.get(workspaceId, request.ideaId);
+  requireCondition(idea?.status === "available" && idea.updatedAt === request.updatedAt, "A pauta mudou durante a geração");
+  const format = idea.format === "carousel" ? "carousel" : "feed_image";
+  const count = format === "carousel" ? idea.carouselScript?.length : 1;
+  requireCondition(count && request.images.length === count, "Quantidade de artes diferente do roteiro da pauta");
+  requireCondition(selected.every(account => account.formats.some(item => item.format === format && item.maxItems >= count)), "Formato da pauta incompatível com uma das redes da marca");
+  const media = [];
+  for (const png of request.images) {
+    const body = Buffer.from(png, "base64");
+    const { width, height, format: codec } = await sharp(body).metadata();
+    requireCondition(width === 1080 && height === 1350 && codec === "jpeg", "A arte final deve ser JPEG 1080 x 1350 (4:5)");
+    const checksum = createHash("sha256").update(body).digest("hex");
+    // The regular assets path is signed for Conteúdos and for external provider downloads.
+    const key = `assets/${tenantId}/${workspaceId}/${idea.id}-${checksum.slice(0,20)}.jpg`;
+    const { url } = await c.objectStorage.put({ key, body, contentType: "image/jpeg" });
+    media.push({ url, kind: "image", width, height, mimeType: "image/jpeg", sizeBytes: body.length });
+  }
+  const input = { ...scope, base: { caption: idea.caption, media }, destinations: accounts.map(accountId => ({ accountId, format })) };
+  const checks = await c.social.posts.validate(input);
+  for (const check of checks) requireCondition(!check.issues.length && !check.warnings.length, `${check.network}: ${[...check.issues.map(issue => issue.message), ...check.warnings].join(". ")}`);
+  if (mode === "validate") return { validated: true, idea: idea.externalId, screens: media.length, networks: checks.map(check => check.network) };
+  const seen = await db.query(`select count(*)::int as total from social_post_destinations d join publication_targets t on t.id=d.target_id
+    where d.tenant_id=$1 and d.workspace_id=$2 and t.status not in ('cancelled','failed') and d.caption=$3 and d.created_at >= $4`, [tenantId, workspaceId, idea.caption, idea.createdAt]);
+  requireCondition(seen.rows[0].total === 0, "Já existe uma publicação com a mesma legenda desta pauta");
+  const post = await c.social.posts.create({ ...input, actor, idempotencyKey, when: { mode: "schedule", localDateTime: slot, timezone }, source: {
+    artifacts: [{ artifactId: idea.id, artifactType: "image", schemaId: "social.post", schemaVersion: 1,
+      checksum: createHash("sha256").update(media.map(item => item.url).join("\n")).digest("hex"),
+      payload: { editorialIdeaId: idea.id, externalId: idea.externalId, imageUrls: media.map(item => item.url) } }],
+  } });
+  await db.query(`update editorial_ideas set status='approved',status_changed_at=now(),updated_at=now()
+    where id=$1 and workspace_id=$2 and tenant_id=$3 and status='available'`, [idea.id, workspaceId, tenantId]);
+  return { scheduled: summarizes(post), idea: idea.externalId, slot };
+}
+
+try {
+  console.log(JSON.stringify(await run()));
+} catch (error) {
+  console.error(error.message.replace(/([?&]sig=)[^&\s]+/g, "$1[redacted]"));
+  process.exitCode = 1;
+} finally {
+  await db?.end();
+  await c.identity?.pool?.end().catch(() => undefined);
+}

@@ -1,4 +1,5 @@
 import {test,expect,type Page} from "@playwright/test";
+import {openSiteSection} from "./fixtures/site-editor-nav";
 import {mkdir} from "node:fs/promises";
 import path from "node:path";
 import {selectSiteTemplate} from "../features/sites/template-state";
@@ -9,7 +10,8 @@ const endpoint=()=>`${api}/v1/sites/${scope.siteId}?workspaceId=${scope.workspac
 async function login(page:Page,section="geral"){await page.goto("/login");await page.getByLabel("E-mail",{exact:true}).fill(scope.email);await page.getByLabel("Senha",{exact:true}).fill(scope.password);await page.getByRole("button",{name:"Entrar",exact:true}).click();await page.waitForURL(/\/workspaces(?:\/|$)/);await page.goto(`/workspaces/${scope.workspaceId}/site?section=${section}`);await expect(page.getByRole("heading",{name:"Meu site",exact:true})).toBeVisible();}
 const preview=(page:Page)=>page.getByRole("region",{name:"Prévia ao vivo",exact:true});
 const frame=(page:Page)=>preview(page).frameLocator("iframe");
-async function section(page:Page,name:string){await page.getByRole("navigation",{name:"Navegação da seção"}).getByRole("button",{name,exact:true}).click();}
+// Fase 8: editor em grupos (Modelo / Aparência / Conteúdo / Vendas / Publicação e domínio).
+const section=openSiteSection;
 async function noOverflow(page:Page){expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);}
 
 test("edição ao vivo acompanha os campos nos seis modelos salvando automaticamente sem publicar",async({page,request},info)=>{
@@ -20,7 +22,7 @@ test("edição ao vivo acompanha os campos nos seis modelos salvando automaticam
   if(id==="nexus")await login(page);else await page.goto(`/workspaces/${scope.workspaceId}/site?section=geral`);
   const name=`Marca ${id} ao vivo`;await page.getByLabel("Nome do site",{exact:true}).fill(name);await expect(preview(page)).toBeVisible();await expect(frame(page).getByRole("link",{name:`${name} — início`,exact:true})).toBeVisible();await expect(preview(page)).toContainText("Aguardando salvamento automático");
   await section(page,"Rodapé");const footer=page.getByLabel("Texto do rodapé",{exact:true});await footer.fill(`Mensagem em tempo real ${id}`);await expect(frame(page).locator("[data-site-preview-active]")).toContainText(`Mensagem em tempo real ${id}`);await expect.poll(()=>frame(page).locator("body").evaluate(element=>element.ownerDocument.defaultView!.scrollY)).toBeGreaterThan(100);await expect(footer).toBeFocused();await noOverflow(page);
-  await preview(page).getByRole("button",{name:"Acompanhar edição",exact:true}).click();await section(page,"Sua marca");await page.getByLabel("Nome do site",{exact:true}).fill(name+" livre");await expect(frame(page).locator("[data-site-preview-active]")).toHaveCount(0);await preview(page).getByRole("button",{name:"Acompanhar edição",exact:true}).click();await expect.poll(()=>frame(page).locator("body").evaluate(element=>element.ownerDocument.defaultView!.scrollY)).toBe(0);
+  await preview(page).getByRole("button",{name:"Acompanhar edição",exact:true}).click();await section(page,"Sua marca e logo");await page.getByLabel("Nome do site",{exact:true}).fill(name+" livre");await expect(frame(page).locator("[data-site-preview-active]")).toHaveCount(0);await preview(page).getByRole("button",{name:"Acompanhar edição",exact:true}).click();await expect.poll(()=>frame(page).locator("body").evaluate(element=>element.ownerDocument.defaultView!.scrollY)).toBe(0);
   expect((await(await request.get(`${api}/v1/public/sites/${scope.slug}`)).json()).data.content).toEqual(before.content);await expect.poll(async()=>(await(await request.get(endpoint(),{headers})).json()).data.draft.content.name).toBe(name+" livre");await expect(page.getByText("Rascunho salvo automaticamente",{exact:true})).toBeVisible();
  }
  await page.screenshot({path:path.join(evidence,`${info.project.name}-live.png`),fullPage:true});expect(errors).toEqual([]);
@@ -61,7 +63,7 @@ test("prévia ocupa a área disponível e permite ampliar sem alterar o rascunho
  if(info.project.name==="desktop"){
   const area=await panel.boundingBox(),visible=await canvas.boundingBox();expect(area!.width).toBeGreaterThan(700);expect(visible!.height).toBeGreaterThan(550);
  }
- await section(page,"Sua marca");await page.getByLabel("Nome do site",{exact:true}).focus();await expect(panel).toBeInViewport({ratio:0.98});await section(page,"Banners e destaques");
+ await section(page,"Sua marca e logo");await page.getByLabel("Nome do site",{exact:true}).focus();await expect(panel).toBeInViewport({ratio:0.98});await section(page,"Banners e destaques");
  const initial=(await(await request.get(endpoint(),{headers})).json()).data;
  await panel.getByRole("button",{name:"Prévia em computador",exact:true}).click();await zoom.selectOption("100");await expect(iframe).toHaveCSS("width","1440px");await expect(iframe).toHaveCSS("transform","matrix(1, 0, 0, 1, 0, 0)");
  expect(await canvas.evaluate(element=>element.scrollWidth>element.clientWidth)).toBe(true);

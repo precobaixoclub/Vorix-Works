@@ -1,4 +1,5 @@
 import {test,expect,type Page} from "@playwright/test";
+import {openSiteSection} from "./fixtures/site-editor-nav";
 import {mkdir,writeFile} from "node:fs/promises";
 import {execFile} from "node:child_process";
 import {promisify} from "node:util";
@@ -23,7 +24,8 @@ test.beforeEach(async({request})=>{
 async function login(page:Page,section="modelos"){
  await page.goto("/login");await page.getByLabel("E-mail",{exact:true}).fill(scope.email);await page.getByLabel("Senha",{exact:true}).fill(scope.password);await page.getByRole("button",{name:"Entrar",exact:true}).click();await page.waitForURL(/\/workspaces(?:\/|$)/);await page.goto(`/workspaces/${scope.workspaceId}/site?section=${section}`);await expect(page.getByRole("heading",{name:"Meu site",exact:true})).toBeVisible();
 }
-async function section(page:Page,name:string){await page.getByRole("navigation",{name:"Navegação da seção"}).getByRole("button",{name,exact:true}).click();}
+// Fase 8: editor em grupos (Modelo / Aparência / Conteúdo / Vendas / Publicação e domínio).
+const section=openSiteSection;
 async function save(page:Page){await expect(page.getByText("Rascunho salvo automaticamente",{exact:true})).toBeVisible();}
 async function imagesReady(page:Page){await page.evaluate(async()=>{await Promise.race([document.fonts.ready,new Promise(ok=>setTimeout(ok,3000))]);for(let y=0;y<document.documentElement.scrollHeight;y+=innerHeight){scrollTo(0,y);await new Promise(ok=>setTimeout(ok,45));}const images=[...document.images].filter(image=>image.getClientRects().length>0);for(const image of images)image.loading="eager";await Promise.race([Promise.all(images.map(image=>image.decode().catch(()=>{}))),new Promise(ok=>setTimeout(ok,5000))]);scrollTo(0,0);});const missing=await page.locator(".tenant-site img").evaluateAll(images=>images.filter(image=>image.getClientRects().length>0&&!(image as HTMLImageElement).naturalWidth).map(image=>(image as HTMLImageElement).src));expect(missing).toEqual([]);}
 async function proof(page:Page,name:string){await imagesReady(page);expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);await page.screenshot({path:path.join(evidence,`${name}.png`),fullPage:true});}

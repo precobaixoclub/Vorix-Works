@@ -36,6 +36,16 @@ function writeStoredPreference(userId: string | undefined, value: boolean) {
 }
 
 /**
+ * Telas de trabalho que precisam de largura abrem com o menu recolhido: Conversas e, desde a Fase 8,
+ * o editor de sites (a prévia ao vivo divide a tela com os campos). A preferência explícita da pessoa
+ * (recolher/expandir) continua valendo em qualquer tela.
+ */
+export function collapsedByDefault(pathname: string | null | undefined): boolean {
+  const path = pathname ?? "";
+  return /\/conversas(\/|$)/.test(path) || /\/workspaces\/[^/]+\/site\/?$/.test(path);
+}
+
+/**
  * Preferência de colapso da sidebar global (`WorkspaceSidebar`) — persistida por usuário.
  * Enquanto o usuário nunca alternou manualmente (`explicitPreference` ausente), o padrão é
  * contextual por rota: recolhida em /conversas (tela de alta densidade, precisa da largura),
@@ -52,8 +62,7 @@ export function SidebarProvider({ children }: { children: ReactNode }) {
     setExplicitPreference(readStoredPreference(userId));
   }, [userId]);
 
-  const isConversasRoute = /\/conversas(\/|$)/.test(pathname ?? "");
-  const collapsed = explicitPreference ?? isConversasRoute;
+  const collapsed = explicitPreference ?? collapsedByDefault(pathname);
 
   function setCollapsed(value: boolean) {
     setExplicitPreference(value);

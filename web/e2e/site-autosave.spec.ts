@@ -1,4 +1,5 @@
 import {test,expect,type Page} from "@playwright/test";
+import {openSiteSection} from "./fixtures/site-editor-nav";
 import {mkdir} from "node:fs/promises";
 
 test("publicação anterior restaura as condições antigas com a revisão comercial atual",async({page,request},info)=>{
@@ -27,7 +28,8 @@ const rules=()=>`${api}/v1/sites/${scope.siteId}/commercial-rules?workspaceId=${
 const region=(page:Page)=>page.getByRole("region",{name:"Prévia ao vivo",exact:true});
 const frame=(page:Page)=>region(page).frameLocator("iframe");
 const saved=(page:Page)=>expect(page.getByText("Rascunho salvo automaticamente",{exact:true})).toBeVisible();
-async function section(page:Page,name:string){await page.getByRole("navigation",{name:"Navegação da seção"}).getByRole("button",{name,exact:true}).click();}
+// Fase 8: editor em grupos (Modelo / Aparência / Conteúdo / Vendas / Publicação e domínio).
+const section=openSiteSection;
 async function login(page:Page){await page.goto("/login",{waitUntil:"networkidle"});await page.getByLabel("E-mail",{exact:true}).fill(scope.email);await page.getByLabel("Senha",{exact:true}).fill(scope.password);await page.getByRole("button",{name:"Entrar",exact:true}).click();await page.waitForURL(/\/workspaces(?:\/|$)/);await page.goto(`/workspaces/${scope.workspaceId}/site?section=geral`);await expect(page.getByLabel("Nome do site",{exact:true})).toBeVisible();}
 async function publish(page:Page){await page.getByRole("button",{name:"Publicar site",exact:true}).click();await page.getByRole("alertdialog").getByRole("button",{name:/^Publicar (agora|este modelo)$/}).click();await expect(page.getByRole("alertdialog")).toHaveCount(0);}
 test.beforeAll(async({request})=>{scope=await(await request.get(api+"/fixture-only/scope")).json();expect(scope.fixtureOnly&&scope.siteBuilderFixture).toBe(true);expect(scope.email).toMatch(/\.invalid$/);const token=(await(await request.post(api+"/v1/auth/login",{data:{email:scope.email,password:scope.password}})).json()).data.accessToken;headers={authorization:`Bearer ${token}`};originalCommerce=(await(await request.get(`${api}/v1/sites/${scope.siteId}/commerce-draft?workspaceId=${scope.workspaceId}`,{headers})).json()).data;await mkdir("../tmp/site-autosave",{recursive:true});});
@@ -68,7 +70,7 @@ test("título de contato e ícones sociais são editáveis e publicáveis",async
 test("regras e modo de venda compartilham o editor e aguardam publicação",async({page,request},info)=>{
  const ruleName=`Regra em rascunho ${info.project.name}`;await login(page);const production=(await(await request.get(commerce(),{headers})).json()).data.settings,existing=(await(await request.get(rules(),{headers})).json()).data;
  await section(page,"Como vender pelo site");const mode=production.mode==="SHOWCASE"?"WHATSAPP_CART":"SHOWCASE";await page.getByRole("radio",{name:mode==="SHOWCASE"?/Apenas mostrar meus produtos/:/Montar um carrinho/}).check();await saved(page);expect((await(await request.get(commerce(),{headers})).json()).data.settings.mode).toBe(production.mode);
- await section(page,"Regras Comerciais");await expect(region(page)).toBeVisible();await page.getByRole("button",{name:"Criar regra",exact:true}).click();const dialog=page.getByRole("dialog");await dialog.getByLabel("Nome da regra",{exact:true}).fill(ruleName);await dialog.getByLabel("Regra ativa",{exact:true}).check();await dialog.getByRole("button",{name:"Concluir edição",exact:true}).click();await saved(page);expect((await(await request.get(rules(),{headers})).json()).data).toEqual(existing);
+ await section(page,"Regras comerciais");await expect(region(page)).toBeVisible();await page.getByRole("button",{name:"Criar regra",exact:true}).click();const dialog=page.getByRole("dialog");await dialog.getByLabel("Nome da regra",{exact:true}).fill(ruleName);await dialog.getByLabel("Regra ativa",{exact:true}).check();await dialog.getByRole("button",{name:"Concluir edição",exact:true}).click();await saved(page);expect((await(await request.get(rules(),{headers})).json()).data).toEqual(existing);
  await page.reload();await expect(page.getByTestId("commercial-rule-row").filter({hasText:ruleName})).toBeVisible();await expect(region(page)).toBeVisible();expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);await page.screenshot({path:`../tmp/site-autosave/${info.project.name}-rules.png`});
  await publish(page);expect((await(await request.get(commerce(),{headers})).json()).data.settings.mode).toBe(mode);expect((await(await request.get(rules(),{headers})).json()).data.some((rule:any)=>rule.name===ruleName)).toBe(true);
 });

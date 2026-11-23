@@ -1,4 +1,5 @@
 import {test,expect,type Page} from "@playwright/test";
+import {openSiteSection} from "./fixtures/site-editor-nav";
 import {selectSiteTemplate} from "../features/sites/template-state";
 const api="http://127.0.0.1:3390";
 test.use({actionTimeout:15000});
@@ -8,7 +9,8 @@ const endpoint=()=>`${api}/v1/sites/${scope.siteId}?workspaceId=${scope.workspac
 async function login(page:Page,section="geral"){await page.goto("/login",{waitUntil:"networkidle"});await page.getByLabel("E-mail",{exact:true}).fill(scope.email);await page.getByLabel("Senha",{exact:true}).fill(scope.password);await page.getByRole("button",{name:"Entrar",exact:true}).click();await page.waitForURL(/\/workspaces(?:\/|$)/);await page.goto(`/workspaces/${scope.workspaceId}/site?section=${section}`);}
 const preview=(page:Page)=>page.getByRole("region",{name:"Prévia ao vivo",exact:true});
 const frame=(page:Page)=>preview(page).frameLocator("iframe");
-async function section(page:Page,name:string){await page.getByRole("navigation",{name:"Navegação da seção"}).getByRole("button",{name,exact:true}).click();}
+// Fase 8: editor em grupos (Modelo / Aparência / Conteúdo / Vendas / Publicação e domínio).
+const section=openSiteSection;
 
 test("clique na prévia abre os campos nos seis modelos com salvamento automático, sem publicar",async({page,request},info)=>{
  test.setTimeout(180000);const errors:string[]=[];page.on("pageerror",error=>errors.push(error.message));

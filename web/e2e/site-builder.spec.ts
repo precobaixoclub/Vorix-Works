@@ -1,4 +1,5 @@
 import {test,expect,type Page} from "@playwright/test";
+import {openSiteSection} from "./fixtures/site-editor-nav";
 import {mkdir} from "node:fs/promises";
 import path from "node:path";
 import type {SiteSnapshot} from "../features/sites/types";
@@ -26,7 +27,8 @@ async function login(page:Page,section="geral"){
  await page.goto("/login");await page.getByLabel("E-mail",{exact:true}).fill(scope.email);await page.getByLabel("Senha",{exact:true}).fill(scope.password);await page.getByRole("button",{name:"Entrar",exact:true}).click();await page.waitForURL(/\/workspaces(?:\/|$)/);
  await page.goto(`/workspaces/${scope.workspaceId}/site?section=${section}`);await expect(page.getByRole("heading",{name:"Meu site",exact:true})).toBeVisible();await expect(page.getByRole("button",{name:"Pré-visualizar",exact:true})).toBeEnabled();
 }
-async function section(page:Page,name:string){await page.getByRole("navigation",{name:"Navegação da seção"}).getByRole("button",{name,exact:true}).click();}
+// Fase 8: editor em grupos (Modelo / Aparência / Conteúdo / Vendas / Publicação e domínio).
+const section=openSiteSection;
 async function preview(page:Page){await page.getByRole("button",{name:"Pré-visualizar",exact:true}).click();return page.getByRole("dialog",{name:"Prévia do seu site"}).frameLocator('iframe[title="Prévia do seu site"]');}
 async function closePreview(page:Page){await page.keyboard.press("Escape");await expect(page.getByRole("dialog",{name:"Prévia do seu site"})).toHaveCount(0);}
 async function save(page:Page){await expect(page.getByText("Rascunho salvo automaticamente",{exact:true})).toBeVisible();}

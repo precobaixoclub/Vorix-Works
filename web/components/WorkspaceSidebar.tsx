@@ -96,13 +96,16 @@ export function WorkspaceSidebar({ workspaceId }: { workspaceId: string }) {
         key={item.href}
         href={`${base}${item.href}`}
         aria-current={isActive ? "page" : undefined}
+        // Menu recolhido (ex.: modo foco do editor do site): só o ícone, com o nome no rótulo e no tooltip.
+        aria-label={collapsed ? item.label : undefined}
         className={cn(
-          "flex h-8 min-w-0 items-center gap-2 rounded-md px-2 text-[13px] font-medium transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/45",
+          "flex h-8 min-w-0 items-center gap-2 rounded-md text-[13px] font-medium transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/45",
+          collapsed ? "justify-center px-0" : "px-2",
           isActive ? "bg-solution/10 text-foreground [&_svg]:text-solution" : "text-muted-foreground hover:bg-surface-2 hover:text-foreground",
         )}
       >
         <NavIcon id={item.icon} className="h-4 w-4 shrink-0" />
-        <span className="truncate">{item.label}</span>
+        {!collapsed ? <span className="truncate">{item.label}</span> : null}
       </Link>
     );
   }

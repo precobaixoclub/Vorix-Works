@@ -1,37 +1,66 @@
 import Link from "next/link";
-import { ArrowUpRight } from "lucide-react";
+import { PlanConfigurator } from "@/components/public/PlanConfigurator";
+import { CommercialFAQ, CommercialFinalCTA } from "@/components/public/CommercialShowcase";
 import { PublicHeader } from "@/components/public/PublicHeader";
 import { PublicFooter } from "@/components/public/PublicFooter";
-import { PricingSection } from "@/components/public/PricingSection";
-import { FAQSection, FinalCTA, SectionHeading } from "@/components/public/LandingSections";
 import { TrackPageView } from "@/components/TrackPageView";
-import { formatCapacityLine, formatCreditsQuota, formatPlanPrice, getPublicPlanTagline } from "@/features/platform-plans/api";
+import { formatCapacityLine, formatCreditsQuota } from "@/features/platform-plans/api";
+import { formatMoney } from "@/features/public-site/configurator";
 import { getPublicProductCatalog } from "@/features/public-site/server";
 import { publicMetadata } from "@/features/public-site/metadata";
-export const dynamic = "force-dynamic";
-export const metadata = publicMetadata("Preços Vorix — Escolha a solução para sua operação", "Compare Conversas, conheça Meetings e explore a proposta Vorix Suite. Valores e condições de Conversas integrados ao catálogo de contratação.", "/precos");
+import "../pricing-commercial.css";
+import "../commercial.css";
 
-export default async function Page() {
-  const catalog = await getPublicProductCatalog();
-  const conversations = catalog.products.find(product => product.key === "conversations")!;
-  const addons = catalog.billing?.addons ?? [];
-  const meetings = catalog.products.find(product => product.key === "meetings")!;
-  const offer = catalog.billing?.meetingsOffer ?? null;
-  const brl = (value: number) => new Intl.NumberFormat("pt-BR", { style: "currency", currency: offer?.currency ?? "BRL", minimumFractionDigits: 0 }).format(value);
-  const recordingsLine = offer ? `1 incluída · +${brl(offer.additionalRecordingMonthlyPrice)}/mês cada adicional` : "Definidas no plano";
-  const rows = [
-    ["Atendimento, funil e propostas", "Incluído", "—", "Proposta integrada"],
-    ["Agenda e inteligência de reuniões", "—", "Em validação", "Em validação"],
-    ["Gravações simultâneas", "—", recordingsLine, recordingsLine],
-    ["Usuários e números adicionais", addons.length ? addons.map(addon => addon.name + " " + new Intl.NumberFormat("pt-BR", { style: "currency", currency: addon.currency }).format(addon.monthlyPriceUsd) + "/mês").join(" · ") : "Conforme o catálogo", "—", "Conforme Conversas"],
-    ["Minutos mensais de gravação", "—", "A definir na oferta", "A definir na oferta"],
-    ["Retenção e armazenamento", "Conforme o plano", "A definir na oferta", "A definir na oferta"],
-    ["Créditos de IA", "Conforme o plano", "A definir na oferta", "A definir na oferta"],
-    ["Conta, empresa e workspace", "Core compartilhado", "Core compartilhado", "Core compartilhado"],
-    ["Contratação", conversations.contractable ? "Direto pelo site" : "Em breve", meetings.contractable ? "Direto pelo site" : "Em breve", meetings.contractable && conversations.contractable ? "Direto pelo site" : "Em breve"],
-  ];
-  return <div className="public-site"><TrackPageView eventName="pricing_view" /><PublicHeader startHref={conversations.cta.href} /><main id="conteudo"><div className="public-container public-pricing-heading"><span className="public-eyebrow">Planos Vorix</span><h1>Comece simples.<br />Ajuste conforme cresce.</h1><p className="public-section-copy">Escolha um ponto de partida e ajuste a capacidade de cada produto. Conversas pode ser contratado hoje, direto pelo site.</p></div><PricingSection catalog={catalog} standalone />
-    <section className="public-section"><div className="public-container"><SectionHeading eyebrow="Vorix Conversas" title="Planos para cada fase da sua operação" description="Escolha a capacidade ideal de equipe, conexões e créditos. Contrate direto pelo site: cadastre o cartão e a primeira cobrança só acontece depois do período de teste." />{catalog.plans.length ? <div className="public-plan-grid">{catalog.plans.map(plan => <article key={plan.code} className="public-plan-card"><h3>{plan.name}</h3><p className="public-section-copy">{getPublicPlanTagline(plan)}</p><strong>{formatPlanPrice(plan)}<small>/mês</small></strong><ul><li>{formatCapacityLine(plan)}</li><li>{formatCreditsQuota(plan.monthlyCreditsQuota)} por mês</li>{plan.trialDays ? <li>{plan.trialDays} dias de teste</li> : null}{plan.yearlyPriceUsd > 0 ? <li>{new Intl.NumberFormat("pt-BR", { style: "currency", currency: plan.currency }).format(plan.yearlyPriceUsd)} por ano · total do ciclo</li> : null}</ul><Link className="public-button primary" href={conversations.contractable ? `/signup?plan=${encodeURIComponent(plan.code)}` : conversations.cta.href}>{conversations.contractable ? "Começar no " + plan.name : "Consultar condições"}<ArrowUpRight size={15} /></Link></article>)}</div> : <p className="public-comparison-note">As condições oficiais não puderam ser carregadas. Fale com o time para confirmar valores antes de contratar.</p>}</div></section>
-    
-    <section className="public-section"><div className="public-container"><SectionHeading eyebrow="Uma plataforma, produtos independentes" title="Compare o papel de cada solução" /><div className="public-comparison" tabIndex={0} aria-label="Comparação das soluções; role horizontalmente para ver todas as colunas"><table><caption className="public-visually-hidden">Comparação de soluções e limites comerciais</caption><thead><tr><th scope="col">Recursos e capacidade</th><th scope="col">Conversas</th><th scope="col">Meetings</th><th scope="col">Suite</th></tr></thead><tbody>{rows.map(([label, ...values]) => <tr key={label}><th scope="row">{label}</th>{values.map((value, index) => <td key={index}>{value}</td>)}</tr>)}</tbody></table></div><p className="public-comparison-note">A Suite combina Conversas + Meetings na mesma conta e empresa. O valor é a soma das partes, sem pacote fechado. No Meetings, a capacidade também depende de contas de gravação saudáveis e disponíveis.</p></div></section><FAQSection /><FinalCTA startHref={conversations.cta.href} /></main><PublicFooter /></div>;
+export const dynamic = "force-dynamic";
+export const metadata = publicMetadata("Preços Vorix | Monte seu plano por módulos", "Compare Conversas, Marketing, Site e Meetings. Ajuste usuários, WhatsApps e gravações simultâneas e confira como contratar.", "/precos");
+
+const questions = [
+  ["O que acontece quando incluo mais usuários ou WhatsApps?", "O valor de Conversas considera apenas a quantidade acima da capacidade do plano escolhido. Compare o investimento e os créditos antes de trocar de plano."],
+  ["O total do Meetings inclui a assinatura da conta?", "A capacidade de gravação é um adicional da conta. Conectar contas Google é uma etapa operacional e não aumenta o limite de reuniões simultâneas."],
+  ["Posso contratar qualquer combinação pela internet?", "Quando o checkout aceita a combinação, o configurador leva os módulos e a capacidade para o cadastro. As demais combinações podem ser encaminhadas ao time comercial com as escolhas preenchidas."],
+  ["Como alterar uma assinatura existente?", "Em Conta e assinatura, confira o uso, os adicionais e a cotação da alteração antes de confirmar, conforme as condições do contrato."],
+] as const;
+
+type Props = { searchParams: Promise<{ modulo?: string | string[] }> };
+
+export default async function Page({ searchParams }: Props) {
+  const [catalog, params] = await Promise.all([getPublicProductCatalog(), searchParams]);
+  const initialModule = typeof params.modulo === "string" ? params.modulo : undefined;
+
+  return <div className="public-site vorix-commercial">
+    <TrackPageView eventName="pricing_view" />
+    <PublicHeader startHref="#monte" appearance="home" />
+    <main id="conteudo">
+      <section className="vc-hero vc-price-hero">
+        <div className="vc-wrap vc-hero-copy">
+          <h1>Monte o Vorix ideal <span>para sua empresa.</span></h1>
+          <p>Escolha as ferramentas, ajuste sua equipe e visualize o investimento em tempo real.</p>
+        </div>
+      </section>
+      <section className="vc-wrap vc-config-section"><PlanConfigurator key={initialModule ?? "padrao"} catalog={catalog} initialModule={initialModule} /></section>
+      <section className="vc-band"><div className="vc-wrap vc-section">
+        <header className="vc-section-head"><h2>Compare os planos de Conversas</h2><p>Capacidade incluída, créditos por mês e valores oficiais por ciclo.</p></header>
+        {catalog.plans.length ? <div className="vc-offers vc-plan-comparison">
+          {catalog.plans.map(plan => <article key={plan.code}>
+            <h3>{plan.name}</h3>
+            <strong>{formatMoney(plan.monthlyPriceUsd, plan.currency)}/mês</strong>
+            {plan.yearlyPriceUsd > 0 && <p>{formatMoney(plan.yearlyPriceUsd, plan.currency)}/ano · total do ciclo</p>}
+            <p>{formatCapacityLine(plan)}</p><p>{formatCreditsQuota(plan.monthlyCreditsQuota)} por mês</p>
+            {plan.trialDays ? <p>{plan.trialDays} dias de teste no cadastro elegível</p> : null}
+          </article>)}
+        </div> : <p>Confirme a disponibilidade dos planos com o time comercial.</p>}
+        {catalog.billing?.priceSource === "plan_versions" && catalog.billing.addons.length > 0 && <p className="vc-plan-addons">{catalog.billing.addons.map(item => `${item.name} · ${formatMoney(item.monthlyPriceUsd, item.currency)}/mês`).join(" | ")}</p>}
+      </div></section>
+      <section id="suite" className="vc-wrap vc-section">
+        <header className="vc-section-head"><h2>Combinações para operações diferentes</h2><p>Use as configurações como ponto de partida e revise a capacidade de cada módulo.</p></header>
+        <div className="vc-flow vc-combinations">
+          <article><h3>Atendimento e reuniões</h3><p>Conversas + Meetings para acompanhar clientes, reuniões e próximos passos.</p><Link className="public-button secondary" href="/precos?modulo=suite#monte">Simular esta combinação</Link></article>
+          <article id="vorix-site"><h3>Operação com os quatro módulos</h3><p>Conversas, Marketing, Site e Meetings com condições confirmadas pelo comercial.</p><Link className="public-button secondary" href="/precos?modulo=completo#monte">Simular os quatro módulos</Link></article>
+        </div>
+      </section>
+      <CommercialFAQ entries={questions} />
+      <CommercialFinalCTA href="#monte" label="Voltar ao configurador" />
+    </main>
+    <PublicFooter />
+  </div>;
 }

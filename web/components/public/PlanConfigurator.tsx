@@ -1,192 +1,136 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowUpRight, Check, Minus, Plus, MessageSquare, Video } from "lucide-react";
-import { simulateCapacity, type CapacityRecommendationOption } from "@/features/platform-plans/api";
+import { useState } from "react";
+import { AudioLines, Check, ChevronDown, Globe, MessageCircle, Minus, Plus, Sparkles } from "lucide-react";
+import useSWR from "swr";
+import { useDebounce } from "@/hooks/useDebounce";
+import { formatCapacityLine, formatCreditsQuota, simulateCapacity } from "@/features/platform-plans/api";
 import type { PublicProductCatalog } from "@/features/public-site/catalog";
-import {
-  adjustQuantity, clamp, composeQuote, CONFIGURATOR_LIMITS, formatMoney, includedPlanQuote, initialConfiguratorState, setQuantity, toggleProduct,
-  type ConfiguratorField, type ConfiguratorState,
-} from "@/features/public-site/configurator";
+import { clamp, CONFIGURATOR_LIMITS, formatMoney, type ConfiguratorField } from "@/features/public-site/configurator";
+import { capacityForPlan, initialSelection, makeModularQuote, toggleModule } from "@/features/public-site/modular-quote";
+import { MODULE_KEYS, MODULE_SHOWCASE } from "@/features/public-site/showcase";
 
-/**
- * "Monte seu Vorix". Conversas: cotação do simulador OFICIAL (mesma conta do checkout), com cache
- * e debounce para o total responder na hora. Meetings: preço oficial do catálogo. "Contratar agora"
- * leva ao cadastro e ao pagamento com cartão com exatamente esta configuração.
- */
-export function PlanConfigurator({ catalog }: { catalog: Pick<PublicProductCatalog, "products" | "plans"> & { billing?: PublicProductCatalog["billing"] } }) {
-  const startPlan = catalog.plans[0] ?? null;
-  const [state, setState] = useState<ConfiguratorState>(() => initialConfiguratorState(startPlan));
-  const { quote: conversationsQuote, failed, loading, warm } = useConversationsQuote(state, startPlan ? includedPlanQuote(startPlan) : null, catalog.plans.length > 0);
-  const quote = useMemo(() => composeQuote({ state, catalog, conversationsQuote, quoteFailed: failed }), [state, catalog, conversationsQuote, failed]);
-  const total = quote.knownTotal === null ? null : formatMoney(quote.knownTotal, quote.currency);
-  const { controlsRef, summaryRef, showBar } = useMobileBar();
-  const totalCaption = quote.hasUndefinedAmounts ? "+ valores a definir" : quote.totalIsOfficial ? "por mês" : "por mês · estimativa";
-  const meetingsContractable = catalog.products.find(product => product.key === "meetings")?.contractable === true;
+const icons = { conversations: MessageCircle, marketing: Sparkles, site: Globe, meetings: AudioLines };
 
-  return <div className="public-configurator" id="monte" onPointerEnter={warm} onFocus={warm}>
-    <div className="public-config-controls" ref={controlsRef}>
-      <fieldset className="public-config-products">
-        <legend>Escolha as soluções</legend>
-        <ProductToggle product="conversations" checked={state.conversations} onChange={() => setState(current => toggleProduct(current, "conversations"))} title="Vorix Conversas" caption="Atendimento e vendas" />
-        <ProductToggle product="meetings" checked={state.meetings} onChange={() => setState(current => toggleProduct(current, "meetings"))} title="Vorix Meetings" caption={meetingsContractable ? "Gravação e inteligência de reuniões" : "Disponível em breve"} />
-      </fieldset>
+export function PlanConfigurator({ catalog, initialModule }: { catalog: PublicProductCatalog; initialModule?: string }) {
+  const [selection, setSelection] = useState(() => initialSelection(catalog, initialModule));
+  const plan = catalog.plans.find(item => item.code === selection.planCode);
+  const hasConversas = selection.modules.includes("conversations");
+  const hasMeetings = selection.modules.includes("meetings");
+  const key = `${selection.users}:${selection.numbers}`;
+  const debounced = useDebounce(key, 160);
+  const needsOptions = hasConversas && !!plan && (selection.users !== (catalog.plans[0]?.includedUsers ?? 2) || selection.numbers !== (catalog.plans[0]?.includedWhatsappConnections ?? 1));
+  const result = useSWR(needsOptions && debounced === key ? ["public-plan-capacity", debounced] : null, ([, quantities]) => {
+    const [users, whatsappConnections] = quantities.split(":").map(Number);
+    return simulateCapacity({ users, whatsappConnections });
+  }, { revalidateOnFocus: false, shouldRetryOnError: false, dedupingInterval: 30_000 });
+  const options = debounced === key ? result.data?.options : undefined;
+  const pending = needsOptions && (debounced !== key || result.isLoading);
+  const quote = makeModularQuote(catalog, selection, options);
+  const official = catalog.billing?.priceSource === "plan_versions";
+  const recordingsOffer = official ? catalog.billing?.meetingsOffer : null;
+  const current = plan && capacityForPlan(plan, selection, options);
+  const improvedOption = selection.period === "monthly" && plan && current && options
+    ? options.filter(candidate => candidate.feasible && candidate.currency === current.currency
+      && candidate.totalMonthlyAmount < current.totalMonthlyAmount
+      && catalog.plans.some(item => item.code === candidate.planCode && item.monthlyPriceUsd > plan.monthlyPriceUsd))
+      .sort((a, b) => a.totalMonthlyAmount - b.totalMonthlyAmount)[0]
+    : undefined;
+  const improved = catalog.plans.find(item => item.code === improvedOption?.planCode);
+  const setQuantity = (field: ConfiguratorField, value: number) => setSelection(previous => ({ ...previous, [field]: clamp(field, value) }));
 
-      {state.conversations ? <section className="public-config-group conversations" aria-labelledby="config-conversations">
-        <h3 id="config-conversations"><MessageSquare size={17} aria-hidden="true" /> Conversas</h3>
-        <Stepper field="users" label="Usuários" hint="Pessoas que atendem e vendem" value={state.users} onChange={(field, value) => setState(current => setQuantity(current, field, value))} onStep={(field, delta) => setState(current => adjustQuantity(current, field, delta))} />
-        <Stepper field="numbers" label="Números conectados" hint="Números de WhatsApp da operação" value={state.numbers} onChange={(field, value) => setState(current => setQuantity(current, field, value))} onStep={(field, delta) => setState(current => adjustQuantity(current, field, delta))} />
-      </section> : null}
+  return <div className="vc-config" id="monte">
+    <fieldset className="vc-module-picker">
+      <legend>Escolha os módulos</legend>
+      <div className="vc-picker-grid">{MODULE_KEYS.map(key => {
+        const item = MODULE_SHOWCASE[key];
+        const Icon = icons[key];
+        const selected = selection.modules.includes(key);
+        const product = catalog.products.find(product => product.key === key);
+        const value = key === "conversations" && product && !product.provisional ? product.monthlyPrice : key === "meetings" ? recordingsOffer?.baseMonthlyPrice : null;
+        const available = product?.contractable;
+        const condition = key === "conversations" && available ? "Contratação online" : key === "meetings" && available ? "Capacidade na conta" : "Condições sob consulta";
+        return <label key={key} className="vc-picker-card" data-selected={selected}>
+          <input type="checkbox" name="modulos" aria-label={`Vorix ${item.name}`} checked={selected} onChange={() => setSelection(previous => toggleModule(previous, key))} />
+          <span className="vc-picker-card-top"><Icon size={23} aria-hidden="true" /><span className="vc-picker-check">{selected && <Check size={16} aria-hidden="true" />}</span></span>
+          <strong>{item.name}</strong>
+          <span>{item.benefits.slice(0, 3).join(" · ")}</span>
+          <span className="vc-picker-price">{value && Number.isFinite(value) && value > 0 ? `A partir de ${formatMoney(value, product?.currency ?? "BRL")}/mês` : "Sob consulta"}</span>
+          <small>{condition}</small>
+        </label>;
+      })}</div>
+    </fieldset>
 
-      {state.meetings ? <section className="public-config-group meetings" aria-labelledby="config-meetings">
-        <h3 id="config-meetings"><Video size={17} aria-hidden="true" /> Meetings</h3>
-        <Stepper field="recordings" label="Gravações simultâneas" hint="Reuniões gravadas ao mesmo tempo" value={state.recordings} onChange={(field, value) => setState(current => setQuantity(current, field, value))} onStep={(field, delta) => setState(current => adjustQuantity(current, field, delta))} />
-      </section> : null}
-
-      <ul className="public-config-facts">
-        {state.conversations ? <li><MessageSquare size={15} aria-hidden="true" /><span>Depois de contratar, você ajusta usuários e números em <strong>Configurações → Plano</strong>.</span></li> : null}
-        {state.meetings ? <li><Video size={15} aria-hidden="true" /><span>No Meetings, a unidade contratada é a <strong>gravação simultânea</strong>. As contas de gravação que você conecta não são cobradas como licença e podem ficar como reserva.</span></li> : null}
-      </ul>
-    </div>
-
-    <aside className="public-config-summary" aria-labelledby="config-summary-title" ref={summaryRef}>
-      <span className="public-eyebrow">Resumo</span>
-      <h3 id="config-summary-title">{quote.title}</h3>
-      <ul className="public-config-summary-list">{quote.summary.map(item => <li key={item.product} className={item.product}><strong>{item.name}</strong><span>{item.details.join(" · ")}</span></li>)}</ul>
-      <div className={"public-config-total" + (loading ? " is-updating" : "")} aria-live="polite" aria-atomic="true">
-        <small>Total mensal</small>
-        <strong>{total ?? "—"}</strong>
-        <span>{total ? totalCaption : "Valor indisponível no momento"}</span>
+    <div className="vc-config-grid">
+      <div className="vc-config-controls">
+        <h2>Ajuste a capacidade</h2>
+        <fieldset className="vc-period">
+          <legend>Período de cobrança</legend>
+          {[["monthly", "Mensal"], ["yearly", "Anual"]].map(([value, label]) => <label key={value}>
+            <input type="radio" name="periodo" checked={selection.period === value} value={value} onChange={() => setSelection(previous => ({ ...previous, period: value === "yearly" ? "yearly" : "monthly" }))} />{label}
+          </label>)}
+        </fieldset>
+        {hasConversas && <section className="vc-config-block" aria-labelledby="capacity-conversations">
+          <h3 id="capacity-conversations">Conversas</h3>
+          {catalog.plans.length ? <label className="vc-plan-select">
+            <span>Plano de Conversas</span>
+            <select value={selection.planCode ?? ""} onChange={event => {
+              const code = catalog.plans.find(item => item.code === event.target.value)?.code;
+              if (code) setSelection(previous => ({ ...previous, planCode: code }));
+            }}>
+              {catalog.plans.map(item => <option key={item.code} value={item.code}>{item.name}</option>)}
+            </select>
+            <ChevronDown size={17} aria-hidden="true" />
+          </label> : <p>Consulte o time comercial para confirmar os planos disponíveis.</p>}
+          {plan && <p className="vc-plan-included">{formatCapacityLine(plan)} · {formatCreditsQuota(plan.monthlyCreditsQuota)} por mês</p>}
+          <CapacityInput id="users" label="Usuários" hint="Quantidade total de pessoas na operação" value={selection.users} onChange={setQuantity} />
+          <CapacityInput id="numbers" label="Números de WhatsApp" hint="Quantidade total de números conectados" value={selection.numbers} onChange={setQuantity} />
+          {improved && improvedOption && <div className="vc-recommendation">
+            <p><strong>Vale comparar o plano {improved.name}.</strong> Com esta capacidade, ele fica em {formatMoney(improvedOption.totalMonthlyAmount, improvedOption.currency)}/mês e inclui {formatCapacityLine(improved)} e {formatCreditsQuota(improved.monthlyCreditsQuota)} por mês.</p>
+            <button type="button" className="public-button secondary" onClick={() => setSelection(previous => ({ ...previous, planCode: improved.code }))}>Selecionar {improved.name}</button>
+          </div>}
+        </section>}
+        {hasMeetings && <section className="vc-config-block" aria-labelledby="capacity-meetings">
+          <h3 id="capacity-meetings">Meetings</h3>
+          {recordingsOffer ? <CapacityInput id="recordings" label="Gravações simultâneas" hint="Quantas reuniões precisam ser gravadas ao mesmo tempo" value={selection.recordings} onChange={setQuantity} /> : <p>Os preços da capacidade de gravação estão sob consulta.</p>}
+          <p>As contas Google conectadas atendem a infraestrutura de gravação. O adicional é por gravação simultânea.</p>
+        </section>}
+        {(["marketing", "site"] as const).filter(key => selection.modules.includes(key)).map(key => <section key={key} className="vc-config-block">
+          <h3>{MODULE_SHOWCASE[key].name}</h3><p>{MODULE_SHOWCASE[key].capacity}</p>
+        </section>)}
       </div>
-      <details className="public-config-breakdown">
-        <summary>Ver composição do preço</summary>
-        <dl>{quote.lines.map(line => <div key={line.label} className={line.product}><dt>{line.label}{line.provisional ? <em> · referência</em> : null}</dt><dd>{line.amount === null ? "a definir" : formatMoney(line.amount, quote.currency)}</dd></div>)}</dl>
-      </details>
-      {quote.notes.length ? <ul className="public-config-notes">{quote.notes.map(note => <li key={note}>{note}</li>)}</ul> : null}
-      <div className="public-config-actions">
-        {quote.primaryCta.disabled
-          ? <button type="button" className="public-button primary" disabled>{quote.primaryCta.label}</button>
-          : <Link href={quote.primaryCta.href} className="public-button primary">{quote.primaryCta.label}<ArrowUpRight size={16} aria-hidden="true" /></Link>}
-        {quote.secondaryCta ? <Link href={quote.secondaryCta.href} className="public-button secondary">{quote.secondaryCta.label}</Link> : null}
-      </div>
-    </aside>
 
-    {/* Mobile: o total e o próximo passo nunca ficam escondidos enquanto a pessoa ajusta. */}
-    <div className={"public-config-bar" + (showBar ? " is-visible" : "")} aria-hidden="true">
-      <span><small>{quote.title}</small><strong>{total ?? "—"}</strong>{total ? <em>{quote.hasUndefinedAmounts ? "+ a definir" : "/mês"}</em> : null}</span>
-      <a href="#config-summary-title" tabIndex={-1}>Ver resumo</a>
+      <aside className="vc-config-summary" aria-labelledby="config-summary-title">
+        <h2 id="config-summary-title">Resumo da configuração</h2>
+        <dl className="vc-quote-lines">{quote.lines.map(line => <div key={line.label}><dt>{line.label}</dt><dd>{line.amount === null ? "Sob consulta" : formatMoney(line.amount, line.currency)}</dd></div>)}</dl>
+        <div className="vc-quote-total" aria-live="polite" aria-atomic="true">
+          <span>{quote.complete ? `Total por ${quote.period}` : `Subtotal conhecido por ${quote.period}`}</span>
+          <strong>{quote.total === null ? "Sob consulta" : formatMoney(quote.total, quote.currency)}</strong>
+        </div>
+        {quote.discount > 0 && <p>Desconto da combinação {formatMoney(quote.discount, quote.currency)}</p>}
+        {selection.modules.length > 1 && <p>As condições comerciais da combinação serão confirmadas conforme os módulos escolhidos.</p>}
+        {quote.notes.map(note => <p key={note}>{note}</p>)}
+        {pending && <p role="status">Consultando a capacidade no catálogo…</p>}
+        {result.error && <p role="status">A cotação de capacidade está indisponível. Consulte o time comercial para confirmar os adicionais.</p>}
+        {pending && !quote.complete
+          ? <button className="public-button primary" type="button" disabled>Consultando o valor</button>
+          : <Link className="public-button primary" href={quote.href} prefetch={false}>{quote.action}</Link>}
+        {!quote.direct && quote.href.startsWith("mailto:") && <details><summary>Ver configuração para compartilhar</summary><p className="vc-share-summary">{quote.summary}</p></details>}
+        <Link className="public-text-link" href="/login?destino=assinatura">Já sou assinante</Link>
+      </aside>
     </div>
   </div>;
 }
 
-function ProductToggle({ product, checked, onChange, title, caption }: { product: "conversations" | "meetings"; checked: boolean; onChange: () => void; title: string; caption: string }) {
-  const Icon = product === "meetings" ? Video : MessageSquare;
-  return <label className={"public-config-toggle " + product}>
-    <input type="checkbox" checked={checked} onChange={onChange} />
-    <span className="public-config-check" aria-hidden="true">{checked ? <Check size={13} /> : null}</span>
-    <Icon size={18} aria-hidden="true" />
-    <span><strong>{title}</strong><small>{caption}</small></span>
-  </label>;
-}
-
-function Stepper({ field, label, hint, value, onStep, onChange }: { field: ConfiguratorField; label: string; hint: string; value: number; onStep: (field: ConfiguratorField, delta: number) => void; onChange: (field: ConfiguratorField, value: number) => void }) {
-  const { min, max } = CONFIGURATOR_LIMITS[field];
-  const id = `config-${field}`;
-  return <div className="public-stepper">
-    <div><label htmlFor={id}>{label}</label><small id={id + "-hint"}>{hint}</small></div>
-    <div className="public-stepper-control">
-      <button type="button" onClick={() => onStep(field, -1)} disabled={value <= min} aria-label={`Diminuir ${label.toLowerCase()}`}><Minus size={15} aria-hidden="true" /></button>
-      <input id={id} type="number" inputMode="numeric" min={min} max={max} value={value} aria-describedby={id + "-hint"}
-        onChange={event => { const next = Number(event.target.value); if (event.target.value !== "") onChange(field, next); }}
-        onKeyDown={event => { if (event.key === "ArrowUp" || event.key === "ArrowDown") { event.preventDefault(); onStep(field, event.key === "ArrowUp" ? 1 : -1); } }} />
-      <button type="button" onClick={() => onStep(field, 1)} disabled={value >= max} aria-label={`Aumentar ${label.toLowerCase()}`}><Plus size={15} aria-hidden="true" /></button>
+function CapacityInput({ id, label, hint, value, onChange }: { id: ConfiguratorField; label: string; hint: string; value: number; onChange: (field: ConfiguratorField, value: number) => void }) {
+  const { min, max } = CONFIGURATOR_LIMITS[id];
+  return <div className="vc-capacity-input">
+    <div><label htmlFor={`capacity-${id}`}>{label}</label><p id={`capacity-${id}-hint`}>{hint}</p></div>
+    <div className="vc-capacity-stepper">
+      <button type="button" aria-label={`Diminuir ${label.toLowerCase()}`} disabled={value <= min} onClick={() => onChange(id, value - 1)}><Minus size={16} aria-hidden="true" /></button>
+      <input id={`capacity-${id}`} aria-describedby={`capacity-${id}-hint`} type="number" inputMode="numeric" min={min} max={max} value={value} onChange={event => { if (event.target.value !== "") onChange(id, event.target.valueAsNumber); }} />
+      <button type="button" aria-label={`Aumentar ${label.toLowerCase()}`} disabled={value >= max} onClick={() => onChange(id, value + 1)}><Plus size={16} aria-hidden="true" /></button>
     </div>
-    {value >= max ? <p className="public-stepper-limit">Limite desta simulação. Depois de contratar, você amplia em Configurações → Plano.</p> : null}
   </div>;
 }
-
-/** Barra fixa do mobile: só enquanto os controles estão na tela e o resumo ainda não. */
-function useMobileBar() {
-  const controlsRef = useRef<HTMLDivElement>(null);
-  const summaryRef = useRef<HTMLElement>(null);
-  const [controlsVisible, setControlsVisible] = useState(false);
-  const [summaryVisible, setSummaryVisible] = useState(false);
-  useEffect(() => {
-    if (typeof IntersectionObserver === "undefined") return;
-    const observer = new IntersectionObserver(entries => {
-      for (const entry of entries) {
-        if (entry.target === controlsRef.current) setControlsVisible(entry.isIntersecting);
-        if (entry.target === summaryRef.current) setSummaryVisible(entry.isIntersecting);
-      }
-    }, { threshold: 0.05 });
-    if (controlsRef.current) observer.observe(controlsRef.current);
-    if (summaryRef.current) observer.observe(summaryRef.current);
-    return () => observer.disconnect();
-  }, []);
-  return { controlsRef, summaryRef, showBar: controlsVisible && !summaryVisible };
-}
-
-/**
- * Cotação oficial com cache por configuração, deduplicação e PRÉ-BUSCA das vizinhas (±1 usuário,
- * ±1 número): o próximo clique já encontra o valor pronto. Todo valor vem do simulador oficial.
- */
-function useConversationsQuote(state: ConfiguratorState, initial: CapacityRecommendationOption | null, enabled: boolean) {
-  const cache = useRef(new Map<string, CapacityRecommendationOption | null>());
-  const pending = useRef(new Map<string, Promise<CapacityRecommendationOption | null>>());
-  const key = quoteKeyOf(state.users, state.numbers);
-  if (initial && cache.current.size === 0) cache.current.set(quoteKeyOf(initial.includedUsers ?? 0, initial.includedWhatsappConnections ?? 0), initial);
-  const [quote, setQuote] = useState<CapacityRecommendationOption | null>(initial);
-  const [failed, setFailed] = useState(false);
-  const [loading, setLoading] = useState(false);
-  // Pré-busca só depois da primeira interação: abrir a página não gera chamadas ao simulador.
-  const touched = useRef(false);
-  if (initial && key !== quoteKeyOf(initial.includedUsers ?? 0, initial.includedWhatsappConnections ?? 0)) touched.current = true;
-
-  const fetchQuote = (users: number, numbers: number) => {
-    const quoteKey = quoteKeyOf(users, numbers);
-    const existing = pending.current.get(quoteKey);
-    if (existing) return existing;
-    const request = simulateCapacity({ users, whatsappConnections: numbers })
-      .then(result => { const value = result.recommended ?? null; cache.current.set(quoteKey, value); return value; })
-      .finally(() => pending.current.delete(quoteKey));
-    pending.current.set(quoteKey, request);
-    return request;
-  };
-  const prefetchAround = (users: number, numbers: number) => {
-    for (const [u, n] of [[users + 1, numbers], [users - 1, numbers], [users, numbers + 1], [users, numbers - 1]] as const) {
-      const nextUsers = clamp("users", u);
-      const nextNumbers = clamp("numbers", n);
-      const quoteKey = quoteKeyOf(nextUsers, nextNumbers);
-      if (!cache.current.has(quoteKey) && !pending.current.has(quoteKey)) void fetchQuote(nextUsers, nextNumbers).catch(() => undefined);
-    }
-  };
-
-  useEffect(() => {
-    if (!enabled || !state.conversations) return;
-    const cached = cache.current.get(key);
-    if (cached !== undefined) {
-      setQuote(cached); setFailed(cached === null); setLoading(false);
-      if (touched.current) prefetchAround(state.users, state.numbers);
-      return;
-    }
-    let cancelled = false;
-    setLoading(true);
-    const timer = setTimeout(() => {
-      fetchQuote(state.users, state.numbers)
-        .then(value => { if (!cancelled) { setQuote(value); setFailed(value === null); prefetchAround(state.users, state.numbers); } })
-        .catch(() => { if (!cancelled) { setQuote(null); setFailed(true); } })
-        .finally(() => { if (!cancelled) setLoading(false); });
-    }, pending.current.has(key) ? 0 : 80);
-    return () => { cancelled = true; clearTimeout(timer); };
-  }, [key, enabled, state.conversations, state.users, state.numbers]); // eslint-disable-line react-hooks/exhaustive-deps
-  // Aquece o cache quando a pessoa chega ao configurador (mouse/foco), antes do primeiro clique.
-  const warm = () => {
-    if (touched.current || !enabled || !state.conversations) return;
-    touched.current = true;
-    prefetchAround(state.users, state.numbers);
-  };
-  return { quote: enabled ? quote : null, failed: enabled ? failed : true, loading, warm };
-}
-
-const quoteKeyOf = (users: number, numbers: number) => `${users}:${numbers}`;

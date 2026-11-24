@@ -4,7 +4,7 @@ import type { PublicationRepositoryPort } from "../../../../application/ports/pu
 import type { CredentialRepositoryPort } from "../../../../application/ports/credential-repository.port.js";
 import type { BackpressureController, OperationalCircuitBreaker } from "../../../../application/operations/operational-services.js";
 import { approvePublication, cancelPublication, createPublication, type PublicationEngineDeps } from "../../../../application/publication/publication-engine.js";
-import { collectPublicationHealth, collectPublicationMetrics } from "../../../../application/publication/publication-observability.js";
+import { collectPublicationHealth, collectPublicationMetrics, collectWorkspacePublicationHealth } from "../../../../application/publication/publication-observability.js";
 import { enqueuePublication, PublicationRecoveryService, PublicationWorker, runDueSchedules, schedulePublication, type PublicationOrchestratorDeps } from "../../../../application/publication/publication-orchestrator.js";
 import { ensurePublicationOutboxIntents } from "../../../../application/publication/publication-outbox-intent.js";
 import type { PublicationProviderPort } from "../../../../application/publication/publication-provider.port.js";
@@ -16,7 +16,7 @@ import { PublicationReconciliationService } from "../../../../application/public
 import type { PublicationSecretResolverPort } from "../../../../application/publication/publication-secret-resolver.js";
 import type { MetaPagesOAuthService } from "../../../../infrastructure/publication/meta-pages-oauth-service.js";
 import type { PublicationChannel, PublicationMode, PublicationProvider } from "../../../../domain/publication/publication.model.js";
-import { requirePermission } from "../../http/require-principal.js";
+import { requirePermission, requirePlatformAdmin } from "../../http/require-principal.js";
 import { AppError } from "../../http/app-error.js";
 import { successEnvelope } from "../../http/response-envelope.js";
 
@@ -128,8 +128,22 @@ export async function registerPublicationRoutes(app: FastifyInstance, deps: Publ
     return successEnvelope(await deps.publicationRepository.listReconciliations({ tenantId: principal.tenantId, workspaceId: query.workspaceId, status: query.state as never }), request.id);
   });
 
-  app.get("/publications/health", async (request) => {
-    requirePermission(request, "publication:read");
+  /**
+   * Correção de segurança: antes bastava `publication:read` (todo papel de qualquer empresa) e a
+   * resposta trazia a fila global, as travas com IDs de publicações de OUTRAS empresas e a saúde do
+   * cofre de segredos. Agora:
+   * - sem `workspaceId` → visão global, só para o administrador da plataforma (monitoramento interno);
+   * - com `workspaceId` → visão daquele workspace, para quem tem `publication:read` nele. O guarda
+   *   global de workspace (`registerWorkspaceTenantGuard`) já devolve 404 para workspace de outra
+   *   empresa ou sem acesso, e a coleta filtra tudo por tenant + workspace (defesa em profundidade).
+   */
+  app.get("/publications/health", { schema: { querystring: { type: "object", properties: { workspaceId: { type: "string", minLength: 1 } } } } }, async (request) => {
+    const { workspaceId } = request.query as { workspaceId?: string };
+    if (workspaceId) {
+      const principal = requirePermission(request, "publication:read");
+      return successEnvelope(await collectWorkspacePublicationHealth({ repository: deps.publicationRepository, queue: deps.queue, tenantId: principal.tenantId, workspaceId }), request.id);
+    }
+    requirePlatformAdmin(request);
     const providerHealth = await Promise.all(deps.providerRegistry.list().map((descriptor) => deps.providerRegistry.health(descriptor.providerId)));
     return successEnvelope(await collectPublicationHealth({ repository: deps.publicationRepository, queue: deps.queue, providers: deps.providers, providerHealth, secretResolverOk: (await deps.secretResolver.health()).ok }), request.id);
   });

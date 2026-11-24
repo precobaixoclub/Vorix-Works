@@ -27,7 +27,8 @@ export type PublicationMetrics = {
 
 export async function collectPublicationMetrics(input: { repository: PublicationRepositoryPort; queue: PublicationQueuePort; tenantId: string; workspaceId: string; now?: () => Date }): Promise<PublicationMetrics> {
   const now = input.now?.() ?? new Date();
-  const jobs = await input.queue.list();
+  // Só os jobs deste tenant/workspace: a fila é global e o tamanho total é dado da plataforma.
+  const jobs = (await input.queue.list()).filter((job) => job.tenantId === input.tenantId && job.workspaceId === input.workspaceId);
   const plans = await input.repository.listPlans({ tenantId: input.tenantId, workspaceId: input.workspaceId });
   const deadLetters = await input.repository.listDeadLetters({ tenantId: input.tenantId, workspaceId: input.workspaceId });
   const details = await Promise.all(plans.map((plan) => input.repository.getDetail(plan.id)));
@@ -60,6 +61,28 @@ export async function collectPublicationMetrics(input: { repository: Publication
   };
 }
 
+/**
+ * Saúde de publicações restrita a UM workspace (correção de segurança): só a pendência do outbox, as
+ * travas e a fila daquele tenant/workspace. A saúde dos provedores e do cofre de segredos
+ * fica na visão global de `collectPublicationHealth`, exclusiva do administrador da plataforma.
+ */
+export async function collectWorkspacePublicationHealth(input: { repository: PublicationRepositoryPort; queue: PublicationQueuePort; tenantId: string; workspaceId: string }): Promise<Record<string, unknown>> {
+  const inScope = (item: { tenantId: string; workspaceId: string } | undefined) => !!item && item.tenantId === input.tenantId && item.workspaceId === input.workspaceId;
+  const locks = await input.repository.listLocks();
+  const plans = await Promise.all(locks.map((lock) => input.repository.getPlanById(lock.publicationId)));
+  return {
+    scope: { tenantId: input.tenantId, workspaceId: input.workspaceId },
+    outbox: { ready: true, pending: (await input.repository.listOutbox({ tenantId: input.tenantId, workspaceId: input.workspaceId, status: "pending" })).length },
+    queue: { ready: true, size: (await input.queue.list()).filter(inScope).length },
+    orchestrator: {
+      ready: true,
+      locks: locks.filter((_lock, index) => inScope(plans[index]))
+        .map(({ publicationId, acquiredAt, expiresAt }) => ({ publicationId, acquiredAt, expiresAt })),
+    },
+  };
+}
+
+/** Visão GLOBAL da plataforma (fila inteira, travas de todas as empresas, cofre de segredos): só para o administrador global. */
 export async function collectPublicationHealth(input: { repository: PublicationRepositoryPort; queue: PublicationQueuePort; providers: readonly PublicationProviderPort[]; providerHealth?: readonly { providerId: string; ok: boolean; safeMessage?: string }[]; secretResolverOk?: boolean }): Promise<Record<string, unknown>> {
   return {
     database: { ready: true },

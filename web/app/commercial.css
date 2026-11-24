@@ -27,7 +27,7 @@
 }
 .vc-hero-copy h1 {
   font-size: clamp(2.3rem, 4.65vw, 4.55rem); line-height: 1.035; font-weight: 700;
-  letter-spacing: -.058em; text-wrap: balance;
+  letter-spacing: -.043em; text-wrap: balance;
 }
 .vc-hero-copy h1 span { color: var(--vc-violet); }
 .vc-hero-copy > p { margin-block: 22px 28px; max-width: 54ch; font-size: clamp(1rem, 1.3vw, 1.175rem); }
@@ -80,6 +80,7 @@
 .vc-product-capacity { align-items: start; }
 .vc-product-capacity strong { display: block; margin: 15px 0 7px; }
 .vc-product-capacity p { margin-bottom: 16px; }
+.vc-product-additions { margin: 0 0 18px; padding-left: 20px; }
 @media (max-width: 1000px) {
   .vc-hero-grid { grid-template-columns: minmax(0, 1fr); }
   .vc-hero-copy h1 { max-width: 18ch; }

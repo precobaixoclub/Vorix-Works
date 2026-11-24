@@ -7,6 +7,7 @@ import { AuthField, AuthShell } from "@/components/public/AuthShell";
 import { useAuth } from "@/contexts/auth-context";
 import { ApiError } from "@/lib/api-client";
 import { PUBLIC_CONTACT } from "@/features/public-site/catalog";
+import { destinationAfterLogin } from "@/features/public-site/account-destination";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -22,7 +23,7 @@ export default function LoginPage() {
     setError(undefined);
     try {
       await login(email.trim(), password);
-      router.push("/workspaces");
+      router.push(destinationAfterLogin(new URLSearchParams(window.location.search).get("destino")));
     } catch (err) {
       setError(err instanceof ApiError ? translateLoginError(err) : "Não foi possível conectar ao Vorix. Verifique sua conexão e tente novamente.");
     } finally {

@@ -1,5 +1,10 @@
 import { defineConfig, devices } from "@playwright/test";
 
+const localPreview = process.env.VORIX_PUBLIC_QA_BASE_URL;
+if (localPreview && !["localhost", "127.0.0.1"].includes(new URL(localPreview).hostname)) {
+  throw new Error("VORIX_PUBLIC_QA_BASE_URL must target a local preview");
+}
+
 /**
  * Redesign operacional (Conversas) — QA obrigatório em browser real (item 38 do pedido), nunca só
  * JSX. `webServer` sobe o próprio `next dev` (porta 3001, mesma do script `dev`); os specs mockam
@@ -15,10 +20,10 @@ export default defineConfig({
   retries: 0,
   reporter: [["list"]],
   use: {
-    baseURL: "http://localhost:3001",
+    baseURL: localPreview ?? "http://localhost:3001",
     trace: "retain-on-failure",
   },
-  webServer: {
+  webServer: localPreview ? undefined : {
     command: "npm run dev",
     url: "http://localhost:3001",
     reuseExistingServer: true,

@@ -61,18 +61,18 @@ test.describe("Fase 13 — site público", () => {
 
   test("Marketing: página própria com capacidades reais e sem preço inventado; Preços mostra Site e Marketing sob consulta", async ({ page }) => {
     await page.goto("/produtos/marketing");
-    await expect(page.getByRole("heading", { level: 1 })).toContainText("Da ideia à publicação");
-    await expect(page.getByText("Publicação no Instagram e no Facebook", { exact: true })).toBeVisible();
+    await expect(page.getByRole("heading", { level: 1 })).toContainText("conteúdos com inteligência artificial");
+    await expect(page.getByRole("heading", { name: "Revisão da peça" })).toBeVisible();
     await expect(page.locator("main")).not.toContainText("R$");
     await page.goto("/precos");
     await expect(page.locator("#vorix-site")).toBeVisible();
-    await expect(page.locator("#vorix-marketing")).toContainText("sob consulta");
+    await expect(page.locator(".vc-picker-card").filter({ hasText: "Marketing" })).toContainText("Sob consulta");
   });
 
   test("informação comercial coerente: o Site não diz mais que a loja está 'em preparação'", async ({ page }) => {
     await page.goto("/produtos/site");
     await expect(page.locator("main")).not.toContainText("em preparação");
-    await expect(page.locator("main")).toContainText("checkout online");
+    await expect(page.locator("main")).toContainText("Mercado Pago");
   });
 
   test("SEO: sitemap só com páginas públicas (inclui Marketing) e robots bloqueia as áreas privadas", async ({ request }) => {
@@ -86,7 +86,7 @@ test.describe("Fase 13 — site público", () => {
   test("SEO: título, descrição e canônico próprios no cadastro e na página de Marketing; login fora do índice", async ({ page }) => {
     await page.goto("/produtos/marketing");
     await expect(page.locator("link[rel='canonical']")).toHaveAttribute("href", /\/produtos\/marketing$/);
-    await expect(page.locator("meta[name='description']")).toHaveAttribute("content", /Ideias/);
+    await expect(page.locator("meta[name='description']")).toHaveAttribute("content", /crie artes e legendas com IA/);
     await page.goto("/signup");
     await expect(page).toHaveTitle(/Criar conta/);
     await expect(page.locator("link[rel='canonical']")).toHaveAttribute("href", /\/signup$/);
@@ -169,7 +169,7 @@ test.describe("Fase 13 — responsividade do site público", () => {
   for (const width of [320, 360, 390, 600, 768, 1024, 1440]) {
     test(`${width}px: páginas públicas e de acesso sem rolagem lateral`, async ({ page }) => {
       await page.setViewportSize({ width, height: 860 });
-      for (const path of ["/", "/precos", "/produtos/marketing", "/produtos/site", "/login", "/signup"]) {
+      for (const path of ["/", "/precos", "/produtos/conversas", "/produtos/marketing", "/produtos/site", "/produtos/meetings", "/login", "/signup"]) {
         await page.goto(path);
         await page.waitForTimeout(300);
         expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1), `${path} ${width}`).toBe(true);

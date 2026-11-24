@@ -21,7 +21,7 @@ describe("sitemap.xml", () => {
     expect(urls).toContain("https://vorixworks.com");
     expect(urls).toContain("https://vorixworks.com/precos");
     expect(urls).toContain("https://vorixworks.com/produtos/meetings");
-    // /pricing redireciona e /produtos/meetings/planos está não publicado (noindex).
+    // Os aliases de planos redirecionam para a página canônica de preços.
     expect(urls).not.toContain("https://vorixworks.com/pricing");
     expect(urls).not.toContain("https://vorixworks.com/produtos/meetings/planos");
   });

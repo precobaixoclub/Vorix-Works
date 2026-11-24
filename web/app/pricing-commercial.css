@@ -1,3 +1,4 @@
+.vc-price-hero.vc-hero { padding-block: clamp(32px, 4.5vw, 64px) clamp(30px, 4vw, 55px); }
 .vc-price-hero .vc-hero-copy h1 { max-width: 20ch; }
 .vc-price-hero .vc-hero-copy p { margin-bottom: 0; }
 .vc-config-section { padding-block: 35px clamp(45px, 7vw, 85px); }

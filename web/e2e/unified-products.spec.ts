@@ -9,8 +9,8 @@ async function proof(page:Page,name:string,project:string){const dir=path.resolv
 
 test("oferta pública contém três produtos e apresenta Site sem um Commerce separado",async({page},info)=>{
  const response=await page.request.get(api+"/v1/platform/plans");expect(response.status()).toBe(200);expect((await response.json()).data.solutions.map((product:{key:string;contractable:boolean})=>[product.key,product.contractable])).toEqual([["conversations",true],["meetings",true],["site",true]]);
- await page.goto("/produtos/site");await expect(page.getByRole("heading",{name:"O site da sua empresa, conectado à sua operação."})).toBeVisible();await expect(page.getByText("Vorix Commerce",{exact:true})).toHaveCount(0);expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);await proof(page,"public-site",info.project.name);
- await page.goto("/produtos/meetings");await expect(page.getByText("Recursos apresentados como visão do produto em homologação.",{exact:false})).toHaveCount(0);await expect(page.getByRole("link",{name:/Contratar Meetings/}).first()).toBeVisible();
+ await page.goto("/produtos/site");await expect(page.getByRole("heading",{name:"Crie um site profissional para apresentar e vender."})).toBeVisible();await expect(page.getByText("Vorix Commerce",{exact:true})).toHaveCount(0);expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);await proof(page,"public-site",info.project.name);
+ await page.goto("/produtos/meetings");await expect(page.getByText("Recursos apresentados como visão do produto em homologação.",{exact:false})).toHaveCount(0);await expect(page.getByRole("link",{name:"Configurar este módulo"}).first()).toHaveAttribute("href","/precos?modulo=meetings#monte");
 });
 
 // Desde 12126483 o Marketing é público: nenhum produto é interno (a API acima já verifica a lista vazia).

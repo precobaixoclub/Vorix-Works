@@ -1422,6 +1422,13 @@ async function addCurrentFixtures(page) {
         isAccountOwner: true,
         teams: [],
         permissions: [
+          "inbox:read",
+          "inbox:reply",
+          "deal:read",
+          "proposal:read",
+          "task:read",
+          "marketing:social_read",
+          "meeting:read",
           "order:read",
           "site:manage",
           "site:publish",
@@ -1698,7 +1705,7 @@ const orderFixtures = [
   createdAt: stamp,
   items: [],
 }));
-const registry = require("../../dist/domain/sites/template-registry.json");
+const registry = require("../../src/domain/sites/template-registry.json");
 const theme = registry.find((t) => t.id === "aura").defaultTheme;
 const block = (id, type, title, text, extra = {}) => ({
   id,
@@ -1841,7 +1848,7 @@ async function captureCommercial(page, browser) {
     { name: "zuno_refresh_token", value: "demo-refresh-token", url: BASE_URL },
     { name: "zuno_csrf_token", value: "demo-csrf-token", url: BASE_URL },
   ]);
-  await mobile.context().route("**/*", route => new URL(route.request().url()).hostname === "localhost" ? route.continue() : route.abort());
+  await mobile.context().route("**/*", route => ["localhost", "127.0.0.1"].includes(new URL(route.request().url()).hostname) ? route.continue() : route.abort());
   await mockApi(mobile);
   await addCurrentFixtures(mobile);
   try {
@@ -1853,7 +1860,7 @@ async function captureCommercial(page, browser) {
   } finally {
     await mobile.close();
   }
-  fs.writeFileSync(path.join(OUT, "manifest.json"), JSON.stringify(results, null, 2) + "\n");
+  fs.writeFileSync(path.join(OUT, requested ? "manifest-parcial.json" : "manifest.json"), JSON.stringify(results, null, 2) + "\n");
   console.log(JSON.stringify(results));
   if (results.some(item => item.error)) process.exitCode = 1;
 }

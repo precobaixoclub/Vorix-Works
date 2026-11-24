@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { loginCookie, mockConversasBackend, WORKSPACE_ID } from "./fixtures/mock-backend";
+import { loginCookie, mockConversasBackend, TENANT_ID, WORKSPACE_ID } from "./fixtures/mock-backend";
 
 type Counts = { users: number; whatsappConnections: number; workspaces: number };
 const initial: Counts = { users: 5, whatsappConnections: 3, workspaces: 3 };
@@ -99,12 +99,12 @@ test("quantidades respeitam uso e workspaces ilimitados aparecem como incluídos
   await expect(page.getByRole("button", { name: "Diminuir Usuários de atendimento", exact: true })).toBeDisabled();
 });
 
-test("sem cobrança ativa, encaminha ao checkout com as quantidades escolhidas", async ({ page }) => {
+test("sem cobrança ativa, encaminha ao checkout com as quantidades escolhidas", async ({ page, baseURL }) => {
   await billingFixture(page, { canChangeNow: false });
   let capacity: unknown;
   await page.route("**/v1/billing/checkout", async (route) => {
     capacity = route.request().postDataJSON().capacity;
-    await route.fulfill({ contentType: "application/json", body: JSON.stringify({ ok: true, data: { checkoutUrl: `http://localhost:3001/workspaces/${WORKSPACE_ID}/settings/plano?checkout=sucesso` } }) });
+    await route.fulfill({ contentType: "application/json", body: JSON.stringify({ ok: true, data: { checkoutUrl: `${baseURL}/workspaces/${WORKSPACE_ID}/settings/plano?checkout=sucesso` } }) });
   });
   await page.goto(`/workspaces/${WORKSPACE_ID}/settings/plano`);
   await page.getByRole("textbox", { name: "Quantidade de Espaços de trabalho", exact: true }).fill("4");
@@ -128,4 +128,46 @@ test("plano da conta abre mesmo sem espaços ativos e atualiza a próxima mensal
   await expect(page.getByRole("textbox", { name: "Quantidade de Espaços de trabalho", exact: true })).toHaveValue("4");
   await expect(page.getByText("R$ 511,00", { exact: true }).first()).toBeVisible();
   await page.screenshot({ path: info.outputPath("plano-conta-espacos.png"), fullPage: true });
+});
+
+test("troca de uma assinatura ativa mostra o preço-base e só envia a mudança após confirmação", async ({ page }) => {
+  await billingFixture(page);
+  const writes: unknown[] = [];
+  await page.route("**/v1/platform/plans", route => route.fulfill({ json: { ok: true, data: {
+    plans: [{ code: "PRO", name: "Pro", monthlyPriceUsd: 299, currency: "BRL", includedUsers: 5, includedWhatsappConnections: 2 }],
+  } } }));
+  await page.route("**/v1/billing/downgrade-preview?*", route => route.fulfill({ json: { ok: true, data: { safeToChange: true, overages: [] } } }));
+  await page.route("**/v1/billing/change-plan", route => {
+    writes.push(route.request().postDataJSON());
+    return route.fulfill({ json: { ok: true, data: { changed: true } } });
+  });
+  await page.goto("/conta/plano");
+  await page.locator("#comparar-planos").getByRole("button", { name: "Selecionar" }).click();
+  const dialog = page.getByRole("alertdialog", { name: "Mudar para o plano Pro?" });
+  await expect(dialog).toContainText(/R\$\s*299,00/);
+  await expect(dialog).toContainText("5 usuários");
+  expect(writes).toEqual([]);
+  await dialog.getByRole("button", { name: "Cancelar", exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  expect(writes).toEqual([]);
+  await page.locator("#comparar-planos").getByRole("button", { name: "Selecionar" }).click();
+  await dialog.getByRole("button", { name: "Confirmar troca de plano" }).click();
+  await expect(dialog).toHaveCount(0);
+  expect(writes).toEqual([{ newPlanCode: "PRO", billingInterval: "monthly" }]);
+});
+
+test("colaborador sem gestão de cobrança não pode alterar o plano nem a capacidade", async ({ page }) => {
+  const fixture = await billingFixture(page);
+  await page.route("**/v1/auth/me", route => route.fulfill({ json: { ok: true, data: {
+    user: { id: "viewer-qa", email: "qa@empresa.invalid", name: "Pessoa QA", isPlatformAdmin: false },
+    tenantId: TENANT_ID, role: "viewer", permissions: [], teams: [],
+  } } }));
+  await page.route("**/v1/platform/plans", route => route.fulfill({ json: { ok: true, data: {
+    plans: [{ code: "PRO", name: "Pro", monthlyPriceUsd: 299, currency: "BRL", includedUsers: 5, includedWhatsappConnections: 2 }],
+  } } }));
+  await page.goto("/conta/plano");
+  await expect(page.locator("#comparar-planos").getByRole("button", { name: "Selecionar" })).toBeDisabled();
+  await expect(page.getByRole("textbox", { name: "Quantidade de Usuários de atendimento", exact: true })).toBeDisabled();
+  await expect(page.getByRole("link", { name: "Consultar outros módulos" })).toHaveCount(0);
+  expect(fixture.saves).toBe(0);
 });

@@ -21,8 +21,10 @@ import { useAuth } from "@/contexts/auth-context";
 import { applyCapacity, cancelPendingCapacityChange, cancelSubscription, changePlan, fetchDowngradePreview, openBillingPortal, previewCapacity, purchaseAddon, purchaseAiCredits, reactivateSubscription, removeAddon, startCheckout, startTrial } from "@/features/billing/api";
 import { useAiCredits, useBillingOverview, useCapacityState } from "@/features/billing/hooks";
 import { RESOURCE_LABELS, type BillingInterval, type BillingOverview, type BillingOverviewAvailableAddon, type CapacityPendingChange, type CapacityPreviewResult, type PlatformPlanCode } from "@/features/billing/types";
-import { fetchPublicPlans, formatCreditsQuota, type PublicPlan } from "@/features/platform-plans/api";
+import { fetchPublicPlans, formatCapacityLine, formatCreditsQuota, type PublicPlan } from "@/features/platform-plans/api";
 import { MeetingPlanCard } from "@/features/meeting-plans/MeetingPlanCard";
+import { PUBLIC_CONTACT } from "@/features/public-site/catalog";
+import { useSolutions } from "@/features/solutions/hooks";
 import { formatCurrencyCents, formatDate } from "@/lib/format";
 import { canManageBilling, RBAC_COPY } from "@/lib/rbac";
 
@@ -31,6 +33,7 @@ export default function BillingSettingsPage({ account = false }: { account?: boo
   const canManage = canManageBilling(state.status === "authenticated" ? state.role : undefined);
   const { data, error, isLoading, mutate } = useBillingOverview();
   const { data: plans } = useSWR("platform-plans", () => fetchPublicPlans());
+  const { solutions, isLoading: loadingSolutions } = useSolutions();
   const returnWorkspaceId = useParams<{ workspaceId?: string }>().workspaceId;
   const returnPath = account || !returnWorkspaceId ? "/conta/plano" : `/workspaces/${returnWorkspaceId}/settings/plano`;
   // Volta do checkout (Mercado Pago/Stripe): avisa o resultado uma única vez.
@@ -56,6 +59,7 @@ export default function BillingSettingsPage({ account = false }: { account?: boo
   const [busy, setBusy] = useState(false);
   const [confirmCancelOpen, setConfirmCancelOpen] = useState(false);
   const [confirmRemoveAddon, setConfirmRemoveAddon] = useState<{ subscriptionItemId: string; name: string } | null>(null);
+  const [planToConfirm, setPlanToConfirm] = useState<PublicPlan | null>(null);
 
   async function run(action: () => Promise<unknown>, successMessage: string) {
     if (!canManage) return;
@@ -108,6 +112,9 @@ export default function BillingSettingsPage({ account = false }: { account?: boo
       await goToCheckout(planCode, interval);
       return;
     }
+    const selected = plans?.find(plan => plan.code === planCode);
+    if (!selected) return;
+    setBusy(true);
     try {
       const preview = await fetchDowngradePreview(planCode);
       if (!preview.safeToChange) {
@@ -118,8 +125,10 @@ export default function BillingSettingsPage({ account = false }: { account?: boo
       }
     } catch {
       // O backend valida novamente no changePlan; esta prévia é apenas para melhorar a mensagem.
+    } finally {
+      setBusy(false);
     }
-    await run(() => changePlan({ newPlanCode: planCode, billingInterval: interval }), "Plano alterado.");
+    setPlanToConfirm(selected);
   }
 
   async function openPortal() {
@@ -183,7 +192,7 @@ export default function BillingSettingsPage({ account = false }: { account?: boo
             <div>
               <p className="text-3xl font-semibold tracking-tight text-foreground">{data.status === "trial" ? `Teste · ${data.planName}` : data.planName}</p>
               <p className="mt-2 text-sm text-muted-foreground">
-                {currentPlan ? cyclePrice(currentPlan, interval) : "Valor do ciclo indisponível no catálogo atual."}
+                {currentPlan ? `Preço-base do catálogo · ${cyclePrice(currentPlan, interval)}` : "Valor-base indisponível no catálogo atual."}
               </p>
               {data.currentPeriodEnd ? <p className="mt-1 text-sm text-muted-foreground">{data.cancelAtPeriodEnd ? "Ativo até" : "Renova em"} {formatDate(data.currentPeriodEnd)}.</p> : null}
               {data.status === "trial" && data.trialDaysRemaining !== null ? <TrialCountdown days={data.trialDaysRemaining} trialEnd={data.trialEnd} hasCard={Boolean(data.paymentMethod)} /> : null}
@@ -224,6 +233,21 @@ export default function BillingSettingsPage({ account = false }: { account?: boo
           </CardBody>
         </Card>
       ) : null}
+
+      <Card className="mt-5">
+        <CardHeader><h2 className="text-sm font-semibold text-foreground">Ferramentas da conta</h2></CardHeader>
+        <CardBody className="space-y-4 text-sm">
+          {loadingSolutions ? <p className="text-muted-foreground">Consultando ferramentas disponíveis…</p> : solutions.length > 0 ?
+            <ul className="flex flex-wrap gap-2" aria-label="Ferramentas disponíveis">{solutions.map(solution => <li key={solution.key}><Badge variant="outline">{solution.name}</Badge></li>)}</ul> :
+            <p className="text-muted-foreground">Nenhuma ferramenta aparece como disponível para esta conta.</p>}
+          <p className="text-muted-foreground">O acesso de cada colaborador segue as permissões no workspace. Veja abaixo o uso, os limites e o valor contratado.</p>
+          <div className="flex flex-wrap gap-x-5 gap-y-2">
+            <a className="font-medium text-primary underline" href="#quantidades-plano">Ajustar capacidade</a>
+            <a className="font-medium text-primary underline" href="#plano-reunioes">Gravações de reuniões</a>
+            {canManage ? <a className="font-medium text-primary underline" href={`${PUBLIC_CONTACT}?subject=Ampliar%20minha%20conta%20Vorix`}>Consultar outros módulos</a> : null}
+          </div>
+        </CardBody>
+      </Card>
 
       <AiCreditsCard canManage={canManage} returnPath={returnPath} />
 
@@ -269,6 +293,19 @@ export default function BillingSettingsPage({ account = false }: { account?: boo
         </CardBody>
       </Card>
 
+      {planToConfirm && <ConfirmDialog
+        open
+        title={`Mudar para o plano ${planToConfirm.name}?`}
+        description={`Preço-base do catálogo: ${cyclePrice(planToConfirm, interval)} · ${formatCapacityLine(planToConfirm)}. Os adicionais da conta podem alterar o total do ciclo.`}
+        confirmLabel="Confirmar troca de plano"
+        busy={busy}
+        confirmDisabled={!canManage}
+        onCancel={() => setPlanToConfirm(null)}
+        onConfirm={async () => {
+          await run(() => changePlan({ newPlanCode: planToConfirm.code, billingInterval: interval }), "Plano alterado.");
+          setPlanToConfirm(null);
+        }}
+      />}
       <ConfirmDialog
         open={confirmCancelOpen}
         title="Cancelar assinatura?"

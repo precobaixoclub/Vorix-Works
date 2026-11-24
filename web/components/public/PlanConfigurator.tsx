@@ -50,9 +50,9 @@ export function PlanConfigurator({ catalog, initialModule }: { catalog: PublicPr
         const product = catalog.products.find(product => product.key === key);
         const value = key === "conversations" && product && !product.provisional ? product.monthlyPrice : key === "meetings" ? recordingsOffer?.baseMonthlyPrice : null;
         const available = product?.contractable;
-        const condition = key === "conversations" && available ? "Contratação online" : key === "meetings" && available ? "Capacidade na conta" : "Condições sob consulta";
+        const condition = key === "conversations" && available ? "Contratação online" : key === "meetings" && available ? "Capacidade na conta" : "Atendimento comercial";
         return <label key={key} className="vc-picker-card" data-selected={selected}>
-          <input type="checkbox" name="modulos" aria-label={`Vorix ${item.name}`} checked={selected} onChange={() => setSelection(previous => toggleModule(previous, key))} />
+          <input type="checkbox" name="modulos" aria-label={`Vorix ${item.name}`} checked={selected} disabled={selected && selection.modules.length === 1} onChange={() => setSelection(previous => toggleModule(previous, key))} />
           <span className="vc-picker-card-top"><Icon size={23} aria-hidden="true" /><span className="vc-picker-check">{selected && <Check size={16} aria-hidden="true" />}</span></span>
           <strong>{item.name}</strong>
           <span>{item.benefits.slice(0, 3).join(" · ")}</span>
@@ -116,7 +116,7 @@ export function PlanConfigurator({ catalog, initialModule }: { catalog: PublicPr
         {pending && !quote.complete
           ? <button className="public-button primary" type="button" disabled>Consultando o valor</button>
           : <Link className="public-button primary" href={quote.href} prefetch={false}>{quote.action}</Link>}
-        {!quote.direct && quote.href.startsWith("mailto:") && <details><summary>Ver configuração para compartilhar</summary><p className="vc-share-summary">{quote.summary}</p></details>}
+        {!quote.direct && <details><summary>Ver configuração para compartilhar</summary><p className="vc-share-summary">{quote.summary}</p></details>}
         <Link className="public-text-link" href="/login?destino=assinatura">Já sou assinante</Link>
       </aside>
     </div>

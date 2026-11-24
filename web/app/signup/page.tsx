@@ -42,6 +42,7 @@ function SignupForm() {
   // Nunca envia um plano desconhecido/FREE pro backend (que rejeitaria) — sem plano reconhecido,
   // o cadastro segue normal, só sem trial automático (mesmo estado de sempre).
   const selectedPlan = VALID_PLAN_CODES.includes(rawPlan as ValidPlanCode) ? (rawPlan as ValidPlanCode) : undefined;
+  const billingInterval = searchParams.get("intervalo") === "anual" ? "yearly" : "monthly";
   const capacity = capacityFrom(searchParams);
   const [name, setName] = useState("");
   // Dias de teste REAIS do plano escolhido (o catálogo manda; nunca um número fixo na tela).
@@ -70,7 +71,7 @@ function SignupForm() {
         try {
           const { checkoutUrl } = await startCheckout({
             planCode: selectedPlan,
-            billingInterval: "monthly",
+            billingInterval,
             capacity,
             successPath: `/workspaces/${workspaceId}/onboarding?checkout=sucesso`,
             cancelPath: `/workspaces/${workspaceId}/settings/plano?checkout=cancelado`,
@@ -96,7 +97,7 @@ function SignupForm() {
     <AuthShell eyebrow="Comece agora" title="Crie sua conta Vorix." description="Comece com Conversas e ajuste usuários e números conforme sua operação cresce.">
       <h2>Criar conta</h2>
       {selectedPlan ? (
-        <p className="public-auth-sub">Plano <strong>{PLAN_LABEL[selectedPlan]}</strong>{capacitySummary(capacity)} · <Link href="/precos#monte">Trocar</Link><br />{trialDays ? `No próximo passo você cadastra o cartão. A primeira cobrança só acontece depois de ${trialDays} dias de teste.` : trialDays === null ? "No próximo passo você cadastra o cartão e a assinatura começa na hora." : "No próximo passo você cadastra o cartão."}</p>
+        <p className="public-auth-sub">Plano <strong>{PLAN_LABEL[selectedPlan]}</strong> · ciclo {billingInterval === "yearly" ? "anual" : "mensal"}{capacitySummary(capacity)} · <Link href="/precos#monte">Trocar</Link><br />{trialDays ? `No próximo passo você cadastra o cartão. A primeira cobrança só acontece depois de ${trialDays} dias de teste.` : trialDays === null ? "No próximo passo você cadastra o cartão e a assinatura começa na hora." : "No próximo passo você cadastra o cartão."}</p>
       ) : (
         // Fase 13: sem plano escolhido não há teste automático com prazo (o backend só inicia o teste
         // de um plano pago escolhido) — a tela não promete dias que não existem.

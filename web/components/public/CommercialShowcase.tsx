@@ -61,18 +61,18 @@ export function CommercialModules() {
       <h2>Quatro ferramentas. A operação que você precisa.</h2>
       <p>Comece pelo que resolve o trabalho de hoje. Amplie na mesma conta quando sua equipe precisar.</p>
     </header>
-    <div className="vc-module-list">
+    <div className="vc-module-list" id="produtos">
       {MODULE_KEYS.map((key) => {
-        const module = MODULE_SHOWCASE[key];
+        const tool = MODULE_SHOWCASE[key];
         const Icon = icons[key];
-        const shot = key === "marketing" ? module.shots[2] : key === "meetings" ? module.shots[2] : module.shots[0];
+        const shot = key === "marketing" || key === "meetings" ? tool.shots[2] : tool.shots[0];
         return <article key={key} className="vc-module-row" data-module={key}>
           <div className="vc-module-copy">
-            <span className="vc-module-name"><Icon size={20} aria-hidden="true" /> Vorix {module.name}</span>
-            <h3>{module.title}</h3>
-            <p>{module.description}</p>
-            <ul className="vc-benefits">{module.benefits.map(item => <li key={item}><Check size={16} aria-hidden="true" />{item}</li>)}</ul>
-            <Link className="public-button secondary" href={productHref(key)}>Conhecer {module.name}</Link>
+            <span className="vc-module-name"><Icon size={20} aria-hidden="true" /> Vorix {tool.name}</span>
+            <h3>{tool.title}</h3>
+            <p>{tool.description}</p>
+            <ul className="vc-benefits">{tool.benefits.map(item => <li key={item}><Check size={16} aria-hidden="true" />{item}</li>)}</ul>
+            <Link className="public-button secondary" href={productHref(key)}>Conhecer {tool.name}</Link>
           </div>
           <figure className="vc-panel"><ProductScreen asset={shot.asset} alt={shot.alt} /><figcaption>{shot.title}</figcaption></figure>
         </article>;
@@ -107,7 +107,7 @@ export function CommercialIntelligence() {
       <p>No Marketing, a equipe parte de um briefing e das referências da marca para criar e revisar peças. No Meetings, a transcrição ajuda a encontrar decisões, responsáveis e próximos passos.</p>
       <div className="vc-ai-links"><Link href="/produtos/marketing">Criação com IA</Link><Link href="/produtos/meetings">Análise de reuniões</Link></div>
     </div>
-    <figure className="vc-panel"><ProductScreen asset="meeting-ai" alt={MODULE_SHOWCASE.meetings.shots[2].alt} /><figcaption>Resumo e decisões em uma reunião demonstrativa.</figcaption></figure>
+    <figure className="vc-panel"><ProductScreen asset="meeting-ai" alt={MODULE_SHOWCASE.meetings.shots[2].alt} /><figcaption>Resumo e assuntos de uma reunião demonstrativa.</figcaption></figure>
   </section>;
 }
 
@@ -168,19 +168,26 @@ export function CommercialFinalCTA({ href = builderHref, label = "Montar meu Vor
 }
 
 export function CommercialProduct({ moduleKey, catalog }: { moduleKey: ModuleKey; catalog: PublicProductCatalog }) {
-  const module = MODULE_SHOWCASE[moduleKey];
+  const tool = MODULE_SHOWCASE[moduleKey];
   const offer = publicModuleTerms(moduleKey, catalog);
-  const hero = moduleKey === "meetings" ? module.shots[2] : moduleKey === "marketing" ? module.shots[2] : module.shots[0];
+  const hero = moduleKey === "meetings" || moduleKey === "marketing" ? tool.shots[2] : tool.shots[0];
   const cta = offer.cta.startsWith("mailto:") ? "Falar com o time comercial" : "Configurar este módulo";
   const Icon = icons[moduleKey];
+  const billing = catalog.billing?.priceSource === "plan_versions" ? catalog.billing : null;
+  const meetings = billing?.meetingsOffer;
+  const additions = moduleKey === "conversations" ? (billing?.addons ?? [])
+    .map(addon => `${addon.name} · ${formatPublicPrice({ currency: addon.currency, monthlyPrice: addon.monthlyPriceUsd })}/mês`)
+    : moduleKey === "meetings" && meetings && Number.isFinite(meetings.additionalRecordingMonthlyPrice) && meetings.additionalRecordingMonthlyPrice > 0
+      ? [`${meetings.includedConcurrentRecordings} simultânea no preço-base`, `Simultânea adicional · ${formatPublicPrice({ currency: meetings.currency, monthlyPrice: meetings.additionalRecordingMonthlyPrice })}/mês`]
+      : [];
   return <div className="public-site vorix-commercial">
     <PublicHeader startHref={builderHref} appearance="home" />
     <main id="conteudo">
       <section className="vc-hero">
         <div className="vc-wrap vc-product-hero">
           <div className="vc-hero-copy">
-            <span className="vc-module-name"><Icon size={21} aria-hidden="true" /> Vorix {module.name}</span>
-            <h1>{module.title}</h1><p>{module.description}</p>
+            <span className="vc-module-name"><Icon size={21} aria-hidden="true" /> Vorix {tool.name}</span>
+            <h1>{tool.title}</h1><p>{tool.description}</p>
             <div className="public-button-row"><Link className="public-button primary" href={offer.cta}>{cta}</Link><a className="public-button secondary" href="#recursos-produto">Ver funcionalidades</a></div>
             <p className="vc-availability">{offer.price} · {offer.note}</p>
           </div>
@@ -188,14 +195,18 @@ export function CommercialProduct({ moduleKey, catalog }: { moduleKey: ModuleKey
         </div>
       </section>
       <section id="recursos-produto" className="vc-wrap vc-section">
-        <header className="vc-section-head"><h2>Veja o {module.name} em ação.</h2><p>{module.availability}</p></header>
-        <div className="vc-gallery">{module.shots.map(shot => <article key={shot.asset}><ProductScreen asset={shot.asset} alt={shot.alt} sizes="(max-width: 760px) 92vw, (max-width: 1100px) 44vw, 590px" /><div><h3>{shot.title}</h3><p>{shot.description}</p></div></article>)}</div>
+        <header className="vc-section-head"><h2>Veja Vorix {tool.name} em ação.</h2><p>{tool.availability}</p></header>
+        <div className="vc-gallery">{tool.shots.map(shot => <article key={shot.asset}><ProductScreen asset={shot.asset} alt={shot.alt} sizes="(max-width: 760px) 92vw, (max-width: 1100px) 44vw, 590px" /><div><h3>{shot.title}</h3><p>{shot.description}</p></div></article>)}</div>
       </section>
       <section className="vc-band"><div className="vc-wrap vc-section vc-product-capacity">
-        <div><h2>Recursos para sua equipe</h2><ul className="vc-benefits">{module.benefits.map(item => <li key={item}><Check size={17} aria-hidden="true" />{item}</li>)}</ul></div>
-        <div><h2>Preço e capacidade</h2><strong>{offer.price}</strong><p>{module.capacity}</p><Link className="public-button secondary" href={offer.cta}>{cta}</Link></div>
+        <div><h2>Recursos para sua equipe</h2><ul className="vc-benefits">{tool.benefits.map(item => <li key={item}><Check size={17} aria-hidden="true" />{item}</li>)}</ul></div>
+        <div>
+          <h2>Preço e capacidade</h2><strong>{offer.price}</strong><p>{tool.capacity}</p>
+          {additions.length > 0 && <ul className="vc-product-additions">{additions.map(text => <li key={text}>{text}</li>)}</ul>}
+          <Link className="public-button secondary" href={offer.cta}>{cta}</Link>
+        </div>
       </div></section>
-      <CommercialFAQ entries={module.faq} />
+      <CommercialFAQ entries={tool.faq} />
       <CommercialFinalCTA href={offer.cta} label={cta} />
     </main>
     <PublicFooter />

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { destinationAfterLogin } from "@/features/public-site/account-destination";
 
 /**
  * Portão de navegação (Sprint 05) — verifica só a PRESENÇA do cookie HttpOnly do refresh token
@@ -34,7 +35,9 @@ export function proxy(request: NextRequest) {
   if (pathname === "/") return NextResponse.next();
 
   if (pathname === "/login") {
-    if (hasRefreshCookie) return NextResponse.redirect(new URL("/workspaces", request.url));
+    if (hasRefreshCookie) {
+      return NextResponse.redirect(new URL(destinationAfterLogin(request.nextUrl.searchParams.get("destino")), request.url));
+    }
     return NextResponse.next();
   }
 
@@ -80,7 +83,9 @@ export function proxy(request: NextRequest) {
   }
 
   if (!hasRefreshCookie) {
-    return NextResponse.redirect(new URL("/login", request.url));
+    const login = new URL("/login", request.url);
+    if (pathname === "/conta/plano") login.searchParams.set("destino", "assinatura");
+    return NextResponse.redirect(login);
   }
   return NextResponse.next();
 }

@@ -5,7 +5,7 @@ const BASE = "https://vorixworks.com";
 /**
  * Sitemap das páginas públicas REAIS — para o Google indexar o que importa, em vez de descobrir
  * sozinho endpoints de asset/imagem. Fora de propósito: `/pricing` (redireciona para `/precos`) e
- * `/produtos/meetings/planos` (não publicado até aprovação, já com noindex).
+ * `/produtos/meetings/planos` (redireciona para o configurador de Meetings).
  */
 const PAGES: { path: string; priority: number; changeFrequency: MetadataRoute.Sitemap[number]["changeFrequency"] }[] = [
   { path: "", priority: 1, changeFrequency: "weekly" },

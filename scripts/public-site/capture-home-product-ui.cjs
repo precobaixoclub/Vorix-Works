@@ -2,9 +2,10 @@
 const fs = require("node:fs");
 const path = require("node:path");
 
+const COMMERCIAL = process.env.VORIX_CAPTURE_COMMERCIAL === "1";
 const OUT = path.resolve(
   process.cwd(),
-  "artifacts/vorix-home-redesign-audit/fresh",
+  COMMERCIAL ? "artifacts/vorix-comercial-local/capturas" : "artifacts/vorix-home-redesign-audit/fresh",
 );
 const BASE_URL = process.env.VORIX_CAPTURE_BASE_URL || "http://localhost:3401";
 if (!["localhost", "127.0.0.1"].includes(new URL(BASE_URL).hostname)) {
@@ -12,6 +13,7 @@ if (!["localhost", "127.0.0.1"].includes(new URL(BASE_URL).hostname)) {
 }
 const WORKSPACE_ID = "ws-demo-atlas";
 const TENANT_ID = "tenant-demo-atlas";
+const DEMO_ART = "https://atlas-demo.invalid/peca-de-exemplo.webp";
 
 fs.mkdirSync(OUT, { recursive: true });
 
@@ -739,6 +741,12 @@ async function fulfill(route, data, status = 200) {
   await route.fulfill({
     status,
     contentType: "application/json",
+    headers: {
+      "access-control-allow-origin": new URL(BASE_URL).origin,
+      "access-control-allow-credentials": "true",
+      "access-control-allow-headers": "authorization, content-type, x-csrf-token",
+      "access-control-allow-methods": "GET, POST, PATCH, PUT, DELETE, OPTIONS",
+    },
     body: JSON.stringify(envelope(data)),
   });
 }
@@ -1190,6 +1198,10 @@ async function prepare(page) {
 
 async function capture(page, name, url, options = {}) {
   await page.goto(`${BASE_URL}${url}`, { waitUntil: "networkidle" });
+  if (COMMERCIAL && url.startsWith("/workspaces/")) {
+    const workspace = page.getByText("Empresa demonstração", { exact: true });
+    await workspace.first().waitFor({ state: "visible", timeout: 12000 });
+  }
   for (const text of options.clickTexts || []) {
     await page.getByText(text, { exact: false }).first().click();
     await page.waitForTimeout(500);
@@ -1200,17 +1212,21 @@ async function capture(page, name, url, options = {}) {
   }
   for (const clickRole of options.clickRoles || []) {
     await page
-      .getByRole(clickRole.role, { name: clickRole.name })
+      .getByRole(clickRole.role, { name: clickRole.name, exact: clickRole.exact })
       .first()
       .click();
     await page.waitForTimeout(500);
   }
   if (options.clickRole) {
     await page
-      .getByRole(options.clickRole.role, { name: options.clickRole.name })
+      .getByRole(options.clickRole.role, { name: options.clickRole.name, exact: options.clickRole.exact })
       .first()
       .click();
     await page.waitForTimeout(500);
+  }
+  if (options.scroll) {
+    await page.locator(options.scroll).first().evaluate((node) => node.scrollIntoView({ block: "start" }));
+    await page.waitForTimeout(350);
   }
   await page.waitForTimeout(options.wait || 900);
   await page.evaluate(() => {
@@ -1218,6 +1234,7 @@ async function capture(page, name, url, options = {}) {
     if (document.activeElement instanceof HTMLElement)
       document.activeElement.blur();
   });
+  if (options.ready) await page.getByText(options.ready, { exact: false }).first().waitFor({ timeout: 12000 });
   await page.screenshot({
     path: path.join(OUT, `${name}.png`),
     fullPage: options.fullPage ?? false,
@@ -1443,6 +1460,19 @@ async function addCurrentFixtures(page) {
         ],
       });
     if (p === "/v1/billing/overview") return fulfill(route, null);
+    if (COMMERCIAL) {
+      if (p === "/v1/editorial-ideas") return fulfill(route, demoEditorialIdeas());
+      if (p === "/v1/social/posts") return fulfill(route, { posts: demoCalendarPosts() });
+      if (p === "/v1/meetings/recording-options") return fulfill(route, {});
+      if (/^\/v1\/proposals\/proposal-mariana$/.test(p)) return fulfill(route, proposals[0]);
+      if (/^\/v1\/execution-runs\/[^/]+$/.test(p)) {
+        const run = { id: p.split("/")[3], workspaceId: WORKSPACE_ID, tenantId: TENANT_ID, state: "waiting_for_approval", mode: "real", createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
+        return fulfill(route, { run, tasks: [], events: [], traces: [], gates: [{ id: "gate-atlas", state: "open" }], artifacts: [
+          { id: "art-atlas", outputPort: "images", payload: { output: { images: [{ uri: DEMO_ART }] } } },
+          { id: "copy-atlas", outputPort: "copy", payload: { output: { title: "Casa Atlas · Coleção Luz Natural", publication: "A luz muda o jeito como a gente vive a casa. A coleção Luz Natural reúne peças para deixar o fim do dia mais acolhedor.\n\nConheça a coleção e escolha a luz do seu canto favorito." } } },
+        ] });
+      }
+    }
     if (p === "/v1/meetings/recording-capacity")
       return fulfill(route, capacity);
     if (p === "/v1/meetings/dashboard")
@@ -1467,8 +1497,8 @@ async function addCurrentFixtures(page) {
           {
             ...meeting,
             participantCount: 2,
-            hasRecording: false,
-            recordingBytes: 0,
+            hasRecording: COMMERCIAL,
+            recordingBytes: COMMERCIAL ? 23800000 : 0,
             transcriptStatus: "completed",
             hasAnalysis: true,
           },
@@ -1484,6 +1514,35 @@ async function addCurrentFixtures(page) {
       return fulfill(route, { items: [], unreadCount: 0 });
     return route.fallback();
   });
+}
+
+function demoEditorialIdeas() {
+  const entries = [
+    ["Coleção Luz Natural", "single_image", "produced", 0],
+    ["Guia para escolher a luz da sala", "carousel", "available", 1],
+    ["Três cantos para desacelerar", "video", "in_production", 2],
+    ["Bastidores do Ateliê Atlas", "carousel", "approved", 3],
+    ["Paleta para o fim de tarde", "single_image", "available", 4],
+  ];
+  return entries.map(([title, format, status, offset], index) => {
+    const date = new Date();
+    date.setDate(date.getDate() + offset);
+    return {
+      id: `idea-atlas-${index}`, externalId: `ATLAS-${index + 1}`, title, format, status, category: "Casa e decoração",
+      commercialObjective: "Apresentar a coleção", targetAudience: "Pessoas que gostam de interiores", concept: title, keyMessage: title,
+      approach: "Demonstração", visualDirection: "Editorial da Casa Atlas", narrativeStructure: "Abertura e convite",
+      caption: title, cta: "Conheça a coleção", priority: "normal", scheduledDate: date.toLocaleDateString("en-CA"),
+      createdAt: stamp, updatedAt: stamp, statusChangedAt: stamp,
+    };
+  });
+}
+
+function demoCalendarPosts() {
+  return demoEditorialIdeas().slice(0, 3).map((idea, index) => ({
+    id: `social-atlas-${index}`, state: index === 0 ? "PUBLISHED" : "SCHEDULED",
+    createdAt: `${idea.scheduledDate}T14:00:00Z`, scheduledAt: `${idea.scheduledDate}T17:00:00Z`, history: [], requiresApproval: false,
+    destinations: [{ id: `dest-atlas-${index}`, network: "instagram", format: "feed_image", caption: idea.title, media: [{ kind: "image", url: DEMO_ART }], state: index === 0 ? "PUBLISHED" : "SCHEDULED", actions: [] }],
+  }));
 }
 const avg = (value, sample) => ({ value, sample });
 const dashboardFixture = {
@@ -1731,6 +1790,74 @@ const siteFixture = {
   publishedAt: stamp,
   updatedAt: stamp,
 };
+
+async function createDemoArt() {
+  const sharp = require("sharp");
+  const photo = path.join("web", "public", "site-assets", "templates", "aura-hero.webp");
+  const overlay = Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1080">
+    <defs><linearGradient id="fade" x2="0" y2="1" gradientUnits="objectBoundingBox"><stop stop-color="#251a18" stop-opacity=".06"/><stop offset="1" stop-color="#211513" stop-opacity=".97"/></linearGradient></defs>
+    <rect width="1080" height="1080" fill="url(#fade)"/>
+    <path d="M66 66h948v948H66z" fill="none" stroke="#f6eadb" stroke-width="2" opacity=".72"/>
+    <text x="111" y="153" fill="#fff3dd" font-family="Arial" font-size="25" letter-spacing="8" font-weight="bold">CASA ATLAS</text>
+    <text x="110" y="748" fill="#fff3dd" font-family="Georgia" font-size="119">Luz natural</text>
+    <text x="114" y="815" fill="#fff3dd" font-family="Arial" font-size="24" letter-spacing="5">COLEÇÃO PARA O FIM DE TARDE</text>
+    <path d="M116 860h180" stroke="#ead5b7" stroke-width="3"/>
+  </svg>`);
+  return sharp(photo).resize(1080, 1080, { fit: "cover" }).composite([{ input: overlay }]).webp({ quality: 88 }).toBuffer();
+}
+
+async function captureCommercial(page, browser) {
+  const root = `/workspaces/${WORKSPACE_ID}`;
+  const targets = [
+    ["dashboard", root],
+    ["inbox", `${root}/conversas`, { clickText: "Mariana Souza", clickRole: { role: "button", name: "Detalhes" } }],
+    ["pipeline", `${root}/deals`],
+    ["proposal", `${root}/proposals?proposal=proposal-mariana`, { ready: "Proposta Comercial - Implantação" }],
+    ["ideas", `${root}/ideias`],
+    ["create", `${root}/create?modo=ia&ideia=idea-atlas-0`],
+    ["review", `${root}/review`],
+    ["calendar", `${root}/calendar`],
+    ["site-editor", `${root}/site?section=aparencia`, { ready: "Aparência" }],
+    ["storefront", "/modelos/aura"],
+    ["store-catalog", "/modelos/aura", { scroll: "#catalogo" }],
+    ["recording", `${root}/meetings`, { scroll: "#como-gravar" }],
+    ["meeting-ai", `${root}/meetings/central/${meetingId}`, { clickRole: { role: "button", name: "Resumo", exact: true }, ready: "Principais assuntos" }],
+    ["meeting-actions", `${root}/meetings/central/${meetingId}`, { clickRole: { role: "button", name: "Decisões e próximos passos", exact: true }, ready: "Preparar o cronograma" }],
+    ["transcript", `${root}/meetings/central/${meetingId}`, { clickRole: { role: "button", name: "Transcrição" } }],
+    ["recording-library", `${root}/meetings/central?visao=gravadas`],
+  ];
+  const results = [];
+  const requested = process.env.VORIX_CAPTURE_SCREENS?.split(",");
+  for (const [name, url, options] of targets) {
+    if (requested && !requested.includes(name)) continue;
+    try { await capture(page, name, url, options); results.push({ name, url }); }
+    catch (error) {
+      const body = await page.locator("body").innerText().catch(() => "");
+      results.push({ name, url, error: error.message, actualUrl: page.url(), body: body.slice(0, 500) });
+    }
+  }
+  const mobile = await browser.newPage({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, colorScheme: "dark" });
+  await mobile.context().addCookies([
+    { name: "zuno_refresh_token", value: "demo-refresh-token", url: BASE_URL },
+    { name: "zuno_csrf_token", value: "demo-csrf-token", url: BASE_URL },
+  ]);
+  await mobile.context().route("**/*", route => new URL(route.request().url()).hostname === "localhost" ? route.continue() : route.abort());
+  await mockApi(mobile);
+  await addCurrentFixtures(mobile);
+  try {
+    await capture(mobile, "dashboard-mobile", root);
+    results.push({ name: "dashboard-mobile", url: root, viewport: "390 × 844 @2x" });
+  } catch (error) {
+    const body = await mobile.locator("body").innerText().catch(() => "");
+    results.push({ name: "dashboard-mobile", url: root, error: error.message, actualUrl: mobile.url(), body: body.slice(0, 500) });
+  } finally {
+    await mobile.close();
+  }
+  fs.writeFileSync(path.join(OUT, "manifest.json"), JSON.stringify(results, null, 2) + "\n");
+  console.log(JSON.stringify(results));
+  if (results.some(item => item.error)) process.exitCode = 1;
+}
+
 async function main() {
   const browser = await chromium.launch({ headless: true });
   const context = await browser.newContext({
@@ -1743,9 +1870,19 @@ async function main() {
   page.on("pageerror", (e) => errors.push(e.message));
   await context.addCookies([
     { name: "zuno_refresh_token", value: "demo-refresh-token", url: BASE_URL },
+    { name: "zuno_csrf_token", value: "demo-csrf-token", url: BASE_URL },
   ]);
   await mockApi(page);
   await addCurrentFixtures(page);
+  if (COMMERCIAL) {
+    await context.route("**/*", route => ["localhost", "127.0.0.1"].includes(new URL(route.request().url()).hostname) ? route.continue() : route.abort());
+    const art = await createDemoArt();
+    await page.route(DEMO_ART, route => route.fulfill({ contentType: "image/webp", body: art }));
+    await page.goto(`${BASE_URL}/login`, { waitUntil: "networkidle" });
+    try { await captureCommercial(page, browser); }
+    finally { await browser.close(); }
+    return;
+  }
   await page.goto(`${BASE_URL}/login`);
   await page.evaluate(
     ({ key, value }) => localStorage.setItem(key, JSON.stringify(value)),

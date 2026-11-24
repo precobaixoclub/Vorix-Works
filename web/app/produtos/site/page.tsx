@@ -1,10 +1,11 @@
-import Link from "next/link";
-import {ArrowUpRight, Check, Globe} from "lucide-react";
-import {PublicHeader} from "@/components/public/PublicHeader";
-import {PublicFooter} from "@/components/public/PublicFooter";
-import {publicMetadata} from "@/features/public-site/metadata";
+import { CommercialProduct } from "@/components/public/CommercialShowcase";
+import { getPublicProductCatalog } from "@/features/public-site/server";
+import { publicMetadata } from "@/features/public-site/metadata";
+import "../../commercial.css";
 
-export const metadata=publicMetadata("Vorix Site — Site e catálogo da sua empresa","Crie o site da sua empresa, publique produtos e receba contatos em uma única experiência Vorix.","/produtos/site");
-export default function SiteProductPage(){
- return <div className="public-site"><PublicHeader/><main id="conteudo"><section className="public-page-hero"><div className="public-container"><div><span className="public-eyebrow-pill"><Globe size={16}/> Vorix Site</span><h1>O site da sua empresa, conectado à sua operação.</h1><p className="public-section-copy">Apresente sua empresa, organize seu catálogo e receba interessados. Um único produto para cuidar da presença online.</p><div className="public-button-row"><Link href="/precos#vorix-site" className="public-button primary">Conhecer os planos <ArrowUpRight size={18}/></Link><Link href="/login" className="public-button secondary">Entrar no Vorix</Link></div></div><ul className="public-product-feature-list">{["Modelos de site e personalização visual","Páginas, imagens e informações de contato","Produtos com fotos, variações e estoque","Contatos do site integrados à sua empresa","Rascunho, prévia e publicação","Endereço próprio e verificação de domínio","Venda pelo WhatsApp, carrinho ou checkout online"].map(feature=><li key={feature}><Check size={16}/>{feature}</li>)}</ul></div></section><section className="public-section public-how"><div className="public-container"><h2>Vitrine e loja online no mesmo lugar.</h2><p className="public-section-copy">Site, catálogo e loja online fazem parte do Vorix Site. Você escolhe como vender: só vitrine, pedido pelo WhatsApp, carrinho ou checkout online com Pix e cartão pelo Mercado Pago — o checkout fica disponível depois que a conta de pagamento é conectada nas configurações de venda do site, e o frete é configurado no mesmo lugar.</p><p className="public-section-copy">O acesso ao Site pode ser incluído no plano ou contratado como adicional, conforme a configuração comercial disponível para sua conta.</p></div></section></main><PublicFooter/></div>;
+export const dynamic = "force-dynamic";
+export const metadata = publicMetadata("Vorix Site | Editor visual, catálogo e loja", "Crie um site profissional, personalize o modelo, organize o catálogo e configure a venda.", "/produtos/site");
+
+export default async function Page() {
+  return <CommercialProduct moduleKey="site" catalog={await getPublicProductCatalog()} />;
 }

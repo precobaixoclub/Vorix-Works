@@ -59,6 +59,7 @@ export function proxy(request: NextRequest) {
     pathname.startsWith("/r/") ||
     pathname.startsWith("/product-shots/") ||
     pathname.startsWith("/marketing/home/") ||
+    pathname.startsWith("/marketing/comercial/") ||
     pathname === "/empresa" ||
     pathname === "/pricing" ||
     pathname === "/precos" ||

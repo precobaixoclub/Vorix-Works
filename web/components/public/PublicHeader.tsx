@@ -51,7 +51,7 @@ const PRODUCTS = [
 ];
 const LINKS = [
   ["/#como-funciona", "Como funciona"],
-  ["/#plataforma", "Plataforma"],
+  ["/#solucoes", "Ferramentas"],
   ["/precos", "Preços"],
   ["/#faq", "FAQ"],
 ] as const;

@@ -104,6 +104,7 @@ export function PublicFooter({
           title="Produtos"
           links={[
             ["/produtos/conversas", "Vorix Conversas"],
+            ["/produtos/marketing", "Vorix Marketing"],
             ["/produtos/meetings", "Vorix Meetings"],
             ["/produtos/site", "Vorix Site"],
             ["/precos", "Preços"],

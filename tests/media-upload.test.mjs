@@ -39,8 +39,9 @@ function buildMultipartBody(boundary, fieldName, filename, contentType, data) {
   return Buffer.concat([Buffer.from(head, "utf8"), Buffer.from(data), Buffer.from(tail, "utf8")]);
 }
 
-// workspace-1 pertence a tenant-1; qualquer outro workspace é desconhecido (404).
-const workspaceRepository = { getById: async (id) => (id === "workspace-1" ? { id, tenantId: "tenant-1", name: "W" } : undefined) };
+// workspace-1 (ativo) pertence a tenant-1; qualquer outro workspace é desconhecido (404). Workspace
+// inativo recusa escrita (WORKSPACE_INACTIVE) no guarda global — por isso o status explícito.
+const workspaceRepository = { getById: async (id) => (id === "workspace-1" ? { id, tenantId: "tenant-1", name: "W", status: "active" } : undefined) };
 
 function buildTestApp(objectStorage) {
   const config = loadApiConfig({ AUTH_MODE: "noop", MEDIA_UPLOAD_MAX_BYTES: "5000000" });

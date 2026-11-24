@@ -11,6 +11,7 @@ import { BcryptPasswordHasher } from "../dist/infrastructure/auth/bcrypt-passwor
 import { registerUser } from "../dist/application/identity/index.js";
 import { startTestPostgres } from "./helpers/pglite-test-db.mjs";
 import { grantInternalMarketing } from "./helpers/solution-entitlements.mjs";
+import { PostgresPlatformBillingRepository } from "../dist/infrastructure/storage/postgres/postgres-platform-billing-repository.js";
 
 const MIGRATIONS_DIR = join(process.cwd(), "db", "migrations");
 
@@ -49,6 +50,13 @@ async function seedUserAndLogin(app, { email, tenantId, role = "owner" }) {
   await grantInternalMarketing(db.pool, tenantId);
   const login = await app.inject({ method: "POST", url: "/v1/auth/login", payload: { email, password: "senha-forte-123" } });
   return login.json().data.accessToken;
+}
+
+async function allowWorkspaces(tenantId, workspaces) {
+  const repository = new PostgresPlatformBillingRepository(db.pool);
+  await repository.ensureTenantBilling({ tenantId, now: new Date().toISOString() });
+  const current = await repository.getTenantControls(tenantId);
+  await repository.saveTenantControls({ controls: { ...current, limits: { ...current.limits, workspaces } }, expectedVersion: current.version, actorUserId: "platform-owner", reason: "Capacidade negociada no teste" });
 }
 
 async function createWorkspace(app, accessToken, name = "Workspace de teste") {
@@ -93,6 +101,9 @@ test("POST /v1/conversations: sem autenticação responde 401", async () => {
 test("GET /v1/conversations: lista só as conversas do workspace pedido", async () => {
   const app = await buildTestApp();
   const accessToken = await seedUserAndLogin(app, { email: "conv-2@example.com", tenantId: "tenant-conv-api-2" });
+  // O plano base permite 1 espaço ativo; o teste precisa de 2. Mesmo caminho do administrador da
+  // plataforma ao negociar a capacidade da conta (a regra de limite segue valendo).
+  await allowWorkspaces("tenant-conv-api-2", 2);
   const workspaceA = await createWorkspace(app, accessToken, "A");
   const workspaceB = await createWorkspace(app, accessToken, "B");
 

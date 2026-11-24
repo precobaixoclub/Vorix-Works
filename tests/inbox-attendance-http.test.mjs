@@ -44,6 +44,10 @@ async function seedConversation(app, { tenantId, aiEnabled = false }) {
   return { workspace, connection, contact, conversationId: conversation.id };
 }
 
+// Identity parcial: o guarda de contrato (desde da2df42a) consulta o bloqueio da conta no repositório de
+// cobrança da identity. Conta ativa, sem bloqueio — o guarda continua falhando fechado sem ele.
+const ACTIVE_CONTRACT = { getTenantControls: async () => undefined };
+
 test("RBAC: viewer (só inbox:read) recebe 403 ao tentar assumir/transferir/finalizar/reabrir uma conversa", async () => {
   const tenantId = "tenant-http-rbac";
   const app = await buildTestApp({ authPort: fakeAuthPortFor(principal({ role: "viewer", tenantId })) });
@@ -374,7 +378,7 @@ test("RBAC: GET /inbox/members exige inbox:assign — viewer recebe 403, editor 
 
   const appViewer = await buildApp({
     config: loadApiConfig({ ZUNO_LOG_LEVEL: "silent", AUTH_MODE: "noop", CONVERSATIONS_MODULE_ENABLED: "true" }),
-    container: { authPort: fakeAuthPortFor(principal({ role: "viewer", tenantId })), identity: { membershipRepository, userRepository, pool: { end: async () => {} } } },
+    container: { authPort: fakeAuthPortFor(principal({ role: "viewer", tenantId })), identity: { membershipRepository, userRepository, platformBillingRepository: ACTIVE_CONTRACT, pool: { end: async () => {} } } },
   });
   const deniedResponse = await appViewer.inject({ method: "GET", url: "/v1/inbox/members" });
   assert.equal(deniedResponse.statusCode, 403);
@@ -382,7 +386,7 @@ test("RBAC: GET /inbox/members exige inbox:assign — viewer recebe 403, editor 
 
   const appEditor = await buildApp({
     config: loadApiConfig({ ZUNO_LOG_LEVEL: "silent", AUTH_MODE: "noop", CONVERSATIONS_MODULE_ENABLED: "true" }),
-    container: { authPort: fakeAuthPortFor(principal({ role: "editor", tenantId })), identity: { membershipRepository, userRepository, pool: { end: async () => {} } } },
+    container: { authPort: fakeAuthPortFor(principal({ role: "editor", tenantId })), identity: { membershipRepository, userRepository, platformBillingRepository: ACTIVE_CONTRACT, pool: { end: async () => {} } } },
   });
   const allowedResponse = await appEditor.inject({ method: "GET", url: "/v1/inbox/members" });
   assert.equal(allowedResponse.statusCode, 200);
@@ -400,7 +404,7 @@ test("Isolamento cross-tenant: GET /inbox/members nunca lista membros de outro t
 
   const appA = await buildApp({
     config: loadApiConfig({ ZUNO_LOG_LEVEL: "silent", AUTH_MODE: "noop", CONVERSATIONS_MODULE_ENABLED: "true" }),
-    container: { authPort: fakeAuthPortFor(principal({ role: "editor", tenantId: tenantA, userId: "user-a1" })), identity: { membershipRepository, userRepository, pool: { end: async () => {} } } },
+    container: { authPort: fakeAuthPortFor(principal({ role: "editor", tenantId: tenantA, userId: "user-a1" })), identity: { membershipRepository, userRepository, platformBillingRepository: ACTIVE_CONTRACT, pool: { end: async () => {} } } },
   });
 
   const response = await appA.inject({ method: "GET", url: "/v1/inbox/members" });

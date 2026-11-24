@@ -119,6 +119,11 @@ export async function mockConversasBackend(page: Page) {
       });
     }
     if (path === "/v1/solutions") return fulfillJson(route, { solutions: [{ key: "conversations", name: "Conversas", internal: false }] });
+    // Plano de gravação de Reuniões (cartão em Conta e assinatura › Plano): conta sem plano, teste disponível.
+    if (path === "/v1/meeting-plans" && method === "GET") return fulfillJson(route, {
+      catalog: { trial: { code: "trial", name: "Teste grátis", priceCents: 0, currency: "BRL", recordingMinutes: 120, recordingHours: 2, retentionDays: 30, maxConcurrentRecordings: 1, summary: "Teste", days: 7 }, plans: [] },
+      trialAvailable: true, checkoutOpen: false, canManage: true, rules: { exportWindowDays: 30, retentionNoticeDays: [7], maxRecordingMinutes: 240 },
+    });
     if (path === "/v1/dashboard") return fulfillJson(route, {
       viewing: "me", subject: { kind: "me", userIds: ["user-qa"] },
       period: { period: "this_month", from: new Date().toISOString(), to: new Date().toISOString(), timeZone: "America/Sao_Paulo", monthStart: "2026-10-01" },

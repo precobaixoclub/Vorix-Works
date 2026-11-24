@@ -68,10 +68,14 @@ async function mockEverything(page: Page) {
     if (path === "/v1/deals/deal-ds2/timeline") return ok([]);
     if (path === "/v1/pipelines") return ok([{ id: "pipe-ds2", name: "Comercial", isDefault: true }]);
     if (path.endsWith("/stages")) return ok([{ id: "st-1", pipelineId: "pipe-ds2", name: "Qualificação", position: 0, isWon: false, isLost: false }, { id: "st-2", pipelineId: "pipe-ds2", name: "Negociação", position: 1, isWon: false, isLost: false }, { id: "st-won", pipelineId: "pipe-ds2", name: "Ganho", position: 2, isWon: true, isLost: false }]);
-    if (path === "/v1/products") return ok([
+    // Catálogo atual: paginado (catalog-bulk) e com categorias/marcas/atributos.
+    const productList = [
       { id: "p1", tenantId: "t", workspaceId: WORKSPACE_ID, name: "Licença Enterprise", code: "ENT-01", category: "Software", itemType: "service", billingType: "monthly", priceCents: 9500, listPriceCents: 9500, minimumPriceCents: 8000, currency: "BRL", active: true, createdAt: iso(), updatedAt: iso() },
       { id: "p2", tenantId: "t", workspaceId: WORKSPACE_ID, name: "Implantação", code: "IMP", category: "Serviço", itemType: "service", billingType: "one_time", priceCents: 150000, listPriceCents: 150000, currency: "BRL", active: true, createdAt: iso(), updatedAt: iso() },
-    ]);
+    ];
+    if (path === "/v1/products") return ok(productList);
+    if (path === "/v1/catalog-bulk/products") return ok({ items: productList, total: productList.length });
+    if (path === "/v1/product-metadata") return ok({ categories: [], brands: [], attributes: [] });
     if (path === "/v1/billing/capacity/preview") {
       const input = route.request().postDataJSON();
       return ok({ current: {}, requestedOnCurrentPlan: { planCode: "PRO", currency: "BRL", totalMonthlyAmount: 297, baseMonthlyAmount: 297, addonsMonthlyAmount: 0, users: input.users, whatsappConnections: input.whatsappConnections, meetingsMonthlyAmount: 0, feasible: true }, recommendation: { options: [] } });
@@ -137,7 +141,7 @@ test.describe("prova visual DS 2.0", () => {
     await page.waitForTimeout(500);
     await capture(page, "conversas-inbox-thread", [VIEWPORTS[0], VIEWPORTS[4]]);
     await page.goto(`/workspaces/${WORKSPACE_ID}/performance`);
-    await expect(page.getByText("Desempenho comercial")).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Desempenho comercial", exact: true })).toBeVisible();
     await capture(page, "sales-performance", [VIEWPORTS[0], VIEWPORTS[2], VIEWPORTS[4]]);
     await page.goto(`/workspaces/${WORKSPACE_ID}/products`);
     await expect(page.getByText("Licença Enterprise").first()).toBeVisible();

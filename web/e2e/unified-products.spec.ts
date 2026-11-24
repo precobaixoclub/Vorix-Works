@@ -13,12 +13,15 @@ test("oferta pública contém três produtos e apresenta Site sem um Commerce se
  await page.goto("/produtos/meetings");await expect(page.getByText("Recursos apresentados como visão do produto em homologação.",{exact:false})).toHaveCount(0);await expect(page.getByRole("link",{name:/Contratar Meetings/}).first()).toBeVisible();
 });
 
-test("admin classifica somente Marketing como interno e libera Meetings por concessão normal",async({page},info)=>{
+// Desde 12126483 o Marketing é público: nenhum produto é interno (a API acima já verifica a lista vazia).
+// A página do cliente no admin agrupa os produtos na aba "Acessos e limites" (4a84bbcd).
+test("admin: nenhum produto interno e Meetings liberado por concessão normal",async({page},info)=>{
  const headers=await login(page);const grant=await page.request.put(`${api}/v1/admin/tenants/${scope.tenantId}/solutions/meetings`,{headers,data:{enabled:true,source:"manual",limits:{maxConcurrentRecordings:1},reason:"Fixture — decisão de produto"}});expect(grant.status()).toBe(200);
  const state=(await(await page.request.get(`${api}/v1/admin/tenants/${scope.tenantId}/solutions`,{headers})).json()).data.solutions;expect(state.filter((product:{internal:boolean})=>product.internal).map((product:{key:string})=>product.key)).toEqual([]);expect(state.some((product:{key:string})=>product.key==="commerce")).toBe(false);
- await page.goto(`/admin/tenants/${scope.tenantId}`);await expect(page.getByText("acesso interno",{exact:true})).toHaveCount(1);await expect(page.getByRole("switch",{name:"Desligar Vorix Site",exact:true})).toBeVisible();await expect(page.getByText("Vorix Commerce",{exact:true})).toHaveCount(0);await proof(page,"admin-products",info.project.name);
+ await page.goto(`/admin/tenants/${scope.tenantId}`);await page.getByRole("button",{name:"Acessos e limites",exact:true}).click();await expect(page.getByRole("switch",{name:"Vorix Site",exact:true})).toBeVisible();await expect(page.getByText("acesso interno",{exact:true})).toHaveCount(0);await expect(page.getByText("Vorix Commerce",{exact:true})).toHaveCount(0);await proof(page,"admin-products",info.project.name);
 });
 
+// A seção da loja virou "Como vender pelo site": a compra online só liga quando a empresa escolhe e configura.
 test("endereço antigo e loja online usam o único produto Site",async({page},info)=>{
- await login(page);await page.goto(`/workspaces/${scope.workspaceId}/commerce`);await expect(page).toHaveURL(new RegExp(`/workspaces/${scope.workspaceId}/site$`));await page.goto(`/workspaces/${scope.workspaceId}/site?section=loja`);await expect(page.getByRole("heading",{name:"Loja online",exact:true})).toBeVisible();await expect(page.getByRole("button",{name:"Ativar compra online"})).toBeDisabled();await expect(page.getByText("Vorix Commerce",{exact:true})).toHaveCount(0);await proof(page,"unified-shop",info.project.name);
+ await login(page);await page.goto(`/workspaces/${scope.workspaceId}/commerce`);await expect(page).toHaveURL(new RegExp(`/workspaces/${scope.workspaceId}/site$`));await page.goto(`/workspaces/${scope.workspaceId}/site?section=loja`);await expect(page.getByRole("heading",{name:"Como você quer vender pelo seu site?",exact:true})).toBeVisible();await expect(page.getByRole("radio",{name:/Ainda não vou vender online/})).toBeChecked();await expect(page.getByText("Vorix Commerce",{exact:true})).toHaveCount(0);await proof(page,"unified-shop",info.project.name);
 });

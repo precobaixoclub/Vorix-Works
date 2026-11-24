@@ -142,7 +142,10 @@ test("moveDealStage: first_deal_won registrado uma única vez, mesmo movendo doi
   assert.equal(await countEvents("first_deal_won", workspace.id), 1);
 });
 
-test("applyProposalAcceptanceToDeal: também dispara first_deal_won (segundo caminho pra ganho, idempotente com moveDealStage)", async () => {
+// Desde 008fd47d (faturamento manual de propostas) o aceite NÃO ganha o negócio: ele fica aberto,
+// aguardando faturamento, e o ganho + first_deal_won (uma única vez) acontecem ao faturar — coberto em
+// proposal-billing-contact.test.mjs. Aqui: o aceite não antecipa o ganho nem duplica o evento.
+test("applyProposalAcceptanceToDeal: aceite deixa o negócio aguardando faturamento e não dispara first_deal_won", async () => {
   const tenantId = "tenant-ev-deal-3";
   const workspace = await makeWorkspace(tenantId);
   const { pipeline, novo, ganho } = await makePipelineWithStages(tenantId, workspace.id);
@@ -152,16 +155,19 @@ test("applyProposalAcceptanceToDeal: também dispara first_deal_won (segundo cam
   await moveDealStage(dealDeps(), { dealId: dealMoved.id, tenantId, workspaceId: workspace.id, targetStageId: ganho.id });
   assert.equal(await countEvents("first_deal_won", workspace.id), 1);
 
-  // ...e outro ganho pela ACEITAÇÃO DE PROPOSTA (bypassa moveDealStage inteiramente) nunca duplica.
-  const dealViaProposal = await createDeal(dealDeps(), { tenantId, workspaceId: workspace.id, pipelineId: pipeline.id, stageId: novo.id, title: "Ganho via proposta" });
+  // ...e outro negócio com proposta ACEITA: continua aberto (aguardando faturamento), sem novo evento.
+  const dealViaProposal = await createDeal(dealDeps(), { tenantId, workspaceId: workspace.id, pipelineId: pipeline.id, stageId: novo.id, title: "Aceito via proposta" });
   const { proposal, rawToken } = await createProposal(proposalDeps(), { tenantId, workspaceId: workspace.id, dealId: dealViaProposal.id, title: "Proposta", items: [{ name: "Item", quantity: 1, unitPriceCents: 1000 }] });
   await sendProposal(proposalDeps(), { proposalId: proposal.id, tenantId, workspaceId: workspace.id });
   const accepted = await acceptPublicProposal(proposalDeps(), rawToken);
   await applyProposalAcceptanceToDeal(dealLinkDeps(), accepted);
 
   const dealAfter = await dealLinkDeps().dealRepository.getById(dealViaProposal.id);
-  assert.ok(dealAfter.wonAt, "o segundo negócio realmente foi ganho (efeito de negócio não quebrou)");
-  assert.equal(await countEvents("first_deal_won", workspace.id), 1, "first_deal_won continua contado uma única vez, mesmo com dois caminhos de ganho reais no mesmo workspace");
+  assert.equal(dealAfter.status, "open", "aceite não fecha o negócio: o ganho vem do faturamento");
+  assert.ok(!dealAfter.wonAt);
+  const stages = await dealLinkDeps().pipelineStageRepository.listByPipeline(pipeline.id);
+  assert.equal(dealAfter.stageId, stages.find((stage) => stage.isAwaitingBilling)?.id, "vai para a etapa de aguardando faturamento");
+  assert.equal(await countEvents("first_deal_won", workspace.id), 1, "first_deal_won segue contado uma única vez (só o ganho manual anterior)");
 });
 
 test("createProposal/sendProposal/acceptPublicProposal: first_proposal_* registrados uma vez cada; recusar NUNCA dispara first_proposal_accepted", async () => {

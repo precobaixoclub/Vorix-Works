@@ -40,7 +40,7 @@ async function buildRealJwtTestApp({ conversationsModuleEnabled, inboxMediaStora
     // `app.close()` no fim de cada teste; nenhum destes testes toca Postgres de verdade.
     // `inboxMediaStorage` PRECISA ser passado aqui (nunca reatribuído em `app.zunoContainer` depois
     // do boot) — `registerInboxRoutes` captura a referência uma única vez ao montar as rotas.
-    container: { workspaceRepository: new InMemoryWorkspaceRepository({ idGenerator: () => "ws-1" }), authPort: new JwtAuthAdapter(jwt), identity: { jwt, pool: { end: async () => {} } }, ...(inboxMediaStorage ? { inboxMediaStorage } : {}) },
+    container: { workspaceRepository: new InMemoryWorkspaceRepository({ idGenerator: () => "ws-1" }), authPort: new JwtAuthAdapter(jwt), identity: { jwt, platformBillingRepository: { getTenantControls: async () => undefined }, pool: { end: async () => {} } }, ...(inboxMediaStorage ? { inboxMediaStorage } : {}) },
   });
   return { app, jwt };
 }

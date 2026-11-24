@@ -32,6 +32,9 @@ const goals = [
   { ...monthGoal(1, 60_000_000), id: "annual", periodType: "annual", progress: { targetValue: 60_000_000, realizedValue: 36_000_000, attainmentBp: 6000, remainingValue: 24_000_000, reached: false }, pace: { totalMonths: 12, elapsedMonths: 9, requiredPerRemainingMonth: 8_000_000, projectedValue: 48_000_000 } },
 ];
 
+/** Consultas do catálogo (filtros vão para o servidor) — para provar o filtro "Precisa repor". */
+const catalogQueries: string[] = [];
+
 const catalog = [
   { key: "commercial_overview", title: "Visão comercial", description: "Oportunidades, pipeline, ganhos, conversão, ticket e ciclo." },
   { key: "revenue_by_origin", title: "Receita por origem", description: "Vendas e receita por origem." },
@@ -73,6 +76,9 @@ async function mockAll(page: Page, billing: Billing = { status: "active", trialD
     if (path === "/v1/solutions") return ok({ solutions: [{ key: "conversations", name: "Conversas", internal: false }, { key: "meetings", name: "Meetings", internal: false }] });
     if (path === "/v1/workspaces/credits") return ok({ monthlyCreditsQuota: 2500, creditsConsumedThisMonth: 2420, creditsExtra: 0, remainingCredits: 80 });
     if (path === "/v1/products") return ok(products);
+    // Catálogo atual (paginado, com filtros no servidor) e categorias/marcas/atributos.
+    if (path === "/v1/product-metadata") return ok({ categories: [], brands: [], attributes: [] });
+    if (path === "/v1/catalog-bulk/products" && method === "GET") { catalogQueries.push(new URL(route.request().url()).search); return ok({ items: products, total: products.length }); }
     if (path === "/v1/products/stock-risk") return ok({ products: [{ productId: "p1", name: "Licença Enterprise", unit: "licença", stockQuantity: 3, openDemand: 7, level: "warning" }, { productId: "p2", name: "Leitor de código", unit: "un", stockQuantity: 42, openDemand: 2, level: "ok" }], deals: [{ dealId: "deal-red", level: "critical", items: [{ productId: "p1", name: "Licença Enterprise", unit: "licença", quantity: 5, available: 3, openDemand: 7, level: "critical" }] }, { dealId: "deal-orange", level: "warning", items: [{ productId: "p1", name: "Licença Enterprise", unit: "licença", quantity: 2, available: 3, openDemand: 7, level: "warning" }] }] });
     if (path === "/v1/deals") return ok(deals);
     if (path === "/v1/pipelines") return ok([{ id: "pipe", name: "Comercial", isDefault: true }]);
@@ -122,11 +128,12 @@ test.describe("prova dos ajustes de produto", () => {
     await page.goto(`/workspaces/${WORKSPACE_ID}/products`);
     await expect(page.getByRole("heading", { name: "Produtos", exact: true })).toBeVisible();
     await expect(page.getByRole("link", { name: "Produtos" }).first()).toBeVisible();
-    await expect(page.getByRole("heading", { name: "Precisa repor" })).toBeVisible();
+    await expect(page.getByText("Licença Enterprise").first()).toBeVisible();
     await capture(page, "products-catalog");
     await page.setViewportSize({ width: 1440, height: 900 });
-    await page.getByRole("button", { name: /Precisa repor/ }).first().click();
-    await expect(page.getByRole("heading", { name: "Precisa repor" })).toBeVisible();
+    // O catálogo atual leva "Precisa repor" para o filtro de estoque (consulta no servidor).
+    await page.getByRole("combobox", { name: "Estoque" }).selectOption({ label: "Precisa repor" });
+    await expect.poll(() => catalogQueries.at(-1) ?? "").toContain("stock=low");
     await capture(page, "products-filter-restock", [VIEWPORTS[0]]);
     await page.getByRole("button", { name: "Lista" }).click();
     await capture(page, "products-list", [VIEWPORTS[0]]);

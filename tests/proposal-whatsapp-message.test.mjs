@@ -36,8 +36,10 @@ test("modelos personalizados mantêm seu texto e sempre incluem o link", () => {
   assert.match(renderProposalMessage(DEFAULT_PROPOSAL_REMINDER_TEMPLATE, vars), /\*Vamos conversar sobre sua proposta\?\*/);
 });
 
+// Validade bem no futuro: uma proposta vencida é marcada como expirada ao ser lida (outra regra,
+// coberta nos testes de propostas) — a prévia não pode depender da data em que o teste roda.
 function previewDeps() {
-  const proposal = { id: "proposal-1", tenantId: "tenant-1", workspaceId: "workspace-1", contactId: "contact-1", title: vars.titulo, totalCents: 9900, currency: "BRL", validUntil: "2026-10-31" };
+  const proposal = { id: "proposal-1", tenantId: "tenant-1", workspaceId: "workspace-1", contactId: "contact-1", title: vars.titulo, totalCents: 9900, currency: "BRL", validUntil: "2099-10-31" };
   return {
     proposalRepository: { getById: async () => proposal },
     contactRepository: { getById: async () => ({ name: "+118644193411194" }) },
@@ -51,7 +53,7 @@ test("prévia usa o modelo do workspace sem gerar token nem registrar visualiza�
   const preview = await previewProposalWhatsappMessage(deps, input);
   assert.ok(preview.message.startsWith("Olá!"));
   assert.ok(preview.message.includes("{{proposal_link}}"));
-  assert.match(preview.message, /31\/10\/2026/);
+  assert.match(preview.message, /31\/10\/2099/);
   const custom = await previewProposalWhatsappMessage({ ...deps, messageTemplates: async () => ({ send: "Personalizado: {{valor}}\n{{proposal_link}}", reminder: "Lembrete\n{{proposal_link}}" }) }, input);
   assert.equal(custom.message, "Personalizado: R$ 99,00\n{{proposal_link}}");
   await assert.rejects(() => previewProposalWhatsappMessage(deps, { ...input, tenantId: "other" }), /PROPOSAL_NOT_FOUND/);

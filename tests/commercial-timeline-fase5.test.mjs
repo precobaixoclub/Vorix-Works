@@ -112,10 +112,15 @@ test("Fase 5 — Timeline 360 agrega contato, negócio, tarefa, proposta e conve
   assert.ok(types.includes("proposal_sent"));
   assert.ok(types.includes("proposal_viewed"));
   assert.ok(types.includes("proposal_accepted"));
-  assert.ok(types.includes("deal_won"), "aceite da proposta move o negócio pra Ganho — deve aparecer como deal_won, nunca só deal_stage_changed genérico");
+  // Desde 008fd47d (faturamento manual de propostas): o aceite deixa o negócio "aguardando faturamento";
+  // o ganho só acontece ao faturar (coberto em proposal-billing-contact.test.mjs). A linha do tempo
+  // mostra o passo específico — nunca um deal_stage_changed genérico, nem um ganho antecipado.
+  assert.ok(types.includes("deal_awaiting_billing"), "aceite da proposta deve aparecer como 'aguardando faturamento'");
+  assert.ok(!types.includes("deal_won"), "aceite sozinho não ganha o negócio: o ganho vem do faturamento");
+  assert.ok(!types.includes("deal_stage_changed"));
 
-  // Ordenação: mais recente primeiro (deal_won foi o último a acontecer).
-  assert.equal(activity[0].type, "deal_won");
+  // Ordenação: mais recente primeiro (o aceite e o aguardando faturamento são os últimos passos).
+  assert.deepEqual(activity.slice(0, 2).map((item) => item.type).sort(), ["deal_awaiting_billing", "proposal_accepted"]);
   for (let i = 1; i < activity.length; i++) {
     assert.ok(activity[i - 1].occurredAt >= activity[i].occurredAt, "lista deve estar em ordem decrescente de occurredAt");
   }

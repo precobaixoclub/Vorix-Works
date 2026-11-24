@@ -66,7 +66,9 @@ before(async()=>{
     await members.add({teamId:legacyConfigured.team.id,userId:legacyConfigured.userId,role:'owner',isPrincipalForLevel:true});
     await db.pool.query("update teams set last_assigned_index_by_level=$2 where id=$1",[legacyConfigured.team.id,JSON.stringify({N1:7})]);
     const result = await applyMigrations(db.pool,migrationDir);
-    assert.deepEqual(result.applied,['0195_workspace_default_teams']);
+    // A 0195 roda sobre os dados legados; as migrações posteriores (0196+) também entram nesta passada.
+    assert.equal(result.applied[0],'0195_workspace_default_teams');
+    assert.ok(result.applied.every(name=>name>='0195_workspace_default_teams'),result.applied.join(','));
   } finally { await rm(oldDir,{recursive:true,force:true}); }
 });
 after(async()=>{ await db?.stop(); });

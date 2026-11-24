@@ -80,8 +80,9 @@ function makeFakeRadar({ credits = { available: true, creditsCost: 1, remainingC
 async function buildTestApp({ role, userId, radar, radarEnv = "true" }) {
   const config = loadApiConfig({ ZUNO_LOG_LEVEL: "silent", AUTH_MODE: "noop", CONVERSATIONS_MODULE_ENABLED: "true", RADAR_ENABLED: radarEnv });
   const authPort = { async verifyToken() { return { authenticated: true, principal: principal({ role, userId }) }; } };
-  // O guarda de tenant global (`workspace-tenant-guard`) exige que o `workspaceId` exista no tenant.
-  const workspaceRepository = { async getById(id) { return id === "ws-1" ? { id, tenantId: "tenant-radar-http" } : undefined; } };
+  // O guarda de tenant global (`workspace-tenant-guard`) exige que o `workspaceId` exista no tenant e,
+  // para escrita, que esteja ativo (WORKSPACE_INACTIVE).
+  const workspaceRepository = { async getById(id) { return id === "ws-1" ? { id, tenantId: "tenant-radar-http", status: "active" } : undefined; } };
   return buildApp({ config, container: { authPort, radar, workspaceRepository } });
 }
 

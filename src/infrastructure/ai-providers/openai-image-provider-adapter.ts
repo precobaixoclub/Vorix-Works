@@ -5,6 +5,7 @@ import type {
   AiMediaProviderAdapterPort,
   AiMediaProviderDescriptor,
 } from "../../application/ports/ai-media-provider-adapter.port.js";
+import { createHash } from "node:crypto";
 import { cropToTargetAspectRatio } from "../image-processing/aspect-ratio-crop.js";
 import { computeGptImageCostUsd, getGptImageModel, isGptImageComplexity, parseGptImageUsage, unsupportedGptImageModelMessage } from "../../shared/utils/gpt-image-models.js";
 
@@ -108,6 +109,12 @@ export class OpenAiImageProviderAdapter implements AiMediaProviderAdapterPort {
     // /v1/images/edits` (multipart, aceita uma imagem de entrada real) em vez de `/generations`
     // (só texto) — o modelo passa a enxergar o produto de verdade, não uma paráfrase dele.
     const referenceImageBuffer = Buffer.isBuffer(request.params.referenceImageBuffer) ? (request.params.referenceImageBuffer as Buffer) : undefined;
+    // Motor criativo (25/11/2026): mais de uma referência real — principal primeiro (o produto/tela que
+    // manda), depois variações. Sem isso só a 1ª imagem chegava ao modelo.
+    const extraReferenceBuffers = Array.isArray(request.params.referenceImageBuffers)
+      ? (request.params.referenceImageBuffers as unknown[]).filter((item): item is Buffer => Buffer.isBuffer(item)).slice(0, 15)
+      : [];
+    const referenceBuffers = [...(referenceImageBuffer ? [referenceImageBuffer] : []), ...extraReferenceBuffers];
     // `background` ("opaque" | "transparent" | "auto"). Só enviado quando o chamador pede
     // explicitamente — sem ele vale o padrão "auto" da OpenAI.
     const background = request.params.background === "opaque" || request.params.background === "transparent" || request.params.background === "auto" ? request.params.background : undefined;
@@ -115,13 +122,13 @@ export class OpenAiImageProviderAdapter implements AiMediaProviderAdapterPort {
     try {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), request.timeoutMs);
-      const response = referenceImageBuffer
+      const response = referenceBuffers.length
         ? await this.httpClient(`${baseUrl}/v1/images/edits`, {
             method: "POST",
             headers: { authorization: `Bearer ${apiKey}` },
             // Sem "content-type" de propósito — o `fetch`/`undici` calcula o boundary do
             // multipart automaticamente a partir do `FormData`; setar manualmente quebra o parse.
-            body: buildEditsFormData({ modelId: modelSpec.id, prompt, size, quality, complexity, referenceImageBuffer, background }),
+            body: buildEditsFormData({ modelId: modelSpec.id, prompt, size, quality, complexity, referenceBuffers, background }),
             signal: controller.signal,
           })
         : await this.httpClient(`${baseUrl}/v1/images/generations`, {
@@ -139,8 +146,10 @@ export class OpenAiImageProviderAdapter implements AiMediaProviderAdapterPort {
       const usage = parseGptImageUsage(body.usage);
       const audit = {
         model: modelSpec.id,
-        endpoint: referenceImageBuffer ? ("edits" as const) : ("generations" as const),
+        endpoint: referenceBuffers.length ? ("edits" as const) : ("generations" as const),
         params: { size, quality, ...(complexity ? { complexity } : {}), ...(background ? { background } : {}), promptChars: prompt.length },
+        // Prova de transmissão: quantas imagens reais foram enviadas, com hash parcial e tamanho (nunca o conteúdo).
+        ...(referenceBuffers.length ? { referenceImages: referenceBuffers.map((buffer) => ({ sha256: createHash("sha256").update(buffer).digest("hex").slice(0, 16), bytes: buffer.length })) } : {}),
         ...(usage ? { usage, costUsd: computeGptImageCostUsd(modelSpec, usage) } : {}),
       };
       const image = body.data?.[0];
@@ -190,7 +199,7 @@ export class OpenAiImageProviderAdapter implements AiMediaProviderAdapterPort {
   }
 }
 
-function buildEditsFormData(input: { modelId: string; prompt: string; size: string; quality: string; complexity?: string; referenceImageBuffer: Buffer; background?: string }): FormData {
+function buildEditsFormData(input: { modelId: string; prompt: string; size: string; quality: string; complexity?: string; referenceBuffers: Buffer[]; background?: string }): FormData {
   const formData = new FormData();
   formData.append("model", input.modelId);
   formData.append("prompt", input.prompt);
@@ -200,7 +209,9 @@ function buildEditsFormData(input: { modelId: string; prompt: string; size: stri
   // Família 2.6: a documentação manda omitir `input_fidelity` nas edições — nunca enviado.
   if (input.complexity) formData.append("complexity", input.complexity);
   if (input.background) formData.append("background", input.background);
-  formData.append("image", new Blob([input.referenceImageBuffer], { type: "image/png" }), "reference.png");
+  // Uma imagem: campo `image` (como sempre). Várias: `image[]`, na ordem (a 1ª é a referência principal).
+  if (input.referenceBuffers.length === 1) formData.append("image", new Blob([input.referenceBuffers[0]], { type: "image/png" }), "reference.png");
+  else input.referenceBuffers.forEach((buffer, index) => formData.append("image[]", new Blob([buffer], { type: "image/png" }), `reference-${index + 1}.png`));
   return formData;
 }
 

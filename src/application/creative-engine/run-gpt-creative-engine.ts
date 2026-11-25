@@ -542,6 +542,8 @@ async function requestGeneratedImage(
       imageCount: 1,
       imageAspectRatio: input.format,
       referenceImageUrl: input.referenceImageUrl,
+      // Foto do produto anunciado: obrigatória — se não carregar, falha explícita (nunca gera só por texto).
+      ...(input.referenceImageUrl ? { referenceRequired: true } : {}),
       creativeGuard: input.creativeGuard,
       ...(input.background ? { imageBackground: input.background } : {}),
     },

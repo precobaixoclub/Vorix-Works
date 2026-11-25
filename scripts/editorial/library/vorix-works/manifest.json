@@ -1,0 +1,187 @@
+{
+  "source": "demo_environment",
+  "note": "Front-end real da Vorix com dados de demonstração (API simulada). Nenhum dado de cliente.",
+  "capturedAt": "2026-11-25T18:40:00.000Z",
+  "captures": [
+    {
+      "file": "conversas-celular.png",
+      "feature": "atendimento_whatsapp",
+      "label": "Conversa do WhatsApp no celular",
+      "form": "mobile",
+      "keywords": [
+        "whatsapp",
+        "celular",
+        "mensagens",
+        "atendimento",
+        "cliente",
+        "responder"
+      ],
+      "width": 780,
+      "height": 1688,
+      "devicePixelRatio": 2
+    },
+    {
+      "file": "conversas-continuidade.png",
+      "feature": "continuidade_atendimento",
+      "label": "Histórico e continuidade do atendimento",
+      "form": "desktop",
+      "keywords": [
+        "historico",
+        "continuidade",
+        "transferencia",
+        "transferiu",
+        "repasse",
+        "responsavel",
+        "contexto",
+        "nota interna",
+        "proximo atendente",
+        "muda de pessoa"
+      ],
+      "width": 2560,
+      "height": 1600,
+      "devicePixelRatio": 2,
+      "focus": {
+        "x": 876,
+        "y": 364,
+        "w": 1634,
+        "h": 882
+      }
+    },
+    {
+      "file": "conversas-whatsapp.png",
+      "feature": "atendimento_whatsapp",
+      "label": "Atendimento pelo WhatsApp",
+      "form": "desktop",
+      "keywords": [
+        "whatsapp",
+        "atendimento",
+        "mensagens",
+        "conversa",
+        "caixa de entrada",
+        "inbox",
+        "responder",
+        "cliente",
+        "equipe"
+      ],
+      "width": 2560,
+      "height": 1600,
+      "devicePixelRatio": 2,
+      "focus": {
+        "x": 876,
+        "y": 519,
+        "w": 1634,
+        "h": 726
+      }
+    },
+    {
+      "file": "marketing-bolsao.png",
+      "feature": "conteudo_ia",
+      "label": "Bolsão de ideias e produção de conteúdo",
+      "form": "desktop",
+      "keywords": [
+        "conteudo",
+        "conteudos",
+        "marketing",
+        "ideias",
+        "pautas",
+        "bolsao",
+        "producao",
+        "redes sociais",
+        "instagram",
+        "post",
+        "ia",
+        "calendario"
+      ],
+      "width": 2560,
+      "height": 1600,
+      "devicePixelRatio": 2,
+      "focus": {
+        "x": 534,
+        "y": 1442,
+        "w": 1486,
+        "h": 141
+      }
+    },
+    {
+      "file": "marketing-calendario.png",
+      "feature": "conteudo_ia",
+      "label": "Calendário de conteúdos produzidos e agendados",
+      "form": "desktop",
+      "keywords": [
+        "conteudo",
+        "conteudos",
+        "marketing",
+        "calendario",
+        "agendamento",
+        "publicacao",
+        "redes sociais",
+        "instagram",
+        "facebook",
+        "post",
+        "producao",
+        "ia"
+      ],
+      "width": 2560,
+      "height": 1600,
+      "devicePixelRatio": 2,
+      "focus": {
+        "x": 503,
+        "y": 560,
+        "w": 2050,
+        "h": 1040
+      }
+    },
+    {
+      "file": "reunioes-resumo.png",
+      "feature": "reunioes_analise",
+      "label": "Resumo e decisões da reunião gravada",
+      "form": "desktop",
+      "keywords": [
+        "reuniao",
+        "reunioes",
+        "gravacao",
+        "gravador",
+        "resumo",
+        "decisoes",
+        "ata",
+        "analise",
+        "ia",
+        "proximos passos",
+        "tarefas"
+      ],
+      "width": 2560,
+      "height": 1600,
+      "devicePixelRatio": 2,
+      "focus": {
+        "x": 988,
+        "y": 1139,
+        "w": 1527,
+        "h": 461
+      }
+    },
+    {
+      "file": "reunioes-transcricao.png",
+      "feature": "reunioes_analise",
+      "label": "Transcrição da reunião com quem falou",
+      "form": "desktop",
+      "keywords": [
+        "transcricao",
+        "transcrita",
+        "reuniao",
+        "gravacao",
+        "falou",
+        "trechos",
+        "registro"
+      ],
+      "width": 2560,
+      "height": 1600,
+      "devicePixelRatio": 2,
+      "focus": {
+        "x": 988,
+        "y": 1009,
+        "w": 1527,
+        "h": 561
+      }
+    }
+  ]
+}

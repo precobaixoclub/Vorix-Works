@@ -118,10 +118,27 @@ export class OpenAiCreativeImageProvider implements AIProviderPort {
       cropAwareHint: creativeGuard.cropAwareHint ?? (canvas.exact ? undefined : resolveCropAwareCompositionHint(imageAspectRatio, size)),
     });
 
-    // Mesma técnica do motor legado: baixa a foto de referência uma vez, best-effort — se falhar,
-    // segue com geração só-texto em vez de travar a peça inteira por causa da referência.
+    // Referências reais (principal + variações). Auditoria 25/11/2026: antes era uma única URL baixada
+    // "best-effort" — se falhasse, a peça saía só por texto, sem aviso, e o produto era inventado.
+    // Quando a referência é obrigatória (`referenceRequired`, produto/tela que a peça anuncia), a falha
+    // agora interrompe a geração com motivo explícito; sem a marca, mantém o comportamento anterior.
     const referenceImageUrl = typeof request.context?.referenceImageUrl === "string" ? request.context.referenceImageUrl.trim() : undefined;
-    const referenceImageBuffer = referenceImageUrl ? await fetchAsBuffer(referenceImageUrl).catch(() => undefined) : undefined;
+    const extraReferenceUrls = Array.isArray(request.context?.referenceImageUrls)
+      ? (request.context.referenceImageUrls as unknown[]).filter((url): url is string => typeof url === "string" && url.trim().length > 0 && url.trim() !== referenceImageUrl).slice(0, 4)
+      : [];
+    const referenceRequired = request.context?.referenceRequired === true;
+    const fetchReference = async (url: string) => {
+      try {
+        return await fetchAsBuffer(url);
+      } catch (error) {
+        if (referenceRequired) {
+          throwMediaGenerationFailure("invalid_request", `REFERENCE_IMAGE_UNAVAILABLE: a referência obrigatória não pôde ser carregada (${error instanceof Error ? error.message : "erro desconhecido"}) — a peça não é gerada sem ela.`);
+        }
+        return undefined;
+      }
+    };
+    const referenceImageBuffer = referenceImageUrl ? await fetchReference(referenceImageUrl) : undefined;
+    const referenceImageBuffers = (await Promise.all(extraReferenceUrls.map(fetchReference))).filter((buffer): buffer is Buffer => Boolean(buffer));
     // Fundo explícito só quando o motor pede (ex.: base institucional editorial = "opaque").
     // Sem isso a OpenAI usa "auto" e pode devolver PNG com transparência (achado do cenário B).
     const background = request.context?.imageBackground === "opaque" || request.context?.imageBackground === "transparent" || request.context?.imageBackground === "auto" ? request.context.imageBackground : undefined;
@@ -141,6 +158,7 @@ export class OpenAiCreativeImageProvider implements AIProviderPort {
           ...(this.config.complexity ? { complexity: this.config.complexity } : {}),
           targetAspectRatio: imageAspectRatio,
           ...(referenceImageBuffer ? { referenceImageBuffer } : {}),
+          ...(referenceImageBuffers.length ? { referenceImageBuffers } : {}),
           ...(background ? { background } : {}),
         },
         timeoutMs: request.timeoutMs,

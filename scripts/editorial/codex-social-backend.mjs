@@ -7,21 +7,37 @@ import { resolveEffectiveEntitlements } from "./dist/application/billing/entitle
 import { parseManualEditorialIdea } from "./dist/domain/editorial/editorial-idea.model.js";
 import { hasPermission } from "./dist/domain/identity/identity.model.js";
 import { classifyObjectKeyOwner, parseOwnedObjectUrl, signForExternalPublication } from "./dist/shared/utils/object-url-signing.js";
+import { planEditorialCreative, rotationOrder } from "./dist/application/creative-engine/plan-editorial-creative.js";
+import { COMPOSITION_ARCHETYPES } from "./dist/application/creative-engine/creative-spec.js";
+import { redactSecrets } from "./dist/application/creative-engine/creative-trace.js";
+import { verifyApprovedArt } from "./dist/application/creative-engine/publication-guard.js";
+import { catalogPhotoSignals } from "./dist/infrastructure/media/creative/catalog-photo-signals.js";
+import { dHash, sha256Prefix, siteCaptureScore } from "./dist/infrastructure/media/creative/image-analysis.js";
 
 // Loaded on stdin from the host, in the Vorix API container. The renderer has no DB access.
 const tenantId = "tenant-vorix";
 const cmkvWorkspaceId = "workspace-cee-prelaunch-mv47cmfh";
 // Estampas selecionadas do catálogo da CMKV para pautas criadas automaticamente.
 const cmkvEditorialProducts = ["000033", "000035", "000037", "000039", "000043", "000044", "000047", "000048"];
+// Funcionalidades da Vorix que as peças podem demonstrar (a captura real vem da Biblioteca da marca).
+const VORIX_FEATURES = [
+  { key: "atendimento_whatsapp", label: "Atendimento pelo WhatsApp", keywords: ["whatsapp", "atendimento", "mensagens", "responder", "caixa de entrada"] },
+  { key: "continuidade_atendimento", label: "Histórico e continuidade do atendimento", keywords: ["historico", "continuidade", "transferencia", "repasse", "muda de pessoa", "proximo atendente", "contexto"] },
+  { key: "conteudo_ia", label: "Produção de conteúdo com IA", keywords: ["conteudo", "conteudos", "posts", "redes sociais", "calendario", "pautas", "marketing"] },
+  { key: "reunioes_analise", label: "Gravação e análise de reuniões", keywords: ["reuniao", "reunioes", "gravacao", "gravador", "transcricao", "resumo", "decisoes", "ata"] },
+];
 // Por workspace: contas IG+FB e, opcionalmente, como aplicar a logo nesta marca.
+// creative.businessKind decide o modo das pautas (produto físico / software / conceitual); creative.products
+// são os produtos do catálogo liberados para pautas automáticas (rodízio); creative.features, o que o
+// software demonstra. Marcas sem catálogo nem software seguem conceituais, como antes.
 // logo.placement: top_left|top_center|top_right|bottom_left|bottom_center|bottom_right (fixa a posição);
 // logo.treatment: auto|none|shadow|halo|plate (auto = sem caixa, sombra suave só se faltar contraste);
 // logo.scale: 0.6–1.6. Sem configuração, vale o que as notas do Perfil da Marca dizem, senão o automático.
 const brands = new Map([
-  ["workspace-mwmumsxd-fmvh3h", { accounts: ["soc-mwmvbruu-sz6rkd12", "soc-mwmvbryk-dthxstki"], logo: {} }],
-  ["workspace-mscc9pi2-jkvwbo", { accounts: ["soc-mwk1mgoy-xhcr2duq", "soc-mwk1my6f-lbham9eo"], logo: {} }],
-  ["workspace-mwmu8kgf-uhe66l", { accounts: ["soc-mwmu9f8k-kj2covm2", "soc-mwmugp3j-hwva5nax"], logo: {} }],
-  [cmkvWorkspaceId, { accounts: ["soc-mwkwg3lc-zj3g4xyk", "soc-mwmuj7ud-3py2gdyo"], logo: {} }],
+  ["workspace-mwmumsxd-fmvh3h", { accounts: ["soc-mwmvbruu-sz6rkd12", "soc-mwmvbryk-dthxstki"], logo: {}, creative: { businessKind: "services" } }],
+  ["workspace-mscc9pi2-jkvwbo", { accounts: ["soc-mwk1mgoy-xhcr2duq", "soc-mwk1my6f-lbham9eo"], logo: {}, creative: { businessKind: "software", features: VORIX_FEATURES } }],
+  ["workspace-mwmu8kgf-uhe66l", { accounts: ["soc-mwmu9f8k-kj2covm2", "soc-mwmugp3j-hwva5nax"], logo: {}, creative: { businessKind: "unknown" } }],
+  [cmkvWorkspaceId, { accounts: ["soc-mwkwg3lc-zj3g4xyk", "soc-mwmuj7ud-3py2gdyo"], logo: {}, creative: { businessKind: "physical_products", products: cmkvEditorialProducts } }],
 ]);
 const timezone = "America/Sao_Paulo";
 const prefix = "codex-editorial-v1";
@@ -104,10 +120,8 @@ function cmkvIdeaPhotos(idea, photosByUrl) {
 }
 
 function cmkvFallbackIdea(slot, products, previous) {
-  const lastSlot = code => previous.findIndex(item => item.codes?.includes(code));
-  const product = [...products].sort(([a], [b]) => {
-    return lastSlot(b) - lastSlot(a) || a.localeCompare(b);
-  }).find(([, photos]) => photos.length >= 2);
+  const order = rotationOrder([...products.keys()], previous);
+  const product = order.map(code => [code, products.get(code)]).find(([, photos]) => photos.length >= 2);
   requireCondition(product, "Catálogo da CMKV sem duas fotos de cores distintas dos modelos editoriais");
   const [code, photos] = product;
   const uses = previous.filter(item => item.codes?.includes(code)).length;
@@ -155,6 +169,124 @@ async function selectCmkvIdea({ slot, ideas, candidates, used, allowCreate }) {
   return { idea, catalogPhotos };
 }
 
+// ---------------------------------------------------------------- motor criativo: plano da pauta
+
+const ARCHETYPES = Object.fromEntries(COMPOSITION_ARCHETYPES.map(item => [item.id, { operation: item.operation, mode: item.mode }]));
+
+async function ownedBytes(url) {
+  const key = parseOwnedObjectUrl(url)?.key;
+  const owner = key && classifyObjectKeyOwner(key);
+  requireCondition(owner?.kind === "workspace" && owner.tenantId === tenantId && owner.workspaceId === workspaceId, "A referência precisa pertencer ao workspace");
+  const response = await fetch(signForExternalPublication(url), { signal: AbortSignal.timeout(20000) });
+  requireCondition(response.ok, `Imagem do workspace indisponível (${response.status})`);
+  return Buffer.from(await response.arrayBuffer());
+}
+
+/** Fotos do catálogo físico do workspace (produto ativo, visível, com cor e foto). */
+async function catalogPhotos() {
+  const { rows } = await db.query(`select distinct p.code, v.option_values->>'color' as color, v.image_url as url
+    from products p join product_variants v on v.product_id=p.id and v.workspace_id=p.workspace_id and v.tenant_id=p.tenant_id
+    where p.tenant_id=$1 and p.workspace_id=$2 and p.active and v.active and v.image_url is not null
+      and p.details->>'siteVisible'='true' and p.details->>'catalogVisible'='true'
+      and coalesce(v.option_values->>'color','') <> ''
+    order by p.code, color, url`, [tenantId, workspaceId]);
+  return rows;
+}
+
+const variantName = color => String(color ?? "").replace(/\s*-\s*Logo.*$/i, "").trim();
+
+/** Capturas reais do software na Biblioteca da marca. Etiquetas: feature:, form:, dpr:, focus:x,y,w,h. */
+async function libraryCaptures() {
+  const { rows } = await db.query(`select a.id, a.name, a.tags, a.material_type, a.ai_instructions, a.storage_ref->>'objectKey' as key
+    from assets a join asset_libraries l on l.id=a.library_id
+    where l.workspace_id=$1 and a.status='active' and a.material_type in ('screenshot_app','screenshot_site')`, [workspaceId]);
+  return rows.filter(row => row.key).map(row => {
+    const tag = prefix => row.tags.find(item => item.startsWith(prefix))?.slice(prefix.length);
+    const focus = tag("focus:")?.split(",").map(Number);
+    return {
+      candidate: { id: row.id, source: "brand_library", materialType: row.material_type, name: row.name, tags: row.tags, notes: row.ai_instructions ?? undefined, form: tag("form:") === "mobile" ? "mobile" : "desktop" },
+      url: c.objectStorage.resolvePublicUrl(row.key),
+      meta: { devicePixelRatio: Number(tag("dpr:")) || 1, ...(focus?.length === 4 && focus.every(Number.isFinite) ? { focus: { x: focus[0], y: focus[1], w: focus[2], h: focus[3] } } : {}), feature: tag("feature:"), form: tag("form:") === "mobile" ? "mobile" : "desktop" },
+    };
+  });
+}
+
+/** Histórico visual recente da marca (impressões das peças publicadas pela automação). */
+async function visualHistory(usedRows) {
+  const history = [];
+  for (const row of usedRows.slice(0, 6)) {
+    const stored = row.creative?.fingerprints;
+    if (Array.isArray(stored) && stored.length) { history.push(...stored); continue; }
+    // Peças anteriores ao motor novo: impressão calculada da primeira arte publicada.
+    const url = row.image;
+    if (!url) continue;
+    try { history.push({ archetype: "legado", textLayout: "top", productCount: 0, palette: [], dHash: await dHash(await ownedBytes(url)) }); } catch { /* arte antiga indisponível: segue sem ela */ }
+  }
+  return history.slice(0, 8);
+}
+
+/** Monta o plano criativo de uma pauta e os arquivos originais das referências escolhidas. */
+async function planIdea(idea, creative, context) {
+  const ideaReferences = [];
+  const urls = new Map();
+  for (const url of idea.referenceImages ?? []) {
+    const photo = context.photosByUrl.get(url);
+    const id = photo ? `produto:${photo.code}:${variantName(photo.color)}` : `pauta:${sha256Prefix(Buffer.from(url))}`;
+    urls.set(id, url);
+    const bytes = await ownedBytes(url);
+    if (photo) ideaReferences.push({ id, source: "catalog", productCode: photo.code, variantLabel: variantName(photo.color), ...(await catalogPhotoSignals(bytes, variantName(photo.color))), ...(ideaReferences.some(item => item.productCode === photo.code) ? { explicitRole: "product_variant" } : {}) });
+    else ideaReferences.push({ id, source: "idea_upload", siteCaptureScore: await siteCaptureScore(bytes) });
+  }
+  const captureMeta = new Map();
+  const libraryCandidates = [];
+  if (creative.businessKind === "software") {
+    for (const capture of context.captures) { libraryCandidates.push(capture.candidate); urls.set(capture.candidate.id, capture.url); captureMeta.set(capture.candidate.id, capture.meta); }
+  }
+  // Produtos liberados para pauta automática, em rodízio: só o primeiro com foto utilizável é medido.
+  const editorialProducts = [];
+  if (creative.businessKind === "physical_products" && creative.products?.length) {
+    for (const code of rotationOrder(creative.products, context.used)) {
+      const photos = context.photos.filter(photo => photo.code === code);
+      const seen = new Set();
+      const measured = [];
+      for (const photo of photos) {
+        const label = variantName(photo.color);
+        if (seen.has(label)) continue;
+        seen.add(label);
+        const signals = await catalogPhotoSignals(await ownedBytes(photo.url), label);
+        if (signals.siteCaptureScore >= 0.62 || signals.variantColorCheck?.consistent === false) continue;
+        const id = `produto:${code}:${label}`;
+        urls.set(id, photo.url);
+        measured.push({ id, variantLabel: label, siteCaptureScore: signals.siteCaptureScore, photoKind: signals.photoKind });
+        if (measured.length >= 3) break;
+      }
+      if (measured.length) { editorialProducts.push({ code, photos: measured }); break; }
+    }
+  }
+  const plan = planEditorialCreative({
+    workspaceId, brandName: context.brandName, businessKind: creative.businessKind, softwareFeatures: creative.features, idea,
+    ideaReferences, libraryCaptures: libraryCandidates, editorialProducts, history: context.history, allowAi: true,
+  });
+  const assets = {};
+  const traced = [];
+  for (const reference of plan.resolved.transmitted) {
+    const url = urls.get(reference.id);
+    if (!url) continue;
+    const bytes = reference.role === "software_capture" ? await ownedBytes(url) : await sharp(await ownedBytes(url)).rotate().resize({ width: 1600, height: 1600, fit: "inside", withoutEnlargement: true }).png().toBuffer();
+    const meta = await sharp(bytes).metadata();
+    assets[reference.id] = { data: bytes.toString("base64"), ...(captureMeta.get(reference.id) ?? {}) };
+    traced.push({ id: reference.id, source: reference.source, role: reference.role, sha256: sha256Prefix(bytes), bytes: bytes.length, width: meta.width, height: meta.height, ...(reference.productCode ? { productCode: reference.productCode, variantLabel: reference.variantLabel } : {}) });
+  }
+  return {
+    plan: {
+      mode: plan.decision.mode, modeReasons: plan.decision.reasons, feature: plan.decision.feature?.feature.key, autoSelected: plan.autoSelected,
+      blockers: plan.resolved.missing, excluded: plan.resolved.excluded.map(entry => ({ id: entry.reference.id, role: entry.reference.role, reason: entry.reason })),
+      screens: plan.screens.map(item => ({ screen: item.screen, spec: item.spec, instruction: item.instruction, transmitted: item.transmitted.map(({ id, role, source, productCode, variantLabel }) => ({ id, role, source, productCode, variantLabel })) })),
+    },
+    blocked: plan.blocked, assets, traced, productCodes: [...new Set(plan.resolved.transmitted.map(reference => reference.productCode).filter(Boolean))],
+  };
+}
+
 function summarizes(post) {
   return { id: post.id, state: post.state, destinations: post.destinations.map(({ network, state, externalUrl, problem }) => ({ network, state, externalUrl, problem })) };
 }
@@ -194,16 +326,19 @@ async function run() {
   const existing = await c.publicationRepository.getPlanByIdempotency({ ...scope, idempotencyKey: `social:${idempotencyKey}` });
   if (existing) return { existing: summarizes(await c.social.posts.get({ ...scope, postId: existing.id })) };
   if (mode === "report_failure") {
-    if (!request.code || !["codex_auth", "preparation"].includes(request.code)) throw new Error("Categoria de falha editorial inválida");
+    if (!request.code || !["codex_auth", "preparation", "quality_review"].includes(request.code)) throw new Error("Categoria de falha editorial inválida");
     const ideas = await c.editorialIdeaRepository.listByWorkspace(workspaceId);
-    if (workspaceId !== cmkvWorkspaceId && !ideas.some(idea => idea.status === "available" && ["single_image", "carousel"].includes(idea.format)
+    if (request.code !== "quality_review" && workspaceId !== cmkvWorkspaceId && !ideas.some(idea => idea.status === "available" && ["single_image", "carousel"].includes(idea.format)
       && (!idea.scheduledDate || idea.scheduledDate <= slot.slice(0, 10)))) return { reported: false };
+    const detail = typeof request.detail === "string" ? redactSecrets(request.detail).replace(/[\u0000-\u001f]+/g, " ").slice(0, 600) : "";
     const cause = request.code === "codex_auth" ? "O Codex do servidor precisa ser autorizado novamente."
+      : request.code === "quality_review" ? `Uma pauta foi encaminhada para revisão manual e não será publicada automaticamente.${detail ? `\n${detail}` : ""}`
       : "A automação não conseguiu preparar ou agendar a pauta para esse horário.";
     const localDate = slot.slice(0, 10).split("-").reverse().join("/");
     const body = `Marca: ${workspace.name}\nHorário: ${localDate} às ${slot.slice(11)} (Brasília)\n${cause}`;
+    const dedupe = request.code === "quality_review" && request.ideaId ? `editorial-review:${workspaceId}:${String(request.ideaId).slice(0, 80)}` : `editorial:${workspaceId}:${slot}`;
     await db.query("select enqueue_platform_email_alert('publication_failed', $1, 'Falha na automação editorial', $2, $3)",
-      [`editorial:${workspaceId}:${slot}`, body, `/workspaces/${workspaceId}/ideias`]);
+      [dedupe, body, `/workspaces/${workspaceId}/ideias`]);
     return { reported: true };
   }
   const actor = await actorForPublish();
@@ -214,38 +349,65 @@ async function run() {
   if (mode === "select") {
     const ideas = (await c.editorialIdeaRepository.listByWorkspace(workspaceId)).filter(idea => idea.status === "available" && (!idea.scheduledDate || idea.scheduledDate <= slot.slice(0,10)));
     const used = await db.query(`select source_artifacts->0->'payload'->>'editorialIdeaId' as id,
-      source_artifacts->0->'payload'->'catalogProductCodes' as codes from publication_plans
+      source_artifacts->0->'payload'->'catalogProductCodes' as codes, source_artifacts->0->'payload'->'creative' as creative,
+      source_artifacts->0->'payload'->'imageUrls'->>0 as image from publication_plans
       where tenant_id=$1 and workspace_id=$2 and idempotency_key like $3 order by created_at desc`, [tenantId,workspaceId,`social:${prefix}:%`]);
     const usedIds = new Set(used.rows.map(row => row.id));
-    const candidates = ideas.filter(item => !usedIds.has(item.id) && ["single_image", "carousel"].includes(item.format)).sort(compareIdeas);
-    if (workspaceId === cmkvWorkspaceId) {
-      const { idea, catalogPhotos } = await selectCmkvIdea({ slot, ideas, candidates, used: used.rows, allowCreate: request.allowCreate });
-      if (!idea) return { brand: workspace.name, empty: true };
-      const photos = await Promise.all(catalogPhotos.map(async photo => ({
-        color: photo.color, data: (await ownedImage(photo.url)).toString("base64"),
-      })));
-      return { idea, brand: await brandFor(workspace, brandConfig), catalogPhotos: photos };
+    // Pautas na fila de revisão manual (reprovadas ou sem material) não voltam sozinhas para a automação.
+    const reviewIds = new Set(Array.isArray(request.skipIdeaIds) ? request.skipIdeaIds.map(String) : []);
+    const candidates = ideas.filter(item => !usedIds.has(item.id) && !reviewIds.has(item.id) && ["single_image", "carousel"].includes(item.format)).sort(compareIdeas);
+    const creative = brandConfig.creative ?? { businessKind: "unknown" };
+    const photos = creative.businessKind === "physical_products" ? await catalogPhotos() : [];
+    const context = {
+      brandName: workspace.name, used: used.rows, photos, photosByUrl: new Map(photos.map(photo => [photo.url, photo])),
+      captures: creative.businessKind === "software" ? await libraryCaptures() : [], history: await visualHistory(used.rows),
+    };
+    // Primeira pauta viável: as bloqueadas (falta referência obrigatória) ficam no Bolsão com a orientação.
+    const blocked = [];
+    const tryIdea = async (idea) => {
+      let planned;
+      try {
+        planned = await planIdea(idea, creative, context);
+      } catch (error) {
+        // Referência que não carrega: esta pauta não segue (nunca gera sem o material); vai para revisão.
+        blocked.push({ ideaId: idea.id, idea: idea.externalId, reason: "REFERENCE_LOAD_FAILED", guidance: [redactSecrets(error instanceof Error ? error.message : String(error)).slice(0, 300)] });
+        return undefined;
+      }
+      if (planned.blocked) { blocked.push({ ideaId: idea.id, idea: idea.externalId, mode: planned.plan.mode, reason: "REFERENCE_MISSING", guidance: planned.plan.blockers.filter(item => item.blocking).map(item => item.message) }); return undefined; }
+      return { idea, brand: await brandFor(workspace, brandConfig), plan: planned.plan, assets: planned.assets, trace: { references: planned.traced }, productCodes: planned.productCodes, history: context.history, archetypes: ARCHETYPES, blocked };
+    };
+    for (const idea of candidates.filter(item => !item.externalId.startsWith("CMKV-AUTO-"))) {
+      const chosen = await tryIdea(idea);
+      if (chosen) return chosen;
     }
-    const idea = candidates[0];
-    if (!idea) return { brand: workspace.name, empty: true, videoIdeas: ideas.filter(item => item.format === "video").length };
-    const references = await Promise.all((idea.referenceImages ?? []).map(async url => (await ownedImage(url)).toString("base64")));
-    return { idea, brand: await brandFor(workspace, brandConfig), references };
+    if (workspaceId === cmkvWorkspaceId) {
+      // CMKV sem pauta viável: cria (ou retoma) a pauta automática do horário, com fotos oficiais do catálogo.
+      const { idea } = await selectCmkvIdea({ slot, ideas, candidates: candidates.filter(item => item.externalId.startsWith("CMKV-AUTO-")), used: used.rows, allowCreate: request.allowCreate });
+      const chosen = idea && await tryIdea(idea);
+      if (chosen) return chosen;
+    }
+    return { brand: workspace.name, empty: true, blocked, videoIdeas: ideas.filter(item => item.format === "video").length };
   }
 
   const publishNow = mode === "publish" && workspaceId === cmkvWorkspaceId;
   requireCondition(mode === "validate" || mode === "schedule" || publishNow, "Operação editorial inválida");
   const idea = await c.editorialIdeaRepository.get(workspaceId, request.ideaId);
   requireCondition(idea?.status === "available" && idea.updatedAt === request.updatedAt, "A pauta mudou durante a geração");
-  let catalogProductCodes;
-  if (workspaceId === cmkvWorkspaceId) {
-    const photos = await cmkvCatalogPhotos();
-    const sources = cmkvIdeaPhotos(idea, new Map(photos.map(photo => [photo.url, photo])));
-    requireCondition(sources, "As fotos oficiais da pauta da CMKV mudaram durante a preparação");
-    catalogProductCodes = [...new Set(sources.map(photo => photo.code))];
-  }
+  // Produtos efetivamente usados na arte (rodízio do catálogo) e o registro do motor criativo
+  // (modo, arquétipos, referências por hash, veredito do Quality Gate, impressões visuais).
+  const catalogProductCodes = Array.isArray(request.productCodes) && request.productCodes.length ? request.productCodes.map(String).slice(0, 10) : undefined;
+  // Registro limitado em tamanho sem quebrar o JSON: se passar do limite, mantém tudo menos a lista de operações.
+  const creativeText = request.creative ? redactSecrets(JSON.stringify(request.creative)) : undefined;
+  const creativeRecord = creativeText ? JSON.parse(creativeText.length <= 60000 ? creativeText
+    : redactSecrets(JSON.stringify({ ...request.creative, trace: { ...request.creative.trace, operations: [], operationsOmitted: true } }))) : undefined;
   const format = idea.format === "carousel" ? "carousel" : "feed_image";
   const count = format === "carousel" ? idea.carouselScript?.length : 1;
   requireCondition(count && request.images.length === count, "Quantidade de artes diferente do roteiro da pauta");
+  // Trava: só segue para o agendador/publicação a imagem exata que o Quality Gate aprovou, tela por tela.
+  if (mode === "schedule" || mode === "publish") {
+    const guard = verifyApprovedArt(request.images.map(image => Buffer.from(image, "base64")), request.creative?.approvals);
+    requireCondition(guard.ok, guard.ok ? "" : guard.reason);
+  }
   requireCondition(selected.every(account => account.formats.some(item => item.format === format && item.maxItems >= count)), "Formato da pauta incompatível com uma das redes da marca");
   const media = [];
   for (const png of request.images) {
@@ -270,7 +432,7 @@ async function run() {
     artifacts: [{ artifactId: idea.id, artifactType: "image", schemaId: "social.post", schemaVersion: 1,
       checksum: createHash("sha256").update(media.map(item => item.url).join("\n")).digest("hex"),
       payload: { editorialIdeaId: idea.id, externalId: idea.externalId, imageUrls: media.map(item => item.url),
-        ...(catalogProductCodes ? { catalogProductCodes } : {}) } }],
+        ...(catalogProductCodes ? { catalogProductCodes } : {}), ...(creativeRecord ? { creative: creativeRecord } : {}) } }],
   } });
   await db.query(`update editorial_ideas set status=$4,status_changed_at=now(),updated_at=now()
     where id=$1 and workspace_id=$2 and tenant_id=$3 and status='available'`,

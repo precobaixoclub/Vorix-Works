@@ -10,8 +10,14 @@
 //   só quando o contraste não basta. Placa apenas se a marca pedir explicitamente.
 // Devolve a arte e um relatório de qualidade; recusa (erro) quando o texto cobriria um rosto.
 import { readFile } from "node:fs/promises";
+import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 import satori from "satori";
 import sharp from "sharp";
+
+// Núcleo do motor criativo (compilado em dist/): composição com os arquivos originais e Quality Gate
+// de fidelidade. Carregado sob demanda pelo diretório de trabalho (o container roda em /app).
+const dist = (path) => import(pathToFileURL(join(process.cwd(), "dist", path)).href);
 
 export const WIDTH = 1080;
 export const HEIGHT = 1350;
@@ -352,19 +358,22 @@ export async function renderArt(request) {
   const accentText = contrastRatio(hexLuminance(accent), hexLuminance(surface)) >= MIN_TEXT_CONTRAST ? accent : foreground;
 
   const catalog = catalogPhotos?.length ? await catalogBase(catalogPhotos, surface) : undefined;
-  const original = catalog?.input ?? Buffer.from(base, "base64");
+  // Composição controlada (motor criativo): a base é montada com a foto original do produto ou a
+  // captura real da tela, no arquétipo planejado; a IA pode entrar só como cenário (`scene`).
+  const composition = request.composition ? await composeBase(request.composition, { surface, accent, foreground, light }) : undefined;
+  const original = composition?.base ?? catalog?.input ?? Buffer.from(base, "base64");
   const originalSize = await sharp(original).metadata();
   if (!originalSize.width || !originalSize.height || Math.abs(originalSize.width / originalSize.height - 0.8) > 0.065) {
     throw new Error("A base visual gerada não está em proporção vertical 4:5");
   }
   const canvas = await sharp(original).resize(WIDTH, HEIGHT, { fit: "cover" }).removeAlpha().raw().toBuffer({ resolveWithObject: true });
-  const protectedRects = mapProtectedAreas(catalog?.areas ?? protectedAreas, originalSize.width, originalSize.height);
+  const protectedRects = mapProtectedAreas(composition?.protectedAreas ?? catalog?.areas ?? protectedAreas, originalSize.width, originalSize.height);
   const logos = await Promise.all(logosInput.map(prepareLogo));
   const fixedPlacement = brandLogoPlacement(profile, logoConfig);
   const scale = clamp(Number(logoConfig?.scale) || 1, 0.6, 1.6);
 
   const plan = chooseComposition({
-    raw: canvas.data, channels: canvas.info.channels, protectedRects, requestedLayout: layout, requestedPlacement: logoPlacement,
+    raw: canvas.data, channels: canvas.info.channels, protectedRects, requestedLayout: composition?.layout ?? layout, requestedPlacement: logoPlacement,
     fixedPlacement, logoAspect: logos[0].aspect, logoScale: scale, headline, body, cta,
   });
   const issues = [];
@@ -385,7 +394,7 @@ export async function renderArt(request) {
   const finalTextStats = regionStats(withVeil.data, withVeil.info.channels, plan.text.rect);
   const fgLum = hexLuminance(foreground);
   const textContrast = contrastRatio(fgLum, fgLum > surfaceLuminance ? finalTextStats.p90 : finalTextStats.p10);
-  if (catalog && textContrast < MIN_TEXT_CONTRAST) throw new Error("QUALITY_CONTRAST: texto da pauta abaixo de 4,5:1");
+  if ((catalog || composition) && textContrast < MIN_TEXT_CONTRAST) throw new Error("QUALITY_CONTRAST: texto da pauta abaixo de 4,5:1");
 
   // Logo: versão compatível com o fundo real daquele canto; tratamento só se o contraste pedir.
   const background = regionStats(withVeil.data, withVeil.info.channels, plan.logo);
@@ -437,20 +446,92 @@ export async function renderArt(request) {
     ...(catalog?.labels ?? []).map(({ left, width, top, color }) => el({
       position: "absolute", left, width, top, justifyContent: "center", fontFamily: "Geist", color: foreground, fontSize: 20,
     }, color)),
+    // Rótulos da composição (cor da variante, "Estampa original", modelo) — nunca sobre o texto principal.
+    ...(composition?.labels ?? []).filter((label) => {
+      const box = { x: label.left, y: label.top, w: label.width, h: (label.size ?? 22) * 1.4 };
+      return intersection(box, grow(plan.text.rect, 8)) === 0 && intersection(box, grow(rect, 12)) === 0;
+    }).map((label) => el({
+      position: "absolute", left: label.left, width: label.width, top: label.top, justifyContent: label.align === "center" ? "center" : "flex-start", fontFamily: "Geist",
+      color: label.tone === "accent" ? accentText : foreground, opacity: label.tone === "muted" ? 0.78 : 1, fontSize: label.size ?? 22, letterSpacing: 0.4,
+    }, label.text)),
   ]), { width: WIDTH, height: HEIGHT, fonts }));
 
   const jpeg = await sharp(withVeil.data, { raw: { width: WIDTH, height: HEIGHT, channels: withVeil.info.channels } }).composite([{ input: lettering }, ...layers]).jpeg({ quality: 93, mozjpeg: true }).toBuffer();
   const round = (value) => Math.round(value * 100) / 100;
-  return {
-    image: jpeg.toString("base64"),
-    quality: {
-      layout: plan.layout, requestedLayout: layout ?? null, textRect: plan.text.rect, veilAlpha: round(veilAlpha), textContrast: round(textContrast),
-      logo: { variant: chosen.logo.variant, placement: plan.placement, fixedByBrand: Boolean(fixedPlacement), treatment, contrast: round(logoContrast), rawContrast: round(chosen.contrast), knockedOut: chosen.logo.knockedOut, rect },
-      protectedAreas: protectedRects.map((area) => ({ kind: area.kind, x: Math.round(area.x), y: Math.round(area.y), w: Math.round(area.w), h: Math.round(area.h) })),
-      issues: textContrast < 3 ? [`contraste do texto ${round(textContrast)}:1`] : [],
-      warnings: [...assetWarnings, ...legibilityWarnings, ...(chosen.contrast < MIN_LOGO_CONTRAST ? [`logo com contraste ${round(chosen.contrast)}:1 sem tratamento — falta uma versão oficial adequada a este fundo`] : [])],
-    },
+  const quality = {
+    layout: plan.layout, requestedLayout: layout ?? null, textRect: plan.text.rect, veilAlpha: round(veilAlpha), textContrast: round(textContrast),
+    logo: { variant: chosen.logo.variant, placement: plan.placement, fixedByBrand: Boolean(fixedPlacement), treatment, contrast: round(logoContrast), rawContrast: round(chosen.contrast), knockedOut: chosen.logo.knockedOut, rect },
+    protectedAreas: protectedRects.map((area) => ({ kind: area.kind, x: Math.round(area.x), y: Math.round(area.y), w: Math.round(area.w), h: Math.round(area.h) })),
+    issues: textContrast < 3 ? [`contraste do texto ${round(textContrast)}:1`] : [],
+    warnings: [...assetWarnings, ...legibilityWarnings, ...(chosen.contrast < MIN_LOGO_CONTRAST ? [`logo com contraste ${round(chosen.contrast)}:1 sem tratamento — falta uma versão oficial adequada a este fundo`] : [])],
   };
+  // Quality Gate de fidelidade (quando o agendador manda o plano): produto, tela, texto e repetição.
+  const review = request.fidelity ? await fidelityReview({ request, jpeg, canvas, composition, protectedRects, plan, quality, logoContrast }) : undefined;
+  return { image: jpeg.toString("base64"), quality, ...(review ?? {}) };
+}
+
+const b64 = (value) => Buffer.from(value, "base64");
+
+/** Base da peça pelo arquétipo planejado, com os arquivos originais (ver compositions.ts). */
+async function composeBase(spec, tones) {
+  const { composeProduct, composeSoftware, composeTypographic } = await dist("infrastructure/media/creative/compositions.js");
+  const scene = spec.scene ? b64(spec.scene) : undefined;
+  if (spec.mode === "physical_product") {
+    return composeProduct(spec.archetype, { photos: spec.products.map((photo) => ({ ...photo, data: b64(photo.data) })), tones, scene });
+  }
+  if (spec.mode === "software") return composeSoftware(spec.archetype, { capture: { ...spec.capture, data: b64(spec.capture.data) }, tones, scene });
+  return composeTypographic({ tones, scene });
+}
+
+/** Evidências medidas na arte final + veredito do Quality Gate de fidelidade + impressão visual. */
+async function fidelityReview({ request, jpeg, canvas, composition, protectedRects, plan, quality, logoContrast }) {
+  const { evaluateFidelityGate } = await dist("application/creative-engine/creative-fidelity-gate.js");
+  const { assessVariety } = await dist("application/creative-engine/visual-variety.js");
+  const { fingerprintArt, measureProductFidelity, measureScreen } = await dist("infrastructure/media/creative/measure-fidelity.js");
+  const { fidelity } = request;
+  const evidence = { operation: fidelity.operation, transmittedReferenceIds: fidelity.transmittedReferenceIds ?? [] };
+  const product = composition?.evidence.product;
+  if (product) {
+    evidence.product = { composited: true, coverage: product.coverage, touchesEdge: product.touchesEdge, usedProductCode: product.productCode, usedVariant: product.variantLabel, cutout: product.cutout };
+  } else if (fidelity.spec.mode === "physical_product" && fidelity.reference) {
+    // Produto gerado pela IA a partir da foto original: mede contra a foto, na região que o gerador apontou.
+    const area = protectedRects.filter((item) => item.kind === "product").sort((a, b) => b.w * b.h - a.w * a.h)[0];
+    if (area) {
+      const base = await sharp(canvas.data, { raw: { width: WIDTH, height: HEIGHT, channels: canvas.info.channels } }).png().toBuffer();
+      const measured = await measureProductFidelity(b64(fidelity.reference), base, { x: area.x, y: area.y, w: area.w, h: area.h });
+      evidence.product = { composited: false, shapeDistance: measured.shapeDistance, colorDeltaE: measured.colorDeltaE, printDistance: measured.printDistance, coverage: (area.w * area.h) / (WIDTH * HEIGHT) };
+      evidence.productMeasure = measured;
+    }
+  }
+  const screen = composition?.evidence.screen;
+  if (screen) {
+    const measured = await measureScreen(jpeg, screen.screenRect);
+    evidence.screen = { composited: true, captureId: screen.captureId, luminanceStd: measured.luminanceStd, edgeDensity: measured.edgeDensity, legibilityScale: screen.legibilityScale, renderedTextPx: screen.renderedTextPx, captureFeature: screen.feature };
+  }
+  const textZone = grow(plan.text.rect, 24);
+  evidence.text = {
+    contrast: quality.textContrast, issues: quality.issues,
+    coversProduct: protectedRects.some((area) => area.kind === "product" && intersection(textZone, area) / (area.w * area.h) > 0.35),
+    marginOk: plan.text.rect.x >= MARGIN - 1 && plan.text.rect.x + plan.text.rect.w <= WIDTH - MARGIN + 1,
+  };
+  evidence.logo = { ok: logoContrast >= 1.6, warnings: quality.warnings };
+  const fingerprint = await fingerprintArt(jpeg, {
+    archetype: composition?.appliedArchetype ?? request.composition?.archetype ?? fidelity.archetype ?? "ai_scene", textLayout: plan.layout,
+    productCount: request.composition?.products?.length ?? (evidence.product ? 1 : 0), ...(fidelity.seriesKey ? { seriesKey: fidelity.seriesKey } : {}),
+  });
+  evidence.variety = assessVariety(fingerprint, request.history ?? []);
+  if (fidelity.aiReview) evidence.aiReview = fidelity.aiReview;
+  // O veredito leva o SHA-256 da imagem avaliada: o backend só agenda exatamente esta imagem.
+  const { sha256Hex } = await dist("application/creative-engine/publication-guard.js");
+  const gate = { ...evaluateFidelityGate(fidelity.spec, evidence), imageSha256: sha256Hex(jpeg) };
+  // Reprovada: a correção é decidida pelo motivo (nunca repetir a mesma solicitação).
+  let revision;
+  if (!gate.approved) {
+    const { planRevision } = await dist("application/creative-engine/targeted-revision.js");
+    const context = fidelity.revisionContext ?? {};
+    revision = planRevision({ failures: gate.failures, operation: fidelity.operation, attempt: context.attempt ?? 1, maxAttempts: context.maxAttempts ?? 3, spentUsd: context.spentUsd ?? 0, budgetUsd: context.budgetUsd ?? 0, aiAttemptCostUsd: context.aiAttemptCostUsd ?? 0 });
+  }
+  return { gate, ...(revision ? { revision } : {}), fingerprint, ...(composition?.appliedArchetype ? { appliedArchetype: composition.appliedArchetype } : {}), evidence: { ...evidence, ...(screen ? { screenRect: screen.screenRect } : {}) } };
 }
 
 if (typeof request !== "undefined") {

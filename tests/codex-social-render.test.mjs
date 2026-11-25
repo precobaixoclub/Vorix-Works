@@ -91,6 +91,27 @@ test("rosto na área de respiro pedida: o texto muda de lugar e o rosto não rec
   assert.ok(distance(center, hex("#E0B090")) < 22, `rosto intacto: ${center}`);
 });
 
+test("fotos do catálogo mantêm a ordem e o texto ocupa a área acima dos produtos", async () => {
+  const result = await renderArt({
+    ...TEXT, profile: PROFILE_DARK, layout: "top", logoPlacement: "top_left",
+    logos: [{ data: await logo({ ink: "#F4F4F4" }), variant: "LIGHT", backgrounds: ["DARK"] }],
+    catalogPhotos: [
+      { data: await base("#151515"), color: "Preto" },
+      { data: await base("#DDCBB1"), color: "Bege" },
+      { data: await base("#4D5D3A"), color: "Verde-Militar" },
+    ],
+  });
+  assert.deepEqual(result.quality.issues, []);
+  const raw = await pixels(result.image);
+  const { textRect, protectedAreas } = result.quality;
+  assert.equal(protectedAreas.length, 3);
+  for (const [i, area] of protectedAreas.entries()) {
+    assert.ok(textRect.y + textRect.h <= area.y);
+    assert.ok(distance(at(raw, area.x + area.w / 2, area.y + area.h / 2),
+      hex(["#151515", "#DDCBB1", "#4D5D3A"][i])) < 12);
+  }
+});
+
 test("sem lugar para o texto fora dos rostos: a verificação de qualidade recusa a arte", async () => {
   await assert.rejects(async () => renderArt({
     ...TEXT, profile: PROFILE_DARK, base: await base("#808080"), layout: "top", logoPlacement: "bottom_right",

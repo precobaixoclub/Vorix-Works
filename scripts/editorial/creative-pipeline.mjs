@@ -91,11 +91,17 @@ export async function produceScreen({ planned, brand, assets, history, render, g
       archetype = next;
       continue;
     }
-    attempts.push({ attempt, archetype, operation, outcome: result.gate?.approved === false ? "rejected" : "approved", gate: result.gate, revision: result.revision });
-    if (!result.gate || result.gate.approved) return { ok: true, image: result.image, quality: result.quality, gate: result.gate, fingerprint: result.fingerprint, evidence: result.evidence, archetype, attempts, spentUsd };
+    // Sem veredito do Quality Gate = inconclusivo: nunca segue como aprovada.
+    if (!result.gate) {
+      attempts.push({ attempt, archetype, operation, outcome: "failed", reason: "Quality Gate sem veredito (inconclusivo)." });
+      return { ok: false, attempts, reason: "Quality Gate sem veredito (inconclusivo) — encaminhada para revisão." };
+    }
+    attempts.push({ attempt, archetype, operation, outcome: result.gate.approved === true ? "approved" : "rejected", gate: result.gate, revision: result.revision });
+    if (result.gate.approved === true) return { ok: true, image: result.image, quality: result.quality, gate: result.gate, fingerprint: result.fingerprint, evidence: result.evidence, archetype: result.appliedArchetype ?? archetype, attempts, spentUsd };
     const action = result.revision?.action ?? "manual_review";
     if (action === "manual_review") break;
     if (action === "switch_to_controlled_composite") archetype = spec.composition.fallback ?? "product_editorial";
+    else if (action === "use_original_photo") archetype = tried.has("product_scene") ? "product_editorial" : "product_scene";
     else if (action === "insert_real_capture") archetype = "device_laptop";
     else if (action === "enlarge_capture") archetype = tried.has("ui_focus") ? "browser_window" : "ui_focus";
     else if (action === "replace_logo_variant") logoConfig = { ...(logoConfig ?? {}), treatment: "halo" };
@@ -108,4 +114,51 @@ export async function produceScreen({ planned, brand, assets, history, render, g
   }
   const last = attempts.at(-1);
   return { ok: false, attempts, reason: last?.revision?.reason ?? last?.reason ?? "Não aprovada pelo Quality Gate." };
+}
+
+// ---------------------------------------------------------------- revisão manual
+
+/**
+ * Fila de revisão do piloto (arquivo no host, sem tabela nova): peça reprovada sem correção automática,
+ * referência que não carregou ou pauta sem o material obrigatório. A pauta entra uma vez (alerta único),
+ * deixa de ser escolhida automaticamente e volta quando a pessoa a remove da fila depois de corrigir.
+ */
+export function addToReviewQueue(queue, entry) {
+  const list = Array.isArray(queue) ? queue : [];
+  if (list.some((item) => item.workspaceId === entry.workspaceId && item.ideaId === entry.ideaId)) return { queue: list, added: false };
+  return { queue: [...list, { ...entry, reason: String(entry.reason ?? "").slice(0, 600) }], added: true };
+}
+
+export function reviewSkipIds(queue, workspaceId) {
+  return (Array.isArray(queue) ? queue : []).filter((item) => item.workspaceId === workspaceId).map((item) => item.ideaId);
+}
+
+/** Aprovações por tela no formato que a trava do backend confere (veredito + hash da imagem aprovada). */
+export function screenApprovals(results) {
+  return results.map((result, index) => ({ screen: index + 1, approved: result.gate?.approved === true, imageSha256: result.gate?.imageSha256, failures: result.gate?.failures ?? [] }));
+}
+
+// ---------------------------------------------------------------- revisão visual da IA
+
+/** Pergunta da revisão visual: compara SÓ o produto da foto original com o da imagem gerada. */
+export function productReviewPrompt({ productCode, variantLabel }) {
+  return `Você é um revisor de fidelidade de produto para anúncios. A Imagem 1 é a FOTO ORIGINAL do produto anunciado` +
+    `${productCode ? ` (modelo ${productCode}${variantLabel ? `, cor ${variantLabel}` : ""})` : ""}. A Imagem 2 é a peça publicitária gerada por IA. ` +
+    `Compare SOMENTE o produto: modelagem (gola, mangas, formato), cor, estampa (desenho, textos/letras, cores da estampa) e posição/tamanho da estampa. ` +
+    `Qualquer diferença perceptível na estampa ou na cor reprova. Responda só JSON: ` +
+    `{"sameGarment":bool,"sameColor":bool,"samePrint":bool,"samePrintPosition":bool,"findings":[string em português],"verdict":"approve"|"reject"}.`;
+}
+
+/** Converte a resposta da revisão visual no formato do Quality Gate (aprovação só com tudo igual). */
+export function aiReviewFromVerdict(review) {
+  if (!review || typeof review !== "object") return { verdict: "unavailable" };
+  const same = review.sameGarment === true && review.sameColor === true && review.samePrint === true && review.samePrintPosition === true;
+  if (same && review.verdict === "approve") return { verdict: "approve" };
+  const details = (Array.isArray(review.findings) ? review.findings : []).join("; ").slice(0, 200);
+  const findings = [
+    ...(review.sameGarment === true ? [] : [{ code: "PRODUCT_MISMATCH", message: "Revisão visual: a peça não é a mesma do produto anunciado." }]),
+    ...(review.sameColor === true ? [] : [{ code: "COLOR_MISMATCH", message: "Revisão visual: a cor do produto mudou." }]),
+    ...(review.samePrint === true && review.samePrintPosition === true ? [] : [{ code: "PRINT_ALTERED", message: `Revisão visual: estampa diferente da original${details ? ` (${details})` : ""}.` }]),
+  ];
+  return { verdict: "reject", findings: findings.length ? findings : [{ code: "AI_REVIEW_REJECTED", message: details || "Revisão visual reprovou." }] };
 }

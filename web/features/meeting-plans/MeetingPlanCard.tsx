@@ -47,7 +47,8 @@ export function MeetingPlanCard({ className }: { className?: string }) {
   }
 
   if (isLoading) return <Card className={className}><CardBody className="space-y-3"><Skeleton className="h-5 w-48" /><Skeleton className="h-24 w-full" /></CardBody></Card>;
-  if (error || !data) return <div className={className}><ErrorState error={error} onRetry={() => void mutate()} /></div>;
+  // Resposta sem catálogo vira aviso NO CARTÃO — nunca derruba a página de plano e cobrança inteira.
+  if (error || !data?.catalog) return <div className={className}><ErrorState error={error} onRetry={() => void mutate()} /></div>;
 
   const { subscription, usage, allowance, catalog } = data;
   const current = subscription ? (subscription.planCode === "trial" ? catalog.trial : catalog.plans.find((plan) => plan.code === subscription.planCode)) : undefined;

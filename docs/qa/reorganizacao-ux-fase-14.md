@@ -50,3 +50,20 @@ Como rodar as fixtures localmente (sem produção): `node tests/fixtures/product
 | Resultados | `results-organization` |
 | Admin global × admin de workspace | `admin-platform` + `tests/system-routes-authorization.test.mjs` (backend) |
 | Acessibilidade automatizada | `a11y-quality` |
+
+## Rodada de correções finais (2026-11-24/25)
+
+**Backend:** 30 → 0 falhas (4.662 passam). Causas, todas de teste (nenhuma regra de negócio alterada):
+- dublês desatualizados: `identity` sem `platformBillingRepository` (guarda de contrato, `da2df42a`) e workspace simulado sem `status: "active"` (guarda de escrita) — atendimento, Radar, upload de mídia;
+- limite de 1 espaço no plano base: o teste passa a ampliar a capacidade pelo mesmo caminho do admin (`saveTenantControls`);
+- data fixa vencida (proposta válida até 31/10/2026) → validade distante;
+- aceite de proposta não ganha mais o negócio (`008fd47d`, faturamento manual): testes passam a verificar "aguardando faturamento";
+- lista exata de migrações (0196+ surgiram depois) → verifica que a 0195 é a primeira aplicada.
+
+**E2E (configuração geral, 1440):** 361 passam, 0 falhas. Correções: mocks de `/v1/meeting-plans` e `/v1/admin/meeting-plans/:id` (a página de plano quebrava inteira), catálogo atual (`catalog-bulk` + `product-metadata`), telas do admin em abas, seção "Como vender pelo site".
+Produto: `MeetingPlanCard` e `AdminMeetingPlanCard` mostram o erro no cartão quando a resposta vem sem catálogo, em vez de derrubar a página.
+
+**Specs com configuração própria:** `commerce-multichannel` 20/20, `public-product` 4/4, `site-analytics` 2/2 (build de produção), `commercial-rules` 4/4 (fixture nova com `--site-commerce --site-builder --commercial-rules`), `unified-products` 3/3. As falhas anteriores vinham de rodá-las na configuração geral, do `next dev` lento/instável ou da fixture iniciada sem as opções certas.
+
+**Ainda falhando — desatualizados frente a mudanças intencionais da vitrine (outra frente, renderizador fora do escopo):** `product-media` (8) e `bambilu-fashion` (4): limite de 4 cores com "mostrar mais", site só com variações que têm foto (`5a9b5bb7`), galeria segue a cor escolhida (`cb376837`). Exigem decidir o esperado por modelo.
+**Problema menor de ordem:** na configuração `commercial-rules`, a spec do carrinho falha se rodar depois das specs de edição do site (estado compartilhado da fixture); isolada, passa.

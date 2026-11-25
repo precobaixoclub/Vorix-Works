@@ -47,7 +47,8 @@ export function AdminMeetingPlanCard({ tenantId }: { tenantId: string }) {
   }
 
   if (isLoading) return <Card><CardBody><Skeleton className="h-24 w-full" /></CardBody></Card>;
-  if (error || !data) return <ErrorState error={error} onRetry={() => void mutate()} />;
+  // Resposta sem catálogo vira aviso no cartão — nunca derruba a página do cliente no admin.
+  if (error || !data?.catalog) return <ErrorState error={error} onRetry={() => void mutate()} />;
 
   const subscription = data.subscription;
   const live = subscription && ["trial", "active", "past_due"].includes(subscription.status);

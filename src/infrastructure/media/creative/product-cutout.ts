@@ -23,7 +23,90 @@ export type ProductCutout = {
   background: [number, number, number];
   /** Foto reduzida original (sem recorte), para composições emolduradas. */
   photo: Buffer;
+  /** Qualidade do recorte medida no resultado (buracos, fragmentos, halo, resto de fundo). */
+  quality: CutoutQuality;
 };
+
+/**
+ * Qualidade do recorte, medida no RESULTADO (não só na borda da foto). Correção 25/11/2026: o relógio
+ * em fundo escuro saía com "confiança 1" porque a borda era uniforme, mas a inundação comia as partes
+ * escuras do próprio produto (buracos na pulseira) e mantinha um bloco do fundo. Agora:
+ * - `interiorHoles`: fração transparente no miolo do produto (produto comido pelo recorte);
+ * - `fragments`: pedaços opacos relevantes além do principal (recorte esfarelado);
+ * - `edgeNoise`: pixels semitransparentes por pixel opaco (halo/granulado de fundo);
+ * - `residualBackground`: pixels mantidos com a cor do fundo (bloco de fundo que ficou).
+ */
+export type CutoutQuality = { ok: boolean; interiorHoles: number; fragments: number; edgeNoise: number; residualBackground: number; reasons: string[] };
+
+// Medido em 64 fotos reais (25/11/2026): estúdio da CMKV = buracos 0, fragmentos 0, halo ≤ 0,035; fotos de
+// cena (relógio, perfume, tênis…) = buracos 5–92%, até 6 fragmentos, halo 0,10–1,06. "Resto de fundo" sozinho
+// não decide (camiseta bege/branca tem cor próxima do cinza do estúdio): só barra o caso extremo.
+export const CUTOUT_LIMITS = { interiorHoles: 0.04, fragments: 1, edgeNoise: 0.08, residualBackground: 0.5 } as const;
+
+function assessCutout(alpha: Uint8Array | Buffer, rgba: Buffer, width: number, height: number, bbox: Rect, background: readonly number[], threshold: number): CutoutQuality {
+  // Miolo do produto: janela central da caixa — num recorte correto, é opaca.
+  let holes = 0;
+  let inner = 0;
+  for (let y = Math.round(bbox.y + bbox.h * 0.3); y < bbox.y + bbox.h * 0.7; y += 2) {
+    for (let x = Math.round(bbox.x + bbox.w * 0.3); x < bbox.x + bbox.w * 0.7; x += 2) {
+      inner += 1;
+      if (alpha[y * width + x] < 128) holes += 1;
+    }
+  }
+  // Fragmentos: componentes opacos (máscara reduzida) com área relevante.
+  const step = Math.max(1, Math.round(Math.max(width, height) / 260));
+  const gw = Math.ceil(width / step);
+  const gh = Math.ceil(height / step);
+  const grid = new Uint8Array(gw * gh);
+  for (let y = 0; y < gh; y += 1) for (let x = 0; x < gw; x += 1) grid[y * gw + x] = alpha[Math.min(height - 1, y * step) * width + Math.min(width - 1, x * step)] >= 128 ? 1 : 0;
+  const seen = new Uint8Array(gw * gh);
+  const sizes: number[] = [];
+  for (let start = 0; start < grid.length; start += 1) {
+    if (!grid[start] || seen[start]) continue;
+    let size = 0;
+    const stack = [start];
+    seen[start] = 1;
+    while (stack.length) {
+      const cell = stack.pop()!;
+      size += 1;
+      const x = cell % gw;
+      for (const next of [x > 0 ? cell - 1 : -1, x < gw - 1 ? cell + 1 : -1, cell - gw, cell + gw]) {
+        if (next >= 0 && next < grid.length && grid[next] && !seen[next]) { seen[next] = 1; stack.push(next); }
+      }
+    }
+    sizes.push(size);
+  }
+  sizes.sort((a, b) => b - a);
+  const fragments = sizes.slice(1).filter((size) => size >= grid.length * 0.003).length;
+  // Halo/granulado e resto de fundo.
+  let soft = 0;
+  let opaque = 0;
+  let kept = 0;
+  let residual = 0;
+  for (let pixel = 0; pixel < width * height; pixel += 1) {
+    const value = alpha[pixel];
+    if (value > 20 && value < 235) soft += 1;
+    if (value >= 235) opaque += 1;
+    if (value >= 128) {
+      kept += 1;
+      const index = pixel * 4;
+      if (Math.hypot(rgba[index] - background[0], rgba[index + 1] - background[1], rgba[index + 2] - background[2]) < threshold * 1.15) residual += 1;
+    }
+  }
+  const quality = {
+    interiorHoles: Math.round((holes / Math.max(1, inner)) * 1000) / 1000,
+    fragments,
+    edgeNoise: Math.round((soft / Math.max(1, opaque)) * 1000) / 1000,
+    residualBackground: Math.round((residual / Math.max(1, kept)) * 1000) / 1000,
+  };
+  const reasons = [
+    ...(quality.interiorHoles > CUTOUT_LIMITS.interiorHoles ? [`recorte comeu ${Math.round(quality.interiorHoles * 100)}% do miolo do produto`] : []),
+    ...(quality.fragments > CUTOUT_LIMITS.fragments ? [`recorte esfarelado em ${quality.fragments + 1} pedaços`] : []),
+    ...(quality.edgeNoise > CUTOUT_LIMITS.edgeNoise ? [`halo/granulado de fundo na borda (${quality.edgeNoise})`] : []),
+    ...(quality.residualBackground > CUTOUT_LIMITS.residualBackground ? [`${Math.round(quality.residualBackground * 100)}% do que ficou é cor de fundo (bloco de fundo)`] : []),
+  ];
+  return { ok: reasons.length === 0, ...quality, reasons };
+}
 
 export async function cutoutProduct(image: Buffer, options: { maxSide?: number } = {}): Promise<ProductCutout> {
   const maxSide = options.maxSide ?? 1400;
@@ -39,6 +122,7 @@ export async function cutoutProduct(image: Buffer, options: { maxSide?: number }
   const transparentBorder = border.filter((pixel) => data[pixel * 4 + 3] < 20).length / border.length;
   let background: [number, number, number] = [255, 255, 255];
   let uniformity = 1;
+  let threshold = 24;
   if (transparentBorder < 0.6) {
     const opaque = border.filter((pixel) => data[pixel * 4 + 3] > 200);
     const median = [0, 1, 2].map((channel) => opaque.map((pixel) => data[pixel * 4 + channel]).sort((a, b) => a - b)[Math.floor(opaque.length / 2)] ?? 255) as [number, number, number];
@@ -49,7 +133,7 @@ export async function cutoutProduct(image: Buffer, options: { maxSide?: number }
     uniformity = close / Math.max(1, opaque.length);
     // Tolerância: o "ruído" do próprio fundo (gradiente de luz do estúdio) + folga.
     const p60 = borderDistances[Math.floor(borderDistances.length * 0.6)] ?? 0;
-    const threshold = Math.max(18, Math.min(46, p60 * 1.6 + 14));
+    threshold = Math.max(18, Math.min(46, p60 * 1.6 + 14));
     const visited = new Uint8Array(total);
     const stack = opaque.filter((pixel) => distance(pixel) < threshold);
     for (const pixel of stack) visited[pixel] = 1;
@@ -85,9 +169,16 @@ export async function cutoutProduct(image: Buffer, options: { maxSide?: number }
   }
   const coverage = count / total;
   const plausible = coverage > 0.08 && coverage < 0.9 ? 1 : 0.2;
-  const confidence = Math.round(Math.min(1, (transparentBorder >= 0.6 ? 1 : uniformity / 0.7)) * plausible * 100) / 100;
+  const bbox = count ? { x: minX, y: minY, w: maxX - minX + 1, h: maxY - minY + 1 } : { x: 0, y: 0, w: width, h: height };
+  const finalAlpha = Buffer.alloc(total);
+  for (let pixel = 0; pixel < total; pixel += 1) finalAlpha[pixel] = data[pixel * 4 + 3];
+  const quality = transparentBorder >= 0.6
+    ? { ok: true, interiorHoles: 0, fragments: 0, edgeNoise: 0, residualBackground: 0, reasons: [] }
+    : assessCutout(finalAlpha, data, width, height, bbox, background, threshold);
+  // Recorte com artefato nunca é "confiável": a composição usa a foto original inteira.
+  const confidence = Math.round(Math.min(1, (transparentBorder >= 0.6 ? 1 : uniformity / 0.7)) * plausible * (quality.ok ? 1 : 0.3) * 100) / 100;
   const png = await sharp(data, { raw: { width, height, channels: 4 } }).png().toBuffer();
-  return { png, width, height, bbox: count ? { x: minX, y: minY, w: maxX - minX + 1, h: maxY - minY + 1 } : { x: 0, y: 0, w: width, h: height }, coverage, confidence, background, photo };
+  return { png, width, height, bbox, coverage, confidence, background, photo, quality };
 }
 
 /**

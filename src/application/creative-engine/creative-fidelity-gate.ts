@@ -17,7 +17,7 @@ import type { VarietyAssessment } from "./visual-variety.js";
 export type GateCode =
   // produto físico
   | "PRODUCT_MISSING" | "PRODUCT_MISMATCH" | "PRINT_ALTERED" | "COLOR_MISMATCH" | "VARIANT_WRONG"
-  | "REFERENCE_IGNORED" | "SITE_CAPTURE_AS_PRODUCT" | "PRODUCT_CROPPED" | "PRODUCT_TOO_SMALL"
+  | "REFERENCE_IGNORED" | "SITE_CAPTURE_AS_PRODUCT" | "PRODUCT_CROPPED" | "PRODUCT_TOO_SMALL" | "CUTOUT_ARTIFACT" | "FIDELITY_INCONCLUSIVE"
   // software
   | "UI_MISSING" | "SCREEN_EMPTY" | "UI_FICTIONAL" | "UI_ILLEGIBLE" | "FEATURE_MISMATCH"
   // todos
@@ -43,6 +43,8 @@ export type ProductEvidence = {
   usedVariant?: string;
   /** A imagem usada como produto foi detectada como captura de tela/site. */
   sourceLooksLikeCapture?: boolean;
+  /** Recorte usado na composição e sua qualidade (buracos, fragmentos, halo, bloco de fundo). */
+  cutout?: { used: boolean; ok: boolean; reasons: string[] };
 };
 
 export type ScreenEvidence = {
@@ -121,8 +123,17 @@ export function evaluateFidelityGate(spec: Pick<CreativeSpec, "mode" | "subject"
       if (expected?.productCode && product.usedProductCode && product.usedProductCode !== expected.productCode) fail("PRODUCT_MISMATCH", `Produto ${product.usedProductCode} usado no lugar de ${expected.productCode}.`);
       if (expected?.variant && product.usedVariant && product.usedVariant !== expected.variant) fail("VARIANT_WRONG", `Variante ${product.usedVariant} usada no lugar de ${expected.variant}.`);
       if (product.composited) {
-        passes.push("Produto composto com os pixels da fotografia original (fidelidade por construção).");
+        if (product.cutout?.used && !product.cutout.ok) {
+          fail("CUTOUT_ARTIFACT", `Recorte do produto com artefato: ${product.cutout.reasons.join("; ") || "qualidade insuficiente"}.`);
+        } else {
+          passes.push(product.cutout?.used ? "Produto recortado da fotografia original sem artefatos (fidelidade por construção)." : "Produto com a fotografia original inteira, sem recorte (fidelidade por construção).");
+        }
       } else {
+        // Produto gerado pela IA: sem a revisão visual contra a foto original, a fidelidade não está
+        // comprovada — inconclusivo reprova (o caminho seguro é recompor com a foto original).
+        if (!evidence.aiReview || evidence.aiReview.verdict === "unavailable") {
+          fail("FIDELITY_INCONCLUSIVE", "Produto gerado pela IA sem revisão visual contra a fotografia original — fidelidade não comprovada.");
+        }
         if (product.shapeDistance === undefined || product.colorDeltaE === undefined) {
           fail("REFERENCE_IGNORED", "Sem medição de fidelidade para um produto gerado pela IA — não é possível comprovar que é o mesmo.");
         } else {

@@ -36,11 +36,15 @@ export type ProtectedArea = { kind: "face" | "product" | "person" | "key_object"
 
 export type CompositionResult = {
   base: Buffer;
+  /** Arquétipo efetivamente aplicado (pode diferir do pedido: foto de cena nunca é recortada). */
+  appliedArchetype?: string;
   layout: "top" | "left" | "bottom";
   protectedAreas: ProtectedArea[];
   labels: CompositionLabel[];
   evidence: {
-    product?: { composited: true; sourceId: string; sourceSha256: string; productCode?: string; variantLabel?: string; rect: Rect; coverage: number; touchesEdge: boolean; cutoutConfidence: number; printRect?: Rect };
+    product?: { composited: true; sourceId: string; sourceSha256: string; productCode?: string; variantLabel?: string; rect: Rect; coverage: number; touchesEdge: boolean; cutoutConfidence: number; printRect?: Rect;
+      /** Se a peça entrou recortada, e a qualidade do recorte (o gate reprova recorte com artefato). */
+      cutout: { used: boolean; ok: boolean; reasons: string[] } };
     variants?: Array<{ sourceId: string; variantLabel?: string; rect: Rect }>;
     screen?: { composited: true; captureId: string; captureSha256: string; feature?: string; quad: Quad; legibilityScale: number; renderedTextPx: number; screenRect: Rect };
   };
@@ -139,8 +143,90 @@ const productEvidence = (photo: ProductPhotoInput, cutout: ProductCutout, rect: 
     rect: visible, coverage: (visible.w * visible.h * cutout.coverage) / ((cutout.bbox.w * cutout.bbox.h) / (cutout.width * cutout.height)) / (W * H),
     // Cortar na base é intencional (foto de modelo); lateral/topo cortados são defeito.
     touchesEdge: rect.x < 0 || rect.x + rect.w > W || rect.y < 0, cutoutConfidence: cutout.confidence, ...(printRect ? { printRect } : {}),
+    cutout: { used: true, ok: cutout.quality.ok, reasons: cutout.quality.reasons },
   };
 };
+
+/** Produto na cena original: a foto inteira em tela cheia, sem recorte; o produto fica protegido. */
+/**
+ * Região do produto numa foto de cena pela concentração de detalhe (bordas e contraste) — o brilho de
+ * luz e o degradê do fundo são lisos; o produto (rótulo, mostrador, estampa, arestas) não. A caixa do
+ * recorte não serve aqui: em foto de cena ela engole o brilho e cobre quase a imagem toda.
+ */
+export async function salientRect(image: Buffer): Promise<Rect> {
+  const meta = await sharp(image).metadata();
+  // Suaviza antes do gradiente: grão fino de fundo some; aresta e rótulo do produto ficam.
+  const { data, info } = await sharp(image).greyscale().resize(200, 200, { fit: "fill" }).blur(1.6).raw().toBuffer({ resolveWithObject: true });
+  const cells = 20;
+  const size = info.width / cells;
+  const energy = new Float64Array(cells * cells);
+  for (let y = 1; y < info.height - 1; y += 1) {
+    for (let x = 1; x < info.width - 1; x += 1) {
+      const index = y * info.width + x;
+      const gradient = Math.abs(data[index + 1] - data[index - 1]) + Math.abs(data[index + info.width] - data[index - info.width]);
+      energy[Math.floor(y / size) * cells + Math.floor(x / size)] += gradient;
+    }
+  }
+  const sorted = [...energy].sort((a, b) => a - b);
+  const threshold = Math.max(sorted[Math.floor(sorted.length * 0.8)], sorted[sorted.length - 1] * 0.35);
+  let x0 = cells, y0 = cells, x1 = -1, y1 = -1;
+  // Só o aglomerado principal: a célula de maior energia e as vizinhas acima do limiar, conectadas.
+  const strong = energy.map((value) => (value >= threshold ? 1 : 0));
+  const seed = energy.indexOf(Math.max(...energy));
+  const stack = [seed];
+  const seen = new Uint8Array(cells * cells);
+  seen[seed] = 1;
+  while (stack.length) {
+    const cell = stack.pop()!;
+    const cx = cell % cells;
+    const cy = (cell - cx) / cells;
+    x0 = Math.min(x0, cx); x1 = Math.max(x1, cx); y0 = Math.min(y0, cy); y1 = Math.max(y1, cy);
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, -1], [1, -1], [-1, 1]]) {
+      const nx = cx + dx;
+      const ny = cy + dy;
+      const next = ny * cells + nx;
+      if (nx >= 0 && ny >= 0 && nx < cells && ny < cells && strong[next] && !seen[next]) { seen[next] = 1; stack.push(next); }
+    }
+  }
+  const sx = (meta.width ?? 1) / cells;
+  const sy = (meta.height ?? 1) / cells;
+  return { x: x0 * sx, y: y0 * sy, w: (x1 - x0 + 1) * sx, h: (y1 - y0 + 1) * sy };
+}
+
+/** Áreas de texto do renderizador (topo 40%, esquerda 45%, base 43%) — a cena só serve se uma ficar livre. */
+const TEXT_BANDS = { top: { x: 0, y: 0, w: W, h: 600 }, left: { x: 0, y: 0, w: 560, h: H }, bottom: { x: 0, y: 770, w: W, h: H - 770 } } as const;
+const overlapShare = (a: Rect, b: Rect) => {
+  const w = Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x);
+  const h = Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y);
+  return w > 0 && h > 0 ? (w * h) / (a.w * a.h) : 0;
+};
+
+/**
+ * Produto na cena original: a foto inteira em tela cheia, sem recorte; o produto (pela concentração de
+ * detalhe) fica protegido. Sem faixa livre para o texto, devolve `undefined` e quem chama usa a foto
+ * emoldurada (editorial) — nunca texto por cima do produto.
+ */
+async function sceneComposition(photo: ProductPhotoInput, cutout: ProductCutout, tones: BrandTones): Promise<CompositionResult | undefined> {
+  const meta = await sharp(cutout.photo).metadata();
+  const sw = meta.width ?? 1;
+  const sh = meta.height ?? 1;
+  const scale = Math.max(W / sw, H / sh);
+  const salient = await salientRect(cutout.photo);
+  const focusX = (salient.x + salient.w / 2) * scale;
+  const left = Math.round(Math.max(0, Math.min(sw * scale - W, focusX - W / 2)));
+  const top = Math.round((sh * scale - H) / 2);
+  const product = { x: salient.x * scale - left, y: salient.y * scale - top, w: salient.w * scale, h: salient.h * scale };
+  const rect = { x: Math.max(0, product.x), y: Math.max(0, product.y), w: Math.min(W, product.x + product.w) - Math.max(0, product.x), h: Math.min(H, product.y + product.h) - Math.max(0, product.y) };
+  const free = (Object.entries(TEXT_BANDS) as Array<[CompositionResult["layout"], Rect]>).map(([layout, band]) => ({ layout, overlap: overlapShare(rect, band) })).sort((a, b) => a.overlap - b.overlap)[0];
+  if (free.overlap > 0.08) return undefined;
+  const base = await sharp(cutout.photo).resize(Math.ceil(sw * scale), Math.ceil(sh * scale)).extract({ left, top, width: W, height: H }).png().toBuffer();
+  const tint = svg(`<rect width="100%" height="100%" fill="${tones.surface}" fill-opacity="0.04"/>`);
+  return {
+    base: await compose(base, [{ input: tint, left: 0, top: 0 }]), appliedArchetype: "product_scene", layout: free.layout, labels: [],
+    protectedAreas: [{ kind: "product", ...pct(rect) }],
+    evidence: { product: { composited: true, sourceId: photo.id, sourceSha256: sha256Prefix(photo.data), productCode: photo.productCode, variantLabel: photo.variantLabel, rect, coverage: (rect.w * rect.h) / (W * H), touchesEdge: false, cutoutConfidence: cutout.confidence, cutout: { used: false, ok: true, reasons: [] } } },
+  };
+}
 
 // ---------------------------------------------------------------- produto físico
 
@@ -150,6 +236,11 @@ export async function composeProduct(archetype: string, input: { photos: Product
   const cutout = await cutoutProduct(primary.data);
   const usable = cutout.confidence >= 0.55;
   const tones = input.tones;
+
+  // Foto de cena (recorte com artefato): nunca recorta — usa a foto inteira, em tela cheia ou emoldurada.
+  // Cena sem faixa livre para o texto: cai na foto emoldurada (editorial), abaixo.
+  const scene = (!usable && archetype !== "product_editorial") || archetype === "product_scene" ? await sceneComposition(primary, cutout, tones) : undefined;
+  if (scene) return scene;
 
   if (archetype === "product_editorial" || !usable) {
     // Página editorial: foto ORIGINAL inteira (sem recorte) em painel alto à direita.
@@ -167,9 +258,9 @@ export async function composeProduct(archetype: string, input: { photos: Product
     const composed = await compose(base, [{ input: frameShadow, left: 0, top: 0 }, { input: rule, left: 0, top: 0 }, { input: photo, left: panel.x, top: panel.y }]);
     const label = [primary.productCode ? `Modelo ${primary.productCode}` : undefined, primary.variantLabel].filter(Boolean).join(" · ");
     return {
-      base: composed, layout: "left", protectedAreas: [{ kind: "product", ...pct(panel) }],
+      base: composed, appliedArchetype: "product_editorial", layout: "left", protectedAreas: [{ kind: "product", ...pct(panel) }],
       labels: label ? [{ left: 84, top: 1210, width: 430, text: label, size: 22, tone: "muted" }] : [],
-      evidence: { product: { composited: true, sourceId: primary.id, sourceSha256: sha256Prefix(primary.data), productCode: primary.productCode, variantLabel: primary.variantLabel, rect: panel, coverage: (panel.w * panel.h) / (W * H) * 0.6, touchesEdge: false, cutoutConfidence: cutout.confidence } },
+      evidence: { product: { composited: true, sourceId: primary.id, sourceSha256: sha256Prefix(primary.data), productCode: primary.productCode, variantLabel: primary.variantLabel, rect: panel, coverage: (panel.w * panel.h) / (W * H) * 0.6, touchesEdge: false, cutoutConfidence: cutout.confidence, cutout: { used: false, ok: true, reasons: [] } } },
     };
   }
 
@@ -177,6 +268,8 @@ export async function composeProduct(archetype: string, input: { photos: Product
     const base = await fitBase(input.scene, tones, { x: 0.5, y: 0.78, r: 0.6 });
     const all = [primary, ...others.slice(0, 2)];
     const cutouts = [cutout, ...await Promise.all(all.slice(1).map((photo) => cutoutProduct(photo.data)))];
+    // Variação com recorte ruim: não monta o leque com artefato — mostra a foto principal inteira.
+    if (cutouts.some((item) => item.confidence < 0.55)) return (await sceneComposition(primary, cutout, tones)) ?? composeProduct("product_editorial", { ...input, photos: [primary] });
     const slots = all.length === 2
       ? [{ cx: 640, h: 760, z: 2 }, { cx: 380, h: 660, z: 1 }]
       : [{ cx: 540, h: 760, z: 3 }, { cx: 290, h: 640, z: 1 }, { cx: 800, h: 640, z: 2 }];

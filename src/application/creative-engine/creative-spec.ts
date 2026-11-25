@@ -33,6 +33,8 @@ export type CompositionArchetype = {
   minVariants?: number;
   /** Exige uma captura real da tela no celular (não recorta a tela de desktop). */
   needsMobileCapture?: boolean;
+  /** Usa o produto recortado: só com foto de estúdio (foto de cena nunca é recortada). */
+  needsCutout?: boolean;
   /** Palavras da pauta que favorecem este arquétipo (texto já normalizado sem acento). */
   affinity: RegExp;
   /** Arquétipo determinístico usado quando a IA não preserva o produto/tela. */
@@ -44,11 +46,12 @@ export type CompositionArchetype = {
 
 export const COMPOSITION_ARCHETYPES: readonly CompositionArchetype[] = [
   // Produto físico
-  { id: "product_studio", mode: "physical_product", label: "Produto em destaque (estúdio)", operation: "deterministic_composite", textLayout: "top", affinity: /\b(destaque|novidade|isolad\w*|estudio|vitrine|basic\w*|essencial)\b/, intent: "A peça original recortada, grande e centralizada, sobre fundo de estúdio nas cores da marca, com sombra de contato." },
+  { id: "product_studio", mode: "physical_product", label: "Produto em destaque (estúdio)", operation: "deterministic_composite", textLayout: "top", needsCutout: true, affinity: /\b(destaque|novidade|isolad\w*|estudio|vitrine|basic\w*|essencial)\b/, intent: "A peça original recortada, grande e centralizada, sobre fundo de estúdio nas cores da marca, com sombra de contato." },
   { id: "product_editorial", mode: "physical_product", label: "Composição editorial", operation: "deterministic_composite", textLayout: "left", affinity: /\b(editorial|revista|tendencia\w*|estilo|elegan\w*|classic\w*|atemporal)\b/, intent: "Foto original emoldurada em página editorial: coluna de texto à esquerda, foto alta à direita, fio de destaque e legenda da cor." },
-  { id: "variant_lineup", mode: "physical_product", label: "Variações reais de cor", operation: "deterministic_composite", textLayout: "top", minVariants: 2, affinity: /\b(cor|cores|variac\w*|versao|versoes|escolh\w*|opc\w*|duas|tres|qual)\b/, intent: "Duas ou três cores REAIS do mesmo modelo em leque, com profundidade e etiquetas de cor — nunca grade de catálogo." },
-  { id: "print_detail", mode: "physical_product", label: "Destaque da estampa", operation: "deterministic_composite", textLayout: "top", affinity: /\b(estampa\w*|detalhe\w*|arte|desenho|print|bordad\w*|dtf|silk)\b/, intent: "Zoom da estampa original em recorte grande + a peça inteira em miniatura, mostrando que a arte é exatamente a do produto." },
-  { id: "commercial_bold", mode: "physical_product", label: "Comercial com chamada curta", operation: "deterministic_composite", textLayout: "left", affinity: /\b(oferta\w*|promo\w*|compre|garanta|chegou|lancamento\w*|ultim\w*|desconto|frete)\b/, intent: "Produto grande à direita sobre faixa diagonal da cor de destaque, chamada curta e CTA fortes à esquerda." },
+  { id: "variant_lineup", mode: "physical_product", label: "Variações reais de cor", operation: "deterministic_composite", textLayout: "top", minVariants: 2, needsCutout: true, affinity: /\b(cor|cores|variac\w*|versao|versoes|escolh\w*|opc\w*|duas|tres|qual)\b/, intent: "Duas ou três cores REAIS do mesmo modelo em leque, com profundidade e etiquetas de cor — nunca grade de catálogo." },
+  { id: "print_detail", mode: "physical_product", label: "Destaque da estampa", operation: "deterministic_composite", textLayout: "top", needsCutout: true, affinity: /\b(estampa\w*|detalhe\w*|arte|desenho|print|bordad\w*|dtf|silk)\b/, intent: "Zoom da estampa original em recorte grande + a peça inteira em miniatura, mostrando que a arte é exatamente a do produto." },
+  { id: "commercial_bold", mode: "physical_product", label: "Comercial com chamada curta", operation: "deterministic_composite", textLayout: "left", needsCutout: true, affinity: /\b(oferta\w*|promo\w*|compre|garanta|chegou|lancamento\w*|ultim\w*|desconto|frete)\b/, intent: "Produto grande à direita sobre faixa diagonal da cor de destaque, chamada curta e CTA fortes à esquerda." },
+  { id: "product_scene", mode: "physical_product", label: "Produto na cena original", operation: "deterministic_composite", textLayout: "top", affinity: /\b(cena|ambiente|lancamento\w*|presente\w*|exclusiv\w*|premium|noite)\b/, intent: "A fotografia original inteira, sem recorte, em tela cheia, com a área de texto preparada — para fotos de cena em que o produto depende do ambiente." },
   { id: "product_lifestyle", mode: "physical_product", label: "Lifestyle", operation: "ai_edit_with_reference", textLayout: "left", fallback: "product_editorial", affinity: /\b(lifestyle|dia a dia|rotina|usar|vestir|passeio|rua|cafe|fim de semana|viagem|look)\b/, intent: "A mesma peça (foto original como referência) vestida em cena real; estampa, cor e modelo idênticos." },
   // Software
   { id: "device_laptop", mode: "software", label: "Notebook com a tela real", operation: "deterministic_composite", textLayout: "top", affinity: /\b(sistema|plataforma|painel|dashboard|equipe|gestao|visao|controle)\b/, intent: "Notebook em leve perspectiva com a captura real encaixada na tela, brilho da marca ao fundo." },
@@ -93,7 +96,8 @@ export function chooseComposition(input: ChooseCompositionInput): CompositionCho
     && !(input.exclude ?? []).includes(item.id)
     && (input.allowAi || item.operation === "deterministic_composite")
     && (!item.minVariants || variants >= item.minVariants)
-    && (!item.needsMobileCapture || [input.references.primary, ...input.references.variants].some((reference) => reference?.form === "mobile")));
+    && (!item.needsMobileCapture || [input.references.primary, ...input.references.variants].some((reference) => reference?.form === "mobile"))
+    && (!item.needsCutout || input.references.primary?.photoKind !== "scene"));
   const primaryPool = eligible.filter((item) => !item.onlyAsAlternative);
   const pool = primaryPool.length ? primaryPool : eligible;
   if (input.seriesArchetype) {
@@ -119,7 +123,8 @@ export function chooseComposition(input: ChooseCompositionInput): CompositionCho
   // série do que ficar sem alternativa quando a peça é reprovada.
   const excludedAgain = COMPOSITION_ARCHETYPES.filter((item) => item.mode === input.mode && (input.exclude ?? []).includes(item.id)
     && (input.allowAi || item.operation === "deterministic_composite") && (!item.minVariants || variants >= item.minVariants)
-    && (!item.needsMobileCapture || [input.references.primary, ...input.references.variants].some((reference) => reference?.form === "mobile")));
+    && (!item.needsMobileCapture || [input.references.primary, ...input.references.variants].some((reference) => reference?.form === "mobile"))
+    && (!item.needsCutout || input.references.primary?.photoKind !== "scene"));
   return { archetype: best.archetype, score: best.score, reasons, alternatives: [...scored.slice(1).map((item) => item.archetype.id), ...excludedAgain.map((item) => item.id)] };
 }
 

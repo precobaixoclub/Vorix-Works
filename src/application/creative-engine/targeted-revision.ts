@@ -15,6 +15,7 @@ import type { GateCode, GateFinding } from "./creative-fidelity-gate.js";
 
 export type RevisionActionKind =
   | "switch_to_controlled_composite"
+  | "use_original_photo"
   | "insert_real_capture"
   | "enlarge_capture"
   | "recompose_text"
@@ -55,7 +56,10 @@ export function planRevision(input: RevisionInput): RevisionPlan {
     return { action: "manual_review", reason: `Limite de ${input.maxAttempts} tentativas atingido sem aprovação. ${reasons}`, estimatedCostUsd: 0 };
   }
   const usesAi = input.operation === "ai_edit_with_reference" || input.operation === "ai_generation" || input.operation === "ai_scene_with_composite";
-  if (has(failures, "PRODUCT_MISMATCH", "PRINT_ALTERED", "COLOR_MISMATCH", "VARIANT_WRONG", "REFERENCE_IGNORED", "SITE_CAPTURE_AS_PRODUCT", "AI_REVIEW_REJECTED") && input.operation === "ai_edit_with_reference") {
+  if (has(failures, "CUTOUT_ARTIFACT")) {
+    return { action: "use_original_photo", reason: `Recorte com artefato — usando a fotografia original inteira, sem recorte. ${reasons}`, estimatedCostUsd: 0 };
+  }
+  if (has(failures, "PRODUCT_MISMATCH", "PRINT_ALTERED", "COLOR_MISMATCH", "VARIANT_WRONG", "REFERENCE_IGNORED", "SITE_CAPTURE_AS_PRODUCT", "AI_REVIEW_REJECTED", "FIDELITY_INCONCLUSIVE") && input.operation === "ai_edit_with_reference") {
     return { action: "switch_to_controlled_composite", reason: `A IA não preservou o produto — recompondo com a fotografia original. ${reasons}`, estimatedCostUsd: 0 };
   }
   if (has(failures, "UI_FICTIONAL", "SCREEN_EMPTY", "UI_MISSING")) {

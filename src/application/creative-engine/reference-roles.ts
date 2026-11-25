@@ -63,6 +63,8 @@ export type ReferenceCandidate = {
   variantColorCheck?: { consistent: boolean; measured: string; expected: string; closest?: string };
   /** Captura de software: tela de desktop ou de celular. */
   form?: "desktop" | "mobile";
+  /** Foto de produto: estúdio (fundo liso, recorte confiável) ou cena (o produto depende do ambiente). */
+  photoKind?: "studio" | "scene";
 };
 
 export type ClassifiedReference = ReferenceCandidate & { role: ReferenceRole; roleReason: string };

@@ -60,3 +60,42 @@ export async function fingerprintArt(output: Buffer, meta: Omit<VisualFingerprin
   const colors = await dominantColors(output, { k: 3 });
   return { ...meta, dHash: await dHash(output), palette: colors.map((color) => rgbHex(color.rgb)) };
 }
+
+/**
+ * Localiza o produto numa imagem gerada pela cor comercial da foto original (o modelo de imagem não diz
+ * onde desenhou a peça): maior região contínua com cor próxima do tecido. Devolve a caixa em px, ou
+ * `undefined` quando não há região plausível — e aí a fidelidade fica inconclusiva (reprova).
+ */
+export async function locateProductByColor(image: Buffer, fabric: readonly number[], options: { maxDeltaE?: number } = {}): Promise<Rect | undefined> {
+  const colorDistance = deltaE;
+  const { data, info } = await sharp(image).removeAlpha().resize(216, 270, { fit: "fill" }).raw().toBuffer({ resolveWithObject: true });
+  const { width, height } = info;
+  const meta = await sharp(image).metadata();
+  const mask = new Uint8Array(width * height);
+  for (let pixel = 0; pixel < width * height; pixel += 1) {
+    if (colorDistance([data[pixel * 3], data[pixel * 3 + 1], data[pixel * 3 + 2]], fabric) <= (options.maxDeltaE ?? 16)) mask[pixel] = 1;
+  }
+  const seen = new Uint8Array(width * height);
+  let best: { size: number; x0: number; y0: number; x1: number; y1: number } | undefined;
+  for (let start = 0; start < mask.length; start += 1) {
+    if (!mask[start] || seen[start]) continue;
+    const stack = [start];
+    seen[start] = 1;
+    const box = { size: 0, x0: width, y0: height, x1: 0, y1: 0 };
+    while (stack.length) {
+      const pixel = stack.pop()!;
+      const x = pixel % width;
+      const y = (pixel - x) / width;
+      box.size += 1;
+      box.x0 = Math.min(box.x0, x); box.x1 = Math.max(box.x1, x); box.y0 = Math.min(box.y0, y); box.y1 = Math.max(box.y1, y);
+      for (const next of [x > 0 ? pixel - 1 : -1, x < width - 1 ? pixel + 1 : -1, pixel - width, pixel + width]) {
+        if (next >= 0 && next < mask.length && mask[next] && !seen[next]) { seen[next] = 1; stack.push(next); }
+      }
+    }
+    if (!best || box.size > best.size) best = box;
+  }
+  if (!best || best.size < width * height * 0.03) return undefined;
+  const sx = (meta.width ?? width) / width;
+  const sy = (meta.height ?? height) / height;
+  return { x: best.x0 * sx, y: best.y0 * sy, w: (best.x1 - best.x0 + 1) * sx, h: (best.y1 - best.y0 + 1) * sy };
+}

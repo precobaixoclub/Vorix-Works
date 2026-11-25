@@ -36,7 +36,7 @@ export type EditorialIdeaForPlan = {
 export type PlanScreen = { headline: string; body?: string; cta?: string };
 
 /** Produto do catálogo disponível para a peça (fotos por variante). */
-export type CatalogProductForPlan = { code: string; photos: ReadonlyArray<{ id: string; variantLabel: string; siteCaptureScore?: number }> };
+export type CatalogProductForPlan = { code: string; photos: ReadonlyArray<{ id: string; variantLabel: string; siteCaptureScore?: number; photoKind?: "studio" | "scene" }> };
 
 export type PlanEditorialCreativeInput = {
   workspaceId: string;
@@ -96,7 +96,7 @@ export function planEditorialCreative(input: PlanEditorialCreativeInput): Editor
     const product = (input.editorialProducts ?? []).find((item) => item.photos.filter((photo) => (photo.siteCaptureScore ?? 0) < 0.62).length > 0);
     if (product) {
       const photos = product.photos.filter((photo) => (photo.siteCaptureScore ?? 0) < 0.62).slice(0, 3);
-      const added = photos.map((photo, index) => classifyReference({ id: photo.id, source: "catalog", productCode: product.code, variantLabel: photo.variantLabel, ...(index === 0 ? {} : { explicitRole: "product_variant" }), siteCaptureScore: photo.siteCaptureScore }, input.businessKind));
+      const added = photos.map((photo, index) => classifyReference({ id: photo.id, source: "catalog", productCode: product.code, variantLabel: photo.variantLabel, ...(index === 0 ? {} : { explicitRole: "product_variant" }), siteCaptureScore: photo.siteCaptureScore, ...(photo.photoKind ? { photoKind: photo.photoKind } : {}) }, input.businessKind));
       references = [...references, ...added];
       autoSelected.push({ id: added[0].id, reason: `A pauta não indicou o produto: modelo ${product.code} escolhido no rodízio dos produtos liberados para uso editorial.` });
     }

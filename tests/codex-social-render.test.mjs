@@ -70,10 +70,15 @@ test("versão oficial compatível com o fundo: fundo escuro usa a versão para D
   assert.equal(light.quality.logo.variant, "PRIMARY");
 });
 
-test("contraste insuficiente e sem versão alternativa: sombra/halo suave na silhueta, nunca placa", async () => {
+test("contraste insuficiente e sem versão alternativa: logo oficial monocromática e nítida (sem halo borrado), nunca placa", async () => {
+  // 25/11/2026: o halo desfocado parecia um borrão — agora a mesma logo vira branca no fundo escuro (ou preta no claro).
   const result = await renderArt({ ...TEXT, profile: PROFILE_DARK, base: await base("#141414"), layout: "top", logoPlacement: "bottom_right", logos: [{ data: await logo({ ink: "#222222" }), variant: "PRIMARY", backgrounds: ["LIGHT"] }] });
-  assert.ok(["shadow", "halo"].includes(result.quality.logo.treatment), result.quality.logo.treatment);
+  assert.equal(result.quality.logo.treatment, "mono");
+  assert.ok(result.quality.logo.contrast >= 3, `contraste ${result.quality.logo.contrast}`);
   assert.ok(result.quality.logo.contrast > result.quality.logo.rawContrast);
+  const raw = await pixels(result.image);
+  const { rect } = result.quality.logo;
+  assert.ok(distance(at(raw, rect.x + rect.w / 2, rect.y + rect.h / 2), [250, 250, 250]) < 30, "miolo da logo branco");
 });
 
 test("rosto na área de respiro pedida: o texto muda de lugar e o rosto não recebe véu", async () => {

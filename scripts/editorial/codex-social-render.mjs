@@ -410,11 +410,20 @@ export async function renderArt(request) {
   if (plan.placement.endsWith("left")) rect.x = plan.logo.x;
   if (plan.placement.endsWith("right")) rect.x = plan.logo.x + plan.logo.w - box.w;
   const requestedTreatment = ["none", "shadow", "halo", "plate"].includes(logoConfig?.treatment) ? logoConfig.treatment : "auto";
-  const treatment = requestedTreatment !== "auto" ? requestedTreatment : chosen.contrast >= MIN_LOGO_CONTRAST ? "none" : chosen.contrast >= 1.8 ? "shadow" : "halo";
+  // Sem contraste suficiente: versão monocromática da logo oficial (branca no escuro, preta no claro), nítida —
+  // o halo/sombra desfocado parecia um borrão (retorno do usuário, 25/11/2026). Halo/sombra só se a marca pedir.
+  const treatment = requestedTreatment !== "auto" ? requestedTreatment : chosen.contrast >= MIN_LOGO_CONTRAST ? "none" : "mono";
   const glowRgb = hexRgb(chosen.logo.luminance > 0.4 ? darkest : lightest);
   const layers = [];
   let logoContrast = chosen.contrast;
-  if (treatment === "plate") {
+  let logoPng = chosen.logo.png;
+  if (treatment === "mono") {
+    const ink = background.mean < 0.35 ? [250, 250, 250] : [17, 17, 17];
+    const { data: px, info } = await sharp(chosen.logo.png).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+    for (let index = 0; index < px.length; index += 4) { px[index] = ink[0]; px[index + 1] = ink[1]; px[index + 2] = ink[2]; }
+    logoPng = await sharp(px, { raw: { width: info.width, height: info.height, channels: 4 } }).png().toBuffer();
+    logoContrast = contrastRatio(relativeLuminance(...ink), background.mean);
+  } else if (treatment === "plate") {
     const plate = Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${rect.w + 36}" height="${rect.h + 28}"><rect width="100%" height="100%" rx="14" fill="${chosen.logo.luminance > 0.4 ? darkest : lightest}"/></svg>`);
     layers.push({ input: plate, left: rect.x - 18, top: rect.y - 14 });
     logoContrast = logoLegibility(chosen.logo, hexLuminance(chosen.logo.luminance > 0.4 ? darkest : lightest));
@@ -426,7 +435,7 @@ export async function renderArt(request) {
   }
   // Logo pouco legível não derruba a peça (a marca perderia o horário): vira aviso no relatório de qualidade.
   const legibilityWarnings = logoContrast < 1.6 ? [`logo pouco legível mesmo com halo (contraste ${logoContrast.toFixed(2)})`] : [];
-  layers.push({ input: await sharp(chosen.logo.png).resize(rect.w, rect.h, { fit: "contain", background: "#00000000" }).png().toBuffer(), left: rect.x, top: rect.y });
+  layers.push({ input: await sharp(logoPng).resize(rect.w, rect.h, { fit: "contain", background: "#00000000" }).png().toBuffer(), left: rect.x, top: rect.y });
 
   // Texto (satori), na área planejada.
   const fontDir = "dist/infrastructure/rendering/assets";

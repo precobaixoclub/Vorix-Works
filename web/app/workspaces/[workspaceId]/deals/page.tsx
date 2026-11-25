@@ -475,7 +475,6 @@ function DealsView() {
         <QuickCreateDealModal
           workspaceId={workspace.id}
           contactId={contactId || undefined}
-          defaultOwnerUserId={ownerUserId || currentUserId}
           onClose={() => { setCreateOpen(false); resetCreateForm(); }}
           onCreated={async (deal) => {
             setCreateOpen(false);

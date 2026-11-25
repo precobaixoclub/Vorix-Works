@@ -3,6 +3,8 @@ import { contactLabel } from "@/features/crm/contact-presentation";
 
 
 import { useEffect, useMemo, useState } from "react";
+import { useAuth } from "@/contexts/auth-context";
+import { teamForUser, useWorkspaceTeamMembers } from "@/features/identity/member-teams";
 import { AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/Button";
@@ -31,7 +33,6 @@ export function QuickCreateDealModal({
   workspaceId,
   contactId,
   defaultOrigin,
-  defaultOwnerUserId,
   defaultTeamId,
   onClose,
   onCreated,
@@ -40,7 +41,6 @@ export function QuickCreateDealModal({
   /** Ausente = o usuário escolhe o contato no próprio formulário (tela de Oportunidades). */
   contactId?: string;
   defaultOrigin?: string;
-  defaultOwnerUserId?: string;
   defaultTeamId?: string;
   onClose: () => void;
   onCreated: (deal: Deal) => void | Promise<void>;
@@ -70,8 +70,16 @@ export function QuickCreateDealModal({
   const effectiveContactId = contactId ?? (selectedContactId || undefined);
   const [valueReais, setValueReais] = useState("");
   const [lines, setLines] = useState<DraftLine[]>([]);
-  const [ownerUserId, setOwnerUserId] = useState(defaultOwnerUserId ?? "");
-  const [teamId, setTeamId] = useState(defaultTeamId ?? "");
+  // Responsável padrão: SEMPRE quem está criando a oportunidade (em qualquer tela); dá para trocar no campo.
+  const { state: authState } = useAuth();
+  const currentUserId = authState.status === "authenticated" ? authState.user.id : "";
+  const [ownerUserId, setOwnerUserId] = useState(currentUserId);
+  // Equipe padrão: a equipe a que o responsável pertence (acompanha a troca de responsável). Uma escolha
+  // manual vale até o responsável mudar de novo. Enquanto as equipes carregam, usa a do contexto.
+  const { data: teamMembers } = useWorkspaceTeamMembers(workspaceId);
+  const [teamChoice, setTeamChoice] = useState<string | undefined>();
+  const teamId = teamChoice ?? (teamMembers ? teamForUser(teamMembers, ownerUserId, defaultTeamId) : defaultTeamId ?? "");
+  const changeOwner = (userId: string) => { setOwnerUserId(userId); setTeamChoice(undefined); };
   const [expectedCloseDate, setExpectedCloseDate] = useState("");
   const [duplicates, setDuplicates] = useState<{ id: string; title: string; valueCents: number; currency: string }[]>([]);
   const [busy, setBusy] = useState(false);
@@ -178,11 +186,11 @@ export function QuickCreateDealModal({
           </div>
           <div>
             <Label>Responsável</Label>
-            <UserPicker workspaceId={workspaceId} value={ownerUserId} onValueChange={setOwnerUserId} extraOption={{ value: "", label: "Sem responsável" }} />
+            <UserPicker workspaceId={workspaceId} value={ownerUserId} onValueChange={changeOwner} extraOption={{ value: "", label: "Sem responsável" }} />
           </div>
           <div>
             <Label>Equipe</Label>
-            <TeamPicker workspaceId={workspaceId} value={teamId} onValueChange={setTeamId} extraOption={{ value: "", label: "Sem equipe" }} />
+            <TeamPicker workspaceId={workspaceId} value={teamId} onValueChange={setTeamChoice} extraOption={{ value: "", label: "Sem equipe" }} />
           </div>
           <div>
             <Label htmlFor="quick-deal-origin">Origem</Label>

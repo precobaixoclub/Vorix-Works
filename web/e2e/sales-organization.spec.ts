@@ -36,7 +36,7 @@ const ORDERS = [{ id: "ord-1", number: 1042, source: "site", status: "PAID", pay
 type Options = { solutions?: string[]; permissions?: readonly string[]; failDeals?: boolean };
 
 async function setup(page: Page, options: Options = {}) {
-  const log = { gets: [] as { path: string; ws: string | null; status: string | null }[], moves: [] as unknown[] };
+  const log = { gets: [] as { path: string; ws: string | null; status: string | null }[], moves: [] as unknown[], created: [] as Record<string, unknown>[] };
   await loginCookie(page.context());
   await mockConversasBackend(page);
   await page.route("**/v1/**", async (route) => {
@@ -59,6 +59,16 @@ async function setup(page: Page, options: Options = {}) {
       if (options.failDeals) return route.fulfill({ status: 500, json: { ok: false, error: { code: "INTERNAL", message: "Falha simulada nas oportunidades.", recoverable: true } } });
       return ok(mine ? DEALS : []);
     }
+    if (path === "/v1/inbox/members") return ok({ members: [{ userId: "user-qa", email: "qa@vorix.dev", name: "QA Reviewer", role: "owner" }, { userId: "user-ana", email: "ana@vorix.dev", name: "Ana Vendedora", role: "editor" }] });
+    if (path === "/v1/deals-duplicates") return ok([]);
+    const team = (id: string, name: string, isDefault = false) => ({ id, name, isDefault, tenantId: TENANT_ID, workspaceId: WORKSPACE_ID, roundRobinEnabled: true, lastAssignedIndexByLevel: {}, timezone: "America/Sao_Paulo", createdAt: iso(-500), updatedAt: iso(-500) });
+    if (path === "/v1/teams" && method === "GET") return ok(mine ? [team("team-default", "Equipe padrão", true), team("team-loja", "Loja física"), team("team-online", "Vendas online")] : []);
+    const teamMembers = /^\/v1\/teams\/([^/]+)\/members$/.exec(path);
+    if (teamMembers && method === "GET") {
+      const users: Record<string, string[]> = { "team-default": ["user-qa"], "team-loja": ["user-qa"], "team-online": ["user-ana"] };
+      return ok((users[teamMembers[1]] ?? []).map((userId) => ({ id: `${teamMembers[1]}-${userId}`, teamId: teamMembers[1], userId, role: "editor", attendanceLevel: "N1", isPrincipalForLevel: true, participatesInRoundRobin: true, createdAt: iso(-500) })));
+    }
+    if (path === "/v1/deals" && method === "POST") { const body = request.postDataJSON() as Record<string, unknown>; log.created.push(body); return ok(deal("deal-new", String(body.title), { ownerUserId: body.ownerUserId })); }
     if (/^\/v1\/deals\/[^/]+$/.test(path)) return ok(DEALS.find((item) => item.id === path.split("/")[3]));
     if (/^\/v1\/deals\/[^/]+\/move-stage$/.test(path)) { log.moves.push(request.postDataJSON()); return ok({ ...DEALS[2], stageId: (request.postDataJSON() as { stageId: string }).stageId }); }
     if (/^\/v1\/deals\/[^/]+\/(timeline|commercial)$/.test(path)) return ok(path.endsWith("timeline") ? [] : { items: [], approval: { required: false } });
@@ -110,6 +120,36 @@ test.describe("Fase 7 — desktop", () => {
     await expect(nav(page).locator("[data-area='sales']")).toHaveAttribute("data-active", "true");
     await page.goBack();
     await expect(page).toHaveURL(new RegExp(`${base()}/deals\\?dealId=deal-site$`));
+  });
+
+  test("nova oportunidade: responsável padrão é quem está criando e a equipe é a dele; trocar o responsável troca a equipe", async ({ page }) => {
+    const log = await setup(page);
+    await page.goto(`${base()}/deals`);
+    // Lista filtrada pela Ana — antes, o formulário herdava esse filtro como responsável.
+    await page.getByRole("button", { name: "Filtros" }).click();
+    await page.getByRole("combobox").filter({ hasText: "QA Reviewer" }).click();
+    await page.getByRole("option", { name: /Ana Vendedora/ }).click();
+    await page.keyboard.press("Escape");
+    await page.getByRole("button", { name: "Nova oportunidade" }).click();
+    const dialog = page.getByRole("dialog", { name: "Criar oportunidade" });
+    const owner = dialog.getByRole("combobox").filter({ hasText: /QA Reviewer|Ana Vendedora|Sem responsável/ });
+    await expect(owner).toContainText("QA Reviewer");
+    // Equipe: a do responsável (específica "Loja física" antes da padrão).
+    await expect(dialog.getByRole("combobox").filter({ hasText: /Loja física|Vendas online|Equipe padrão|Sem equipe/ })).toContainText("Loja física");
+    await dialog.getByLabel("Título").fill("Venda do teste");
+    await dialog.getByRole("button", { name: "Criar oportunidade" }).click();
+    await expect.poll(() => log.created.length).toBe(1);
+    expect(log.created[0]).toMatchObject({ workspaceId: WORKSPACE_ID, title: "Venda do teste", ownerUserId: "user-qa", teamId: "team-loja" });
+    // Trocar continua possível: escolher a Ana envia a Ana.
+    await page.getByRole("button", { name: "Nova oportunidade" }).click();
+    const again = page.getByRole("dialog", { name: "Criar oportunidade" });
+    await again.getByRole("combobox").filter({ hasText: "QA Reviewer" }).click();
+    await page.getByRole("option", { name: /Ana Vendedora/ }).click();
+    await expect(again.getByRole("combobox").filter({ hasText: /Loja física|Vendas online|Equipe padrão|Sem equipe/ })).toContainText("Vendas online");
+    await again.getByLabel("Título").fill("Venda da Ana");
+    await again.getByRole("button", { name: "Criar oportunidade" }).click();
+    await expect.poll(() => log.created.length).toBe(2);
+    expect(log.created[1]).toMatchObject({ title: "Venda da Ana", ownerUserId: "user-ana", teamId: "team-online" });
   });
 
   test("mudança de etapa simulada usa a operação existente", async ({ page }) => {

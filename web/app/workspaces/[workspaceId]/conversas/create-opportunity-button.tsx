@@ -111,7 +111,6 @@ export function CreateOpportunityButton({
           workspaceId={workspaceId}
           contactId={contactId}
           defaultOrigin="whatsapp"
-          defaultOwnerUserId={conversation.assignedUserId}
           defaultTeamId={conversation.currentTeamId}
           onClose={() => setContactId(undefined)}
           onCreated={async (deal) => {

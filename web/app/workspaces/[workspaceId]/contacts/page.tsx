@@ -41,6 +41,7 @@ import { useInboxConversations, useInboxMembers } from "@/features/inbox/hooks";
 import { useDebounce } from "@/hooks/useDebounce";
 import { formatCurrencyCents, formatDate, formatDateTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { LinksPreview } from "@/components/LinkifiedText";
 
 type ContactSection = "summary" | "conversations" | "deals" | "tasks" | "proposals" | "timeline";
 
@@ -886,6 +887,7 @@ function EditContactModal({ workspaceId, contact, onClose, onSaved }: { workspac
         <div className="sm:col-span-2">
           <Label htmlFor="edit-contact-notes">Notas</Label>
           <Textarea id="edit-contact-notes" value={notes} onChange={(event) => setNotes(event.target.value)} rows={3} />
+          <LinksPreview text={notes} />
         </div>
       </div>
       <div className="mt-4 flex justify-end gap-2">

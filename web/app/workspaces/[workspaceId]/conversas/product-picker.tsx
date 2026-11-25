@@ -13,6 +13,7 @@ import { useDebounce } from "@/hooks/useDebounce";
 import { addConversationProductToOpportunity, listConversationProducts, sendConversationProduct, type ConversationProduct } from "@/features/inbox/api";
 import { useInvalidateSales } from "@/features/sales/hooks";
 import { formatCurrencyCents } from "@/lib/format";
+import { LinkifiedText } from "@/components/LinkifiedText";
 
 /** Botão "Produtos" do composer: o atendente busca no catálogo e o Vorix monta o card (foto, preço, link). */
 export function ProductPickerButton({ disabled, onOpen }: { disabled?: boolean; onOpen: () => void }) {
@@ -119,7 +120,7 @@ export function ProductPickerModal({ workspaceId, conversationId, canAddToOpport
             <div className="min-w-0 space-y-1">
               <p className="font-medium">{selected.name}</p>
               <p className="text-sm tabular-nums">{formatCurrencyCents(variant?.priceCents ?? selected.priceCents, selected.currency)}</p>
-              {selected.description ? <p className="max-h-40 overflow-y-auto whitespace-pre-wrap break-words text-xs text-muted-foreground">{selected.description}</p> : null}
+              {selected.description ? <p className="max-h-40 overflow-y-auto whitespace-pre-wrap break-words text-xs text-muted-foreground"><LinkifiedText text={selected.description} /></p> : null}
               <p className="text-xs text-muted-foreground">{selected.siteUrl || selected.hasDetailsLink ? "O link com os detalhes completos e as fotos vai junto." : "Envio com a descrição completa do produto."}</p>
             </div>
           </div>

@@ -45,6 +45,7 @@ import { ClosedDealCorrectionModal } from "@/components/sales/ClosedDealCorrecti
 import { useAuth } from "@/contexts/auth-context";
 import { canManageTenant, canOperateWorkspace } from "@/lib/rbac";
 import styles from "./DealDetail.module.css";
+import { LinkifiedText } from "@/components/LinkifiedText";
 
 type Section = "overview" | "products" | "negotiation" | "summary" | "activities" | "proposals" | "timeline";
 
@@ -189,7 +190,7 @@ export function DealDetailModal({
           <div className="space-y-6">
             {status === "lost" || deal.closeComment ? <div className="space-y-3 rounded-xl border border-border bg-muted/20 p-4">
               {status === "lost" ? <div><p className="text-xs font-medium text-muted-foreground">Motivo da perda</p><p className="mt-1 text-base font-semibold">{deal.lossReason ?? "Não informado no registro original"}</p></div> : null}
-              {deal.closeComment ? <div><p className="text-xs font-medium text-muted-foreground">Observação do fechamento</p><p className="mt-1 whitespace-pre-wrap break-words text-sm">{deal.closeComment}</p></div> : null}
+              {deal.closeComment ? <div><p className="text-xs font-medium text-muted-foreground">Observação do fechamento</p><p className="mt-1 whitespace-pre-wrap break-words text-sm"><LinkifiedText text={deal.closeComment} /></p></div> : null}
             </div> : null}
             {deal.firstClosedAt ? <p className="text-xs text-muted-foreground">Primeiro fechamento: {formatDateTime(deal.firstClosedAt)}{deal.reopenCount ? ` · ${deal.reopenCount} reabertura(s) · Última: ${formatDateTime(deal.reopenedAt)}` : ""}</p> : null}
             <DealCockpitStats workspaceId={workspaceId} deal={deal} />
@@ -436,7 +437,7 @@ function DealActivities({ tasks, members }: { tasks: readonly Task[]; members: r
           <p className="mt-1 text-xs text-muted-foreground">
             {TASK_TYPE_LABEL[task.type]} · {userLabel(task.ownerUserId, members)} · {task.dueAt ? formatDateTime(task.dueAt) : "Sem prazo"}
           </p>
-          {task.description ? <p className="mt-2 text-sm text-muted-foreground">{task.description}</p> : null}
+          {task.description ? <p className="mt-2 whitespace-pre-wrap break-words text-sm text-muted-foreground"><LinkifiedText text={task.description} /></p> : null}
         </div>
       ))}
     </div>
@@ -460,7 +461,7 @@ function DealTimeline({ dealId, workspaceId, stages, members }: { dealId: string
           {typeof event.payload.finalValueCents === "number" ? <p className="mt-1 text-sm">Valor final: {formatCurrencyCents(event.payload.finalValueCents)}</p> : null}
           {typeof event.payload.toValueCents === "number" ? <p className="mt-1 text-sm">{typeof event.payload.fromValueCents === "number" ? `${formatCurrencyCents(event.payload.fromValueCents)} → ` : ""}{formatCurrencyCents(event.payload.toValueCents)}</p> : null}
           {typeof event.payload.lossReason === "string" ? <p className="mt-1 text-sm">Motivo: {event.payload.lossReason}</p> : null}
-          {typeof event.payload.comment === "string" ? <p className="mt-1 whitespace-pre-wrap break-words text-sm text-muted-foreground">{event.payload.comment}</p> : null}
+          {typeof event.payload.comment === "string" ? <p className="mt-1 whitespace-pre-wrap break-words text-sm text-muted-foreground"><LinkifiedText text={event.payload.comment} /></p> : null}
         </li>
       ))}
     </ol>

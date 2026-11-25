@@ -18,6 +18,7 @@ import { CalendarPlus, FilePlus2, Link2, Link2Off, XCircle } from "lucide-react"
 import { regenerateProposalLink, revokeProposalLink } from "@/features/crm/api";
 import type { Proposal } from "@/features/crm/types";
 import { formatCurrencyCents, formatDate, formatDateTime } from "@/lib/format";
+import { LinkifiedText } from "@/components/LinkifiedText";
 
 export function ProposalDetailModal({ workspaceId, proposal, contactName, dealTitle, conversationId, onClose, onChanged, onCreateNewProposal, onCreateFollowUp, onMarkDealLost, onOpenContact, onOpenDeal }: {
   workspaceId: string;
@@ -106,7 +107,7 @@ export function ProposalDetailModal({ workspaceId, proposal, contactName, dealTi
           <Info label="Visualizações" value={String(proposal.viewCount ?? 0)} />
         </div>
         <div className="space-y-2">{proposal.items.map((item, index) => <div key={index} className="flex justify-between gap-3 rounded-lg border px-3 py-2 text-sm"><span>{item.quantity}× {item.name}</span><span>{formatCurrencyCents(item.subtotalCents, proposal.currency)}</span></div>)}</div>
-        {proposal.conditions ? <p className="whitespace-pre-wrap rounded-lg bg-muted/30 p-3 text-sm text-muted-foreground">{proposal.conditions}</p> : null}
+        {proposal.conditions ? <p className="whitespace-pre-wrap rounded-lg bg-muted/30 p-3 text-sm text-muted-foreground"><LinkifiedText text={proposal.conditions} /></p> : null}
 
         {generatedLink ? <div><Label htmlFor="generated-proposal-link">Novo link</Label><div className="flex gap-2"><Input id="generated-proposal-link" value={generatedLink} readOnly onFocus={(event) => event.target.select()} /><Button variant="secondary" onClick={() => void navigator.clipboard.writeText(generatedLink)}>Copiar</Button></div></div> : null}
         <div className="flex flex-wrap justify-end gap-2">

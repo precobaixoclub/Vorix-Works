@@ -30,6 +30,7 @@ import { MEETING_SOURCE_LABEL, MEETING_STATUS_LABEL, TRANSCRIPT_STATUS_LABEL, ty
 import { ApiError } from "@/lib/api-client";
 import { formatDateTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { LinkifiedText } from "@/components/LinkifiedText";
 
 type Section = DetailSectionKey;
 
@@ -494,7 +495,7 @@ function Overview({ meeting, myUserId }: { meeting: MeetingDetail; myUserId?: st
   ];
   return (
     <Card className="p-5">
-      {meeting.description ? <p className="mb-4 whitespace-pre-line text-sm text-foreground">{meeting.description}</p> : null}
+      {meeting.description ? <p className="mb-4 whitespace-pre-line break-words text-sm text-foreground"><LinkifiedText text={meeting.description} /></p> : null}
       <dl className="grid gap-x-6 gap-y-3 sm:grid-cols-2">
         {rows.map(([label, value]) => (
           <div key={label} className="flex items-baseline justify-between gap-3 border-b border-border/40 pb-2">

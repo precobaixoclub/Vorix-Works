@@ -24,6 +24,7 @@ import {
 } from "@/features/meetings/agenda";
 import { ApiError } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
+import { LinkifiedText } from "@/components/LinkifiedText";
 
 type View = "month" | "week" | "day" | "list";
 const VIEW_LABEL: Record<View, string> = { month: "Mês", week: "Semana", day: "Dia", list: "Lista" };
@@ -320,7 +321,7 @@ function EventDetail({ workspaceId, event, googleEmail, canWrite, onClose, onEdi
         {event.meetLink && open ? <a href={event.meetLink} target="_blank" rel="noreferrer" className="inline-flex min-h-[40px] items-center gap-2 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:opacity-90" data-testid="agenda-join"><Video className="h-4 w-4" /> Entrar na reunião</a> : null}
         {event.meetLink ? <p className="break-all text-xs text-muted-foreground">{event.meetLink.replace("https://", "")}</p> : event.wantsMeetLink && event.syncState === "pending" ? <p className="text-muted-foreground">O link do Meet será gerado na sincronização com o Google.</p> : null}
         {event.attendees.length ? <p><span className="text-muted-foreground">Participantes: </span>{event.attendees.join(", ")}</p> : null}
-        {event.description ? <p className="whitespace-pre-line">{event.description}</p> : null}
+        {event.description ? <p className="whitespace-pre-line break-words"><LinkifiedText text={event.description} /></p> : null}
         {event.googleRecurringEventId ? <p className="text-xs text-muted-foreground">Ocorrência de um evento recorrente do Google.</p> : null}
         {event.syncState ? <p className={cn("text-xs", event.syncState === "conflict" || event.syncState === "failed" ? "text-destructive" : "text-muted-foreground")} data-testid="agenda-sync-state">{SYNC_LABEL[event.syncState]}{event.lastSyncError ? ` — ${event.lastSyncError}` : ""}</p> : null}
         {event.syncState === "conflict" && canWrite ? (

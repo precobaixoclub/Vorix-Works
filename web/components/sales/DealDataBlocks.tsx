@@ -20,6 +20,7 @@ import { useCustomFields } from "@/features/sales/hooks";
 import { PARTICIPANT_ROLE_LABEL } from "@/features/sales/presentation";
 import type { DealCustomField, ParticipantRole } from "@/features/sales/types";
 import { cn } from "@/lib/utils";
+import { LinksPreview } from "@/components/LinkifiedText";
 
 const errorMessage = (cause: unknown) => (cause instanceof Error ? cause.message.replace(/^[A-Z_]+:\s*/, "") : undefined);
 
@@ -83,6 +84,7 @@ function CustomFieldInput({ field, value, onSave }: { field: DealCustomField; va
       ) : (
         <Input type={field.fieldType === "date" ? "date" : "text"} inputMode={field.fieldType === "number" ? "decimal" : undefined} value={text} onChange={(event) => setText(event.target.value)} onBlur={commit} />
       )}
+      {field.fieldType === "text" ? <LinksPreview text={text} /> : null}
     </label>
   );
 }

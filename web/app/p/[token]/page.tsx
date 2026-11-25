@@ -19,6 +19,7 @@ import {
 } from "@/features/crm/public-proposal-api";
 import { formatCurrencyCents, formatDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { LinkifiedText } from "@/components/LinkifiedText";
 
 /** Remove o prefixo técnico (`CODIGO: mensagem`) — o cliente final só vê a frase em português. */
 function cleanPublicErrorMessage(message: string, fallback: string): string {
@@ -159,7 +160,7 @@ export default function PublicProposalPage() {
               {proposal.items.map((item, index) => <li key={index} className="flex flex-wrap justify-between gap-3"><span className="min-w-0 flex-1 break-words [overflow-wrap:anywhere]">{String(item.quantity).replace(".", ",")} × {item.name}</span><span className="tabular-nums">{formatCurrencyCents(item.subtotalCents, proposal.currency)}</span></li>)}
             </ul>
             <div className="flex justify-between border-t border-border/60 pt-2 font-semibold"><span>Total</span><span className="tabular-nums">{formatCurrencyCents(proposal.totalCents, proposal.currency)}</span></div>
-            {proposal.conditions ? <p className="whitespace-pre-wrap text-muted-foreground">{proposal.conditions}</p> : null}
+            {proposal.conditions ? <p className="whitespace-pre-wrap text-muted-foreground"><LinkifiedText text={proposal.conditions} /></p> : null}
             {proposal.validUntil ? <p className="text-muted-foreground">Válida até {formatDate(proposal.validUntil)}.</p> : null}
             <p className="rounded-lg bg-muted/50 px-3 py-2 text-xs text-muted-foreground">Ao confirmar, você registra o aceite comercial desta proposta ({proposal.number ?? "proposta"}{proposal.version > 1 ? ` v${proposal.version}` : ""}). Isto não é uma assinatura eletrônica.</p>
             {actionError ? <p role="alert" className="text-sm text-destructive">{actionError}</p> : null}

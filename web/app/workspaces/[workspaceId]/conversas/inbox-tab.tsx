@@ -1,5 +1,6 @@
 "use client";
 
+import { LinkifiedText } from "@/components/LinkifiedText";
 import { activeQuickView, applyQuickView, QUICK_VIEWS, quickViewCounts, type QuickViewKey } from "@/features/inbox/quick-views";
 import { contactLabel } from "@/features/crm/contact-presentation";
 
@@ -2894,7 +2895,7 @@ function MessageBubble({
              23) — quebra palavra normal só quando REALMENTE não cabe (uma URL longa, por exemplo),
              nunca palavras curtas que cabiam na linha; nunca `break-all`, que quebraria QUALQUER
              palavra no meio mesmo sobrando espaço. */}
-          {body ? <p className={cn("whitespace-pre-wrap [overflow-wrap:anywhere]", isMedia && "mt-1.5")}>{body}</p> : null}
+          {body ? <p className={cn("whitespace-pre-wrap [overflow-wrap:anywhere]", isMedia && "mt-1.5")}><LinkifiedText text={body} /></p> : null}
           <div className="mt-1.5 flex flex-wrap items-center justify-end gap-1 text-[10px] opacity-70">
             <span className="tabular-nums">{timeLabel(message.sentAt ?? message.createdAt)}</span>
             {message.scheduledAt ? <span className="inline-flex items-center gap-0.5"><CalendarClock className="h-3 w-3" /> Agendada para {formatScheduledAt(message.scheduledAt)}</span> : null}
@@ -3118,7 +3119,7 @@ function EventPill({ event, currentUserId, members }: { event: InboxConversation
           <p className="mb-0.5 flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-300">
             <StickyNote className="h-3 w-3" aria-hidden="true" /> Nota interna · {author} · {timeLabel(event.createdAt)}
           </p>
-          <p className="whitespace-pre-wrap break-words">{typeof event.metadata?.text === "string" ? event.metadata.text : ""}</p>
+          <p className="whitespace-pre-wrap break-words"><LinkifiedText text={typeof event.metadata?.text === "string" ? event.metadata.text : ""} /></p>
         </div>
       </div>
     );

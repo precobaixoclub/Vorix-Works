@@ -66,6 +66,7 @@ import { IdeaEditor } from "./IdeaEditor";
 import { IdeasHubTabs } from "./IdeasHubTabs";
 import { blueprintToIdeaInput, clearLocalTankIdeas, readLocalTankIdeas } from "./local-tank-migration";
 import { referenceThumb } from "./reference-images";
+import { LinkifiedText } from "@/components/LinkifiedText";
 
 type View = "grid" | "list" | "calendar";
 const PAGE = 24;
@@ -763,7 +764,7 @@ function EditorialIdeaDetail({ workspaceId, idea, busy, onClose, onEdit, onDelet
             ))}</ol>
           </DetailBlock>
         ) : null}
-        <DetailBlock label="Legenda"><p className="whitespace-pre-wrap break-words text-sm text-foreground">{idea.caption}</p></DetailBlock>
+        <DetailBlock label="Legenda"><p className="whitespace-pre-wrap break-words text-sm text-foreground"><LinkifiedText text={idea.caption} /></p></DetailBlock>
         <div className="grid gap-4 md:grid-cols-2">
           <DetailBlock label="Chamada para ação"><p className="text-sm text-foreground">{idea.cta}</p></DetailBlock>
           <DetailBlock label="Público-alvo"><p className="text-sm text-foreground">{idea.targetAudience}</p></DetailBlock>

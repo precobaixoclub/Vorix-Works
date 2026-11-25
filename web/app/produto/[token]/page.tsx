@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { getApiBaseUrl } from "@/lib/api-error";
 import { formatCurrencyCents } from "@/lib/format";
 import type { SharedProduct } from "@/features/crm/public-product";
+import { LinkifiedText } from "@/components/LinkifiedText";
 
 const load = cache(async (token: string): Promise<SharedProduct | null> => {
   if (!/^[A-Za-z0-9_-]{40,2000}$/.test(token)) return null;
@@ -42,7 +43,7 @@ export default async function SharedProductPage({ params }: { params: Promise<{ 
             {product.selectedVariant ? <p className="mt-2 break-words text-slate-600">Opção: {product.selectedVariant}</p> : null}
             {product.sku ? <p className="mt-2 break-words text-sm text-slate-500">Referência: {product.sku}</p> : null}
             <p className="mt-5 text-3xl font-semibold tracking-tight">{formatCurrencyCents(product.priceCents, product.currency)}</p>
-            {product.description ? <section className="mt-7 border-t border-slate-200 pt-5"><h2 className="text-base font-semibold">Descrição</h2><p className="mt-3 whitespace-pre-wrap break-words text-sm leading-7 text-slate-700">{product.description}</p></section> : null}
+            {product.description ? <section className="mt-7 border-t border-slate-200 pt-5"><h2 className="text-base font-semibold">Descrição</h2><p className="mt-3 whitespace-pre-wrap break-words text-sm leading-7 text-slate-700"><LinkifiedText text={product.description} /></p></section> : null}
             {product.variants.length > 1 ? <section className="mt-6 border-t border-slate-200 pt-5"><h2 className="text-base font-semibold">Opções disponíveis</h2><ul className="mt-3 space-y-2">{product.variants.map((variant, index) => <li key={index} className="flex flex-wrap justify-between gap-2 rounded-lg bg-slate-50 px-3 py-2 text-sm"><span className="break-words">{variant.label}</span><span>{formatCurrencyCents(variant.priceCents, product.currency)}</span></li>)}</ul></section> : null}
           </div>
         </article>

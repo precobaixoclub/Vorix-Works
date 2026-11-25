@@ -42,6 +42,7 @@ import { PostDetail } from "@/features/social/PostDetail";
 import { useSocialSettings } from "@/features/social/hooks";
 import { formatDateTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { LinkifiedText } from "@/components/LinkifiedText";
 
 const NETWORK_LABEL: Record<PublicationNetwork, string> = { instagram: "Instagram", facebook: "Facebook", tiktok: "TikTok", youtube: "YouTube Shorts" };
 const NETWORK_FILTERS: { value: PublicationNetwork | "all"; label: string }[] = [{ value: "all", label: "Todas as redes" }, ...(Object.keys(NETWORK_LABEL) as PublicationNetwork[]).map((value) => ({ value, label: NETWORK_LABEL[value] }))];
@@ -207,7 +208,7 @@ export function MarketingCalendar() {
           <div className="space-y-5">
             {legacy.thumb ? <img src={legacy.thumb} alt="" className="max-h-[360px] w-full rounded-xl bg-muted object-contain" /> : null}
             <DetailBlock label="Data e hora da publicação"><p className="text-sm">{formatDateTime(legacy.date.toISOString())}</p></DetailBlock>
-            <DetailBlock label="Legenda"><p className="whitespace-pre-wrap break-words text-sm">{legacy.posts[0]!.text || "Sem legenda"}</p></DetailBlock>
+            <DetailBlock label="Legenda"><p className="whitespace-pre-wrap break-words text-sm">{legacy.posts[0]!.text ? <LinkifiedText text={legacy.posts[0]!.text} /> : "Sem legenda"}</p></DetailBlock>
           </div>
         </DetailModal>
       ) : null}

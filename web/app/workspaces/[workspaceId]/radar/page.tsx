@@ -50,6 +50,7 @@ import { formatDateTime, formatRelativeTime } from "@/lib/format";
 import { canOperateWorkspace } from "@/lib/rbac";
 import { cn } from "@/lib/utils";
 import { OperationsNow } from "@/components/inbox/OperationsNow";
+import { LinkifiedText } from "@/components/LinkifiedText";
 
 /**
  * Radar de Sentimento (réplica adaptada do CMDesk, pedido explícito do usuário) — conversas em
@@ -513,7 +514,7 @@ function RadarAlertModal({
 
           {alert.conversationContext ? (
             <DetailBlock label="Últimas mensagens do cliente">
-              <p className="whitespace-pre-wrap text-sm text-muted-foreground">{alert.conversationContext}</p>
+              <p className="whitespace-pre-wrap break-words text-sm text-muted-foreground"><LinkifiedText text={alert.conversationContext} /></p>
             </DetailBlock>
           ) : null}
         </div>

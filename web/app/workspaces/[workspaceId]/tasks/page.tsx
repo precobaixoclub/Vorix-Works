@@ -34,6 +34,7 @@ import type { InboxConversation } from "@/features/inbox/types";
 import { useDebounce } from "@/hooks/useDebounce";
 import { formatDateTime, formatRelativeTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { LinkifiedText } from "@/components/LinkifiedText";
 
 type TaskView = "today" | "overdue" | "upcoming" | "done" | "cancelled";
 const TASK_VIEW_FROM_PARAM: Record<string, TaskView> = { hoje: "today", atrasadas: "overdue", proximas: "upcoming", concluidas: "done", canceladas: "cancelled" };
@@ -432,7 +433,7 @@ function TaskRow({
             {overdue ? <Badge variant="destructive">Atrasada</Badge> : null}
           </div>
           <h2 className="mt-2 text-sm font-semibold text-foreground">{task.title}</h2>
-          {task.description ? <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">{task.description}</p> : null}
+          {task.description ? <p className="mt-1 line-clamp-2 break-words text-sm text-muted-foreground"><LinkifiedText text={task.description} /></p> : null}
           <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
             <span className={cn("inline-flex items-center gap-1", overdue && "font-medium text-destructive")}>
               <Clock3 className="h-3.5 w-3.5" />

@@ -42,6 +42,7 @@ import {
 } from "@/features/social/presentation";
 import type { SocialDestinationAction, SocialDestinationView, SocialPostView } from "@/features/social/types";
 import { cn } from "@/lib/utils";
+import { LinkifiedText } from "@/components/LinkifiedText";
 
 /**
  * Detalhe de uma publicação do compositor social, com as ações REAIS por rede (aprovar, publicar
@@ -126,7 +127,7 @@ export function PostDetail({ workspaceId, postId, timezone, onClose, onChanged }
               </div>
               <div className="space-y-4">
                 <DetailBlock label="Horário"><p className="text-sm tabular-nums">{formatDateTime(post.scheduledAt ?? post.createdAt, post.timezone ?? timezone)}{post.timezone ? <span className="text-muted-foreground"> · {post.timezone.replace(/_/g, " ")}</span> : null}</p></DetailBlock>
-                <DetailBlock label="Legenda"><p className="whitespace-pre-wrap break-words text-sm">{first?.caption || "Sem legenda"}</p>{first?.hashtags.length ? <p className="mt-1 text-sm text-sky-600 dark:text-sky-400">{first.hashtags.map((tag) => `#${tag}`).join(" ")}</p> : null}</DetailBlock>
+                <DetailBlock label="Legenda"><p className="whitespace-pre-wrap break-words text-sm">{first?.caption ? <LinkifiedText text={first.caption} /> : "Sem legenda"}</p>{first?.hashtags.length ? <p className="mt-1 text-sm text-sky-600 dark:text-sky-400">{first.hashtags.map((tag) => `#${tag}`).join(" ")}</p> : null}</DetailBlock>
               </div>
             </div>
             <DetailBlock label="Redes">

@@ -338,16 +338,19 @@ async function catalogBase(photos, surface) {
 }
 
 export async function renderArt(request) {
-  const { base, catalogPhotos, profile, headline, body, cta, layout, logoPlacement, protectedAreas, logoConfig } = request;
+  const { base, catalogPhotos, profile, body, cta, layout, logoPlacement, protectedAreas, logoConfig } = request;
   const identity = profile?.identity;
+  const headline = identity?.typography?.headlineCase === "UPPERCASE" ? request.headline?.toLocaleUpperCase("pt-BR") : request.headline;
   const colors = (identity?.colors ?? []).filter((color) => /^#[\da-f]{6}$/i.test(color.hex));
   const logosInput = request.logos?.length ? request.logos : request.logo ? [{ data: request.logo, variant: "PRIMARY", backgrounds: request.logoBackgrounds ?? [] }] : [];
   if (!logosInput.length) throw new Error("QUALITY_LOGO_MISSING: workspace sem logo oficial configurada");
 
-  const darkBrand = /fundo sempre (preto|escuro)|preto tecnológico/i.test(identity?.notes ?? "") || colors.some((color) => /preto tecnológico/i.test(color.name));
-  const lightBrand = /fundo sempre claro|nunca escuro/i.test(identity?.notes ?? "");
+  const brandNotes = identity?.notes ?? "";
+  const darkBackground = /fundo\s+sempre\s+(?:preto|escuro|azul[- ]marinho)/i.test(brandNotes);
+  const lightBackground = /fundo\s+sempre\s+claro|nunca\s+escuro/i.test(brandNotes);
+  const darkBrand = darkBackground || /preto tecnológico/i.test(brandNotes) || colors.some((color) => /preto tecnológico/i.test(color.name));
   const serif = identity?.typography?.family === "SERIF";
-  const light = !darkBrand && (lightBrand || serif || logosInput.every((logo) => (logo.backgrounds ?? []).includes("LIGHT") && !(logo.backgrounds ?? []).includes("DARK")));
+  const light = !darkBrand && (lightBackground || serif || logosInput.every((logo) => (logo.backgrounds ?? []).includes("LIGHT") && !(logo.backgrounds ?? []).includes("DARK")));
   const lightest = [...colors].sort((a, b) => hexLuminance(b.hex) - hexLuminance(a.hex))[0]?.hex ?? "#FFFFFF";
   const darkest = [...colors].sort((a, b) => hexLuminance(a.hex) - hexLuminance(b.hex))[0]?.hex ?? "#0B0B10";
   const surface = light
@@ -475,7 +478,8 @@ export async function renderArt(request) {
     warnings: [...assetWarnings, ...legibilityWarnings, ...(chosen.contrast < MIN_LOGO_CONTRAST ? [`logo com contraste ${round(chosen.contrast)}:1 sem tratamento — falta uma versão oficial adequada a este fundo`] : [])],
   };
   // Quality Gate de fidelidade (quando o agendador manda o plano): produto, tela, texto e repetição.
-  const review = request.fidelity ? await fidelityReview({ request, jpeg, canvas, composition, protectedRects, plan, quality, logoContrast }) : undefined;
+  const strictBackground = darkBackground ? "dark" : lightBackground ? "light" : undefined;
+  const review = request.fidelity ? await fidelityReview({ request, jpeg, canvas, composition, protectedRects, plan, quality, logoContrast, strictBackground, colors }) : undefined;
   return { image: jpeg.toString("base64"), quality, ...(review ?? {}) };
 }
 
@@ -493,10 +497,10 @@ async function composeBase(spec, tones) {
 }
 
 /** Evidências medidas na arte final + veredito do Quality Gate de fidelidade + impressão visual. */
-async function fidelityReview({ request, jpeg, canvas, composition, protectedRects, plan, quality, logoContrast }) {
+async function fidelityReview({ request, jpeg, canvas, composition, protectedRects, plan, quality, logoContrast, strictBackground, colors }) {
   const { evaluateFidelityGate } = await dist("application/creative-engine/creative-fidelity-gate.js");
   const { assessVariety } = await dist("application/creative-engine/visual-variety.js");
-  const { fingerprintArt, measureProductFidelity, measureScreen } = await dist("infrastructure/media/creative/measure-fidelity.js");
+  const { evaluateSceneBackground, fingerprintArt, measureProductFidelity, measureScreen } = await dist("infrastructure/media/creative/measure-fidelity.js");
   const { fidelity } = request;
   const evidence = { operation: fidelity.operation, transmittedReferenceIds: fidelity.transmittedReferenceIds ?? [] };
   const product = composition?.evidence.product;
@@ -530,6 +534,13 @@ async function fidelityReview({ request, jpeg, canvas, composition, protectedRec
   });
   evidence.variety = assessVariety(fingerprint, request.history ?? []);
   if (fidelity.aiReview) evidence.aiReview = fidelity.aiReview;
+  if (fidelity.spec.mode === "conceptual") {
+    evidence.scene = {
+      reviewRequired: fidelity.sceneReviewRequired === true,
+      review: fidelity.sceneReview,
+      paletteIssue: strictBackground ? await evaluateSceneBackground(jpeg, { tone: strictBackground, colors: colors.map(({ hex }) => hex), protectedRects }) : undefined,
+    };
+  }
   // O veredito leva o SHA-256 da imagem avaliada: o backend só agenda exatamente esta imagem.
   const { sha256Hex } = await dist("application/creative-engine/publication-guard.js");
   const gate = { ...evaluateFidelityGate(fidelity.spec, evidence), imageSha256: sha256Hex(jpeg) };

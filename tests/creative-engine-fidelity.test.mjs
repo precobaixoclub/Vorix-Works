@@ -14,7 +14,7 @@ import { applyHomography, homography, warpIntoQuad } from "../dist/infrastructur
 import { composeProduct, composeSoftware } from "../dist/infrastructure/media/creative/compositions.js";
 import { measureProductFidelity } from "../dist/infrastructure/media/creative/measure-fidelity.js";
 import { cutoutProduct } from "../dist/infrastructure/media/creative/product-cutout.js";
-import { produceScreen } from "../scripts/editorial/creative-pipeline.mjs";
+import { produceScreen, sceneReviewFromVerdict } from "../scripts/editorial/creative-pipeline.mjs";
 
 // Reestruturação do motor criativo (25/11/2026). Achados da auditoria fixados aqui com imagens
 // sintéticas — nenhuma IA paga, nenhum dado de cliente:
@@ -277,6 +277,56 @@ test("telas e rastreamento: texto exato da arte respeitado; assinaturas nunca v�
   const instruction = buildImageInstruction(spec, [{ id: "p", role: "product_photo", productCode: "000048", variantLabel: "Bege" }]);
   assert.match(instruction, /Imagem 1: FOTO ORIGINAL do produto anunciado \(000048, Bege\)/);
   assert.match(instruction, /PRODUTO IMUTÁVEL/);
+});
+
+test("o piloto reprova fundo saturado e só aprova a arte final após revisar a direção visual", async () => {
+  const { renderArt } = await import("../scripts/editorial/codex-social-render.mjs");
+  const brandIdentity = {
+    colors: [{ name: "Preto azulado (fundo)", hex: "#080E23", role: "PRIMARY" }, { name: "Verde-limão", hex: "#A8E82B", role: "ACCENT" }, { name: "Dourado de apoio", hex: "#FFC928", role: "SECONDARY" }],
+    notes: "Fundo sempre preto ou azul-marinho muito escuro. Amarelo como apoio.",
+    typography: { family: "SANS", headlineCase: "UPPERCASE" },
+  };
+  const { screens: [planned] } = planEditorialCreative({
+    workspaceId: "ws", brandName: "Preço Baixo Club", brandIdentity, businessKind: "unknown", allowAi: true, history: [], ideaReferences: [],
+    idea: IDEA({ title: "Quanto custa cada uso?", keyMessage: "Quanto custa cada uso?", visualDirection: "Calculadora e caderno, sem tênis ou moedas." }),
+  });
+  assert.match(planned.instruction, /Preto azulado \(fundo\) #080E23 \(PRIMARY\)/);
+  assert.match(planned.instruction, /Fundo sempre preto ou azul-marinho muito escuro/);
+  assert.match(planned.instruction, /Calculadora e caderno, sem tênis ou moedas/);
+
+  const logo = await svgPng('<circle cx="100" cy="100" r="85" fill="#FFFFFF"/>', 200, 200);
+  const base = (color, floor) => svgPng(`<rect width="1080" height="1350" fill="${color}"/><rect y="860" width="1080" height="490" fill="${floor}"/>`, 1080, 1350);
+  const saturated = await base("#0122A3", "#FDC401");
+  const dark = await base("#080E23", "#0C100C");
+  const setup = {
+    planned, brand: { name: "Preço Baixo Club", profile: { identity: brandIdentity }, logos: [{ data: logo.toString("base64"), variant: "PRIMARY", backgrounds: ["DARK"] }] },
+    assets: {}, history: [], render: renderArt, archetypes: ARCHETYPES,
+  };
+  const corrections = [];
+  const reviewed = [];
+  const result = await produceScreen({
+    ...setup,
+    generateAi: async ({ correction }) => {
+      corrections.push(correction);
+      return { base: (corrections.length === 1 ? saturated : dark).toString("base64"), layout: "top" };
+    },
+    reviewScene: async ({ instruction, image }) => {
+      assert.equal(instruction, planned.instruction);
+      reviewed.push(image);
+      return sceneReviewFromVerdict(reviewed.length === 1
+        ? { paletteMatches: true, directionMatches: false, findings: ["Faltam calculadora e caderno."], verdict: "reject" }
+        : { paletteMatches: true, directionMatches: true, findings: [], verdict: "approve" });
+    },
+  });
+  assert.equal(result.ok, true, JSON.stringify(result.attempts));
+  assert.deepEqual(result.attempts.map(({ gate }) => gate.failures.map(({ code }) => code)), [["BRAND_PALETTE_MISMATCH"], ["VISUAL_DIRECTION_MISMATCH"], []]);
+  assert.match(corrections[1], /Fundo escuro da marca/);
+  assert.match(corrections[2], /Faltam calculadora e caderno/);
+  assert.equal(result.image, reviewed.at(-1));
+
+  const inconclusive = await produceScreen({ ...setup, generateAi: async () => ({ base: dark.toString("base64"), layout: "top" }) });
+  assert.equal(inconclusive.ok, false);
+  assert.equal(inconclusive.attempts[0].gate.failures[0].code, "SCENE_REVIEW_INCONCLUSIVE");
 });
 
 test("dHash: mesma imagem = mesma impressão; layouts opostos = distantes", async () => {

@@ -23,7 +23,7 @@ try {
     const name = `Captura real — ${capture.label}`;
     if (existing.some((asset) => asset.name === name && asset.status === "active")) { results.push({ file: capture.file, skipped: "já cadastrada" }); continue; }
     const body = Buffer.from(capture.data, "base64");
-    const key = `assets/${workspace.tenantId}/${workspace.id}/library/captura-${capture.file}`;
+    const key = `assets/${workspace.tenantId}/${workspace.id}/captura-${capture.file}`;
     await c.objectStorage.put({ key, body, contentType: "image/png" });
     const tags = [`feature:${capture.feature}`, `form:${capture.form}`, `dpr:${capture.devicePixelRatio}`,
       ...(capture.focus ? [`focus:${capture.focus.x},${capture.focus.y},${capture.focus.w},${capture.focus.h}`] : []), ...capture.keywords];

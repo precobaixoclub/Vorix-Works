@@ -56,6 +56,33 @@ export async function measureScreen(output: Buffer, screenRect: Rect): Promise<{
   return { luminanceStd: Math.round(stats.luminanceStd * 1000) / 1000, edgeDensity: Math.round(stats.edgeDensity * 1000) / 1000 };
 }
 
+export async function evaluateSceneBackground(output: Buffer, options: { tone: "light" | "dark"; colors: readonly string[]; protectedRects: readonly Rect[] }): Promise<string | undefined> {
+  const { tone, colors, protectedRects } = options;
+  const matchesTone = (rgb: readonly number[]) => tone === "dark" ? Math.max(...rgb) <= 75 : Math.min(...rgb) >= 155;
+  const palette = colors.filter((hex) => /^#[\da-f]{6}$/i.test(hex))
+    .map((hex) => [1, 3, 5].map((start) => parseInt(hex.slice(start, start + 2), 16))).filter(matchesTone);
+  const image = sharp(output);
+  const { width = 1, height = 1 } = await image.metadata();
+  const { data, info } = await image.resize(36, 45, { fit: "fill" }).toColourspace("srgb").removeAlpha().raw().toBuffer({ resolveWithObject: true });
+  let compatible = 0;
+  let sampled = 0;
+  for (let row = 0; row < info.height; row++) {
+    for (let column = 0; column < info.width; column++) {
+      const x = (column + 0.5) * width / info.width;
+      const y = (row + 0.5) * height / info.height;
+      if (protectedRects.some((rect) => x >= rect.x && x < rect.x + rect.w && y >= rect.y && y < rect.y + rect.h)) continue;
+      const offset = (row * info.width + column) * info.channels;
+      const rgb = [data[offset], data[offset + 1], data[offset + 2]];
+      if (matchesTone(rgb) && (!palette.length || palette.some((color) => deltaE(color, rgb) <= 25))) compatible++;
+      sampled++;
+    }
+  }
+  const expected = tone === "dark" ? "escuro" : "claro";
+  if (sampled < info.width * info.height * 0.15) return `Área de fundo insuficiente para comprovar o fundo ${expected} da marca.`;
+  const share = compatible / sampled;
+  return share > 0.5 ? undefined : `Fundo ${expected} da marca ocupa só ${Math.round(share * 100)}% da área sem elementos protegidos. Use a cor de fundo do perfil como superfície dominante.`;
+}
+
 export async function fingerprintArt(output: Buffer, meta: Omit<VisualFingerprint, "dHash" | "palette">): Promise<VisualFingerprint> {
   const colors = await dominantColors(output, { k: 3 });
   return { ...meta, dHash: await dHash(output), palette: colors.map((color) => rgbHex(color.rgb)) };

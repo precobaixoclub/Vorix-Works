@@ -75,9 +75,7 @@ async function logoFile(url) {
   return ownedImage(url);
 }
 
-async function brandFor(workspace, config) {
-  const { rows } = await db.query("select profile from brand_visual_profiles where workspace_id=$1", [workspaceId]);
-  const profile = rows[0]?.profile;
+async function brandFor(workspace, config, profile) {
   const identity = profile?.identity;
   // Todas as versões oficiais (com os fundos para os quais servem): o renderizador escolhe a compatível.
   const logos = [];
@@ -264,7 +262,7 @@ async function planIdea(idea, creative, context) {
     }
   }
   const plan = planEditorialCreative({
-    workspaceId, brandName: context.brandName, businessKind: creative.businessKind, softwareFeatures: creative.features, idea,
+    workspaceId, brandName: context.brandName, brandIdentity: context.profile?.identity, businessKind: creative.businessKind, softwareFeatures: creative.features, idea,
     ideaReferences, libraryCaptures: libraryCandidates, editorialProducts, history: context.history, allowAi: true,
   });
   const assets = {};
@@ -357,9 +355,10 @@ async function run() {
     const reviewIds = new Set(Array.isArray(request.skipIdeaIds) ? request.skipIdeaIds.map(String) : []);
     const candidates = ideas.filter(item => !usedIds.has(item.id) && !reviewIds.has(item.id) && ["single_image", "carousel"].includes(item.format)).sort(compareIdeas);
     const creative = brandConfig.creative ?? { businessKind: "unknown" };
+    const { rows: [brandRow] } = await db.query("select profile from brand_visual_profiles where workspace_id=$1", [workspaceId]);
     const photos = creative.businessKind === "physical_products" ? await catalogPhotos() : [];
     const context = {
-      brandName: workspace.name, used: used.rows, photos, photosByUrl: new Map(photos.map(photo => [photo.url, photo])),
+      brandName: workspace.name, profile: brandRow?.profile, used: used.rows, photos, photosByUrl: new Map(photos.map(photo => [photo.url, photo])),
       captures: creative.businessKind === "software" ? await libraryCaptures() : [], history: await visualHistory(used.rows),
     };
     // Primeira pauta viável: as bloqueadas (falta referência obrigatória) ficam no Bolsão com a orientação.
@@ -374,7 +373,7 @@ async function run() {
         return undefined;
       }
       if (planned.blocked) { blocked.push({ ideaId: idea.id, idea: idea.externalId, mode: planned.plan.mode, reason: "REFERENCE_MISSING", guidance: planned.plan.blockers.filter(item => item.blocking).map(item => item.message) }); return undefined; }
-      return { idea, brand: await brandFor(workspace, brandConfig), plan: planned.plan, assets: planned.assets, trace: { references: planned.traced }, productCodes: planned.productCodes, history: context.history, archetypes: ARCHETYPES, blocked };
+      return { idea, brand: await brandFor(workspace, brandConfig, context.profile), plan: planned.plan, assets: planned.assets, trace: { references: planned.traced }, productCodes: planned.productCodes, history: context.history, archetypes: ARCHETYPES, blocked };
     };
     for (const idea of candidates.filter(item => !item.externalId.startsWith("CMKV-AUTO-"))) {
       const chosen = await tryIdea(idea);

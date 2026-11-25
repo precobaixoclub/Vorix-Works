@@ -21,7 +21,8 @@ export type GateCode =
   // software
   | "UI_MISSING" | "SCREEN_EMPTY" | "UI_FICTIONAL" | "UI_ILLEGIBLE" | "FEATURE_MISMATCH"
   // todos
-  | "TEXT_ILLEGIBLE" | "TEXT_OVERFLOW" | "TEXT_OVER_PRODUCT" | "MARGIN" | "LOGO" | "REPETITION" | "REFERENCE_MISSING" | "AI_REVIEW_REJECTED";
+  | "TEXT_ILLEGIBLE" | "TEXT_OVERFLOW" | "TEXT_OVER_PRODUCT" | "MARGIN" | "LOGO" | "REPETITION" | "REFERENCE_MISSING" | "AI_REVIEW_REJECTED"
+  | "BRAND_PALETTE_MISMATCH" | "VISUAL_DIRECTION_MISMATCH" | "SCENE_REVIEW_INCONCLUSIVE";
 
 export type GateFinding = { code: GateCode; message: string };
 
@@ -76,6 +77,7 @@ export type GateEvidence = {
   logo?: { ok: boolean; warnings?: string[] };
   variety?: VarietyAssessment;
   aiReview?: AiReviewEvidence;
+  scene?: { paletteIssue?: string; reviewRequired: boolean; review?: AiReviewEvidence };
 };
 
 export type GateResult = {
@@ -165,6 +167,18 @@ export function evaluateFidelityGate(spec: Pick<CreativeSpec, "mode" | "subject"
       if (screen.renderedTextPx !== undefined && screen.renderedTextPx < FIDELITY_LIMITS.minRenderedTextPx) fail("UI_ILLEGIBLE", `A captura ficou pequena demais para ler (texto ≈ ${screen.renderedTextPx.toFixed(1)} px).`);
       const expectedFeature = spec.subject.kind === "feature" ? spec.subject.key : undefined;
       if (expectedFeature && screen.captureFeature && screen.captureFeature !== expectedFeature) fail("FEATURE_MISMATCH", `A tela mostra "${screen.captureFeature}", mas a peça divulga "${expectedFeature}".`);
+    }
+  }
+
+  if (evidence.scene?.paletteIssue) fail("BRAND_PALETTE_MISMATCH", evidence.scene.paletteIssue);
+  if (evidence.scene?.reviewRequired) {
+    const review = evidence.scene.review;
+    if (review?.verdict === "approve") {
+      passes.push("Cena revisada conforme a identidade da marca e a direção visual da pauta.");
+    } else if (review?.verdict === "reject") {
+      for (const finding of review.findings ?? [{ code: "VISUAL_DIRECTION_MISMATCH" as const, message: "A cena foi reprovada na revisão visual." }]) fail(finding.code, finding.message);
+    } else {
+      fail("SCENE_REVIEW_INCONCLUSIVE", "A aderência da cena à paleta e à direção visual precisa de revisão.");
     }
   }
 

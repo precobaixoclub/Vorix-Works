@@ -52,6 +52,9 @@ export function planRevision(input: RevisionInput): RevisionPlan {
   if (has(failures, "REFERENCE_MISSING")) {
     return { action: "manual_review", reason: `Falta material obrigatório — precisa de ação do usuário. ${reasons}`, estimatedCostUsd: 0 };
   }
+  if (has(failures, "SCENE_REVIEW_INCONCLUSIVE")) {
+    return { action: "manual_review", reason: reasons, estimatedCostUsd: 0 };
+  }
   if (input.attempt >= input.maxAttempts) {
     return { action: "manual_review", reason: `Limite de ${input.maxAttempts} tentativas atingido sem aprovação. ${reasons}`, estimatedCostUsd: 0 };
   }
@@ -68,13 +71,14 @@ export function planRevision(input: RevisionInput): RevisionPlan {
   if (has(failures, "UI_ILLEGIBLE")) {
     return { action: "enlarge_capture", reason: `Captura pequena demais — usando enquadramento maior/recorte da funcionalidade. ${reasons}`, estimatedCostUsd: 0 };
   }
-  if (has(failures, "REPETITION")) {
+  const sceneMismatch = has(failures, "BRAND_PALETTE_MISMATCH", "VISUAL_DIRECTION_MISMATCH");
+  if (!sceneMismatch && has(failures, "REPETITION")) {
     return { action: "switch_archetype", reason: `Composição repetida — trocando o arquétipo. ${reasons}`, estimatedCostUsd: 0 };
   }
-  if (has(failures, "PRODUCT_CROPPED", "PRODUCT_TOO_SMALL", "TEXT_OVER_PRODUCT", "TEXT_OVERFLOW", "TEXT_ILLEGIBLE", "MARGIN")) {
+  if (!sceneMismatch && has(failures, "PRODUCT_CROPPED", "PRODUCT_TOO_SMALL", "TEXT_OVER_PRODUCT", "TEXT_OVERFLOW", "TEXT_ILLEGIBLE", "MARGIN")) {
     return { action: "recompose_text", reason: `Ajuste de enquadramento/texto sem gerar nova imagem. ${reasons}`, estimatedCostUsd: 0 };
   }
-  if (has(failures, "LOGO")) {
+  if (!sceneMismatch && has(failures, "LOGO")) {
     return { action: "replace_logo_variant", reason: `Logotipo inadequado — trocando a versão/tratamento. ${reasons}`, estimatedCostUsd: 0 };
   }
   if (usesAi) {

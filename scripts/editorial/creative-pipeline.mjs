@@ -34,7 +34,7 @@ const operationOf = (archetypeId, archetypes) => archetypes[archetypeId]?.operat
  * renderizador; `generateAi({ spec, instruction, transmitted, correction })` gera a base pela IA
  * (ou `undefined` quando a IA não está disponível/autorizada).
  */
-export async function produceScreen({ planned, brand, assets, history, render, generateAi, archetypes, maxAttempts = 3, budgetUsd = 0, aiAttemptCostUsd = 0, seriesKey }) {
+export async function produceScreen({ planned, brand, assets, history, render, generateAi, reviewScene, archetypes, maxAttempts = 3, budgetUsd = 0, aiAttemptCostUsd = 0, seriesKey }) {
   const { spec, screen, transmitted } = planned;
   const attempts = [];
   const tried = new Set();
@@ -81,6 +81,15 @@ export async function produceScreen({ planned, brand, assets, history, render, g
     let result;
     try {
       result = await render(request);
+      const needsSceneReview = spec.mode === "conceptual" && (spec.visualDirection || (AI_OPERATIONS.has(operation) && (spec.brandIdentity?.colors?.length || spec.brandIdentity?.notes?.trim())));
+      if (needsSceneReview && result.gate?.approved === true) {
+        const sceneReview = await reviewScene?.({ spec, instruction: planned.instruction, image: result.image });
+        const verified = await render({ ...request, fidelity: { ...fidelity, sceneReviewRequired: true, sceneReview } });
+        if (!result.gate.imageSha256 || verified.gate?.imageSha256 !== result.gate.imageSha256) {
+          return { ok: false, attempts, reason: "A arte mudou durante a revisão visual da cena." };
+        }
+        result = verified;
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       attempts.push({ attempt, archetype, outcome: "failed", reason: message });
@@ -179,4 +188,14 @@ export function aiReviewFromVerdict(review) {
     ...(print === true && position === true ? [] : [{ code: "PRINT_ALTERED", message: `Revisão visual: estampa diferente da original${details ? ` (${details})` : ""}.` }]),
   ];
   return { verdict: "reject", findings: findings.length ? findings : [{ code: "AI_REVIEW_REJECTED", message: details || "Revisão visual reprovou." }] };
+}
+
+export function sceneReviewFromVerdict(review) {
+  if (!review || typeof review.paletteMatches !== "boolean" || typeof review.directionMatches !== "boolean" || !["approve", "reject"].includes(review.verdict)) return { verdict: "unavailable" };
+  const details = Array.isArray(review.findings) ? review.findings.filter((item) => typeof item === "string").join(" ").slice(0, 350) : "";
+  if (review.verdict === "approve" && review.paletteMatches && review.directionMatches && !details) return { verdict: "approve" };
+  const findings = [];
+  if (!review.paletteMatches) findings.push({ code: "BRAND_PALETTE_MISMATCH", message: details || "Cores ou hierarquia da paleta divergentes do perfil da marca." });
+  if (!review.directionMatches || !findings.length) findings.push({ code: "VISUAL_DIRECTION_MISMATCH", message: details || "Cena divergente da direção visual da pauta." });
+  return { verdict: "reject", findings };
 }

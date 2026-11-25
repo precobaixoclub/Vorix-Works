@@ -1,4 +1,5 @@
 import type { ClassifiedReference, ReferenceGuidance, ResolvedReferences } from "./reference-roles.js";
+import type { BrandIdentity } from "../../shared/utils/brand-identity.js";
 import { ideaText, VISUAL_MODE_LABELS, type VisualIntentDecision, type VisualIntentIdea, type VisualMode } from "./visual-intent.js";
 import { archetypeRecencyPenalty, type VisualFingerprint } from "./visual-variety.js";
 
@@ -131,6 +132,8 @@ export function chooseComposition(input: ChooseCompositionInput): CompositionCho
 export type CreativeSpec = {
   workspaceId: string;
   brand: string;
+  brandIdentity?: Pick<BrandIdentity, "colors" | "notes">;
+  visualDirection?: string;
   objective?: string;
   audience?: string;
   /** Produto (código + variante) ou funcionalidade divulgada. */
@@ -159,7 +162,7 @@ export type CreativeSpec = {
 
 export type BuildCreativeSpecInput = {
   workspaceId: string;
-  brand: { name: string };
+  brand: { name: string; identity?: CreativeSpec["brandIdentity"] };
   idea: VisualIntentIdea & { id: string; targetAudience?: string; cta?: string };
   screen: { headline: string; body?: string; cta?: string };
   decision: VisualIntentDecision;
@@ -177,6 +180,9 @@ const PRODUCT_CREATIVE = ["cenário", "iluminação", "fundo", "elementos decora
 
 export function buildCreativeSpec(input: BuildCreativeSpecInput): CreativeSpec {
   const { decision, references } = input;
+  const brandIdentity = input.brand.identity;
+  const direction = input.idea.visualDirection?.trim();
+  const visualDirection = direction === "Seguir a identidade visual da marca." || direction === "Usar as imagens de referência da ideia." ? undefined : direction;
   const choice = chooseComposition({
     mode: decision.mode, idea: input.idea, references, history: input.history, seriesKey: input.seriesKey,
     seriesArchetype: input.seriesArchetype, allowAi: input.allowAi, exclude: input.excludeArchetypes, seed: input.idea.id,
@@ -209,6 +215,8 @@ export function buildCreativeSpec(input: BuildCreativeSpecInput): CreativeSpec {
   return {
     workspaceId: input.workspaceId,
     brand: input.brand.name,
+    ...(brandIdentity ? { brandIdentity: { colors: brandIdentity.colors, notes: brandIdentity.notes } } : {}),
+    ...(visualDirection ? { visualDirection } : {}),
     objective: input.idea.objective,
     audience: input.idea.targetAudience,
     subject,
@@ -237,6 +245,16 @@ export function buildCreativeSpec(input: BuildCreativeSpecInput): CreativeSpec {
   };
 }
 
+export function sceneArtDirection(spec: Pick<CreativeSpec, "brandIdentity" | "visualDirection">): string[] {
+  const colors = spec.brandIdentity?.colors ?? [];
+  const notes = spec.brandIdentity?.notes?.trim();
+  return [
+    ...(colors.length ? [`Paleta da marca (respeite a hierarquia e o uso indicado no nome da cor): ${colors.map(({ name, hex, role }) => `${name} ${hex} (${role})`).join(", ")}.`] : []),
+    ...(notes ? [`Perfil da marca: ${notes}`] : []),
+    ...(spec.visualDirection ? [`Direção visual da pauta: ${spec.visualDirection}`] : []),
+  ];
+}
+
 /**
  * Instrução concreta para o gerador de imagem, derivada da especificação — nunca um prompt genérico.
  * `referenceOrder` descreve, na ordem de envio, o papel de cada imagem anexada.
@@ -254,6 +272,7 @@ export function buildImageInstruction(spec: CreativeSpec, referenceOrder: readon
   const lines = [
     `Marca: ${spec.brand}. Modo: ${spec.modeLabel}. Composição: ${spec.composition.label} — ${spec.composition.intent}`,
     `Mensagem da peça: ${spec.mainMessage}${spec.supportingText ? ` / ${spec.supportingText}` : ""}.`,
+    ...sceneArtDirection(spec),
     ...(attachments.length ? ["Imagens anexadas, nesta ordem:", ...attachments] : []),
   ];
   if (spec.mode === "physical_product") {
@@ -268,7 +287,7 @@ export function buildImageInstruction(spec: CreativeSpec, referenceOrder: readon
       "Deixe a área reservada livre e plana (mesa/superfície limpa), com luz coerente para receber um dispositivo.",
     );
   } else {
-    lines.push("Traduza o conceito em uma cena fotográfica crível, nas cores e no clima da marca. Sem letras, números ou logotipos.");
+    lines.push("Traduza o conceito no estilo, com os elementos e a paleta da direção visual. Use fotografia crível se nenhum estilo for solicitado. Reserve as cores de apoio a pequenos detalhes quando o perfil pedir. Sem letras, números ou logotipos.");
   }
   lines.push("Evite: " + spec.avoid.join(", ") + ".");
   lines.push("Nenhum texto, letra, número, logotipo ou marca d'água na imagem — o texto é aplicado depois pelo renderizador.");

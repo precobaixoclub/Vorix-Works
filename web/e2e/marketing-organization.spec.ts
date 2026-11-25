@@ -29,6 +29,7 @@ const IDEAS = [idea("i1", "Vestido do mês", "available", { scheduledDate: ymd }
 
 async function setup(page: Page, options: { solutions?: string[]; role?: string; permissions?: readonly string[] } = {}) {
   const log = { workspaceIds: new Set<string>(), imports: [] as string[], writes: [] as string[] };
+  let posts = POSTS;
   await loginCookie(page.context());
   await mockConversasBackend(page);
   await page.route("https://cdn.example.test/**", (route) => route.fulfill({ contentType: "image/png", body: PNG }));
@@ -48,9 +49,15 @@ async function setup(page: Page, options: { solutions?: string[]; role?: string;
     if (path === "/v1/workspaces") return ok(WORKSPACES);
     const wsMatch = /^\/v1\/workspaces\/([^/]+)$/.exec(path);
     if (wsMatch) return ok(WORKSPACES.find((item) => item.id === wsMatch[1]));
-    if (path === "/v1/social/posts" && method === "GET") return ok({ posts: mine ? POSTS : [] });
+    if (path === "/v1/social/posts" && method === "GET") return ok({ posts: mine ? posts : [] });
+    if (path === "/v1/social/posts/s3/cancel" && method === "POST" && mine) {
+      posts = posts.map((post) => post.id === "s3"
+        ? { ...post, state: "CANCELLED", destinations: post.destinations.map((item) => ({ ...item, state: "CANCELLED" })) }
+        : post);
+      return ok(posts.find((post) => post.id === "s3"));
+    }
     const postMatch = /^\/v1\/social\/posts\/([^/]+)$/.exec(path);
-    if (postMatch) return ok(POSTS.find((post) => post.id === postMatch[1]));
+    if (postMatch) return ok(posts.find((post) => post.id === postMatch[1]));
     if (path === "/v1/social/settings") return ok({ timezone: "America/Sao_Paulo", networks: [] });
     if (path === "/v1/tiktok/posts") return ok(mine ? [{ publicationId: "tt1", state: "published", description: "Vídeo antigo do estúdio", media: { imageUrls: [IMG] }, createdAt: today(6), publishedAt: today(11) }] : []);
     if (path === "/v1/youtube/posts") return ok([]);
@@ -70,6 +77,28 @@ async function setup(page: Page, options: { solutions?: string[]; role?: string;
 
 const base = (id = WORKSPACE_ID) => `/workspaces/${id}`;
 const items = (page: Page) => page.getByTestId("marketing-calendar").locator("[data-item]");
+
+for (const view of ["Grade", "Lista"] as const) {
+  test(`Conteúdos em ${view}: menu inteiro e recusa de publicação pendente`, async ({ page }) => {
+    const log = await setup(page);
+    await page.goto(`${base()}/campaigns?status=awaiting_approval`);
+    await page.getByRole("button", { name: view, exact: true }).click();
+    await page.getByRole("button", { name: "Abrir menu", exact: true }).click();
+    const menu = page.getByRole("dialog", { name: "Ações do conteúdo" });
+    await expect(menu).toBeInViewport({ ratio: 1 });
+    await expect(menu.getByRole("button", { name: "Ver detalhes" })).toBeVisible();
+    await menu.getByRole("button", { name: "Recusar conteúdo" }).click();
+    const confirmation = page.getByRole("alertdialog", { name: "Recusar conteúdo" });
+    await expect(confirmation).toContainText("Bastidores do ateliê");
+    expect(log.writes).toEqual([]);
+    await confirmation.getByRole("button", { name: "Recusar conteúdo" }).click();
+    await expect(page.getByText("Nenhum conteúdo corresponde aos filtros aplicados.")).toBeVisible();
+    expect(log.writes).toEqual(["POST /v1/social/posts/s3/cancel"]);
+    await page.getByRole("combobox", { name: "Status" }).selectOption("cancelled");
+    await expect(page.getByText("Bastidores do ateliê", { exact: true })).toBeVisible();
+    await expect(page.getByText("Cancelado", { exact: true })).toBeVisible();
+  });
+}
 
 test.describe("Fase 5 — desktop", () => {
   test.use({ viewport: { width: 1440, height: 900 } });

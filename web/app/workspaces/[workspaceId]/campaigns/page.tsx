@@ -7,6 +7,7 @@ import useSWR from "swr";
 import { ConceptsExplainer } from "@/components/marketing/ConceptsExplainer";
 import { listEditorialIdeas } from "@/features/editorial-ideas/api";
 import { AlignLeft, ExternalLink, GalleryHorizontal, ImageIcon, LayoutGrid, List, MoreHorizontal, Video } from "lucide-react";
+import { toast } from "sonner";
 import { Button } from "@/components/Button";
 import { ChannelIcon, channelLabel } from "@/components/ChannelIcon";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
@@ -21,10 +22,12 @@ import { Spinner } from "@/components/Spinner";
 import { StatsGrid } from "@/components/StatsGrid";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Card, CardContent } from "@/components/ui/card";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { TablePagination, usePagination } from "@/components/ui/table-pagination";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useCurrentWorkspace } from "@/contexts/workspace-context";
+import { useMyAccess } from "@/features/auth/access";
 import { cancelUnifiedPublication } from "@/features/publication-history/api";
 import { groupPublications, publicationDate, type ContentGroup } from "@/features/publication-history/content-groups";
 import { useUnifiedPublications } from "@/features/publication-history/hooks";
@@ -37,6 +40,7 @@ import {
   type PublicationNetwork,
   type UnifiedPublication,
 } from "@/features/publication-history/types";
+import { cancelSocialPost } from "@/features/social/api";
 import { useDebounce } from "@/hooks/useDebounce";
 import { useSortedRows } from "@/hooks/useSortedRows";
 import { formatDateTime } from "@/lib/format";
@@ -120,6 +124,8 @@ function matchesDate(iso: string | undefined, filter: DateFilter): boolean {
  */
 export default function ContentsPage() {
   const workspace = useCurrentWorkspace();
+  const { can } = useMyAccess();
+  const canReject = can("marketing:social_schedule");
   const [search, setSearch] = useState("");
   const [networkFilter, setNetworkFilter] = useState<PublicationNetwork | "all">("all");
   // Fase 4: a jornada de "Criar conteúdo" abre a biblioteca já filtrada (?status=published|failed|…).
@@ -179,13 +185,17 @@ export default function ContentsPage() {
   useEffect(() => { resetPage(); }, [debouncedSearch, networkFilter, statusFilter, formatFilter, dateFilter, sort, resetPage]);
 
   const selected = selectedKey ? groups.find((group) => group.key === selectedKey) : undefined;
+  const rejecting = pendingCancel && derivePublicationStatus(pendingCancel) === "awaiting_approval";
 
   async function cancel(post: UnifiedPublication) {
     setBusyId(post.id);
     try {
-      await cancelUnifiedPublication(workspace.id, post.network, post.id);
-      await mutate();
+      if (post.source === "social") await cancelSocialPost(workspace.id, post.id);
+      else await cancelUnifiedPublication(workspace.id, post.network, post.id);
       setPendingCancel(undefined);
+      await mutate();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Não foi possível cancelar a publicação.");
     } finally {
       setBusyId(undefined);
     }
@@ -253,7 +263,7 @@ export default function ContentsPage() {
       ) : viewMode === "grid" ? (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {sorted.map((group) => (
-            <ContentCard key={group.key} workspaceId={workspace.id} group={group} onOpen={() => setSelectedKey(group.key)} />
+            <ContentCard key={group.key} workspaceId={workspace.id} group={group} onOpen={() => setSelectedKey(group.key)} onReject={canReject ? setPendingCancel : undefined} />
           ))}
         </div>
       ) : (
@@ -294,7 +304,7 @@ export default function ContentsPage() {
                     <TableCell className="text-right text-muted-foreground">{group.date ? formatDateTime(group.date) : "—"}</TableCell>
                     <TableCell>
                       <div className="flex items-center justify-end">
-                        <ActionsMenu workspaceId={workspace.id} group={group} onOpen={() => setSelectedKey(group.key)} />
+                        <ActionsMenu workspaceId={workspace.id} group={group} onOpen={() => setSelectedKey(group.key)} onReject={canReject ? setPendingCancel : undefined} />
                       </div>
                     </TableCell>
                   </TableRow>
@@ -310,9 +320,12 @@ export default function ContentsPage() {
       ) : null}
       <ConfirmDialog
         open={!!pendingCancel}
-        title="Cancelar agendamento"
-        description={pendingCancel ? `Cancelar o agendamento no ${NETWORK_LABEL[pendingCancel.network]}? A publicação nessa rede não vai mais sair.` : ""}
-        confirmLabel="Cancelar agendamento"
+        title={rejecting ? "Recusar conteúdo" : "Cancelar agendamento"}
+        description={pendingCancel ? rejecting
+          ? `Recusar “${titleOf(pendingCancel)}”? O envio pendente será cancelado.`
+          : `Cancelar o agendamento no ${NETWORK_LABEL[pendingCancel.network]}? A publicação nessa rede não vai mais sair.`
+          : ""}
+        confirmLabel={rejecting ? "Recusar conteúdo" : "Cancelar agendamento"}
         cancelLabel="Voltar"
         variant="danger"
         busy={!!pendingCancel && busyId === pendingCancel.id}
@@ -374,7 +387,9 @@ function NetworkIcons({ group, onDark = false }: { group: ContentGroup; onDark?:
   );
 }
 
-function ContentCard({ workspaceId, group, onOpen }: { workspaceId: string; group: ContentGroup; onOpen: () => void }) {
+type ContentActions = { workspaceId: string; group: ContentGroup; onOpen: () => void; onReject?: (post: UnifiedPublication) => void };
+
+function ContentCard({ workspaceId, group, onOpen, onReject }: ContentActions) {
   const post = group.primary;
   const format = contentTypeOf(post);
   const thumbnail = post.media.imageUrls[0] ?? post.media.thumbnailUrl;
@@ -403,24 +418,40 @@ function ContentCard({ workspaceId, group, onOpen }: { workspaceId: string; grou
             <h2 className="line-clamp-2 text-sm font-semibold text-foreground">{titleOf(post)}</h2>
             <p className="mt-1 text-xs text-muted-foreground">{group.date ? formatDateTime(group.date) : "Sem data"} · {FORMAT_LABEL[format]}</p>
           </button>
-          <ActionsMenu workspaceId={workspaceId} group={group} onOpen={onOpen} />
+          <ActionsMenu workspaceId={workspaceId} group={group} onOpen={onOpen} onReject={onReject} />
         </div>
       </div>
     </article>
   );
 }
 
-function ActionsMenu({ workspaceId, group, onOpen }: { workspaceId: string; group: ContentGroup; onOpen: () => void }) {
+function ActionsMenu({ workspaceId, group, onOpen, onReject }: ContentActions) {
+  const [open, setOpen] = useState(false);
+  const pendingPosts = new Map<string, UnifiedPublication>();
+  for (const post of group.posts) {
+    if (post.source === "social" && derivePublicationStatus(post) === "awaiting_approval") pendingPosts.set(post.id, post);
+  }
+
   return (
-    <details className="relative shrink-0">
-      <summary className="flex h-9 w-9 cursor-pointer list-none items-center justify-center rounded-full text-muted-foreground hover:bg-muted hover:text-foreground" aria-label="Abrir menu">
-        <MoreHorizontal className="h-4 w-4" aria-hidden />
-      </summary>
-      <div className="absolute right-0 z-20 mt-1 w-52 rounded-xl border border-border bg-popover p-1 text-popover-foreground shadow-md">
-        <button type="button" onClick={onOpen} className="w-full rounded-lg px-3 py-2 text-left text-sm text-foreground hover:bg-muted">Ver detalhes</button>
-        <Link href={publishAgainHref(workspaceId, group.primary)} className="block rounded-lg px-3 py-2 text-sm text-foreground hover:bg-muted">Publicar novamente</Link>
-      </div>
-    </details>
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button type="button" variant="ghost" size="icon" className="h-9 w-9 shrink-0 rounded-full text-muted-foreground" aria-label="Abrir menu">
+          <MoreHorizontal className="h-4 w-4" aria-hidden />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent align="end" collisionPadding={12} className="w-52 max-h-[var(--radix-popover-content-available-height)] max-w-[var(--radix-popover-content-available-width)] overflow-y-auto p-1" aria-label="Ações do conteúdo">
+        <button type="button" onClick={() => { setOpen(false); onOpen(); }} className="w-full rounded-lg px-3 py-2 text-left text-sm text-foreground hover:bg-muted">Ver detalhes</button>
+        <Link href={publishAgainHref(workspaceId, group.primary)} onClick={() => setOpen(false)} className="block rounded-lg px-3 py-2 text-sm text-foreground hover:bg-muted">Publicar novamente</Link>
+        {onReject && Array.from(pendingPosts.values(), (post) => {
+          const networks = group.posts.filter((item) => item.source === "social" && item.id === post.id).map((item) => NETWORK_LABEL[item.network]);
+          return (
+            <button key={post.id} type="button" onClick={() => { setOpen(false); onReject(post); }} className="w-full rounded-lg px-3 py-2 text-left text-sm text-destructive hover:bg-muted">
+              {pendingPosts.size > 1 ? `Recusar em ${networks.join(", ")}` : "Recusar conteúdo"}
+            </button>
+          );
+        })}
+      </PopoverContent>
+    </Popover>
   );
 }
 

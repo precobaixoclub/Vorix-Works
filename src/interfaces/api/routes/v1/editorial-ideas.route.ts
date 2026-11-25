@@ -21,11 +21,19 @@ import { NotFoundError, ValidationError } from "../../http/app-error.js";
 import { requirePermission } from "../../http/require-principal.js";
 import { successEnvelope } from "../../http/response-envelope.js";
 import { assertWorkspaceBelongsToTenant } from "./workspace-ownership.js";
+import { planEditorialCreative } from "../../../../application/creative-engine/plan-editorial-creative.js";
+import { REFERENCE_ROLE_LABELS, type BusinessKind, type ReferenceCandidate } from "../../../../application/creative-engine/reference-roles.js";
+import type { SoftwareFeature } from "../../../../application/creative-engine/visual-intent.js";
 
 export type EditorialIdeasRoutesDeps = {
   editorialIdeaRepository: EditorialIdeaRepositoryPort;
   workspaceRepository: WorkspaceRepositoryPort;
   now?: () => Date;
+  /** Contexto criativo por metadados (catálogo, Biblioteca, tipo de negócio). Sem ele, a prévia trata
+   * os anexos como envios soltos e o negócio como desconhecido. */
+  loadCreativeContext?: (input: { tenantId: string; workspaceId: string; referenceImages: readonly string[] }) => Promise<{
+    businessKind: BusinessKind; softwareFeatures?: SoftwareFeature[]; ideaReferences: ReferenceCandidate[]; libraryCaptures: ReferenceCandidate[]; urls: Record<string, string>;
+  }>;
 };
 
 const WORKSPACE_QUERY_SCHEMA = { type: "object", required: ["workspaceId"], properties: { workspaceId: { type: "string", minLength: 1 } } } as const;
@@ -255,5 +263,50 @@ export async function registerEditorialIdeasRoutes(app: FastifyInstance, deps: E
     if (!idea) throw new NotFoundError("Pauta não encontrada neste workspace.");
     if (!isGeneratableFormat(idea.format)) throw new ValidationError("Pautas de vídeo seguem para produção manual; o motor de ideias gera imagem única e carrossel.");
     return successEnvelope(buildEditorialGenerationBrief(idea), request.id);
+  });
+
+  // Prévia de "como a arte será produzida" (motor criativo): modo, materiais e papel de cada um, o que
+  // vai ao gerador, o que fica de fora e por quê, o que falta e a composição de cada tela. Só leitura,
+  // sem IA e sem baixar imagens — a mesma decisão que o motor toma na hora de gerar.
+  app.get("/editorial-ideas/:id/creative-plan", { schema: { params: ID_PARAMS_SCHEMA, querystring: WORKSPACE_QUERY_SCHEMA } }, async (request) => {
+    const principal = requirePermission(request, "asset:read");
+    const { id } = request.params as { id: string };
+    const { workspaceId } = request.query as { workspaceId: string };
+    await assertWorkspaceBelongsToTenant(deps.workspaceRepository, { tenantId: principal.tenantId, workspaceId });
+    const workspace = await deps.workspaceRepository.getById(workspaceId);
+    const idea = await deps.editorialIdeaRepository.get(workspaceId, id);
+    if (!idea) throw new NotFoundError("Pauta não encontrada neste workspace.");
+    if (!isGeneratableFormat(idea.format)) throw new ValidationError("Pautas de vídeo seguem para produção manual.");
+    const referenceImages = idea.referenceImages ?? [];
+    type CreativeContext = Awaited<ReturnType<NonNullable<EditorialIdeasRoutesDeps["loadCreativeContext"]>>>;
+    const context: CreativeContext = deps.loadCreativeContext
+      ? await deps.loadCreativeContext({ tenantId: principal.tenantId, workspaceId, referenceImages })
+      : { businessKind: "unknown", ideaReferences: referenceImages.map((_url, index) => ({ id: `pauta:${index + 1}`, source: "idea_upload" })), libraryCaptures: [], urls: Object.fromEntries(referenceImages.map((url, index) => [`pauta:${index + 1}`, url])) };
+    const plan = planEditorialCreative({
+      workspaceId, brandName: workspace?.name ?? "Marca", businessKind: context.businessKind, softwareFeatures: context.softwareFeatures,
+      idea: { ...idea, keyMessage: idea.keyMessage ?? "" }, ideaReferences: context.ideaReferences, libraryCaptures: context.libraryCaptures, history: [], allowAi: true,
+    });
+    const transmitted = new Set(plan.resolved.transmitted.map((reference) => reference.id));
+    const excluded = new Map(plan.resolved.excluded.map((entry) => [entry.reference.id, entry.reason]));
+    return successEnvelope({
+      businessKind: context.businessKind,
+      mode: plan.decision.mode,
+      modeLabel: plan.screens[0]?.spec.modeLabel,
+      modeReasons: plan.decision.reasons,
+      feature: plan.decision.feature ? { key: plan.decision.feature.feature.key, label: plan.decision.feature.feature.label } : null,
+      blocked: plan.blocked,
+      guidance: plan.resolved.missing.map((item) => ({ code: item.code, blocking: item.blocking, message: item.message })),
+      autoSelected: plan.autoSelected,
+      references: plan.references.map((reference) => ({
+        id: reference.id, role: reference.role, roleLabel: REFERENCE_ROLE_LABELS[reference.role], roleReason: reference.roleReason, source: reference.source,
+        ...(reference.productCode ? { productCode: reference.productCode } : {}), ...(reference.variantLabel ? { variantLabel: reference.variantLabel } : {}),
+        ...(reference.name ? { name: reference.name } : {}), ...(context.urls[reference.id] ? { url: context.urls[reference.id] } : {}),
+        principal: plan.resolved.primary?.id === reference.id, used: transmitted.has(reference.id), ...(excluded.has(reference.id) ? { excludedReason: excluded.get(reference.id) } : {}),
+      })),
+      screens: plan.screens.map((item, index) => ({
+        index: index + 1, headline: item.screen.headline, archetype: item.spec.composition.archetype, compositionLabel: item.spec.composition.label,
+        operation: item.spec.composition.operation, intent: item.spec.composition.intent, fidelity: item.spec.fidelityConstraints, avoid: item.spec.avoid,
+      })),
+    }, request.id);
   });
 }

@@ -1,4 +1,5 @@
 "use client";
+import { CreativePlanPanel } from "./CreativePlanPanel";
 
 import {
   CalendarDays,
@@ -561,6 +562,7 @@ export function EditorialIdeasBoard({ workspaceId, openNew = false }: { workspac
 
       {selected ? (
         <EditorialIdeaDetail
+          workspaceId={workspaceId}
           idea={selected}
           busy={busy}
           onClose={() => setSelectedId(null)}
@@ -677,7 +679,8 @@ function IdeaCard({ idea, busy, onOpen, onEdit, onToggleActive, onDelete, onCrea
   );
 }
 
-function EditorialIdeaDetail({ idea, busy, onClose, onEdit, onDelete, onToggleUsed, onToggleActive, onScheduleChange, onGenerate }: {
+function EditorialIdeaDetail({ workspaceId, idea, busy, onClose, onEdit, onDelete, onToggleUsed, onToggleActive, onScheduleChange, onGenerate }: {
+  workspaceId: string;
   idea: EditorialIdea;
   busy: string | null;
   onClose: () => void;
@@ -740,6 +743,11 @@ function EditorialIdeaDetail({ idea, busy, onClose, onEdit, onDelete, onToggleUs
             <p className="flex items-center gap-2 text-sm text-muted-foreground"><Sparkles className="h-4 w-4" aria-hidden="true" /> Sem imagens. Anexe fotos para a arte partir delas.</p>
           )}
         </DetailBlock>
+        {idea.format === "video" ? null : (
+          <DetailBlock label="Como a arte será produzida">
+            <CreativePlanPanel workspaceId={workspaceId} ideaId={idea.id} referenceCount={refs.length} onEditReferences={onEdit} />
+          </DetailBlock>
+        )}
         <DetailBlock label="Texto da arte"><p className="text-sm font-medium text-foreground">{idea.keyMessage}</p></DetailBlock>
         {idea.carouselScript ? (
           <DetailBlock label="Telas do carrossel">

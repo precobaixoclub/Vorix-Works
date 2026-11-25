@@ -30,6 +30,7 @@ import { registerAiProvidersRoutes } from "./ai-providers.route.js";
 import { registerAssetsRoutes } from "./assets.route.js";
 import { registerProductionSettingsRoutes } from "./production-settings.route.js";
 import { registerEditorialIdeasRoutes } from "./editorial-ideas.route.js";
+import { loadEditorialCreativeContext } from "../../../../infrastructure/storage/postgres/editorial-creative-context.js";
 import { registerMeetingPlanRoutes } from "./meeting-plans.route.js";
 import { registerBrandProfileRoutes } from "./brand-profile.route.js";
 import { registerBrandIdentityRoutes } from "./brand-identity.route.js";
@@ -892,6 +893,7 @@ export async function registerV1Routes(app: FastifyInstance): Promise<void> {
   await registerEditorialIdeasRoutes(app, {
     editorialIdeaRepository: app.zunoContainer.editorialIdeaRepository,
     workspaceRepository: app.zunoContainer.workspaceRepository,
+    ...(app.zunoContainer.pool ? { loadCreativeContext: (input) => loadEditorialCreativeContext(app.zunoContainer.pool!, input) } : {}),
   });
   await registerProductionSettingsRoutes(app, {
     productionSettingsRepository: app.zunoContainer.productionSettingsRepository,

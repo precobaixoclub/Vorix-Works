@@ -385,3 +385,119 @@ test("API do Bolsão: prévia de como a arte será produzida (modo, materiais, p
   assert.equal(seen[0].tenantId, "tenant-a");
   assert.equal((await app.inject({ method: "GET", url: `/editorial-ideas/${id}/creative-plan?workspaceId=${other.id}` })).statusCode, 404);
 });
+
+// Foto de "cena": fundo escuro com degradê e grão + produto escuro (como o relógio da marca demo, em que o
+// recorte comia a pulseira e deixava um bloco de fundo).
+const darkScene = async () => {
+  const base = await svgPng(`<defs><radialGradient id="g" cx="0.7" cy="0.4" r="0.8"><stop offset="0" stop-color="#4A4E50"/><stop offset="1" stop-color="#141617"/></radialGradient>
+    <filter id="n"><feTurbulence type="fractalNoise" baseFrequency="0.7" numOctaves="2" seed="3"/><feColorMatrix type="saturate" values="0"/><feComponentTransfer><feFuncA type="table" tableValues="0 0.35"/></feComponentTransfer></filter></defs>
+    <rect width="100%" height="100%" fill="url(#g)"/><rect width="100%" height="100%" filter="url(#n)"/>
+    <rect x="430" y="300" width="190" height="900" rx="40" fill="#1C1E1F"/><circle cx="525" cy="650" r="210" fill="#202425" stroke="#9AA3A8" stroke-width="18"/><circle cx="525" cy="650" r="150" fill="#16324A"/>
+    <rect x="300" y="1150" width="450" height="250" fill="#111213"/>`, 1300, 1300);
+  return sharp(base).jpeg({ quality: 88 }).toBuffer();
+};
+
+test("recorte: foto de estúdio passa; foto de cena (fundo escuro, produto escuro) é detectada e NUNCA é recortada", async () => {
+  const { cutoutProduct, CUTOUT_LIMITS } = await import("../dist/infrastructure/media/creative/product-cutout.js");
+  const studio = await cutoutProduct(await studioShirt("#1A2A45"));
+  assert.equal(studio.quality.ok, true, JSON.stringify(studio.quality));
+  assert.ok(studio.confidence >= 0.55);
+  const scene = await cutoutProduct(await darkScene());
+  assert.equal(scene.quality.ok, false, JSON.stringify(scene.quality));
+  assert.ok(scene.confidence < 0.55);
+  assert.ok(scene.quality.interiorHoles > CUTOUT_LIMITS.interiorHoles || scene.quality.fragments > CUTOUT_LIMITS.fragments || scene.quality.edgeNoise > CUTOUT_LIMITS.edgeNoise);
+  const { catalogPhotoSignals } = await import("../dist/infrastructure/media/creative/catalog-photo-signals.js");
+  assert.equal((await catalogPhotoSignals(await darkScene(), "Preto")).photoKind, "scene");
+  assert.equal((await catalogPhotoSignals(await studioShirt("#1A2A45"), "Azul-Marinho")).photoKind, "studio");
+  // Arquétipo que recorta, pedido para foto de cena: entra a foto inteira, sem recorte.
+  const composed = await composeProduct("product_studio", { photos: [{ id: "relogio", data: await darkScene(), productCode: "R1", variantLabel: "Preto" }], tones: { ...TONES, light: false, surface: "#0E0B09" } });
+  assert.equal(composed.evidence.product.cutout.used, false);
+  assert.equal(composed.evidence.product.sourceId, "relogio");
+});
+
+test("Quality Gate: recorte com artefato reprova e a correção usa a foto original; produto da IA sem revisão visual é inconclusivo", () => {
+  const spec = { mode: "physical_product", subject: { kind: "product", productCode: "R1" }, requiredReferences: [{ id: "r", role: "product_photo" }], blockers: [] };
+  const artifact = evaluateFidelityGate(spec, { operation: "deterministic_composite", transmittedReferenceIds: ["r"], product: { composited: true, coverage: 0.3, cutout: { used: true, ok: false, reasons: ["recorte comeu 46% do miolo do produto"] } } });
+  assert.deepEqual(artifact.failures.map((failure) => failure.code), ["CUTOUT_ARTIFACT"]);
+  assert.equal(planRevision({ failures: artifact.failures, operation: "deterministic_composite", attempt: 1, maxAttempts: 3, spentUsd: 0, budgetUsd: 0, aiAttemptCostUsd: 0 }).action, "use_original_photo");
+  const ai = evaluateFidelityGate(spec, { operation: "ai_edit_with_reference", transmittedReferenceIds: ["r"], product: { composited: false, shapeDistance: 5, colorDeltaE: 3, printDistance: 6, coverage: 0.3 } });
+  assert.ok(ai.failures.some((failure) => failure.code === "FIDELITY_INCONCLUSIVE"));
+  const reviewed = evaluateFidelityGate(spec, { operation: "ai_edit_with_reference", transmittedReferenceIds: ["r"], product: { composited: false, shapeDistance: 5, colorDeltaE: 3, printDistance: 6, coverage: 0.3 }, aiReview: { verdict: "approve" } });
+  assert.equal(reviewed.approved, true, JSON.stringify(reviewed.failures));
+});
+
+test("orquestração: resposta sem veredito do Quality Gate é inconclusiva e não segue como aprovada", async () => {
+  const photo = (await studioShirt("#1A2A45")).toString("base64");
+  const plan = planEditorialCreative({ workspaceId: "ws", brandName: "CMKV", businessKind: "physical_products", idea: IDEA({ title: "Camiseta nova" }), history: [], allowAi: false,
+    ideaReferences: [{ id: "p", source: "catalog", productCode: "1", variantLabel: "Preto" }] });
+  const result = await produceScreen({ planned: plan.screens[0], brand: { name: "CMKV", logos: [] }, assets: { p: { data: photo } }, history: [], archetypes: ARCHETYPES,
+    render: async () => ({ image: "x", quality: {} }) });
+  assert.equal(result.ok, false);
+  assert.match(result.reason, /inconclusivo/);
+});
+
+test("trava de publicação: sem veredito, reprovada ou imagem trocada depois da aprovação nunca chega ao agendador", async () => {
+  const { verifyApprovedArt, sha256Hex } = await import("../dist/application/creative-engine/publication-guard.js");
+  const approvedImage = Buffer.from("arte-aprovada");
+  const ok = { screen: 1, approved: true, imageSha256: sha256Hex(approvedImage) };
+  assert.equal(verifyApprovedArt([approvedImage], [ok]).ok, true);
+  assert.match(verifyApprovedArt([approvedImage], undefined).reason, /Sem veredito/);
+  assert.match(verifyApprovedArt([approvedImage], [{ screen: 1, approved: false, imageSha256: ok.imageSha256, failures: [{ code: "PRINT_ALTERED" }] }]).reason, /PRINT_ALTERED/);
+  assert.match(verifyApprovedArt([Buffer.from("tentativa-reprovada")], [ok]).reason, /não é a que o Quality Gate aprovou/);
+  assert.match(verifyApprovedArt([approvedImage, approvedImage], [ok]).reason, /não correspondem/);
+  // Caminho real: o renderizador põe no veredito o hash da imagem que ele mesmo devolveu.
+  const { renderArt } = await import("../scripts/editorial/codex-social-render.mjs");
+  const logo = (await svgPng(`<rect x="20" y="40" width="460" height="120" rx="16" fill="#111"/>`, 500, 200)).toString("base64");
+  const profile = { identity: { colors: [{ name: "Off-white", hex: "#F5F2EB" }, { name: "Dourado", hex: "#C9A227", role: "ACCENT" }], typography: { family: "SANS" }, notes: "Fundo sempre claro." } };
+  const spec = { mode: "physical_product", subject: { kind: "product", productCode: "1" }, requiredReferences: [{ id: "p", role: "product_photo" }], blockers: [] };
+  const rendered = await renderArt({ profile, logos: [{ data: logo, variant: "PRIMARY", backgrounds: ["LIGHT"] }], headline: "Nova", body: "", cta: "",
+    composition: { mode: "physical_product", archetype: "product_studio", products: [{ id: "p", data: (await studioShirt("#1A2A45")).toString("base64"), productCode: "1" }] },
+    fidelity: { spec, operation: "deterministic_composite", archetype: "product_studio", transmittedReferenceIds: ["p"] }, history: [] });
+  const image = Buffer.from(rendered.image, "base64");
+  assert.equal(rendered.gate.imageSha256, sha256Hex(image));
+  const { screenApprovals } = await import("../scripts/editorial/creative-pipeline.mjs");
+  assert.equal(verifyApprovedArt([image], screenApprovals([rendered])).ok, true);
+});
+
+test("fila de revisão: a pauta entra uma vez (um alerta) e sai da seleção automática daquela marca", async () => {
+  const { addToReviewQueue, reviewSkipIds } = await import("../scripts/editorial/creative-pipeline.mjs");
+  const first = addToReviewQueue([], { workspaceId: "ws-cmkv", ideaId: "i1", idea: "CMKV-7", reason: "x".repeat(900) });
+  assert.equal(first.added, true);
+  assert.equal(first.queue[0].reason.length, 600);
+  const again = addToReviewQueue(first.queue, { workspaceId: "ws-cmkv", ideaId: "i1", idea: "CMKV-7", reason: "de novo" });
+  assert.equal(again.added, false);
+  assert.equal(again.queue.length, 1);
+  assert.deepEqual(reviewSkipIds(again.queue, "ws-cmkv"), ["i1"]);
+  assert.deepEqual(reviewSkipIds(again.queue, "ws-vorix"), []);
+});
+
+test("revisão visual da IA: só aprova com peça, cor e estampa iguais; resposta ausente é inconclusiva", async () => {
+  const { aiReviewFromVerdict, productReviewPrompt } = await import("../scripts/editorial/creative-pipeline.mjs");
+  assert.deepEqual(aiReviewFromVerdict({ sameGarment: true, sameColor: true, samePrint: true, samePrintPosition: true, findings: [], verdict: "approve" }), { verdict: "approve" });
+  const printChanged = aiReviewFromVerdict({ sameGarment: true, sameColor: true, samePrint: false, samePrintPosition: true, findings: ["letras diferentes"], verdict: "reject" });
+  assert.equal(printChanged.verdict, "reject");
+  assert.deepEqual(printChanged.findings.map((finding) => finding.code), ["PRINT_ALTERED"]);
+  // "Aprovado" com uma diferença marcada continua reprovado (a conclusão não vence o detalhe).
+  assert.equal(aiReviewFromVerdict({ sameGarment: true, sameColor: false, samePrint: true, samePrintPosition: true, findings: [], verdict: "approve" }).verdict, "reject");
+  assert.deepEqual(aiReviewFromVerdict(undefined), { verdict: "unavailable" });
+  assert.match(productReviewPrompt({ productCode: "000048", variantLabel: "Azul-Marinho" }), /modelo 000048, cor Azul-Marinho/);
+});
+
+test("foto de cena: o texto nunca cobre o produto (área do produto pela concentração de detalhe; sem faixa livre, foto emoldurada)", async () => {
+  const { renderArt } = await import("../scripts/editorial/codex-social-render.mjs");
+  const { salientRect } = await import("../dist/infrastructure/media/creative/compositions.js");
+  const scene = await darkScene();
+  const salient = await salientRect(scene);
+  // O produto sintético (mostrador + pulseira) está no centro; o brilho do fundo não entra na caixa.
+  assert.ok(salient.x > 200 && salient.x + salient.w < 1100, JSON.stringify(salient));
+  const logo = (await svgPng(`<rect x="20" y="40" width="460" height="120" rx="16" fill="#F3E6CF"/>`, 500, 200)).toString("base64");
+  const profile = { identity: { colors: [{ name: "Preto profundo", hex: "#0E0B09", role: "PRIMARY" }, { name: "Âmbar", hex: "#E0913A", role: "ACCENT" }], typography: { family: "SERIF" }, notes: "Fundo sempre escuro." } };
+  const spec = { mode: "physical_product", subject: { kind: "product", productCode: "R1" }, requiredReferences: [{ id: "r", role: "product_photo" }], blockers: [] };
+  const result = await renderArt({ profile, logos: [{ data: logo, variant: "LIGHT", backgrounds: ["DARK"] }], headline: "Um presente que marca o tempo", body: "Cronógrafo preto em aço", cta: "Escolha o presente",
+    composition: { mode: "physical_product", archetype: "product_scene", products: [{ id: "r", data: scene.toString("base64"), productCode: "R1" }] },
+    fidelity: { spec, operation: "deterministic_composite", archetype: "product_scene", transmittedReferenceIds: ["r"] }, history: [] });
+  assert.equal(result.gate.approved, true, JSON.stringify(result.gate.failures));
+  assert.equal(result.evidence.text.coversProduct, false);
+  assert.equal(result.evidence.product.cutout.used, false, "foto de cena nunca é recortada");
+  assert.ok(["product_scene", "product_editorial"].includes(result.appliedArchetype));
+});

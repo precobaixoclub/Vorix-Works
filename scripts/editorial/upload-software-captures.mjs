@@ -1,15 +1,17 @@
 // Cadastra as capturas reais da Vorix (scripts/editorial/library/vorix-works) na Biblioteca da marca, como
 // "Captura do aplicativo", com as etiquetas que o motor criativo lê: feature:, form:, dpr:, focus:x,y,w,h e as
-// palavras-chave da funcionalidade. Idempotente pelo nome do arquivo (não duplica).
+// palavras-chave da funcionalidade. Idempotente pelo nome (não duplica).
 //
-// SÓ RODA COM AUTORIZAÇÃO (é escrita em produção). No servidor, dentro do container da API:
-//   docker exec -i -e CAPTURES_JSON="$(base64 -w0 capturas.json)" zuno-zuno-api-1 node --input-type=module < upload-software-captures.mjs
-// onde capturas.json = { workspaceId, captures: [{ file, data(base64), ...manifesto }] } (montado por quem roda).
+// SÓ RODA COM AUTORIZAÇÃO (é escrita em produção). O pacote vem de build-capture-payload.mjs e entra pela
+// entrada padrão, antes do script (mesmo mecanismo do piloto — nada é copiado para o servidor):
+//   (printf 'const request = '; cat capturas.json; echo ';'; cat upload-software-captures.mjs) |
+//     ssh servidor "docker exec -i zuno-zuno-api-1 node --input-type=module"
 import { buildApiContainer } from "./dist/interfaces/api/di/container.js";
 import { loadApiConfig } from "./dist/interfaces/api/config/api-config.js";
 
-const payload = JSON.parse(Buffer.from(process.env.CAPTURES_JSON ?? "", "base64").toString("utf8"));
-if (!payload.workspaceId || !Array.isArray(payload.captures)) throw new Error("CAPTURES_JSON inválido");
+// eslint-disable-next-line no-undef
+const payload = typeof request === "undefined" ? undefined : request;
+if (!payload?.workspaceId || !Array.isArray(payload.captures)) throw new Error("Pacote de capturas inválido");
 const c = buildApiContainer(loadApiConfig());
 try {
   const workspace = await c.workspaceRepository.getById(payload.workspaceId);

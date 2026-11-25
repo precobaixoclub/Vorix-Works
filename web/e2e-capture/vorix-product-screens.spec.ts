@@ -232,10 +232,10 @@ test.describe("Reuniões", () => {
 const ymd = "2026-11-25";
 const idea = (id: string, title: string, status: string, over: Record<string, unknown> = {}) => ({ id, externalId: id, title, category: "Conteúdo", commercialObjective: "Gerar demanda", targetAudience: "Pequenas empresas", concept: "", keyMessage: title, format: "single_image", approach: "Educativo", visualDirection: "", narrativeStructure: "", caption: "", cta: "Saiba mais", priority: "normal", status, statusChangedAt: iso(0), ...over });
 const IDEAS = [
-  idea("i1", "3 sinais de que seu atendimento depende de uma pessoa só", "available", { scheduledDate: ymd, format: "carousel", carouselScript: [{ headline: "Sinal 1", body: "" }, { headline: "Sinal 2", body: "" }] }),
-  idea("i2", "O que muda quando o histórico fica com a empresa", "available", { scheduledDate: "2026-11-26" }),
-  idea("i3", "Como responder mais rápido sem parecer robô", "in_production", { scheduledDate: "2026-11-27" }),
-  idea("i4", "Reunião boa termina com decisão registrada", "available", { scheduledDate: "2026-11-28" }),
+  idea("i1", "3 sinais de que seu atendimento depende de uma pessoa só", "available", { scheduledDate: ymd, format: "carousel", carouselScript: [{ headline: "Sinal 1", body: "" }, { headline: "Sinal 2", body: "" }], referenceImages: ["https://cdn.example.test/arte-1.png"] }),
+  idea("i2", "O que muda quando o histórico fica com a empresa", "available", { scheduledDate: "2026-11-26", referenceImages: ["https://cdn.example.test/arte-4.png"] }),
+  idea("i3", "Como responder mais rápido sem parecer robô", "in_production", { scheduledDate: "2026-11-27", referenceImages: ["https://cdn.example.test/arte-6.png"] }),
+  idea("i4", "Reunião boa termina com decisão registrada", "available", { scheduledDate: "2026-11-28", referenceImages: ["https://cdn.example.test/arte-2.png"] }),
   idea("i5", "Bastidores: como a equipe usa notas internas", "produced"),
 ];
 
@@ -293,6 +293,6 @@ test.describe("Marketing", () => {
     await page.getByText("O que muda quando o histórico fica com a empresa").first().waitFor();
     await snap(page, { file: "marketing-bolsao.png", feature: "conteudo_ia", label: "Bolsão de ideias e produção de conteúdo", form: "desktop",
       keywords: ["conteudo", "conteudos", "marketing", "ideias", "pautas", "bolsao", "producao", "redes sociais", "instagram", "post", "ia", "calendario"] },
-    async () => union([await boxOf(page.getByText("3 sinais de que seu atendimento").first()), await boxOf(page.getByText("Reunião boa termina com decisão").first())]));
+    async () => union([await boxOf(page.locator("article").filter({ hasText: "3 sinais de que seu atendimento" }).first()), await boxOf(page.locator("article").filter({ hasText: "Reunião boa termina com decisão" }).first())]));
   });
 });

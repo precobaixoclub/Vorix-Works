@@ -134,3 +134,51 @@ original) + 4 cenas conceituais (Vorix/marca demo) + até 4 refações = 14 imag
    demonstração da Vorix ficam bloqueadas com orientação (comportamento intencional).
 3. Copiar `codex-social-*.mjs` + `creative-pipeline.mjs` para `/opt/vorix-editorial` e rodar
    `node codex-social-schedule.mjs 19 select <workspace>` (só leitura) nas 4 marcas antes do horário.
+
+## 8. Finalização e integração do piloto (25/11/2026, 2ª rodada)
+
+**Versão anterior do piloto (commit A):** os três `codex-social-*.mjs` commitados são idênticos, byte a byte, aos
+de `/opt/vorix-editorial` (hash conferido no servidor: backend `69398242`, render `e265c2ef`, schedule
+`f928b5dc`; arquivos de 23/11 23:36, executados pelo `codex-social.timer`). `activate.sh`, `.service` e
+`.timer` do servidor já eram iguais ao HEAD.
+
+**Defeito do recorte (relógio com bloco cinza):** a inundação pela borda, em foto de cena com fundo escuro,
+comia partes escuras do próprio produto e mantinha blocos do fundo, com "confiança 1". Agora a qualidade é
+medida no resultado (buracos no miolo, fragmentos, halo, resto de fundo — limites calibrados em 64 fotos
+reais); recorte com artefato não é usado. Foto de cena nunca é recortada: entra inteira (tela cheia, com a
+área do produto pela concentração de detalhe, ou emoldurada quando não há faixa livre para o texto).
+O Quality Gate reprova `CUTOUT_ARTIFACT` e a revisão usa a foto original.
+
+**Trava antes da publicação (caminho real do piloto):** o renderizador grava no veredito o SHA-256 da
+imagem avaliada; o backend, na etapa `schedule/publish`, recusa criar a publicação sem a aprovação de
+todas as telas ou se a imagem enviada não for exatamente a aprovada (`publication-guard.ts`). Sem
+veredito = inconclusivo = reprovado. Produto gerado pela IA sem revisão visual contra a foto original =
+`FIDELITY_INCONCLUSIVE`. No piloto, a revisão visual é feita pelo Codex (foto original × imagem gerada).
+Peça reprovada, referência que não carrega ou pauta sem material obrigatório → fila de revisão
+(`/var/lib/vorix-codex/review-queue.json`, sem tabela nova): um alerta por pauta, e ela sai da seleção
+automática até ser removida da fila. A idempotência por horário (`codex-editorial-v1:<slot>`) não mudou.
+
+**Amostra real pela API OpenAI (teto US$ 3,50):** todas as 10 chamadas voltaram `429
+credit_balance_exhausted` (conta sem crédito) — **gasto US$ 0,00**. Nenhuma imagem lifestyle real foi gerada;
+os 6 casos da CMKV caíram, como previsto, na composição com a foto original. Para repetir com crédito:
+`node scripts/editorial/creative-real-sample.mjs <fixtures> <saída>` (a chave fica no cofre do servidor;
+a ponte `openai-image-gateway.mjs` roda no container via entrada padrão, sem copiar arquivos nem gravar).
+
+**Capturas da Vorix:** 7 capturas validadas em 19 combinações de composição (texto da interface na arte
+entre 7,6 e 12,3 px; telas com conteúdo; todas aprovadas). Só dados fictícios. Cadastro preparado
+(`build-capture-payload.mjs` + `upload-software-captures.mjs`) e **não executado**.
+
+**Catálogo CMKV:** ver `cmkv-variantes-com-foto-inconsistente.md` (000033 e 000035 "Azul-Marinho" com foto
+turquesa; bloqueadas até a correção).
+
+### Deploy (quando autorizado) e rollback
+
+1. Backup: `cp -a /opt/vorix-editorial /opt/vorix-editorial/backup-<data>` (os três scripts atuais = commit A).
+2. Deploy da API (os scripts importam `dist/` novo: publication-guard, planner, compositions etc.).
+3. Cadastrar as capturas da Vorix (pacote + upload) — sem elas, as pautas de demonstração da Vorix vão para
+   revisão (comportamento intencional).
+4. Copiar `codex-social-{backend,render,schedule}.mjs` + `creative-pipeline.mjs` para `/opt/vorix-editorial`.
+5. Antes do horário: `node codex-social-schedule.mjs 19 select <workspace>` (só leitura) nas 4 marcas e
+   `validate` com imagem de teste.
+6. Rollback: restaurar os três scripts do backup (versão do commit A) — o `dist/` novo é compatível com
+   eles (só acrescenta módulos); se preciso, redeploy da API no commit anterior.

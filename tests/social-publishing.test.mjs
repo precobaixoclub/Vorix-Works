@@ -124,6 +124,7 @@ function harness(options = {}) {
     partner_instagram: new ScriptedProvider("partner_instagram", ["instagram"], { official: false, music: options.music }),
   };
   const social = createSocialPublishingModule({
+    ...(options.approvalRequired ? { approvalRequired: options.approvalRequired } : {}),
     repository,
     publicationRepository,
     credentials,
@@ -776,6 +777,21 @@ test("Aprovação, cancelamento e reagendamento", async () => {
   await h.drain();
   assert.equal(h.providers.meta_official.calls.length, 2, "só o reagendado saiu");
   await assert.rejects(() => h.social.posts.reschedule({ tenantId: "tenant-a", workspaceId: "ws-a", postId: post.id, localDateTime: "2026-11-03T10:00", actor: h.owner }), /SOCIAL_POST_ALREADY_STARTED/);
+});
+
+test("Aprovação por WhatsApp: marca com a regra ligada força 'aguardando aprovação' mesmo sem o composer pedir; falha na leitura da regra não trava", async () => {
+  const asked = [];
+  const h = harness({ approvalRequired: async (input) => { asked.push(input); if (input.workspaceId === "ws-a") return true; throw new Error("db fora"); } });
+  await h.enable("instagram", ["meta_official"]);
+  const account = await h.connect();
+  const post = await h.compose([{ accountId: account.id, format: "feed_image" }]);
+  assert.equal(post.state, "AWAITING_APPROVAL");
+  assert.deepEqual(asked[0], { tenantId: "tenant-a", workspaceId: "ws-a" });
+  await h.drain();
+  assert.equal(h.providers.meta_official.calls.length, 0, "nada sai antes da resposta");
+  await h.social.posts.approve({ tenantId: "tenant-a", workspaceId: "ws-a", postId: post.id, actor: h.owner });
+  await h.drain();
+  assert.equal(h.providers.meta_official.calls.length, 1);
 });
 
 test("Health check periódico detecta credencial inválida antes do horário; credencial de outro perfil é recusada", async () => {

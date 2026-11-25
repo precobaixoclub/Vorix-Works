@@ -6,7 +6,7 @@ import type { SolutionEntitlementRepositoryPort } from "../../../application/por
 import { createHmac, randomBytes } from "node:crypto";
 /** Modelo das leituras de texto por visão do motor criativo (ver `visionTextBrain`). */
 export const VISION_TEXT_MODEL_ID = "gpt-4.1";
-import { configureObjectUrlSigning, deriveObjectUrlSigningKey } from "../../../shared/utils/object-url-signing.js";
+import { configureObjectUrlSigning, deriveObjectUrlSigningKey, signForExternalPublication } from "../../../shared/utils/object-url-signing.js";
 import type { PublicObjectRepositoryPort } from "../../../application/ports/public-object-repository.port.js";
 import { join } from "node:path";
 import type pg from "pg";
@@ -115,6 +115,8 @@ import type { SchedulingRepositoryPort } from "../../../application/ports/schedu
 import type { SessionRepositoryPort } from "../../../application/ports/session-repository.port.js";
 import type { TenantMembershipRepositoryPort } from "../../../application/ports/tenant-membership-repository.port.js";
 import { createSocialPublishingModule, type SocialPublishingModule } from "../../../infrastructure/social/social-publishing-module.js";
+import { WhatsappApprovalService } from "../../../application/approvals/whatsapp-approval-service.js";
+import { PostgresWhatsappApprovalRepository } from "../../../infrastructure/storage/postgres/postgres-whatsapp-approval-repository.js";
 import { SocialGatewayClient } from "../../../infrastructure/social/gateway/client.js";
 import { PostgresSocialRepository } from "../../../infrastructure/storage/postgres/postgres-social-repository.js";
 import { InMemorySocialRepository } from "../../../infrastructure/storage/in-memory-social-repository.js";
@@ -354,6 +356,8 @@ export type ApiContainer = {
   platformEmailAlerts?: PlatformEmailAlerts;
   /** Social Publishing multiprovider (Vorix Marketing). Ausente quando `SOCIAL_PUBLISHING_ENABLED=false`. */
   social?: SocialPublishingModule;
+  /** Aprovação de publicações pelo WhatsApp (número da conta, regra por marca). */
+  whatsappApprovals?: WhatsappApprovalService;
   /** Acesso por SOLUÇÃO (Vorix Conversas / Vorix Marketing / futuras) — só existe com identidade
    * real (Postgres). Ausente = guarda de solução desligado (dev/teste em memória). */
   solutionAccess?: SolutionAccessService;
@@ -1596,7 +1600,12 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
   // Publication — agendamento, outbox, retry e reconciliação continuam sendo os do motor existente.
   // Providers oficiais (Meta/TikTok) ficam registrados, mas desligados por kill switch, homologação e
   // política por tenant até liberação explícita.
+  // Aprovação de publicações pelo WhatsApp: a regra é lida na criação da publicação (o serviço completo é
+  // montado logo abaixo, depois do módulo social, porque ele aprova/cancela pelas mesmas regras do Marketing).
+  const whatsappApprovalRepository = repositories.pool ? new PostgresWhatsappApprovalRepository(repositories.pool) : undefined;
+  let whatsappApprovals: WhatsappApprovalService | undefined;
   const social = config?.social.enabled === false ? undefined : createSocialPublishingModule({
+    approvalRequired: async (input) => (whatsappApprovals ? whatsappApprovals.requiresApproval(input) : false),
     tenantPublishingAllowed: identityRepositories ? async tenantId => {
       if (config?.solutions?.killSwitches.includes("marketing")) return false;
       const access = await resolveEffectiveEntitlements(identityRepositories, tenantId);
@@ -1630,6 +1639,30 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
     },
   });
   if (social) publicationProviderRegistry.register(social.router);
+  if (social && whatsappApprovalRepository) {
+    const socialPosts = social.posts;
+    whatsappApprovals = new WhatsappApprovalService({
+      repository: whatsappApprovalRepository,
+      connections: repositories.messagingConnectionRepository,
+      workspaces: repositories.workspaceRepository,
+      provider: inboxProvider,
+      posts: {
+        get: async (input) => {
+          const view = await socialPosts.get(input);
+          const first = view.destinations[0];
+          return { state: view.state, scheduledAt: view.scheduledAt, timezone: view.timezone, caption: first?.caption, networks: [...new Set(view.destinations.map((destination) => destination.network))], media: (first?.media ?? []).map((media) => ({ url: media.url, kind: media.kind, mimeType: media.mimeType })) };
+        },
+        approve: (input) => socialPosts.approve(input),
+        cancel: (input) => socialPosts.cancel(input),
+      },
+      loadMedia: async (url) => {
+        const response = await fetch(signForExternalPublication(url), { signal: AbortSignal.timeout(20_000) });
+        if (!response.ok) throw new Error(`mídia indisponível (${response.status})`);
+        return { data: Buffer.from(await response.arrayBuffer()), mimeType: response.headers.get("content-type") ?? "image/jpeg" };
+      },
+      idGenerator: () => `wap-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+    });
+  }
   const scheduleOccurrenceGenerator = new ScheduleOccurrenceGenerator({
     windowDays: config?.scheduling.occurrenceWindowDays ?? 30,
     maxOccurrencesPerRun: config?.scheduling.maxOccurrencesPerRun ?? 200,
@@ -1959,6 +1992,7 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
     executionSideEffectGuard,
     executionCircuitBreaker,
     social,
+    whatsappApprovals,
     publicationProviders,
     publicationProviderAdapters,
     publicationProviderRegistry,

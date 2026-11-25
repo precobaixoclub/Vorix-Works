@@ -42,6 +42,7 @@ export type SocialPublishingModuleDeps = {
   mediaProbe?: SocialMediaProbePort | null;
   defaultTimezone?: string;
   timezoneFor?: (input: { tenantId: string; workspaceId: string }) => Promise<string | undefined>;
+  approvalRequired?: (input: { tenantId: string; workspaceId: string }) => Promise<boolean>;
   idGenerator?: () => string;
   now?: () => Date;
 };
@@ -92,7 +93,7 @@ export function createSocialPublishingModule(deps: SocialPublishingModuleDeps): 
   const notifier = new SocialNotifier({ repository: deps.repository, memberships: deps.memberships, notification: deps.notification, email: deps.email, now: deps.now });
   const audit = new SocialAuditLog(deps.auditRepository, idGenerator);
   const accounts = new SocialAccountService({ repository: deps.repository, publicationRepository: deps.publicationRepository, resolver, vault, notifier, audit, idGenerator, now: deps.now });
-  const posts = new SocialPostService({ repository: deps.repository, publicationRepository: deps.publicationRepository, accounts, resolver, vault, audit, mediaProbe: deps.mediaProbe === null ? undefined : deps.mediaProbe ?? new SocialMediaProbe(), idGenerator, now: deps.now, defaultTimezone: deps.defaultTimezone, timezoneFor: deps.timezoneFor });
+  const posts = new SocialPostService({ repository: deps.repository, publicationRepository: deps.publicationRepository, accounts, resolver, vault, audit, mediaProbe: deps.mediaProbe === null ? undefined : deps.mediaProbe ?? new SocialMediaProbe(), idGenerator, now: deps.now, defaultTimezone: deps.defaultTimezone, timezoneFor: deps.timezoneFor, approvalRequired: deps.approvalRequired });
   const admin = new SocialProviderAdminService({ repository: deps.repository, publicationRepository: deps.publicationRepository, resolver, notifier, audit, now: deps.now });
   const router = new SocialPublicationRouter({ repository: deps.repository, publicationRepository: deps.publicationRepository, accounts, resolver, vault, notifier, audit, idGenerator, now: deps.now });
   return { gateway, repository: deps.repository, registry, resolver, vault, notifier, audit, accounts, posts, admin, router };

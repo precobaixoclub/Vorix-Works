@@ -21,6 +21,7 @@ import { registerSocialMaintenanceScheduler } from "./scheduler/social-maintenan
 import { registerMetaAdsSyncScheduler } from "./scheduler/meta-ads-sync-scheduler.js";
 import { registerTrialExpirationScheduler } from "./scheduler/trial-expiration-scheduler.js";
 import { registerDealArchiveScheduler } from "./scheduler/deal-archive-scheduler.js";
+import { registerWhatsappApprovalScheduler } from "./scheduler/whatsapp-approval-scheduler.js";
 import { registerProposalFollowUpScheduler } from "./scheduler/proposal-follow-up-scheduler.js";
 import { registerContactDirectoryScheduler } from "./scheduler/contact-directory-scheduler.js";
 import { registerCapacityChangeScheduler } from "./scheduler/capacity-change-scheduler.js";
@@ -212,6 +213,8 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   registerTrialExpirationScheduler(app, container, { enabled: config.billing.trialEnabled, intervalMs: config.billing.trialExpirationCheckIntervalMs });
   // Sales Engine — follow-up de propostas (tarefa/alerta ao vendedor; nunca mensagem automática ao cliente).
   registerDealArchiveScheduler(app, container);
+  // Aprovação de publicações pelo WhatsApp (envio dos pedidos, aplicação das respostas e prazo).
+  registerWhatsappApprovalScheduler(app, container);
   registerProposalFollowUpScheduler(app, container, { enabled: process.env.ZUNO_PROPOSAL_FOLLOW_UPS !== "false", intervalMs: 15 * 60 * 1000 });
   registerContactDirectoryScheduler(app, container, { intervalMs: 5 * 60 * 1000 });
   // Pricing/Capacity Etapa B — aplica reduções de capacidade agendadas pro fim do ciclo. Mesma

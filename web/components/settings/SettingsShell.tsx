@@ -2,7 +2,7 @@
 
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect } from "react";
-import { Boxes, CalendarDays, CreditCard, Globe, Headset, Mic, Palette, PlugZap, Scale, Settings, Share2, ShoppingBag, SlidersHorizontal, Store, Target, UserRound, UsersRound, Workflow, type LucideIcon } from "lucide-react";
+import { Boxes, CalendarDays, MessageSquareText, CreditCard, Globe, Headset, Mic, Palette, PlugZap, Scale, Settings, Share2, ShoppingBag, SlidersHorizontal, Store, Target, UserRound, UsersRound, Workflow, type LucideIcon } from "lucide-react";
 import { PageHeader } from "@/components/PageHeader";
 import { useCurrentWorkspace } from "@/contexts/workspace-context";
 import { useSolutions } from "@/features/solutions/hooks";
@@ -12,7 +12,7 @@ import { cn } from "@/lib/utils";
 export { SETTINGS_SECTIONS, settingsSectionsFor };
 
 const ICONS: Record<SettingsSectionKey, LucideIcon> = {
-  profile: UserRound, general: Settings, users: UsersRound, teams: UsersRound, brand: Palette,
+  profile: UserRound, general: Settings, users: UsersRound, teams: UsersRound, brand: Palette, approvals: MessageSquareText,
   attendance: Headset, channels: PlugZap, "service-rules": SlidersHorizontal, products: Boxes, commercial: Scale, goals: Target, automations: Workflow,
   "site-address": Globe, "site-selling": ShoppingBag, "site-products": Boxes, marketplaces: Store,
   "meetings-preferences": SlidersHorizontal, "meetings-recorder": Mic,

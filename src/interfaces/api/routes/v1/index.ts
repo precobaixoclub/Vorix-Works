@@ -30,6 +30,7 @@ import { registerAiProvidersRoutes } from "./ai-providers.route.js";
 import { registerAssetsRoutes } from "./assets.route.js";
 import { registerProductionSettingsRoutes } from "./production-settings.route.js";
 import { registerEditorialIdeasRoutes } from "./editorial-ideas.route.js";
+import { registerWhatsappApprovalsRoutes } from "./whatsapp-approvals.route.js";
 import { loadEditorialCreativeContext } from "../../../../infrastructure/storage/postgres/editorial-creative-context.js";
 import { registerMeetingPlanRoutes } from "./meeting-plans.route.js";
 import { registerBrandProfileRoutes } from "./brand-profile.route.js";
@@ -890,6 +891,7 @@ export async function registerV1Routes(app: FastifyInstance): Promise<void> {
     maxUploadBytes: app.zunoConfig.objectStorage.maxUploadBytes,
     removeImageBackground: app.zunoContainer.removeImageBackground,
   });
+  await registerWhatsappApprovalsRoutes(app, { service: app.zunoContainer.whatsappApprovals });
   await registerEditorialIdeasRoutes(app, {
     editorialIdeaRepository: app.zunoContainer.editorialIdeaRepository,
     workspaceRepository: app.zunoContainer.workspaceRepository,

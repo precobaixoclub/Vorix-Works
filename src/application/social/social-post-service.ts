@@ -44,6 +44,8 @@ export type SocialPostServiceDeps = {
   defaultTimezone?: string;
   /** Fuso do workspace (configuração do cliente); prevalece sobre o padrão da plataforma. */
   timezoneFor?: (input: { tenantId: string; workspaceId: string }) => Promise<string | undefined>;
+  /** A marca exige aprovação (ex.: aprovação pelo WhatsApp)? Se sim, a publicação nasce aguardando aprovação. */
+  approvalRequired?: (input: { tenantId: string; workspaceId: string }) => Promise<boolean>;
 };
 
 /** Conteúdo base + personalização opcional por rede (legenda, hashtags, música, formato, mídia). */
@@ -230,7 +232,8 @@ export class SocialPostService {
 
     const planId = this.deps.idGenerator();
     const now = this.now().toISOString();
-    const requireApproval = input.requireApproval ?? false;
+    // Regra da marca vence: com aprovação obrigatória (WhatsApp), nada é agendado/publicado sem o "1" do aprovador.
+    const requireApproval = (input.requireApproval ?? false) || (await this.deps.approvalRequired?.({ tenantId: input.tenantId, workspaceId: input.workspaceId }).catch(() => false)) === true;
     const prepared = await Promise.all(input.destinations.map(async (destination) => {
       const merged = this.merge(input.base, destination);
       return { destination, merged: { ...merged, media: await this.probe(merged.media) }, account: accounts.get(destination.accountId)!, candidateId: this.deps.idGenerator(), targetId: this.deps.idGenerator(), destinationId: this.deps.idGenerator() };

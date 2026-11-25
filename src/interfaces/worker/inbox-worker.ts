@@ -95,6 +95,8 @@ import { PostgresSiteRepository } from "../../infrastructure/storage/postgres/po
 import { PostgresDealRepository } from "../../infrastructure/storage/postgres/postgres-deal-repository.js";
 import { PostgresPipelineRepository, PostgresPipelineStageRepository } from "../../infrastructure/storage/postgres/postgres-pipeline-repository.js";
 import { PostgresProductRepository } from "../../infrastructure/storage/postgres/postgres-product-repository.js";
+import { PostgresWhatsappApprovalRepository } from "../../infrastructure/storage/postgres/postgres-whatsapp-approval-repository.js";
+import { canonicalApprovalPhone, captureApprovalReply } from "../../application/approvals/whatsapp-approval-service.js";
 import { PostgresSalesCatalogRepository, PostgresDealItemRepository, PostgresSalesConfigRepository, PostgresCommercialApprovalRepository } from "../../infrastructure/storage/postgres/postgres-sales-engine-repositories.js";
 
 /**
@@ -499,6 +501,7 @@ async function main(): Promise<void> {
   }
 
   const repositories = buildPlatformRepositories({ driver: config.persistenceDriver, databaseUrl: config.databaseUrl });
+  const approvalRepository = repositories.pool ? new PostgresWhatsappApprovalRepository(repositories.pool) : undefined;
   const provider: MessagingProvider = config.inbox.wuzApiBaseUrl && config.inbox.wuzApiAdminToken
     ? new WuzApiMessagingProvider(new WuzApiClient({ baseUrl: config.inbox.wuzApiBaseUrl, adminToken: config.inbox.wuzApiAdminToken }))
     : new FakeMessagingProvider();
@@ -845,6 +848,23 @@ async function main(): Promise<void> {
   // só usa isso como gatilho pra revalidar, nunca como fonte de verdade (ver publishRealtimeNotification).
   await consumeQueue(channel, INBOX_QUEUES.incoming, async (content) => {
     const event = JSON.parse(content.toString("utf8")) as Extract<NormalizedInboxEvent, { type: "message.inbound" }>;
+    // Aprovação de publicação pelo WhatsApp: resposta do aprovador ("1", "2 motivo") é capturada aqui e NÃO
+    // vira conversa de atendimento; qualquer outra mensagem segue o fluxo normal. A API aplica a decisão.
+    if (approvalRepository && !event.isGroup && !event.fromMe && event.body) {
+      const fromPhone = event.chatPhoneE164 ?? event.chatPn ?? event.chatId;
+      const capture = await captureApprovalReply(approvalRepository, { connectionId: event.connectionId, fromPhone, text: event.body, isGroup: event.isGroup, fromMe: event.fromMe })
+        .catch((error) => { console.error("[inbox-worker] falha ao ler resposta de aprovação:", error instanceof Error ? error.message : error); return { handled: false as const, reply: undefined }; });
+      if (capture.handled) {
+        if (capture.reply) {
+          const connectionRow = await deps.connectionRepository.getById(event.connectionId);
+          if (connectionRow?.externalSessionId) {
+            await provider.sendText({ externalSessionId: connectionRow.externalSessionId, to: canonicalApprovalPhone(fromPhone), body: capture.reply })
+              .catch((error) => console.error("[inbox-worker] falha ao responder o aprovador:", error instanceof Error ? error.message : error));
+          }
+        }
+        return;
+      }
+    }
     const { contact, conversation, message, wasCreated } = await registerInboundMessage(deps, {
       tenantId: event.tenantId,
       workspaceId: event.workspaceId,

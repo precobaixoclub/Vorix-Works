@@ -11,7 +11,7 @@ export type SettingsCategory = "Minha conta" | "Espaço de trabalho" | "Atendime
 export const SETTINGS_CATEGORIES: readonly SettingsCategory[] = ["Minha conta", "Espaço de trabalho", "Atendimento e vendas", "Site", "Reuniões", "Integrações", "Conta e assinatura"];
 
 export type SettingsSectionKey =
-  | "profile" | "general" | "users" | "teams" | "brand"
+  | "profile" | "general" | "users" | "teams" | "brand" | "approvals"
   | "attendance" | "channels" | "service-rules" | "products" | "commercial" | "goals" | "automations"
   | "site-address" | "site-selling" | "site-products" | "marketplaces"
   | "meetings-preferences" | "meetings-recorder"
@@ -35,6 +35,8 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
   { value: "users", label: "Usuários e permissões", href: "/settings/users", category: "Espaço de trabalho" },
   { value: "teams", label: "Equipes", href: "/settings/teams", category: "Espaço de trabalho" },
   { value: "brand", label: "Marca e identidade", href: "/settings/marca", category: "Espaço de trabalho", solutions: ["marketing"] },
+  // Aprovação de publicações pelo WhatsApp (número da conta, regra por marca).
+  { value: "approvals", label: "Aprovações por WhatsApp", href: "/settings/aprovacoes", category: "Espaço de trabalho", solutions: ["marketing"] },
   // Fase 6: "Atendimento e canais" — as três telas que já existiam, num grupo só.
   { value: "attendance", label: "Encerramento e avaliação", href: "/settings/attendance", category: "Atendimento e vendas", solutions: ["conversations"] },
   { value: "channels", label: "Canais de atendimento", href: "/conversas?aba=canais", category: "Atendimento e vendas", solutions: ["conversations"] },

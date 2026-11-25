@@ -88,9 +88,9 @@ function makePrompt(instruction, correction) {
 }
 
 const reviewSchema = {
-  type: "object", additionalProperties: false, required: ["sameGarment", "sameColor", "samePrint", "samePrintPosition", "findings", "verdict"],
-  properties: { sameGarment: { type: "boolean" }, sameColor: { type: "boolean" }, samePrint: { type: "boolean" }, samePrintPosition: { type: "boolean" },
-    findings: { type: "array", items: { type: "string" } }, verdict: { type: "string", enum: ["approve", "reject"] } },
+  type: "object", additionalProperties: false, required: ["garmentMatches", "fabricColorMatches", "printElementsMatch", "printPositionMatches", "materialDifferences", "acceptableVariations", "verdict"],
+  properties: { garmentMatches: { type: "boolean" }, fabricColorMatches: { type: "boolean" }, printElementsMatch: { type: "boolean" }, printPositionMatches: { type: "boolean" },
+    materialDifferences: { type: "array", items: { type: "string" } }, acceptableVariations: { type: "array", items: { type: "string" } }, verdict: { type: "string", enum: ["approve", "reject"] } },
 };
 
 /** Revisão visual pelo Codex (mesmo plano, sem custo por imagem): foto original × imagem gerada. Falha = inconclusivo. */

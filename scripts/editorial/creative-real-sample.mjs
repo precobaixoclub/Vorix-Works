@@ -4,7 +4,9 @@
 // localização da peça pela cor original → revisão visual contra a foto original → Quality Gate no
 // renderizador → refação direcionada (se houver orçamento) → senão, composição com a foto original.
 //
-// Uso: node scripts/editorial/creative-real-sample.mjs <fixtures> <saída> [--dry]
+// Uso: node scripts/editorial/creative-real-sample.mjs <fixtures> <saída> [--dry | --codex]
+//   --codex: gera e revisa pelo Codex do servidor (mesmo usuário/modelo do piloto, plano ChatGPT, sem custo por
+//   imagem). Arquivos temporários só em /var/lib/vorix-codex/jobs/amostra-* e apagados ao fim; nada é publicado.
 import { spawn } from "node:child_process";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -15,6 +17,13 @@ import { aiReviewFromVerdict, productReviewPrompt } from "./creative-pipeline.mj
 
 const [fixtures, out, flag] = process.argv.slice(2);
 const DRY = flag === "--dry";
+const REREVIEW = flag === "--rereview";
+const CODEX = flag === "--codex" || REREVIEW;
+const HOST = "rumoaoaltar-netcup";
+const AGENT_HOME = "/var/lib/vorix-codex";
+const CODEX_BIN = "/opt/vorix-editorial/tools/node_modules/.bin/codex";
+// Não concorre com o piloto: para antes do horário de preparo (11:15/18:15, Brasília).
+const STOP_AT = ["10:50", "17:50"];
 const BUDGET_USD = 3.5;
 const dist = (path) => import(pathToFileURL(join(process.cwd(), "dist", path)).href);
 const { planEditorialCreative } = await dist("application/creative-engine/plan-editorial-creative.js");
@@ -48,12 +57,97 @@ function callGateway(request) {
   });
 }
 
+function ssh(command, input) {
+  return new Promise((resolve, reject) => {
+    const child = spawn("ssh", [HOST, command], { stdio: ["pipe", "pipe", "pipe"] });
+    const out = [];
+    const err = [];
+    child.stdout.on("data", (chunk) => out.push(chunk));
+    child.stderr.on("data", (chunk) => err.push(chunk));
+    child.once("error", reject);
+    child.once("close", (code) => (code === 0 ? resolve(Buffer.concat(out)) : reject(new Error(Buffer.concat(err).toString().trim().split("\n").slice(-3).join(" ") || `ssh ${code}`))));
+    child.stdin.end(input ?? "");
+  });
+}
+
+const nowBrt = () => new Intl.DateTimeFormat("sv-SE", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date());
+const nearPilotSlot = () => { const now = nowBrt(); return STOP_AT.some((stop) => now >= stop && now < `${stop.slice(0, 2)}:59`); };
+
+const IMAGE_SCHEMA = { type: "object", additionalProperties: false, required: ["image", "layout", "logoPlacement", "protectedAreas"], properties: {
+  image: { type: "string" }, layout: { type: "string", enum: ["top", "left", "bottom"] },
+  logoPlacement: { type: "string", enum: ["top_left", "top_center", "top_right", "bottom_left", "bottom_center", "bottom_right"] },
+  protectedAreas: { type: "array", items: { type: "object", additionalProperties: false, required: ["kind", "x", "y", "width", "height"], properties: { kind: { type: "string", enum: ["face", "product", "person", "key_object"] }, x: { type: "number" }, y: { type: "number" }, width: { type: "number" }, height: { type: "number" } } } } } };
+const REVIEW_SCHEMA = {
+  type: "object", additionalProperties: false, required: ["garmentMatches", "fabricColorMatches", "printElementsMatch", "printPositionMatches", "materialDifferences", "acceptableVariations", "verdict"],
+  properties: { garmentMatches: { type: "boolean" }, fabricColorMatches: { type: "boolean" }, printElementsMatch: { type: "boolean" }, printPositionMatches: { type: "boolean" },
+    materialDifferences: { type: "array", items: { type: "string" } }, acceptableVariations: { type: "array", items: { type: "string" } }, verdict: { type: "string", enum: ["approve", "reject"] } },
+};
+
+/** Mesmo prompt-moldura do piloto: regras fixas + instrução do plano; devolve o caminho e as áreas protegidas. */
+const pilotPrompt = (instruction) => `Você é responsável pela base visual desta pauta aprovada para Instagram/Facebook. Use a ferramenta nativa de geração/edição de imagem exatamente uma vez.\n` +
+  `As instruções da peça no fim descrevem somente a criação da imagem. Não use shell nem publique.\n` +
+  `Formato final obrigatório: retrato 4:5 (1080 x 1350), com todos os elementos relevantes dentro de margens de 8%. A arte será composta com texto e logo oficial depois. ` +
+  `Responda JSON com image sendo o caminho absoluto do arquivo que a ferramenta produziu e protectedAreas listando, em porcentagem da imagem gerada (0–100: x, y do canto superior esquerdo, width, height), ` +
+  `cada rosto (face), a pessoa principal (person), o produto/peça principal (product) e outros elementos que não podem ser cobertos (key_object).\n\nINSTRUÇÕES DA PEÇA (planejamento criativo):\n${instruction}`;
+
+async function codexExec(job, schema, prompt, images, timeoutMs) {
+  const schemaPath = `${job}/schema-${Date.now()}.json`;
+  await ssh(`cat > ${schemaPath} && chmod 644 ${schemaPath}`, JSON.stringify(schema));
+  const args = ["--ask-for-approval", "never", "exec", "--model", "gpt-6.2-sol", "--ephemeral", "--sandbox", "read-only", "--skip-git-repo-check", "--cd", job, "--json", "--output-schema", schemaPath, ...images.flatMap((image) => ["--image", image]), "-"];
+  const command = `timeout ${Math.round(timeoutMs / 1000)} runuser -u vorix-codex -- env -i PATH=/usr/local/bin:/usr/bin:/bin HOME=${AGENT_HOME} CODEX_HOME=${AGENT_HOME}/.codex ${CODEX_BIN} ${args.join(" ")}`;
+  const events = (await ssh(command, prompt)).toString("utf8");
+  const last = events.split("\n").flatMap((line) => { try { const event = JSON.parse(line); return event.type === "item.completed" && event.item?.type === "agent_message" ? [event.item.text] : []; } catch { return []; } }).at(-1);
+  if (!last) throw new Error("Codex não devolveu resposta");
+  return JSON.parse(last);
+}
+
+/** Geração/edição e revisão pelo Codex do servidor, no formato do gateway da API. */
+async function codexCall(request) {
+  const started = Date.now();
+  const job = `${AGENT_HOME}/jobs/amostra-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+  try {
+    await ssh(`mkdir -p ${job} && chown vorix-codex:vorix-codex ${job} && chmod 755 ${job}`);
+    const files = [];
+    for (const [index, image] of (request.images ?? []).entries()) {
+      const name = `${job}/imagem-${index + 1}.png`;
+      await ssh(`cat > ${name} && chmod 644 ${name}`, Buffer.from(image, "base64"));
+      files.push(name);
+    }
+    if (request.op === "review") {
+      const verdict = await codexExec(job, REVIEW_SCHEMA, `${request.prompt} Não gere imagens; só compare e responda o JSON.`, files, 240000);
+      return { ok: true, content: JSON.stringify(verdict), ms: Date.now() - started };
+    }
+    const plan = await codexExec(job, IMAGE_SCHEMA, pilotPrompt(request.prompt), files, 330000);
+    const path = String(plan.image ?? "");
+    if (!path.startsWith(`${AGENT_HOME}/.codex/generated_images/`) || !/\.(png|jpe?g|webp)$/i.test(path) || path.includes("..")) throw new Error("Caminho de imagem fora do diretório do Codex");
+    const bytes = await ssh(`cat '${path}' && rm -f '${path}'`);
+    const png = await sharp(bytes).png().toBuffer();
+    return { ok: true, image: png.toString("base64"), protectedAreas: plan.protectedAreas ?? [], layout: plan.layout, ms: Date.now() - started };
+  } catch (error) {
+    return { ok: false, status: 0, code: "codex", message: String(error.message ?? error).slice(0, 300), ms: Date.now() - started };
+  } finally {
+    await ssh(`rm -rf ${job}`).catch(() => undefined);
+  }
+}
+
 const reviewCost = (usage) => usage ? (usage.prompt_tokens * 0.15 + usage.completion_tokens * 0.6) / 1_000_000 : 0;
 
 /** Registra a operação prevista, confere o orçamento e só então chama a API. */
 async function paidCall(kind, request, meta) {
   const estimate = ESTIMATE[kind];
   const planned = { kind, ...meta, estimateUsd: estimate, spentBeforeUsd: Math.round(ledger.spentUsd * 10000) / 10000 };
+  if (CODEX) {
+    if (nearPilotSlot()) {
+      ledger.operations.push({ ...planned, engine: "codex", outcome: "skipped_pilot_window" });
+      console.log(`  ⏸ ${kind} pulado: perto do horário do piloto (${nowBrt()})`);
+      return undefined;
+    }
+    console.log(`  → codex ${kind} ${meta.case}${meta.attempt ? ` tentativa ${meta.attempt}` : ""} (${nowBrt()})`);
+    const result = await codexCall(request);
+    ledger.operations.push({ ...planned, engine: "codex", model: "gpt-6.2-sol", estimateUsd: 0, outcome: result.ok ? "ok" : `failed:${result.message ?? ""}`, ms: result.ms, costUsd: 0 });
+    if (!result.ok) console.log(`  ✗ ${kind}: ${result.message}`);
+    return result.ok ? { ...result, costUsd: 0 } : undefined;
+  }
   if (ledger.spentUsd + estimate > BUDGET_USD) {
     ledger.operations.push({ ...planned, outcome: "skipped_budget" });
     console.log(`  ✋ orçamento: ${kind} pulado (gasto US$ ${ledger.spentUsd.toFixed(3)})`);
@@ -158,8 +252,12 @@ async function lifestyleAttempt(state, attempt) {
     const aiReview = aiReviewFromVerdict(review);
     const generatedBuffer = Buffer.from(generated.image, "base64");
     const meta = await sharp(generatedBuffer).metadata();
-    const box = await locateProductByColor(generatedBuffer, fabric);
-    const protectedAreas = box ? [{ kind: "product", x: (box.x / meta.width) * 100, y: (box.y / meta.height) * 100, width: (box.w / meta.width) * 100, height: (box.h / meta.height) * 100 }] : [];
+    const colorBox = await locateProductByColor(generatedBuffer, fabric);
+    const reported = (generated.protectedAreas ?? []).filter((area) => area.kind === "product").sort((a, b) => b.width * b.height - a.width * a.height)[0];
+    // Área do produto: a informada pelo gerador (Codex) ou, sem ela, a localizada pela cor original do tecido.
+    const box = reported ? { x: reported.x / 100 * meta.width, y: reported.y / 100 * meta.height, w: reported.width / 100 * meta.width, h: reported.height / 100 * meta.height } : colorBox;
+    const protectedAreas = [...(generated.protectedAreas ?? []).filter((area) => area.kind === "face"),
+      ...(box ? [{ kind: "product", x: (box.x / meta.width) * 100, y: (box.y / meta.height) * 100, width: (box.w / meta.width) * 100, height: (box.h / meta.height) * 100 }] : [])];
     let rendered;
     try {
       rendered = await renderArt({ ...cmkv, headline: item.headline, body: item.body, cta: "Confira no catálogo", base: generated.image, layout: item.layout, logoPlacement: item.layout === "left" ? "top_left" : item.layout === "top" ? "bottom_right" : "top_right", protectedAreas,
@@ -193,7 +291,7 @@ async function conceptualCase(item) {
   const generated = await paidCall("generate_medium", { op: "generate", model: MODEL, prompt, size: SIZE, quality: "medium" }, { case: item.key, attempt: 1, endpoint: "/v1/images/generations", model: MODEL, inputs: [], promptChars: prompt.length });
   if (!generated?.image) { entry.result = { approved: false, by: "nao_gerada" }; return entry; }
   await save(`${item.key}-ia.png`, generated.image);
-  const rendered = await renderArt({ ...item.brand, headline: item.headline, body: item.body, cta: "", base: generated.image, layout: "top", logoPlacement: "bottom_right", protectedAreas: [],
+  const rendered = await renderArt({ ...item.brand, headline: item.headline, body: item.body, cta: "", base: generated.image, layout: generated.layout ?? "top", logoPlacement: "bottom_right", protectedAreas: generated.protectedAreas ?? [],
     fidelity: { spec: planned.spec, operation: "ai_generation", archetype: "concept_scene", transmittedReferenceIds: [] }, history: [] }).catch((error) => ({ error: error.message }));
   if (rendered.image) await save(`${item.key}-final.jpg`, rendered.image);
   entry.attempts.push({ attempt: 1, base: `${item.key}-ia.png`, final: rendered.image ? `${item.key}-final.jpg` : null, gate: rendered.gate && { approved: rendered.gate.approved, failures: rendered.gate.failures, passes: rendered.gate.passes }, error: rendered.error, ms: generated.ms, costUsd: generated.costUsd });
@@ -203,7 +301,7 @@ async function conceptualCase(item) {
 
 void ARCHETYPES;
 // Pré-checagem do saldo (≈ US$ 0,00001; sem crédito volta 429 e não cobra): sem saldo, nenhuma chamada paga.
-if (!DRY) {
+if (!DRY && !CODEX) {
   const probe = await callGateway({ op: "probe" });
   ledger.operations.push({ kind: "probe", case: "saldo", endpoint: "/v1/chat/completions", model: "gpt-4o-mini", inputs: [], estimateUsd: 0.00001, outcome: probe.ok ? "ok" : `failed:${probe.status}:${probe.code ?? ""}`, ms: probe.ms, costUsd: probe.ok ? 0.00001 : 0 });
   if (!probe.ok) {
@@ -226,9 +324,57 @@ async function varietyReport() {
   };
 }
 
+// --rereview: revisão calibrada das imagens JÁ geradas (nenhuma geração nova), mantendo o veredito anterior ao lado.
+if (REREVIEW) {
+  const previous = JSON.parse(await readFile(join(out, "real-report.json"), "utf8"));
+  for (const entry of previous.cases.filter((item) => item.kind === "lifestyle")) {
+    const item = LIFESTYLE.find((candidate) => candidate.key === entry.case);
+    const file = await readFile(join(fixtures, "cmkv-photos", `${item.code}_${item.variant}.webp`));
+    const photoPng = (await sharp(file).resize({ height: 1024 }).png().toBuffer()).toString("base64");
+    const reference = { id: `produto:${item.code}:${item.variant}`, source: "catalog", productCode: item.code, variantLabel: item.variant, ...(await catalogPhotoSignals(file, item.variant)) };
+    const plan = planEditorialCreative({ workspaceId: "cmkv", brandName: "CMKV Wears", businessKind: "physical_products", idea: { id: item.key, title: item.headline, format: "single_image", keyMessage: `${item.headline}
+
+${item.body}`, approach: "lifestyle, dia a dia, look", visualDirection: "lifestyle: a camiseta vestida na rotina, look do dia a dia" }, ideaReferences: [reference], history: [], allowAi: true });
+    const fabric = await productColor(await cutoutProduct(file));
+    let approvedFile;
+    for (const attempt of entry.attempts.filter((candidate) => candidate.base)) {
+      const generated = (await readFile(join(out, attempt.base))).toString("base64");
+      console.log(`${entry.case} tentativa ${attempt.attempt}: revisão calibrada`);
+      const reviewed = await paidCall("review", { op: "review", prompt: productReviewPrompt({ productCode: item.code, variantLabel: item.variant }), images: [photoPng, generated] }, { case: entry.case, attempt: attempt.attempt, endpoint: "codex (revisão calibrada)", inputs: [reference.id, attempt.base] });
+      let review;
+      try { review = reviewed ? JSON.parse(reviewed.content) : undefined; } catch { review = undefined; }
+      const aiReview = aiReviewFromVerdict(review);
+      const buffer = Buffer.from(generated, "base64");
+      const meta = await sharp(buffer).metadata();
+      const box = attempt.product ? { x: attempt.product.x / 100 * meta.width, y: attempt.product.y / 100 * meta.height, w: attempt.product.w / 100 * meta.width, h: attempt.product.h / 100 * meta.height } : await locateProductByColor(buffer, fabric);
+      const protectedAreas = box ? [{ kind: "product", x: box.x / meta.width * 100, y: box.y / meta.height * 100, width: box.w / meta.width * 100, height: box.h / meta.height * 100 }] : [];
+      const rendered = await renderArt({ ...cmkv, headline: item.headline, body: item.body, cta: "Confira no catálogo", base: generated, layout: item.layout, logoPlacement: item.layout === "left" ? "top_left" : item.layout === "top" ? "bottom_right" : "top_right", protectedAreas,
+        fidelity: { spec: plan.screens[0].spec, operation: "ai_edit_with_reference", archetype: "product_lifestyle", transmittedReferenceIds: [reference.id], reference: photoPng, aiReview }, history: [] }).catch((error) => ({ error: error.message }));
+      const finalName = `${entry.case}-final-${attempt.attempt}-calibrada.jpg`;
+      if (rendered.image) await save(finalName, rendered.image);
+      attempt.calibrated = { review, final: rendered.image ? finalName : null, gate: rendered.gate && { approved: rendered.gate.approved, failures: rendered.gate.failures, passes: rendered.gate.passes, warnings: rendered.gate.warnings }, fingerprint: rendered.fingerprint ?? null, error: rendered.error, ms: reviewed?.ms };
+      if (rendered.gate?.approved && !approvedFile) approvedFile = finalName;
+      await writeFile(join(out, "real-report.json"), JSON.stringify(previous, null, 2));
+    }
+    entry.calibratedResult = approvedFile ? { approved: true, by: "ia", file: approvedFile } : { approved: entry.result?.approved ?? false, by: entry.result?.by, file: entry.result?.file };
+  }
+  previous.rereviewOperations = ledger.operations;
+  report.push(...previous.cases);
+  previous.varietyCalibrated = await (async () => {
+    const { hammingHex } = await dist("application/creative-engine/visual-variety.js");
+    const pieces = previous.cases.filter((item) => item.kind === "lifestyle").map((item) => ({ key: item.case, attempt: item.attempts.find((attempt) => attempt.calibrated?.gate?.approved) ?? item.attempts.find((attempt) => attempt.calibrated) })).filter((item) => item.attempt?.calibrated?.fingerprint);
+    const pairs = [];
+    for (let i = 0; i < pieces.length; i += 1) for (let j = i + 1; j < pieces.length; j += 1) pairs.push({ a: pieces[i].key, b: pieces[j].key, distance: hammingHex(pieces[i].attempt.calibrated.fingerprint.dHash, pieces[j].attempt.calibrated.fingerprint.dHash) });
+    return { pieces: pieces.map((item) => ({ key: item.key, textLayout: item.attempt.calibrated.fingerprint.textLayout, palette: item.attempt.calibrated.fingerprint.palette, product: item.attempt.product })), pairs, minDistance: pairs.length ? Math.min(...pairs.map((pair) => pair.distance)) : null, nearDuplicates: pairs.filter((pair) => pair.distance <= 10) };
+  })();
+  await writeFile(join(out, "real-report.json"), JSON.stringify(previous, null, 2));
+  console.log("revisão calibrada concluída");
+  process.exit(0);
+}
+
 const persist = () => writeFile(join(out, "real-report.json"), JSON.stringify({ budgetUsd: BUDGET_USD, spentUsd: ledger.spentUsd, operations: ledger.operations, cases: report }, null, 2));
 for (const item of LIFESTYLE) { console.log(item.key); report.push(await lifestyleCase(item, 1)); await persist(); }
 for (const item of CONCEPTUAL) { console.log(item.key); report.push(await conceptualCase(item)); await persist(); }
 for (const item of LIFESTYLE) { console.log(`${item.key} (fase final)`); await lifestyleCase(item, 3); await persist(); }
 await writeFile(join(out, "real-report.json"), JSON.stringify({ budgetUsd: BUDGET_USD, spentUsd: ledger.spentUsd, operations: ledger.operations, cases: report, variety: await varietyReport() }, null, 2));
-console.log(`\nGasto total: US$ ${ledger.spentUsd.toFixed(4)} de US$ ${BUDGET_USD}`);
+console.log(`\n${CODEX ? "Motor: Codex (plano ChatGPT, sem custo por imagem)" : "Motor: API OpenAI"} — gasto total: US$ ${ledger.spentUsd.toFixed(4)} de US$ ${BUDGET_USD}`);

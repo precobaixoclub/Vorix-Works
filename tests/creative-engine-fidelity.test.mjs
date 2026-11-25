@@ -501,3 +501,25 @@ test("foto de cena: o texto nunca cobre o produto (área do produto pela concent
   assert.equal(result.evidence.product.cutout.used, false, "foto de cena nunca é recortada");
   assert.ok(["product_scene", "product_editorial"].includes(result.appliedArchetype));
 });
+
+test("revisão calibrada: diferença material reprova; variação de foto (luz, pose, traço) não — e a cor medida continua regra", async () => {
+  const { aiReviewFromVerdict } = await import("../scripts/editorial/creative-pipeline.mjs");
+  const ok = { garmentMatches: true, fabricColorMatches: true, printElementsMatch: true, printPositionMatches: true, materialDifferences: [], acceptableVariations: ["luz lateral", "traço levemente mais fino"], verdict: "approve" };
+  assert.equal(aiReviewFromVerdict(ok).verdict, "approve");
+  const missing = aiReviewFromVerdict({ ...ok, printElementsMatch: false, materialDifferences: ["falta a palavra Yourself"], verdict: "reject" });
+  assert.equal(missing.verdict, "reject");
+  assert.match(missing.findings[0].message, /Yourself/);
+  // "Aprovado", mas listando uma diferença material: reprova (o detalhe vence a conclusão).
+  assert.equal(aiReviewFromVerdict({ ...ok, materialDifferences: ["borboleta trocada por flor"] }).verdict, "reject");
+  const spec = { mode: "physical_product", subject: { kind: "product", productCode: "000044" }, requiredReferences: [{ id: "p", role: "product_photo" }], blockers: [] };
+  const posed = { composited: false, shapeDistance: 20, colorDeltaE: 0.8, printDistance: 16, coverage: 0.3 };
+  const approved = evaluateFidelityGate(spec, { operation: "ai_edit_with_reference", transmittedReferenceIds: ["p"], product: posed, aiReview: { verdict: "approve" } });
+  assert.equal(approved.approved, true, JSON.stringify(approved.failures));
+  assert.ok(approved.warnings.some((warning) => /decidido pela revisão visual/.test(warning)));
+  const rejected = evaluateFidelityGate(spec, { operation: "ai_edit_with_reference", transmittedReferenceIds: ["p"], product: posed, aiReview: { verdict: "reject", findings: [{ code: "PRINT_ALTERED", message: "falta a palavra" }] } });
+  assert.deepEqual(rejected.failures.map((failure) => failure.code), ["PRINT_ALTERED"]);
+  const otherColor = evaluateFidelityGate(spec, { operation: "ai_edit_with_reference", transmittedReferenceIds: ["p"], product: { ...posed, colorDeltaE: 25 }, aiReview: { verdict: "approve" } });
+  assert.ok(otherColor.failures.some((failure) => failure.code === "COLOR_MISMATCH"), "cor medida reprova mesmo com a revisão aprovando");
+  const unreviewed = evaluateFidelityGate(spec, { operation: "ai_edit_with_reference", transmittedReferenceIds: ["p"], product: posed });
+  assert.ok(unreviewed.failures.some((failure) => failure.code === "PRODUCT_MISMATCH"), "sem revisão, as distâncias de pixel decidem");
+});

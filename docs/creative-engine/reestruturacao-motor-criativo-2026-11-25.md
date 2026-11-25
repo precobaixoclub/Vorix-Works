@@ -182,3 +182,29 @@ turquesa; bloqueadas até a correção).
    `validate` com imagem de teste.
 6. Rollback: restaurar os três scripts do backup (versão do commit A) — o `dist/` novo é compatível com
    eles (só acrescenta módulos); se preciso, redeploy da API no commit anterior.
+
+## 9. Geração real pelo Codex (25/11/2026, 3ª rodada)
+
+A API OpenAI continua sem crédito (diagnóstico: chave de projeto válida no cofre, modelos 2.6 acessíveis,
+sonda de 1 token → 429). Por autorização do usuário, a amostra rodou pelo **Codex do servidor** (mesmo
+usuário/modelo do piloto, plano ChatGPT, **US$ 0**), entre 15h24 e 15h55, fora do horário do piloto;
+arquivos temporários apagados ao fim. Nada publicado.
+
+| Caso (CMKV) | Produto | Revisão rigorosa (1ª versão) | Revisão calibrada + Quality Gate |
+|---|---|---|---|
+| Modelo masculino | 000037 Preto | reprovou a 1ª, aprovou a refação | **aprovada (IA)** |
+| Modelo feminino | 000048 Bege | reprovou | **aprovada (IA)** |
+| Destaque da estampa | 000044 Preto | reprovou (só pela "forma" de pixel) | **aprovada (IA)** |
+| Lifestyle externo | 000043 Verde-Militar | reprovou | **reprovada** — rótulo do pote "Lemon" virou "Lamon" nas 2 tentativas → foto original |
+| Editorial de moda | 000047 Marrom | reprovou | **aprovada (IA)** |
+| Produto em destaque | 000033 Preto | reprovou | **reprovada** — estampa fiel, mas texto da peça ilegível → foto original |
+
+Calibração (comprovada visualmente, estampa a estampa): a 1ª revisão tratava luz, pose e espessura de
+traço como "estampa diferente", e a distância de forma em pixel falha por definição quando pose/enquadramento
+mudam. Agora a revisão separa **diferença material** (elemento a mais/a menos, desenho ou texto trocado,
+outra cor de tecido, estampa fora do lugar) de variação de fotografia; a cor medida (ΔE) continua regra; as
+distâncias de pixel viram aviso quando há revisão visual. O caso "Lamon" mostra que a rigidez continua.
+
+Conceituais (geração livre): Vorix ×2 e Aurum aprovadas; CMKV reprovada por contraste do texto (2,34:1).
+Variedade entre as peças da IA: menor distância perceptual 11/64 (nenhuma quase igual); cenários, enquadramentos e
+pessoas diferentes; ponto de atenção: três peças com fundo neutro quente parecido.

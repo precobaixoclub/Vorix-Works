@@ -134,13 +134,20 @@ export function evaluateFidelityGate(spec: Pick<CreativeSpec, "mode" | "subject"
         if (!evidence.aiReview || evidence.aiReview.verdict === "unavailable") {
           fail("FIDELITY_INCONCLUSIVE", "Produto gerado pela IA sem revisão visual contra a fotografia original — fidelidade não comprovada.");
         }
+        // Com revisão visual (elemento por elemento) a forma e a estampa são julgadas por ela: as distâncias
+        // de pixel variam de propósito com pose, corpo e enquadramento (achado de 25/11/2026: close-up com a
+        // estampa idêntica reprovava por "forma"). Sem revisão, as distâncias decidem. A cor medida é sempre regra.
+        const reviewed = evidence.aiReview?.verdict === "approve" || evidence.aiReview?.verdict === "reject";
+        const shapeOrPrint = (code: GateCode, message: string) => (reviewed ? warnings.push(`${message} (pose/enquadramento — decidido pela revisão visual)`) : fail(code, message));
         if (product.shapeDistance === undefined || product.colorDeltaE === undefined) {
           fail("REFERENCE_IGNORED", "Sem medição de fidelidade para um produto gerado pela IA — não é possível comprovar que é o mesmo.");
         } else {
-          if (product.shapeDistance > FIDELITY_LIMITS.maxShapeDistance) fail("PRODUCT_MISMATCH", `Forma do produto diferente da foto original (distância ${product.shapeDistance}/64).`);
+          if (product.shapeDistance > FIDELITY_LIMITS.maxShapeDistance) shapeOrPrint("PRODUCT_MISMATCH", `Forma do produto diferente da foto original (distância ${product.shapeDistance}/64)`);
           if (product.colorDeltaE > FIDELITY_LIMITS.maxColorDeltaE) fail("COLOR_MISMATCH", `Cor comercial diferente da foto original (ΔE ${product.colorDeltaE.toFixed(1)}).`);
+          else passes.push(`Cor do tecido igual à da foto original (ΔE ${product.colorDeltaE.toFixed(1)}).`);
         }
-        if (product.printDistance !== undefined && product.printDistance > FIDELITY_LIMITS.maxPrintDistance) fail("PRINT_ALTERED", `Estampa diferente da original (distância ${product.printDistance}/64).`);
+        if (product.printDistance !== undefined && product.printDistance > FIDELITY_LIMITS.maxPrintDistance) shapeOrPrint("PRINT_ALTERED", `Estampa com distância de pixel ${product.printDistance}/64 da original`);
+        if (evidence.aiReview?.verdict === "approve") passes.push("Revisão visual elemento por elemento: mesma peça, mesma cor e mesma estampa da foto original.");
       }
       if (product.coverage !== undefined && product.coverage < FIDELITY_LIMITS.minProductCoverage) fail("PRODUCT_TOO_SMALL", `O produto ocupa só ${(product.coverage * 100).toFixed(0)}% da arte — não é o protagonista.`);
       if (product.touchesEdge) fail("PRODUCT_CROPPED", "O produto foi cortado pela borda da arte.");

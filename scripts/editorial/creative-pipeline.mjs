@@ -140,25 +140,43 @@ export function screenApprovals(results) {
 
 // ---------------------------------------------------------------- revisão visual da IA
 
-/** Pergunta da revisão visual: compara SÓ o produto da foto original com o da imagem gerada. */
+/**
+ * Pergunta da revisão visual: compara SÓ o produto da foto original com o da imagem gerada, separando
+ * diferença MATERIAL (o cliente receberia outra peça: elemento a mais/a menos, desenho ou texto diferente,
+ * outra cor de tecido, estampa em outro lugar) de variação aceitável de fotografia (luz, ângulo, caimento,
+ * pose, espessura de traço). Calibração de 25/11/2026: a 1ª versão reprovava variação de luz e traço como
+ * "estampa diferente" mesmo com a estampa idêntica à vista.
+ */
 export function productReviewPrompt({ productCode, variantLabel }) {
-  return `Você é um revisor de fidelidade de produto para anúncios. A Imagem 1 é a FOTO ORIGINAL do produto anunciado` +
+  return `Você é um revisor de fidelidade de produto para anúncios de moda. A Imagem 1 é a FOTO ORIGINAL do produto anunciado` +
     `${productCode ? ` (modelo ${productCode}${variantLabel ? `, cor ${variantLabel}` : ""})` : ""}. A Imagem 2 é a peça publicitária gerada por IA. ` +
-    `Compare SOMENTE o produto: modelagem (gola, mangas, formato), cor, estampa (desenho, textos/letras, cores da estampa) e posição/tamanho da estampa. ` +
-    `Qualquer diferença perceptível na estampa ou na cor reprova. Responda só JSON: ` +
-    `{"sameGarment":bool,"sameColor":bool,"samePrint":bool,"samePrintPosition":bool,"findings":[string em português],"verdict":"approve"|"reject"}.`;
+    `Compare SOMENTE o produto, elemento por elemento da estampa (cada desenho, cada palavra, cada cor da estampa) e a cor do tecido. ` +
+    `DIFERENÇA MATERIAL (reprova): elemento da estampa faltando ou a mais; desenho trocado por outro; texto com palavras/letras diferentes; ` +
+    `cor do tecido claramente diferente (outra cor comercial); estampa em outro lugar da peça ou com tamanho muito diferente; outro tipo de peça. ` +
+    `VARIAÇÃO ACEITÁVEL (não reprova): luz, sombra, ângulo, pose, caimento no corpo, dobras, corpo masculino/feminino, leve diferença de espessura ou nitidez do traço. ` +
+    `Responda só JSON: {"garmentMatches":bool,"fabricColorMatches":bool,"printElementsMatch":bool,"printPositionMatches":bool,` +
+    `"materialDifferences":[string em português, só diferenças materiais],"acceptableVariations":[string em português],"verdict":"approve"|"reject"}. ` +
+    `verdict = "reject" se e somente se houver alguma diferença material.`;
 }
 
-/** Converte a resposta da revisão visual no formato do Quality Gate (aprovação só com tudo igual). */
+/** Converte a resposta da revisão visual no formato do Quality Gate (aprovação só sem diferença material). */
 export function aiReviewFromVerdict(review) {
   if (!review || typeof review !== "object") return { verdict: "unavailable" };
-  const same = review.sameGarment === true && review.sameColor === true && review.samePrint === true && review.samePrintPosition === true;
-  if (same && review.verdict === "approve") return { verdict: "approve" };
-  const details = (Array.isArray(review.findings) ? review.findings : []).join("; ").slice(0, 200);
+  // Aceita também o formato anterior (sameGarment/sameColor/samePrint/samePrintPosition).
+  const garment = review.garmentMatches ?? review.sameGarment;
+  const color = review.fabricColorMatches ?? review.sameColor;
+  const print = review.printElementsMatch ?? review.samePrint;
+  const position = review.printPositionMatches ?? review.samePrintPosition;
+  const material = Array.isArray(review.materialDifferences) ? review.materialDifferences : review.verdict === "reject" ? (review.findings ?? []) : [];
+  const same = garment === true && color === true && print === true && position === true;
+  if (same && material.length === 0 && review.verdict === "approve") {
+    return { verdict: "approve", ...(Array.isArray(review.acceptableVariations) && review.acceptableVariations.length ? { notes: review.acceptableVariations.slice(0, 5) } : {}) };
+  }
+  const details = material.join("; ").slice(0, 200);
   const findings = [
-    ...(review.sameGarment === true ? [] : [{ code: "PRODUCT_MISMATCH", message: "Revisão visual: a peça não é a mesma do produto anunciado." }]),
-    ...(review.sameColor === true ? [] : [{ code: "COLOR_MISMATCH", message: "Revisão visual: a cor do produto mudou." }]),
-    ...(review.samePrint === true && review.samePrintPosition === true ? [] : [{ code: "PRINT_ALTERED", message: `Revisão visual: estampa diferente da original${details ? ` (${details})` : ""}.` }]),
+    ...(garment === true ? [] : [{ code: "PRODUCT_MISMATCH", message: "Revisão visual: a peça não é a mesma do produto anunciado." }]),
+    ...(color === true ? [] : [{ code: "COLOR_MISMATCH", message: "Revisão visual: a cor do produto mudou." }]),
+    ...(print === true && position === true ? [] : [{ code: "PRINT_ALTERED", message: `Revisão visual: estampa diferente da original${details ? ` (${details})` : ""}.` }]),
   ];
   return { verdict: "reject", findings: findings.length ? findings : [{ code: "AI_REVIEW_REJECTED", message: details || "Revisão visual reprovou." }] };
 }

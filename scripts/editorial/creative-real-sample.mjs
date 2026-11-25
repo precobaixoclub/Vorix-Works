@@ -88,13 +88,17 @@ const demoLogo = await sharp(Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg
 const aurum = { name: "Aurum Perfumaria (demonstração)", logoConfig: {}, profile: { identity: { colors: [{ name: "Preto profundo", hex: "#0E0B09", role: "PRIMARY" }, { name: "Âmbar", hex: "#E0913A", role: "ACCENT" }, { name: "Creme", hex: "#F3E6CF" }], typography: { family: "SERIF" }, notes: "Perfumaria autoral, fundo sempre escuro, luz âmbar." } }, logos: [{ data: demoLogo.toString("base64"), variant: "LIGHT", backgrounds: ["DARK"] }] };
 const ARCHETYPES = COMPOSITION_ARCHETYPES.map((item) => item.id);
 
+// Seis campanhas da CMKV (validação de 25/11/2026). Produtos e cores diferentes, fotos consistentes.
+// As variantes Azul-Marinho do 000033 e do 000035 estão com foto de outra cor no catálogo: proibidas aqui
+// (além do bloqueio automático da checagem de cor).
+const FORBIDDEN_VARIANTS = new Set(["000033:Azul-Marinho", "000035:Azul-Marinho-LogoBranca"]);
 const LIFESTYLE = [
-  { key: "cmkv-ls-1", code: "000048", variant: "Azul-Marinho", headline: "Be Yourself, do seu jeito", body: "Pra um café sem pressa no fim de semana", scene: "uma mulher jovem tomando café numa cafeteria de rua com luz natural da manhã, vestindo a camiseta; enquadramento da cintura para cima, frontal" },
-  { key: "cmkv-ls-2", code: "000033", variant: "Preto", headline: "No rain, no flowers", body: "Leve para o passeio de domingo", scene: "uma mulher caminhando num parque arborizado ao fim da tarde, vestindo a camiseta; plano médio frontal, a estampa voltada para a câmera" },
-  { key: "cmkv-ls-3", code: "000043", variant: "Verde-Militar", headline: "Estilo leve, o ano todo", body: "Estampa delicada, caimento confortável", scene: "uma mulher numa cozinha clara e aconchegante, sorrindo, vestindo a camiseta; plano médio frontal" },
-  { key: "cmkv-ls-4", code: "000044", variant: "Preto", headline: "All we need is love", body: "Para o look do dia a dia", scene: "uma mulher numa rua urbana com muros de tijolo e luz de fim de tarde, vestindo a camiseta com jeans; plano médio frontal" },
-  { key: "cmkv-ls-5", code: "000047", variant: "Marrom", headline: "Love is all around", body: "A camiseta que combina com a rotina", scene: "uma mulher sentada num sofá de sala com plantas e luz suave, vestindo a camiseta; plano médio frontal, estampa visível" },
-  { key: "cmkv-ls-6", code: "000035", variant: "Preto", headline: "Coração em destaque", body: "Básica com personalidade", scene: "uma mulher num estúdio fotográfico urbano com fundo de concreto e luz lateral, vestindo a camiseta; plano médio frontal" },
+  { key: "cmkv-ls-1-masculino", label: "Modelo masculino", code: "000037", variant: "Preto", layout: "left", headline: "Fé no que você veste", body: "Camiseta preta, estampa fé", scene: "um homem jovem de barba curta vestindo esta MESMA camiseta, em pé numa calçada urbana ao entardecer; plano médio frontal, a estampa inteira visível no peito, caimento masculino natural" },
+  { key: "cmkv-ls-2-feminino", label: "Modelo feminino", code: "000048", variant: "Bege", layout: "left", headline: "Be Yourself, do seu jeito", body: "Para um café sem pressa", scene: "uma mulher jovem tomando café numa cafeteria com luz natural da manhã, vestindo esta MESMA camiseta; enquadramento da cintura para cima, frontal" },
+  { key: "cmkv-ls-3-estampa", label: "Destaque da estampa", code: "000044", variant: "Preto", layout: "top", headline: "All we need is love", body: "A estampa é o recado", scene: "close-up editorial do peito de uma pessoa vestindo esta MESMA camiseta, a estampa ocupando boa parte da imagem e perfeitamente nítida, luz lateral suave que mostra a textura do tecido" },
+  { key: "cmkv-ls-4-externo", label: "Lifestyle externo", code: "000043", variant: "Verde-Militar", layout: "top", headline: "Leve para o sábado", body: "Estampa leve, dia inteiro", scene: "uma mulher caminhando numa feira de rua ensolarada com frutas e toldos coloridos ao fundo desfocado, vestindo esta MESMA camiseta; plano americano frontal, estampa visível" },
+  { key: "cmkv-ls-5-editorial", label: "Editorial de moda", code: "000047", variant: "Marrom", layout: "left", headline: "Love is all around", body: "Editorial outono", scene: "editorial de moda em estúdio com fundo de papel cor creme e luz de recorte, modelo em pose de revista vestindo esta MESMA camiseta com calça de alfaiataria; plano médio, estampa frontal" },
+  { key: "cmkv-ls-6-produto", label: "Produto em destaque", code: "000033", variant: "Preto", layout: "bottom", headline: "No rain, no flowers", body: "Chegou na CMKV", scene: "foto publicitária de produto: esta MESMA camiseta vestida, enquadrada do ombro à cintura, centralizada sobre fundo de estúdio escuro com feixe de luz suave e algumas flores secas ao lado; a camiseta é a protagonista" },
 ];
 const CONCEPTUAL = [
   { key: "conc-1-vorix", brand: vorix, businessKind: "software", headline: "Atendimento é trabalho em equipe", body: "Quem assume sabe o que foi combinado", scene: "duas pessoas de uma pequena empresa conversando e passando o atendimento de uma para a outra num escritório moderno com luz roxa suave; sem telas, sem papéis, sem texto" },
@@ -111,6 +115,7 @@ const lifestyleState = new Map();
 
 /** Fase 1: primeira tentativa. Fase 3: refação direcionada (se houver orçamento) e, sem aprovação, a foto original. */
 async function lifestyleCase(item, phase) {
+  if (FORBIDDEN_VARIANTS.has(`${item.code}:${item.variant}`)) throw new Error(`Variante proibida na amostra: ${item.code} ${item.variant}`);
   if (phase === 3) {
     const state = lifestyleState.get(item.key);
     if (state.entry.result?.approved) return state.entry;
@@ -124,10 +129,11 @@ async function lifestyleCase(item, phase) {
   const photoPng = (await sharp(file).resize({ height: 1024 }).png().toBuffer()).toString("base64");
   await save(`${item.key}-original.png`, photoPng);
   const signals = await catalogPhotoSignals(file, item.variant);
+  if (signals.variantColorCheck?.consistent === false) throw new Error(`Foto inconsistente com a variante: ${item.code} ${item.variant}`);
   const reference = { id: `produto:${item.code}:${item.variant}`, source: "catalog", productCode: item.code, variantLabel: item.variant, ...signals };
   const plan = planEditorialCreative({ workspaceId: "cmkv", brandName: "CMKV Wears", businessKind: "physical_products", idea: { id: item.key, title: item.headline, format: "single_image", keyMessage: `${item.headline}\n\n${item.body}`, approach: "lifestyle, dia a dia, look" }, ideaReferences: [reference], history: [], allowAi: true });
   const planned = plan.screens[0];
-  const entry = { case: item.key, kind: "lifestyle", product: `${item.code} · ${item.variant}`, original: `${item.key}-original.png`, mode: plan.decision.mode, archetype: planned.spec.composition.archetype, transmitted: planned.transmitted.map((ref) => ref.id), attempts: [] };
+  const entry = { case: item.key, label: item.label, kind: "lifestyle", product: `${item.code} · ${item.variant}`, original: `${item.key}-original.png`, mode: plan.decision.mode, archetype: planned.spec.composition.archetype, transmitted: planned.transmitted.map((ref) => ref.id), attempts: [] };
   if (planned.spec.composition.archetype !== "product_lifestyle") entry.note = `planejador escolheu ${planned.spec.composition.archetype}`;
   const fabric = await productColor(await cutoutProduct(file));
   const state = { item, file, photoPng, reference, planned, entry, fabric, correction: undefined, generatedOnce: false };
@@ -139,7 +145,7 @@ async function lifestyleCase(item, phase) {
 async function lifestyleAttempt(state, attempt) {
   const { item, photoPng, reference, planned, entry, fabric, correction } = state;
   {
-    const prompt = `${planned.instruction}\nCena: ${item.scene}. Fotografia publicitária realista, luz natural, pele e tecido com textura real. A camiseta da Imagem 1 é EXATAMENTE a mesma peça: mesma cor, mesma estampa com o mesmo desenho, as mesmas letras, as mesmas cores e na mesma posição e tamanho no peito. Deixe os 45% da esquerda com fundo mais limpo para texto; a pessoa e a camiseta inteira no lado direito.${correction ? `\nCORREÇÃO DIRECIONADA: ${correction}` : ""}`;
+    const prompt = `${planned.instruction}\nCena: ${item.scene}. Fotografia publicitária realista, luz natural, pele e tecido com textura real. A camiseta da Imagem 1 é EXATAMENTE a mesma peça: mesma cor, mesma estampa com o mesmo desenho, as mesmas letras, as mesmas cores e na mesma posição e tamanho no peito. ${item.layout === "left" ? "Deixe os 45% da esquerda com fundo mais limpo para texto; a pessoa e a camiseta inteira no lado direito." : item.layout === "top" ? "Deixe o terço superior com fundo mais limpo para texto; a camiseta abaixo dele." : "Deixe o terço inferior com fundo mais limpo para texto; a camiseta acima dele."}${correction ? `\nCORREÇÃO DIRECIONADA: ${correction}` : ""}`;
     const generated = await paidCall("edit_high", { op: "edit", model: MODEL, prompt, size: SIZE, quality: "high", images: [photoPng] }, { case: item.key, attempt, endpoint: "/v1/images/edits", model: MODEL, inputs: [reference.id], promptChars: prompt.length });
     if (!generated?.image) { entry.attempts.push({ attempt, outcome: "not_generated" }); return false; }
     state.generatedOnce = true;
@@ -156,11 +162,11 @@ async function lifestyleAttempt(state, attempt) {
     const protectedAreas = box ? [{ kind: "product", x: (box.x / meta.width) * 100, y: (box.y / meta.height) * 100, width: (box.w / meta.width) * 100, height: (box.h / meta.height) * 100 }] : [];
     let rendered;
     try {
-      rendered = await renderArt({ ...cmkv, headline: item.headline, body: item.body, cta: "Confira no catálogo", base: generated.image, layout: "left", logoPlacement: "top_left", protectedAreas,
+      rendered = await renderArt({ ...cmkv, headline: item.headline, body: item.body, cta: "Confira no catálogo", base: generated.image, layout: item.layout, logoPlacement: item.layout === "left" ? "top_left" : item.layout === "top" ? "bottom_right" : "top_right", protectedAreas,
         fidelity: { spec: planned.spec, operation: "ai_edit_with_reference", archetype: "product_lifestyle", transmittedReferenceIds: [reference.id], reference: photoPng, aiReview }, history: [] });
     } catch (error) { rendered = { error: error.message }; }
     const gate = rendered.gate;
-    entry.attempts.push({ attempt, base: baseName, final: rendered.image ? `${item.key}-final-${attempt}.jpg` : null, review, located: Boolean(box), measure: rendered.evidence?.productMeasure, gate: gate && { approved: gate.approved, failures: gate.failures, passes: gate.passes }, error: rendered.error, ms: generated.ms, costUsd: generated.costUsd + (reviewed?.costUsd ?? 0) });
+    entry.attempts.push({ attempt, product: box ? { x: Math.round(box.x / meta.width * 100), y: Math.round(box.y / meta.height * 100), w: Math.round(box.w / meta.width * 100), h: Math.round(box.h / meta.height * 100) } : null, fingerprint: rendered.fingerprint ?? null, base: baseName, final: rendered.image ? `${item.key}-final-${attempt}.jpg` : null, review, located: Boolean(box), measure: rendered.evidence?.productMeasure, gate: gate && { approved: gate.approved, failures: gate.failures, passes: gate.passes }, error: rendered.error, ms: generated.ms, costUsd: generated.costUsd + (reviewed?.costUsd ?? 0) });
     if (rendered.image) await save(`${item.key}-final-${attempt}.jpg`, rendered.image);
     if (gate?.approved) { entry.result = { approved: true, by: "ia", file: `${item.key}-final-${attempt}.jpg` }; return true; }
     state.correction = [...(gate?.failures ?? []).map((failure) => failure.message), ...(review?.findings ?? [])].join(" ").slice(0, 500) || "Reproduza a estampa exatamente como na Imagem 1.";
@@ -196,8 +202,33 @@ async function conceptualCase(item) {
 }
 
 void ARCHETYPES;
+// Pré-checagem do saldo (≈ US$ 0,00001; sem crédito volta 429 e não cobra): sem saldo, nenhuma chamada paga.
+if (!DRY) {
+  const probe = await callGateway({ op: "probe" });
+  ledger.operations.push({ kind: "probe", case: "saldo", endpoint: "/v1/chat/completions", model: "gpt-4o-mini", inputs: [], estimateUsd: 0.00001, outcome: probe.ok ? "ok" : `failed:${probe.status}:${probe.code ?? ""}`, ms: probe.ms, costUsd: probe.ok ? 0.00001 : 0 });
+  if (!probe.ok) {
+    console.log(`Saldo indisponível (${probe.status} ${probe.code ?? ""}): amostra NÃO executada, nenhuma chamada paga.`);
+    await writeFile(join(out, "real-report.json"), JSON.stringify({ budgetUsd: BUDGET_USD, spentUsd: 0, preflight: probe, operations: ledger.operations, cases: [] }, null, 2));
+    process.exit(0);
+  }
+  ledger.spentUsd += 0.00001;
+}
+
+/** Variedade entre as peças aprovadas: distância perceptual par a par + enquadramento e posição do produto. */
+async function varietyReport() {
+  const { hammingHex } = await dist("application/creative-engine/visual-variety.js");
+  const pieces = report.filter((item) => item.kind === "lifestyle").map((item) => ({ key: item.case, attempt: item.attempts.find((attempt) => attempt.final && attempt.gate?.approved) ?? item.attempts.at(-1) })).filter((item) => item.attempt?.fingerprint);
+  const pairs = [];
+  for (let i = 0; i < pieces.length; i += 1) for (let j = i + 1; j < pieces.length; j += 1) pairs.push({ a: pieces[i].key, b: pieces[j].key, distance: hammingHex(pieces[i].attempt.fingerprint.dHash, pieces[j].attempt.fingerprint.dHash) });
+  return {
+    pieces: pieces.map((item) => ({ key: item.key, textLayout: item.attempt.fingerprint.textLayout, palette: item.attempt.fingerprint.palette, product: item.attempt.product })),
+    pairs, minDistance: pairs.length ? Math.min(...pairs.map((pair) => pair.distance)) : null, nearDuplicates: pairs.filter((pair) => pair.distance <= 10),
+  };
+}
+
 const persist = () => writeFile(join(out, "real-report.json"), JSON.stringify({ budgetUsd: BUDGET_USD, spentUsd: ledger.spentUsd, operations: ledger.operations, cases: report }, null, 2));
 for (const item of LIFESTYLE) { console.log(item.key); report.push(await lifestyleCase(item, 1)); await persist(); }
 for (const item of CONCEPTUAL) { console.log(item.key); report.push(await conceptualCase(item)); await persist(); }
 for (const item of LIFESTYLE) { console.log(`${item.key} (fase final)`); await lifestyleCase(item, 3); await persist(); }
+await writeFile(join(out, "real-report.json"), JSON.stringify({ budgetUsd: BUDGET_USD, spentUsd: ledger.spentUsd, operations: ledger.operations, cases: report, variety: await varietyReport() }, null, 2));
 console.log(`\nGasto total: US$ ${ledger.spentUsd.toFixed(4)} de US$ ${BUDGET_USD}`);

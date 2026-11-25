@@ -18,7 +18,26 @@ try {
   if (!key) throw new Error("Chave da OpenAI indisponível no cofre do servidor");
   const auth = { authorization: `Bearer ${key}` };
   let response;
-  if (request.op === "review") {
+  if (request.op === "account") {
+    // Diagnóstico da conta sem custo: valida a chave, lista modelos e lê organização/projeto dos cabeçalhos.
+    // A chave nunca sai daqui — só o tipo (projeto/usuário/serviço) e os identificadores da organização/projeto.
+    const models = await fetch("https://api.openai.com/v1/models", { headers: auth, signal: AbortSignal.timeout(30000) });
+    const body = await models.json().catch(() => ({}));
+    const ids = Array.isArray(body.data) ? body.data.map((model) => model.id) : [];
+    const keyKind = key.startsWith("sk-proj-") ? "chave de projeto" : key.startsWith("sk-svcacct-") ? "conta de serviço" : key.startsWith("sk-admin-") ? "chave administrativa" : "chave de usuário (legada)";
+    const source = stored?.value?.apiKey ? "cofre (ai-provider:openai)" : "variável de ambiente";
+    console.log(JSON.stringify({ ok: models.ok, status: models.status, keyKind, source, organization: models.headers.get("openai-organization"), project: models.headers.get("openai-project"),
+      required: Object.fromEntries((request.models ?? []).map((id) => [id, ids.includes(id)])), imageModels: ids.filter((id) => /image/.test(id)), error: models.ok ? undefined : String(body?.error?.code ?? body?.error?.message ?? "").slice(0, 120), ms: Date.now() - started }));
+    response = undefined;
+  } else if (request.op === "probe") {
+    // Sonda de saldo: 1 token no modelo mais barato (≈ US$ 0,00001). Sem crédito, volta 429 e não cobra.
+    const probe = await fetch("https://api.openai.com/v1/chat/completions", { method: "POST", headers: { ...auth, "content-type": "application/json" }, signal: AbortSignal.timeout(30000),
+      body: JSON.stringify({ model: "gpt-4o-mini", max_tokens: 1, messages: [{ role: "user", content: "ok" }] }) });
+    const body = await probe.json().catch(() => ({}));
+    console.log(JSON.stringify({ ok: probe.ok, status: probe.status, code: body?.error?.code ?? body?.error?.type ?? null, usage: body.usage ?? null,
+      limits: { requestsRemaining: probe.headers.get("x-ratelimit-remaining-requests"), tokensRemaining: probe.headers.get("x-ratelimit-remaining-tokens") }, ms: Date.now() - started }));
+    response = undefined;
+  } else if (request.op === "review") {
     response = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST", headers: { ...auth, "content-type": "application/json" }, signal: AbortSignal.timeout(120000),
       body: JSON.stringify({ model: request.model, temperature: 0, response_format: { type: "json_object" }, messages: [{ role: "user", content: [
@@ -38,8 +57,10 @@ try {
       body: JSON.stringify({ model: request.model, prompt: request.prompt, size: request.size, quality: request.quality, n: 1 }),
     });
   } else throw new Error("Operação inválida");
-  const body = await response.json().catch(() => ({}));
-  if (!response.ok) {
+  const body = response ? await response.json().catch(() => ({})) : {};
+  if (!response) {
+    // diagnóstico já impresso acima
+  } else if (!response.ok) {
     console.log(JSON.stringify({ ok: false, status: response.status, code: body?.error?.code ?? body?.error?.type ?? null, message: String(body?.error?.message ?? "").slice(0, 300), ms: Date.now() - started }));
   } else if (request.op === "review") {
     console.log(JSON.stringify({ ok: true, content: body.choices?.[0]?.message?.content ?? "", usage: body.usage ?? null, ms: Date.now() - started }));

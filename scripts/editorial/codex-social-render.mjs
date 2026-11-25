@@ -308,8 +308,31 @@ async function logoGlow(logoPng, rect, rgb, mode) {
 
 // ---------------------------------------------------------------- composição
 
+async function catalogBase(photos, surface) {
+  const gap = 22;
+  const panelWidth = Math.floor((WIDTH - 2 * TEXT_X - gap * (photos.length - 1)) / photos.length);
+  const panelHeight = 590;
+  const top = 585;
+  const start = Math.floor((WIDTH - photos.length * panelWidth - (photos.length - 1) * gap) / 2);
+  const layers = await Promise.all(photos.map(async ({ data, color }, index) => {
+    const column = start + index * (panelWidth + gap);
+    const { data: input, info: { width, height } } = await sharp(Buffer.from(data, "base64"))
+      .resize(panelWidth, panelHeight, { fit: "inside" }).png().toBuffer({ resolveWithObject: true });
+    return { input, left: column + Math.floor((panelWidth - width) / 2), top: top + Math.floor((panelHeight - height) / 2),
+      width, height, column, color };
+  }));
+  const input = await sharp({ create: { width: WIDTH, height: HEIGHT, channels: 3, background: surface } })
+    .composite(layers.map(({ input, left, top }) => ({ input, left, top }))).png().toBuffer();
+  const areas = layers.map(({ left, top, width, height }) => ({
+    kind: "product", x: left / WIDTH * 100, y: top / HEIGHT * 100,
+    width: width / WIDTH * 100, height: height / HEIGHT * 100,
+  }));
+  const labelTop = Math.max(...layers.map(layer => layer.top + layer.height)) + 22;
+  return { input, areas, labels: layers.map(({ column, color }) => ({ left: column, width: panelWidth, top: labelTop, color })) };
+}
+
 export async function renderArt(request) {
-  const { base, profile, headline, body, cta, layout, logoPlacement, protectedAreas, logoConfig } = request;
+  const { base, catalogPhotos, profile, headline, body, cta, layout, logoPlacement, protectedAreas, logoConfig } = request;
   const identity = profile?.identity;
   const colors = (identity?.colors ?? []).filter((color) => /^#[\da-f]{6}$/i.test(color.hex));
   const logosInput = request.logos?.length ? request.logos : request.logo ? [{ data: request.logo, variant: "PRIMARY", backgrounds: request.logoBackgrounds ?? [] }] : [];
@@ -328,13 +351,14 @@ export async function renderArt(request) {
   const accent = colors.find((color) => color.role === "ACCENT")?.hex ?? colors[0]?.hex ?? foreground;
   const accentText = contrastRatio(hexLuminance(accent), hexLuminance(surface)) >= MIN_TEXT_CONTRAST ? accent : foreground;
 
-  const original = Buffer.from(base, "base64");
+  const catalog = catalogPhotos?.length ? await catalogBase(catalogPhotos, surface) : undefined;
+  const original = catalog?.input ?? Buffer.from(base, "base64");
   const originalSize = await sharp(original).metadata();
   if (!originalSize.width || !originalSize.height || Math.abs(originalSize.width / originalSize.height - 0.8) > 0.065) {
     throw new Error("A base visual gerada não está em proporção vertical 4:5");
   }
   const canvas = await sharp(original).resize(WIDTH, HEIGHT, { fit: "cover" }).removeAlpha().raw().toBuffer({ resolveWithObject: true });
-  const protectedRects = mapProtectedAreas(protectedAreas, originalSize.width, originalSize.height);
+  const protectedRects = mapProtectedAreas(catalog?.areas ?? protectedAreas, originalSize.width, originalSize.height);
   const logos = await Promise.all(logosInput.map(prepareLogo));
   const fixedPlacement = brandLogoPlacement(profile, logoConfig);
   const scale = clamp(Number(logoConfig?.scale) || 1, 0.6, 1.6);
@@ -361,6 +385,7 @@ export async function renderArt(request) {
   const finalTextStats = regionStats(withVeil.data, withVeil.info.channels, plan.text.rect);
   const fgLum = hexLuminance(foreground);
   const textContrast = contrastRatio(fgLum, fgLum > surfaceLuminance ? finalTextStats.p90 : finalTextStats.p10);
+  if (catalog && textContrast < MIN_TEXT_CONTRAST) throw new Error("QUALITY_CONTRAST: texto da pauta abaixo de 4,5:1");
 
   // Logo: versão compatível com o fundo real daquele canto; tratamento só se o contraste pedir.
   const background = regionStats(withVeil.data, withVeil.info.channels, plan.logo);
@@ -409,6 +434,9 @@ export async function renderArt(request) {
     group(title, textRect.y + 28, serif ? "DM Serif Display" : "Geist", foreground),
     group(detail, textRect.y + 45 + title.height, "Geist", foreground),
     group(action, textRect.y + 66 + title.height + detail.height, "Geist", accentText),
+    ...(catalog?.labels ?? []).map(({ left, width, top, color }) => el({
+      position: "absolute", left, width, top, justifyContent: "center", fontFamily: "Geist", color: foreground, fontSize: 20,
+    }, color)),
   ]), { width: WIDTH, height: HEIGHT, fonts }));
 
   const jpeg = await sharp(withVeil.data, { raw: { width: WIDTH, height: HEIGHT, channels: withVeil.info.channels } }).composite([{ input: lettering }, ...layers]).jpeg({ quality: 93, mozjpeg: true }).toBuffer();

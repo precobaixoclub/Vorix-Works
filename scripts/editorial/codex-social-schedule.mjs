@@ -8,20 +8,25 @@ const generatedDir = join(agentHome, ".codex/generated_images");
 const executable = "/opt/vorix-editorial/tools/node_modules/.bin/codex";
 const container = "zuno-zuno-api-1";
 const timezone = "America/Sao_Paulo";
+const cmkvWorkspaceId = "workspace-cee-prelaunch-mv47cmfh";
 const workspaces = [
   "workspace-mwmumsxd-fmvh3h", "workspace-mscc9pi2-jkvwbo",
-  "workspace-mwmu8kgf-uhe66l", "workspace-cee-prelaunch-mv47cmfh",
+  "workspace-mwmu8kgf-uhe66l", cmkvWorkspaceId,
 ];
 const localTime = () => new Intl.DateTimeFormat("sv-SE", { timeZone: timezone, dateStyle: "short", timeStyle: "short", hour12: false }).format(new Date()).replace(" ", "T");
 const [requestedHour, requestedMode = "schedule", workspace, probeImage] = process.argv.slice(2);
 const currentHour = Number(localTime().slice(11,13));
 const hour = requestedHour === "auto" ? String(currentHour === 11 || currentHour === 18 ? currentHour + 1 : currentHour) : requestedHour;
 const mode = requestedHour === "auto" && currentHour !== 11 && currentHour !== 18 ? "reconcile" : requestedMode;
-if (!["12", "19"].includes(hour) || !["schedule", "select", "validate", "reconcile"].includes(mode)
-  || (workspace && !workspaces.includes(workspace))) throw new Error("Uso: node codex-social-schedule.mjs auto|12|19 [schedule|select|validate|reconcile] [workspace] [imagem de teste]");
+if (!["12", "19"].includes(hour) || !["schedule", "select", "validate", "reconcile", "publish"].includes(mode)
+  || (workspace && !workspaces.includes(workspace))) throw new Error("Uso: node codex-social-schedule.mjs auto|12|19 [schedule|select|validate|reconcile|publish] [workspace] [imagem de teste]");
 if (probeImage && mode !== "validate") throw new Error("Imagem de teste permitida apenas na validação");
 const slot = `${localTime().slice(0,10)}T${hour}:00`;
 if (mode === "schedule" && localTime() >= slot) throw new Error(`Horário ${slot} já passou`);
+if (mode === "publish" && (workspace !== cmkvWorkspaceId || localTime() < slot)) {
+  throw new Error("A recuperação imediata exige indicar a CMKV e um horário de hoje já encerrado");
+}
+const submitting = mode === "schedule" || mode === "publish";
 const backend = await readFile(new URL("codex-social-backend.mjs", basedir), "utf8");
 const renderer = await readFile(new URL("codex-social-render.mjs", basedir), "utf8");
 const agent = ["-u", "vorix-codex", "--", "env", "-i", "PATH=/usr/local/bin:/usr/bin:/bin", `HOME=${agentHome}`, `CODEX_HOME=${agentHome}/.codex`, executable];
@@ -112,21 +117,45 @@ async function generate(jobDir, schema, prompt, references) {
   return { asset, layout: plan.layout, logoPlacement: plan.logoPlacement, protectedAreas: plan.protectedAreas ?? [] };
 }
 
-function screensFor(idea) {
+function screensFor(idea, catalogPhotos) {
   if (idea.format === "carousel") return idea.carouselScript.map(slide => ({ ...slide }));
   const rule = idea.creativePrompt?.match(/TEXTO EXATO DA (?:CAPA\/ARTE|ARTE)\s*:\s*['“"]([^\r\n'”"]+)['”"]/i);
   const lines = idea.keyMessage.trim().split(/\r?\n\s*\r?\n/);
+  if (catalogPhotos) {
+    const headline = rule?.[1] ?? idea.title;
+    return [{ headline, body: (headline === lines[0] ? lines.slice(1) : lines).join("\n"), cta: idea.cta }];
+  }
   return [{ headline: rule?.[1] || lines[0], body: rule ? idea.keyMessage : lines.slice(1).join("\n"), cta: idea.cta }];
+}
+
+async function submitArt(key, idea, brand, images, quality) {
+  if (mode === "schedule" && localTime() >= slot) throw new Error(`A peça ficou pronta depois de ${slot}`);
+  const result = await callContainer(backend, { ...key, action: mode, ideaId: idea.id, updatedAt: idea.updatedAt, images });
+  const post = result.scheduled ?? result.submitted;
+  if (post) {
+    const networks = new Set(post.destinations.map(item => item.network));
+    if (networks.size !== firstNetworks.size || ![...networks].every(network => firstNetworks.has(network))) throw new Error("Redes registradas divergentes");
+  }
+  return { brand: brand.name, ...result, quality };
 }
 
 async function runWorkspace(workspaceId) {
   const key = { workspaceId, slot };
   if (mode === "reconcile") return callContainer(backend, { ...key, action: "reconcile" });
-  const selection = await callContainer(backend, { ...key, action: "select" });
+  const selection = await callContainer(backend, { ...key, action: "select", allowCreate: submitting });
   if (selection.existing || selection.empty) return selection;
-  const { idea, brand, references } = selection;
-  const screens = screensFor(idea);
+  const { idea, brand, references, catalogPhotos } = selection;
+  const screens = screensFor(idea, catalogPhotos);
   if (mode === "select") return { brand: brand.name, idea: idea.externalId, title: idea.title, screens: screens.length, slot };
+  if (catalogPhotos) {
+    const rendered = [];
+    for (const [i, screen] of screens.entries()) {
+      const photos = i === 0 ? catalogPhotos.slice(0, 3) : [catalogPhotos[(i - 1) % catalogPhotos.length]];
+      rendered.push(await callContainer(renderer, { ...brand, ...screen, catalogPhotos: photos, layout: "top", logoPlacement: "top_left" }));
+    }
+    return submitArt(key, idea, brand, rendered.map(item => item.image),
+      rendered.map((item, i) => ({ screen: i + 1, ...item.quality })));
+  }
   const jobDir = await mkdtemp(join(agentHome, "jobs", "editorial-"));
   const user = (await readFile("/etc/passwd", "utf8")).split("\n").find(line => line.startsWith("vorix-codex:"))?.split(":");
   if (!user) throw new Error("Usuário dedicado do Codex indisponível");
@@ -164,14 +193,7 @@ async function runWorkspace(workspaceId) {
         }
       }
     }
-    if (mode === "schedule" && localTime() >= slot) throw new Error(`A peça ficou pronta depois de ${slot}`);
-    const action = mode === "validate" ? "validate" : "schedule";
-    const result = await callContainer(backend, { ...key, action, ideaId: idea.id, updatedAt: idea.updatedAt, images: final });
-    if (result.scheduled) {
-      const networks = result.scheduled.destinations.map(item => item.network);
-      if (networks.length !== 2 || !networks.every(network => firstNetworks.has(network))) throw new Error("Redes registradas divergentes");
-    }
-    return { brand: brand.name, ...result, quality: qualityReports };
+    return await submitArt(key, idea, brand, final, qualityReports);
   } finally {
     await rm(jobDir, { recursive: true, force: true });
   }
@@ -179,21 +201,22 @@ async function runWorkspace(workspaceId) {
 
 const targets = workspace ? [workspace] : workspaces;
 let loginError;
-if (mode === "schedule") {
+if (mode === "schedule" && targets.some(workspaceId => workspaceId !== cmkvWorkspaceId)) {
   try { await processOutput("runuser", [...agent, "login", "status"], "", 15000); }
   catch (error) { loginError = error; }
 }
 for (const pair of [targets.slice(0,2), targets.slice(2)]) {
   await Promise.all(pair.map(async workspaceId => {
     const values = { slot, workspace: workspaceId };
+    const authError = workspaceId === cmkvWorkspaceId ? undefined : loginError;
     try {
-      if (loginError) throw loginError;
+      if (authError) throw authError;
       console.log(JSON.stringify({ time: new Date().toISOString(), ...values, ...await runWorkspace(workspaceId) }));
     } catch (error) {
       console.error(JSON.stringify({ time: new Date().toISOString(), ...values, error: error.message.replace(/([?&]sig=)[^&\s]+/g, "$1[redacted]") }));
       process.exitCode = 1;
-      if (mode === "schedule") {
-        await callContainer(backend, { workspaceId, slot, action: "report_failure", code: loginError ? "codex_auth" : "preparation" })
+      if (submitting) {
+        await callContainer(backend, { workspaceId, slot, action: "report_failure", code: authError ? "codex_auth" : "preparation" })
           .catch(() => console.error(JSON.stringify({ ...values, error: "Falha ao registrar o alerta por e-mail" })));
       }
     }

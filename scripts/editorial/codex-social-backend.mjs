@@ -4,11 +4,15 @@ import sharp from "sharp";
 import { buildApiContainer } from "./dist/interfaces/api/di/container.js";
 import { loadApiConfig } from "./dist/interfaces/api/config/api-config.js";
 import { resolveEffectiveEntitlements } from "./dist/application/billing/entitlement-use-cases.js";
+import { parseManualEditorialIdea } from "./dist/domain/editorial/editorial-idea.model.js";
 import { hasPermission } from "./dist/domain/identity/identity.model.js";
 import { classifyObjectKeyOwner, parseOwnedObjectUrl, signForExternalPublication } from "./dist/shared/utils/object-url-signing.js";
 
 // Loaded on stdin from the host, in the Vorix API container. The renderer has no DB access.
 const tenantId = "tenant-vorix";
+const cmkvWorkspaceId = "workspace-cee-prelaunch-mv47cmfh";
+// Estampas selecionadas do catálogo da CMKV para pautas criadas automaticamente.
+const cmkvEditorialProducts = ["000033", "000035", "000037", "000039", "000043", "000044", "000047", "000048"];
 // Por workspace: contas IG+FB e, opcionalmente, como aplicar a logo nesta marca.
 // logo.placement: top_left|top_center|top_right|bottom_left|bottom_center|bottom_right (fixa a posição);
 // logo.treatment: auto|none|shadow|halo|plate (auto = sem caixa, sombra suave só se faltar contraste);
@@ -17,7 +21,7 @@ const brands = new Map([
   ["workspace-mwmumsxd-fmvh3h", { accounts: ["soc-mwmvbruu-sz6rkd12", "soc-mwmvbryk-dthxstki"], logo: {} }],
   ["workspace-mscc9pi2-jkvwbo", { accounts: ["soc-mwk1mgoy-xhcr2duq", "soc-mwk1my6f-lbham9eo"], logo: {} }],
   ["workspace-mwmu8kgf-uhe66l", { accounts: ["soc-mwmu9f8k-kj2covm2", "soc-mwmugp3j-hwva5nax"], logo: {} }],
-  ["workspace-cee-prelaunch-mv47cmfh", { accounts: ["soc-mwkwg3lc-zj3g4xyk", "soc-mwmuj7ud-3py2gdyo"], logo: {} }],
+  [cmkvWorkspaceId, { accounts: ["soc-mwkwg3lc-zj3g4xyk", "soc-mwmuj7ud-3py2gdyo"], logo: {} }],
 ]);
 const timezone = "America/Sao_Paulo";
 const prefix = "codex-editorial-v1";
@@ -83,8 +87,80 @@ function compareIdeas(a, b) {
     || a.createdAt.localeCompare(b.createdAt) || a.externalId.localeCompare(b.externalId);
 }
 
+async function cmkvCatalogPhotos() {
+  const { rows } = await db.query(`select distinct p.code, v.option_values->>'color' as color, v.image_url as url
+    from products p join product_variants v on v.product_id=p.id and v.workspace_id=p.workspace_id and v.tenant_id=p.tenant_id
+    where p.tenant_id=$1 and p.workspace_id=$2 and p.active and v.active and v.image_url is not null
+      and p.details->>'siteVisible'='true' and p.details->>'catalogVisible'='true' and p.details->>'type'='APPAREL'
+      and coalesce(v.option_values->>'color','') <> ''
+    order by p.code, color, url`, [tenantId, workspaceId]);
+  return rows;
+}
+
+function cmkvIdeaPhotos(idea, photosByUrl) {
+  const photos = (idea.referenceImages ?? []).map(url => photosByUrl.get(url));
+  const fits = idea.format === "carousel" ? photos.length >= 2 : photos.length >= 1 && photos.length <= 3;
+  return fits && photos.every(Boolean) ? photos : undefined;
+}
+
+function cmkvFallbackIdea(slot, products, previous) {
+  const lastSlot = code => previous.findIndex(item => item.codes?.includes(code));
+  const product = [...products].sort(([a], [b]) => {
+    return lastSlot(b) - lastSlot(a) || a.localeCompare(b);
+  }).find(([, photos]) => photos.length >= 2);
+  requireCondition(product, "Catálogo da CMKV sem duas fotos de cores distintas dos modelos editoriais");
+  const [code, photos] = product;
+  const uses = previous.filter(item => item.codes?.includes(code)).length;
+  const pair = [photos[uses % photos.length], photos[(uses + 1) % photos.length]];
+  const colors = pair.map(photo => photo.color.toLocaleLowerCase("pt-BR"));
+  const themes = [
+    ["Uma estampa, duas escolhas", "Qual cor você usaria com jeans?"],
+    ["Dois jeitos de usar a mesma estampa", "Qual cor combina mais com seu dia a dia?"],
+    ["O look começa pela cor", "Qual versão você colocaria no próximo look?"],
+  ];
+  const [title, question] = themes[uses % themes.length];
+  return parseManualEditorialIdea({
+    title, format: "single_image", category: "Vitrine CMKV", approach: "Comparação de cores",
+    keyMessage: `${title}\n\n${colors.join(" ou ")}?`,
+    caption: `${question} Veja o modelo ${code} da CMKV em ${colors.join(" e ")} e confira as opções no catálogo.\n\n#CMKVWears #CamisetaEstampada #ModaCasual`,
+    cta: "Confira no catálogo", suggestedDate: slot.slice(0, 10),
+    referenceImages: pair.map(photo => photo.url),
+  }, `CMKV-AUTO-${slot.slice(0, 10)}-${slot.slice(11, 13)}`);
+}
+
+async function selectCmkvIdea({ slot, ideas, candidates, used, allowCreate }) {
+  const photos = await cmkvCatalogPhotos();
+  const photosByUrl = new Map(photos.map(photo => [photo.url, photo]));
+  const fallbackId = `CMKV-AUTO-${slot.slice(0, 10)}-${slot.slice(11, 13)}`;
+  const current = ideas.find(idea => idea.externalId === fallbackId);
+  for (const idea of candidates) {
+    if (idea.externalId.startsWith("CMKV-AUTO-") && idea.externalId !== fallbackId) continue;
+    const catalogPhotos = cmkvIdeaPhotos(idea, photosByUrl);
+    if (catalogPhotos) return { idea, catalogPhotos };
+  }
+  if (!allowCreate) return {};
+  requireCondition(!current, "A pauta automática deste horário não tem fotos oficiais válidas");
+  const products = new Map(cmkvEditorialProducts.map(code => [code, []]));
+  for (const photo of photos) {
+    const group = products.get(photo.code);
+    if (group && !group.some(entry => entry.color === photo.color || entry.url === photo.url)) group.push(photo);
+  }
+  const fallback = cmkvFallbackIdea(slot, products, used);
+  await c.editorialIdeaRepository.importMany({ tenantId, workspaceId, ideas: [fallback] });
+  const { rows } = await db.query("select id from editorial_ideas where tenant_id=$1 and workspace_id=$2 and external_id=$3",
+    [tenantId, workspaceId, fallback.externalId]);
+  const idea = rows[0] && await c.editorialIdeaRepository.get(workspaceId, rows[0].id);
+  const catalogPhotos = idea?.status === "available" && cmkvIdeaPhotos(idea, photosByUrl);
+  requireCondition(catalogPhotos, "Não foi possível recuperar a pauta automática da CMKV");
+  return { idea, catalogPhotos };
+}
+
 function summarizes(post) {
   return { id: post.id, state: post.state, destinations: post.destinations.map(({ network, state, externalUrl, problem }) => ({ network, state, externalUrl, problem })) };
+}
+
+function publishedOnBoth(post) {
+  return post.destinations.length === 2 && post.destinations.every(destination => destination.state === "PUBLISHED");
 }
 
 async function reconcile() {
@@ -95,7 +171,7 @@ async function reconcile() {
   [tenantId, workspaceId, `social:${prefix}:%`]);
   for (const row of rows) {
     const post = await c.social.posts.get({ ...scope, postId: row.id });
-    if (post.destinations.length === 2 && post.destinations.every(destination => destination.state === "PUBLISHED")) {
+    if (publishedOnBoth(post)) {
       await db.query(`update editorial_ideas set status='published',status_changed_at=now(),updated_at=now()
         where id=$1 and workspace_id=$2 and tenant_id=$3 and status in ('available','approved')`, [row.editorial_idea_id, workspaceId, tenantId]);
     }
@@ -120,7 +196,7 @@ async function run() {
   if (mode === "report_failure") {
     if (!request.code || !["codex_auth", "preparation"].includes(request.code)) throw new Error("Categoria de falha editorial inválida");
     const ideas = await c.editorialIdeaRepository.listByWorkspace(workspaceId);
-    if (!ideas.some(idea => idea.status === "available" && ["single_image", "carousel"].includes(idea.format)
+    if (workspaceId !== cmkvWorkspaceId && !ideas.some(idea => idea.status === "available" && ["single_image", "carousel"].includes(idea.format)
       && (!idea.scheduledDate || idea.scheduledDate <= slot.slice(0, 10)))) return { reported: false };
     const cause = request.code === "codex_auth" ? "O Codex do servidor precisa ser autorizado novamente."
       : "A automação não conseguiu preparar ou agendar a pauta para esse horário.";
@@ -137,18 +213,36 @@ async function run() {
 
   if (mode === "select") {
     const ideas = (await c.editorialIdeaRepository.listByWorkspace(workspaceId)).filter(idea => idea.status === "available" && (!idea.scheduledDate || idea.scheduledDate <= slot.slice(0,10)));
-    const used = await db.query(`select distinct source_artifacts->0->'payload'->>'editorialIdeaId' as id from publication_plans
-      where tenant_id=$1 and workspace_id=$2 and idempotency_key like $3`, [tenantId,workspaceId,`social:${prefix}:%`]);
+    const used = await db.query(`select source_artifacts->0->'payload'->>'editorialIdeaId' as id,
+      source_artifacts->0->'payload'->'catalogProductCodes' as codes from publication_plans
+      where tenant_id=$1 and workspace_id=$2 and idempotency_key like $3 order by created_at desc`, [tenantId,workspaceId,`social:${prefix}:%`]);
     const usedIds = new Set(used.rows.map(row => row.id));
-    const idea = ideas.filter(item => !usedIds.has(item.id) && ["single_image", "carousel"].includes(item.format)).sort(compareIdeas)[0];
+    const candidates = ideas.filter(item => !usedIds.has(item.id) && ["single_image", "carousel"].includes(item.format)).sort(compareIdeas);
+    if (workspaceId === cmkvWorkspaceId) {
+      const { idea, catalogPhotos } = await selectCmkvIdea({ slot, ideas, candidates, used: used.rows, allowCreate: request.allowCreate });
+      if (!idea) return { brand: workspace.name, empty: true };
+      const photos = await Promise.all(catalogPhotos.map(async photo => ({
+        color: photo.color, data: (await ownedImage(photo.url)).toString("base64"),
+      })));
+      return { idea, brand: await brandFor(workspace, brandConfig), catalogPhotos: photos };
+    }
+    const idea = candidates[0];
     if (!idea) return { brand: workspace.name, empty: true, videoIdeas: ideas.filter(item => item.format === "video").length };
     const references = await Promise.all((idea.referenceImages ?? []).map(async url => (await ownedImage(url)).toString("base64")));
     return { idea, brand: await brandFor(workspace, brandConfig), references };
   }
 
-  requireCondition(mode === "validate" || mode === "schedule", "Operação editorial inválida");
+  const publishNow = mode === "publish" && workspaceId === cmkvWorkspaceId;
+  requireCondition(mode === "validate" || mode === "schedule" || publishNow, "Operação editorial inválida");
   const idea = await c.editorialIdeaRepository.get(workspaceId, request.ideaId);
   requireCondition(idea?.status === "available" && idea.updatedAt === request.updatedAt, "A pauta mudou durante a geração");
+  let catalogProductCodes;
+  if (workspaceId === cmkvWorkspaceId) {
+    const photos = await cmkvCatalogPhotos();
+    const sources = cmkvIdeaPhotos(idea, new Map(photos.map(photo => [photo.url, photo])));
+    requireCondition(sources, "As fotos oficiais da pauta da CMKV mudaram durante a preparação");
+    catalogProductCodes = [...new Set(sources.map(photo => photo.code))];
+  }
   const format = idea.format === "carousel" ? "carousel" : "feed_image";
   const count = format === "carousel" ? idea.carouselScript?.length : 1;
   requireCondition(count && request.images.length === count, "Quantidade de artes diferente do roteiro da pauta");
@@ -171,14 +265,17 @@ async function run() {
   const seen = await db.query(`select count(*)::int as total from social_post_destinations d join publication_targets t on t.id=d.target_id
     where d.tenant_id=$1 and d.workspace_id=$2 and t.status not in ('cancelled','failed') and d.caption=$3 and d.created_at >= $4`, [tenantId, workspaceId, idea.caption, idea.createdAt]);
   requireCondition(seen.rows[0].total === 0, "Já existe uma publicação com a mesma legenda desta pauta");
-  const post = await c.social.posts.create({ ...input, actor, idempotencyKey, when: { mode: "schedule", localDateTime: slot, timezone }, source: {
+  const when = publishNow ? { mode: "now" } : { mode: "schedule", localDateTime: slot, timezone };
+  const post = await c.social.posts.create({ ...input, actor, idempotencyKey, when, source: {
     artifacts: [{ artifactId: idea.id, artifactType: "image", schemaId: "social.post", schemaVersion: 1,
       checksum: createHash("sha256").update(media.map(item => item.url).join("\n")).digest("hex"),
-      payload: { editorialIdeaId: idea.id, externalId: idea.externalId, imageUrls: media.map(item => item.url) } }],
+      payload: { editorialIdeaId: idea.id, externalId: idea.externalId, imageUrls: media.map(item => item.url),
+        ...(catalogProductCodes ? { catalogProductCodes } : {}) } }],
   } });
-  await db.query(`update editorial_ideas set status='approved',status_changed_at=now(),updated_at=now()
-    where id=$1 and workspace_id=$2 and tenant_id=$3 and status='available'`, [idea.id, workspaceId, tenantId]);
-  return { scheduled: summarizes(post), idea: idea.externalId, slot };
+  await db.query(`update editorial_ideas set status=$4,status_changed_at=now(),updated_at=now()
+    where id=$1 and workspace_id=$2 and tenant_id=$3 and status='available'`,
+  [idea.id, workspaceId, tenantId, publishedOnBoth(post) ? "published" : "approved"]);
+  return { [publishNow ? "submitted" : "scheduled"]: summarizes(post), idea: idea.externalId, slot };
 }
 
 try {

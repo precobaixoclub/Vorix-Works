@@ -335,3 +335,23 @@ test("versão refeita chega marcada com o motivo; refação que falhou avisa o a
   assert.match(sent.at(-1).body, /⚠️ Não consegui refazer a arte de CMKV Wears: tela 1 reprovada pelo Quality Gate\. A ideia voltou ao Bolsão\./);
   assert.equal(await service.notifyFailedRedos(), 0, "aviso único");
 });
+
+// Regressão (26/11/2026): "Pode refazer" depois do aviso de falha aprovou a versão refeita que tinha acabado de chegar.
+test("aprovação só com a palavra de aprovação: 'Pode refazer', 'Ok, mas…' perguntam de novo e nunca aprovam", async () => {
+  assert.deepEqual(parseApprovalReply("1 obrigado"), { decision: "approve" });
+  assert.deepEqual(parseApprovalReply("Ok, pode publicar 👍"), { decision: "approve" });
+  assert.deepEqual(parseApprovalReply("Pode refazer"), { decision: "approve", unclear: true });
+  assert.deepEqual(parseApprovalReply("ok mas troca a frase"), { decision: "approve", unclear: true });
+  const { service, repository } = setup();
+  await configure(service);
+  repository.state.toRequest.push({ tenantId: "t1", workspaceId: "ws-cmkv", publicationId: "pub-1" });
+  await service.dispatchPending();
+  const [request] = repository.state.requests;
+  const unclear = await captureApprovalReply(repository, { connectionId: "conn-vorix", fromPhone: APPROVER, text: "Pode refazer", isGroup: false, fromMe: false });
+  assert.equal(unclear.handled, true);
+  assert.match(unclear.reply, new RegExp(`Não entendi se é para aprovar a publicação ${request.code}`));
+  assert.equal(request.status, "sent", "continua aguardando a resposta");
+  const quotedUnclear = await captureApprovalReply(repository, { connectionId: "conn-vorix", fromPhone: APPROVER, text: "sim mas muda a cor", quotedExternalMessageId: "m1", isGroup: false, fromMe: false });
+  assert.match(quotedUnclear.reply, /Não entendi/);
+  assert.equal(request.status, "sent");
+});

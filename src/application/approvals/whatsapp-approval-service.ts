@@ -421,6 +421,7 @@ export async function captureApprovalReply(
     : undefined;
   if (quoted && quoted.approverPhone === phone) {
     if (!open.some((request) => request.id === quoted.id)) return { handled: true, reply: approvalAckText.late(quoted.code) };
+    if (parsed.unclear) return { handled: true, reply: approvalAckText.unclear(quoted.code) };
     const decided = await repository.decideRequest(quoted.id, parsed.decision, parsed.reason, (input.now ?? new Date()).toISOString());
     return decided ? { handled: true, requestId: quoted.id } : { handled: true, reply: approvalAckText.late(quoted.code) };
   }
@@ -428,6 +429,8 @@ export async function captureApprovalReply(
   if (!match) return { handled: false };
   if ("ambiguous" in match) return { handled: true, reply: approvalAckText.ambiguous(match.ambiguous) };
   if ("unknownCode" in match) return { handled: true, reply: approvalAckText.unknownCode(match.unknownCode) };
+  // "Pode refazer", "Ok, mas…": nunca aprova sem certeza — pergunta de novo.
+  if (parsed.unclear) return { handled: true, reply: approvalAckText.unclear(match.request.code) };
   const decided = await repository.decideRequest(match.request.id, parsed.decision, parsed.reason, (input.now ?? new Date()).toISOString());
   return decided ? { handled: true, requestId: match.request.id } : { handled: true, reply: approvalAckText.late(match.request.code) };
 }

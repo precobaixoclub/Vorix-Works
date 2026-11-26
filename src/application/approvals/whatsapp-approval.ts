@@ -7,7 +7,11 @@
 export type ApprovalDecision = "approve" | "reject";
 export type ApprovalTimeoutPolicy = "skip" | "publish";
 
-export type ParsedApprovalReply = { decision: ApprovalDecision; code?: string; reason?: string };
+/** `unclear`: começa como aprovação mas continua com outro assunto ("Pode refazer", "Ok, mas…") — nunca aprova. */
+export type ParsedApprovalReply = { decision: ApprovalDecision; code?: string; reason?: string; unclear?: boolean };
+
+/** O que pode acompanhar uma aprovação sem mudar o sentido ("1 obrigado", "pode publicar 👍"). */
+const APPROVE_FILLER = /^(sim|s|ok|okay|pode|publica|publicar|aprovado|aprovada|aprovo|isso|obrigad[oa]|valeu|vlw|beleza|blz|perfeito|perfeita|otimo|ótimo|ótima|otima|top|show|tá|ta|bom|boa|massa|👍|✅|🙏|😊|❤️|!+)$/;
 
 const APPROVE = /^(1|sim|s|ok|aprovar|aprovado|aprovo|aprova|pode|pode publicar|publica|publicar|👍|✅)$/;
 const REJECT = /^(2|nao|não|n|reprovar|reprovado|reprovo|reprova|recusar|recuso|não publica|nao publica|👎|❌)$/;
@@ -43,6 +47,11 @@ export function parseApprovalReply(text: string | undefined): ParsedApprovalRepl
     const decision: ApprovalDecision | undefined = APPROVE.test(head) ? "approve" : REJECT.test(head) ? "reject" : undefined;
     if (!decision) continue;
     const reason = rest.slice(size).join(" ").replace(/^[-–:,.\s]+/, "").trim();
+    // Aprovação só com a palavra de aprovação (e cortesias). "Pode refazer" aprovava o pedido aberto
+    // (produção, 26/11/2026): texto a mais depois de "ok/sim/pode" fica sem decisão e o sistema pergunta.
+    if (decision === "approve" && lowered.slice(size).some((word) => !APPROVE_FILLER.test(word))) {
+      return { decision, ...(code ? { code } : {}), unclear: true };
+    }
     return { decision, ...(code ? { code } : {}), ...(decision === "reject" && reason ? { reason: reason.slice(0, 300) } : {}) };
   }
   return undefined;
@@ -80,6 +89,7 @@ export const approvalAckText = {
   approved: (brand: string, when?: string) => `✅ Aprovado — ${brand}. ${when ? `Será publicado em ${when}.` : "Publicando agora."}`,
   rejected: (brand: string, reason?: string) => `❌ Reprovado — ${brand}. A publicação foi cancelada${reason ? ` (motivo: ${reason})` : ""}.`,
   redoQueued: (brand: string, reason: string, attempt: number, max: number) => `❌ Reprovado — ${brand} (motivo: ${reason}). Vou refazer a arte com base no seu motivo e te mando a nova versão para aprovar (ajuste ${attempt} de ${max}).`,
+  unclear: (code: string) => `Não entendi se é para aprovar a publicação ${code}. Responda só *1* para aprovar, ou *2* e o que precisa mudar para eu refazer.`,
   redoFailed: (brand: string, detail?: string) => `⚠️ Não consegui refazer a arte de ${brand}${detail ? `: ${detail.slice(0, 220)}` : ""}. A ideia voltou ao Bolsão.`,
   redoLimit: (brand: string, reason: string | undefined, max: number) => `❌ Reprovado — ${brand}${reason ? ` (motivo: ${reason})` : ""}. Já foram ${max} ajustes nesta ideia: ela voltou ao Bolsão para revisão.`,
   expiredSkip: (brand: string, when?: string) => `⏰ Sem resposta — ${brand}: a publicação${when ? ` das ${when}` : ""} não foi feita.`,

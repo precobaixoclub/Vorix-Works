@@ -172,6 +172,11 @@ test("composição: arquétipos variam com o histórico e entre telas do carross
   const archetypes = plan.screens.map((item) => item.spec.composition.archetype);
   assert.equal(new Set(archetypes).size, 3, `telas diferentes: ${archetypes}`);
   assert.equal(plan.screens[0].spec.seriesKey, "ideia:idea-1");
+  // Regressão (26/11/2026): pauta conceitual reprovada por repetição precisa ter para onde trocar.
+  const noRefs = { primary: undefined, variants: [], logos: [], complementary: [], transmitted: [], excluded: [], missing: [] };
+  const conceptual = chooseComposition({ mode: "conceptual", idea: { title: "O robô aspirador passa embaixo?" }, references: noRefs, history: [], allowAi: true, seed: "a" });
+  assert.equal(conceptual.archetype.id, "concept_scene");
+  assert.ok(conceptual.alternatives.includes("typographic_statement"), `alternativas: ${conceptual.alternatives}`);
 });
 
 test("repetição: imagem quase idêntica ou mesma estrutura seguida é reprovada; na mesma série só a tela idêntica reprova", () => {

@@ -108,9 +108,12 @@ export function chooseComposition(input: ChooseCompositionInput): CompositionCho
     && (!item.needsCutout || input.references.primary?.photoKind !== "scene"));
   const primaryPool = eligible.filter((item) => !item.onlyAsAlternative);
   const pool = primaryPool.length ? primaryPool : eligible;
+  // Arquétipos "só como alternativa" (ex.: frase tipográfica) entram no fim da fila de troca. Antes ficavam
+  // de fora: pauta conceitual reprovada por repetição não tinha para onde trocar (produção, 26/11/2026).
+  const backups = eligible.filter((item) => !pool.includes(item)).map((item) => item.id);
   if (input.seriesArchetype) {
     const series = pool.find((item) => item.id === input.seriesArchetype);
-    if (series) return { archetype: series, score: 0, reasons: ["Mesma família visual da série (carrossel/campanha padronizada)."], alternatives: pool.filter((item) => item !== series).map((item) => item.id) };
+    if (series) return { archetype: series, score: 0, reasons: ["Mesma família visual da série (carrossel/campanha padronizada)."], alternatives: [...pool.filter((item) => item !== series).map((item) => item.id), ...backups] };
   }
   if (!pool.length) {
     const fallback = available.find((item) => item.operation === "deterministic_composite")!;
@@ -133,7 +136,7 @@ export function chooseComposition(input: ChooseCompositionInput): CompositionCho
     && (input.allowAi || item.operation === "deterministic_composite") && (!item.minVariants || variants >= item.minVariants)
     && (!item.needsMobileCapture || [input.references.primary, ...input.references.variants].some((reference) => reference?.form === "mobile"))
     && (!item.needsCutout || input.references.primary?.photoKind !== "scene"));
-  return { archetype: best.archetype, score: best.score, reasons, alternatives: [...scored.slice(1).map((item) => item.archetype.id), ...excludedAgain.map((item) => item.id)] };
+  return { archetype: best.archetype, score: best.score, reasons, alternatives: [...scored.slice(1).map((item) => item.archetype.id), ...backups, ...excludedAgain.map((item) => item.id).filter((id) => !backups.includes(id))] };
 }
 
 export type CreativeSpec = {

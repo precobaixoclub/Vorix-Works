@@ -488,6 +488,47 @@ services:
     cpus: 2.0
     pids_limit: 128
 
+  # Motor de vídeo (Marketing › Criar vídeo com IA). DESLIGADO por padrão: só sobe com
+  # `--profile video` (ativação aprovada). Um render por vez (a fila garante), limites da medição
+  # controlada (2 vCPU / 2 GiB, sem swap extra) e prioridade de CPU abaixo dos demais serviços.
+  video-worker:
+    profiles: ["video"]
+    logging: *bounded-logging
+    build:
+      context: .
+      dockerfile: docker/video-worker.Dockerfile
+    restart: unless-stopped
+    # Mesmo usuário do worker do Meetings: grava o MP4 no volume de uploads (dono root).
+    user: "0:0"
+    depends_on:
+      zuno-postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: "postgres://zuno:${ZUNO_POSTGRES_PASSWORD}@zuno-postgres:5432/zuno"
+      JWT_SECRET: "${ZUNO_JWT_SECRET}"
+      ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:-}"
+      VIDEO_AI_MODEL: "${VIDEO_AI_MODEL:-}"
+      VIDEO_RENDER_THREADS: "${VIDEO_RENDER_THREADS:-2}"
+      VIDEO_RENDER_PRESET: "${VIDEO_RENDER_PRESET:-veryfast}"
+      VIDEO_MAX_DURATION_SECONDS: "${VIDEO_MAX_DURATION_SECONDS:-90}"
+      VIDEO_WHISPER_THREADS: "${VIDEO_WHISPER_THREADS:-2}"
+      MEETINGS_WHISPER_MODEL: "${MEETINGS_WHISPER_MODEL:-small}"
+      OBJECT_STORAGE_ENABLED: "${OBJECT_STORAGE_ENABLED:-true}"
+      OBJECT_STORAGE_DRIVER: "${OBJECT_STORAGE_DRIVER:-local}"
+      OBJECT_STORAGE_LOCAL_DIR: "${OBJECT_STORAGE_LOCAL_DIR:-/app/uploads}"
+      OBJECT_STORAGE_PUBLIC_BASE_URL: "${OBJECT_STORAGE_PUBLIC_BASE_URL:-https://api.vorixworks.com/uploads}"
+    volumes:
+      - zuno_uploads:/app/uploads
+      - zuno_meetings_models:/data/whisper-cache
+    networks: [zuno_network]
+    init: true
+    mem_limit: 2048m
+    mem_reservation: 128m
+    memswap_limit: 2048m
+    cpus: 2.0
+    cpu_shares: 256
+    pids_limit: 256
+
   # Gravador: Chrome + PulseAudio. Grava SÓ ÁUDIO por padrão (sem codificar vídeo), 1 login por vez.
   # Limites rígidos: se o Chrome estourar, cai a gravação — nunca a API, o site ou o WhatsApp.
   meetings-recorder:

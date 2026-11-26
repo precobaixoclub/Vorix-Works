@@ -295,6 +295,9 @@ export type ApiConfig = {
     schedulingLateMsMax: number;
     analyticsDeadLetterMax: number;
   };
+  /** Marketing › Criar vídeo com IA — ativação gradual por workspace (VIDEO_ENGINE_WORKSPACES = ids
+   * separados por vírgula, ou "*"). Vazio = desligado em todo lugar (rollback = apagar a variável). */
+  videoEngine: { enabledWorkspaces: readonly string[]; allWorkspaces: boolean; musicLibraryAvailable: boolean };
   /** Upload de mídia (foto/vídeo) para posts — hospeda num bucket S3-compatível (AWS S3, Cloudflare
    * R2, DigitalOcean Spaces, MinIO) para gerar a URL pública que TikTok/Meta exigem. */
   objectStorage: {
@@ -740,6 +743,12 @@ export function loadApiConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
     radar: {
       enabled: env.RADAR_ENABLED?.trim() === "true",
       aiEnabled: env.RADAR_AI_ENABLED?.trim() === "true",
+    },
+    videoEngine: {
+      enabledWorkspaces: (env.VIDEO_ENGINE_WORKSPACES ?? "").split(",").map((id) => id.trim()).filter((id) => id && id !== "*"),
+      allWorkspaces: (env.VIDEO_ENGINE_WORKSPACES ?? "").split(",").map((id) => id.trim()).includes("*"),
+      // A biblioteca de trilhas fica no worker; a API só anuncia se a operação a declarou instalada.
+      musicLibraryAvailable: env.VIDEO_MUSIC_LIBRARY_AVAILABLE?.trim() === "true",
     },
     objectStorage: {
       enabled: objectStorageEnabled,

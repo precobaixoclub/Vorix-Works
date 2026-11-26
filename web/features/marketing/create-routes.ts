@@ -3,7 +3,8 @@
  * Publicações e a rota antiga `/social/compose` apontam todos para cá.
  */
 
-export type CreateMode = "ia" | "pronto";
+/** `video` = Criar vídeo com IA (aparece só com o motor de vídeo habilitado no workspace). */
+export type CreateMode = "ia" | "pronto" | "video";
 
 /** Parâmetros antigos de `/create` (atalho rápido da Home e da Produção) que já indicam a criação com IA. */
 const LEGACY_AI_PARAMS = ["draft", "format", "aspectRatio", "channel", "ideia"] as const;
@@ -13,7 +14,7 @@ const COMPOSER_PARAMS = ["media", "caption", "source"] as const;
 /** Qual modo abrir: o pedido explicitamente, ou o deduzido de links antigos; `undefined` = mostrar a escolha. */
 export function resolveCreateMode(params: URLSearchParams): CreateMode | undefined {
   const mode = params.get("modo");
-  if (mode === "ia" || mode === "pronto") return mode;
+  if (mode === "ia" || mode === "pronto" || mode === "video") return mode;
   if (COMPOSER_PARAMS.some((key) => params.has(key))) return "pronto";
   if (LEGACY_AI_PARAMS.some((key) => params.has(key))) return "ia";
   return undefined;

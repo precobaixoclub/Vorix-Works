@@ -37,6 +37,8 @@ import type { ProductionAspectRatio, ProductionChannel, ProductionFormat, Refere
 import { useProductionSettings } from "@/features/production-settings/hooks";
 import { useTenantCredits } from "@/features/workspace/hooks";
 import { useCreativeEngineWorkspaceStatus } from "@/features/creative-engine-entitlement/hooks";
+import { VideoCreateFlow } from "@/features/video-editing/VideoCreateFlow";
+import { getVideoEngineStatus } from "@/features/video-editing/api";
 
 type ComposerFormat = Exclude<ProductionFormat, "video">;
 type ContentTypeId = "publicacao" | "anuncio" | "story" | "carrossel";
@@ -112,6 +114,8 @@ export default function CreateHubPage() {
   );
 }
 
+const VIDEO_MODE = { mode: "video" as const, title: "Criar vídeo com IA", description: "Envie vídeos ou imagens e diga o que quer. A IA planeja a edição, monta o vídeo com a sua marca e você revisa antes de publicar.", icon: Video };
+
 const MODES: { mode: CreateMode; title: string; description: string; icon: typeof Sparkles }[] = [
   { mode: "ia", title: "Criar com IA", description: "Escolha uma ideia do Bolsão ou descreva uma nova. A IA cria arte e legenda com a identidade da sua marca; você revisa antes de publicar.", icon: Sparkles },
   { mode: "pronto", title: "Publicar conteúdo pronto", description: "Envie imagem, carrossel ou vídeo, escreva a legenda, escolha as redes e publique agora ou agende.", icon: Upload },
@@ -128,6 +132,10 @@ function CreateHub() {
   const posts = useSWR(access && can("marketing:social_read") ? ["social-feed", workspace.id] : null, () => listSocialPosts(workspace.id));
   const base = `/workspaces/${workspace.id}`;
   const step = mode === "pronto" ? 3 : 1;
+  // Motor de vídeo: só aparece quando habilitado para este workspace (ativação gradual).
+  const videoStatus = useSWR(["video-engine-status", workspace.id], () => getVideoEngineStatus(workspace.id).catch(() => undefined), { revalidateOnFocus: false });
+  const videoEnabled = videoStatus.data?.enabled === true;
+  const modes = videoEnabled ? [...MODES, VIDEO_MODE] : MODES;
 
   return (
     <main className="mx-auto w-full max-w-6xl px-3 py-5 sm:px-6 sm:py-8" data-testid="create-hub">
@@ -151,8 +159,8 @@ function CreateHub() {
         <ContentPipeline base={base} ideas={ideas.data} posts={posts.data?.posts} />
       </div>
 
-      <div role="tablist" aria-label="Como você quer criar" className={cn("mb-5 grid gap-3", mode ? "grid-cols-2" : "sm:grid-cols-2")} data-testid="create-modes">
-        {MODES.map((option) => {
+      <div role="tablist" aria-label="Como você quer criar" className={cn("mb-5 grid gap-3", mode ? (videoEnabled ? "grid-cols-3" : "grid-cols-2") : videoEnabled ? "sm:grid-cols-3" : "sm:grid-cols-2")} data-testid="create-modes">
+        {modes.map((option) => {
           const Icon = option.icon;
           const active = mode === option.mode;
           const blocked = option.mode === "pronto" && access !== undefined && !canPublish;
@@ -185,6 +193,8 @@ function CreateHub() {
         <AiCreateFlow ideas={ideas.data} ideasLoading={ideas.isLoading} ideasError={Boolean(ideas.error)} onIdeasChanged={() => void ideas.mutate()} />
       ) : mode === "pronto" ? (
         <SocialComposer embedded />
+      ) : mode === "video" ? (
+        videoStatus.data?.enabled ? <VideoCreateFlow status={videoStatus.data} /> : videoStatus.isLoading ? null : <p className="rounded-xl bg-muted px-4 py-3 text-sm text-muted-foreground">Criar vídeo com IA ainda não está habilitado para este espaço de trabalho.</p>
       ) : null}
     </main>
   );

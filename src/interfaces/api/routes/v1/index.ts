@@ -1,3 +1,4 @@
+import { buildVideoProjectsService, registerVideoProjectsRoutes } from "./video-projects.route.js";
 import {PostgresCommercialRuleRepository} from "../../../../infrastructure/storage/postgres/postgres-commercial-rule-repository.js";
 import { registerMarketplaceRoutes } from "./marketplaces.route.js";
 import { buildMarketplaceService } from "../../../../infrastructure/marketplaces/build-marketplace-service.js";
@@ -892,6 +893,10 @@ export async function registerV1Routes(app: FastifyInstance): Promise<void> {
     removeImageBackground: app.zunoContainer.removeImageBackground,
   });
   await registerWhatsappApprovalsRoutes(app, { service: app.zunoContainer.whatsappApprovals });
+  await registerVideoProjectsRoutes(app, {
+    service: buildVideoProjectsService({ pool: app.zunoContainer.pool, objectStorage: app.zunoContainer.objectStorage, videoEngine: app.zunoConfig.videoEngine }),
+    workspaceRepository: app.zunoContainer.workspaceRepository,
+  });
   await registerEditorialIdeasRoutes(app, {
     editorialIdeaRepository: app.zunoContainer.editorialIdeaRepository,
     workspaceRepository: app.zunoContainer.workspaceRepository,

@@ -251,3 +251,28 @@ export class FfmpegEditExecutor implements VideoEditExecutor {
     }
   }
 }
+
+/** Retenção do cache de intermediários: apaga arquivos mais velhos que `maxAgeMs` (por mtime). */
+export async function pruneVideoCache(cacheRoot: string, maxAgeMs: number, now = Date.now()): Promise<{ removed: number; freedBytes: number }> {
+  const { readdir: list, stat: info, rm: remove } = await import("node:fs/promises");
+  let removed = 0;
+  let freedBytes = 0;
+  const walk = async (dir: string): Promise<void> => {
+    const entries = await list(dir, { withFileTypes: true }).catch(() => []);
+    for (const entry of entries) {
+      const path = join(dir, entry.name);
+      if (entry.isDirectory()) {
+        await walk(path);
+        continue;
+      }
+      const stats = await info(path).catch(() => null);
+      if (stats && now - stats.mtimeMs > maxAgeMs) {
+        await remove(path, { force: true }).catch(() => undefined);
+        removed += 1;
+        freedBytes += stats.size;
+      }
+    }
+  };
+  await walk(cacheRoot);
+  return { removed, freedBytes };
+}

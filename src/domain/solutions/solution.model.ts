@@ -178,6 +178,9 @@ export const MARKETING_ROUTE_PREFIXES: readonly string[] = [
   "production-settings",
   "publications",
   "publication-media",
+  // Criar vídeo com IA (motor de vídeo).
+  "video-projects",
+  "video-versions",
   "publication-sync",
   "publication-providers/tiktok",
   "publication-providers/youtube",

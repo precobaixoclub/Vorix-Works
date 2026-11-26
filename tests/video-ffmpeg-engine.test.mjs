@@ -240,3 +240,18 @@ test("executor: limites, mídia ausente e cancelamento (processo morto, pasta li
   assert.equal(existsSync(join(dir, "x.mp4")), false);
   await cleanup(dir);
 });
+
+test("retenção do cache: apaga só intermediários mais velhos que o limite", async () => {
+  const { pruneVideoCache } = await import("../dist/infrastructure/video-editing/ffmpeg-edit-executor.js");
+  const { utimesSync, mkdirSync: mk } = await import("node:fs");
+  const dir = mkdtempSync(join(tmpdir(), "vorix-cache-"));
+  mk(join(dir, "ws-a"), { recursive: true });
+  writeFileSync(join(dir, "ws-a", "old.mp4"), Buffer.alloc(1000));
+  writeFileSync(join(dir, "ws-a", "new.mp4"), Buffer.alloc(500));
+  const tenDaysAgo = (Date.now() - 10 * 24 * 3600 * 1000) / 1000;
+  utimesSync(join(dir, "ws-a", "old.mp4"), tenDaysAgo, tenDaysAgo);
+  const result = await pruneVideoCache(dir, 7 * 24 * 3600 * 1000);
+  assert.deepEqual(result, { removed: 1, freedBytes: 1000 });
+  assert.deepEqual(readdirSync(join(dir, "ws-a")), ["new.mp4"]);
+  await cleanup(dir);
+});

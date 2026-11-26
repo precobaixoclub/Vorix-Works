@@ -83,7 +83,8 @@ function luminance(hex: string): number {
   return 0.2126 * r + 0.7152 * g + 0.0722 * b;
 }
 function contrastText(background: string, brand: BrandStyle): string {
-  return luminance(background) > 0.45 ? brand.darkHex : "#FFFFFF";
+  // Cruzamento do WCAG: escolhe sempre a cor de texto com maior contraste (dourado pede texto escuro).
+  return luminance(background) > 0.179 ? brand.darkHex : "#FFFFFF";
 }
 function darken(hex: string, amount: number): string {
   return `#${hexToRgb(hex).map((v) => Math.round(v * (1 - amount)).toString(16).padStart(2, "0")).join("").toUpperCase()}`;

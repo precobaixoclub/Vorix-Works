@@ -67,6 +67,8 @@ export type WhatsappApprovalServiceDeps = {
   connections: MessagingConnectionRepositoryPort;
   workspaces: WorkspaceRepositoryPort;
   provider?: MessagingProvider;
+  /** Publicação não aprovada (reprovada ou sem resposta): a ideia de origem volta para o Bolsão. */
+  onNotApproved?: (input: { tenantId: string; workspaceId: string; publicationId: string }) => Promise<void>;
   posts: {
     get(input: { tenantId: string; workspaceId: string; postId: string }): Promise<ApprovalPostView>;
     approve(input: { tenantId: string; workspaceId: string; postId: string; actor: { userId: string; role: TenantRole } }): Promise<unknown>;
@@ -263,6 +265,11 @@ export class WhatsappApprovalService {
   }
 
   /** Aplica as decisões recebidas pelo WhatsApp na publicação da marca certa. */
+  private async returnIdea(request: ApprovalRequest) {
+    await this.deps.onNotApproved?.({ tenantId: request.tenantId, workspaceId: request.workspaceId, publicationId: request.publicationId })
+      .catch((error) => this.deps.log?.(`ideia não voltou ao Bolsão (${request.publicationId}): ${error instanceof Error ? error.message : error}`));
+  }
+
   async applyDecisions(): Promise<number> {
     let applied = 0;
     for (const request of await this.deps.repository.listByStatus("decided", 20)) {
@@ -277,6 +284,7 @@ export class WhatsappApprovalService {
           await this.sendText(request.connectionId, request.approverPhone, approvalAckText.approved(brand, formatWhen(post.scheduledAt, post.timezone))).catch(() => undefined);
         } else {
           await this.deps.posts.cancel({ ...key, actor });
+          await this.returnIdea(request);
           await this.sendText(request.connectionId, request.approverPhone, approvalAckText.rejected(brand, request.reason)).catch(() => undefined);
         }
         await this.deps.repository.updateRequest(request.id, { status: "applied", appliedAt: this.now().toISOString() });
@@ -312,6 +320,7 @@ export class WhatsappApprovalService {
           await this.sendText(request.connectionId, request.approverPhone, approvalAckText.expiredPublish(brand, when)).catch(() => undefined);
         } else {
           await this.deps.posts.cancel({ ...key, actor });
+          await this.returnIdea(request);
           await this.sendText(request.connectionId, request.approverPhone, approvalAckText.expiredSkip(brand, when)).catch(() => undefined);
         }
         await this.deps.repository.updateRequest(request.id, { status: "expired", appliedAt: this.now().toISOString(), detail: rule?.onTimeout === "publish" ? "sem resposta: publicada pela regra da marca" : "sem resposta: não publicada" });

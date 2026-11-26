@@ -223,3 +223,21 @@ test("eco das mensagens do sistema ao aprovador não entra nas Conversas; o que 
   assert.equal(await isApprovalEcho(repository, { ...base, chatPhone: "+5511977776666", externalMessageId: "x", waitMs: 2_000 }), false);
   assert.ok(Date.now() - started < 500);
 });
+
+test("ideia do Bolsão só fica 'feita' se aprovada: reprovada ou sem resposta, volta a ficar disponível", async () => {
+  const { service, repository, posts } = setup();
+  const returned = [];
+  service.deps.onNotApproved = async (input) => { returned.push(input.publicationId); };
+  await configure(service);
+  posts.set("pub-2", { ...posts.get("pub-1") });
+  posts.set("pub-3", { ...posts.get("pub-1"), scheduledAt: "2026-11-25T18:01:00Z" });
+  repository.state.toRequest.push(...["pub-1", "pub-2", "pub-3"].map((publicationId) => ({ tenantId: "t1", workspaceId: "ws-cmkv", publicationId })));
+  await service.dispatchPending();
+  const [first, second] = repository.state.requests;
+  await captureApprovalReply(repository, { connectionId: "conn-vorix", fromPhone: "+5511988887777", text: `1 ${first.code}`, isGroup: false, fromMe: false });
+  await captureApprovalReply(repository, { connectionId: "conn-vorix", fromPhone: "+5511988887777", text: `2 ${second.code} não gostei`, isGroup: false, fromMe: false });
+  await service.applyDecisions();
+  assert.deepEqual(returned, ["pub-2"], "aprovada não volta; reprovada volta");
+  await service.expireDue();
+  assert.deepEqual(returned, ["pub-2", "pub-3"], "sem resposta com 'não publica' também volta");
+});

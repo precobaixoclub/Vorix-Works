@@ -1660,6 +1660,13 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
         if (!response.ok) throw new Error(`mídia indisponível (${response.status})`);
         return { data: Buffer.from(await response.arrayBuffer()), mimeType: response.headers.get("content-type") ?? "image/jpeg" };
       },
+      // Ideia do Bolsão só vira "feita" se aprovada: reprovada/sem resposta, volta a ficar disponível.
+      onNotApproved: async ({ tenantId, workspaceId, publicationId }) => {
+        await repositories.pool!.query(`update editorial_ideas i set status='available', status_changed_at=now(), updated_at=now()
+          from publication_plans p where p.id=$1 and p.tenant_id=$2 and p.workspace_id=$3
+            and i.tenant_id=p.tenant_id and i.workspace_id=p.workspace_id and i.id = p.source_artifacts->0->'payload'->>'editorialIdeaId'
+            and i.status='approved'`, [publicationId, tenantId, workspaceId]);
+      },
       idGenerator: () => `wap-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
     });
   }

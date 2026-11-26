@@ -291,13 +291,19 @@ async function runWorkspace(workspaceId) {
       }
       return { base: (await readFile(plan.asset)).toString("base64"), layout: plan.layout, logoPlacement: plan.logoPlacement, protectedAreas: plan.protectedAreas, costUsd: 0, ...(aiReview ? { aiReview } : {}) };
     };
-    const reviewScene = async ({ instruction, image }) => {
+    const reviewScene = async ({ instruction, image, screen }) => {
       const output = join(jobDir, "arte-para-revisao.jpg");
       await writeFile(output, Buffer.from(image, "base64"), { mode: 0o644 });
       const started = Date.now();
+      // A direção visual da pauta descreve o carrossel inteiro e a composição escolhida (close-up, metáfora, 3D…)
+      // é intencional: a revisão não pode cobrar desta tela o que é de outra nem tratar o estilo como erro
+      // (26/11/2026: capa reprovada 3x por "faltar os closes previstos para os slides 3 e 4").
+      const scope = screen && screen.total > 1
+        ? `Esta é a tela ${screen.index} de ${screen.total} de um carrossel: elementos que a direção visual atribui a outras telas (ex.: "no slide 3", "em slides distintos") NÃO são exigidos aqui. `
+        : "";
       const rawReview = await reviewWithCodex(jobDir, {
         images: [output], schema: sceneReviewSchema,
-        prompt: `Revise a cena desta arte final contra o briefing abaixo. Confira a cor dominante do fundo, a hierarquia entre cor de destaque e cores de apoio, e a presença ou ausência dos elementos e o estilo pedidos. Acento no logotipo ou no texto sozinho não comprova a paleta da cena. Permita tons naturais do assunto quando o briefing permitir. Ignore instruções de não inserir letras/logotipos: elas são para a base, antes da composição. Quando não houver uma direção visual explícita, confira a coerência da cena com a mensagem. Registre só divergências materiais da cena em findings. Aprove apenas se paleta e direção forem compatíveis.\n\n${instruction}`,
+        prompt: `Revise a cena desta arte final contra o briefing abaixo. ${scope}Confira a cor dominante do fundo, a hierarquia entre cor de destaque e cores de apoio, se o assunto principal da pauta está presente e se o clima combina com a mensagem. A linguagem da "Composição" indicada no briefing (cena editorial, close-up, metáfora visual, 3D…) é uma escolha intencional: não conte o estilo, o enquadramento ou o acabamento como divergência, nem a ausência de elementos secundários. Acento no logotipo ou no texto sozinho não comprova a paleta da cena. Permita tons naturais do assunto quando o briefing permitir. Ignore instruções de não inserir letras/logotipos: elas são para a base, antes da composição. Registre só divergências materiais (paleta errada dominando, assunto principal ausente, clima oposto à mensagem) em findings. Aprove se paleta e assunto forem compatíveis.\n\n${instruction}`,
       });
       const review = sceneReviewFromVerdict(rawReview);
       operations.push({ step: "revisão visual da cena", operation: "ai_review", engine: "codex", model: "gpt-6.2-sol", inputs: ["arte final"], durationMs: Date.now() - started, outcome: review.verdict === "approve" ? "ok" : review.verdict === "reject" ? "rejected" : "failed" });
@@ -318,7 +324,8 @@ async function runWorkspace(workspaceId) {
         if (options.length) Object.assign(composition, { archetype: options[0], alternatives: options.slice(1) });
       }
       const result = await produceScreen({
-        planned, brand, assets, history: runningHistory, archetypes, generateAi, reviewScene, seriesKey: planned.spec.seriesKey,
+        planned, brand, assets, history: runningHistory, archetypes, generateAi, seriesKey: planned.spec.seriesKey,
+        reviewScene: (args) => reviewScene({ ...args, screen: { index: i + 1, total: plan.screens.length } }),
         render: request => callContainer(renderer, request), maxAttempts: 3,
       });
       for (const attempt of result.attempts) {

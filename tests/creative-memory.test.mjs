@@ -17,7 +17,7 @@ const approve = (extra = {}) => ({ workspaceId: ws, publicationId: `pub-${++seq}
 test("leitura do motivo: texto, imagem vazia, tela citada, legenda, produto, 'não quero postar', pontual e motivo vago", () => {
   const phrase = interpretRejection("a frase ficou estranha");
   assert.deepEqual(phrase.categories, ["texto"]);
-  assert.deepEqual(phrase.changes, { text: true, caption: false, image: false, product: false, logo: false });
+  assert.deepEqual(phrase.changes, { text: true, caption: false, image: false, product: false, logo: false, audio: false });
 
   // Caso real (26/11/2026): "texto no canto" descreve o vazio — é queixa de imagem, não do texto. "5 imagens" é contagem.
   const empty = interpretRejection("das 5 imagens ainda ficou 3 vazias com um texto no canto", { screenCount: 5 });
@@ -29,9 +29,10 @@ test("leitura do motivo: texto, imagem vazia, tela citada, legenda, produto, 'n�
   assert.deepEqual(interpretRejection("a última imagem ficou feia", { screenCount: 5 }).screens, [5]);
   assert.deepEqual(interpretRejection("imagem 2 e 4 estão escuras demais", { screenCount: 5 }).screens, [2, 4]);
   assert.deepEqual(interpretRejection("a capa e a terceira tela", { screenCount: 5 }).screens, [1, 3]);
-  assert.deepEqual(interpretRejection("a legenda está longa demais").changes, { text: false, caption: true, image: false, product: false, logo: false });
+  assert.deepEqual(interpretRejection("a legenda está longa demais").changes, { text: false, caption: true, image: false, product: false, logo: false, audio: false });
   const product = interpretRejection("estampa errada, não combina com academia");
   assert.ok(product.changes.product && product.changes.image && !product.changes.text);
+  assert.deepEqual(interpretRejection("ja foi usada essa imagem").categories, ["repeticao"], "caso real da CMKV (26/11/2026)");
   assert.equal(interpretRejection("não quero postar isso").noRedo, true);
   assert.equal(interpretRejection("só desta vez deixa a frase mais curta").oneOff, true);
   const vague = interpretRejection("não gostei");

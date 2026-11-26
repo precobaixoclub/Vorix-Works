@@ -355,3 +355,31 @@ test("aprovação só com a palavra de aprovação: 'Pode refazer', 'Ok, mas…'
   assert.match(quotedUnclear.reply, /Não entendi/);
   assert.equal(request.status, "sent");
 });
+
+// Refação direcionada (27/11/2026): "não quero postar" não é pedido de ajuste — não gasta uma refação.
+test("reprovação 'não quero postar isso': cancela, devolve ao Bolsão e não agenda refação", async () => {
+  const { service, repository, sent, actions } = setup();
+  const returned = [];
+  const redoCalls = [];
+  service.deps.onNotApproved = async (input) => { returned.push(input.publicationId); };
+  service.deps.onRejectedForRedo = async (input) => { redoCalls.push(input.publicationId); return { queued: true, attempt: 1 }; };
+  await configure(service);
+  repository.state.toRequest.push({ tenantId: "t1", workspaceId: "ws-cmkv", publicationId: "pub-1" });
+  await service.dispatchPending();
+  const request = repository.state.requests.find((item) => item.publicationId === "pub-1");
+  await captureApprovalReply(repository, { connectionId: "conn-vorix", fromPhone: APPROVER, text: `2 ${request.code} não quero postar isso`, isGroup: false, fromMe: false });
+  await service.applyDecisions();
+  assert.deepEqual(redoCalls, []);
+  assert.deepEqual(returned, ["pub-1"]);
+  assert.ok(actions.some((action) => action.action === "cancel" && action.postId === "pub-1"));
+  assert.match(sent.at(-1).body, /Entendi que não é para refazer/);
+});
+
+test("versão refeita: a mensagem de aprovação mostra o que mudou e o que ficou igual", async () => {
+  const { service, repository, sent } = setup();
+  await configure(service);
+  repository.findRedoByResult = async () => ({ attempt: 1, reason: "a frase ficou estranha", changes: "Mudou: texto. Mantive: imagem, legenda." });
+  repository.state.toRequest.push({ tenantId: "t1", workspaceId: "ws-cmkv", publicationId: "pub-1" });
+  await service.dispatchPending();
+  assert.match(sent[1].body, /você pediu: “a frase ficou estranha”\nMudou: texto\. Mantive: imagem, legenda\./);
+});

@@ -67,12 +67,12 @@ export class PostgresWhatsappApprovalRepository implements WhatsappApprovalRepos
     return (await this.getRule(input.tenantId, input.workspaceId))!;
   }
 
-  async findRedoByResult(publicationId: string): Promise<{ attempt: number; reason: string } | undefined> {
+  async findRedoByResult(publicationId: string): Promise<{ attempt: number; reason: string; changes?: string } | undefined> {
     // O pedido pode sair antes de o piloto gravar o resultado: cai para a refação em andamento da mesma ideia.
-    const { rows } = await this.pool.query(`select r.attempt, r.reason from publication_redo_requests r join publication_plans p on p.id=$1
+    const { rows } = await this.pool.query(`select r.attempt, r.reason, r.change_summary from publication_redo_requests r join publication_plans p on p.id=$1
       where r.result_publication_id=$1 or (r.status='running' and r.workspace_id=p.workspace_id and r.idea_id = p.source_artifacts->0->'payload'->>'editorialIdeaId')
       order by (r.result_publication_id=$1) desc nulls last, r.created_at desc limit 1`, [publicationId]);
-    return rows[0] ? { attempt: Number(rows[0].attempt), reason: String(rows[0].reason) } : undefined;
+    return rows[0] ? { attempt: Number(rows[0].attempt), reason: String(rows[0].reason), ...(rows[0].change_summary ? { changes: String(rows[0].change_summary) } : {}) } : undefined;
   }
 
   async listFailedRedosToNotify(limit: number): Promise<Array<{ id: string; workspaceId: string; detail?: string; connectionId: string; approverPhone: string }>> {

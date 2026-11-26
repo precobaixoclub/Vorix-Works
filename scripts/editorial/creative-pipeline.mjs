@@ -42,8 +42,13 @@ function repeatedLayout(gate) {
  * Produz uma tela aprovada ou devolve o motivo para revisão manual. `render(request)` executa o
  * renderizador; `generateAi({ spec, instruction, transmitted, correction })` gera a base pela IA
  * (ou `undefined` quando a IA não está disponível/autorizada).
+ *
+ * `reuse` (refação direcionada): base aprovada da versão anterior desta tela ({ archetype, base, layout,
+ * logoPlacement, protectedAreas, aiReview?, sceneReview? }). Enquanto o arquétipo for o mesmo e nenhuma
+ * correção de imagem for pedida, a tela é recomposta sobre ela — sem gerar imagem nova (o cliente não
+ * criticou esta imagem). A revisão da cena aprovada antes vale para a mesma base.
  */
-export async function produceScreen({ planned, brand, assets, history, render, generateAi, reviewScene, archetypes, maxAttempts = 3, budgetUsd = 0, aiAttemptCostUsd = 0, seriesKey }) {
+export async function produceScreen({ planned, brand, assets, history, render, generateAi, reviewScene, archetypes, maxAttempts = 3, budgetUsd = 0, aiAttemptCostUsd = 0, seriesKey, reuse }) {
   const { spec, screen, transmitted } = planned;
   const fashionCampaign = spec.presentation === "fashion_campaign";
   const attempts = [];
@@ -53,6 +58,7 @@ export async function produceScreen({ planned, brand, assets, history, render, g
   let spentUsd = 0;
   let logoConfig = brand.logoConfig;
   let layoutRetried = false;
+  let generation;
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     tried.add(archetype);
     const operation = operationOf(archetype, archetypes);
@@ -62,8 +68,12 @@ export async function produceScreen({ planned, brand, assets, history, render, g
       revisionContext: { attempt, maxAttempts, spentUsd, budgetUsd, aiAttemptCostUsd },
     };
     const request = { ...brand, logoConfig, ...screen, presentation: spec.presentation, fidelity, history };
+    generation = undefined;
     if (AI_OPERATIONS.has(operation)) {
-      const generated = generateAi ? await generateAi({ spec, archetype, instruction: planned.instruction, transmitted, correction }) : undefined;
+      const reusing = Boolean(reuse?.base) && reuse.archetype === archetype && !correction;
+      const generated = reusing
+        ? { base: reuse.base, layout: reuse.layout, logoPlacement: reuse.logoPlacement, protectedAreas: reuse.protectedAreas ?? [], costUsd: 0, reused: true, ...(reuse.aiReview ? { aiReview: reuse.aiReview } : {}) }
+        : generateAi ? await generateAi({ spec, archetype, instruction: planned.instruction, transmitted, correction }) : undefined;
       if (!generated) {
         // IA indisponível/sem orçamento: cai na composição controlada equivalente.
         archetype = spec.composition.fallback ?? Object.keys(archetypes).find((id) => archetypes[id].mode === spec.mode && archetypes[id].operation === "deterministic_composite" && !tried.has(id));
@@ -73,6 +83,7 @@ export async function produceScreen({ planned, brand, assets, history, render, g
         continue;
       }
       spentUsd += generated.costUsd ?? 0;
+      generation = { archetype, operation, base: generated.base, layout: generated.layout, logoPlacement: generated.logoPlacement, protectedAreas: generated.protectedAreas ?? [], reused: generated.reused === true, ...(generated.aiReview ? { aiReview: generated.aiReview } : {}) };
       Object.assign(request, { base: generated.base, layout: generated.layout, logoPlacement: generated.logoPlacement, protectedAreas: generated.protectedAreas });
       const primary = transmitted.find((item) => item.role === "product_photo");
       if (spec.mode === "physical_product" && primary && assets[primary.id]) fidelity.reference = assets[primary.id].data;
@@ -98,7 +109,9 @@ export async function produceScreen({ planned, brand, assets, history, render, g
       const needsSceneReview = (spec.mode === "conceptual" && generatedScene && (spec.visualDirection || spec.brandIdentity?.colors?.length || spec.brandIdentity?.notes?.trim()))
         || (fashionCampaign && spec.mode === "physical_product" && generatedScene && spec.visualDirection);
       if (needsSceneReview && result.gate?.approved === true) {
-        const sceneReview = await reviewScene?.({ spec, instruction: planned.instruction, image: result.image });
+        // Mesma base já aprovada na revisão da cena (só o texto mudou): não gasta outra revisão.
+        const sceneReview = generation?.reused && reuse?.sceneReview?.verdict === "approve" ? reuse.sceneReview : await reviewScene?.({ spec, instruction: planned.instruction, image: result.image });
+        if (generation && sceneReview) generation.sceneReview = sceneReview;
         const verified = await render({ ...request, fidelity: { ...fidelity, sceneReviewRequired: true, sceneReview } });
         if (!result.gate.imageSha256 || verified.gate?.imageSha256 !== result.gate.imageSha256) {
           return { ok: false, attempts, reason: "A arte mudou durante a revisão visual da cena." };
@@ -125,8 +138,8 @@ export async function produceScreen({ planned, brand, assets, history, render, g
       attempts.push({ attempt, archetype, operation, outcome: "failed", reason: "Quality Gate sem veredito (inconclusivo)." });
       return { ok: false, attempts, reason: "Quality Gate sem veredito (inconclusivo) — encaminhada para revisão." };
     }
-    attempts.push({ attempt, archetype, operation, outcome: result.gate.approved === true ? "approved" : "rejected", gate: result.gate, revision: result.revision });
-    if (result.gate.approved === true) return { ok: true, image: result.image, quality: result.quality, gate: result.gate, fingerprint: result.fingerprint, evidence: result.evidence, archetype: result.appliedArchetype ?? archetype, attempts, spentUsd };
+    attempts.push({ attempt, archetype, operation, outcome: result.gate.approved === true ? "approved" : "rejected", gate: result.gate, revision: result.revision, ...(generation?.reused ? { reused: true } : {}) });
+    if (result.gate.approved === true) return { ok: true, image: result.image, quality: result.quality, gate: result.gate, fingerprint: result.fingerprint, evidence: result.evidence, archetype: result.appliedArchetype ?? archetype, attempts, spentUsd, ...(generation ? { generation } : {}) };
     const action = result.revision?.action ?? "manual_review";
     if (action === "manual_review") break;
     if (action === "switch_to_controlled_composite") archetype = spec.composition.fallback ?? (fashionCampaign ? "fashion_poster" : "product_editorial");
@@ -226,4 +239,19 @@ export function sceneReviewFromVerdict(review) {
   if (!review.paletteMatches) findings.push({ code: "BRAND_PALETTE_MISMATCH", message: details || "Cores ou hierarquia da paleta divergentes do perfil da marca." });
   if (!review.directionMatches || !findings.length) findings.push({ code: "VISUAL_DIRECTION_MISMATCH", message: details || "Cena divergente da direção visual da pauta." });
   return { verdict: "reject", findings };
+}
+
+// ---------------------------------------------------------------- refação direcionada: logo
+
+/**
+ * Motivo da reprovação que falou da logo → ajuste do renderizador (sem IA): tamanho ou tratamento.
+ * "logo muito grande" → menor; "pequena" → maior; "apagada/sumiu/sem contraste" → halo; "caixa/fundo" → sem caixa.
+ */
+export function logoAdjustment(reason, current = {}) {
+  const text = String(reason ?? "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+  const scale = Number(current.scale) || 1;
+  if (/\b(grande|enorme|exagerad\w*|chamativ\w*)\b/.test(text)) return { ...current, scale: Math.max(0.6, Number((scale * 0.75).toFixed(2))) };
+  if (/\b(pequen\w*|minuscul\w*|miud\w*)\b/.test(text)) return { ...current, scale: Math.min(1.6, Number((scale * 1.3).toFixed(2))) };
+  if (/\b(caixa|fundo|quadrado|retangulo|tarja)\b/.test(text)) return { ...current, treatment: "none" };
+  return { ...current, treatment: "halo" };
 }

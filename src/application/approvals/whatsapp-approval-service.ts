@@ -3,6 +3,7 @@ import { normalizePhoneNumber } from "../../domain/inbox/inbox.model.js";
 import type { MessagingProvider } from "../ports/messaging-provider.port.js";
 import type { MessagingConnectionRepositoryPort } from "../ports/messaging-connection-repository.port.js";
 import type { WorkspaceRepositoryPort } from "../ports/workspace-repository.port.js";
+import { interpretRejection } from "../creative-engine/feedback-interpretation.js";
 import {
   approvalAckText,
   approvalCode,
@@ -43,7 +44,7 @@ export interface WhatsappApprovalRepositoryPort {
   getRule(tenantId: string, workspaceId: string): Promise<ApprovalRule | undefined>;
   saveRule(input: Omit<ApprovalRule, "enabledAt" | "updatedAt"> & { updatedBy: string }): Promise<ApprovalRule>;
   /** A publicação é uma versão refeita? (número da refação + motivo que a originou) — vai no texto do pedido. */
-  findRedoByResult?(publicationId: string): Promise<{ attempt: number; reason: string } | undefined>;
+  findRedoByResult?(publicationId: string): Promise<{ attempt: number; reason: string; changes?: string } | undefined>;
   /** Refações que falharam e ainda não foram avisadas ao aprovador (com o pedido original para saber para quem). */
   listFailedRedosToNotify?(limit: number): Promise<Array<{ id: string; workspaceId: string; detail?: string; connectionId: string; approverPhone: string }>>;
   markRedoNotified?(id: string): Promise<void>;
@@ -300,8 +301,13 @@ export class WhatsappApprovalService {
    * Sem motivo, marca que devolve, limite atingido ou falha ao agendar: a ideia volta ao Bolsão.
    * Devolve o resultado da tentativa de refação (undefined = nem tentou).
    */
-  private async redoOrReturn(request: ApprovalRequest): Promise<{ queued: boolean; attempt?: number } | undefined> {
+  private async redoOrReturn(request: ApprovalRequest): Promise<{ queued: boolean; attempt?: number; declined?: boolean } | undefined> {
     const reason = request.reason?.trim();
+    // "Não quero postar isso" não é pedido de ajuste: devolve ao Bolsão sem gastar uma refação.
+    if (reason && interpretRejection(reason).noRedo) {
+      await this.returnIdea(request);
+      return { queued: false, declined: true };
+    }
     const rule = reason && this.deps.onRejectedForRedo ? await this.deps.repository.getRule(request.tenantId, request.workspaceId) : undefined;
     if (reason && rule && rule.onReject !== "return") {
       const result = await this.deps.onRejectedForRedo!({ tenantId: request.tenantId, workspaceId: request.workspaceId, publicationId: request.publicationId, reason })
@@ -330,6 +336,7 @@ export class WhatsappApprovalService {
           await this.deps.posts.cancel({ ...key, actor });
           const redo = await this.redoOrReturn(request);
           const ack = redo?.queued ? approvalAckText.redoQueued(brand, request.reason ?? "", redo.attempt ?? 1, MAX_REDO_ATTEMPTS)
+            : redo?.declined ? approvalAckText.declined(brand, request.reason)
             : redo ? approvalAckText.redoLimit(brand, request.reason, MAX_REDO_ATTEMPTS) : approvalAckText.rejected(brand, request.reason);
           await this.sendText(request.connectionId, request.approverPhone, ack).catch(() => undefined);
         }

@@ -11,6 +11,7 @@ import { PRODUCT_THEME_DEMANDS, planEditorialCreative, rankProductsForIdea, rota
 import { COMPOSITION_ARCHETYPES } from "./dist/application/creative-engine/creative-spec.js";
 import { redactSecrets } from "./dist/application/creative-engine/creative-trace.js";
 import { rankIdeasForSlot } from "./dist/application/creative-engine/editorial-calendar.js";
+import { matchesRejectedPiece, redoScopeViolations, resolveRedoScope, scopedText } from "./dist/application/creative-engine/redo-scope.js";
 import { applyProductMemory, buildCreativeMemory, feedbackEventsFromRows, memoryGuidance } from "./dist/application/creative-engine/creative-memory.js";
 import { verifyApprovedArt } from "./dist/application/creative-engine/publication-guard.js";
 import { catalogPhotoSignals } from "./dist/infrastructure/media/creative/catalog-photo-signals.js";
@@ -317,9 +318,11 @@ async function planIdea(idea, creative, context) {
     // Rodízio, reordenado pelo assunto da pauta. Nenhuma peça atende a ocasião pedida: mede a primeira do
     // rodízio mesmo assim — o planejador recusa e registra o motivo (a pauta vai para revisão).
     // Refação pedida por causa do produto: as peças das versões reprovadas saem do rodízio (se sobrar alguma).
+    const kept = (context.keepProducts ?? []).filter(code => creative.products.includes(code) && !context.excludeProducts?.includes(code));
     const allowed = creative.products.filter(code => !context.excludeProducts?.includes(code));
     // Memória da marca: peça reprovada por produto em pautas diferentes vai para o fim do rodízio (não é bloqueada).
-    const rotated = applyProductMemory(rotationOrder(allowed.length ? allowed : creative.products, context.used), context.memory).map(code => ({ code, themes: creative.productThemes?.[code] ?? [] }));
+    const rotation = applyProductMemory(rotationOrder(allowed.length ? allowed : creative.products, context.used), context.memory);
+    const rotated = [...kept, ...rotation.filter(code => !kept.includes(code))].map(code => ({ code, themes: creative.productThemes?.[code] ?? [] }));
     const ranked = rankProductsForIdea(rotated, idea);
     for (const { code, themes } of ranked.length ? ranked : rotated) {
       const photos = context.photos.filter(photo => photo.code === code);
@@ -389,9 +392,26 @@ async function reconcile() {
 
 // ---------------------------------------------------------------- refação depois da reprovação no WhatsApp
 
+/** Escopo da refação direcionada (o que muda e o que fica), a partir do motivo e da leitura do Codex. */
+function redoScopeFor(idea) {
+  if (typeof request.redoReason !== "string" || !request.redoReason.trim()) return undefined;
+  return resolveRedoScope({ reason: request.redoReason, screenCount: screensForIdea(idea).length, codex: request.redoCodex && typeof request.redoCodex === "object" ? request.redoCodex : undefined });
+}
+
+/** Texto reescrito pelo Codex, mas só nas telas que o motivo criticou: as demais voltam ao texto original. */
+function effectiveTextOverride(idea) {
+  const scope = redoScopeFor(idea);
+  if (!request.textOverride || !scope) return request.textOverride;
+  const screens = screensForIdea(idea);
+  const original = idea.format === "carousel"
+    ? { headline: screens[0]?.headline ?? "", body: screens[0]?.body ?? "", slides: (idea.carouselScript ?? []).map(slide => ({ headline: slide.headline, body: slide.body ?? "" })) }
+    : { headline: screens[0]?.headline ?? idea.title, body: screens[0]?.body ?? "" };
+  return scopedText(original, request.textOverride, scope);
+}
+
 /** Texto reescrito na refação (título/subtítulo/telas): aplicado só na pauta refeita, sem alterar o Bolsão. */
 function withTextOverride(idea) {
-  const override = request.textOverride;
+  const override = effectiveTextOverride(idea);
   if (!override || !request.onlyIdea || (idea.id !== request.onlyIdea && idea.externalId !== request.onlyIdea)) return idea;
   const clean = (value, max) => String(value ?? "").replace(/[\r\n]+/g, " ").replace(/["“”']/g, "").replace(/\s+/g, " ").trim().slice(0, max);
   if (idea.format === "carousel") {
@@ -428,8 +448,26 @@ async function claimRedo() {
   }
   // Aprendizado da marca para a reescrita (texto, legenda, informação) — só erros recorrentes.
   const memory = await brandMemory().catch(() => undefined);
+  // Versão reprovada, tela a tela: a refação direcionada recompõe sobre a base aprovada as telas que o motivo
+  // não criticou (sem gerar imagem nova) e garante que as criticadas mudem.
+  const creative = plan?.payload?.creative ?? {};
+  const screensMeta = Array.isArray(creative.screens) ? creative.screens : [];
+  const previousScreens = [];
+  for (const [index, archetype] of (Array.isArray(creative.archetypes) ? creative.archetypes : []).entries()) {
+    const meta = screensMeta[index] ?? {};
+    let base;
+    if (meta.baseUrl) {
+      try { base = (await ownedBytes(meta.baseUrl)).toString("base64"); } catch { /* base indisponível: esta tela é gerada de novo */ }
+    }
+    previousScreens.push({ screen: index + 1, archetype: String(archetype), operation: ARCHETYPES[archetype]?.operation, imageSha256: creative.approvals?.[index]?.imageSha256,
+      ...(creative.fingerprints?.[index] ? { fingerprint: creative.fingerprints[index] } : {}),
+      ...(base ? { base, layout: meta.layout, logoPlacement: meta.logoPlacement, protectedAreas: meta.protectedAreas ?? [], ...(meta.aiReview ? { aiReview: meta.aiReview } : {}), ...(meta.sceneReview ? { sceneReview: meta.sceneReview } : {}) } : {}) });
+  }
+  const hint = resolveRedoScope({ reason: job.reason, screenCount: screensForIdea(idea).length });
   return { job: {
     id: job.id, reason: job.reason, attempt: job.attempt, slot: job.slot, previousImage, memory: memoryGuidance(memory, "redo"),
+    previousScreens, previousVersionProducts: Array.isArray(plan?.payload?.catalogProductCodes) ? plan.payload.catalogProductCodes.map(String) : [],
+    scopeHint: { text: hint.text, image: hint.image, caption: hint.caption, product: hint.product, logo: hint.logo, unclear: hint.reading.unclear, changed: hint.changed, kept: hint.kept },
     previousArchetypes: Array.isArray(plan?.payload?.creative?.archetypes) ? plan.payload.creative.archetypes.map(String) : [],
     reasons: history.map(row => row.reason), previousProducts: [...new Set(history.flatMap(row => Array.isArray(row.codes) ? row.codes.map(String) : []))],
     idea: { id: idea.id, externalId: idea.externalId, title: idea.title, format: idea.format, category: idea.category, keyMessage: idea.keyMessage, caption: idea.caption,
@@ -515,6 +553,12 @@ async function run() {
     // já foi ao ar ou está agendado perto do horário (categoria, abordagem, formato, assunto). Nada é descartado.
     const ranking = rankIdeasForSlot(eligible, { slot, recent: await nearbyPieces(allIdeas) });
     const candidates = ranking.map(entry => entry.idea).map(withTextOverride);
+    // Refação: o escopo decide se a peça do catálogo muda (motivo falou do produto) ou fica a mesma.
+    const redoScope = only && candidates[0] ? redoScopeFor(candidates[0]) : undefined;
+    if (redoScope && Array.isArray(request.previousProducts)) {
+      request.excludeProducts = redoScope.product ? request.previousProducts : [];
+      request.keepProducts = redoScope.product ? [] : Array.isArray(request.previousVersionProducts) ? request.previousVersionProducts : [];
+    }
     const calendar = ranking.slice(0, 3).map(entry => ({ idea: entry.idea.externalId, score: Number(entry.score.toFixed(2)), reasons: entry.reasons }));
     const creative = brandConfig.creative ?? { businessKind: "unknown" };
     const { rows: [brandRow] } = await db.query("select profile from brand_visual_profiles where workspace_id=$1", [workspaceId]);
@@ -525,6 +569,8 @@ async function run() {
       // a tela que ficou igual à da versão reprovada (26/11/2026).
       history: await visualHistory(used.rows.filter(row => row.state !== "cancelled")),
       excludeProducts: Array.isArray(request.excludeProducts) ? request.excludeProducts.map(String) : [],
+      // Refação que não criticou o produto: a mesma peça da versão anterior (o rodízio não troca o que estava certo).
+      keepProducts: Array.isArray(request.keepProducts) ? request.keepProducts.map(String) : [],
       // Sem a memória (consulta falhou) o piloto segue como antes: ela só orienta, nunca é obrigatória.
       memory: await brandMemory().catch(() => undefined),
     };
@@ -541,6 +587,7 @@ async function run() {
       }
       if (planned.blocked) { blocked.push({ ideaId: idea.id, idea: idea.externalId, mode: planned.plan.mode, reason: "REFERENCE_MISSING", guidance: planned.plan.blockers.filter(item => item.blocking).map(item => item.message) }); return undefined; }
       return { idea, brand: await brandFor(workspace, brandConfig, context.profile), plan: planned.plan, assets: planned.assets, trace: { references: planned.traced }, productCodes: planned.productCodes, history: context.history, archetypes: ARCHETYPES, blocked, calendar,
+        ...(redoScope ? { redoScope: { text: redoScope.text, image: redoScope.image, caption: redoScope.caption, product: redoScope.product, logo: redoScope.logo, changed: redoScope.changed, kept: redoScope.kept } } : {}),
         ...(context.memory ? { memory: memorySummary(context.memory) } : {}) };
     };
     for (const idea of candidates.filter(item => !item.externalId.startsWith("CMKV-AUTO-"))) {
@@ -588,14 +635,51 @@ async function run() {
     const { url } = await c.objectStorage.put({ key, body, contentType: "image/jpeg" });
     media.push({ url, kind: "image", width, height, mimeType: "image/jpeg", sizeBytes: body.length });
   }
-  // Refação: a legenda reescrita pelo Codex (quando o motivo falava dela) substitui a da pauta.
-  const baseCaption = typeof request.captionOverride === "string" && request.captionOverride.trim() ? request.captionOverride.trim().slice(0, 2200) : idea.caption;
+  // Refação: a legenda reescrita pelo Codex substitui a da pauta só quando o motivo falou da legenda.
+  const scope = typeof request.redoJobId === "string" ? redoScopeFor(idea) : undefined;
+  const captionAllowed = !scope || scope.caption;
+  const baseCaption = captionAllowed && typeof request.captionOverride === "string" && request.captionOverride.trim() ? request.captionOverride.trim().slice(0, 2200) : idea.caption;
   const campaignCta = brandConfig.creative?.presentation === "fashion_campaign" && idea.cta && !baseCaption.includes(idea.cta) ? idea.cta : undefined;
   const caption = campaignCta ? `${baseCaption}\n\n${campaignCta}` : baseCaption;
   const input = { ...scope, base: { caption, media }, destinations: accounts.map(accountId => ({ accountId, format })) };
   const checks = await c.social.posts.validate(input);
   for (const check of checks) requireCondition(!check.issues.length && !check.warnings.length, `${check.network}: ${[...check.issues.map(issue => issue.message), ...check.warnings].join(". ")}`);
   if (mode === "validate") return { validated: true, idea: idea.externalId, screens: media.length, networks: checks.map(check => check.network) };
+  // Nenhuma peça reprovada volta: a mesma sequência de imagens com a mesma legenda de uma versão que o cliente
+  // reprovou é bloqueada aqui, no backend, para qualquer origem (piloto, refação, recuperação).
+  const imageSha256 = request.images.map(image => createHash("sha256").update(Buffer.from(image, "base64")).digest("hex"));
+  const { rows: rejectedRows } = await db.query(`select p.id, p.source_artifacts->0->'payload'->'creative'->'approvals' as approvals,
+      (select d.caption from social_post_destinations d where d.publication_id=p.id order by d.created_at limit 1) as caption
+    from publication_approval_requests q join publication_plans p on p.id=q.publication_id and p.tenant_id=q.tenant_id and p.workspace_id=q.workspace_id
+    where q.tenant_id=$1 and q.workspace_id=$2 and q.decision='reject' and p.source_artifacts->0->'payload'->>'editorialIdeaId'=$3`, [tenantId, workspaceId, idea.id]);
+  const rejectedPieces = rejectedRows.map(row => ({ id: row.id, caption: row.caption ?? "", imageSha256: Array.isArray(row.approvals) ? row.approvals.map(item => String(item?.imageSha256 ?? "")) : [] }));
+  requireCondition(!matchesRejectedPiece({ imageSha256, caption }, rejectedPieces), "Esta é a mesma peça que o cliente reprovou (mesmas imagens e mesma legenda) — publicação bloqueada.");
+  if (scope) {
+    // Refação direcionada: toda tela que o motivo criticou precisa ter mudado em relação à versão reprovada.
+    const { rows: [job] } = await db.query("select publication_id from publication_redo_requests where id=$1 and workspace_id=$2", [request.redoJobId, workspaceId]);
+    const previous = rejectedPieces.find(piece => piece.id === job?.publication_id);
+    const violations = previous ? redoScopeViolations(scope, previous.imageSha256, imageSha256) : [];
+    requireCondition(!violations.length, violations.join(" "));
+    if (!scope.text.length && !scope.image.length && !scope.logo && caption.trim() === (previous?.caption ?? "").trim()) {
+      throw new Error("A refação não mudou nada do que foi criticado.");
+    }
+  }
+  // Bases aprovadas (imagem antes do texto) das telas geradas pela IA: uma refação futura recompõe sobre elas
+  // as telas que o cliente não criticar, sem gerar de novo.
+  if (creativeRecord && Array.isArray(request.bases)) {
+    const screens = [];
+    for (const [index, entry] of request.bases.slice(0, count).entries()) {
+      if (!entry || typeof entry.data !== "string") { screens.push(null); continue; }
+      const jpeg = await sharp(Buffer.from(entry.data, "base64")).rotate().jpeg({ quality: 92 }).toBuffer();
+      const key = `assets/${tenantId}/${workspaceId}/bases/${idea.id}-${index + 1}-${createHash("sha256").update(jpeg).digest("hex").slice(0, 20)}.jpg`;
+      const { url } = await c.objectStorage.put({ key, body: jpeg, contentType: "image/jpeg" });
+      const pick = (value, allowed) => (allowed.includes(value) ? value : undefined);
+      screens.push({ baseUrl: url, layout: pick(entry.layout, ["top", "left", "bottom"]), logoPlacement: pick(entry.logoPlacement, ["top_left", "top_center", "top_right", "bottom_left", "bottom_center", "bottom_right"]),
+        protectedAreas: Array.isArray(entry.protectedAreas) ? entry.protectedAreas.slice(0, 12) : [],
+        ...(entry.aiReview?.verdict === "approve" ? { aiReview: { verdict: "approve" } } : {}), ...(entry.sceneReview?.verdict === "approve" ? { sceneReview: { verdict: "approve" } } : {}) });
+    }
+    creativeRecord.screens = screens;
+  }
   const seen = await db.query(`select count(*)::int as total from social_post_destinations d join publication_targets t on t.id=d.target_id
     where d.tenant_id=$1 and d.workspace_id=$2 and t.status not in ('cancelled','failed') and d.caption=$3 and d.created_at >= $4`, [tenantId, workspaceId, caption, idea.createdAt]);
   requireCondition(seen.rows[0].total === 0, "Já existe uma publicação com a mesma legenda desta pauta");
@@ -608,7 +692,9 @@ async function run() {
         ...(typeof request.redoJobId === "string" ? { redoJobId: request.redoJobId } : {}) } }],
   } });
   if (typeof request.redoJobId === "string") {
-    await db.query(`update publication_redo_requests set status='done', result_publication_id=$2, updated_at=now() where id=$1 and workspace_id=$3`, [request.redoJobId, post.id, workspaceId]);
+    // O que mudou e o que ficou: vai na mensagem de aprovação da nova versão.
+    const summary = scope ? `Mudou: ${scope.changed}.${scope.kept ? ` Mantive: ${scope.kept}.` : ""}` : null;
+    await db.query(`update publication_redo_requests set status='done', result_publication_id=$2, change_summary=$4, updated_at=now() where id=$1 and workspace_id=$3`, [request.redoJobId, post.id, workspaceId, summary]);
   }
   await db.query(`update editorial_ideas set status=$4,status_changed_at=now(),updated_at=now()
     where id=$1 and workspace_id=$2 and tenant_id=$3 and status='available'`,
@@ -617,7 +703,7 @@ async function run() {
   // for cancelada, a pauta não volta com a frase reprovada (26/11/2026: "Peito ou costas?" voltaria às 19h).
   if (typeof request.redoJobId === "string" && request.textOverride) {
     const rewritten = withTextOverride(idea);
-    const captionOverride = typeof request.captionOverride === "string" && request.captionOverride.trim() ? request.captionOverride.trim().slice(0, 2200) : null;
+    const captionOverride = captionAllowed && typeof request.captionOverride === "string" && request.captionOverride.trim() ? request.captionOverride.trim().slice(0, 2200) : null;
     if (rewritten !== idea || captionOverride) {
       await db.query(`update editorial_ideas set key_message=$4, creative_prompt=coalesce($5, creative_prompt), carousel_script=coalesce($6::jsonb, carousel_script), caption=coalesce($7, caption), updated_at=now()
         where id=$1 and workspace_id=$2 and tenant_id=$3`,

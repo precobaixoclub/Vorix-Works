@@ -72,6 +72,7 @@ const GUIDANCE: Record<FeedbackCategory, { text: string; appliesTo: LessonTarget
   logo: { text: "Logo: versão oficial, legível e discreta, sem caixa pesada.", appliesTo: ["image", "video"] },
   repeticao: { text: "Variedade: mude enquadramento e linguagem em relação às peças recentes.", appliesTo: ["image", "video"] },
   informacao: { text: "Informação: nunca invente preço, prazo, promoção ou característica que a pauta não traz.", appliesTo: ["redo", "video"] },
+  audio: { text: "Áudio: música abaixo da fala, sem estourar, narração clara.", appliesTo: ["video"] },
 };
 
 const cleanExample = (value: string) => value.replace(/[\r\n]+/g, " ").replace(/["“”]/g, "'").replace(/\s+/g, " ").trim().slice(0, 120);

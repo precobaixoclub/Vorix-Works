@@ -21,6 +21,7 @@ export const FEEDBACK_CATEGORIES = [
   "logo",
   "repeticao",
   "informacao",
+  "audio",
 ] as const;
 export type FeedbackCategory = (typeof FEEDBACK_CATEGORIES)[number];
 
@@ -37,12 +38,14 @@ export const FEEDBACK_CATEGORY_LABELS: Readonly<Record<FeedbackCategory, string>
   logo: "logo",
   repeticao: "conteúdo repetido",
   informacao: "informação incorreta",
+  audio: "áudio (música, narração)",
 };
 
 /** Categorias que falam da IMAGEM (cena, composição) — as que pesam contra uma linguagem visual. */
 export const IMAGE_CATEGORIES: readonly FeedbackCategory[] = ["imagem", "imagem_vazia", "cores", "pessoas", "estilo_visual", "qualidade_imagem", "repeticao"];
 
-export type RejectionChanges = { text: boolean; caption: boolean; image: boolean; product: boolean; logo: boolean };
+/** `audio`: música/narração — só existe no vídeo. */
+export type RejectionChanges = { text: boolean; caption: boolean; image: boolean; product: boolean; logo: boolean; audio: boolean };
 
 export type RejectionInterpretation = {
   categories: FeedbackCategory[];
@@ -61,8 +64,9 @@ export const normalizeFeedback = (value: string) => value.normalize("NFD").repla
 
 const ORDINALS: Record<string, number> = { primeira: 1, primeiro: 1, segunda: 2, segundo: 2, terceira: 3, terceiro: 3, quarta: 4, quarto: 4, quinta: 5, quinto: 5, sexta: 6, sexto: 6, setima: 7, setimo: 7, oitava: 8, oitavo: 8, nona: 9, nono: 9, decima: 10, decimo: 10 };
 const NUMBER_WORDS: Record<string, number> = { um: 1, uma: 1, dois: 2, duas: 2, tres: 3, quatro: 4, cinco: 5, seis: 6, sete: 7, oito: 8, nove: 9, dez: 10 };
-const SCREEN_NOUN = "(?:tela|imagem|foto|slide|card|pagina|lamina|arte)";
-const SCREEN_NOUNS = "(?:telas|imagens|fotos|slides|cards|paginas|laminas|artes)";
+// "cena"/"trecho": no vídeo, cada tela é uma cena do plano de edição.
+const SCREEN_NOUN = "(?:tela|imagem|foto|slide|card|pagina|lamina|arte|cena|trecho)";
+const SCREEN_NOUNS = "(?:telas|imagens|fotos|slides|cards|paginas|laminas|artes|cenas|trechos)";
 
 /** Telas citadas no motivo. Conta ("das 5 imagens, 3 vazias") não é referência de tela. */
 export function referencedScreens(text: string, screenCount: number): number[] | "all" | undefined {
@@ -97,8 +101,9 @@ const PATTERNS: Array<[FeedbackCategory, RegExp]> = [
   ["pessoas", /\b(pessoa\w*|rosto\w*|gente|mulher\w*|homem|homens|crianc\w*|maos?|dedos?|noiv[oa]s?|casal|olhos)\b/],
   ["estilo_visual", /\b(3d|render\w*|estilo|banco de imagens?|generic[oa]s?|artificial|fake|cara de ia|clich\w*|infantil|brega|cafona|feio|feia|sem graca|sem criatividade|pouco criativ\w*|mais criativ\w*|chat[oa]|sem vida|sem impacto)\b/],
   ["qualidade_imagem", /\b(pixelad\w*|borrad\w*|desfocad\w*|serrilhad\w*|recorte\w*|recortad\w*|distorc\w*|deformad\w*|baixa qualidade|resoluc\w*|emenda\w*|costura)\b/],
-  ["repeticao", /\b(repetid\w*|repetiu|repete|igual|iguais|mesma coisa|parecid[oa]s?|sempre a mesma|sempre o mesmo)\b/],
+  ["repeticao", /\b(repetid\w*|repetiu|repete|igual|iguais|mesma coisa|parecid[oa]s?|sempre a mesma|sempre o mesmo|ja (?:foi |foram )?(?:usad|postad|publicad)\w*|ja (?:vi|usei|usamos|postei|postamos))\b/],
   ["informacao", /\b(preco\w*|valor errado|informac\w* errad\w*|data errad\w*|nao existe|nao temos|nao vendemos|nao oferecemos|inventou|inventad[oa])\b/],
+  ["audio", /\b(musica\w*|trilha\w*|som|audio|volume|narrac\w*|locuc\w*|locutor\w*|voz)\b/],
   ["imagem", /\b(imagem|imagens|foto|fotos|fotografi\w*|cena\w*|visual|ilustrac\w*|desenho\w*|fundo|cenario|composic\w*|enquadr\w*)\b/],
 ];
 const NO_REDO = /\b(nao (quero|vou|precisa|e para|e pra|da para|da pra) (mais )?(postar|publicar|refazer|usar)|nao (posta|publica|refaz)\b|cancela\w*|deixa (pra|para) la|esquece|desist\w*|nao faz sentido (postar|publicar)|fora de (epoca|contexto)|nao combina com a gente|nao e (nosso|nossa) (publico|marca))/;
@@ -115,13 +120,14 @@ export function interpretRejection(reason: string | undefined, options: { screen
   const has = (...wanted: FeedbackCategory[]) => specific.some((category) => wanted.includes(category));
   const unclear = specific.length === 0 && !noRedo;
   const changes: RejectionChanges = unclear
-    ? { text: true, caption: true, image: true, product: false, logo: false }
+    ? { text: true, caption: true, image: true, product: false, logo: false, audio: false }
     : {
       text: has("texto", "informacao"),
       caption: has("legenda", "informacao"),
       image: has(...IMAGE_CATEGORIES) || has("produto"),
       product: has("produto"),
       logo: has("logo"),
+      audio: has("audio"),
     };
   const screens = referencedScreens(text, screenCount);
   return { categories: specific, changes, ...(screens ? { screens } : {}), noRedo, oneOff: ONE_OFF.test(text), unclear };

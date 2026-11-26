@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import { mkdir, mkdtemp, readFile, realpath, writeFile, chown, rm } from "node:fs/promises";
 import { isAbsolute, join, relative, sep } from "node:path";
 import { createHash } from "node:crypto";
-import { addToReviewQueue, aiReviewFromVerdict, produceScreen, productReviewPrompt, reviewSkipIds, sceneReviewFromVerdict, screenApprovals } from "./creative-pipeline.mjs";
+import { addToReviewQueue, aiReviewFromVerdict, logoAdjustment, produceScreen, productReviewPrompt, reviewSkipIds, sceneReviewFromVerdict, screenApprovals } from "./creative-pipeline.mjs";
 
 const basedir = new URL("./", import.meta.url);
 const agentHome = "/var/lib/vorix-codex";
@@ -156,11 +156,13 @@ const sha = text => createHash("sha256").update(text).digest("hex").slice(0, 16)
 const redoJob = onlyIdea && process.env.VORIX_REDO_JOB ? JSON.parse(await readFile(process.env.VORIX_REDO_JOB, "utf8")) : undefined;
 
 const redoSchema = {
-  type: "object", additionalProperties: false, required: ["headline", "body", "caption", "slides", "changeProduct", "imageCorrection"],
+  type: "object", additionalProperties: false, required: ["headline", "body", "caption", "slides", "changeProduct", "imageCorrection", "changeText", "textScreens", "imageScreens"],
   properties: {
     headline: { type: "string" }, body: { type: "string" }, caption: { type: "string" },
     slides: { type: "array", items: { type: "object", additionalProperties: false, required: ["headline", "body"], properties: { headline: { type: "string" }, body: { type: "string" } } } },
     changeProduct: { type: "boolean" }, imageCorrection: { type: "string" },
+    // Refação direcionada: o que o motivo critica, tela a tela (1 = capa). O backend confere com a leitura do motivo.
+    changeText: { type: "boolean" }, textScreens: { type: "array", items: { type: "integer" } }, imageScreens: { type: "array", items: { type: "integer" } },
   },
 };
 
@@ -196,6 +198,7 @@ async function rewriteForRedo(job) {
       `Legenda atual: ${idea.caption ?? ""}`,
       ``,
       ...(job.memory?.length ? [``, `Aprendizado desta marca (erros que o cliente já reprovou em mais de uma pauta — não repita):`, ...job.memory.map(item => `- ${item}`)] : []),
+      ...(job.scopeHint && !job.scopeHint.unclear ? [``, `Leitura do motivo: mudar ${job.scopeHint.changed}; manter igual ${job.scopeHint.kept || "o resto"}. Corrija SÓ o que foi criticado — o que o cliente não criticou fica exatamente como está.`] : []),
       ``,
       `Corrija exatamente o que o motivo critica, mantendo a ideia da pauta, o português do Brasil natural e o tom da marca.`,
       `- headline: título da arte (até 8 palavras, frase que um brasileiro diria; sem aspas). Se o motivo não falar do texto, repita o título atual.`,
@@ -204,17 +207,22 @@ async function rewriteForRedo(job) {
       `- caption: a legenda; reescreva só se o motivo falar da legenda, senão devolva a legenda atual exatamente igual.`,
       `- changeProduct: true só se o motivo criticar a peça/estampa/produto mostrado.`,
       `- imageCorrection: instrução curta para a nova imagem se o motivo criticar a cena, cores, pessoas ou composição; "" se não.`,
+      `- changeText: true só se o motivo criticar o texto da arte (frase, título, palavra).`,
+      carousel ? `- textScreens: números das telas (1 = capa) cujo texto o motivo critica; [] se nenhuma.` : `- textScreens: [1] se o texto muda, senão [].`,
+      carousel ? `- imageScreens: números das telas (1 = capa) cuja IMAGEM o motivo critica (olhe a arte); [] se nenhuma.` : `- imageScreens: [1] se a imagem muda, senão [].`,
       `Nunca invente preço, promoção, prazo ou característica que não está na pauta.`,
     ].filter(line => line !== undefined).join("\n");
     const output = await reviewWithCodex(dir, { images, prompt, schema: redoSchema });
     if (!output || typeof output.headline !== "string" || !output.headline.trim()) throw new Error("O Codex não devolveu o ajuste da refação");
     if (carousel && output.slides?.length !== idea.carouselScript.length) throw new Error("O Codex não devolveu todas as telas do carrossel");
     const caption = typeof output.caption === "string" && output.caption.trim() && output.caption.trim() !== String(idea.caption ?? "").trim() ? output.caption.trim() : undefined;
+    const screensList = value => (Array.isArray(value) ? value.filter(Number.isInteger) : []);
     return {
       text: { headline: output.headline, body: output.body ?? "", slides: carousel ? output.slides : [] },
       ...(caption ? { caption } : {}),
       changeProduct: output.changeProduct === true,
       imageCorrection: typeof output.imageCorrection === "string" ? output.imageCorrection.trim().slice(0, 600) : "",
+      codex: { changeText: output.changeText === true, textScreens: screensList(output.textScreens), imageScreens: screensList(output.imageScreens), changeProduct: output.changeProduct === true, captionChanged: Boolean(caption) },
     };
   } finally {
     await rm(dir, { recursive: true, force: true });
@@ -242,19 +250,23 @@ async function runWorkspace(workspaceId) {
   // Refação: o Codex decide o que muda (texto, legenda, peça, cena) a partir do motivo da reprovação.
   const redo = redoJob ? await rewriteForRedo(redoJob) : undefined;
   if (redo) console.error(JSON.stringify({ workspace: workspaceId, redoPlan: { headline: redo.text.headline, body: redo.text.body, changeProduct: redo.changeProduct, imageCorrection: redo.imageCorrection, captionChanged: Boolean(redo.caption) } }));
-  const selection = await callContainer(backend, { ...key, action: "select", allowCreate: submitting && !onlyIdea, skipIdeaIds: onlyIdea ? [] : reviewSkipIds(await readReviewQueue(), workspaceId),
-    ...(redo ? { textOverride: redo.text, excludeProducts: redo.changeProduct ? redoJob.previousProducts ?? [] : [] } : {}) });
+  // Refação direcionada: o backend cruza o motivo com a leitura do Codex e devolve o escopo (o que muda, o que fica).
+  const redoRequest = redo ? { textOverride: redo.text, redoReason: redoJob.reason, redoCodex: redo.codex, previousProducts: redoJob.previousProducts ?? [], previousVersionProducts: redoJob.previousVersionProducts ?? [] } : {};
+  const selection = await callContainer(backend, { ...key, action: "select", allowCreate: submitting && !onlyIdea, skipIdeaIds: onlyIdea ? [] : reviewSkipIds(await readReviewQueue(), workspaceId), ...redoRequest });
   // Pautas bloqueadas (sem material obrigatório ou referência que não carrega): revisão manual, sem gerar.
   for (const item of selection.blocked ?? []) {
     if (item.ideaId) await sendToReview(workspaceId, { ideaId: item.ideaId, idea: item.idea, reason: `${item.reason}: ${(item.guidance ?? []).join(" ")}` });
   }
   if (redoJob && (selection.existing || selection.empty)) throw new Error(selection.blocked?.[0]?.guidance?.[0] ?? "A pauta não pôde ser refeita");
   if (selection.existing || selection.empty) return selection;
-  const { idea, brand, plan, assets, history, archetypes, trace, productCodes, blocked, memory, calendar } = selection;
+  const { idea, plan, assets, history, archetypes, trace, productCodes, blocked, memory, calendar, redoScope } = selection;
+  // Motivo que falou da logo: ajusta tamanho/tratamento no renderizador (sem IA).
+  const brand = redoScope?.logo ? { ...selection.brand, logoConfig: logoAdjustment(redoJob?.reason, selection.brand?.logoConfig ?? {}) } : selection.brand;
+  if (redoScope) console.error(JSON.stringify({ workspace: workspaceId, redoScope }));
   if (mode === "select") {
     return { brand: brand.name, idea: idea.externalId, title: idea.title, mode: plan.mode, modeReasons: plan.modeReasons, autoSelected: plan.autoSelected,
       screens: plan.screens.map(item => ({ archetype: item.spec.composition.archetype, operation: item.spec.composition.operation, references: item.transmitted.map(ref => `${ref.role}:${ref.id}`) })),
-      excluded: plan.excluded, blocked, slot, ...(calendar ? { calendar } : {}), ...(memory ? { memory } : {}) };
+      excluded: plan.excluded, blocked, slot, ...(calendar ? { calendar } : {}), ...(memory ? { memory } : {}), ...(redoScope ? { redoScope } : {}) };
   }
   const jobDir = await mkdtemp(join(agentHome, "jobs", "editorial-"));
   const user = (await readFile("/etc/passwd", "utf8")).split("\n").find(line => line.startsWith("vorix-codex:"))?.split(":");
@@ -316,17 +328,32 @@ async function runWorkspace(workspaceId) {
     const qualityReports = [];
     const fingerprints = [];
     const runningHistory = [...history];
+    // Versão reprovada tela a tela (só quando o número de telas não mudou).
+    const previousScreens = redoJob?.previousScreens?.length === plan.screens.length ? redoJob.previousScreens : [];
+    let reusedScreens = 0;
     for (const [i, planned] of plan.screens.entries()) {
-      // Refação que criticou a imagem: a capa não volta para a composição controlada que foi reprovada
-      // (26/11/2026: a frase tipográfica reprovada por "imagem vazia" saiu igual na refação).
-      const rejected = i === 0 && redo?.imageCorrection ? redoJob.previousArchetypes?.[0] : undefined;
-      if (rejected && archetypes[rejected]?.operation === "deterministic_composite") {
-        const composition = planned.spec.composition;
-        const options = [composition.archetype, ...composition.alternatives].filter((id) => id !== rejected);
-        if (options.length) Object.assign(composition, { archetype: options[0], alternatives: options.slice(1) });
+      const composition = planned.spec.composition;
+      const previous = previousScreens[i];
+      // Sem escopo (versões antigas da API): a imagem de todas as telas pode mudar, como antes.
+      const imageMayChange = !redoScope || redoScope.image.includes(i + 1);
+      let reuse;
+      let screenHistory = runningHistory;
+      if (redoScope && previous && !imageMayChange && archetypes[previous.archetype]?.mode === planned.spec.mode) {
+        // Imagem que o cliente não criticou: mesma linguagem e, se foi gerada pela IA, a mesma base aprovada.
+        const options = [previous.archetype, ...[composition.archetype, ...composition.alternatives].filter((id) => id !== previous.archetype)];
+        Object.assign(composition, { archetype: options[0], alternatives: options.slice(1) });
+        if (previous.base) { reuse = previous; reusedScreens += 1; }
+      } else if (previous && imageMayChange) {
+        // Imagem criticada: composição controlada (sem IA) sairia igual — troca a linguagem, salvo troca de produto.
+        if (archetypes[previous.archetype]?.operation === "deterministic_composite" && !redoScope?.product) {
+          const options = [composition.archetype, ...composition.alternatives].filter((id) => id !== previous.archetype);
+          if (options.length) Object.assign(composition, { archetype: options[0], alternatives: options.slice(1) });
+        }
+        // A tela reprovada entra no histórico como peça "recente": o Quality Gate recusa uma nova quase igual a ela.
+        if (previous.fingerprint) screenHistory = [{ ...previous.fingerprint, seriesKey: undefined }, ...runningHistory];
       }
       const result = await produceScreen({
-        planned, brand, assets, history: runningHistory, archetypes, generateAi, seriesKey: planned.spec.seriesKey,
+        planned, brand, assets, history: screenHistory, archetypes, generateAi, seriesKey: planned.spec.seriesKey, ...(reuse ? { reuse } : {}),
         reviewScene: (args) => reviewScene({ ...args, screen: { index: i + 1, total: plan.screens.length } }),
         render: request => callContainer(renderer, request), maxAttempts: 3,
       });
@@ -344,6 +371,7 @@ async function runWorkspace(workspaceId) {
       final.push(result.image);
       fingerprints.push(result.fingerprint);
       runningHistory.unshift(result.fingerprint);
+      if (reuse) operations.push({ step: `tela ${i + 1}`, operation: "reuse_base", engine: "refação direcionada", inputs: ["base aprovada da versão anterior"], outcome: result.generation?.reused ? "ok" : "regenerated" });
       qualityReports.push({ screen: i + 1, archetype: result.archetype, attempts: result.attempts.length, gate: { approved: result.gate?.approved ?? true, passes: result.gate?.passes, warnings: result.gate?.warnings }, logo: result.quality.logo, textContrast: result.quality.textContrast });
     }
     const creative = {
@@ -354,8 +382,12 @@ async function runWorkspace(workspaceId) {
       // Aprendizado aplicado nesta peça (para auditar o que a memória mudou).
       ...(memory?.lessons?.length || Object.keys(memory?.archetypeBias ?? {}).length ? { memory: { lessons: memory.lessons.map(item => item.category), archetypeBias: memory.archetypeBias, avoidProducts: memory.avoidProducts } } : {}),
     };
-    return await submitArt(key, idea, brand, final, qualityReports, { creative, productCodes,
-      ...(redoJob ? { redoJobId: redoJob.id, textOverride: redo?.text, ...(redo?.caption ? { captionOverride: redo.caption } : {}) } : {}) });
+    if (redoScope) console.error(JSON.stringify({ workspace: workspaceId, redoResult: { reusedScreens, regenerated: results.filter(item => item.generation && !item.generation.reused).length, screens: results.length } }));
+    // Bases das telas geradas pela IA (imagem antes do texto): permitem a refação direcionada desta peça.
+    const bases = results.map(item => (item.generation ? { data: item.generation.base, layout: item.generation.layout, logoPlacement: item.generation.logoPlacement, protectedAreas: item.generation.protectedAreas,
+      ...(item.generation.aiReview ? { aiReview: item.generation.aiReview } : {}), ...(item.generation.sceneReview ? { sceneReview: item.generation.sceneReview } : {}) } : null));
+    return await submitArt(key, idea, brand, final, qualityReports, { creative, productCodes, bases,
+      ...(redoJob ? { ...redoRequest, redoJobId: redoJob.id, ...(redo?.caption && (!redoScope || redoScope.caption) ? { captionOverride: redo.caption } : {}) } : {}) });
   } finally {
     await rm(jobDir, { recursive: true, force: true });
   }

@@ -63,12 +63,13 @@ export const phoneDigits = (value: string) => value.replace(/\D/g, "");
 const NETWORK_LABEL: Record<string, string> = { instagram: "Instagram", facebook: "Facebook", tiktok: "TikTok", youtube: "YouTube", kwai: "Kwai" };
 
 /** `withCode`: já há outro pedido aguardando este aprovador — a resposta precisa do código (ou citar a mensagem). */
-export function approvalRequestText(input: { brand: string; code: string; networks: string[]; when?: string; caption?: string; screens: number; withCode?: boolean; redo?: { attempt: number; max: number; reason: string } }): string {
+export function approvalRequestText(input: { brand: string; code: string; networks: string[]; when?: string; caption?: string; screens: number; withCode?: boolean; redo?: { attempt: number; max: number; reason: string; changes?: string } }): string {
   const networks = input.networks.map((network) => NETWORK_LABEL[network] ?? network).join(" + ") || "redes sociais";
   const caption = (input.caption ?? "").trim();
   return [
     `*Aprovação de publicação — ${input.brand}*`,
     ...(input.redo ? [`🔁 Versão refeita (ajuste ${input.redo.attempt} de ${input.redo.max}) — você pediu: “${input.redo.reason}”`] : []),
+    ...(input.redo?.changes ? [input.redo.changes] : []),
     `${networks} · ${input.when ? `agendada para ${input.when}` : "publicar assim que aprovar"}${input.screens > 1 ? ` · carrossel com ${input.screens} imagens` : ""}`,
     ...(caption ? ["", `Legenda: ${caption.length > 600 ? `${caption.slice(0, 600)}…` : caption}`] : []),
     "",
@@ -91,6 +92,7 @@ export const approvalAckText = {
   redoQueued: (brand: string, reason: string, attempt: number, max: number) => `❌ Reprovado — ${brand} (motivo: ${reason}). Vou refazer a arte com base no seu motivo e te mando a nova versão para aprovar (ajuste ${attempt} de ${max}).`,
   unclear: (code: string) => `Não entendi se é para aprovar a publicação ${code}. Responda só *1* para aprovar, ou *2* e o que precisa mudar para eu refazer.`,
   redoFailed: (brand: string, detail?: string) => `⚠️ Não consegui refazer a arte de ${brand}${detail ? `: ${detail.slice(0, 220)}` : ""}. A ideia voltou ao Bolsão.`,
+  declined: (brand: string, reason?: string) => `❌ Reprovado — ${brand}${reason ? ` (motivo: ${reason})` : ""}. Entendi que não é para refazer: a publicação foi cancelada e a ideia voltou ao Bolsão.`,
   redoLimit: (brand: string, reason: string | undefined, max: number) => `❌ Reprovado — ${brand}${reason ? ` (motivo: ${reason})` : ""}. Já foram ${max} ajustes nesta ideia: ela voltou ao Bolsão para revisão.`,
   expiredSkip: (brand: string, when?: string) => `⏰ Sem resposta — ${brand}: a publicação${when ? ` das ${when}` : ""} não foi feita.`,
   expiredPublish: (brand: string, when?: string) => `⏰ Sem resposta — ${brand}: pela regra da marca, a publicação${when ? ` das ${when}` : ""} seguiu automaticamente.`,

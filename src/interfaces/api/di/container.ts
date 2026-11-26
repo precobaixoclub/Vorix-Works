@@ -1893,6 +1893,7 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
       executionSideEffectGuard,
       executionCircuitBreaker,
       social,
+      whatsappApprovals,
       publicationProviders,
       publicationProviderAdapters,
       publicationProviderRegistry,

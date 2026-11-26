@@ -858,7 +858,7 @@ async function main(): Promise<void> {
     }
     if (approvalRepository && !event.isGroup && !event.fromMe && event.body) {
       const fromPhone = event.chatPhoneE164 ?? event.chatPn ?? event.chatId;
-      const capture = await captureApprovalReply(approvalRepository, { connectionId: event.connectionId, fromPhone, text: event.body, isGroup: event.isGroup, fromMe: event.fromMe })
+      const capture = await captureApprovalReply(approvalRepository, { connectionId: event.connectionId, fromPhone, text: event.body, isGroup: event.isGroup, fromMe: event.fromMe, ...(event.quotedExternalMessageId ? { quotedExternalMessageId: event.quotedExternalMessageId } : {}) })
         .catch((error) => { console.error("[inbox-worker] falha ao ler resposta de aprovação:", error instanceof Error ? error.message : error); return { handled: false as const, reply: undefined }; });
       if (capture.handled) {
         if (capture.reply) {

@@ -49,8 +49,10 @@ export interface WhatsappApprovalRepositoryPort {
   listByStatus(status: ApprovalRequestStatus, limit: number): Promise<ApprovalRequest[]>;
   listRecent(tenantId: string, limit: number): Promise<ApprovalRequest[]>;
   /** Mensagens que o SISTEMA mandou ao aprovador — o eco delas (fromMe) não vira conversa de atendimento. */
-  recordOutbound(connectionId: string, externalMessageIds: string[]): Promise<void>;
+  recordOutbound(connectionId: string, externalMessageIds: string[], requestId?: string): Promise<void>;
   isApprovalOutbound(connectionId: string, externalMessageId: string): Promise<boolean>;
+  /** Pedido que uma mensagem enviada representa (imagem/texto do pedido) — para a resposta citando a mensagem. */
+  requestForOutbound(connectionId: string, externalMessageId: string): Promise<ApprovalRequest | undefined>;
   /** O telefone é de um aprovador configurado para pedidos enviados por esta conexão? */
   isApproverPhone(connectionId: string, phone: string): Promise<boolean>;
   /** Houve pedido/mensagem de aprovação por esta conexão no último minuto (eco ainda pode estar a caminho)? */
@@ -210,11 +212,11 @@ export class WhatsappApprovalService {
   private readonly deliverable = new Map<string, string>();
 
   /** Envia para o aprovador; se o WhatsApp não conhece o número nessa forma, tenta a outra (com/sem o 9). */
-  private async deliver(connectionId: string, phone: string, send: (to: string) => Promise<{ externalMessageId?: string } | void>) {
+  private async deliver(connectionId: string, phone: string, send: (to: string) => Promise<{ externalMessageId?: string } | void>, requestId?: string) {
     let result: { externalMessageId?: string } | void = undefined;
     this.deliverable.set(phone, await deliverToApprover(phone, async (to) => { result = await send(to); }, this.deliverable.get(phone)));
     const id = (result as { externalMessageId?: string } | undefined)?.externalMessageId;
-    if (id) await this.deps.repository.recordOutbound(connectionId, [id]).catch(() => undefined);
+    if (id) await this.deps.repository.recordOutbound(connectionId, [id], requestId).catch(() => undefined);
   }
 
   private async sendText(connectionId: string, phone: string, body: string) {
@@ -242,10 +244,12 @@ export class WhatsappApprovalService {
         for (const media of images) {
           const file = await this.deps.loadMedia(media.url);
           const mediaUrl = `data:${file.mimeType};base64,${file.data.toString("base64")}`;
-          await this.deliver(settings.connectionId, rule.approverPhone, (to) => provider.sendImage({ externalSessionId: session, to, mediaUrl }));
+          await this.deliver(settings.connectionId, rule.approverPhone, (to) => provider.sendImage({ externalSessionId: session, to, mediaUrl }), request.id);
         }
-        const text = approvalRequestText({ brand: workspace?.name ?? "marca", code: request.code, networks: post.networks, when: formatWhen(post.scheduledAt, post.timezone), caption: post.caption, screens: images.length });
-        await this.deliver(settings.connectionId, rule.approverPhone, (to) => provider.sendText({ externalSessionId: session, to, body: text }));
+        // Outro pedido já aguardando este aprovador: "1" sozinho seria ambíguo — a mensagem já orienta com o código.
+        const othersOpen = (await this.deps.repository.listOpenByPhone(settings.connectionId, rule.approverPhone)).some((open) => open.id !== request.id);
+        const text = approvalRequestText({ brand: workspace?.name ?? "marca", code: request.code, networks: post.networks, when: formatWhen(post.scheduledAt, post.timezone), caption: post.caption, screens: images.length, withCode: othersOpen });
+        await this.deliver(settings.connectionId, rule.approverPhone, (to) => provider.sendText({ externalSessionId: session, to, body: text }), request.id);
         await this.deps.repository.updateRequest(request.id, { status: "sent", sentAt: this.now().toISOString() });
         sent += 1;
       } catch (error) {
@@ -352,8 +356,8 @@ export class WhatsappApprovalService {
  * Devolve `handled: false` quando a mensagem não é resposta de aprovação (segue o fluxo normal).
  */
 export async function captureApprovalReply(
-  repository: Pick<WhatsappApprovalRepositoryPort, "listOpenByPhone" | "decideRequest">,
-  input: { connectionId: string; fromPhone: string | undefined; text: string | undefined; isGroup: boolean; fromMe: boolean; now?: Date },
+  repository: Pick<WhatsappApprovalRepositoryPort, "listOpenByPhone" | "decideRequest"> & Partial<Pick<WhatsappApprovalRepositoryPort, "requestForOutbound">>,
+  input: { connectionId: string; fromPhone: string | undefined; text: string | undefined; isGroup: boolean; fromMe: boolean; quotedExternalMessageId?: string; now?: Date },
 ): Promise<{ handled: boolean; reply?: string; requestId?: string }> {
   if (input.isGroup || input.fromMe || !input.fromPhone) return { handled: false };
   const parsed = parseApprovalReply(input.text);
@@ -361,6 +365,15 @@ export async function captureApprovalReply(
   let phone: string;
   try { phone = canonicalApprovalPhone(input.fromPhone); } catch { return { handled: false }; }
   const open = await repository.listOpenByPhone(input.connectionId, phone);
+  // Resposta citando a imagem/texto de um pedido ("Responder" no WhatsApp): vale para aquele pedido, sem código.
+  const quoted = !parsed.code && input.quotedExternalMessageId && repository.requestForOutbound
+    ? await repository.requestForOutbound(input.connectionId, input.quotedExternalMessageId).catch(() => undefined)
+    : undefined;
+  if (quoted && quoted.approverPhone === phone) {
+    if (!open.some((request) => request.id === quoted.id)) return { handled: true, reply: approvalAckText.late(quoted.code) };
+    const decided = await repository.decideRequest(quoted.id, parsed.decision, parsed.reason, (input.now ?? new Date()).toISOString());
+    return decided ? { handled: true, requestId: quoted.id } : { handled: true, reply: approvalAckText.late(quoted.code) };
+  }
   const match = matchPendingRequest(open, parsed);
   if (!match) return { handled: false };
   if ("ambiguous" in match) return { handled: true, reply: approvalAckText.ambiguous(match.ambiguous) };

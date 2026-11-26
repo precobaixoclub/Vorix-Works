@@ -53,7 +53,8 @@ export const phoneDigits = (value: string) => value.replace(/\D/g, "");
 
 const NETWORK_LABEL: Record<string, string> = { instagram: "Instagram", facebook: "Facebook", tiktok: "TikTok", youtube: "YouTube", kwai: "Kwai" };
 
-export function approvalRequestText(input: { brand: string; code: string; networks: string[]; when?: string; caption?: string; screens: number }): string {
+/** `withCode`: já há outro pedido aguardando este aprovador — a resposta precisa do código (ou citar a mensagem). */
+export function approvalRequestText(input: { brand: string; code: string; networks: string[]; when?: string; caption?: string; screens: number; withCode?: boolean }): string {
   const networks = input.networks.map((network) => NETWORK_LABEL[network] ?? network).join(" + ") || "redes sociais";
   const caption = (input.caption ?? "").trim();
   return [
@@ -61,7 +62,15 @@ export function approvalRequestText(input: { brand: string; code: string; networ
     `${networks} · ${input.when ? `agendada para ${input.when}` : "publicar assim que aprovar"}${input.screens > 1 ? ` · carrossel com ${input.screens} imagens` : ""}`,
     ...(caption ? ["", `Legenda: ${caption.length > 600 ? `${caption.slice(0, 600)}…` : caption}`] : []),
     "",
-    `Responda *1* para aprovar ou *2* para reprovar (pode escrever o motivo depois do 2).`,
+    ...(input.withCode
+      ? [
+        `Há mais de uma publicação aguardando você. Responda *1 ${input.code}* para aprovar ou *2 ${input.code}* para reprovar (pode escrever o motivo depois).`,
+        `Ou toque em *Responder* nesta mensagem (ou na imagem) e mande só *1* ou *2*.`,
+      ]
+      : [
+        `Responda *1* para aprovar ou *2* para reprovar (pode escrever o motivo depois do 2).`,
+        `Também vale tocar em *Responder* nesta mensagem ou na imagem.`,
+      ]),
     `Código: *${input.code}*`,
   ].join("\n");
 }
@@ -72,7 +81,7 @@ export const approvalAckText = {
   expiredSkip: (brand: string, when?: string) => `⏰ Sem resposta — ${brand}: a publicação${when ? ` das ${when}` : ""} não foi feita.`,
   expiredPublish: (brand: string, when?: string) => `⏰ Sem resposta — ${brand}: pela regra da marca, a publicação${when ? ` das ${when}` : ""} seguiu automaticamente.`,
   late: (code: string) => `Esse pedido (${code}) já foi encerrado — nada foi alterado.`,
-  ambiguous: (codes: string[]) => `Há ${codes.length} publicações aguardando sua aprovação. Responda com o código, por exemplo: *1 ${codes[0]}* ou *2 ${codes[0]} motivo*. Códigos: ${codes.join(", ")}.`,
+  ambiguous: (codes: string[]) => `Há ${codes.length} publicações aguardando sua aprovação. Toque em *Responder* na imagem da publicação e mande *1* ou *2* — ou responda com o código, por exemplo: *1 ${codes[0]}* ou *2 ${codes[0]} motivo*. Códigos: ${codes.join(", ")}.`,
   unknownCode: (code: string) => `Não encontrei uma publicação aguardando aprovação com o código ${code}.`,
   failed: (brand: string, detail: string) => `⚠️ Não consegui aplicar sua resposta na publicação de ${brand}: ${detail}`,
   test: (brand: string) => `Teste de aprovação — ${brand}. Quando houver uma publicação para aprovar, ela chega aqui. Responda *1* para aprovar ou *2* para reprovar.`,

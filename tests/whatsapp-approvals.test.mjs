@@ -10,7 +10,7 @@ const APPROVER = "+55 (11) 98888-7777";
 const PHONE = canonicalApprovalPhone(APPROVER);
 
 function fakeRepository() {
-  const state = { outbound: new Set(), settings: new Map(), rules: new Map(), requests: [], members: [{ userId: "u-owner", name: "Dono", role: "owner" }, { userId: "u-viewer", name: "Leitor", role: "viewer" }], toRequest: [] };
+  const state = { outbound: new Set(), outboundRequest: new Map(), settings: new Map(), rules: new Map(), requests: [], members: [{ userId: "u-owner", name: "Dono", role: "owner" }, { userId: "u-viewer", name: "Leitor", role: "viewer" }], toRequest: [] };
   const repo = {
     state,
     async getSettings(tenantId) { return state.settings.get(tenantId); },
@@ -26,7 +26,8 @@ function fakeRepository() {
     async listOpenByPhone(connectionId, phone) { return state.requests.filter((request) => request.connectionId === connectionId && request.approverPhone === phone && request.status === "sent"); },
     async listByStatus(status) { return state.requests.filter((request) => request.status === status); },
     async listRecent() { return state.requests; },
-    async recordOutbound(connectionId, ids) { for (const id of ids) state.outbound.add(`${connectionId}:${id}`); },
+    async recordOutbound(connectionId, ids, requestId) { for (const id of ids) { state.outbound.add(`${connectionId}:${id}`); if (requestId) state.outboundRequest.set(`${connectionId}:${id}`, requestId); } },
+    async requestForOutbound(connectionId, id) { const requestId = state.outboundRequest.get(`${connectionId}:${id}`); return state.requests.find((request) => request.id === requestId); },
     async isApprovalOutbound(connectionId, id) { return state.outbound.has(`${connectionId}:${id}`); },
     async hasRecentApprovalActivity() { return state.recentActivity === true; },
     async isApproverPhone(connectionId, phone) { return [...state.rules.values()].some((rule) => rule.approverPhone === phone) && [...state.settings.values()].some((item) => item.connectionId === connectionId); },
@@ -252,4 +253,32 @@ test("publicação aprovada que foi ao ar marca a ideia como feita a cada ciclo;
   const result = await service.tick();
   assert.equal(result.completed, 0);
   assert.equal(result.sent, 0);
+});
+
+test("várias marcas ao mesmo tempo: responder citando a imagem ou o texto do pedido decide aquele pedido, sem código", async () => {
+  const { service, repository, sent, actions, posts } = setup();
+  await configure(service);
+  await service.saveRule({ tenantId: "t1", workspaceId: "ws-vorix", enabled: true, approverUserId: "u-owner", approverPhone: APPROVER, onTimeout: "skip", actorUserId: "u-owner" });
+  posts.set("pub-2", { ...posts.get("pub-1") });
+  repository.state.toRequest.push({ tenantId: "t1", workspaceId: "ws-cmkv", publicationId: "pub-1" }, { tenantId: "t1", workspaceId: "ws-vorix", publicationId: "pub-2" });
+  await service.dispatchPending();
+  const [cmkv, vorix] = repository.state.requests;
+  // Mensagens: [imagem CMKV, texto CMKV, imagem Vorix, texto Vorix] — ids m1..m4.
+  assert.doesNotMatch(sent[1].body, /Há mais de uma/, "primeiro pedido: basta 1 ou 2");
+  assert.match(sent[1].body, /Responder/);
+  assert.ok(sent[3].body.includes(`Há mais de uma publicação aguardando você. Responda *1 ${vorix.code}* para aprovar`), "segundo pedido já orienta com o código");
+  // "1" sozinho ainda é ambíguo e a orientação ensina a citar a imagem.
+  const ambiguous = await captureApprovalReply(repository, { connectionId: "conn-vorix", fromPhone: APPROVER, text: "1", isGroup: false, fromMe: false });
+  assert.match(ambiguous.reply, /Responder\* na imagem/);
+  // Citando a imagem da Vorix (m3): reprova a Vorix. Citando o texto da CMKV (m2): aprova a CMKV.
+  assert.deepEqual(await captureApprovalReply(repository, { connectionId: "conn-vorix", fromPhone: APPROVER, text: "2 cor apagada", quotedExternalMessageId: "m3", isGroup: false, fromMe: false }), { handled: true, requestId: vorix.id });
+  assert.deepEqual(await captureApprovalReply(repository, { connectionId: "conn-vorix", fromPhone: APPROVER, text: "1", quotedExternalMessageId: "m2", isGroup: false, fromMe: false }), { handled: true, requestId: cmkv.id });
+  await service.applyDecisions();
+  assert.deepEqual(actions.map((action) => [action.action, action.postId]).sort(), [["approve", "pub-1"], ["cancel", "pub-2"]]);
+  assert.equal(vorix.reason, "cor apagada");
+  // Citando um pedido já encerrado: avisa que nada mudou.
+  const late = await captureApprovalReply(repository, { connectionId: "conn-vorix", fromPhone: APPROVER, text: "2", quotedExternalMessageId: "m1", isGroup: false, fromMe: false });
+  assert.ok(late.reply.includes(`(${cmkv.code}) já foi encerrado`), late.reply);
+  // Citar uma mensagem que não é de pedido não muda a regra normal.
+  assert.deepEqual(await captureApprovalReply(repository, { connectionId: "conn-vorix", fromPhone: APPROVER, text: "1", quotedExternalMessageId: "conversa-qualquer", isGroup: false, fromMe: false }), { handled: false });
 });

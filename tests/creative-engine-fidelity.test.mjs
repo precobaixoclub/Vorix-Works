@@ -608,3 +608,15 @@ test("revisão calibrada: diferença material reprova; variação de foto (luz, 
   const unreviewed = evaluateFidelityGate(spec, { operation: "ai_edit_with_reference", transmittedReferenceIds: ["p"], product: posed });
   assert.ok(unreviewed.failures.some((failure) => failure.code === "PRODUCT_MISMATCH"), "sem revisão, as distâncias de pixel decidem");
 });
+
+test("marca de produto físico: pauta sem palavra de produto mostra peça REAL do catálogo, nunca roupa inventada pela IA", () => {
+  // Caso real (25/11/2026): "Texas, no seu sotaque" virou cena conceitual e a IA desenhou uma estampa que não existe.
+  const idea = { title: "Texas, no seu sotaque", concept: "Cinto, jeans e uma textura que lembra couro já puxam o western. Um desenho autoral faz o resto.", keyMessage: "Texas, no seu sotaque" };
+  const decision = classifyVisualIntent({ businessKind: "physical_products", idea, references: [] });
+  assert.equal(decision.mode, "physical_product");
+  assert.equal(decision.demonstratesProduct, true);
+  // Pedido institucional explícito continua conceitual (sem produto).
+  assert.equal(classifyVisualIntent({ businessKind: "physical_products", idea: { title: "Nossos valores: o manifesto da marca" }, references: [] }).mode, "conceptual");
+  // Serviços sem catálogo seguem conceituais como antes.
+  assert.equal(classifyVisualIntent({ businessKind: "services", idea, references: [] }).mode, "conceptual");
+});

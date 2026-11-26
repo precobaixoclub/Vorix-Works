@@ -126,6 +126,18 @@ export function classifyVisualIntent(input: VisualIntentInput): VisualIntentDeci
     };
   }
 
+  // Marca de produto físico sem pedido explícito de peça institucional: mostra uma peça REAL do catálogo
+  // (o planejador escolhe no rodízio). Antes caía em "cena conceitual" e a IA desenhava a roupa do zero —
+  // em produção (25/11/2026) a CMKV recebeu camiseta com estampa que não existe no catálogo.
+  if (input.businessKind === "physical_products" && !conceptAsked) {
+    return {
+      mode: "physical_product",
+      source: "business_default",
+      reasons: ["O negócio vende produtos físicos: a peça mostra um produto real do catálogo, nunca uma peça inventada."],
+      demonstratesProduct: true,
+    };
+  }
+
   if (input.businessKind === "software" && !conceptAsked && (feature || SOFTWARE_INTENT.test(text))) {
     return {
       mode: "software",

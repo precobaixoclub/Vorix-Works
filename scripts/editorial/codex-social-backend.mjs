@@ -472,7 +472,9 @@ async function run() {
     const photos = creative.businessKind === "physical_products" ? await catalogPhotos() : [];
     const context = {
       brandName: workspace.name, profile: brandRow?.profile, used: used.rows, photos, photosByUrl: new Map(photos.map(photo => [photo.url, photo])),
-      captures: creative.businessKind === "software" ? await libraryCaptures() : [], history: await visualHistory(used.rows),
+      captures: creative.businessKind === "software" ? await libraryCaptures() : [], // Peça cancelada (reprovada no WhatsApp) nunca foi ao ar: não conta como repetição — senão a refação reprova
+      // a tela que ficou igual à da versão reprovada (26/11/2026).
+      history: await visualHistory(used.rows.filter(row => row.state !== "cancelled")),
       excludeProducts: Array.isArray(request.excludeProducts) ? request.excludeProducts.map(String) : [],
     };
     // Primeira pauta viável: as bloqueadas (falta referência obrigatória) ficam no Bolsão com a orientação.

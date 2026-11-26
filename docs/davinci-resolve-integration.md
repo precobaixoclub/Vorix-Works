@@ -1,5 +1,9 @@
 # Integração DaVinci Resolve — Etapa A (motor de execução)
 
+> **2026-11-26 — estacionada.** A reavaliação (`docs/video-engine-architecture-review.md`)
+> recomenda FFmpeg como executor de produção. O código abaixo fica no repositório, fora do fluxo,
+> e só volta se a opção híbrida com DaVinci Studio for aprovada.
+
 Status: **ponte, adaptador, compilador e Quality Gate implementados e testados contra simulação.
 A prova ao vivo (MP4 exportado pelo DaVinci) ainda NÃO foi executada: o DaVinci Resolve não está
 instalado na máquina de desenvolvimento.** Este documento separa o que foi verificado do que ainda

@@ -710,7 +710,7 @@ test("conceitual: várias linguagens de imagem (cena, close-up, metáfora, 3D); 
   const tech = chooseComposition({ mode: "conceptual", idea: { title: "Algo mais tecnológico e inovador", visualDirection: "visual digital, futurista, inteligência artificial" }, references: noRefs, history: [], allowAi: true, seed: "x" });
   assert.equal(tech.archetype.id, "concept_3d");
   const plan = planEditorialCreative({ workspaceId: "ws", brandName: "PBC", businessKind: "unknown", ideaReferences: [], history: [], allowAi: true,
-    idea: IDEA({ title: "Impressora", format: "carousel", carouselScript: [{ headline: "1" }, { headline: "2" }, { headline: "3" }, { headline: "4" }] }) });
+    idea: IDEA({ title: "Impressora", format: "carousel", carouselScript: [{ headline: "1" }, { headline: "2" }, { headline: "3" }, { headline: "4" }, { headline: "5" }, { headline: "6" }] }) });
   const operations = plan.screens.map((item) => item.spec.composition.operation);
   // Regressão (26/11/2026): telas 3+ tipográficas foram reprovadas como "vazias com texto no canto".
   assert.ok(operations.every((operation) => operation === "ai_generation"), `telas: ${operations}`);

@@ -112,7 +112,13 @@ export function chooseComposition(input: ChooseCompositionInput): CompositionCho
     && (!item.needsMobileCapture || [input.references.primary, ...input.references.variants].some((reference) => reference?.form === "mobile"))
     && (!item.needsCutout || input.references.primary?.photoKind !== "scene"));
   const primaryPool = eligible.filter((item) => !item.onlyAsAlternative);
-  const pool = primaryPool.length ? primaryPool : eligible;
+  // Todas as linguagens principais já usadas nas telas anteriores (carrossel longo): repete uma delas em vez de
+  // cair na alternativa (5ª tela tipográfica "vazia" na Preço Baixo Club, 26/11/2026).
+  const reusable = primaryPool.length ? [] : available.filter((item) => !item.onlyAsAlternative && (input.exclude ?? []).includes(item.id)
+    && (input.allowAi || item.operation === "deterministic_composite") && (!item.minVariants || variants >= item.minVariants)
+    && (!item.needsMobileCapture || [input.references.primary, ...input.references.variants].some((reference) => reference?.form === "mobile"))
+    && (!item.needsCutout || input.references.primary?.photoKind !== "scene"));
+  const pool = primaryPool.length ? primaryPool : reusable.length ? reusable : eligible;
   // Arquétipos "só como alternativa" (ex.: frase tipográfica) entram no fim da fila de troca. Antes ficavam
   // de fora: pauta conceitual reprovada por repetição não tinha para onde trocar (produção, 26/11/2026).
   const backups = eligible.filter((item) => !pool.includes(item)).map((item) => item.id);

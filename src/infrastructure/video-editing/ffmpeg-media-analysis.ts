@@ -21,6 +21,8 @@ export type RunFfmpegCaptureOptions = {
   cwd?: string;
   /** Recebe o número do último quadro processado (progresso real). */
   onFrame?: (frame: number) => void;
+  /** Mantém o cabeçalho (versão do FFmpeg) no stderr. */
+  banner?: boolean;
 };
 
 export function runFfmpegCapture(args: string[], options: RunFfmpegCaptureOptions = {}): Promise<CaptureResult> {
@@ -28,7 +30,7 @@ export function runFfmpegCapture(args: string[], options: RunFfmpegCaptureOption
   const timeoutMs = options.timeoutMs ?? 120_000;
   return new Promise((resolve, reject) => {
     const startedAt = Date.now();
-    const child = spawn(binary, ["-hide_banner", "-nostdin", ...args], { shell: false, windowsHide: true, stdio: ["ignore", "ignore", "pipe"], cwd: options.cwd });
+    const child = spawn(binary, [...(options.banner ? [] : ["-hide_banner"]), "-nostdin", ...args], { shell: false, windowsHide: true, stdio: ["ignore", "ignore", "pipe"], cwd: options.cwd });
     let stderr = "";
     let done = false;
     const finish = (fn: () => void) => {

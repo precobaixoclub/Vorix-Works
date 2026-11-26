@@ -271,8 +271,9 @@ export function compileFfmpegEdit(input: CompileFfmpegInput): CompiledFfmpegEdit
   let nextInput = clipFiles.length;
   const filters: string[] = [];
 
-  // Mesma base de tempo em todas as entradas: concat muda a base (1/1000000) e o xfade exige igualdade.
-  clipFiles.forEach((_, index) => filters.push(`[${index}:v]settb=AVTB,setpts=PTS-STARTPTS[c${index}]`));
+  // Mesma base de tempo e frame rate constante declarado: o concat muda a base (1/1000000) e perde o
+  // frame rate (1/0); o xfade exige os dois (o FFmpeg 7 de produção recusa, o 6.1 tolerava).
+  clipFiles.forEach((_, index) => filters.push(`[${index}:v]settb=AVTB,setpts=PTS-STARTPTS,fps=${fps}[c${index}]`));
   let current = "[c0]";
   let currentDuration = layout[0]!.frames / fps;
   for (let index = 1; index < layout.length; index += 1) {
@@ -284,7 +285,7 @@ export function compileFfmpegEdit(input: CompileFfmpegInput): CompiledFfmpegEdit
       filters.push(`${current}[c${index}]xfade=transition=${transition}:duration=${n(d)}:offset=${n(currentDuration - d)}${label}`);
       currentDuration += frames / fps - d;
     } else {
-      filters.push(`${current}[c${index}]concat=n=2:v=1:a=0${label}`);
+      filters.push(`${current}[c${index}]concat=n=2:v=1:a=0,fps=${fps}${label}`);
       currentDuration += frames / fps;
     }
     current = label;

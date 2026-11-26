@@ -219,7 +219,10 @@ export class FfmpegEditExecutor implements VideoEditExecutor {
           throw new VideoRenderStepError(step.id, `${step.kind} ${step.id}: ${error instanceof Error ? error.message : String(error)}`, []);
         });
         if (result.exitCode !== 0) {
-          const tail = result.stderr.split(/\r?\n/).filter((line) => line.trim() && !/^\s*(frame|size)=/.test(line)).slice(-6);
+          // Primeiro as linhas que dizem o porquê (o FFmpeg costuma terminar com mensagens genéricas).
+          const lines = result.stderr.split(/\r?\n/).filter((line) => line.trim() && !/^\s*(frame|size)=/.test(line));
+          const causes = lines.filter((line) => /error|invalid|failed|unable|no such|not found|unknown|cannot/i.test(line) && !/Terminating thread|Task finished|Conversion failed|Nothing was written/i.test(line));
+          const tail = [...causes.slice(0, 6), ...lines.slice(-3)];
           throw new VideoRenderStepError(step.id, `FFmpeg falhou em ${step.kind} ${step.id} (código ${result.exitCode}).`, tail);
         }
         if (cachePath) await place(join(jobDir, step.output), cachePath).catch(() => undefined);
@@ -232,7 +235,7 @@ export class FfmpegEditExecutor implements VideoEditExecutor {
       await mkdir(dirname(request.outputPath), { recursive: true });
       await copyFile(join(jobDir, compiled.output), request.outputPath);
       const info = await stat(request.outputPath);
-      const version = (await runFfmpegCapture(["-version"], { timeoutMs: 10_000 })).stderr;
+      const version = (await runFfmpegCapture(["-f", "lavfi", "-i", "nullsrc=s=16x16:d=0.04", "-f", "null", "-"], { timeoutMs: 10_000, banner: true })).stderr;
       progress("done", 100, "Vídeo pronto");
       return {
         outputPath: request.outputPath,

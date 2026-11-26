@@ -28,6 +28,7 @@ function fakeRepository() {
     async listRecent() { return state.requests; },
     async recordOutbound(connectionId, ids) { for (const id of ids) state.outbound.add(`${connectionId}:${id}`); },
     async isApprovalOutbound(connectionId, id) { return state.outbound.has(`${connectionId}:${id}`); },
+    async hasRecentApprovalActivity() { return state.recentActivity === true; },
     async isApproverPhone(connectionId, phone) { return [...state.rules.values()].some((rule) => rule.approverPhone === phone) && [...state.settings.values()].some((item) => item.connectionId === connectionId); },
   };
   return repo;
@@ -210,6 +211,13 @@ test("eco das mensagens do sistema ao aprovador não entra nas Conversas; o que 
   // Eco que chega antes de o id ser gravado: num chat de aprovador, confere de novo após a pausa.
   setTimeout(() => repository.state.outbound.add("conn-vorix:atrasado"), 1);
   assert.equal(await isApprovalEcho(repository, { ...base, externalMessageId: "atrasado", waitMs: 30 }), true);
+  // Eco só com LID (sem telefone): com envio de aprovação no último minuto, também espera e confere.
+  setTimeout(() => repository.state.outbound.add("conn-vorix:lid"), 1);
+  assert.equal(await isApprovalEcho(repository, { ...base, chatPhone: "123456789012345@lid", externalMessageId: "lid", waitMs: 30 }), false, "sem atividade recente: segue normal");
+  repository.state.recentActivity = true;
+  setTimeout(() => repository.state.outbound.add("conn-vorix:lid2"), 1);
+  assert.equal(await isApprovalEcho(repository, { ...base, chatPhone: "123456789012345@lid", externalMessageId: "lid2", waitMs: 30 }), true);
+  repository.state.recentActivity = false;
   // Chat de outro contato: sem pausa, segue normal.
   const started = Date.now();
   assert.equal(await isApprovalEcho(repository, { ...base, chatPhone: "+5511977776666", externalMessageId: "x", waitMs: 2_000 }), false);

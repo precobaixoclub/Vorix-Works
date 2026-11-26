@@ -53,6 +53,8 @@ export interface WhatsappApprovalRepositoryPort {
   isApprovalOutbound(connectionId: string, externalMessageId: string): Promise<boolean>;
   /** O telefone é de um aprovador configurado para pedidos enviados por esta conexão? */
   isApproverPhone(connectionId: string, phone: string): Promise<boolean>;
+  /** Houve pedido/mensagem de aprovação por esta conexão no último minuto (eco ainda pode estar a caminho)? */
+  hasRecentApprovalActivity(connectionId: string): Promise<boolean>;
 }
 
 export type ApprovalPostView = {
@@ -358,14 +360,16 @@ export async function captureApprovalReply(
  * equipe digita no celular para o aprovador continua indo para as Conversas.
  */
 export async function isApprovalEcho(
-  repository: Pick<WhatsappApprovalRepositoryPort, "isApprovalOutbound" | "isApproverPhone">,
+  repository: Pick<WhatsappApprovalRepositoryPort, "isApprovalOutbound" | "isApproverPhone" | "hasRecentApprovalActivity">,
   input: { connectionId: string; externalMessageId: string; chatPhone: string | undefined; fromMe: boolean; isGroup: boolean; waitMs?: number },
 ): Promise<boolean> {
   if (!input.fromMe || input.isGroup || !input.externalMessageId) return false;
   if (await repository.isApprovalOutbound(input.connectionId, input.externalMessageId)) return true;
   let phone: string | undefined;
   try { phone = input.chatPhone ? canonicalApprovalPhone(input.chatPhone) : undefined; } catch { phone = undefined; }
-  if (!phone || !(await repository.isApproverPhone(input.connectionId, phone))) return false;
+  // O eco pode vir só com o identificador interno do WhatsApp (LID), sem telefone: então vale a atividade recente.
+  const approverChat = phone ? await repository.isApproverPhone(input.connectionId, phone) : false;
+  if (!approverChat && !(await repository.hasRecentApprovalActivity(input.connectionId))) return false;
   await new Promise((resolve) => setTimeout(resolve, input.waitMs ?? 2_500));
   return repository.isApprovalOutbound(input.connectionId, input.externalMessageId);
 }

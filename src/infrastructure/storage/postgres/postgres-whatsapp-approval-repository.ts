@@ -129,6 +129,12 @@ export class PostgresWhatsappApprovalRepository implements WhatsappApprovalRepos
     return rows.length > 0;
   }
 
+  async hasRecentApprovalActivity(connectionId: string): Promise<boolean> {
+    const { rows } = await this.pool.query(`select 1 where exists (select 1 from whatsapp_approval_outbound where connection_id=$1 and created_at > now() - interval '60 seconds')
+      or exists (select 1 from publication_approval_requests where connection_id=$1 and (status='pending' or sent_at > now() - interval '60 seconds' or applied_at > now() - interval '60 seconds'))`, [connectionId]);
+    return rows.length > 0;
+  }
+
   async listRecent(tenantId: string, limit: number): Promise<ApprovalRequest[]> {
     const { rows } = await this.pool.query<RequestRow>("select * from publication_approval_requests where tenant_id=$1 order by created_at desc limit $2", [tenantId, limit]);
     return rows.map(toRequest);

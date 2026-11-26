@@ -659,3 +659,38 @@ test("marca de produto físico: pauta sem palavra de produto mostra peça REAL d
   // Serviços sem catálogo seguem conceituais como antes.
   assert.equal(classifyVisualIntent({ businessKind: "services", idea, references: [] }).mode, "conceptual");
 });
+
+// Regressão (26/11/2026): cena gerada reprovada só pela POSIÇÃO do texto repetida caía na frase tipográfica
+// (Preço Baixo Club, inclusive na refação pedida por "imagem vazia"). Agora gera de novo com outro layout.
+test("cena gerada com layout repetido: gera de novo com o texto em outra posição, sem trocar para a frase tipográfica", async () => {
+  const planned = {
+    spec: { mode: "conceptual", subject: "impressora", requiredReferences: [], blockers: [], composition: { archetype: "concept_scene", alternatives: ["typographic_statement"] } },
+    screen: { headline: "Impressora barata pode ter tinta cara" }, transmitted: [], instruction: "cena de home office",
+  };
+  const corrections = [];
+  const renders = [];
+  const generateAi = async ({ correction }) => { corrections.push(correction); return { base: "img", layout: corrections.length === 1 ? "top" : "left", protectedAreas: [] }; };
+  const render = async (request) => {
+    renders.push(request.fidelity.archetype);
+    if (renders.length === 1) {
+      return { image: "a", quality: {}, gate: { approved: false, failures: [{ code: "REPETITION", message: "Mesma composição (concept_scene, texto top) em 2 das 3 peças anteriores." }] }, revision: { action: "switch_archetype", reason: "Composição repetida — trocando o arquétipo." } };
+    }
+    return { image: "b", quality: {}, gate: { approved: true, failures: [], passes: [] }, fingerprint: { archetype: "concept_scene", textLayout: "left", productCount: 0, palette: [], dHash: "f".repeat(16) } };
+  };
+  const result = await produceScreen({ planned, brand: { name: "PBC", logos: [] }, assets: {}, history: [], render, generateAi, archetypes: ARCHETYPES });
+  assert.equal(result.ok, true);
+  assert.deepEqual(renders, ["concept_scene", "concept_scene"], "não troca para a frase tipográfica");
+  assert.equal(corrections[0], undefined);
+  assert.match(corrections[1], /layout 'left'/);
+  // Cópia quase idêntica não é "só layout": segue a troca de arquétipo normal.
+  const copies = [];
+  const copyRender = async (request) => {
+    copies.push(request.fidelity.archetype);
+    return copies.length === 1
+      ? { image: "a", quality: {}, gate: { approved: false, failures: [{ code: "REPETITION", message: "Quase idêntica a uma peça recente (distância 3/64)." }] }, revision: { action: "switch_archetype", reason: "x" } }
+      : { image: "b", quality: {}, gate: { approved: true, failures: [], passes: [] }, fingerprint: { archetype: "typographic_statement", textLayout: "top", productCount: 0, palette: [], dHash: "e".repeat(16) } };
+  };
+  const switched = await produceScreen({ planned, brand: { name: "PBC", logos: [] }, assets: {}, history: [], render: copyRender, generateAi, archetypes: ARCHETYPES });
+  assert.equal(switched.ok, true);
+  assert.deepEqual(copies, ["concept_scene", "typographic_statement"]);
+});

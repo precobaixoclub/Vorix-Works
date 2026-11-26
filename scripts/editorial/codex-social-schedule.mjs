@@ -309,6 +309,14 @@ async function runWorkspace(workspaceId) {
     const fingerprints = [];
     const runningHistory = [...history];
     for (const [i, planned] of plan.screens.entries()) {
+      // Refação que criticou a imagem: a capa não volta para a composição controlada que foi reprovada
+      // (26/11/2026: a frase tipográfica reprovada por "imagem vazia" saiu igual na refação).
+      const rejected = i === 0 && redo?.imageCorrection ? redoJob.previousArchetypes?.[0] : undefined;
+      if (rejected && archetypes[rejected]?.operation === "deterministic_composite") {
+        const composition = planned.spec.composition;
+        const options = [composition.archetype, ...composition.alternatives].filter((id) => id !== rejected);
+        if (options.length) Object.assign(composition, { archetype: options[0], alternatives: options.slice(1) });
+      }
       const result = await produceScreen({
         planned, brand, assets, history: runningHistory, archetypes, generateAi, reviewScene, seriesKey: planned.spec.seriesKey,
         render: request => callContainer(renderer, request), maxAttempts: 3,

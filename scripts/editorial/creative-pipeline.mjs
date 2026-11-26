@@ -29,6 +29,15 @@ export function compositionRequest(spec, archetype, transmitted, assets) {
 
 const operationOf = (archetypeId, archetypes) => archetypes[archetypeId]?.operation ?? "deterministic_composite";
 
+/** Posição do texto que repetiu ("Mesma composição (concept_scene, texto top) em 2 das 3…"), se foi só isso que reprovou. */
+function repeatedLayout(gate) {
+  const failures = gate?.failures ?? [];
+  if (!failures.length || failures.some((failure) => failure.code !== "REPETITION")) return undefined;
+  const messages = failures.map((failure) => failure.message ?? "").join(" ");
+  if (/Quase idêntica|praticamente igual/.test(messages)) return undefined;
+  return messages.match(/Mesma composição \([^,]+, texto (top|left|bottom)\)/)?.[1];
+}
+
 /**
  * Produz uma tela aprovada ou devolve o motivo para revisão manual. `render(request)` executa o
  * renderizador; `generateAi({ spec, instruction, transmitted, correction })` gera a base pela IA
@@ -43,6 +52,7 @@ export async function produceScreen({ planned, brand, assets, history, render, g
   let correction;
   let spentUsd = 0;
   let logoConfig = brand.logoConfig;
+  let layoutRetried = false;
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     tried.add(archetype);
     const operation = operationOf(archetype, archetypes);
@@ -120,6 +130,14 @@ export async function produceScreen({ planned, brand, assets, history, render, g
     else if (action === "enlarge_capture") archetype = tried.has("ui_focus") ? "browser_window" : "ui_focus";
     else if (action === "replace_logo_variant") logoConfig = { ...(logoConfig ?? {}), treatment: "halo" };
     else if (action === "regenerate_scene_with_correction") correction = result.revision.correction;
+    else if (action === "switch_archetype" && AI_OPERATIONS.has(operation) && !layoutRetried && repeatedLayout(result.gate)) {
+      // Cena gerada reprovada só porque a POSIÇÃO do texto repetiu as peças recentes: gera de novo com o texto
+      // em outra área, em vez de abandonar a cena (antes caía na frase tipográfica — 26/11/2026, Preço Baixo Club).
+      const repeated = repeatedLayout(result.gate);
+      const other = ["left", "bottom", "top"].filter((layout) => layout !== repeated);
+      layoutRetried = true;
+      correction = `O texto no layout '${repeated}' repetiu a composição das peças recentes da marca. Use obrigatoriamente o layout '${other[0]}' (ou '${other[1]}'), com a área de respiro nessa posição, e uma cena com enquadramento diferente.`;
+    }
     else {
       const next = spec.composition.alternatives.find((id) => !tried.has(id) && (generateAi || operationOf(id, archetypes) === "deterministic_composite"));
       if (!next) break;

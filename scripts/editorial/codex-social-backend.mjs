@@ -389,6 +389,7 @@ async function claimRedo() {
   }
   return { job: {
     id: job.id, reason: job.reason, attempt: job.attempt, slot: job.slot, previousImage,
+    previousArchetypes: Array.isArray(plan?.payload?.creative?.archetypes) ? plan.payload.creative.archetypes.map(String) : [],
     reasons: history.map(row => row.reason), previousProducts: [...new Set(history.flatMap(row => Array.isArray(row.codes) ? row.codes.map(String) : []))],
     idea: { id: idea.id, externalId: idea.externalId, title: idea.title, format: idea.format, category: idea.category, keyMessage: idea.keyMessage, caption: idea.caption,
       cta: idea.cta, visualDirection: idea.visualDirection, screens: screensForIdea(idea), carouselScript: idea.carouselScript ?? [] },

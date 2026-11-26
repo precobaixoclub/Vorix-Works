@@ -48,6 +48,11 @@ export interface WhatsappApprovalRepositoryPort {
   listOpenByPhone(connectionId: string, approverPhone: string): Promise<ApprovalRequest[]>;
   listByStatus(status: ApprovalRequestStatus, limit: number): Promise<ApprovalRequest[]>;
   listRecent(tenantId: string, limit: number): Promise<ApprovalRequest[]>;
+  /** Mensagens que o SISTEMA mandou ao aprovador — o eco delas (fromMe) não vira conversa de atendimento. */
+  recordOutbound(connectionId: string, externalMessageIds: string[]): Promise<void>;
+  isApprovalOutbound(connectionId: string, externalMessageId: string): Promise<boolean>;
+  /** O telefone é de um aprovador configurado para pedidos enviados por esta conexão? */
+  isApproverPhone(connectionId: string, phone: string): Promise<boolean>;
 }
 
 export type ApprovalPostView = {
@@ -196,13 +201,16 @@ export class WhatsappApprovalService {
   private readonly deliverable = new Map<string, string>();
 
   /** Envia para o aprovador; se o WhatsApp não conhece o número nessa forma, tenta a outra (com/sem o 9). */
-  private async deliver(phone: string, send: (to: string) => Promise<unknown>) {
-    this.deliverable.set(phone, await deliverToApprover(phone, send, this.deliverable.get(phone)));
+  private async deliver(connectionId: string, phone: string, send: (to: string) => Promise<{ externalMessageId?: string } | void>) {
+    let result: { externalMessageId?: string } | void = undefined;
+    this.deliverable.set(phone, await deliverToApprover(phone, async (to) => { result = await send(to); }, this.deliverable.get(phone)));
+    const id = (result as { externalMessageId?: string } | undefined)?.externalMessageId;
+    if (id) await this.deps.repository.recordOutbound(connectionId, [id]).catch(() => undefined);
   }
 
   private async sendText(connectionId: string, phone: string, body: string) {
     const { provider, session } = await this.session(connectionId);
-    await this.deliver(phone, (to) => provider.sendText({ externalSessionId: session, to, body }));
+    await this.deliver(connectionId, phone, (to) => provider.sendText({ externalSessionId: session, to, body }));
   }
 
   /** Envia os pedidos das publicações que aguardam aprovação (até 10 por rodada). */
@@ -225,10 +233,10 @@ export class WhatsappApprovalService {
         for (const media of images) {
           const file = await this.deps.loadMedia(media.url);
           const mediaUrl = `data:${file.mimeType};base64,${file.data.toString("base64")}`;
-          await this.deliver(rule.approverPhone, (to) => provider.sendImage({ externalSessionId: session, to, mediaUrl }));
+          await this.deliver(settings.connectionId, rule.approverPhone, (to) => provider.sendImage({ externalSessionId: session, to, mediaUrl }));
         }
         const text = approvalRequestText({ brand: workspace?.name ?? "marca", code: request.code, networks: post.networks, when: formatWhen(post.scheduledAt, post.timezone), caption: post.caption, screens: images.length });
-        await this.deliver(rule.approverPhone, (to) => provider.sendText({ externalSessionId: session, to, body: text }));
+        await this.deliver(settings.connectionId, rule.approverPhone, (to) => provider.sendText({ externalSessionId: session, to, body: text }));
         await this.deps.repository.updateRequest(request.id, { status: "sent", sentAt: this.now().toISOString() });
         sent += 1;
       } catch (error) {
@@ -341,4 +349,23 @@ export async function captureApprovalReply(
   if ("unknownCode" in match) return { handled: true, reply: approvalAckText.unknownCode(match.unknownCode) };
   const decided = await repository.decideRequest(match.request.id, parsed.decision, parsed.reason, (input.now ?? new Date()).toISOString());
   return decided ? { handled: true, requestId: match.request.id } : { handled: true, reply: approvalAckText.late(match.request.code) };
+}
+
+/**
+ * Eco (fromMe) de uma mensagem que o SISTEMA mandou ao aprovador? Então não entra nas Conversas — senão o
+ * chat mostraria só metade (os pedidos, sem as respostas, que também não entram). O eco pode chegar antes
+ * de o id ser gravado: num chat de aprovador, confere de novo depois de uma pausa curta. Mensagem que a
+ * equipe digita no celular para o aprovador continua indo para as Conversas.
+ */
+export async function isApprovalEcho(
+  repository: Pick<WhatsappApprovalRepositoryPort, "isApprovalOutbound" | "isApproverPhone">,
+  input: { connectionId: string; externalMessageId: string; chatPhone: string | undefined; fromMe: boolean; isGroup: boolean; waitMs?: number },
+): Promise<boolean> {
+  if (!input.fromMe || input.isGroup || !input.externalMessageId) return false;
+  if (await repository.isApprovalOutbound(input.connectionId, input.externalMessageId)) return true;
+  let phone: string | undefined;
+  try { phone = input.chatPhone ? canonicalApprovalPhone(input.chatPhone) : undefined; } catch { phone = undefined; }
+  if (!phone || !(await repository.isApproverPhone(input.connectionId, phone))) return false;
+  await new Promise((resolve) => setTimeout(resolve, input.waitMs ?? 2_500));
+  return repository.isApprovalOutbound(input.connectionId, input.externalMessageId);
 }

@@ -96,7 +96,7 @@ import { PostgresDealRepository } from "../../infrastructure/storage/postgres/po
 import { PostgresPipelineRepository, PostgresPipelineStageRepository } from "../../infrastructure/storage/postgres/postgres-pipeline-repository.js";
 import { PostgresProductRepository } from "../../infrastructure/storage/postgres/postgres-product-repository.js";
 import { PostgresWhatsappApprovalRepository } from "../../infrastructure/storage/postgres/postgres-whatsapp-approval-repository.js";
-import { canonicalApprovalPhone, captureApprovalReply, deliverToApprover } from "../../application/approvals/whatsapp-approval-service.js";
+import { canonicalApprovalPhone, captureApprovalReply, deliverToApprover, isApprovalEcho } from "../../application/approvals/whatsapp-approval-service.js";
 import { PostgresSalesCatalogRepository, PostgresDealItemRepository, PostgresSalesConfigRepository, PostgresCommercialApprovalRepository } from "../../infrastructure/storage/postgres/postgres-sales-engine-repositories.js";
 
 /**
@@ -850,6 +850,12 @@ async function main(): Promise<void> {
     const event = JSON.parse(content.toString("utf8")) as Extract<NormalizedInboxEvent, { type: "message.inbound" }>;
     // Aprovação de publicação pelo WhatsApp: resposta do aprovador ("1", "2 motivo") é capturada aqui e NÃO
     // vira conversa de atendimento; qualquer outra mensagem segue o fluxo normal. A API aplica a decisão.
+    // Eco das mensagens que o próprio sistema mandou ao aprovador (pedido, imagens, confirmações): também fica fora.
+    if (approvalRepository && event.fromMe && !event.isGroup) {
+      const echo = await isApprovalEcho(approvalRepository, { connectionId: event.connectionId, externalMessageId: event.externalMessageId, chatPhone: event.chatPhoneE164 ?? event.chatPn ?? event.chatId, fromMe: event.fromMe, isGroup: event.isGroup })
+        .catch((error) => { console.error("[inbox-worker] falha ao checar eco de aprovação:", error instanceof Error ? error.message : error); return false; });
+      if (echo) return;
+    }
     if (approvalRepository && !event.isGroup && !event.fromMe && event.body) {
       const fromPhone = event.chatPhoneE164 ?? event.chatPn ?? event.chatId;
       const capture = await captureApprovalReply(approvalRepository, { connectionId: event.connectionId, fromPhone, text: event.body, isGroup: event.isGroup, fromMe: event.fromMe })
@@ -860,7 +866,10 @@ async function main(): Promise<void> {
           if (connectionRow?.externalSessionId) {
             const session = connectionRow.externalSessionId;
             // A forma em que a mensagem chegou é a que o WhatsApp conhece (ex.: sem o 9 extra) — tenta essa primeiro.
-            await deliverToApprover(canonicalApprovalPhone(fromPhone), (to) => provider.sendText({ externalSessionId: session, to, body: capture.reply! }), String(fromPhone).split("@")[0].replace(/\D/g, ""))
+            await deliverToApprover(canonicalApprovalPhone(fromPhone), async (to) => {
+              const sent = await provider.sendText({ externalSessionId: session, to, body: capture.reply! });
+              if (sent?.externalMessageId) await approvalRepository.recordOutbound(event.connectionId, [sent.externalMessageId]).catch(() => undefined);
+            }, String(fromPhone).split("@")[0].replace(/\D/g, ""))
               .catch((error) => console.error("[inbox-worker] falha ao responder o aprovador:", error instanceof Error ? error.message : error));
           }
         }

@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { approvalCode, matchPendingRequest, parseApprovalReply } from "../dist/application/approvals/whatsapp-approval.js";
-import { canonicalApprovalPhone, captureApprovalReply, deliverToApprover, whatsappPhoneVariants, WhatsappApprovalService } from "../dist/application/approvals/whatsapp-approval-service.js";
+import { canonicalApprovalPhone, captureApprovalReply, deliverToApprover, isApprovalEcho, whatsappPhoneVariants, WhatsappApprovalService } from "../dist/application/approvals/whatsapp-approval-service.js";
 
 // Aprovação de publicações pelo WhatsApp (25/11/2026): número da CONTA, regra por MARCA. Tudo simulado —
 // nenhum WhatsApp real, nenhuma publicação real.
@@ -10,7 +10,7 @@ const APPROVER = "+55 (11) 98888-7777";
 const PHONE = canonicalApprovalPhone(APPROVER);
 
 function fakeRepository() {
-  const state = { settings: new Map(), rules: new Map(), requests: [], members: [{ userId: "u-owner", name: "Dono", role: "owner" }, { userId: "u-viewer", name: "Leitor", role: "viewer" }], toRequest: [] };
+  const state = { outbound: new Set(), settings: new Map(), rules: new Map(), requests: [], members: [{ userId: "u-owner", name: "Dono", role: "owner" }, { userId: "u-viewer", name: "Leitor", role: "viewer" }], toRequest: [] };
   const repo = {
     state,
     async getSettings(tenantId) { return state.settings.get(tenantId); },
@@ -26,6 +26,9 @@ function fakeRepository() {
     async listOpenByPhone(connectionId, phone) { return state.requests.filter((request) => request.connectionId === connectionId && request.approverPhone === phone && request.status === "sent"); },
     async listByStatus(status) { return state.requests.filter((request) => request.status === status); },
     async listRecent() { return state.requests; },
+    async recordOutbound(connectionId, ids) { for (const id of ids) state.outbound.add(`${connectionId}:${id}`); },
+    async isApprovalOutbound(connectionId, id) { return state.outbound.has(`${connectionId}:${id}`); },
+    async isApproverPhone(connectionId, phone) { return [...state.rules.values()].some((rule) => rule.approverPhone === phone) && [...state.settings.values()].some((item) => item.connectionId === connectionId); },
   };
   return repo;
 }
@@ -191,4 +194,24 @@ test("número registrado no WhatsApp sem o 9 extra: tenta a outra forma só quan
   await service.sendTest({ tenantId: "t1", workspaceId: "ws-cmkv" });
   assert.equal(sent.at(-1).to, "551188887777");
   assert.equal(repository.state.requests.length, 0);
+});
+
+test("eco das mensagens do sistema ao aprovador não entra nas Conversas; o que a equipe digita para ele entra", async () => {
+  const { service, repository, sent } = setup();
+  await configure(service);
+  repository.state.toRequest.push({ tenantId: "t1", workspaceId: "ws-cmkv", publicationId: "pub-1" });
+  await service.dispatchPending();
+  assert.equal(repository.state.outbound.size, sent.length, "imagem + pedido registrados");
+  const base = { connectionId: "conn-vorix", chatPhone: "5511988887777@s.whatsapp.net", fromMe: true, isGroup: false, waitMs: 5 };
+  assert.equal(await isApprovalEcho(repository, { ...base, externalMessageId: "m1" }), true);
+  assert.equal(await isApprovalEcho(repository, { ...base, externalMessageId: "m2" }), true);
+  assert.equal(await isApprovalEcho(repository, { ...base, externalMessageId: "digitado-no-celular" }), false);
+  assert.equal(await isApprovalEcho(repository, { ...base, externalMessageId: "m1", fromMe: false }), false, "mensagem recebida nunca é eco");
+  // Eco que chega antes de o id ser gravado: num chat de aprovador, confere de novo após a pausa.
+  setTimeout(() => repository.state.outbound.add("conn-vorix:atrasado"), 1);
+  assert.equal(await isApprovalEcho(repository, { ...base, externalMessageId: "atrasado", waitMs: 30 }), true);
+  // Chat de outro contato: sem pausa, segue normal.
+  const started = Date.now();
+  assert.equal(await isApprovalEcho(repository, { ...base, chatPhone: "+5511977776666", externalMessageId: "x", waitMs: 2_000 }), false);
+  assert.ok(Date.now() - started < 500);
 });

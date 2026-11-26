@@ -112,6 +112,23 @@ export class PostgresWhatsappApprovalRepository implements WhatsappApprovalRepos
     return rows.map(toRequest);
   }
 
+  async recordOutbound(connectionId: string, externalMessageIds: string[]): Promise<void> {
+    if (!externalMessageIds.length) return;
+    await this.pool.query(`insert into whatsapp_approval_outbound (external_message_id, connection_id)
+      select unnest($2::text[]), $1 on conflict do nothing`, [connectionId, externalMessageIds]);
+  }
+
+  async isApprovalOutbound(connectionId: string, externalMessageId: string): Promise<boolean> {
+    const { rows } = await this.pool.query("select 1 from whatsapp_approval_outbound where connection_id=$1 and external_message_id=$2", [connectionId, externalMessageId]);
+    return rows.length > 0;
+  }
+
+  async isApproverPhone(connectionId: string, phone: string): Promise<boolean> {
+    const { rows } = await this.pool.query(`select 1 from whatsapp_approval_rules r join whatsapp_approval_settings s on s.tenant_id=r.tenant_id
+      where s.connection_id=$1 and r.approver_phone=$2 limit 1`, [connectionId, phone]);
+    return rows.length > 0;
+  }
+
   async listRecent(tenantId: string, limit: number): Promise<ApprovalRequest[]> {
     const { rows } = await this.pool.query<RequestRow>("select * from publication_approval_requests where tenant_id=$1 order by created_at desc limit $2", [tenantId, limit]);
     return rows.map(toRequest);

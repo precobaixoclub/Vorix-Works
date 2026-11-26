@@ -24,10 +24,10 @@ const toRequest = (row: RequestRow): ApprovalRequest => ({
   createdAt: iso(row.created_at)!, ...(row.sent_at ? { sentAt: iso(row.sent_at) } : {}), ...(row.decided_at ? { decidedAt: iso(row.decided_at) } : {}), ...(row.applied_at ? { appliedAt: iso(row.applied_at) } : {}),
 });
 
-type RuleRow = { tenant_id: string; workspace_id: string; enabled: boolean; approver_user_id: string | null; approver_phone: string | null; on_timeout: "skip" | "publish"; enabled_at: Date | null; updated_at: Date };
+type RuleRow = { tenant_id: string; workspace_id: string; enabled: boolean; approver_user_id: string | null; approver_phone: string | null; on_timeout: "skip" | "publish"; on_reject?: "redo" | "return" | null; enabled_at: Date | null; updated_at: Date };
 const toRule = (row: RuleRow): ApprovalRule => ({
   tenantId: row.tenant_id, workspaceId: row.workspace_id, enabled: row.enabled, ...(row.approver_user_id ? { approverUserId: row.approver_user_id } : {}),
-  ...(row.approver_phone ? { approverPhone: row.approver_phone } : {}), onTimeout: row.on_timeout, ...(row.enabled_at ? { enabledAt: iso(row.enabled_at) } : {}), updatedAt: iso(row.updated_at),
+  ...(row.approver_phone ? { approverPhone: row.approver_phone } : {}), onTimeout: row.on_timeout, onReject: row.on_reject === "return" ? "return" : "redo", ...(row.enabled_at ? { enabledAt: iso(row.enabled_at) } : {}), updatedAt: iso(row.updated_at),
 });
 
 export class PostgresWhatsappApprovalRepository implements WhatsappApprovalRepositoryPort {
@@ -58,13 +58,32 @@ export class PostgresWhatsappApprovalRepository implements WhatsappApprovalRepos
 
   async saveRule(input: Omit<ApprovalRule, "enabledAt" | "updatedAt"> & { updatedBy: string }): Promise<ApprovalRule> {
     // enabled_at marca quando a regra foi ligada: só publicações criadas depois disso pedem aprovação.
-    await this.pool.query(`insert into whatsapp_approval_rules (tenant_id, workspace_id, enabled, approver_user_id, approver_phone, on_timeout, enabled_at, updated_by, updated_at)
-      values ($1,$2,$3,$4,$5,$6, case when $3 then now() end, $7, now())
+    await this.pool.query(`insert into whatsapp_approval_rules (tenant_id, workspace_id, enabled, approver_user_id, approver_phone, on_timeout, on_reject, enabled_at, updated_by, updated_at)
+      values ($1,$2,$3,$4,$5,$6,$8, case when $3 then now() end, $7, now())
       on conflict (tenant_id, workspace_id) do update set enabled=excluded.enabled, approver_user_id=excluded.approver_user_id, approver_phone=excluded.approver_phone,
-        on_timeout=excluded.on_timeout, updated_by=excluded.updated_by, updated_at=now(),
+        on_timeout=excluded.on_timeout, on_reject=excluded.on_reject, updated_by=excluded.updated_by, updated_at=now(),
         enabled_at = case when excluded.enabled and not whatsapp_approval_rules.enabled then now() when excluded.enabled then whatsapp_approval_rules.enabled_at else null end`,
-    [input.tenantId, input.workspaceId, input.enabled, input.approverUserId ?? null, input.approverPhone ?? null, input.onTimeout, input.updatedBy]);
+    [input.tenantId, input.workspaceId, input.enabled, input.approverUserId ?? null, input.approverPhone ?? null, input.onTimeout, input.updatedBy, input.onReject ?? "redo"]);
     return (await this.getRule(input.tenantId, input.workspaceId))!;
+  }
+
+  async findRedoByResult(publicationId: string): Promise<{ attempt: number; reason: string } | undefined> {
+    // O pedido pode sair antes de o piloto gravar o resultado: cai para a refação em andamento da mesma ideia.
+    const { rows } = await this.pool.query(`select r.attempt, r.reason from publication_redo_requests r join publication_plans p on p.id=$1
+      where r.result_publication_id=$1 or (r.status='running' and r.workspace_id=p.workspace_id and r.idea_id = p.source_artifacts->0->'payload'->>'editorialIdeaId')
+      order by (r.result_publication_id=$1) desc nulls last, r.created_at desc limit 1`, [publicationId]);
+    return rows[0] ? { attempt: Number(rows[0].attempt), reason: String(rows[0].reason) } : undefined;
+  }
+
+  async listFailedRedosToNotify(limit: number): Promise<Array<{ id: string; workspaceId: string; detail?: string; connectionId: string; approverPhone: string }>> {
+    const { rows } = await this.pool.query(`select r.id, r.workspace_id, r.detail, q.connection_id, q.approver_phone from publication_redo_requests r
+      join publication_approval_requests q on q.publication_id=r.publication_id
+      where r.status='failed' and r.notified_at is null and r.updated_at > now() - interval '1 day' order by r.updated_at limit $1`, [limit]);
+    return rows.map((row) => ({ id: row.id, workspaceId: row.workspace_id, ...(row.detail ? { detail: row.detail } : {}), connectionId: row.connection_id, approverPhone: row.approver_phone }));
+  }
+
+  async markRedoNotified(id: string): Promise<void> {
+    await this.pool.query("update publication_redo_requests set notified_at=now() where id=$1", [id]);
   }
 
   async listMembers(tenantId: string): Promise<ApprovalMember[]> {

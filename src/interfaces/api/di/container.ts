@@ -115,7 +115,7 @@ import type { SchedulingRepositoryPort } from "../../../application/ports/schedu
 import type { SessionRepositoryPort } from "../../../application/ports/session-repository.port.js";
 import type { TenantMembershipRepositoryPort } from "../../../application/ports/tenant-membership-repository.port.js";
 import { createSocialPublishingModule, type SocialPublishingModule } from "../../../infrastructure/social/social-publishing-module.js";
-import { WhatsappApprovalService } from "../../../application/approvals/whatsapp-approval-service.js";
+import { MAX_REDO_ATTEMPTS, WhatsappApprovalService } from "../../../application/approvals/whatsapp-approval-service.js";
 import { PostgresWhatsappApprovalRepository } from "../../../infrastructure/storage/postgres/postgres-whatsapp-approval-repository.js";
 import { SocialGatewayClient } from "../../../infrastructure/social/gateway/client.js";
 import { PostgresSocialRepository } from "../../../infrastructure/storage/postgres/postgres-social-repository.js";
@@ -1666,6 +1666,24 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
           from publication_plans p where p.id=$1 and p.tenant_id=$2 and p.workspace_id=$3
             and i.tenant_id=p.tenant_id and i.workspace_id=p.workspace_id and i.id = p.source_artifacts->0->'payload'->>'editorialIdeaId'
             and i.status='approved'`, [publicationId, tenantId, workspaceId]);
+      },
+      // Reprovada com motivo: agenda a refação para o piloto (host), que refaz com o Codex e reenvia para aprovação.
+      onRejectedForRedo: async ({ tenantId, workspaceId, publicationId, reason }) => {
+        const pool = repositories.pool!;
+        const { rows: [plan] } = await pool.query(`select idempotency_key, source_artifacts->0->'payload'->>'editorialIdeaId' as idea_id from publication_plans
+          where id=$1 and tenant_id=$2 and workspace_id=$3`, [publicationId, tenantId, workspaceId]);
+        if (!plan?.idea_id) return { queued: false };
+        const { rows: [count] } = await pool.query(`select count(*)::int as total from publication_redo_requests where idea_id=$1 and created_at > now() - interval '2 days'`, [plan.idea_id]);
+        const attempt = (count?.total ?? 0) + 1;
+        if (attempt > MAX_REDO_ATTEMPTS) return { queued: false, attempt };
+        const slot = String(plan.idempotency_key ?? "").match(/\d{4}-\d{2}-\d{2}T(?:12|19):00/)?.[0] ?? null;
+        await pool.query(`insert into publication_redo_requests (id, tenant_id, workspace_id, publication_id, idea_id, reason, attempt, slot)
+          values ($1,$2,$3,$4,$5,$6,$7,$8) on conflict (publication_id) do nothing`,
+        [`redo-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`, tenantId, workspaceId, publicationId, plan.idea_id, reason.slice(0, 300), attempt, slot]);
+        // A pauta fica disponível para o piloto refazer (o rodízio normal não a escolhe enquanto a refação estiver aberta).
+        await pool.query(`update editorial_ideas set status='available', status_changed_at=now(), updated_at=now()
+          where id=$1 and tenant_id=$2 and workspace_id=$3 and status='approved'`, [plan.idea_id, tenantId, workspaceId]);
+        return { queued: true, attempt };
       },
       // Publicada em todas as redes (nenhum destino pendente/falho): a ideia do Bolsão vira "publicada" na hora.
       completePublishedIdeas: async () => {

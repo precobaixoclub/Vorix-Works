@@ -28,7 +28,7 @@ if (mode === "schedule" && localTime() >= slot) throw new Error(`Horário ${slot
 // VORIX_EDITORIAL_IDEA (id ou código da pauta, só com uma marca indicada): refaz aquela pauta específica,
 // com chave própria — na CMKV pode publicar na hora (passando pela aprovação da marca, quando ligada).
 const onlyIdea = workspace && process.env.VORIX_EDITORIAL_IDEA ? process.env.VORIX_EDITORIAL_IDEA.trim() : undefined;
-if (mode === "publish" && (workspace !== cmkvWorkspaceId || (localTime() < slot && !onlyIdea))) {
+if (mode === "publish" && !onlyIdea && (workspace !== cmkvWorkspaceId || localTime() < slot)) {
   throw new Error("A recuperação imediata exige indicar a CMKV e um horário de hoje já encerrado");
 }
 const submitting = mode === "schedule" || mode === "publish";
@@ -149,6 +149,76 @@ async function submitArt(key, idea, brand, images, quality, extra = {}) {
 }
 
 const sha = text => createHash("sha256").update(text).digest("hex").slice(0, 16);
+
+// ---------------------------------------------------------------- refação depois da reprovação no WhatsApp
+
+// VORIX_REDO_JOB: arquivo com a refação (motivo, arte reprovada, texto atual) — preenchido por codex-social-redo.mjs.
+const redoJob = onlyIdea && process.env.VORIX_REDO_JOB ? JSON.parse(await readFile(process.env.VORIX_REDO_JOB, "utf8")) : undefined;
+
+const redoSchema = {
+  type: "object", additionalProperties: false, required: ["headline", "body", "caption", "slides", "changeProduct", "imageCorrection"],
+  properties: {
+    headline: { type: "string" }, body: { type: "string" }, caption: { type: "string" },
+    slides: { type: "array", items: { type: "object", additionalProperties: false, required: ["headline", "body"], properties: { headline: { type: "string" }, body: { type: "string" } } } },
+    changeProduct: { type: "boolean" }, imageCorrection: { type: "string" },
+  },
+};
+
+/**
+ * O Codex lê o motivo da reprovação (e a arte reprovada) e devolve o que muda na nova versão: o texto da arte,
+ * a legenda (só se o motivo falar dela), se troca a peça do catálogo e o ajuste da cena para o gerador.
+ */
+async function rewriteForRedo(job) {
+  const dir = await mkdtemp(join(agentHome, "jobs", "redo-"));
+  const user = (await readFile("/etc/passwd", "utf8")).split("\n").find(line => line.startsWith("vorix-codex:"))?.split(":");
+  try {
+    if (user) await chown(dir, Number(user[2]), Number(user[3]));
+    const images = [];
+    if (job.previousImage) {
+      const file = join(dir, "arte-reprovada.jpg");
+      await writeFile(file, Buffer.from(job.previousImage, "base64"), { mode: 0o644 });
+      images.push(file);
+    }
+    const idea = job.idea;
+    const carousel = idea.format === "carousel";
+    const prompt = [
+      `Você ajusta uma arte de Instagram/Facebook que o responsável pela marca REPROVOU pelo WhatsApp.`,
+      `Motivo desta reprovação: "${job.reason}"`,
+      ...(job.reasons?.length > 1 ? [`Motivos das versões anteriores desta mesma pauta: ${job.reasons.slice(0, -1).map(item => `"${item}"`).join("; ")}`] : []),
+      images.length ? `A imagem anexada é a arte reprovada.` : "",
+      ``,
+      `Pauta: ${idea.title}${idea.category ? ` (${idea.category})` : ""}`,
+      `Mensagem: ${idea.keyMessage ?? ""}`,
+      ...(idea.visualDirection ? [`Direção visual: ${idea.visualDirection}`] : []),
+      carousel
+        ? `Telas atuais do carrossel (${idea.carouselScript.length}): ${idea.carouselScript.map((slide, index) => `${index + 1}) ${slide.headline}${slide.body ? ` — ${slide.body}` : ""}`).join(" | ")}`
+        : `Texto atual da arte: título "${idea.screens?.[0]?.headline ?? ""}"${idea.screens?.[0]?.body ? `, subtítulo "${idea.screens[0].body}"` : ""}`,
+      `Legenda atual: ${idea.caption ?? ""}`,
+      ``,
+      `Corrija exatamente o que o motivo critica, mantendo a ideia da pauta, o português do Brasil natural e o tom da marca.`,
+      `- headline: título da arte (até 8 palavras, frase que um brasileiro diria; sem aspas). Se o motivo não falar do texto, repita o título atual.`,
+      `- body: subtítulo curto (até 18 palavras) ou "" se não houver.`,
+      carousel ? `- slides: exatamente ${idea.carouselScript.length} telas na mesma ordem, cada uma com headline e body.` : `- slides: lista vazia.`,
+      `- caption: a legenda; reescreva só se o motivo falar da legenda, senão devolva a legenda atual exatamente igual.`,
+      `- changeProduct: true só se o motivo criticar a peça/estampa/produto mostrado.`,
+      `- imageCorrection: instrução curta para a nova imagem se o motivo criticar a cena, cores, pessoas ou composição; "" se não.`,
+      `Nunca invente preço, promoção, prazo ou característica que não está na pauta.`,
+    ].filter(line => line !== undefined).join("\n");
+    const output = await reviewWithCodex(dir, { images, prompt, schema: redoSchema });
+    if (!output || typeof output.headline !== "string" || !output.headline.trim()) throw new Error("O Codex não devolveu o ajuste da refação");
+    if (carousel && output.slides?.length !== idea.carouselScript.length) throw new Error("O Codex não devolveu todas as telas do carrossel");
+    const caption = typeof output.caption === "string" && output.caption.trim() && output.caption.trim() !== String(idea.caption ?? "").trim() ? output.caption.trim() : undefined;
+    return {
+      text: { headline: output.headline, body: output.body ?? "", slides: carousel ? output.slides : [] },
+      ...(caption ? { caption } : {}),
+      changeProduct: output.changeProduct === true,
+      imageCorrection: typeof output.imageCorrection === "string" ? output.imageCorrection.trim().slice(0, 600) : "",
+    };
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+}
+
 const reviewFile = join(agentHome, "review-queue.json");
 async function readReviewQueue() {
   try { return JSON.parse(await readFile(reviewFile, "utf8")); } catch { return []; }
@@ -167,11 +237,15 @@ async function sendToReview(workspaceId, entry) {
 async function runWorkspace(workspaceId) {
   const key = { workspaceId, slot, ...(onlyIdea ? { onlyIdea } : {}) };
   if (mode === "reconcile") return callContainer(backend, { ...key, action: "reconcile" });
-  const selection = await callContainer(backend, { ...key, action: "select", allowCreate: submitting && !onlyIdea, skipIdeaIds: reviewSkipIds(await readReviewQueue(), workspaceId) });
+  // Refação: o Codex decide o que muda (texto, legenda, peça, cena) a partir do motivo da reprovação.
+  const redo = redoJob ? await rewriteForRedo(redoJob) : undefined;
+  const selection = await callContainer(backend, { ...key, action: "select", allowCreate: submitting && !onlyIdea, skipIdeaIds: reviewSkipIds(await readReviewQueue(), workspaceId),
+    ...(redo ? { textOverride: redo.text, excludeProducts: redo.changeProduct ? redoJob.previousProducts ?? [] : [] } : {}) });
   // Pautas bloqueadas (sem material obrigatório ou referência que não carrega): revisão manual, sem gerar.
   for (const item of selection.blocked ?? []) {
     if (item.ideaId) await sendToReview(workspaceId, { ideaId: item.ideaId, idea: item.idea, reason: `${item.reason}: ${(item.guidance ?? []).join(" ")}` });
   }
+  if (redoJob && (selection.existing || selection.empty)) throw new Error(selection.blocked?.[0]?.guidance?.[0] ?? "A pauta não pôde ser refeita");
   if (selection.existing || selection.empty) return selection;
   const { idea, brand, plan, assets, history, archetypes, trace, productCodes, blocked } = selection;
   if (mode === "select") {
@@ -200,7 +274,7 @@ async function runWorkspace(workspaceId) {
     const generateAi = loginError ? async () => undefined : probeImage ? async () => ({ base: (await readFile(probeImage)).toString("base64"), layout: "top", logoPlacement: "bottom_right", protectedAreas: [] }) : async ({ instruction, transmitted, correction }) => {
       if (mode === "schedule" && localTime() >= slot) throw new Error(`A geração excedeu o horário ${slot}`);
       const refs = transmitted.map(item => files.get(item.id)).filter(Boolean);
-      const prompt = makePrompt(instruction, correction);
+      const prompt = makePrompt(redo?.imageCorrection ? `${instruction}\n\nAJUSTE PEDIDO PELO APROVADOR (a versão anterior foi reprovada): ${redo.imageCorrection}` : instruction, correction);
       const started = Date.now();
       const plan = await generate(jobDir, schema, prompt, refs);
       operations.push({ step: "base visual", operation: refs.length ? "image_edit" : "image_generation", engine: "codex:ferramenta nativa de imagem", model: "gpt-6.2-sol",
@@ -258,7 +332,8 @@ async function runWorkspace(workspaceId) {
       mode: plan.mode, modeReasons: plan.modeReasons, feature: plan.feature, autoSelected: plan.autoSelected, excluded: plan.excluded,
       archetypes: qualityReports.map(item => item.archetype), fingerprints, approvals: screenApprovals(results), trace: { version: 1, references: trace.references, operations },
     };
-    return await submitArt(key, idea, brand, final, qualityReports, { creative, productCodes });
+    return await submitArt(key, idea, brand, final, qualityReports, { creative, productCodes,
+      ...(redoJob ? { redoJobId: redoJob.id, ...(redo?.caption ? { captionOverride: redo.caption } : {}) } : {}) });
   } finally {
     await rm(jobDir, { recursive: true, force: true });
   }

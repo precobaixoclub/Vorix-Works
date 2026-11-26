@@ -83,7 +83,9 @@ export async function produceScreen({ planned, brand, assets, history, render, g
     try {
       result = await render(request);
       const generatedScene = AI_OPERATIONS.has(operation);
-      const needsSceneReview = (spec.mode === "conceptual" && (spec.visualDirection || (generatedScene && (spec.brandIdentity?.colors?.length || spec.brandIdentity?.notes?.trim()))))
+      // Revisão da cena só quando a IA gerou a cena: a composição tipográfica não tem foto para "conferir com a
+      // direção visual" (26/11/2026: frase tipográfica reprovada por "faltar a fotografia de home office").
+      const needsSceneReview = (spec.mode === "conceptual" && generatedScene && (spec.visualDirection || spec.brandIdentity?.colors?.length || spec.brandIdentity?.notes?.trim()))
         || (fashionCampaign && spec.mode === "physical_product" && generatedScene && spec.visualDirection);
       if (needsSceneReview && result.gate?.approved === true) {
         const sceneReview = await reviewScene?.({ spec, instruction: planned.instruction, image: result.image });

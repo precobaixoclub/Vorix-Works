@@ -282,3 +282,56 @@ test("várias marcas ao mesmo tempo: responder citando a imagem ou o texto do pe
   // Citar uma mensagem que não é de pedido não muda a regra normal.
   assert.deepEqual(await captureApprovalReply(repository, { connectionId: "conn-vorix", fromPhone: APPROVER, text: "1", quotedExternalMessageId: "conversa-qualquer", isGroup: false, fromMe: false }), { handled: false });
 });
+
+test("reprovada com motivo: refaz e reenvia (até 2 vezes); sem motivo, limite ou marca que devolve: ideia volta ao Bolsão", async () => {
+  const { service, repository, sent, posts } = setup();
+  const returned = [];
+  const redoCalls = [];
+  let redoResult = { queued: true, attempt: 1 };
+  service.deps.onNotApproved = async (input) => { returned.push(input.publicationId); };
+  service.deps.onRejectedForRedo = async (input) => { redoCalls.push([input.publicationId, input.reason]); return redoResult; };
+  await configure(service);
+  for (const id of ["pub-2", "pub-3", "pub-4"]) posts.set(id, { ...posts.get("pub-1") });
+  const reject = async (publicationId, text) => {
+    repository.state.toRequest.push({ tenantId: "t1", workspaceId: "ws-cmkv", publicationId });
+    await service.dispatchPending();
+    const request = repository.state.requests.find((item) => item.publicationId === publicationId);
+    await captureApprovalReply(repository, { connectionId: "conn-vorix", fromPhone: APPROVER, text: text.replace("CODE", request.code), isGroup: false, fromMe: false });
+    await service.applyDecisions();
+  };
+  // Com motivo (regra padrão = refazer): agenda a refação, a ideia NÃO volta ao Bolsão.
+  await reject("pub-1", "2 CODE a frase ficou estranha");
+  assert.deepEqual(redoCalls, [["pub-1", "a frase ficou estranha"]]);
+  assert.deepEqual(returned, []);
+  assert.match(sent.at(-1).body, /Vou refazer a arte com base no seu motivo.*ajuste 1 de 2/);
+  // Limite atingido: volta ao Bolsão e avisa.
+  redoResult = { queued: false, attempt: 3 };
+  await reject("pub-2", "2 CODE ainda não");
+  assert.deepEqual(returned, ["pub-2"]);
+  assert.match(sent.at(-1).body, /Já foram 2 ajustes nesta ideia/);
+  // Sem motivo: só cancela e devolve, sem refazer.
+  await reject("pub-3", "2 CODE");
+  assert.equal(redoCalls.length, 2);
+  assert.deepEqual(returned, ["pub-2", "pub-3"]);
+  // Marca configurada para devolver: não refaz.
+  await service.saveRule({ tenantId: "t1", workspaceId: "ws-cmkv", enabled: true, approverUserId: "u-owner", approverPhone: APPROVER, onTimeout: "skip", onReject: "return", actorUserId: "u-owner" });
+  await reject("pub-4", "2 CODE cor errada");
+  assert.equal(redoCalls.length, 2);
+  assert.deepEqual(returned, ["pub-2", "pub-3", "pub-4"]);
+});
+
+test("versão refeita chega marcada com o motivo; refação que falhou avisa o aprovador uma vez", async () => {
+  const { service, repository, sent } = setup();
+  await configure(service);
+  repository.findRedoByResult = async (publicationId) => (publicationId === "pub-1" ? { attempt: 1, reason: "a frase ficou estranha" } : undefined);
+  repository.state.toRequest.push({ tenantId: "t1", workspaceId: "ws-cmkv", publicationId: "pub-1" });
+  await service.dispatchPending();
+  assert.match(sent[1].body, /🔁 Versão refeita \(ajuste 1 de 2\) — você pediu: “a frase ficou estranha”/);
+  const failed = [{ id: "redo-1", workspaceId: "ws-cmkv", detail: "tela 1 reprovada pelo Quality Gate", connectionId: "conn-vorix", approverPhone: PHONE }];
+  const notified = [];
+  repository.listFailedRedosToNotify = async () => failed.filter((item) => !notified.includes(item.id));
+  repository.markRedoNotified = async (id) => { notified.push(id); };
+  assert.equal(await service.notifyFailedRedos(), 1);
+  assert.match(sent.at(-1).body, /⚠️ Não consegui refazer a arte de CMKV Wears: tela 1 reprovada pelo Quality Gate\. A ideia voltou ao Bolsão\./);
+  assert.equal(await service.notifyFailedRedos(), 0, "aviso único");
+});

@@ -22,6 +22,7 @@ const RULE_BODY = {
     approverUserId: { anyOf: [{ type: "string", minLength: 1, maxLength: 120 }, { type: "null" }] },
     approverPhone: { anyOf: [{ type: "string", maxLength: 40 }, { type: "null" }] },
     onTimeout: { type: "string", enum: ["skip", "publish"] },
+    onReject: { type: "string", enum: ["redo", "return"] },
   },
 } as const;
 const WORKSPACE_PARAMS = { type: "object", required: ["workspaceId"], properties: { workspaceId: { type: "string", minLength: 1, maxLength: 120 } } } as const;
@@ -65,10 +66,10 @@ export async function registerWhatsappApprovalsRoutes(app: FastifyInstance, deps
   app.put("/whatsapp-approvals/rules/:workspaceId", { schema: { params: WORKSPACE_PARAMS, body: RULE_BODY } }, async (request) => {
     const principal = requireManager(request);
     const { workspaceId } = request.params as { workspaceId: string };
-    const body = request.body as { enabled: boolean; approverUserId?: string | null; approverPhone?: string | null; onTimeout: "skip" | "publish" };
+    const body = request.body as { enabled: boolean; approverUserId?: string | null; approverPhone?: string | null; onTimeout: "skip" | "publish"; onReject?: "redo" | "return" };
     return successEnvelope(await translate(() => service().saveRule({
       tenantId: principal.tenantId, workspaceId, enabled: body.enabled, approverUserId: body.approverUserId ?? undefined,
-      approverPhone: body.approverPhone ?? undefined, onTimeout: body.onTimeout, actorUserId: principal.userId,
+      approverPhone: body.approverPhone ?? undefined, onTimeout: body.onTimeout, ...(body.onReject ? { onReject: body.onReject } : {}), actorUserId: principal.userId,
     })), request.id);
   });
 

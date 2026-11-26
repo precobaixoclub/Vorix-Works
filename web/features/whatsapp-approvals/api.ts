@@ -2,7 +2,9 @@ import { apiClient } from "@/lib/api-client";
 
 /** Aprovação de publicações pelo WhatsApp: número da CONTA (de qualquer espaço de trabalho) e regra por MARCA. */
 export type ApprovalTimeoutPolicy = "skip" | "publish";
-export type ApprovalRule = { workspaceId: string; enabled: boolean; approverUserId?: string; approverPhone?: string; onTimeout: ApprovalTimeoutPolicy; enabledAt?: string };
+/** Reprovada com motivo: refazer a arte e reenviar, ou devolver a ideia ao Bolsão. */
+export type ApprovalRejectPolicy = "redo" | "return";
+export type ApprovalRule = { workspaceId: string; enabled: boolean; approverUserId?: string; approverPhone?: string; onTimeout: ApprovalTimeoutPolicy; onReject?: ApprovalRejectPolicy; enabledAt?: string };
 export type ApprovalRequestStatus = "pending" | "sent" | "decided" | "applied" | "expired" | "failed";
 export type ApprovalRequestView = {
   id: string; workspaceId: string; publicationId: string; code: string; status: ApprovalRequestStatus;
@@ -19,7 +21,7 @@ export type WhatsappApprovalsOverview = {
 
 export const getWhatsappApprovals = () => apiClient.get<WhatsappApprovalsOverview>("/v1/whatsapp-approvals");
 export const saveWhatsappApprovalSettings = (input: { enabled: boolean; connectionId?: string | null }) => apiClient.put("/v1/whatsapp-approvals/settings", input);
-export const saveWhatsappApprovalRule = (workspaceId: string, input: { enabled: boolean; approverUserId?: string | null; approverPhone?: string | null; onTimeout: ApprovalTimeoutPolicy }) =>
+export const saveWhatsappApprovalRule = (workspaceId: string, input: { enabled: boolean; approverUserId?: string | null; approverPhone?: string | null; onTimeout: ApprovalTimeoutPolicy; onReject: ApprovalRejectPolicy }) =>
   apiClient.put(`/v1/whatsapp-approvals/rules/${encodeURIComponent(workspaceId)}`, input);
 export const sendWhatsappApprovalTest = (workspaceId: string) => apiClient.post<{ sent: boolean }>("/v1/whatsapp-approvals/test", { workspaceId });
 

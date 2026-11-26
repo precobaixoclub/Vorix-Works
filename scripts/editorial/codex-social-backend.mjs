@@ -7,7 +7,7 @@ import { resolveEffectiveEntitlements } from "./dist/application/billing/entitle
 import { parseManualEditorialIdea } from "./dist/domain/editorial/editorial-idea.model.js";
 import { hasPermission } from "./dist/domain/identity/identity.model.js";
 import { classifyObjectKeyOwner, parseOwnedObjectUrl, signForExternalPublication } from "./dist/shared/utils/object-url-signing.js";
-import { PRODUCT_THEME_DEMANDS, planEditorialCreative, rankProductsForIdea, rotationOrder } from "./dist/application/creative-engine/plan-editorial-creative.js";
+import { PRODUCT_THEME_DEMANDS, planEditorialCreative, rankProductsForIdea, rotationOrder, screensForIdea } from "./dist/application/creative-engine/plan-editorial-creative.js";
 import { COMPOSITION_ARCHETYPES } from "./dist/application/creative-engine/creative-spec.js";
 import { redactSecrets } from "./dist/application/creative-engine/creative-trace.js";
 import { verifyApprovedArt } from "./dist/application/creative-engine/publication-guard.js";
@@ -279,7 +279,9 @@ async function planIdea(idea, creative, context) {
   if (creative.businessKind === "physical_products" && creative.products?.length) {
     // Rodízio, reordenado pelo assunto da pauta. Nenhuma peça atende a ocasião pedida: mede a primeira do
     // rodízio mesmo assim — o planejador recusa e registra o motivo (a pauta vai para revisão).
-    const rotated = rotationOrder(creative.products, context.used).map(code => ({ code, themes: creative.productThemes?.[code] ?? [] }));
+    // Refação pedida por causa do produto: as peças das versões reprovadas saem do rodízio (se sobrar alguma).
+    const allowed = creative.products.filter(code => !context.excludeProducts?.includes(code));
+    const rotated = rotationOrder(allowed.length ? allowed : creative.products, context.used).map(code => ({ code, themes: creative.productThemes?.[code] ?? [] }));
     const ranked = rankProductsForIdea(rotated, idea);
     for (const { code, themes } of ranked.length ? ranked : rotated) {
       const photos = context.photos.filter(photo => photo.code === code);
@@ -346,6 +348,53 @@ async function reconcile() {
   }
 }
 
+// ---------------------------------------------------------------- refação depois da reprovação no WhatsApp
+
+/** Texto reescrito na refação (título/subtítulo/telas): aplicado só na pauta refeita, sem alterar o Bolsão. */
+function withTextOverride(idea) {
+  const override = request.textOverride;
+  if (!override || !request.onlyIdea || (idea.id !== request.onlyIdea && idea.externalId !== request.onlyIdea)) return idea;
+  const clean = (value, max) => String(value ?? "").replace(/[\r\n]+/g, " ").replace(/["“”']/g, "").replace(/\s+/g, " ").trim().slice(0, max);
+  if (idea.format === "carousel") {
+    if (!Array.isArray(override.slides) || override.slides.length !== (idea.carouselScript ?? []).length) return idea;
+    return { ...idea, carouselScript: idea.carouselScript.map((slide, index) => ({ ...slide, headline: clean(override.slides[index]?.headline, 90) || slide.headline, body: clean(override.slides[index]?.body, 220) || slide.body })) };
+  }
+  const headline = clean(override.headline, 90);
+  const body = clean(override.body, 220);
+  if (!headline) return idea;
+  const prompt = String(idea.creativePrompt ?? "").replace(/TEXTO EXATO DA (?:CAPA\/ARTE|ARTE)\s*:\s*['“"][^\r\n'”"]+['”"]/gi, "").trim();
+  return { ...idea, keyMessage: body ? `${headline}\n\n${body}` : headline, creativePrompt: `TEXTO EXATO DA ARTE: "${headline}"${prompt ? `\n${prompt}` : ""}` };
+}
+
+/** Pega a próxima refação pendente desta marca (com o contexto que o Codex precisa para refazer). */
+async function claimRedo() {
+  await db.query(`update publication_redo_requests set status='failed', detail='A refação foi interrompida.', updated_at=now()
+    where workspace_id=$1 and status='running' and updated_at < now() - interval '40 minutes'`, [workspaceId]);
+  const { rows: [job] } = await db.query(`update publication_redo_requests set status='running', updated_at=now() where id = (
+      select id from publication_redo_requests where tenant_id=$1 and workspace_id=$2 and status='pending' order by created_at limit 1 for update skip locked)
+    returning id, publication_id, idea_id, reason, attempt, slot`, [tenantId, workspaceId]);
+  if (!job) return { job: null };
+  const idea = await c.editorialIdeaRepository.get(workspaceId, job.idea_id);
+  if (!idea || idea.status !== "available") {
+    await db.query("update publication_redo_requests set status='failed', detail=$2, updated_at=now() where id=$1", [job.id, "A pauta não está mais disponível no Bolsão."]);
+    return { job: null };
+  }
+  const { rows: [plan] } = await db.query("select source_artifacts->0->'payload' as payload from publication_plans where id=$1", [job.publication_id]);
+  const { rows: history } = await db.query(`select r.reason, p.source_artifacts->0->'payload'->'catalogProductCodes' as codes from publication_redo_requests r
+    join publication_plans p on p.id=r.publication_id where r.idea_id=$1 order by r.created_at`, [job.idea_id]);
+  let previousImage;
+  const url = plan?.payload?.imageUrls?.[0];
+  if (url) {
+    try { previousImage = (await sharp(await ownedBytes(url)).resize({ width: 720, withoutEnlargement: true }).jpeg({ quality: 80 }).toBuffer()).toString("base64"); } catch { /* sem a arte anterior: o Codex refaz só pelo texto */ }
+  }
+  return { job: {
+    id: job.id, reason: job.reason, attempt: job.attempt, slot: job.slot, previousImage,
+    reasons: history.map(row => row.reason), previousProducts: [...new Set(history.flatMap(row => Array.isArray(row.codes) ? row.codes.map(String) : []))],
+    idea: { id: idea.id, externalId: idea.externalId, title: idea.title, format: idea.format, category: idea.category, keyMessage: idea.keyMessage, caption: idea.caption,
+      cta: idea.cta, visualDirection: idea.visualDirection, screens: screensForIdea(idea), carouselScript: idea.carouselScript ?? [] },
+  } };
+}
+
 async function run() {
   const brandConfig = brands.get(workspaceId);
   requireCondition(brandConfig, "Workspace fora da automação editorial");
@@ -355,6 +404,13 @@ async function run() {
   if (mode === "reconcile") {
     await reconcile();
     return { brand: workspace.name, reconciled: true };
+  }
+  if (mode === "claim_redo") return claimRedo();
+  if (mode === "finish_redo") {
+    requireCondition(typeof request.jobId === "string" && ["done", "failed"].includes(request.status), "Conclusão de refação inválida");
+    await db.query(`update publication_redo_requests set status=$3, detail=$4, updated_at=now() where id=$1 and workspace_id=$2 and status='running'`,
+      [request.jobId, workspaceId, request.status, typeof request.detail === "string" ? redactSecrets(request.detail).slice(0, 600) : null]);
+    return { finished: true };
   }
   const slot = request.slot;
   requireCondition(/^\d{4}-\d{2}-\d{2}T(?:12|19):00$/.test(slot), "Horário editorial inválido");
@@ -405,14 +461,18 @@ async function run() {
     const reviewIds = new Set(Array.isArray(request.skipIdeaIds) ? request.skipIdeaIds.map(String) : []);
     // Pauta indicada pelo operador (id ou código externo): só ela é considerada.
     const only = request.onlyIdea ? String(request.onlyIdea) : undefined;
+    // Pauta com refação aberta (reprovada no WhatsApp com motivo) só sai pela própria refação.
+    const { rows: redoing } = await db.query(`select idea_id from publication_redo_requests where workspace_id=$1 and status in ('pending','running')`, [workspaceId]);
+    const redoIds = new Set(redoing.map(row => row.idea_id));
     const candidates = ideas.filter(item => !usedIds.has(item.id) && !reviewIds.has(item.id) && ["single_image", "carousel"].includes(item.format)
-      && (!only || item.id === only || item.externalId === only)).sort(compareIdeas);
+      && (only ? item.id === only || item.externalId === only : !redoIds.has(item.id))).sort(compareIdeas).map(withTextOverride);
     const creative = brandConfig.creative ?? { businessKind: "unknown" };
     const { rows: [brandRow] } = await db.query("select profile from brand_visual_profiles where workspace_id=$1", [workspaceId]);
     const photos = creative.businessKind === "physical_products" ? await catalogPhotos() : [];
     const context = {
       brandName: workspace.name, profile: brandRow?.profile, used: used.rows, photos, photosByUrl: new Map(photos.map(photo => [photo.url, photo])),
       captures: creative.businessKind === "software" ? await libraryCaptures() : [], history: await visualHistory(used.rows),
+      excludeProducts: Array.isArray(request.excludeProducts) ? request.excludeProducts.map(String) : [],
     };
     // Primeira pauta viável: as bloqueadas (falta referência obrigatória) ficam no Bolsão com a orientação.
     const blocked = [];
@@ -441,7 +501,8 @@ async function run() {
     return { brand: workspace.name, empty: true, blocked, videoIdeas: ideas.filter(item => item.format === "video").length };
   }
 
-  const publishNow = mode === "publish" && workspaceId === cmkvWorkspaceId;
+  // Publicar na hora: recuperação da CMKV ou pauta refeita/indicada (passa pela aprovação da marca, quando ligada).
+  const publishNow = mode === "publish" && (workspaceId === cmkvWorkspaceId || Boolean(request.onlyIdea));
   requireCondition(mode === "validate" || mode === "schedule" || publishNow, "Operação editorial inválida");
   const idea = await c.editorialIdeaRepository.get(workspaceId, request.ideaId);
   requireCondition(idea?.status === "available" && idea.updatedAt === request.updatedAt, "A pauta mudou durante a geração");
@@ -472,8 +533,10 @@ async function run() {
     const { url } = await c.objectStorage.put({ key, body, contentType: "image/jpeg" });
     media.push({ url, kind: "image", width, height, mimeType: "image/jpeg", sizeBytes: body.length });
   }
-  const campaignCta = brandConfig.creative?.presentation === "fashion_campaign" && idea.cta && !idea.caption.includes(idea.cta) ? idea.cta : undefined;
-  const caption = campaignCta ? `${idea.caption}\n\n${campaignCta}` : idea.caption;
+  // Refação: a legenda reescrita pelo Codex (quando o motivo falava dela) substitui a da pauta.
+  const baseCaption = typeof request.captionOverride === "string" && request.captionOverride.trim() ? request.captionOverride.trim().slice(0, 2200) : idea.caption;
+  const campaignCta = brandConfig.creative?.presentation === "fashion_campaign" && idea.cta && !baseCaption.includes(idea.cta) ? idea.cta : undefined;
+  const caption = campaignCta ? `${baseCaption}\n\n${campaignCta}` : baseCaption;
   const input = { ...scope, base: { caption, media }, destinations: accounts.map(accountId => ({ accountId, format })) };
   const checks = await c.social.posts.validate(input);
   for (const check of checks) requireCondition(!check.issues.length && !check.warnings.length, `${check.network}: ${[...check.issues.map(issue => issue.message), ...check.warnings].join(". ")}`);
@@ -486,8 +549,12 @@ async function run() {
     artifacts: [{ artifactId: idea.id, artifactType: "image", schemaId: "social.post", schemaVersion: 1,
       checksum: createHash("sha256").update(media.map(item => item.url).join("\n")).digest("hex"),
       payload: { editorialIdeaId: idea.id, externalId: idea.externalId, imageUrls: media.map(item => item.url),
-        ...(catalogProductCodes ? { catalogProductCodes } : {}), ...(creativeRecord ? { creative: creativeRecord } : {}) } }],
+        ...(catalogProductCodes ? { catalogProductCodes } : {}), ...(creativeRecord ? { creative: creativeRecord } : {}),
+        ...(typeof request.redoJobId === "string" ? { redoJobId: request.redoJobId } : {}) } }],
   } });
+  if (typeof request.redoJobId === "string") {
+    await db.query(`update publication_redo_requests set status='done', result_publication_id=$2, updated_at=now() where id=$1 and workspace_id=$3`, [request.redoJobId, post.id, workspaceId]);
+  }
   await db.query(`update editorial_ideas set status=$4,status_changed_at=now(),updated_at=now()
     where id=$1 and workspace_id=$2 and tenant_id=$3 and status='available'`,
   [idea.id, workspaceId, tenantId, publishedOnBoth(post) ? "published" : "approved"]);

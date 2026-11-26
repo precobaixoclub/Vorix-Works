@@ -17,6 +17,7 @@ import {
   saveWhatsappApprovalRule,
   saveWhatsappApprovalSettings,
   sendWhatsappApprovalTest,
+  type ApprovalRejectPolicy,
   type ApprovalTimeoutPolicy,
   type WhatsappApprovalsOverview,
 } from "@/features/whatsapp-approvals/api";
@@ -116,15 +117,16 @@ function BrandRule({ data, workspace, onSaved }: { data: WhatsappApprovalsOvervi
   const [approverUserId, setApproverUserId] = useState(rule.approverUserId ?? (data.approvers.length === 1 ? data.approvers[0].userId : ""));
   const [approverPhone, setApproverPhone] = useState(rule.approverPhone ?? "");
   const [onTimeout, setOnTimeout] = useState<ApprovalTimeoutPolicy>(rule.onTimeout);
+  const [onReject, setOnReject] = useState<ApprovalRejectPolicy>(rule.onReject ?? "redo");
   const [busy, setBusy] = useState<"save" | "test" | undefined>();
-  useEffect(() => { setEnabled(rule.enabled); setApproverPhone(rule.approverPhone ?? ""); setOnTimeout(rule.onTimeout); if (rule.approverUserId) setApproverUserId(rule.approverUserId); }, [rule.enabled, rule.approverPhone, rule.onTimeout, rule.approverUserId]);
-  const dirty = enabled !== rule.enabled || approverUserId !== (rule.approverUserId ?? "") || approverPhone.replace(/\D/g, "") !== (rule.approverPhone ?? "").replace(/\D/g, "") || onTimeout !== rule.onTimeout;
+  useEffect(() => { setEnabled(rule.enabled); setApproverPhone(rule.approverPhone ?? ""); setOnTimeout(rule.onTimeout); setOnReject(rule.onReject ?? "redo"); if (rule.approverUserId) setApproverUserId(rule.approverUserId); }, [rule.enabled, rule.approverPhone, rule.onTimeout, rule.onReject, rule.approverUserId]);
+  const dirty = enabled !== rule.enabled || approverUserId !== (rule.approverUserId ?? "") || approverPhone.replace(/\D/g, "") !== (rule.approverPhone ?? "").replace(/\D/g, "") || onTimeout !== rule.onTimeout || onReject !== (rule.onReject ?? "redo");
   const accountReady = data.settings.enabled && Boolean(data.settings.connectionId);
 
   async function save() {
     setBusy("save");
     try {
-      await saveWhatsappApprovalRule(workspace.id, { enabled, approverUserId: approverUserId || null, approverPhone: approverPhone.trim() || null, onTimeout });
+      await saveWhatsappApprovalRule(workspace.id, { enabled, approverUserId: approverUserId || null, approverPhone: approverPhone.trim() || null, onTimeout, onReject });
       toast.success(enabled ? `${workspace.name}: publicações novas vão pedir aprovação pelo WhatsApp.` : `${workspace.name}: aprovação pelo WhatsApp desligada.`);
       onSaved();
     } catch (error) {
@@ -156,7 +158,7 @@ function BrandRule({ data, workspace, onSaved }: { data: WhatsappApprovalsOvervi
         <Switch checked={enabled} onCheckedChange={setEnabled} disabled={!data.canManage} aria-label={`Exigir aprovação para ${workspace.name}`} />
       </div>
       {enabled || rule.enabled ? (
-        <div className="grid gap-3 md:grid-cols-3">
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
           <div>
             <Label htmlFor={`approver-${workspace.id}`}>Quem aprova</Label>
             <Select value={approverUserId || NONE} onValueChange={(value) => setApproverUserId(value === NONE ? "" : value)} disabled={!data.canManage}>
@@ -178,6 +180,16 @@ function BrandRule({ data, workspace, onSaved }: { data: WhatsappApprovalsOvervi
               <SelectContent>
                 <SelectItem value="skip">Não publica (mais seguro)</SelectItem>
                 <SelectItem value="publish">Publica mesmo assim</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <Label htmlFor={`reject-${workspace.id}`}>Reprovada com motivo</Label>
+            <Select value={onReject} onValueChange={(value) => setOnReject(value as ApprovalRejectPolicy)} disabled={!data.canManage}>
+              <SelectTrigger id={`reject-${workspace.id}`}><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="redo">Refaz a arte e reenvia (até 2 vezes)</SelectItem>
+                <SelectItem value="return">Devolve a ideia ao Bolsão</SelectItem>
               </SelectContent>
             </Select>
           </div>

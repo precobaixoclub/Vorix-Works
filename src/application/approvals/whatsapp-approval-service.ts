@@ -24,7 +24,11 @@ import {
  */
 
 export type ApprovalSettings = { tenantId: string; enabled: boolean; connectionId?: string; updatedAt?: string };
-export type ApprovalRule = { tenantId: string; workspaceId: string; enabled: boolean; approverUserId?: string; approverPhone?: string; onTimeout: ApprovalTimeoutPolicy; enabledAt?: string; updatedAt?: string };
+/** Reprovação com motivo: refazer a arte com base no motivo e reenviar (`redo`) ou devolver a ideia ao Bolsão (`return`). */
+export type ApprovalRejectPolicy = "redo" | "return";
+export type ApprovalRule = { tenantId: string; workspaceId: string; enabled: boolean; approverUserId?: string; approverPhone?: string; onTimeout: ApprovalTimeoutPolicy; onReject: ApprovalRejectPolicy; enabledAt?: string; updatedAt?: string };
+/** Até quantas vezes a mesma ideia é refeita depois de reprovada; depois volta ao Bolsão. */
+export const MAX_REDO_ATTEMPTS = 2;
 export type ApprovalRequestStatus = "pending" | "sent" | "decided" | "applied" | "expired" | "failed";
 export type ApprovalRequest = {
   id: string; tenantId: string; workspaceId: string; publicationId: string; code: string; connectionId: string; approverPhone: string; approverUserId?: string;
@@ -38,6 +42,11 @@ export interface WhatsappApprovalRepositoryPort {
   listRules(tenantId: string): Promise<ApprovalRule[]>;
   getRule(tenantId: string, workspaceId: string): Promise<ApprovalRule | undefined>;
   saveRule(input: Omit<ApprovalRule, "enabledAt" | "updatedAt"> & { updatedBy: string }): Promise<ApprovalRule>;
+  /** A publicação é uma versão refeita? (número da refação + motivo que a originou) — vai no texto do pedido. */
+  findRedoByResult?(publicationId: string): Promise<{ attempt: number; reason: string } | undefined>;
+  /** Refações que falharam e ainda não foram avisadas ao aprovador (com o pedido original para saber para quem). */
+  listFailedRedosToNotify?(limit: number): Promise<Array<{ id: string; workspaceId: string; detail?: string; connectionId: string; approverPhone: string }>>;
+  markRedoNotified?(id: string): Promise<void>;
   listMembers(tenantId: string): Promise<ApprovalMember[]>;
   /** Publicações aguardando aprovação em marcas com a regra ligada e ainda sem pedido. */
   listPublicationsToRequest(limit: number): Promise<Array<{ tenantId: string; workspaceId: string; publicationId: string }>>;
@@ -71,6 +80,11 @@ export type WhatsappApprovalServiceDeps = {
   provider?: MessagingProvider;
   /** Publicação não aprovada (reprovada ou sem resposta): a ideia de origem volta para o Bolsão. */
   onNotApproved?: (input: { tenantId: string; workspaceId: string; publicationId: string }) => Promise<void>;
+  /**
+   * Reprovada com motivo numa marca que refaz: agenda a refação (o piloto refaz e reenvia para aprovação).
+   * Devolve `queued: false` quando o limite de refações da ideia foi atingido (a ideia volta ao Bolsão).
+   */
+  onRejectedForRedo?: (input: { tenantId: string; workspaceId: string; publicationId: string; reason: string }) => Promise<{ queued: boolean; attempt?: number }>;
   /**
    * Publicação que foi ao ar em todas as redes: a ideia de origem fica "feita" (publicada) na hora — sem
    * esperar a conciliação do piloto (que só roda perto das 12h/19h). Devolve quantas ideias mudaram.
@@ -153,7 +167,7 @@ export class WhatsappApprovalService {
     return {
       settings: settings ?? { tenantId, enabled: false },
       connections,
-      workspaces: workspaces.filter((workspace) => workspace.status !== "archived").map((workspace) => ({ id: workspace.id, name: workspace.name, rule: rules.find((rule) => rule.workspaceId === workspace.id) ?? { tenantId, workspaceId: workspace.id, enabled: false, onTimeout: "skip" as const } })),
+      workspaces: workspaces.filter((workspace) => workspace.status !== "archived").map((workspace) => ({ id: workspace.id, name: workspace.name, rule: rules.find((rule) => rule.workspaceId === workspace.id) ?? { tenantId, workspaceId: workspace.id, enabled: false, onTimeout: "skip" as const, onReject: "redo" as const } })),
       approvers: members.filter((member) => hasPermission(member.role, "publication:approve")).map(({ userId, name, email }) => ({ userId, name, email })),
       recent: await this.deps.repository.listRecent(tenantId, 15),
     };
@@ -168,7 +182,7 @@ export class WhatsappApprovalService {
     return this.deps.repository.saveSettings({ tenantId: input.tenantId, enabled: input.enabled, connectionId: input.connectionId, updatedBy: input.actorUserId });
   }
 
-  async saveRule(input: { tenantId: string; workspaceId: string; enabled: boolean; approverUserId?: string; approverPhone?: string; onTimeout: ApprovalTimeoutPolicy; actorUserId: string }) {
+  async saveRule(input: { tenantId: string; workspaceId: string; enabled: boolean; approverUserId?: string; approverPhone?: string; onTimeout: ApprovalTimeoutPolicy; onReject?: ApprovalRejectPolicy; actorUserId: string }) {
     const workspace = await this.deps.workspaces.getById(input.workspaceId);
     if (!workspace || workspace.tenantId !== input.tenantId) throw new Error("WHATSAPP_APPROVAL_WORKSPACE_INVALID: espaço de trabalho não encontrado nesta conta.");
     let approverPhone: string | undefined;
@@ -180,7 +194,8 @@ export class WhatsappApprovalService {
       const member = (await this.deps.repository.listMembers(input.tenantId)).find((item) => item.userId === input.approverUserId);
       if (!member || !hasPermission(member.role, "publication:approve")) throw new Error("WHATSAPP_APPROVAL_APPROVER_INVALID: essa pessoa não tem permissão para aprovar publicações.");
     }
-    return this.deps.repository.saveRule({ tenantId: input.tenantId, workspaceId: input.workspaceId, enabled: input.enabled, approverUserId: input.approverUserId, approverPhone, onTimeout: input.onTimeout, updatedBy: input.actorUserId });
+    const onReject = input.onReject ?? (await this.deps.repository.getRule(input.tenantId, input.workspaceId))?.onReject ?? "redo";
+    return this.deps.repository.saveRule({ tenantId: input.tenantId, workspaceId: input.workspaceId, enabled: input.enabled, approverUserId: input.approverUserId, approverPhone, onTimeout: input.onTimeout, onReject, updatedBy: input.actorUserId });
   }
 
   /** A marca exige aprovação pelo WhatsApp? (usado ao criar a publicação). */
@@ -248,7 +263,8 @@ export class WhatsappApprovalService {
         }
         // Outro pedido já aguardando este aprovador: "1" sozinho seria ambíguo — a mensagem já orienta com o código.
         const othersOpen = (await this.deps.repository.listOpenByPhone(settings.connectionId, rule.approverPhone)).some((open) => open.id !== request.id);
-        const text = approvalRequestText({ brand: workspace?.name ?? "marca", code: request.code, networks: post.networks, when: formatWhen(post.scheduledAt, post.timezone), caption: post.caption, screens: images.length, withCode: othersOpen });
+        const redo = await this.deps.repository.findRedoByResult?.(item.publicationId).catch(() => undefined);
+        const text = approvalRequestText({ brand: workspace?.name ?? "marca", code: request.code, networks: post.networks, when: formatWhen(post.scheduledAt, post.timezone), caption: post.caption, screens: images.length, withCode: othersOpen, ...(redo ? { redo: { ...redo, max: MAX_REDO_ATTEMPTS } } : {}) });
         await this.deliver(settings.connectionId, rule.approverPhone, (to) => provider.sendText({ externalSessionId: session, to, body: text }), request.id);
         await this.deps.repository.updateRequest(request.id, { status: "sent", sentAt: this.now().toISOString() });
         sent += 1;
@@ -279,6 +295,25 @@ export class WhatsappApprovalService {
       .catch((error) => this.deps.log?.(`ideia não voltou ao Bolsão (${request.publicationId}): ${error instanceof Error ? error.message : error}`));
   }
 
+  /**
+   * Reprovada: com motivo e a marca configurada para refazer, agenda a refação (a ideia não volta ao Bolsão).
+   * Sem motivo, marca que devolve, limite atingido ou falha ao agendar: a ideia volta ao Bolsão.
+   * Devolve o resultado da tentativa de refação (undefined = nem tentou).
+   */
+  private async redoOrReturn(request: ApprovalRequest): Promise<{ queued: boolean; attempt?: number } | undefined> {
+    const reason = request.reason?.trim();
+    const rule = reason && this.deps.onRejectedForRedo ? await this.deps.repository.getRule(request.tenantId, request.workspaceId) : undefined;
+    if (reason && rule && rule.onReject !== "return") {
+      const result = await this.deps.onRejectedForRedo!({ tenantId: request.tenantId, workspaceId: request.workspaceId, publicationId: request.publicationId, reason })
+        .catch((error) => { this.deps.log?.(`refação não agendada (${request.publicationId}): ${error instanceof Error ? error.message : error}`); return undefined; });
+      if (result?.queued) return result;
+      await this.returnIdea(request);
+      return result;
+    }
+    await this.returnIdea(request);
+    return undefined;
+  }
+
   async applyDecisions(): Promise<number> {
     let applied = 0;
     for (const request of await this.deps.repository.listByStatus("decided", 20)) {
@@ -293,8 +328,10 @@ export class WhatsappApprovalService {
           await this.sendText(request.connectionId, request.approverPhone, approvalAckText.approved(brand, formatWhen(post.scheduledAt, post.timezone))).catch(() => undefined);
         } else {
           await this.deps.posts.cancel({ ...key, actor });
-          await this.returnIdea(request);
-          await this.sendText(request.connectionId, request.approverPhone, approvalAckText.rejected(brand, request.reason)).catch(() => undefined);
+          const redo = await this.redoOrReturn(request);
+          const ack = redo?.queued ? approvalAckText.redoQueued(brand, request.reason ?? "", redo.attempt ?? 1, MAX_REDO_ATTEMPTS)
+            : redo ? approvalAckText.redoLimit(brand, request.reason, MAX_REDO_ATTEMPTS) : approvalAckText.rejected(brand, request.reason);
+          await this.sendText(request.connectionId, request.approverPhone, ack).catch(() => undefined);
         }
         await this.deps.repository.updateRequest(request.id, { status: "applied", appliedAt: this.now().toISOString() });
         applied += 1;
@@ -347,7 +384,20 @@ export class WhatsappApprovalService {
     const expired = await this.expireDue();
     const completed = await (this.deps.completePublishedIdeas?.() ?? Promise.resolve(0))
       .catch((error) => { this.deps.log?.(`ideias publicadas não marcadas como feitas: ${error instanceof Error ? error.message : error}`); return 0; });
-    return { sent, applied, expired, completed };
+    const redoFailures = await this.notifyFailedRedos()
+      .catch((error) => { this.deps.log?.(`aviso de refação não enviado: ${error instanceof Error ? error.message : error}`); return 0; });
+    return { sent, applied, expired, completed, redoFailures };
+  }
+
+  /** Refação que não deu certo (Quality Gate, Codex indisponível…): avisa o aprovador uma vez; a ideia já está no Bolsão. */
+  async notifyFailedRedos(): Promise<number> {
+    const failed = await this.deps.repository.listFailedRedosToNotify?.(10) ?? [];
+    for (const redo of failed) {
+      const brand = (await this.deps.workspaces.getById(redo.workspaceId))?.name ?? "marca";
+      await this.sendText(redo.connectionId, redo.approverPhone, approvalAckText.redoFailed(brand, redo.detail)).catch(() => undefined);
+      await this.deps.repository.markRedoNotified?.(redo.id);
+    }
+    return failed.length;
   }
 }
 

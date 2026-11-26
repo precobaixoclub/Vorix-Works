@@ -14,7 +14,7 @@ export function registerWhatsappApprovalScheduler(app: FastifyInstance, containe
     running = true;
     try {
       const result = await service.tick();
-      if (result.sent || result.applied || result.expired || result.completed) app.log.info(result, "whatsapp approvals");
+      if (result.sent || result.applied || result.expired || result.completed || result.redoFailures) app.log.info(result, "whatsapp approvals");
     } catch (error) {
       app.log.error({ err: error }, "whatsapp approval scheduler failed");
     } finally {

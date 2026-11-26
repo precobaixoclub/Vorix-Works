@@ -113,7 +113,7 @@ export class DavinciResolveExecutor implements VideoEditExecutor {
       const info = await stat(source).catch(() => null);
       if (!info?.isFile() || info.size === 0) throw new Error(`Arquivo de mídia inexistente ou vazio para o asset "${id}".`);
       mediaBytes += info.size;
-      sources.push({ from: source, to: join(jobDir, asset.fileName) });
+      sources.push({ from: source, to: join(jobDir, asset.fileName!) });
     }
     const fsInfo = await statfs(jobDir);
     const freeBytes = Number(fsInfo.bavail) * Number(fsInfo.bsize);

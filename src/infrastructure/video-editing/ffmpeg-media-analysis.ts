@@ -14,12 +14,21 @@ export type CaptureResult = { exitCode: number | null; stderr: string; durationM
 
 const MAX_STDERR = 4 * 1024 * 1024;
 
-export function runFfmpegCapture(args: string[], options: { timeoutMs?: number; signal?: AbortSignal } = {}): Promise<CaptureResult> {
+export type RunFfmpegCaptureOptions = {
+  timeoutMs?: number;
+  signal?: AbortSignal;
+  /** Pasta de trabalho (os caminhos dos argumentos ficam relativos a ela). */
+  cwd?: string;
+  /** Recebe o número do último quadro processado (progresso real). */
+  onFrame?: (frame: number) => void;
+};
+
+export function runFfmpegCapture(args: string[], options: RunFfmpegCaptureOptions = {}): Promise<CaptureResult> {
   const binary = resolveFfmpegBinaryPath();
   const timeoutMs = options.timeoutMs ?? 120_000;
   return new Promise((resolve, reject) => {
     const startedAt = Date.now();
-    const child = spawn(binary, ["-hide_banner", "-nostdin", ...args], { shell: false, windowsHide: true, stdio: ["ignore", "ignore", "pipe"] });
+    const child = spawn(binary, ["-hide_banner", "-nostdin", ...args], { shell: false, windowsHide: true, stdio: ["ignore", "ignore", "pipe"], cwd: options.cwd });
     let stderr = "";
     let done = false;
     const finish = (fn: () => void) => {
@@ -39,7 +48,13 @@ export function runFfmpegCapture(args: string[], options: { timeoutMs?: number; 
     };
     options.signal?.addEventListener("abort", onAbort);
     child.stderr?.on("data", (chunk: Buffer) => {
-      if (stderr.length < MAX_STDERR) stderr += chunk.toString("utf8");
+      const text = chunk.toString("utf8");
+      if (stderr.length < MAX_STDERR) stderr += text;
+      if (options.onFrame) {
+        const matches = text.match(/frame=\s*(\d+)/g);
+        const last = matches?.[matches.length - 1];
+        if (last) options.onFrame(Number(last.replace(/\D/g, "")));
+      }
     });
     child.on("error", (error) => finish(() => reject(error)));
     child.on("close", (exitCode) => finish(() => resolve({ exitCode, stderr, durationMs: Date.now() - startedAt })));

@@ -161,6 +161,9 @@ def main():
     parser.add_argument("--no-vad", action="store_true")
     parser.add_argument("--diarize", default=None, choices=["pyannote"])
     parser.add_argument("--num-speakers", type=int, default=None)
+    # Motor de vídeo: tempos por palavra para legenda com destaque da palavra falada. Desligado
+    # por padrão (Meetings não usa e o custo de CPU é maior).
+    parser.add_argument("--word-timestamps", action="store_true")
     args = parser.parse_args()
 
     cpu_start = time.process_time()
@@ -184,12 +187,19 @@ def main():
             vad_parameters={"min_silence_duration_ms": 500},
             # Sem herdar o texto do trecho anterior: evita laços de repetição em reuniões longas.
             condition_on_previous_text=False,
+            word_timestamps=args.word_timestamps,
         )
         for piece in pieces:
-            segments.append({
+            segment = {
                 "start": round(offset + piece.start, 3), "end": round(offset + piece.end, 3), "text": piece.text,
                 "avg_logprob": piece.avg_logprob, "no_speech_prob": piece.no_speech_prob,
-            })
+            }
+            if args.word_timestamps and piece.words:
+                segment["words"] = [
+                    {"start": round(offset + w.start, 3), "end": round(offset + w.end, 3), "word": w.word, "probability": round(w.probability, 3)}
+                    for w in piece.words
+                ]
+            segments.append(segment)
         if language is None:
             # Idioma do 1º bloco vale para a reunião inteira.
             language, language_probability = info.language, float(info.language_probability)

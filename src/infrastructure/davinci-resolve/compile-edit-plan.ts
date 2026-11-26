@@ -264,6 +264,11 @@ export function compileEditPlan(plan: VideoEditPlan, options: CompileOptions): C
   if (!validation.valid) {
     throw new PlanCompilationError("Plano de edição inválido; nada foi enviado ao DaVinci.", validation.issues.map((issue) => `${issue.path}: ${issue.message}`));
   }
+  const unsupported = [
+    ...plan.assets.filter((asset) => asset.kind === "card").map((asset) => `cartão "${asset.id}"`),
+    ...(plan.narration ? ["narração"] : []),
+  ];
+  if (unsupported.length > 0) throw new PlanCompilationError(`Recursos não suportados pelo executor DaVinci (estacionado): ${unsupported.join(", ")}.`);
   const conventions = options.conventions ?? DEFAULT_CONVENTIONS;
   const fontFamily = options.fontFamily ?? "Arial";
   const { fps } = plan;
@@ -327,7 +332,7 @@ export function compileEditPlan(plan: VideoEditPlan, options: CompileOptions): C
 
   const usedAssetIds = new Set<string>(plan.clips.map((clip) => clip.assetId));
   if (plan.logo) usedAssetIds.add(plan.logo.assetId);
-  const requiredFiles = plan.assets.filter((asset) => usedAssetIds.has(asset.id) && asset.kind !== "audio").map((asset) => asset.fileName);
+  const requiredFiles = plan.assets.filter((asset) => usedAssetIds.has(asset.id) && asset.kind !== "audio").map((asset) => asset.fileName!);
 
   // Texto
   const textWindows: TextWindow[] = [];
@@ -376,7 +381,7 @@ export function compileEditPlan(plan: VideoEditPlan, options: CompileOptions): C
       else merged.push({ ...window });
     }
     if ((asset.sourceDurationSeconds ?? 0) + 0.05 < plan.durationSeconds) warnings.push("trilha mais curta que o vídeo: termina antes do fim");
-    music = { sourceFileName: asset.fileName, outputFileName: PREPARED_MUSIC_FILE, durationSeconds: plan.durationSeconds, gainDb: plan.music.gainDb, fadeInSeconds: plan.music.fadeInSeconds, fadeOutSeconds: plan.music.fadeOutSeconds, duckWindows: merged, duckDb: 10 };
+    music = { sourceFileName: asset.fileName!, outputFileName: PREPARED_MUSIC_FILE, durationSeconds: plan.durationSeconds, gainDb: plan.music.gainDb, fadeInSeconds: plan.music.fadeInSeconds, fadeOutSeconds: plan.music.fadeOutSeconds, duckWindows: merged, duckDb: 10 };
   }
   if (plan.sourceAudioGainDb !== 0) warnings.push("ganho do áudio original não aplicado nesta versão (a API do DaVinci não expõe o volume do clipe)");
 
@@ -394,9 +399,9 @@ export function compileEditPlan(plan: VideoEditPlan, options: CompileOptions): C
     const { clip, asset } = layout;
     const ref = `clip-${index + 1}`;
     const srcStart = asset.kind === "video" ? frames(clip.sourceInSeconds, fps) : 0;
-    operations.push({ op: "append_clip", args: { ref, jobId: options.jobId, fileName: asset.fileName, startFrame: srcStart, endFrame: srcStart + layout.durationFrames - endOffset, trackIndex: layout.track, recordFrame: layout.startFrame, mediaType: 1 } });
+    operations.push({ op: "append_clip", args: { ref, jobId: options.jobId, fileName: asset.fileName!, startFrame: srcStart, endFrame: srcStart + layout.durationFrames - endOffset, trackIndex: layout.track, recordFrame: layout.startFrame, mediaType: 1 } });
     if (clip.keepSourceAudio) {
-      operations.push({ op: "append_clip", args: { ref: `${ref}-audio`, jobId: options.jobId, fileName: asset.fileName, startFrame: srcStart, endFrame: srcStart + layout.durationFrames - endOffset, trackIndex: layout.track, recordFrame: layout.startFrame, mediaType: 2 } });
+      operations.push({ op: "append_clip", args: { ref: `${ref}-audio`, jobId: options.jobId, fileName: asset.fileName!, startFrame: srcStart, endFrame: srcStart + layout.durationFrames - endOffset, trackIndex: layout.track, recordFrame: layout.startFrame, mediaType: 2 } });
     }
     const props = framingProperties(layout, plan, conventions, warnings);
     if (props) operations.push({ op: "set_clip_properties", args: { ref, props } });
@@ -422,7 +427,7 @@ export function compileEditPlan(plan: VideoEditPlan, options: CompileOptions): C
     const startFrame = frames(plan.logo.startSeconds, fps);
     const durationFrames = Math.min(totalFrames - startFrame, frames(plan.logo.durationSeconds, fps));
     const track = nextVideoTrack++;
-    operations.push({ op: "append_clip", args: { ref: "logo", jobId: options.jobId, fileName: asset.fileName, startFrame: 0, endFrame: durationFrames - endOffset, trackIndex: track, recordFrame: startFrame, mediaType: 1 } });
+    operations.push({ op: "append_clip", args: { ref: "logo", jobId: options.jobId, fileName: asset.fileName!, startFrame: 0, endFrame: durationFrames - endOffset, trackIndex: track, recordFrame: startFrame, mediaType: 1 } });
     const fit = Math.min(plan.width / asset.width, plan.height / asset.height);
     const zoom = (plan.logo.scale * plan.width) / (asset.width * fit);
     const shownW = asset.width * fit * zoom;

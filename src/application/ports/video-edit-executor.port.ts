@@ -5,7 +5,7 @@
 
 import type { VideoEditPlan } from "../../domain/video-editing/video-edit-plan.js";
 
-export type VideoEditStage = "validating" | "staging" | "connecting" | "building_timeline" | "rendering" | "verifying" | "done";
+export type VideoEditStage = "validating" | "staging" | "connecting" | "building_timeline" | "rendering_clips" | "rendering" | "verifying" | "done";
 
 export type VideoEditProgress = { stage: VideoEditStage; percent: number; message: string };
 
@@ -24,12 +24,15 @@ export type VideoEditExecutionRequest = {
 export type VideoEditExecutionResult = {
   outputPath: string;
   sizeBytes: number;
-  projectName: string;
-  timelineName: string;
+  /** Só executores com projeto próprio (DaVinci). */
+  projectName?: string;
+  timelineName?: string;
   warnings: string[];
   timings: Record<string, number>;
   engine: { product: string; version: string; codec: string };
   operationsSent: number;
+  /** Detalhes do executor (cache, layout de texto, etc.) para relatório. */
+  details?: Record<string, unknown>;
 };
 
 export type VideoEditExecutor = {

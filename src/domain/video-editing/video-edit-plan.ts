@@ -36,16 +36,19 @@ export const MIN_CLIP_SECONDS = 0.4;
 
 export type VideoEditMode = "edit_footage" | "images_ad";
 
-export type EditMediaKind = "video" | "image" | "audio";
+/** `card` = fundo de cor/gradiente gerado pelo executor (abertura, encerramento com CTA); não tem arquivo. */
+export type EditMediaKind = "video" | "image" | "audio" | "card";
 
-export type EditMediaRole = "footage" | "product_photo" | "screenshot" | "logo" | "music" | "reference";
+export type EditMediaRole = "footage" | "product_photo" | "screenshot" | "logo" | "music" | "narration" | "reference" | "card";
 
 export type EditMediaAsset = {
   id: string;
   kind: EditMediaKind;
   role: EditMediaRole;
-  /** Nome de arquivo simples (sem pasta) dentro da pasta do job. Ex.: "clip-01.mp4". */
-  fileName: string;
+  /** Nome de arquivo simples (sem pasta) dentro da pasta do job. Ex.: "clip-01.mp4". Ausente só em `card`. */
+  fileName?: string;
+  /** Somente `card`: cor sólida ou gradiente vertical. */
+  card?: { colorHex: string; gradientToHex?: string };
   /** Duração real da mídia de origem — obrigatória para vídeo e áudio. */
   sourceDurationSeconds?: number;
   width?: number;
@@ -66,8 +69,9 @@ export type EditMotionType = "static" | "push_in" | "pull_out" | "pan_left" | "p
 /** Movimento de câmera sobre o quadro (Ken Burns). `intensity` 0–1 mapeia para no máximo 18% de zoom/deslocamento. */
 export type EditMotion = { type: EditMotionType; intensity: number };
 
-/** Enquadramento: `fill` preenche o quadro (pode cortar bordas); `fit` mostra a mídia inteira sobre fundo preto. */
-export type EditFraming = { fit: "fill" | "fit"; focusX: number; focusY: number };
+/** Enquadramento: `fill` preenche o quadro (pode cortar bordas); `fit` mostra a mídia inteira sobre um fundo desfocado da própria mídia. */
+/** `zoom` (1–2.5) aproxima além do enquadramento base, mantendo o foco — ex.: gravação de tela no 9:16. */
+export type EditFraming = { fit: "fill" | "fit"; focusX: number; focusY: number; zoom?: number };
 
 export type EditTextRole = "hook" | "headline" | "caption" | "cta" | "price" | "subtitle";
 export type EditTextPosition = "top" | "center" | "bottom" | "lower_third";
@@ -115,7 +119,10 @@ export type EditClip = {
   keepSourceAudio: boolean;
 };
 
-export type EditCaptionSegment = { startSeconds: number; endSeconds: number; text: string };
+export type EditCaptionWord = { text: string; startSeconds: number; endSeconds: number };
+
+/** `words` (opcional, da transcrição) permite destacar a palavra falada no momento certo. */
+export type EditCaptionSegment = { startSeconds: number; endSeconds: number; text: string; words?: EditCaptionWord[] };
 
 export type EditCaptions = {
   enabled: boolean;
@@ -130,9 +137,12 @@ export type EditMusic = {
   gainDb: number;
   fadeInSeconds: number;
   fadeOutSeconds: number;
-  /** Abaixar a trilha enquanto há fala do vídeo de origem. */
+  /** Abaixar a trilha enquanto há fala (áudio original ou narração). */
   duckUnderSpeech: boolean;
 };
+
+/** Narração já gravada/gerada (arquivo de áudio). O executor não sintetiza voz. */
+export type EditNarration = { assetId: string; startSeconds: number; gainDb: number };
 
 export type EditLogo = {
   assetId: string;
@@ -157,6 +167,7 @@ export type VideoEditPlan = {
   clips: EditClip[];
   captions?: EditCaptions;
   music?: EditMusic;
+  narration?: EditNarration;
   logo?: EditLogo;
   /** Ganho do áudio de origem (fala) em dB. */
   sourceAudioGainDb: number;
@@ -173,7 +184,7 @@ const ID_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;
 /** Nome de arquivo simples: sem separador de pasta, sem "..", extensão de mídia conhecida. */
 const FILE_NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,80}\.(mp4|mov|m4v|webm|mkv|png|jpe?g|webp|wav|mp3|m4a|aac)$/i;
 const HEX_PATTERN = /^#[0-9A-Fa-f]{6}$/;
-const KIND_EXTENSIONS: Record<EditMediaKind, RegExp> = {
+const KIND_EXTENSIONS: Record<Exclude<EditMediaKind, "card">, RegExp> = {
   video: /\.(mp4|mov|m4v|webm|mkv)$/i,
   image: /\.(png|jpe?g|webp)$/i,
   audio: /\.(wav|mp3|m4a|aac)$/i,
@@ -238,10 +249,17 @@ export function validateVideoEditPlan(plan: VideoEditPlan): PlanValidation {
     if (!ID_PATTERN.test(asset.id ?? "")) issues.push({ path: `${path}.id`, message: "id inválido" });
     if (assets.has(asset.id)) issues.push({ path: `${path}.id`, message: "id repetido" });
     assets.set(asset.id, asset);
+    if (!["video", "image", "audio", "card"].includes(asset.kind)) issues.push({ path: `${path}.kind`, message: "tipo de mídia desconhecido" });
+    if (asset.kind === "card") {
+      if (asset.fileName !== undefined) issues.push({ path: `${path}.fileName`, message: "cartão não tem arquivo" });
+      if (!asset.card || !HEX_PATTERN.test(asset.card.colorHex) || (asset.card.gradientToHex !== undefined && !HEX_PATTERN.test(asset.card.gradientToHex))) issues.push({ path: `${path}.card`, message: "cartão sem cor válida (#RRGGBB)" });
+      return;
+    }
+    if (asset.card !== undefined) issues.push({ path: `${path}.card`, message: "só assets do tipo card têm cor" });
     if (!isSafeMediaFileName(asset.fileName ?? "")) issues.push({ path: `${path}.fileName`, message: "nome de arquivo inseguro (somente nome simples dentro do job)" });
-    else if (!KIND_EXTENSIONS[asset.kind]?.test(asset.fileName)) issues.push({ path: `${path}.fileName`, message: `extensão não corresponde ao tipo ${asset.kind}` });
-    if (fileNames.has(asset.fileName)) issues.push({ path: `${path}.fileName`, message: "arquivo repetido" });
-    fileNames.add(asset.fileName);
+    else if (!KIND_EXTENSIONS[asset.kind as Exclude<EditMediaKind, "card">]?.test(asset.fileName!)) issues.push({ path: `${path}.fileName`, message: `extensão não corresponde ao tipo ${asset.kind}` });
+    if (asset.fileName && fileNames.has(asset.fileName)) issues.push({ path: `${path}.fileName`, message: "arquivo repetido" });
+    if (asset.fileName) fileNames.add(asset.fileName);
     if ((asset.kind === "video" || asset.kind === "audio") && (!finite(asset.sourceDurationSeconds) || asset.sourceDurationSeconds <= 0)) {
       issues.push({ path: `${path}.sourceDurationSeconds`, message: "duração da mídia de origem obrigatória" });
     }
@@ -285,6 +303,8 @@ export function validateVideoEditPlan(plan: VideoEditPlan): PlanValidation {
     else if (!finite(clip.motion.intensity) || clip.motion.intensity < 0 || clip.motion.intensity > 1) issues.push({ path: `${path}.motion.intensity`, message: "intensidade fora de 0–1" });
     if (!clip.framing || (clip.framing.fit !== "fill" && clip.framing.fit !== "fit")) issues.push({ path: `${path}.framing`, message: "enquadramento inválido" });
     else {
+      if (clip.framing.zoom !== undefined && (!finite(clip.framing.zoom) || clip.framing.zoom < 1 || clip.framing.zoom > 2.5)) issues.push({ path: `${path}.framing.zoom`, message: "zoom de enquadramento fora de 1–2,5" });
+      if (asset?.protectedFidelity && (clip.framing.zoom ?? 1) > 1.6) issues.push({ path: `${path}.framing.zoom`, message: "zoom forte demais para produto/tela protegidos" });
       for (const key of ["focusX", "focusY"] as const) {
         if (!finite(clip.framing[key]) || clip.framing[key] < 0 || clip.framing[key] > 1) issues.push({ path: `${path}.framing.${key}`, message: "foco fora de 0–1" });
       }
@@ -292,6 +312,7 @@ export function validateVideoEditPlan(plan: VideoEditPlan): PlanValidation {
     if (asset?.protectedFidelity && clip.framing?.fit === "fill" && clip.motion?.intensity > 0.6) {
       issues.push({ path: `${path}.motion.intensity`, message: "movimento forte demais para mídia com fidelidade protegida (corta o produto)" });
     }
+    if (asset?.kind === "card" && clip.framing?.fit === "fit") issues.push({ path: `${path}.framing`, message: "cartão sempre preenche o quadro" });
     if (clip.keepSourceAudio && asset?.kind !== "video") issues.push({ path: `${path}.keepSourceAudio`, message: "só vídeo tem áudio de origem" });
 
     (clip.overlays ?? []).forEach((overlay, overlayIndex) => {
@@ -316,6 +337,19 @@ export function validateVideoEditPlan(plan: VideoEditPlan): PlanValidation {
     plan.captions.segments.forEach((segment, index) => {
       const path = `captions.segments[${index}]`;
       checkText(segment.text, `${path}.text`, issues);
+      if (segment.words !== undefined) {
+        if (!Array.isArray(segment.words) || segment.words.length > 60) issues.push({ path: `${path}.words`, message: "palavras inválidas" });
+        else {
+          let lastWord = segment.startSeconds - 0.05;
+          for (const word of segment.words) {
+            if (typeof word.text !== "string" || word.text.trim().length === 0 || word.text.length > 40 || CONTROL_CHARS.test(word.text) || !finite(word.startSeconds) || !finite(word.endSeconds) || word.startSeconds < lastWord - 0.05 || word.endSeconds < word.startSeconds || word.endSeconds > segment.endSeconds + 0.3) {
+              issues.push({ path: `${path}.words`, message: "palavra fora da ordem ou do intervalo da legenda" });
+              break;
+            }
+            lastWord = word.startSeconds;
+          }
+        }
+      }
       if (!finite(segment.startSeconds) || !finite(segment.endSeconds) || segment.endSeconds - segment.startSeconds < 0.25 || segment.startSeconds < lastEnd - EPSILON || segment.endSeconds > plan.durationSeconds + EPSILON) {
         issues.push({ path, message: "legenda fora de ordem, curta demais ou além do fim" });
       }
@@ -330,6 +364,13 @@ export function validateVideoEditPlan(plan: VideoEditPlan): PlanValidation {
     for (const key of ["fadeInSeconds", "fadeOutSeconds"] as const) {
       if (!finite(plan.music[key]) || plan.music[key] < 0 || plan.music[key] > 5) issues.push({ path: `music.${key}`, message: "fade fora de 0–5s" });
     }
+  }
+
+  if (plan.narration) {
+    const asset = assets.get(plan.narration.assetId);
+    if (!asset || asset.kind !== "audio") issues.push({ path: "narration.assetId", message: "narração deve ser um asset de áudio" });
+    if (!finite(plan.narration.startSeconds) || plan.narration.startSeconds < 0 || plan.narration.startSeconds >= plan.durationSeconds) issues.push({ path: "narration.startSeconds", message: "início da narração fora do vídeo" });
+    if (!finite(plan.narration.gainDb) || plan.narration.gainDb < -20 || plan.narration.gainDb > 12) issues.push({ path: "narration.gainDb", message: "ganho da narração fora de -20..12 dB" });
   }
 
   if (plan.logo) {

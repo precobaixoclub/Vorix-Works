@@ -53,7 +53,9 @@
     "test:site-commerce": "npm run build && node --test tests/site-commerce.test.mjs tests/product-site-engine.test.mjs tests/site-customization.test.mjs",
     "davinci:install-bridge": "node scripts/davinci/install-bridge.mjs",
     "davinci:proof": "npm run build && node scripts/davinci/proof-render.mjs",
-    "test:video-editing": "npm run build && node --test tests/video-edit-plan.test.mjs tests/davinci-bridge-lua.test.mjs tests/davinci-executor.test.mjs",
+    "test:video-editing": "npm run build && node --test tests/video-edit-plan.test.mjs tests/video-ffmpeg-engine.test.mjs tests/davinci-bridge-lua.test.mjs tests/davinci-executor.test.mjs",
+    "video:b0-materials": "node scripts/video/make-b0-materials.mjs",
+    "video:b0": "npm run build && node scripts/video/b0-proof.mjs",
     "test:website-builder": "npm run build && node scripts/sync-site-template-registry.mjs --check && node --test tests/website-builder-templates.test.mjs tests/site-customization.test.mjs tests/product-site-engine.test.mjs"
   },
   "devDependencies": {

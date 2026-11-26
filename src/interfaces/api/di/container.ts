@@ -1667,6 +1667,16 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
             and i.tenant_id=p.tenant_id and i.workspace_id=p.workspace_id and i.id = p.source_artifacts->0->'payload'->>'editorialIdeaId'
             and i.status='approved'`, [publicationId, tenantId, workspaceId]);
       },
+      // Publicada em todas as redes (nenhum destino pendente/falho): a ideia do Bolsão vira "publicada" na hora.
+      completePublishedIdeas: async () => {
+        const { rowCount } = await repositories.pool!.query(`update editorial_ideas i set status='published', status_changed_at=now(), updated_at=now()
+          from publication_plans p where p.state='published' and p.published_at > now() - interval '2 days'
+            and i.tenant_id=p.tenant_id and i.workspace_id=p.workspace_id and i.id = p.source_artifacts->0->'payload'->>'editorialIdeaId'
+            and i.status in ('available','approved')
+            and exists (select 1 from publication_targets t where t.publication_id=p.id)
+            and not exists (select 1 from publication_targets t where t.publication_id=p.id and t.status <> 'published')`);
+        return rowCount ?? 0;
+      },
       idGenerator: () => `wap-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
     });
   }

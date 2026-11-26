@@ -69,6 +69,11 @@ export type WhatsappApprovalServiceDeps = {
   provider?: MessagingProvider;
   /** Publicação não aprovada (reprovada ou sem resposta): a ideia de origem volta para o Bolsão. */
   onNotApproved?: (input: { tenantId: string; workspaceId: string; publicationId: string }) => Promise<void>;
+  /**
+   * Publicação que foi ao ar em todas as redes: a ideia de origem fica "feita" (publicada) na hora — sem
+   * esperar a conciliação do piloto (que só roda perto das 12h/19h). Devolve quantas ideias mudaram.
+   */
+  completePublishedIdeas?: () => Promise<number>;
   posts: {
     get(input: { tenantId: string; workspaceId: string; postId: string }): Promise<ApprovalPostView>;
     approve(input: { tenantId: string; workspaceId: string; postId: string; actor: { userId: string; role: TenantRole } }): Promise<unknown>;
@@ -336,7 +341,9 @@ export class WhatsappApprovalService {
     const sent = await this.dispatchPending();
     const applied = await this.applyDecisions();
     const expired = await this.expireDue();
-    return { sent, applied, expired };
+    const completed = await (this.deps.completePublishedIdeas?.() ?? Promise.resolve(0))
+      .catch((error) => { this.deps.log?.(`ideias publicadas não marcadas como feitas: ${error instanceof Error ? error.message : error}`); return 0; });
+    return { sent, applied, expired, completed };
   }
 }
 

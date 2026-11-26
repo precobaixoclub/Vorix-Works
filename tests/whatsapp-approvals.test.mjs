@@ -241,3 +241,15 @@ test("ideia do Bolsão só fica 'feita' se aprovada: reprovada ou sem resposta, 
   await service.expireDue();
   assert.deepEqual(returned, ["pub-2", "pub-3"], "sem resposta com 'não publica' também volta");
 });
+
+test("publicação aprovada que foi ao ar marca a ideia como feita a cada ciclo; falha nesse passo não derruba o ciclo", async () => {
+  const { service } = setup();
+  let calls = 0;
+  service.deps.completePublishedIdeas = async () => { calls += 1; return 1; };
+  assert.equal((await service.tick()).completed, 1);
+  assert.equal(calls, 1);
+  service.deps.completePublishedIdeas = async () => { throw new Error("banco indisponível"); };
+  const result = await service.tick();
+  assert.equal(result.completed, 0);
+  assert.equal(result.sent, 0);
+});

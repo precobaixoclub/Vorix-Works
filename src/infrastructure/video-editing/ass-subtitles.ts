@@ -18,6 +18,7 @@ import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { EditCaptionWord, EditTextAnimation, EditTextPosition, EditTextRole, EditTextStyle, VideoEditPlan } from "../../domain/video-editing/video-edit-plan.js";
 import { loadFontMetrics, type FontMetrics } from "./font-metrics.js";
+import { textArea, type Rect } from "./scene-compositions.js";
 
 // ---------------------------------------------------------------------------
 // Fontes
@@ -73,6 +74,8 @@ export type TextWindow = {
   endSeconds: number;
   isCaption: boolean;
   words?: EditCaptionWord[];
+  /** Área livre da composição (painel do split): o texto vai para lá, com a cor de texto da marca. */
+  area?: Rect;
 };
 
 /** Centro vertical do bloco de texto (fração da altura, origem no topo). */
@@ -102,7 +105,8 @@ export function collectTextWindows(plan: VideoEditPlan, warnings: string[]): Tex
   for (const clip of plan.clips) {
     for (const overlay of clip.overlays) {
       const start = clip.recordStartSeconds + overlay.startOffsetSeconds;
-      windows.push({ text: overlay.text, role: overlay.role, style: overlay.style, position: overlay.position, animation: overlay.animation, startSeconds: start, endSeconds: Math.min(plan.durationSeconds, start + overlay.durationSeconds), isCaption: false });
+      const area = textArea(clip.layout, plan.aspect, plan.width, plan.height);
+      windows.push({ text: overlay.text, role: overlay.role, style: overlay.style, position: overlay.position, animation: overlay.animation, startSeconds: start, endSeconds: Math.min(plan.durationSeconds, start + overlay.durationSeconds), isCaption: false, ...(area ? { area } : {}) });
     }
   }
   const titles = [...windows];
@@ -215,16 +219,19 @@ export function buildAss(plan: VideoEditPlan, options: AssOptions = {}): BuiltAs
   for (const window of windows) {
     const font = resolveFont(window.style.fontFamily, warnings);
     fontFiles.add(font.file);
-    const boxed = Boolean(window.style.backgroundHex);
-    const layout = layoutText(window.text, window.style.size, font.metrics, W, H, boxed ? 0.8 : 0.86);
+    // No painel do split o texto é limpo (sem caixa), na cor de texto da marca, dentro da largura do painel.
+    const boxed = Boolean(window.style.backgroundHex) && !window.area;
+    // O painel é superfície de design: o texto pode ser maior que sobre a foto.
+    const layout = layoutText(window.text, window.area ? Math.min(0.12, window.style.size * 1.45) : window.style.size, font.metrics, W, H, window.area ? (window.area.w * 0.84) / W : boxed ? 0.8 : 0.86);
     if (layout.shrunk) warnings.push(`texto "${window.text.slice(0, 24)}…" reduzido para caber em ${MAX_LINES} linhas`);
     const padding = Math.round(layout.sizePx * 0.32);
     const withinFrame = layout.widthPx + 2 * padding <= W * 0.96;
     layouts.push({ text: window.text, lines: layout.lines.length, sizePx: layout.sizePx, widthPx: Math.round(layout.widthPx), withinFrame });
 
-    const x = Math.round(W / 2);
-    const y = Math.round(POSITION_Y[orientation][window.position] * H);
-    const textColor = window.style.colorHex.toUpperCase();
+    const PANEL_Y: Record<string, number> = { top: 0.3, center: 0.5, lower_third: 0.64, bottom: 0.76 };
+    const x = window.area ? Math.round(window.area.x + window.area.w / 2) : Math.round(W / 2);
+    const y = window.area ? Math.round(window.area.y + window.area.h * PANEL_Y[window.position]!) : Math.round(POSITION_Y[orientation][window.position] * H);
+    const textColor = (window.area && plan.look ? plan.look.panelTextHex : window.style.colorHex).toUpperCase();
     const box = window.style.backgroundHex?.toUpperCase();
     // Sem caixa: contorno escuro ou claro conforme o texto, mais sombra suave, para ler sobre foto.
     const outlineHex = box ?? (luminance(textColor) > 0.4 ? "#000000" : "#FFFFFF");
@@ -232,7 +239,7 @@ export function buildAss(plan: VideoEditPlan, options: AssOptions = {}): BuiltAs
       `\\an5\\pos(${x},${y})`,
       `\\fn${font.family}\\fs${layout.sizePx}\\b${window.style.bold === false ? 0 : 1}`,
       `\\1c${assColor(textColor)}`,
-      boxed ? `\\3c${assColor(box!)}\\3a&H26&\\bord${padding}\\shad0` : `\\3c${assColor(outlineHex)}\\bord${Math.max(2, Math.round(layout.sizePx * 0.06))}\\4c&H000000&\\4a&H80&\\shad${Math.max(1, Math.round(layout.sizePx * 0.05))}`,
+      window.area ? `\\bord0\\shad0` : boxed ? `\\3c${assColor(box!)}\\3a&H26&\\bord${padding}\\shad0` : `\\3c${assColor(outlineHex)}\\bord${Math.max(2, Math.round(layout.sizePx * 0.06))}\\4c&H000000&\\4a&H80&\\shad${Math.max(1, Math.round(layout.sizePx * 0.05))}`,
     ];
     const durationMs = Math.round((window.endSeconds - window.startSeconds) * 1000);
     const fadeIn = window.isCaption ? 60 : Math.min(220, Math.floor(durationMs / 4));
@@ -240,8 +247,13 @@ export function buildAss(plan: VideoEditPlan, options: AssOptions = {}): BuiltAs
     const anim: string[] = window.animation === "none" ? [] : [`\\fad(${fadeIn},${fadeOut})`];
     if (window.animation === "slide_up") anim.push(`\\move(${x},${y + Math.round(H * 0.035)},${x},${y},0,320)`);
     if (window.animation === "pop") anim.push(`\\fscx72\\fscy72\\t(0,150,\\fscx106\\fscy106)\\t(150,240,\\fscx100\\fscy100)`);
+    if (window.animation === "kinetic") anim.splice(0, anim.length, `\\fad(0,${fadeOut})`);
     const style = boxed ? "Box" : "Plain";
-    const text = layout.lines.map(escapeAssText).join("\\N");
+    // Cinético: cada palavra entra em sequência (alfa + escala), ~110 ms por palavra.
+    let wordIndex = 0;
+    const text = window.animation === "kinetic"
+      ? layout.lines.map((line) => line.split(" ").map((word) => { const t0 = wordIndex++ * 110; return `{\\alpha&HFF&\\fscx70\\fscy70\\t(${t0},${t0 + 200},\\alpha&H00&\\fscx100\\fscy100)}${escapeAssText(word)}`; }).join(" ")).join("\\N")
+      : layout.lines.map(escapeAssText).join("\\N");
 
     if (window.isCaption && window.words && window.words.length > 0) {
       // Um evento por palavra: a frase inteira na tela, com a palavra falada destacada.

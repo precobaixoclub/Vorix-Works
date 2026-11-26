@@ -10,11 +10,12 @@ import { z } from "zod";
 export const VIDEO_EDIT_DRAFT_SCHEMA_VERSION = 1;
 
 const SCENE_PURPOSES = ["hook", "product", "detail", "benefit", "proof", "variety", "demo", "context", "cta"] as const;
-const MOTIONS = ["static", "push_in", "pull_out", "pan_left", "pan_right", "pan_up", "pan_down"] as const;
-const TRANSITIONS = ["cut", "cross_dissolve", "dip_to_black", "push_left", "push_up", "zoom_in"] as const;
+const MOTIONS = ["static", "push_in", "pull_out", "pan_left", "pan_right", "pan_up", "pan_down", "punch_in", "drift"] as const;
+const LAYOUTS = ["full", "framed", "split", "parallax", "inset", "device_phone", "device_laptop"] as const;
+const TRANSITIONS = ["cut", "cross_dissolve", "dip_to_black", "push_left", "push_up", "zoom_in", "blur", "circle_open", "wipe", "flash", "smooth_left"] as const;
 const TEXT_ROLES = ["hook", "headline", "cta", "price", "subtitle"] as const;
 const POSITIONS = ["top", "center", "bottom", "lower_third"] as const;
-const ANIMATIONS = ["fade", "slide_up", "pop", "none"] as const;
+const ANIMATIONS = ["fade", "slide_up", "pop", "kinetic", "none"] as const;
 
 const textSchema = z
   .object({
@@ -33,6 +34,7 @@ const sceneSchema = z
     sentenceIds: z.array(z.string().min(1).max(10)).max(12).optional(),
     sourceStartSeconds: z.number().min(0).max(3600).optional(),
     motion: z.enum(MOTIONS),
+    layout: z.enum(LAYOUTS).optional(),
     motionIntensity: z.enum(["subtle", "medium", "strong"]),
     focus: z.enum(["center", "top", "bottom", "left", "right"]),
     transitionIn: z.enum(TRANSITIONS),
@@ -81,7 +83,8 @@ export const VIDEO_EDIT_DRAFT_TOOL_INPUT_SCHEMA: Record<string, unknown> = {
           durationSeconds: { type: "number", minimum: 0.8, maximum: 12, description: "Tempo da cena. Em vídeo com frases, o tempo real vem das frases escolhidas." },
           sentenceIds: { type: "array", maxItems: 12, items: { type: "string", maxLength: 10 }, description: "Só para vídeo com fala: ids de frases CONSECUTIVAS do mesmo material (ex.: [\"S4\",\"S5\"])." },
           sourceStartSeconds: { type: "number", minimum: 0, description: "Só para vídeo SEM fala: segundo da fonte onde a cena começa." },
-          motion: { type: "string", enum: [...MOTIONS] },
+          motion: { type: "string", enum: [...MOTIONS], description: "punch_in = aproximação rápida (gancho); drift = deriva diagonal lenta." },
+          layout: { type: "string", enum: [...LAYOUTS], description: "Composição (só imagem): full = tela cheia; framed = produto num cartão sobre a cor da marca; split = foto + painel da marca com o texto; parallax = produto em camada sobre fundo (profundidade); inset = lupa no detalhe; device_phone/device_laptop = captura real dentro de um aparelho." },
           motionIntensity: { type: "string", enum: ["subtle", "medium", "strong"] },
           focus: { type: "string", enum: ["center", "top", "bottom", "left", "right"], description: "Onde está o assunto principal no material." },
           transitionIn: { type: "string", enum: [...TRANSITIONS], description: "Transição de entrada da cena." },

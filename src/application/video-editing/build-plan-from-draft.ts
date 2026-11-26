@@ -8,7 +8,7 @@
  */
 
 import type { EditClip, EditMediaAsset, EditTextOverlay, EditTextPosition, EditTextRole, EditTextStyle, EditTransitionType, VideoAspect, VideoEditPlan } from "../../domain/video-editing/video-edit-plan.js";
-import { VIDEO_FORMATS, validateVideoEditPlan } from "../../domain/video-editing/video-edit-plan.js";
+import { OVERLAP_TRANSITIONS, VIDEO_FORMATS, validateVideoEditPlan } from "../../domain/video-editing/video-edit-plan.js";
 import type { VideoEditDraft } from "../ai-gateway/schemas/video-edit-draft.v1.js";
 import { captionsFromTranscript, chooseFraming, snapRangeToWords, transcriptWords, type BrandGlossary, type Transcript, type TranscriptSentence } from "./transcript-tools.js";
 
@@ -67,7 +67,7 @@ export type BuildPlanContext = {
 export type BuildPlanResult = { ok: true; plan: VideoEditPlan; warnings: string[] } | { ok: false; issues: string[]; warnings: string[] };
 
 const FPS = 30;
-const OVERLAP = new Set<EditTransitionType>(["cross_dissolve", "push_left", "push_up", "zoom_in"]);
+const OVERLAP = new Set<EditTransitionType>(OVERLAP_TRANSITIONS);
 const INTENSITY = { subtle: 0.2, medium: 0.4, strong: 0.6 } as const;
 const TRANSITION_SECONDS = { suaves: 0.6, moderadas: 0.45, marcantes: 0.3 } as const;
 const FOCUS = { center: [0.5, 0.5], top: [0.5, 0.3], bottom: [0.5, 0.7], left: [0.3, 0.5], right: [0.7, 0.5] } as const;
@@ -129,7 +129,7 @@ export function buildPlanFromDraft(draft: VideoEditDraft, context: BuildPlanCont
     let duration = scene.durationSeconds;
     let speech = false;
     if (scene.materialId === cardId) {
-      asset = { id: cardId, kind: "card", role: "card", card: { colorHex: context.brand.primaryHex.toUpperCase(), gradientToHex: darken(context.brand.primaryHex, 0.38) } };
+      asset = { id: cardId, kind: "card", role: "card", card: { colorHex: context.brand.primaryHex.toUpperCase(), gradientToHex: darken(context.brand.primaryHex, luminance(context.brand.primaryHex) > 0.5 ? 0.14 : 0.38) } };
     } else {
       const material = materials.get(scene.materialId);
       if (!material || material.kind === "audio") {
@@ -171,9 +171,25 @@ export function buildPlanFromDraft(draft: VideoEditDraft, context: BuildPlanCont
     if (speech) intensity = Math.min(intensity, 0.2);
     if (protectedMedia && fit === "fill") intensity = Math.min(intensity, 0.6);
 
+    // Composição: só imagem; aparelho só para captura real; lupa só para produto.
+    let layout = scene.layout ?? "full";
+    if (layout !== "full" && asset.kind !== "image") {
+      warnings.push(`${path}: composição ${layout} é só para imagem; usada tela cheia`);
+      layout = "full";
+    }
+    if ((layout === "device_phone" || layout === "device_laptop") && asset.role !== "screenshot") layout = "framed";
+    // Aparelho pela orientação da captura: tela horizontal (desktop) nunca é recortada num celular.
+    const landscape = (asset.width ?? 1) >= (asset.height ?? 1);
+    if (layout === "inset" && asset.role === "screenshot") layout = landscape ? "device_laptop" : "device_phone";
+    if (layout === "device_phone" && landscape) layout = "device_laptop";
+
+    // Aparelho/painel: a câmera anda pouco (o aparelho não pode sair do quadro).
+    if (layout === "device_phone" || layout === "device_laptop" || layout === "split") intensity = Math.min(intensity, 0.25);
+
     const overlays: EditTextOverlay[] = scene.texts.map((text, textIndex) => {
       let position: EditTextPosition = text.position;
-      if (protectedMedia && position === "center") {
+      // No split o texto vai para o painel da marca, nunca sobre o produto.
+      if (protectedMedia && position === "center" && layout !== "split") {
         position = "top";
         warnings.push(`${path}: texto movido do centro para o topo (não cobre o produto)`);
       }
@@ -184,7 +200,7 @@ export function buildPlanFromDraft(draft: VideoEditDraft, context: BuildPlanCont
     built.push({
       speech,
       flexible: asset.kind !== "video",
-      clip: { id: `c${index + 1}`, assetId: asset.id, purpose: scene.purpose, sourceInSeconds: round3(sourceIn), durationSeconds: duration, motion: { type: scene.motion, intensity }, framing: { fit: asset.kind === "card" ? "fill" : fit, focusX, focusY, ...(zoom ? { zoom } : {}) }, transitionIn: { type: scene.transitionIn, durationSeconds: 0 }, overlays, keepSourceAudio: speech },
+      clip: { id: `c${index + 1}`, assetId: asset.id, purpose: scene.purpose, sourceInSeconds: round3(sourceIn), durationSeconds: duration, motion: { type: scene.motion, intensity }, framing: { fit: asset.kind === "card" ? "fill" : fit, focusX, focusY, ...(zoom ? { zoom } : {}) }, transitionIn: { type: scene.transitionIn, durationSeconds: 0 }, overlays, keepSourceAudio: speech, ...(layout !== "full" ? { layout } : {}) },
     });
   });
   if (issues.length > 0) return { ok: false, issues, warnings };
@@ -294,6 +310,7 @@ export function buildPlanFromDraft(draft: VideoEditDraft, context: BuildPlanCont
     ...(logo ? { logo } : {}),
     sourceAudioGainDb: 0,
     strategy: draft.strategy,
+    look: { backgroundHex: context.brand.primaryHex.toUpperCase(), accentHex: context.brand.accentHex.toUpperCase(), panelTextHex: contrastText(context.brand.primaryHex, context.brand).toUpperCase() },
     prompt: context.request.slice(0, 4000),
   };
   const validation = validateVideoEditPlan(plan);

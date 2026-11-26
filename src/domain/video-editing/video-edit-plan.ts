@@ -39,7 +39,8 @@ export type VideoEditMode = "edit_footage" | "images_ad";
 /** `card` = fundo de cor/gradiente gerado pelo executor (abertura, encerramento com CTA); não tem arquivo. */
 export type EditMediaKind = "video" | "image" | "audio" | "card";
 
-export type EditMediaRole = "footage" | "product_photo" | "screenshot" | "logo" | "music" | "narration" | "reference" | "card";
+/** `generated` = imagem criada por IA (cena conceitual): nunca produto nem tela de software. */
+export type EditMediaRole = "footage" | "product_photo" | "screenshot" | "logo" | "music" | "narration" | "reference" | "card" | "generated";
 
 export type EditMediaAsset = {
   id: string;
@@ -60,11 +61,30 @@ export type EditMediaAsset = {
   protectedFidelity?: boolean;
 };
 
-export type EditTransitionType = "cut" | "cross_dissolve" | "dip_to_black" | "push_left" | "push_up" | "zoom_in";
+export const OVERLAP_TRANSITIONS = ["cross_dissolve", "push_left", "push_up", "zoom_in", "blur", "circle_open", "wipe", "flash", "smooth_left"] as const;
+export type EditTransitionType = "cut" | "dip_to_black" | (typeof OVERLAP_TRANSITIONS)[number];
+const TRANSITION_TYPES: readonly string[] = ["cut", "dip_to_black", ...OVERLAP_TRANSITIONS];
 
 export type EditTransition = { type: EditTransitionType; durationSeconds: number };
 
-export type EditMotionType = "static" | "push_in" | "pull_out" | "pan_left" | "pan_right" | "pan_up" | "pan_down";
+/** `punch_in`: aproximação rápida no início (gancho) e quase parada depois; `drift`: deriva diagonal lenta. */
+export type EditMotionType = "static" | "push_in" | "pull_out" | "pan_left" | "pan_right" | "pan_up" | "pan_down" | "punch_in" | "drift";
+const MOTION_TYPES: readonly string[] = ["static", "push_in", "pull_out", "pan_left", "pan_right", "pan_up", "pan_down", "punch_in", "drift"];
+
+/**
+ * Composição da cena (só imagem/cartão; vídeo é sempre `full`):
+ * - `full`: a mídia ocupa o quadro (preencher ou inteira sobre fundo desfocado);
+ * - `framed`: a foto inteira num cartão com cantos arredondados e sombra, sobre o fundo da marca;
+ * - `split`: foto de um lado e painel da marca do outro — textos da cena vão para o painel;
+ * - `parallax`: fundo e foto em camadas que se movem em velocidades diferentes (profundidade);
+ * - `inset`: foto inteira + lupa circular ampliando o detalhe no ponto de foco;
+ * - `device_phone`/`device_laptop`: captura real dentro de um celular/notebook desenhado.
+ */
+export const SCENE_LAYOUTS = ["full", "framed", "split", "parallax", "inset", "device_phone", "device_laptop"] as const;
+export type EditSceneLayout = (typeof SCENE_LAYOUTS)[number];
+
+/** Cores da marca usadas pelas composições (fundos, painéis, molduras). */
+export type EditLook = { backgroundHex: string; accentHex: string; panelTextHex: string };
 
 /** Movimento de câmera sobre o quadro (Ken Burns). `intensity` 0–1 mapeia para no máximo 18% de zoom/deslocamento. */
 export type EditMotion = { type: EditMotionType; intensity: number };
@@ -75,7 +95,8 @@ export type EditFraming = { fit: "fill" | "fit"; focusX: number; focusY: number;
 
 export type EditTextRole = "hook" | "headline" | "caption" | "cta" | "price" | "subtitle";
 export type EditTextPosition = "top" | "center" | "bottom" | "lower_third";
-export type EditTextAnimation = "fade" | "slide_up" | "pop" | "none";
+/** `kinetic`: as palavras entram uma a uma. */
+export type EditTextAnimation = "fade" | "slide_up" | "pop" | "kinetic" | "none";
 
 export type EditTextStyle = {
   /** Altura da fonte como fração da altura do quadro (0.02–0.12). */
@@ -117,6 +138,8 @@ export type EditClip = {
   overlays: EditTextOverlay[];
   /** Vídeo com fala: manter o áudio original do trecho. */
   keepSourceAudio: boolean;
+  /** Composição da cena; ausente = `full`. */
+  layout?: EditSceneLayout;
 };
 
 export type EditCaptionWord = { text: string; startSeconds: number; endSeconds: number };
@@ -173,6 +196,8 @@ export type VideoEditPlan = {
   sourceAudioGainDb: number;
   /** Rótulo da estratégia de composição escolhida pela IA (para variar entre peças). */
   strategy: string;
+  /** Cores da marca para as composições `framed`/`split`/`parallax`/`device_*`. */
+  look?: EditLook;
   /** Pedido original do usuário, guardado para histórico — nunca interpretado pelo executor. */
   prompt: string;
 };
@@ -265,6 +290,13 @@ export function validateVideoEditPlan(plan: VideoEditPlan): PlanValidation {
     }
   });
 
+  if (plan.look) {
+    for (const key of ["backgroundHex", "accentHex", "panelTextHex"] as const) if (!HEX_PATTERN.test(plan.look[key] ?? "")) issues.push({ path: `look.${key}`, message: "cor inválida" });
+  }
+  for (const [index, asset] of (plan.assets ?? []).entries()) {
+    if (asset.role === "generated" && (asset.kind !== "image" || asset.protectedFidelity)) issues.push({ path: `assets[${index}]`, message: "imagem gerada por IA não pode representar produto nem tela" });
+  }
+
   // Clipes
   const clips = plan.clips ?? [];
   if (clips.length === 0) issues.push({ path: "clips", message: "plano sem clipes" });
@@ -287,8 +319,8 @@ export function validateVideoEditPlan(plan: VideoEditPlan): PlanValidation {
     }
 
     const transition = clip.transitionIn ?? { type: "cut", durationSeconds: 0 };
-    const overlap = transition.type === "cross_dissolve" || transition.type === "push_left" || transition.type === "push_up" || transition.type === "zoom_in" ? transition.durationSeconds : 0;
-    if (!["cut", "cross_dissolve", "dip_to_black", "push_left", "push_up", "zoom_in"].includes(transition.type)) issues.push({ path: `${path}.transitionIn.type`, message: "transição desconhecida" });
+    const overlap = (OVERLAP_TRANSITIONS as readonly string[]).includes(transition.type) ? transition.durationSeconds : 0;
+    if (!TRANSITION_TYPES.includes(transition.type)) issues.push({ path: `${path}.transitionIn.type`, message: "transição desconhecida" });
     if (!finite(transition.durationSeconds) || transition.durationSeconds < 0 || transition.durationSeconds > 1.5) issues.push({ path: `${path}.transitionIn.durationSeconds`, message: "duração de transição fora de 0–1.5s" });
     if (index > 0 && overlap * 2 > Math.min(clip.durationSeconds, clips[index - 1]!.durationSeconds) + EPSILON) issues.push({ path: `${path}.transitionIn`, message: "transição longa demais para os clipes vizinhos" });
 
@@ -299,7 +331,7 @@ export function validateVideoEditPlan(plan: VideoEditPlan): PlanValidation {
     }
     expectedStart = (finite(clip.recordStartSeconds) ? clip.recordStartSeconds : start) + clip.durationSeconds;
 
-    if (!clip.motion || !["static", "push_in", "pull_out", "pan_left", "pan_right", "pan_up", "pan_down"].includes(clip.motion.type)) issues.push({ path: `${path}.motion`, message: "movimento desconhecido" });
+    if (!clip.motion || !MOTION_TYPES.includes(clip.motion.type)) issues.push({ path: `${path}.motion`, message: "movimento desconhecido" });
     else if (!finite(clip.motion.intensity) || clip.motion.intensity < 0 || clip.motion.intensity > 1) issues.push({ path: `${path}.motion.intensity`, message: "intensidade fora de 0–1" });
     if (!clip.framing || (clip.framing.fit !== "fill" && clip.framing.fit !== "fit")) issues.push({ path: `${path}.framing`, message: "enquadramento inválido" });
     else {
@@ -313,6 +345,14 @@ export function validateVideoEditPlan(plan: VideoEditPlan): PlanValidation {
       issues.push({ path: `${path}.motion.intensity`, message: "movimento forte demais para mídia com fidelidade protegida (corta o produto)" });
     }
     if (asset?.kind === "card" && clip.framing?.fit === "fit") issues.push({ path: `${path}.framing`, message: "cartão sempre preenche o quadro" });
+    const layout = clip.layout ?? "full";
+    if (!(SCENE_LAYOUTS as readonly string[]).includes(layout)) issues.push({ path: `${path}.layout`, message: "composição desconhecida" });
+    else if (layout !== "full") {
+      if (asset?.kind !== "image") issues.push({ path: `${path}.layout`, message: "composição só para imagem (vídeo e cartão usam full)" });
+      if ((layout === "device_phone" || layout === "device_laptop") && asset?.role !== "screenshot") issues.push({ path: `${path}.layout`, message: "moldura de aparelho só para captura de tela real" });
+      if (layout === "inset" && asset?.role === "screenshot") issues.push({ path: `${path}.layout`, message: "lupa de detalhe é para produto, não para tela" });
+      if (!plan.look) issues.push({ path: `${path}.layout`, message: "composição exige as cores da marca (look)" });
+    }
     if (clip.keepSourceAudio && asset?.kind !== "video") issues.push({ path: `${path}.keepSourceAudio`, message: "só vídeo tem áudio de origem" });
 
     (clip.overlays ?? []).forEach((overlay, overlayIndex) => {
@@ -323,7 +363,7 @@ export function validateVideoEditPlan(plan: VideoEditPlan): PlanValidation {
       if (!finite(overlay.startOffsetSeconds) || overlay.startOffsetSeconds < 0 || !finite(overlay.durationSeconds) || overlay.durationSeconds < 0.3 || overlay.startOffsetSeconds + overlay.durationSeconds > clip.durationSeconds + EPSILON) {
         issues.push({ path: opath, message: "texto fora do intervalo do clipe" });
       }
-      if (asset?.protectedFidelity && overlay.position === "center") issues.push({ path: `${opath}.position`, message: "texto no centro cobre o produto/tela protegida" });
+      if (asset?.protectedFidelity && overlay.position === "center" && clip.layout !== "split") issues.push({ path: `${opath}.position`, message: "texto no centro cobre o produto/tela protegida" });
     });
   });
 

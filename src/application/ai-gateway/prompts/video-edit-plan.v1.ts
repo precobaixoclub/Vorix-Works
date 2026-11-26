@@ -38,7 +38,8 @@ Regras de edição (obrigatórias):
 6. Ritmo: cenas de 1,5 a 4 s em anúncios com fotos; respeite a duração pedida. Varie movimento e transição entre cenas, sem exagero: no máximo 2 tipos de transição por vídeo além do corte; fala entre cenas de fala usa corte.
 7. Produto e tela: mostre inteiros e nítidos; texto nunca no centro de um produto; prefira top/bottom. Para detalhe da estampa, use push_in com foco onde o detalhe está.
 8. Não repita a estratégia das peças recentes da marca quando houver alternativa.
-9. Português do Brasil, tom da marca. Se algo pedido não for possível com os materiais, registre em "warnings".`;
+9. Português do Brasil, tom da marca. Se algo pedido não for possível com os materiais, registre em "warnings".
+10. Composição (campo "layout", só para imagem) — evite vídeo com cara de apresentação de fotos: use 2 a 4 composições diferentes por vídeo. "parallax" dá profundidade ao gancho; "framed" valoriza o produto num cartão; "split" põe a foto ao lado de um painel da marca com o texto (o texto vai para o painel e pode usar position "center"); "inset" amplia um detalhe numa lupa (use focus onde o detalhe está); "device_phone"/"device_laptop" põem uma captura de tela real dentro do aparelho. "full" = tela cheia. Texto "kinetic" faz as palavras entrarem uma a uma (bom para gancho). "punch_in" é aproximação rápida (gancho); "drift" é deriva lenta.`;
 
 export const VIDEO_EDIT_PLAN_PROMPT_HASH = createHash("sha256").update(INSTRUCTIONS).digest("hex");
 

@@ -19,6 +19,7 @@
 import { createHash } from "node:crypto";
 import type { EditClip, EditMediaAsset, VideoEditPlan } from "../../domain/video-editing/video-edit-plan.js";
 import { validateVideoEditPlan } from "../../domain/video-editing/video-edit-plan.js";
+import { layoutBase } from "./scene-compositions.js";
 
 export type MediaFacts = Record<string, { hasAudio: boolean; durationSeconds?: number | null; width?: number; height?: number }>;
 
@@ -56,7 +57,8 @@ export class FfmpegPlanError extends Error {
   }
 }
 
-const OVERLAP: Record<string, string | undefined> = { cross_dissolve: "fade", push_left: "slideleft", push_up: "slideup", zoom_in: "zoomin" };
+/** Transição do plano → efeito do xfade. Só transições com sobreposição aparecem aqui. */
+const OVERLAP: Record<string, string | undefined> = { cross_dissolve: "fade", push_left: "slideleft", push_up: "slideup", zoom_in: "zoomin", blur: "hblur", circle_open: "circleopen", wipe: "wipeleft", flash: "fadewhite", smooth_left: "smoothleft" };
 const MAX_MOTION = 0.18;
 
 const n = (value: number, digits = 4) => {
@@ -71,7 +73,8 @@ function ease(duration: number): string {
   return `st(0\\,clip(t/${n(duration)}\\,0\\,1));ld(0)*ld(0)*(3-2*ld(0))`;
 }
 
-type Motion = { zoomFrom: number; zoomTo: number; shiftX: [number, number]; shiftY: [number, number] };
+/** `easeSeconds`: o movimento se completa nesse tempo (punch-in) em vez de durar a cena toda. */
+type Motion = { zoomFrom: number; zoomTo: number; shiftX: [number, number]; shiftY: [number, number]; easeSeconds?: number };
 
 function motionOf(clip: EditClip): Motion | null {
   const amount = MAX_MOTION * clip.motion.intensity;
@@ -91,6 +94,10 @@ function motionOf(clip: EditClip): Motion | null {
       return { zoomFrom: over, zoomTo: over, shiftX: [0, 0], shiftY: [-shift, shift] };
     case "pan_down":
       return { zoomFrom: over, zoomTo: over, shiftX: [0, 0], shiftY: [shift, -shift] };
+    case "punch_in":
+      return { zoomFrom: 1, zoomTo: 1 + amount * 0.8, shiftX: [0, 0], shiftY: [0, 0], easeSeconds: 0.45 };
+    case "drift":
+      return { zoomFrom: over, zoomTo: over, shiftX: [-shift, shift], shiftY: [shift * 0.6, -shift * 0.6] };
     default:
       return null;
   }
@@ -102,7 +109,7 @@ function motionOf(clip: EditClip): Motion | null {
  */
 function zoompanFilter(motion: Motion | null, duration: number, fps: number, W: number, H: number): string {
   if (!motion) return `scale=${W}:${H}:flags=lanczos`;
-  const p = `st(0\\,clip(on/${fps}/${n(duration)}\\,0\\,1));ld(0)*ld(0)*(3-2*ld(0))`;
+  const p = `st(0\\,clip(on/${fps}/${n(motion.easeSeconds ?? duration)}\\,0\\,1));ld(0)*ld(0)*(3-2*ld(0))`;
   const z = `${n(motion.zoomFrom)}+(${n(motion.zoomTo - motion.zoomFrom)})*(${p})`;
   const dx = `(${n(motion.shiftX[0])}+(${n(motion.shiftX[1] - motion.shiftX[0])})*(${p}))`;
   const dy = `(${n(motion.shiftY[0])}+(${n(motion.shiftY[1] - motion.shiftY[0])})*(${p}))`;
@@ -111,7 +118,7 @@ function zoompanFilter(motion: Motion | null, duration: number, fps: number, W: 
 
 /** Vídeo: escala por quadro + recorte fixo (zoom contínuo; deslocamento com passo de 1 px). */
 function motionFilter(motion: Motion, duration: number, cw: number, ch: number): string {
-  const e = ease(duration);
+  const e = ease(motion.easeSeconds ?? duration);
   const z = `(${n(motion.zoomFrom)}+(${n(motion.zoomTo - motion.zoomFrom)})*(${e}))`;
   const dx = `(${n(motion.shiftX[0])}+(${n(motion.shiftX[1] - motion.shiftX[0])})*(${e}))`;
   const dy = `(${n(motion.shiftY[0])}+(${n(motion.shiftY[1] - motion.shiftY[0])})*(${e}))`;
@@ -220,13 +227,30 @@ export function compileFfmpegEdit(input: CompileFfmpegInput): CompiledFfmpegEdit
       const framing = framingFilter(clip, cw, ch);
       chain = `[0:v]setpts=PTS-STARTPTS,fps=${fps},${framing}${motion ? `,${motionFilter(motion, duration, cw, ch)}` : ""},${tail}[v]`;
     } else {
-      const baseName = `base-${index + 1}-${hash({ a: asset, f: clip.framing, cw, ch })}.png`;
+      const layoutKind = clip.layout ?? "full";
+      const ratio = (facts[asset.id]?.width ?? asset.width ?? 0) / (facts[asset.id]?.height ?? asset.height ?? 1);
+      const composed = asset.kind === "image" && layoutKind !== "full" && plan.look && ratio > 0 ? layoutBase(layoutKind, clip, plan.look, plan.aspect, cw, ch, ratio, W, H) : undefined;
+      if (asset.kind === "image" && layoutKind !== "full" && !composed) warnings.push(`cena ${clip.id}: composição ${layoutKind} sem dimensões/cores; usada a foto em tela cheia`);
+      const baseName = `base-${index + 1}-${hash({ a: asset, f: clip.framing, l: layoutKind, look: plan.look, cw, ch })}.png`;
       const baseInput = asset.kind === "card" ? ["-f", "lavfi", "-i", cardSource(asset, cw, ch)] : ["-i", asset.fileName!];
-      const baseChain = asset.kind === "card" ? `[0:v]format=rgb24,${cardGradient(asset)},setsar=1[b]` : `[0:v]format=rgb24,${framingFilter(clip, cw, ch)}[b]`;
-      steps.push({ kind: "base", id: clip.id, output: baseName, args: ["-hide_banner", "-y", ...limitInputs(baseInput), "-filter_complex", baseChain, "-map", "[b]", "-frames:v", "1", "-update", "1", baseName], timeoutMs: 60_000, cacheKey: "cacheable" });
-      inputArgs = ["-loop", "1", "-framerate", String(fps), "-t", n(duration + 0.5, 3), "-i", baseName];
+      const baseChain = asset.kind === "card" ? `[0:v]format=rgb24,${cardGradient(asset)},setsar=1[b]` : composed ? composed.chain : `[0:v]format=rgb24,${framingFilter(clip, cw, ch)}[b]`;
       const imageTail = [...fades, `fps=${fps}`, "format=yuv420p", "setsar=1"].join(",");
-      chain = `[0:v]setpts=PTS-STARTPTS,${zoompanFilter(motion, duration, fps, W, H)},${imageTail}[v]`;
+      if (composed?.parallaxForeground) {
+        // Parallax: fundo e primeiro plano em arquivos separados; o fundo aproxima devagar e o produto
+        // desliza na frente — profundidade real, não um zoom único.
+        const fgName = `fg-${index + 1}-${hash({ a: asset, l: layoutKind, look: plan.look, W, H })}.png`;
+        steps.push({ kind: "base", id: clip.id, output: baseName, args: ["-hide_banner", "-y", ...limitInputs(baseInput), "-filter_complex", `${baseChain};[f]nullsink`, "-map", "[b]", "-frames:v", "1", "-update", "1", baseName], timeoutMs: 90_000, cacheKey: "cacheable" });
+        steps.push({ kind: "base", id: `${clip.id}-fg`, output: fgName, args: ["-hide_banner", "-y", ...limitInputs(baseInput), "-filter_complex", `${baseChain};[b]nullsink`, "-map", "[f]", "-frames:v", "1", "-update", "1", fgName], timeoutMs: 90_000, cacheKey: "cacheable" });
+        inputArgs = ["-loop", "1", "-framerate", String(fps), "-t", n(duration + 0.5, 3), "-i", baseName, "-loop", "1", "-framerate", String(fps), "-t", n(duration + 0.5, 3), "-i", fgName];
+        const drift = Math.round(W * 0.035);
+        const e = `(st(0\,clip(t/${n(duration)}\,0\,1));ld(0)*ld(0)*(3-2*ld(0)))`;
+        const bgMotion: Motion = { zoomFrom: 1, zoomTo: 1.08, shiftX: [0.01, -0.01], shiftY: [0, 0] };
+        chain = `[0:v]setpts=PTS-STARTPTS,${zoompanFilter(bgMotion, duration, fps, W, H)}[bgv];[1:v]setpts=PTS-STARTPTS,format=rgba[fgv];[bgv][fgv]overlay=x='${-drift}+${2 * drift}*${e}':y='${Math.round(H * 0.012)}-${Math.round(H * 0.024)}*${e}':format=auto,${imageTail}[v]`;
+      } else {
+        steps.push({ kind: "base", id: clip.id, output: baseName, args: ["-hide_banner", "-y", ...limitInputs(baseInput), "-filter_complex", baseChain, "-map", "[b]", "-frames:v", "1", "-update", "1", baseName], timeoutMs: 90_000, cacheKey: "cacheable" });
+        inputArgs = ["-loop", "1", "-framerate", String(fps), "-t", n(duration + 0.5, 3), "-i", baseName];
+        chain = `[0:v]setpts=PTS-STARTPTS,${zoompanFilter(motion, duration, fps, W, H)},${imageTail}[v]`;
+      }
     }
     const spec = { inputArgs, chain, frames, fps, W, H };
     const clipName = `clip-${index + 1}-${hash(spec)}.mp4`;

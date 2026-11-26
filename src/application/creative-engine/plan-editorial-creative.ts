@@ -188,11 +188,11 @@ export function planEditorialCreative(input: PlanEditorialCreativeInput): Editor
     if (!best || captureFeatureScore(best, words) === 0 || best.id === resolved.primary.id) return resolved;
     return { ...resolved, primary: best, transmitted: [best, ...resolved.transmitted.filter((reference) => reference.id !== resolved.primary!.id)] };
   };
-  const planned = screens.map((screen, index) => {
+  const planned = screens.map((screen) => {
     const screenReferences = resolvedFor(screen);
-    // Carrossel conceitual: imagem gerada na capa e na 2ª tela; as demais tipográficas (tempo de geração dentro
-    // da janela do horário e unidade da série).
-    const allowAi = input.allowAi && !(decision.mode === "conceptual" && index >= 2);
+    // Toda tela do carrossel conceitual ganha imagem (cada uma numa linguagem). Limitar à capa e à 2ª tela deixou
+    // 3 telas "vazias com texto no canto" e a refação foi reprovada (26/11/2026).
+    const allowAi = input.allowAi;
     // Carrossel: cada tela com composição diferente (sem repetir a anterior); esgotou, recomeça.
     const spec = buildCreativeSpec({
       workspaceId: input.workspaceId, brand: { name: input.brandName, identity: input.brandIdentity, presentation: input.presentation }, idea: { ...input.idea, objective: input.idea.commercialObjective }, screen,

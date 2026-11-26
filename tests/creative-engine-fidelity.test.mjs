@@ -696,7 +696,7 @@ test("cena gerada com layout repetido: gera de novo com o texto em outra posiç�
 });
 
 // Motor mais criativo (26/11/2026): pauta conceitual tem várias linguagens de imagem, alterna com o histórico.
-test("conceitual: várias linguagens de imagem (cena, close-up, metáfora, 3D); alterna com o histórico; carrossel gera IA só nas 2 primeiras telas", () => {
+test("conceitual: várias linguagens de imagem (cena, close-up, metáfora, 3D); alterna com o histórico; toda tela do carrossel ganha imagem", () => {
   const noRefs = { primary: undefined, variants: [], logos: [], complementary: [], transmitted: [], excluded: [], missing: [] };
   const aiConcepts = COMPOSITION_ARCHETYPES.filter((item) => item.mode === "conceptual" && item.operation === "ai_generation").map((item) => item.id);
   assert.ok(aiConcepts.length >= 4, `linguagens: ${aiConcepts}`);
@@ -712,6 +712,7 @@ test("conceitual: várias linguagens de imagem (cena, close-up, metáfora, 3D); 
   const plan = planEditorialCreative({ workspaceId: "ws", brandName: "PBC", businessKind: "unknown", ideaReferences: [], history: [], allowAi: true,
     idea: IDEA({ title: "Impressora", format: "carousel", carouselScript: [{ headline: "1" }, { headline: "2" }, { headline: "3" }, { headline: "4" }] }) });
   const operations = plan.screens.map((item) => item.spec.composition.operation);
-  assert.deepEqual(operations.slice(0, 2), ["ai_generation", "ai_generation"]);
-  assert.ok(operations.slice(2).every((operation) => operation === "deterministic_composite"), `telas 3+: ${operations}`);
+  // Regressão (26/11/2026): telas 3+ tipográficas foram reprovadas como "vazias com texto no canto".
+  assert.ok(operations.every((operation) => operation === "ai_generation"), `telas: ${operations}`);
+  assert.ok(new Set(plan.screens.map((item) => item.spec.composition.archetype)).size >= 3, "linguagens variadas no carrossel");
 });

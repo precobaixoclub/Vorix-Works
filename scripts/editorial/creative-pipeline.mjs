@@ -109,6 +109,11 @@ export async function produceScreen({ planned, brand, assets, history, render, g
       const message = error instanceof Error ? error.message : String(error);
       attempts.push({ attempt, archetype, outcome: "failed", reason: message });
       if (!/QUALITY_/.test(message)) throw error;
+      // Imagem gerada fora do formato: gera de novo pedindo o retrato, sem trocar a composição.
+      if (/QUALITY_ASPECT/.test(message) && AI_OPERATIONS.has(operation)) {
+        correction = "A imagem anterior saiu fora do formato. Gere obrigatoriamente em retrato vertical 4:5 (1080 x 1350), nunca quadrada ou horizontal.";
+        continue;
+      }
       // Composição recusada antes do gate (texto sobre rosto/produto): outro arquétipo.
       const next = spec.composition.alternatives.find((id) => !tried.has(id) && (generateAi || operationOf(id, archetypes) === "deterministic_composite"));
       if (!next) break;

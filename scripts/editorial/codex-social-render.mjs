@@ -370,8 +370,11 @@ export async function renderArt(request) {
   const composition = request.composition ? await composeBase(request.composition, { surface, accent, foreground, light }) : undefined;
   const original = composition?.base ?? catalog?.input ?? Buffer.from(base, "base64");
   const originalSize = await sharp(original).metadata();
-  if (!originalSize.width || !originalSize.height || Math.abs(originalSize.width / originalSize.height - 0.8) > 0.065) {
-    throw new Error("A base visual gerada não está em proporção vertical 4:5");
+  // Base de 2:3 (1024x1536, comum no gerador) até quadrada: recorte central para 4:5 (as áreas protegidas já
+  // são mapeadas com esse recorte). Fora disso o recorte cortaria a cena: QUALITY_ → o pipeline gera de novo.
+  const ratio = originalSize.width && originalSize.height ? originalSize.width / originalSize.height : 0;
+  if (!(ratio >= 0.6 && ratio <= 1.05)) {
+    throw new Error(`QUALITY_ASPECT: A base visual gerada não está em proporção vertical 4:5 (${originalSize.width}x${originalSize.height})`);
   }
   const canvas = await sharp(original).resize(WIDTH, HEIGHT, { fit: "cover" }).removeAlpha().raw().toBuffer({ resolveWithObject: true });
   const protectedRects = mapProtectedAreas(composition?.protectedAreas ?? catalog?.areas ?? protectedAreas, originalSize.width, originalSize.height);

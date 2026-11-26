@@ -96,7 +96,7 @@ import { PostgresDealRepository } from "../../infrastructure/storage/postgres/po
 import { PostgresPipelineRepository, PostgresPipelineStageRepository } from "../../infrastructure/storage/postgres/postgres-pipeline-repository.js";
 import { PostgresProductRepository } from "../../infrastructure/storage/postgres/postgres-product-repository.js";
 import { PostgresWhatsappApprovalRepository } from "../../infrastructure/storage/postgres/postgres-whatsapp-approval-repository.js";
-import { canonicalApprovalPhone, captureApprovalReply } from "../../application/approvals/whatsapp-approval-service.js";
+import { canonicalApprovalPhone, captureApprovalReply, deliverToApprover } from "../../application/approvals/whatsapp-approval-service.js";
 import { PostgresSalesCatalogRepository, PostgresDealItemRepository, PostgresSalesConfigRepository, PostgresCommercialApprovalRepository } from "../../infrastructure/storage/postgres/postgres-sales-engine-repositories.js";
 
 /**
@@ -858,7 +858,9 @@ async function main(): Promise<void> {
         if (capture.reply) {
           const connectionRow = await deps.connectionRepository.getById(event.connectionId);
           if (connectionRow?.externalSessionId) {
-            await provider.sendText({ externalSessionId: connectionRow.externalSessionId, to: canonicalApprovalPhone(fromPhone), body: capture.reply })
+            const session = connectionRow.externalSessionId;
+            // A forma em que a mensagem chegou é a que o WhatsApp conhece (ex.: sem o 9 extra) — tenta essa primeiro.
+            await deliverToApprover(canonicalApprovalPhone(fromPhone), (to) => provider.sendText({ externalSessionId: session, to, body: capture.reply! }), String(fromPhone).split("@")[0].replace(/\D/g, ""))
               .catch((error) => console.error("[inbox-worker] falha ao responder o aprovador:", error instanceof Error ? error.message : error));
           }
         }

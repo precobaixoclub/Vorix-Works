@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { approvalCode, matchPendingRequest, parseApprovalReply } from "../dist/application/approvals/whatsapp-approval.js";
-import { canonicalApprovalPhone, captureApprovalReply, WhatsappApprovalService } from "../dist/application/approvals/whatsapp-approval-service.js";
+import { canonicalApprovalPhone, captureApprovalReply, deliverToApprover, whatsappPhoneVariants, WhatsappApprovalService } from "../dist/application/approvals/whatsapp-approval-service.js";
 
 // Aprovação de publicações pelo WhatsApp (25/11/2026): número da CONTA, regra por MARCA. Tudo simulado —
 // nenhum WhatsApp real, nenhuma publicação real.
@@ -168,4 +168,27 @@ test("prazo com regra 'publicar mesmo assim' aprova automaticamente; aprovador s
   assert.equal(other.actions.length, 0);
   assert.equal(other.repository.state.requests[0].status, "failed");
   assert.match(other.sent.at(-1).body, /Não consegui aplicar/);
+});
+
+test("número registrado no WhatsApp sem o 9 extra: tenta a outra forma só quando o WhatsApp não conhece o número", async () => {
+  assert.deepEqual(whatsappPhoneVariants("5546999990000"), ["5546999990000", "554699990000"]);
+  assert.deepEqual(whatsappPhoneVariants("554699990000"), ["554699990000", "5546999990000"]);
+  assert.deepEqual(whatsappPhoneVariants("554633334444"), ["554633334444"], "fixo não ganha 9");
+  const tried = [];
+  const send = async (to) => { tried.push(to); if (to.length === 13) throw new Error('WuzAPI indisponível (status 500): {"error":"error sending message: no LID found for 5546999990000@s.whatsapp.net from server"}'); };
+  assert.equal(await deliverToApprover("5546999990000", send), "554699990000");
+  assert.deepEqual(tried, ["5546999990000", "554699990000"]);
+  tried.length = 0;
+  assert.equal(await deliverToApprover("5546999990000", send, "554699990000"), "554699990000");
+  assert.deepEqual(tried, ["554699990000"], "forma que já funcionou vai primeiro");
+  // Outro erro (sessão caída) não vira tentativa às cegas em outro número.
+  await assert.rejects(deliverToApprover("5546999990000", async () => { throw new Error("no session"); }), /no session/);
+
+  const { service, repository, sent } = setup();
+  const realSend = service.deps.provider.sendText;
+  service.deps.provider.sendText = async (input) => { if (input.to === PHONE) throw new Error("no LID found for x"); return realSend(input); };
+  await configure(service);
+  await service.sendTest({ tenantId: "t1", workspaceId: "ws-cmkv" });
+  assert.equal(sent.at(-1).to, "551188887777");
+  assert.equal(repository.state.requests.length, 0);
 });

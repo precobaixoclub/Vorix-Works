@@ -88,6 +88,38 @@ export function canonicalApprovalPhone(raw: string): string {
   return phoneDigits(normalizePhoneNumber(raw));
 }
 
+/**
+ * Formas em que o WhatsApp pode ter o número: celulares brasileiros fora de SP/RJ costumam estar registrados
+ * SEM o 9 extra (confirmado em produção: a forma com o 9 falhou com "no LID found" e a sem o 9 entregou).
+ */
+export function whatsappPhoneVariants(phone: string): string[] {
+  const digits = phoneDigits(phone);
+  const withNine = /^55(\d{2})9([6-9]\d{7})$/.exec(digits);
+  if (withNine) return [digits, `55${withNine[1]}${withNine[2]}`];
+  const withoutNine = /^55(\d{2})([6-9]\d{7})$/.exec(digits);
+  if (withoutNine) return [digits, `55${withoutNine[1]}9${withoutNine[2]}`];
+  return [digits];
+}
+
+const UNKNOWN_NUMBER = /no LID found|not on whatsapp|not registered|not a whatsapp|invalid jid|no such user/i;
+
+/** Envia ao aprovador tentando as formas do número (a preferida primeiro); devolve a forma que funcionou. */
+export async function deliverToApprover(phone: string, send: (to: string) => Promise<unknown>, preferred?: string): Promise<string> {
+  const variants = whatsappPhoneVariants(phone);
+  const ordered = preferred && variants.includes(preferred) ? [preferred, ...variants.filter((item) => item !== preferred)] : variants;
+  let lastError: unknown;
+  for (const to of ordered) {
+    try {
+      await send(to);
+      return to;
+    } catch (error) {
+      lastError = error;
+      if (!UNKNOWN_NUMBER.test(error instanceof Error ? error.message : String(error))) throw error;
+    }
+  }
+  throw lastError;
+}
+
 export class WhatsappApprovalService {
   constructor(private readonly deps: WhatsappApprovalServiceDeps) {}
 
@@ -160,9 +192,17 @@ export class WhatsappApprovalService {
     return { connection, provider: this.deps.provider, session: connection.externalSessionId };
   }
 
+  /** Forma do número que o WhatsApp aceitou por último (por aprovador), para não errar a cada envio. */
+  private readonly deliverable = new Map<string, string>();
+
+  /** Envia para o aprovador; se o WhatsApp não conhece o número nessa forma, tenta a outra (com/sem o 9). */
+  private async deliver(phone: string, send: (to: string) => Promise<unknown>) {
+    this.deliverable.set(phone, await deliverToApprover(phone, send, this.deliverable.get(phone)));
+  }
+
   private async sendText(connectionId: string, phone: string, body: string) {
     const { provider, session } = await this.session(connectionId);
-    await provider.sendText({ externalSessionId: session, to: phone, body });
+    await this.deliver(phone, (to) => provider.sendText({ externalSessionId: session, to, body }));
   }
 
   /** Envia os pedidos das publicações que aguardam aprovação (até 10 por rodada). */
@@ -184,10 +224,11 @@ export class WhatsappApprovalService {
         const images = post.media.filter((media) => media.kind === "image").slice(0, 10);
         for (const media of images) {
           const file = await this.deps.loadMedia(media.url);
-          await provider.sendImage({ externalSessionId: session, to: rule.approverPhone, mediaUrl: `data:${file.mimeType};base64,${file.data.toString("base64")}` });
+          const mediaUrl = `data:${file.mimeType};base64,${file.data.toString("base64")}`;
+          await this.deliver(rule.approverPhone, (to) => provider.sendImage({ externalSessionId: session, to, mediaUrl }));
         }
         const text = approvalRequestText({ brand: workspace?.name ?? "marca", code: request.code, networks: post.networks, when: formatWhen(post.scheduledAt, post.timezone), caption: post.caption, screens: images.length });
-        await provider.sendText({ externalSessionId: session, to: rule.approverPhone, body: text });
+        await this.deliver(rule.approverPhone, (to) => provider.sendText({ externalSessionId: session, to, body: text }));
         await this.deps.repository.updateRequest(request.id, { status: "sent", sentAt: this.now().toISOString() });
         sent += 1;
       } catch (error) {

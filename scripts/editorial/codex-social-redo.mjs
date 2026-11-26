@@ -71,7 +71,10 @@ for (const workspaceId of workspaces) {
         const detail = result.stderr.trim().split("\n").at(-1) ?? "";
         let message = detail;
         try { message = JSON.parse(detail).error ?? detail; } catch { /* linha não-JSON */ }
-        failure = (message || `a refação terminou sem publicação (${last.slice(0, 200)})`).replace(/^QUALITY_GATE:\s*/, "");
+        // Para o aprovador: só a primeira linha, sem rastro técnico ("Error:", pilha, versão do Node).
+        failure = (message || `a refação terminou sem publicação (${last.slice(0, 200)})`).replace(/^QUALITY_GATE:\s*/, "")
+          .split("\n")[0].replace(/\bError:\s*/g, "").replace(/\bQUALITY_[A-Z_]+:\s*/g, "").trim();
+        console.error(JSON.stringify({ workspace: workspaceId, redo: job.id, stderr: result.stderr.trim().split("\n").slice(-25).join("\n").slice(0, 4000) }));
       }
       console.log(JSON.stringify({ time: new Date().toISOString(), workspace: workspaceId, redo: job.id, attempt: job.attempt, mode, hour, ok: !failure, ...(failure ? { error: failure.slice(0, 400) } : {}) }));
     } catch (error) {

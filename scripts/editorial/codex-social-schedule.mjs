@@ -239,7 +239,8 @@ async function runWorkspace(workspaceId) {
   if (mode === "reconcile") return callContainer(backend, { ...key, action: "reconcile" });
   // Refação: o Codex decide o que muda (texto, legenda, peça, cena) a partir do motivo da reprovação.
   const redo = redoJob ? await rewriteForRedo(redoJob) : undefined;
-  const selection = await callContainer(backend, { ...key, action: "select", allowCreate: submitting && !onlyIdea, skipIdeaIds: reviewSkipIds(await readReviewQueue(), workspaceId),
+  if (redo) console.error(JSON.stringify({ workspace: workspaceId, redoPlan: { headline: redo.text.headline, body: redo.text.body, changeProduct: redo.changeProduct, imageCorrection: redo.imageCorrection, captionChanged: Boolean(redo.caption) } }));
+  const selection = await callContainer(backend, { ...key, action: "select", allowCreate: submitting && !onlyIdea, skipIdeaIds: onlyIdea ? [] : reviewSkipIds(await readReviewQueue(), workspaceId),
     ...(redo ? { textOverride: redo.text, excludeProducts: redo.changeProduct ? redoJob.previousProducts ?? [] : [] } : {}) });
   // Pautas bloqueadas (sem material obrigatório ou referência que não carrega): revisão manual, sem gerar.
   for (const item of selection.blocked ?? []) {

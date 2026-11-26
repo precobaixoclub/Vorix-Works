@@ -179,3 +179,32 @@ export function chooseFraming(asset: Pick<EditMediaAsset, "width" | "height" | "
   const minimumKept = asset.protectedFidelity ? 0.6 : 0.55;
   return keptArea >= minimumKept ? "fill" : "fit";
 }
+
+export type TranscriptSentence = { id: string; materialId: string; start: number; end: number; text: string };
+
+/**
+ * Frases numeradas para o planejador escolher por id: corta em pontuação final ou em pausa longa
+ * (≥ 0,7 s). Ids globais e estáveis na ordem dos materiais ("S1", "S2"…).
+ */
+export function buildSentences(transcripts: { materialId: string; transcript: Transcript }[], options: { pauseSeconds?: number; maxWords?: number } = {}): TranscriptSentence[] {
+  const pause = options.pauseSeconds ?? 0.7;
+  const maxWords = options.maxWords ?? 28;
+  const sentences: TranscriptSentence[] = [];
+  for (const { materialId, transcript } of transcripts) {
+    let current: TranscriptWord[] = [];
+    const flush = () => {
+      if (current.length === 0) return;
+      sentences.push({ id: `S${sentences.length + 1}`, materialId, start: current[0]!.start, end: current[current.length - 1]!.end, text: current.map((word) => word.word.trim()).join(" ") });
+      current = [];
+    };
+    const words = transcriptWords(transcript);
+    words.forEach((word, index) => {
+      const previous = words[index - 1];
+      if (previous && word.start - previous.end >= pause) flush();
+      current.push(word);
+      if (/[.!?]$/.test(word.word.trim()) || current.length >= maxWords) flush();
+    });
+    flush();
+  }
+  return sentences;
+}

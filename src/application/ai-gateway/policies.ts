@@ -151,3 +151,18 @@ export const MEETING_FOLLOW_UP_POLICY: AiPolicy = {
   sensitiveDataPolicy: "strict",
   providerFallbackAllowed: false,
 };
+
+/** Política de `video_edit_planning` — motor de vídeo. Entrada média (lista de materiais + frases da
+ * transcrição de até ~3 min), saída estruturada com até 14 cenas. Temperatura moderada: é decisão
+ * criativa, mas a validação semântica recusa material/frase/número inexistente. */
+export const VIDEO_EDIT_PLANNING_POLICY: AiPolicy = {
+  preferredCapability: "structured_text",
+  maxInputTokens: 24_000,
+  maxOutputTokens: 4_000,
+  timeoutMs: 90_000,
+  retryPolicy: DEFAULT_AI_RETRY_POLICY,
+  temperature: 0.4,
+  structuredOutputRequired: true,
+  sensitiveDataPolicy: "strict",
+  providerFallbackAllowed: false,
+};

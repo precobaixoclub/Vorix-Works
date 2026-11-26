@@ -34,6 +34,8 @@ export type BuildAiGatewayOptions = {
      * Ligar/desligar a análise profunda NÃO passa por aqui (é `RADAR_AI_ENABLED` na composição
      * raiz + `radar_settings.ai_analysis_enabled` por workspace) — isto só escolhe o modelo. */
     anthropicSentimentRadarModel?: string;
+    /** Motor de vídeo — modelo do planejamento de edição (worker de vídeo). Padrão: `DEFAULT_VIDEO_PLANNING_MODEL`. */
+    anthropicVideoPlanningModel?: string;
   };
   executionRepository: AiExecutionRepositoryPort;
   telemetry?: AiTelemetryPort;
@@ -57,6 +59,9 @@ export type BuiltAiGateway = {
 /** Já registrado e ativo em `model-registry.ts` — mesmo modelo padrão das demais operações de texto. */
 export const DEFAULT_SENTIMENT_RADAR_MODEL = "claude-haiku-4-5-20251001";
 
+/** Planejar edição é decisão criativa com muitas restrições: Sonnet 5 (já registrado e ativo). */
+export const DEFAULT_VIDEO_PLANNING_MODEL = "claude-sonnet-5-20260201";
+
 function buildBindings(aiConfig: BuildAiGatewayOptions["aiConfig"]): AiOperationModelBindings {
   const bindings: AiOperationModelBindings = {
     briefing_field_extraction: { provider: "anthropic", modelId: aiConfig.anthropicBriefingExtractionModel },
@@ -71,6 +76,7 @@ function buildBindings(aiConfig: BuildAiGatewayOptions["aiConfig"]): AiOperation
     meeting_question_answer: { provider: "anthropic", modelId: aiConfig.anthropicMeetingAnalysisModel ?? "claude-haiku-4-5-20251001" },
     meeting_follow_up: { provider: "anthropic", modelId: aiConfig.anthropicMeetingAnalysisModel ?? "claude-haiku-4-5-20251001" },
     sentiment_radar_analysis: { provider: "anthropic", modelId: aiConfig.anthropicSentimentRadarModel || DEFAULT_SENTIMENT_RADAR_MODEL },
+    video_edit_planning: { provider: "anthropic", modelId: aiConfig.anthropicVideoPlanningModel || DEFAULT_VIDEO_PLANNING_MODEL },
   };
   if (aiConfig.anthropicInboxAutoReplyModel) {
     bindings.inbox_auto_reply = { provider: "anthropic", modelId: aiConfig.anthropicInboxAutoReplyModel };

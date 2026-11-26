@@ -1,3 +1,5 @@
+import { videoEditPlanPromptV1, type VideoEditPlanningContext } from "./prompts/video-edit-plan.v1.js";
+import { applyVideoEditDraftSemanticValidation, validateVideoEditDraftStructure, VIDEO_EDIT_DRAFT_SCHEMA_VERSION, VIDEO_EDIT_DRAFT_TOOL_INPUT_SCHEMA, type VideoEditDraft } from "./schemas/video-edit-draft.v1.js";
 import { getBriefingSchema } from "../../domain/briefing/schema-registry.js";
 import type { BriefingType } from "../../domain/briefing/briefing.model.js";
 import type { AiOperation } from "../ports/ai-gateway.port.js";
@@ -276,6 +278,16 @@ export const PROMPT_TEMPLATE_REGISTRY: Partial<Record<AiOperation, PromptTemplat
       const durationMs = typeof sanitizedInput.durationMs === "number" ? sanitizedInput.durationMs : Number.MAX_SAFE_INTEGER;
       return applyMeetingAiAnalysisSemanticValidation({ structural: structural as MeetingAiAnalysisResult, transcriptText: meetingTranscriptPlainText(context.segments), durationMs });
     },
+  },
+  video_edit_planning: {
+    template: videoEditPlanPromptV1 as PromptTemplate<unknown>,
+    buildContext: (input) => input as unknown as VideoEditPlanningContext,
+    toolName: "submit_video_edit_draft",
+    toolDescription: "Envia o rascunho de edição do vídeo: cenas em ordem, frases escolhidas por id, movimentos, transições, textos, legendas, trilha e logo.",
+    toolInputSchema: VIDEO_EDIT_DRAFT_TOOL_INPUT_SCHEMA,
+    outputSchemaRef: { id: "video-edit-draft", version: VIDEO_EDIT_DRAFT_SCHEMA_VERSION },
+    validateStructure: (raw) => validateVideoEditDraftStructure(raw),
+    validateSemantics: (structural, sanitizedInput) => applyVideoEditDraftSemanticValidation(structural as VideoEditDraft, sanitizedInput),
   },
   sentiment_radar_analysis: {
     template: sentimentRadarAnalysisPromptV1 as PromptTemplate<unknown>,

@@ -120,7 +120,7 @@ export function classifyReference(candidate: ReferenceCandidate, businessKind: B
 }
 
 export type ReferenceGuidance = {
-  code: "PRODUCT_PHOTO_MISSING" | "SOFTWARE_CAPTURE_MISSING" | "SITE_CAPTURE_NOT_PRODUCT" | "VARIANT_PHOTO_MISSING" | "VARIANT_PHOTO_MISMATCH";
+  code: "PRODUCT_PHOTO_MISSING" | "PRODUCT_THEME_MISMATCH" | "SOFTWARE_CAPTURE_MISSING" | "SITE_CAPTURE_NOT_PRODUCT" | "VARIANT_PHOTO_MISSING" | "VARIANT_PHOTO_MISMATCH";
   blocking: boolean;
   message: string;
 };

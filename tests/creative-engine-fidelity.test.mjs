@@ -7,7 +7,7 @@ import { buildImageInstruction, chooseComposition, COMPOSITION_ARCHETYPES } from
 import { assessVariety } from "../dist/application/creative-engine/visual-variety.js";
 import { evaluateFidelityGate } from "../dist/application/creative-engine/creative-fidelity-gate.js";
 import { planRevision } from "../dist/application/creative-engine/targeted-revision.js";
-import { planEditorialCreative, rotationOrder, screensForIdea } from "../dist/application/creative-engine/plan-editorial-creative.js";
+import { planEditorialCreative, rankProductsForIdea, rotationOrder, screensForIdea } from "../dist/application/creative-engine/plan-editorial-creative.js";
 import { redactSecrets } from "../dist/application/creative-engine/creative-trace.js";
 import { checkVariantColor, dHash, siteCaptureScore, textureStats } from "../dist/infrastructure/media/creative/image-analysis.js";
 import { applyHomography, homography, warpIntoQuad } from "../dist/infrastructure/media/creative/perspective-warp.js";
@@ -122,6 +122,33 @@ test("planejamento: produto físico sem foto na pauta usa o rodízio dos produto
   assert.equal(plan.decision.mode, "physical_product");
   assert.equal(plan.resolved.primary.id, "produto:000035:Preto");
   assert.match(plan.autoSelected[0].reason, /rodízio/);
+});
+
+// Regressão (26/11/2026): "Seu treino, seu estilo" saiu com a camiseta de coração (rodízio cego ao assunto).
+test("planejamento: a peça escolhida combina com o assunto da pauta; ocasião sem peça (academia) vai para revisão", () => {
+  const photos = (code) => [{ id: `produto:${code}:Branco`, variantLabel: "Branco" }];
+  const products = [
+    { code: "000035", themes: ["coracao", "amor", "carinho"], photos: photos("000035") },
+    { code: "000037", themes: ["fe", "deus", "gratidao"], photos: photos("000037") },
+    { code: "000039", themes: ["borboleta*", "leveza"], photos: photos("000039") },
+  ];
+  const base = { workspaceId: "ws", brandName: "CMKV", businessKind: "physical_products", ideaReferences: [], history: [], allowAi: false };
+  const faith = planEditorialCreative({ ...base, idea: IDEA({ title: "Sempre foi Deus", keyMessage: "Gratidão por cada dia." }), editorialProducts: products });
+  assert.equal(faith.resolved.primary.productCode, "000037");
+  assert.match(faith.autoSelected[0].reason, /combina com o assunto \(deus, gratidao\)/);
+  // Sem assunto reconhecido: mantém o rodízio (primeira da lista).
+  const neutral = planEditorialCreative({ ...base, idea: IDEA({ title: "Combina sem copiar" }), editorialProducts: products });
+  assert.equal(neutral.resolved.primary.productCode, "000035");
+  const gym = planEditorialCreative({ ...base, idea: IDEA({ title: "Seu treino, seu estilo", keyMessage: "Da academia para o resto do dia." }), editorialProducts: products });
+  assert.equal(gym.blocked, true);
+  assert.equal(gym.resolved.primary, undefined);
+  assert.deepEqual(gym.resolved.missing.map((item) => item.code), ["PRODUCT_THEME_MISMATCH"]);
+  assert.match(gym.resolved.missing[0].message, /academia\/treino/);
+  // Com uma peça liberada para academia, ela é a escolhida.
+  const withGym = planEditorialCreative({ ...base, idea: IDEA({ title: "Seu treino, seu estilo" }), editorialProducts: [...products, { code: "000099", themes: ["fitness", "treino*"], photos: photos("000099") }] });
+  assert.equal(withGym.blocked, false);
+  assert.equal(withGym.resolved.primary.productCode, "000099");
+  assert.deepEqual(rankProductsForIdea(products, IDEA({ title: "Leveza de borboleta" })).map((item) => item.code), ["000039", "000035", "000037"]);
 });
 
 test("composição: arquétipos variam com o histórico e entre telas do carrossel; sem IA autorizada, só composição controlada", () => {

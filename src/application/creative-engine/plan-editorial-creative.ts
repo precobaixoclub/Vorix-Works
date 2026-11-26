@@ -35,8 +35,49 @@ export type EditorialIdeaForPlan = {
 
 export type PlanScreen = { headline: string; body?: string; cta?: string };
 
-/** Produto do catálogo disponível para a peça (fotos por variante). */
-export type CatalogProductForPlan = { code: string; photos: ReadonlyArray<{ id: string; variantLabel: string; siteCaptureScore?: number; photoKind?: "studio" | "scene" }> };
+/**
+ * Produto do catálogo disponível para a peça (fotos por variante). `themes`: do que a estampa fala
+ * (palavras sem acento; terminadas em "*" valem como prefixo) e os temas de uso (`fitness`, `praia`, `inverno`, `western`).
+ */
+export type CatalogProductForPlan = { code: string; themes?: readonly string[]; photos: ReadonlyArray<{ id: string; variantLabel: string; siteCaptureScore?: number; photoKind?: "studio" | "scene" }> };
+
+/**
+ * Ocasiões que, quando a pauta fala delas, exigem uma peça daquele tema. Produção (26/11/2026): a pauta
+ * "Seu treino, seu estilo" saiu com a camiseta de coração — o rodízio não olhava o assunto da pauta.
+ */
+export const PRODUCT_THEME_DEMANDS: ReadonlyArray<{ theme: string; label: string; pattern: RegExp }> = [
+  { theme: "fitness", label: "academia/treino", pattern: /\b(treino\w*|treinar|academia\w*|malha(?:r|cao|ndo)|musculac\w*|fitness|crossfit|atleta\w*|gym|workout|esportiv\w*)\b/ },
+  { theme: "praia", label: "praia", pattern: /\b(praia\w*|pe na areia|litoral|piscina)\b/ },
+  { theme: "inverno", label: "frio/inverno", pattern: /\b(inverno|frio|moletom|casaco\w*)\b/ },
+  { theme: "western", label: "estilo western/country", pattern: /\b(western|texas|cowboy\w*|cowgirl\w*|country|rodeio\w*|faroeste|velho oeste|o oeste)\b/ },
+];
+
+const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const themePattern = (theme: string) => new RegExp(theme.endsWith("*") ? `\\b${escapeRegExp(theme.slice(0, -1))}\\w*` : `\\b${escapeRegExp(theme)}\\b`);
+
+/** Ocasiões que a pauta pede (ver PRODUCT_THEME_DEMANDS). */
+export function themeDemands(text: string): Array<{ theme: string; label: string }> {
+  return PRODUCT_THEME_DEMANDS.filter((demand) => demand.pattern.test(text)).map(({ theme, label }) => ({ theme, label }));
+}
+
+/** Temas da peça que aparecem no texto da pauta. */
+export function matchedProductThemes(themes: readonly string[] | undefined, text: string): string[] {
+  return (themes ?? []).filter((theme) => !PRODUCT_THEME_DEMANDS.some((demand) => demand.theme === theme) && themePattern(theme).test(text));
+}
+
+/**
+ * Ordena as peças para a pauta: só as que atendem à ocasião pedida (academia, praia…); entre elas, a que
+ * mais fala do assunto da pauta primeiro; empate mantém a ordem recebida (rodízio).
+ */
+export function rankProductsForIdea<T extends { themes?: readonly string[] }>(products: readonly T[], idea: EditorialIdeaForPlan): T[] {
+  const text = ideaText(idea);
+  const demands = themeDemands(text);
+  const fitting = products.filter((product) => demands.every((demand) => product.themes?.includes(demand.theme)));
+  return fitting
+    .map((product, index) => ({ product, index, score: matchedProductThemes(product.themes, text).length }))
+    .sort((a, b) => b.score - a.score || a.index - b.index)
+    .map((entry) => entry.product);
+}
 
 export type PlanEditorialCreativeInput = {
   workspaceId: string;
@@ -94,13 +135,22 @@ export function planEditorialCreative(input: PlanEditorialCreativeInput): Editor
     }
   }
 
+  let themeGap: string[] | undefined;
   if (decision.mode === "physical_product" && !references.some((reference) => reference.role === "product_photo" || reference.role === "product_variant")) {
-    const product = (input.editorialProducts ?? []).find((item) => item.photos.filter((photo) => (photo.siteCaptureScore ?? 0) < 0.62).length > 0);
+    const usable = (input.editorialProducts ?? []).filter((item) => item.photos.some((photo) => (photo.siteCaptureScore ?? 0) < 0.62));
+    const product = rankProductsForIdea(usable, input.idea)[0];
     if (product) {
       const photos = product.photos.filter((photo) => (photo.siteCaptureScore ?? 0) < 0.62).slice(0, 3);
       const added = photos.map((photo, index) => classifyReference({ id: photo.id, source: "catalog", productCode: product.code, variantLabel: photo.variantLabel, ...(index === 0 ? {} : { explicitRole: "product_variant" }), siteCaptureScore: photo.siteCaptureScore, ...(photo.photoKind ? { photoKind: photo.photoKind } : {}) }, input.businessKind));
       references = [...references, ...added];
-      autoSelected.push({ id: added[0].id, reason: `A pauta não indicou o produto: modelo ${product.code} escolhido no rodízio dos produtos liberados para uso editorial.` });
+      const matched = matchedProductThemes(product.themes, ideaText(input.idea));
+      autoSelected.push({ id: added[0].id, reason: matched.length
+        ? `A pauta não indicou o produto: modelo ${product.code} escolhido porque a estampa combina com o assunto (${matched.map((theme) => theme.replace(/\*$/, "")).join(", ")}).`
+        : `A pauta não indicou o produto: modelo ${product.code} escolhido no rodízio dos produtos liberados para uso editorial.` });
+    } else {
+      // A pauta pede uma ocasião (academia, praia…) que nenhuma peça liberada atende: não força uma peça qualquer.
+      const demands = themeDemands(ideaText(input.idea));
+      if (demands.length && usable.length) themeGap = demands.map((demand) => demand.label);
     }
   }
 
@@ -109,6 +159,12 @@ export function planEditorialCreative(input: PlanEditorialCreativeInput): Editor
   const resolved = resolveReferencesForMode(decision.mode, references, {
     productCode: primaryProduct, featureKeywords: decision.feature?.feature.keywords, featureLabel: decision.feature?.feature.label, ideaText: ideaText(input.idea),
   });
+  if (themeGap) {
+    resolved.missing = [
+      ...resolved.missing.filter((item) => item.code !== "PRODUCT_PHOTO_MISSING"),
+      { code: "PRODUCT_THEME_MISMATCH", blocking: true, message: `A pauta fala de ${themeGap.join(" e ")}, e nenhuma peça liberada para uso editorial combina com esse tema. Escolha a peça na pauta ou libere no catálogo um produto desse tema.` },
+    ];
+  }
 
   const screens = screensForIdea(input.idea);
   const seriesKey = screens.length > 1 ? `ideia:${input.idea.id}` : undefined;

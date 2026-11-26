@@ -7,7 +7,7 @@ import { resolveEffectiveEntitlements } from "./dist/application/billing/entitle
 import { parseManualEditorialIdea } from "./dist/domain/editorial/editorial-idea.model.js";
 import { hasPermission } from "./dist/domain/identity/identity.model.js";
 import { classifyObjectKeyOwner, parseOwnedObjectUrl, signForExternalPublication } from "./dist/shared/utils/object-url-signing.js";
-import { planEditorialCreative, rotationOrder } from "./dist/application/creative-engine/plan-editorial-creative.js";
+import { planEditorialCreative, rankProductsForIdea, rotationOrder } from "./dist/application/creative-engine/plan-editorial-creative.js";
 import { COMPOSITION_ARCHETYPES } from "./dist/application/creative-engine/creative-spec.js";
 import { redactSecrets } from "./dist/application/creative-engine/creative-trace.js";
 import { verifyApprovedArt } from "./dist/application/creative-engine/publication-guard.js";
@@ -19,6 +19,18 @@ const tenantId = "tenant-vorix";
 const cmkvWorkspaceId = "workspace-cee-prelaunch-mv47cmfh";
 // Estampas selecionadas do catálogo da CMKV para pautas criadas automaticamente.
 const cmkvEditorialProducts = ["000033", "000035", "000037", "000039", "000043", "000044", "000047", "000048"];
+// Do que cada estampa fala (conferido nas fotos do catálogo em 26/11/2026). O planejador escolhe a peça
+// que combina com o assunto da pauta; ocasião sem peça (academia, praia, frio, western) vai para revisão.
+const cmkvProductThemes = {
+  "000033": ["flor*", "floral", "natureza", "primavera", "supera*", "resilien*", "recomec*", "delicad*"],
+  "000035": ["coracao", "coracoes", "amor", "amar", "carinho", "afeto", "romantic*", "minimalis*"],
+  "000037": ["fe", "deus", "gratidao", "grata", "espiritual*", "oracao", "abencoad*", "bencao"],
+  "000039": ["borboleta*", "leveza", "liberdade", "transforma*", "delicad*"],
+  "000043": ["limao", "limoes", "limonada", "verao", "refrescan*", "fruta*", "piquenique", "alegria", "divertid*"],
+  "000044": ["amor", "love", "romantic*", "namorad*", "casal", "coracao", "coracoes"],
+  "000047": ["amor", "love", "coracao", "coracoes", "onca", "animal print", "atitude", "ousad*"],
+  "000048": ["borboleta*", "autoestima", "seja voce", "be yourself", "autentic*", "essencia", "transforma*", "rosa"],
+};
 // Funcionalidades da Vorix que as peças podem demonstrar (a captura real vem da Biblioteca da marca).
 const VORIX_FEATURES = [
   { key: "atendimento_whatsapp", label: "Atendimento pelo WhatsApp", keywords: ["whatsapp", "atendimento", "mensagens", "responder", "caixa de entrada"] },
@@ -37,7 +49,7 @@ const brands = new Map([
   ["workspace-mwmumsxd-fmvh3h", { accounts: ["soc-mwmvbruu-sz6rkd12", "soc-mwmvbryk-dthxstki"], logo: {}, creative: { businessKind: "services" } }],
   ["workspace-mscc9pi2-jkvwbo", { accounts: ["soc-mwk1mgoy-xhcr2duq", "soc-mwk1my6f-lbham9eo"], logo: {}, creative: { businessKind: "software", features: VORIX_FEATURES } }],
   ["workspace-mwmu8kgf-uhe66l", { accounts: ["soc-mwmu9f8k-kj2covm2", "soc-mwmugp3j-hwva5nax"], logo: {}, creative: { businessKind: "unknown" } }],
-  [cmkvWorkspaceId, { accounts: ["soc-mwkwg3lc-zj3g4xyk", "soc-mwmuj7ud-3py2gdyo"], logo: {}, creative: { businessKind: "physical_products", products: cmkvEditorialProducts, presentation: "fashion_campaign" } }],
+  [cmkvWorkspaceId, { accounts: ["soc-mwkwg3lc-zj3g4xyk", "soc-mwmuj7ud-3py2gdyo"], logo: {}, creative: { businessKind: "physical_products", products: cmkvEditorialProducts, productThemes: cmkvProductThemes, presentation: "fashion_campaign" } }],
 ]);
 const timezone = "America/Sao_Paulo";
 const prefix = "codex-editorial-v1";
@@ -244,7 +256,11 @@ async function planIdea(idea, creative, context) {
   // Produtos liberados para pauta automática, em rodízio: só o primeiro com foto utilizável é medido.
   const editorialProducts = [];
   if (creative.businessKind === "physical_products" && creative.products?.length) {
-    for (const code of rotationOrder(creative.products, context.used)) {
+    // Rodízio, reordenado pelo assunto da pauta. Nenhuma peça atende a ocasião pedida: mede a primeira do
+    // rodízio mesmo assim — o planejador recusa e registra o motivo (a pauta vai para revisão).
+    const rotated = rotationOrder(creative.products, context.used).map(code => ({ code, themes: creative.productThemes?.[code] ?? [] }));
+    const ranked = rankProductsForIdea(rotated, idea);
+    for (const { code, themes } of ranked.length ? ranked : rotated) {
       const photos = context.photos.filter(photo => photo.code === code);
       const seen = new Set();
       const measured = [];
@@ -259,7 +275,7 @@ async function planIdea(idea, creative, context) {
         measured.push({ id, variantLabel: label, siteCaptureScore: signals.siteCaptureScore, photoKind: signals.photoKind });
         if (measured.length >= 3) break;
       }
-      if (measured.length) { editorialProducts.push({ code, photos: measured }); break; }
+      if (measured.length) { editorialProducts.push({ code, themes, photos: measured }); break; }
     }
   }
   const plan = planEditorialCreative({

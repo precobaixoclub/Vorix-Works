@@ -102,6 +102,8 @@ export type PlanEditorialCreativeInput = {
   allowAi: boolean;
   /** Linguagens que a marca não usa (ex.: "concept_3d" numa marca de casamento). */
   avoidArchetypes?: readonly string[];
+  /** Memória criativa da marca: pontos por linguagem e orientações aprendidas (ver creative-memory.ts). */
+  memory?: { archetypeBias?: Readonly<Record<string, number>>; guidance?: readonly string[] };
   explicitMode?: VisualMode;
 };
 
@@ -198,7 +200,7 @@ export function planEditorialCreative(input: PlanEditorialCreativeInput): Editor
     // Carrossel: cada tela com composição diferente (sem repetir a anterior); esgotou, recomeça.
     const spec = buildCreativeSpec({
       workspaceId: input.workspaceId, brand: { name: input.brandName, identity: input.brandIdentity, presentation: input.presentation }, idea: { ...input.idea, objective: input.idea.commercialObjective }, screen,
-      decision, references: screenReferences, history: input.history, allowAi, seriesKey, excludeArchetypes: used, avoidArchetypes: input.avoidArchetypes,
+      decision, references: screenReferences, history: input.history, allowAi, seriesKey, excludeArchetypes: used, avoidArchetypes: input.avoidArchetypes, memory: input.memory,
     });
     if (used.includes(spec.composition.archetype)) used.length = 0;
     used.push(spec.composition.archetype);

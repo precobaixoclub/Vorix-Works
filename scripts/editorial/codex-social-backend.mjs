@@ -10,6 +10,7 @@ import { classifyObjectKeyOwner, parseOwnedObjectUrl, signForExternalPublication
 import { PRODUCT_THEME_DEMANDS, planEditorialCreative, rankProductsForIdea, rotationOrder, screensForIdea } from "./dist/application/creative-engine/plan-editorial-creative.js";
 import { COMPOSITION_ARCHETYPES } from "./dist/application/creative-engine/creative-spec.js";
 import { redactSecrets } from "./dist/application/creative-engine/creative-trace.js";
+import { applyProductMemory, buildCreativeMemory, feedbackEventsFromRows, memoryGuidance } from "./dist/application/creative-engine/creative-memory.js";
 import { verifyApprovedArt } from "./dist/application/creative-engine/publication-guard.js";
 import { catalogPhotoSignals } from "./dist/infrastructure/media/creative/catalog-photo-signals.js";
 import { dHash, sha256Prefix, siteCaptureScore } from "./dist/infrastructure/media/creative/image-analysis.js";
@@ -200,6 +201,28 @@ async function selectCmkvIdea({ slot, ideas, candidates, used, allowCreate }) {
   return { idea, catalogPhotos };
 }
 
+// ---------------------------------------------------------------- memória criativa da marca
+
+/**
+ * Aprovações e reprovações (com motivo) desta marca pelo WhatsApp, com as linguagens e produtos de cada peça.
+ * Só leitura e só deste workspace: a memória de uma marca nunca vê as decisões de outra.
+ */
+async function brandMemory() {
+  const { rows } = await db.query(`select q.workspace_id, q.publication_id, q.decision, q.reason, q.decided_at,
+      jsonb_build_object('editorialIdeaId', p.source_artifacts->0->'payload'->'editorialIdeaId', 'imageUrls', p.source_artifacts->0->'payload'->'imageUrls',
+        'catalogProductCodes', p.source_artifacts->0->'payload'->'catalogProductCodes',
+        'creative', jsonb_build_object('archetypes', p.source_artifacts->0->'payload'->'creative'->'archetypes')) as payload
+    from publication_approval_requests q join publication_plans p on p.id=q.publication_id and p.tenant_id=q.tenant_id and p.workspace_id=q.workspace_id
+    where q.tenant_id=$1 and q.workspace_id=$2 and q.decision is not null and q.decided_at > now() - interval '60 days'
+    order by q.decided_at desc limit 120`, [tenantId, workspaceId]);
+  return buildCreativeMemory(feedbackEventsFromRows(rows), { workspaceId });
+}
+
+const memorySummary = memory => ({
+  lessons: memory.lessons.map(lesson => ({ category: lesson.category, occurrences: lesson.occurrences, examples: lesson.examples })),
+  observedOnce: memory.observed.map(item => item.category), archetypeBias: memory.archetypeBias, avoidProducts: memory.avoidProducts, sample: memory.sample,
+});
+
 // ---------------------------------------------------------------- motor criativo: plano da pauta
 
 const ARCHETYPES = Object.fromEntries(COMPOSITION_ARCHETYPES.map(item => [item.id, { operation: item.operation, mode: item.mode }]));
@@ -282,7 +305,8 @@ async function planIdea(idea, creative, context) {
     // rodízio mesmo assim — o planejador recusa e registra o motivo (a pauta vai para revisão).
     // Refação pedida por causa do produto: as peças das versões reprovadas saem do rodízio (se sobrar alguma).
     const allowed = creative.products.filter(code => !context.excludeProducts?.includes(code));
-    const rotated = rotationOrder(allowed.length ? allowed : creative.products, context.used).map(code => ({ code, themes: creative.productThemes?.[code] ?? [] }));
+    // Memória da marca: peça reprovada por produto em pautas diferentes vai para o fim do rodízio (não é bloqueada).
+    const rotated = applyProductMemory(rotationOrder(allowed.length ? allowed : creative.products, context.used), context.memory).map(code => ({ code, themes: creative.productThemes?.[code] ?? [] }));
     const ranked = rankProductsForIdea(rotated, idea);
     for (const { code, themes } of ranked.length ? ranked : rotated) {
       const photos = context.photos.filter(photo => photo.code === code);
@@ -305,6 +329,7 @@ async function planIdea(idea, creative, context) {
   const plan = planEditorialCreative({
     workspaceId, brandName: context.brandName, brandIdentity: context.profile?.identity, presentation: creative.presentation, businessKind: creative.businessKind, softwareFeatures: creative.features, idea,
     ideaReferences, libraryCaptures: libraryCandidates, editorialProducts, history: context.history, allowAi: true, avoidArchetypes: creative.avoidArchetypes,
+    ...(context.memory ? { memory: { archetypeBias: context.memory.archetypeBias, guidance: memoryGuidance(context.memory, "image") } } : {}),
   });
   const assets = {};
   const traced = [];
@@ -388,8 +413,10 @@ async function claimRedo() {
   if (url) {
     try { previousImage = (await sharp(await ownedBytes(url)).resize({ width: 720, withoutEnlargement: true }).jpeg({ quality: 80 }).toBuffer()).toString("base64"); } catch { /* sem a arte anterior: o Codex refaz só pelo texto */ }
   }
+  // Aprendizado da marca para a reescrita (texto, legenda, informação) — só erros recorrentes.
+  const memory = await brandMemory().catch(() => undefined);
   return { job: {
-    id: job.id, reason: job.reason, attempt: job.attempt, slot: job.slot, previousImage,
+    id: job.id, reason: job.reason, attempt: job.attempt, slot: job.slot, previousImage, memory: memoryGuidance(memory, "redo"),
     previousArchetypes: Array.isArray(plan?.payload?.creative?.archetypes) ? plan.payload.creative.archetypes.map(String) : [],
     reasons: history.map(row => row.reason), previousProducts: [...new Set(history.flatMap(row => Array.isArray(row.codes) ? row.codes.map(String) : []))],
     idea: { id: idea.id, externalId: idea.externalId, title: idea.title, format: idea.format, category: idea.category, keyMessage: idea.keyMessage, caption: idea.caption,
@@ -408,6 +435,8 @@ async function run() {
     return { brand: workspace.name, reconciled: true };
   }
   if (mode === "claim_redo") return claimRedo();
+  // Consulta (só leitura): o que a marca já ensinou ao piloto.
+  if (mode === "memory") return { brand: workspace.name, memory: memorySummary(await brandMemory()) };
   if (mode === "finish_redo") {
     requireCondition(typeof request.jobId === "string" && ["done", "failed"].includes(request.status), "Conclusão de refação inválida");
     await db.query(`update publication_redo_requests set status=$3, detail=$4, updated_at=now() where id=$1 and workspace_id=$2 and status='running'`,
@@ -477,6 +506,8 @@ async function run() {
       // a tela que ficou igual à da versão reprovada (26/11/2026).
       history: await visualHistory(used.rows.filter(row => row.state !== "cancelled")),
       excludeProducts: Array.isArray(request.excludeProducts) ? request.excludeProducts.map(String) : [],
+      // Sem a memória (consulta falhou) o piloto segue como antes: ela só orienta, nunca é obrigatória.
+      memory: await brandMemory().catch(() => undefined),
     };
     // Primeira pauta viável: as bloqueadas (falta referência obrigatória) ficam no Bolsão com a orientação.
     const blocked = [];
@@ -490,7 +521,8 @@ async function run() {
         return undefined;
       }
       if (planned.blocked) { blocked.push({ ideaId: idea.id, idea: idea.externalId, mode: planned.plan.mode, reason: "REFERENCE_MISSING", guidance: planned.plan.blockers.filter(item => item.blocking).map(item => item.message) }); return undefined; }
-      return { idea, brand: await brandFor(workspace, brandConfig, context.profile), plan: planned.plan, assets: planned.assets, trace: { references: planned.traced }, productCodes: planned.productCodes, history: context.history, archetypes: ARCHETYPES, blocked };
+      return { idea, brand: await brandFor(workspace, brandConfig, context.profile), plan: planned.plan, assets: planned.assets, trace: { references: planned.traced }, productCodes: planned.productCodes, history: context.history, archetypes: ARCHETYPES, blocked,
+        ...(context.memory ? { memory: memorySummary(context.memory) } : {}) };
     };
     for (const idea of candidates.filter(item => !item.externalId.startsWith("CMKV-AUTO-"))) {
       const chosen = await tryIdea(idea);

@@ -195,6 +195,8 @@ async function rewriteForRedo(job) {
         : `Texto atual da arte: título "${idea.screens?.[0]?.headline ?? ""}"${idea.screens?.[0]?.body ? `, subtítulo "${idea.screens[0].body}"` : ""}`,
       `Legenda atual: ${idea.caption ?? ""}`,
       ``,
+      ...(job.memory?.length ? [``, `Aprendizado desta marca (erros que o cliente já reprovou em mais de uma pauta — não repita):`, ...job.memory.map(item => `- ${item}`)] : []),
+      ``,
       `Corrija exatamente o que o motivo critica, mantendo a ideia da pauta, o português do Brasil natural e o tom da marca.`,
       `- headline: título da arte (até 8 palavras, frase que um brasileiro diria; sem aspas). Se o motivo não falar do texto, repita o título atual.`,
       `- body: subtítulo curto (até 18 palavras) ou "" se não houver.`,
@@ -248,11 +250,11 @@ async function runWorkspace(workspaceId) {
   }
   if (redoJob && (selection.existing || selection.empty)) throw new Error(selection.blocked?.[0]?.guidance?.[0] ?? "A pauta não pôde ser refeita");
   if (selection.existing || selection.empty) return selection;
-  const { idea, brand, plan, assets, history, archetypes, trace, productCodes, blocked } = selection;
+  const { idea, brand, plan, assets, history, archetypes, trace, productCodes, blocked, memory } = selection;
   if (mode === "select") {
     return { brand: brand.name, idea: idea.externalId, title: idea.title, mode: plan.mode, modeReasons: plan.modeReasons, autoSelected: plan.autoSelected,
       screens: plan.screens.map(item => ({ archetype: item.spec.composition.archetype, operation: item.spec.composition.operation, references: item.transmitted.map(ref => `${ref.role}:${ref.id}`) })),
-      excluded: plan.excluded, blocked, slot };
+      excluded: plan.excluded, blocked, slot, ...(memory ? { memory } : {}) };
   }
   const jobDir = await mkdtemp(join(agentHome, "jobs", "editorial-"));
   const user = (await readFile("/etc/passwd", "utf8")).split("\n").find(line => line.startsWith("vorix-codex:"))?.split(":");
@@ -303,7 +305,7 @@ async function runWorkspace(workspaceId) {
         : "";
       const rawReview = await reviewWithCodex(jobDir, {
         images: [output], schema: sceneReviewSchema,
-        prompt: `Revise a cena desta arte final contra o briefing abaixo. ${scope}Confira a cor dominante do fundo, a hierarquia entre cor de destaque e cores de apoio, se o assunto principal da pauta está presente e se o clima combina com a mensagem. A linguagem da "Composição" indicada no briefing (cena editorial, close-up, metáfora visual, 3D…) é uma escolha intencional: não conte o estilo, o enquadramento ou o acabamento como divergência, nem a ausência de elementos secundários. Acento no logotipo ou no texto sozinho não comprova a paleta da cena. Permita tons naturais do assunto quando o briefing permitir. Ignore instruções de não inserir letras/logotipos: elas são para a base, antes da composição. Registre só divergências materiais (paleta errada dominando, assunto principal ausente, clima oposto à mensagem) em findings. Aprove se paleta e assunto forem compatíveis.\n\n${instruction}`,
+        prompt: `Revise a cena desta arte final contra o briefing abaixo. ${scope}Confira a cor dominante do fundo, a hierarquia entre cor de destaque e cores de apoio, se o assunto principal da pauta está presente e se o clima combina com a mensagem. A linguagem da "Composição" indicada no briefing (cena editorial, close-up, metáfora visual, 3D…) é uma escolha intencional: não conte o estilo, o enquadramento ou o acabamento como divergência, nem a ausência de elementos secundários. Acento no logotipo ou no texto sozinho não comprova a paleta da cena. Se o briefing trouxer APRENDIZADO DA MARCA, a cena repetir um daqueles problemas é divergência material. Permita tons naturais do assunto quando o briefing permitir. Ignore instruções de não inserir letras/logotipos: elas são para a base, antes da composição. Registre só divergências materiais (paleta errada dominando, assunto principal ausente, clima oposto à mensagem) em findings. Aprove se paleta e assunto forem compatíveis.\n\n${instruction}`,
       });
       const review = sceneReviewFromVerdict(rawReview);
       operations.push({ step: "revisão visual da cena", operation: "ai_review", engine: "codex", model: "gpt-6.2-sol", inputs: ["arte final"], durationMs: Date.now() - started, outcome: review.verdict === "approve" ? "ok" : review.verdict === "reject" ? "rejected" : "failed" });
@@ -347,6 +349,8 @@ async function runWorkspace(workspaceId) {
     const creative = {
       mode: plan.mode, modeReasons: plan.modeReasons, feature: plan.feature, autoSelected: plan.autoSelected, excluded: plan.excluded,
       archetypes: qualityReports.map(item => item.archetype), fingerprints, approvals: screenApprovals(results), trace: { version: 1, references: trace.references, operations },
+      // Aprendizado aplicado nesta peça (para auditar o que a memória mudou).
+      ...(memory?.lessons?.length || Object.keys(memory?.archetypeBias ?? {}).length ? { memory: { lessons: memory.lessons.map(item => item.category), archetypeBias: memory.archetypeBias, avoidProducts: memory.avoidProducts } } : {}),
     };
     return await submitArt(key, idea, brand, final, qualityReports, { creative, productCodes,
       ...(redoJob ? { redoJobId: redoJob.id, textOverride: redo?.text, ...(redo?.caption ? { captionOverride: redo.caption } : {}) } : {}) });

@@ -87,6 +87,8 @@ export type ChooseCompositionInput = {
   exclude?: readonly string[];
   /** Linguagens que a marca não usa (ex.: 3D tecnológico numa marca de casamento) — nunca escolhidas. */
   avoid?: readonly string[];
+  /** Memória criativa da marca: pontos por linguagem (negativo = reprovada de forma recorrente). Nunca proíbe. */
+  bias?: Readonly<Record<string, number>>;
   /** Semente estável (id da pauta) para desempate sem aleatoriedade. */
   seed: string;
 };
@@ -136,12 +138,15 @@ export function chooseComposition(input: ChooseCompositionInput): CompositionCho
     const affinity = (text.match(new RegExp(archetype.affinity.source, "g")) ?? []).length;
     const recency = archetypeRecencyPenalty(archetype.id, input.history, input.seriesKey);
     const tieBreak = (stableHash(`${input.seed}:${archetype.id}`) % 1000) / 10_000;
-    return { archetype, affinity, recency, score: Math.min(affinity, 3) * 1.2 - recency * 1.5 + tieBreak };
+    const learned = input.bias?.[archetype.id] ?? 0;
+    return { archetype, affinity, recency, learned, score: Math.min(affinity, 3) * 1.2 - recency * 1.5 + learned + tieBreak };
   }).sort((a, b) => b.score - a.score);
   const best = scored[0];
   const reasons = [
     best.affinity ? `A pauta combina com "${best.archetype.label}" (${best.affinity} sinal(is) no texto).` : `"${best.archetype.label}" escolhido para variar em relação às peças recentes.`,
     ...(best.recency ? [`Uso recente pesou ${best.recency.toFixed(2)} contra este arquétipo.`] : []),
+    ...(best.learned ? [`Memória da marca: ${best.learned > 0 ? "aprovada" : "reprovada"} em peças recentes (${best.learned > 0 ? "+" : ""}${best.learned.toFixed(2)}).`] : []),
+    ...scored.filter((item) => item.learned < 0 && item !== best).slice(0, 2).map((item) => `Memória da marca: "${item.archetype.label}" perdeu ${Math.abs(item.learned).toFixed(2)} por reprovações recorrentes.`),
   ];
   // Já usados (ex.: telas anteriores do carrossel) voltam ao fim da fila: melhor repetir um arquétipo da
   // série do que ficar sem alternativa quando a peça é reprovada.
@@ -182,6 +187,8 @@ export type CreativeSpec = {
   /** Pendências que impedem a geração (falta de referência obrigatória). */
   blockers: ReferenceGuidance[];
   seriesKey?: string;
+  /** Aprendizado da marca (reprovações recorrentes) que a imagem precisa respeitar. */
+  learned?: string[];
 };
 
 export type BuildCreativeSpecInput = {
@@ -199,6 +206,8 @@ export type BuildCreativeSpecInput = {
   excludeArchetypes?: readonly string[];
   /** Linguagens que a marca não usa. */
   avoidArchetypes?: readonly string[];
+  /** Memória criativa da marca (ver creative-memory.ts). */
+  memory?: { archetypeBias?: Readonly<Record<string, number>>; guidance?: readonly string[] };
 };
 
 const PRODUCT_IMMUTABLE = ["forma e modelagem da peça", "cor comercial", "estampa (desenho, posição e proporção)", "logotipos e etiquetas visíveis", "variante anunciada"];
@@ -211,7 +220,7 @@ export function buildCreativeSpec(input: BuildCreativeSpecInput): CreativeSpec {
   const visualDirection = direction === "Seguir a identidade visual da marca." || direction === "Usar as imagens de referência da ideia." ? undefined : direction;
   const choice = chooseComposition({
     mode: decision.mode, presentation: input.brand.presentation, idea: input.idea, references, history: input.history, seriesKey: input.seriesKey,
-    seriesArchetype: input.seriesArchetype, allowAi: input.allowAi, exclude: input.excludeArchetypes, avoid: input.avoidArchetypes, seed: input.idea.id,
+    seriesArchetype: input.seriesArchetype, allowAi: input.allowAi, exclude: input.excludeArchetypes, avoid: input.avoidArchetypes, bias: input.memory?.archetypeBias, seed: input.idea.id,
   });
   const primary = references.primary;
   const subject: CreativeSpec["subject"] = decision.mode === "physical_product"
@@ -269,6 +278,7 @@ export function buildCreativeSpec(input: BuildCreativeSpecInput): CreativeSpec {
     immutable: decision.mode === "physical_product" ? PRODUCT_IMMUTABLE : decision.mode === "software" ? ["conteúdo e layout da interface capturada"] : [],
     blockers: references.missing.filter((item) => item.blocking),
     ...(input.seriesKey ? { seriesKey: input.seriesKey } : {}),
+    ...(input.memory?.guidance?.length ? { learned: [...input.memory.guidance] } : {}),
   };
 }
 
@@ -322,6 +332,7 @@ export function buildImageInstruction(spec: CreativeSpec, referenceOrder: readon
     );
   }
   lines.push("Evite: " + spec.avoid.join(", ") + ".");
+  if (spec.learned?.length) lines.push("APRENDIZADO DA MARCA (problemas que o cliente já reprovou mais de uma vez — não repita):", ...spec.learned.map((item) => `- ${item}`));
   lines.push("Nenhum texto, letra, número, logotipo ou marca d'água na imagem — o texto é aplicado depois pelo renderizador.");
   if (correction) lines.push(`CORREÇÃO DIRECIONADA desta tentativa: ${correction}`);
   return lines.join("\n");

@@ -27,13 +27,13 @@ async function main() {
   await mkdir(targetDir, { recursive: true });
   const copied = [];
   for (const entry of entries) {
-    if (!entry.isFile() || !entry.name.endsWith(".ttf")) continue;
+    if (!entry.isFile() || !/\.ttf$|-OFL\.txt$/.test(entry.name)) continue;
     const targetFile = join(targetDir, entry.name);
     await copyFile(join(sourceDir, entry.name), targetFile);
     copied.push(targetFile);
   }
 
-  console.log(`[copy-rendering-assets] ${copied.length} fonte(s) .ttf copiada(s) para dist/infrastructure/rendering/assets.`);
+  console.log(`[copy-rendering-assets] ${copied.length} arquivo(s) de fonte copiado(s) para dist/infrastructure/rendering/assets.`);
   for (const file of copied) {
     console.log(`  - ${relative(projectRoot, file)}`);
   }

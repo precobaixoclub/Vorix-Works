@@ -36,6 +36,7 @@ const operationOf = (archetypeId, archetypes) => archetypes[archetypeId]?.operat
  */
 export async function produceScreen({ planned, brand, assets, history, render, generateAi, reviewScene, archetypes, maxAttempts = 3, budgetUsd = 0, aiAttemptCostUsd = 0, seriesKey }) {
   const { spec, screen, transmitted } = planned;
+  const fashionCampaign = spec.presentation === "fashion_campaign";
   const attempts = [];
   const tried = new Set();
   let archetype = spec.composition.archetype;
@@ -50,7 +51,7 @@ export async function produceScreen({ planned, brand, assets, history, render, g
       operation, archetype, transmittedReferenceIds: transmitted.map((item) => item.id), ...(seriesKey ? { seriesKey } : {}),
       revisionContext: { attempt, maxAttempts, spentUsd, budgetUsd, aiAttemptCostUsd },
     };
-    const request = { ...brand, logoConfig, ...screen, fidelity, history };
+    const request = { ...brand, logoConfig, ...screen, presentation: spec.presentation, fidelity, history };
     if (AI_OPERATIONS.has(operation)) {
       const generated = generateAi ? await generateAi({ spec, archetype, instruction: planned.instruction, transmitted, correction }) : undefined;
       if (!generated) {
@@ -81,7 +82,9 @@ export async function produceScreen({ planned, brand, assets, history, render, g
     let result;
     try {
       result = await render(request);
-      const needsSceneReview = spec.mode === "conceptual" && (spec.visualDirection || (AI_OPERATIONS.has(operation) && (spec.brandIdentity?.colors?.length || spec.brandIdentity?.notes?.trim())));
+      const generatedScene = AI_OPERATIONS.has(operation);
+      const needsSceneReview = (spec.mode === "conceptual" && (spec.visualDirection || (generatedScene && (spec.brandIdentity?.colors?.length || spec.brandIdentity?.notes?.trim()))))
+        || (fashionCampaign && spec.mode === "physical_product" && generatedScene && spec.visualDirection);
       if (needsSceneReview && result.gate?.approved === true) {
         const sceneReview = await reviewScene?.({ spec, instruction: planned.instruction, image: result.image });
         const verified = await render({ ...request, fidelity: { ...fidelity, sceneReviewRequired: true, sceneReview } });
@@ -109,8 +112,8 @@ export async function produceScreen({ planned, brand, assets, history, render, g
     if (result.gate.approved === true) return { ok: true, image: result.image, quality: result.quality, gate: result.gate, fingerprint: result.fingerprint, evidence: result.evidence, archetype: result.appliedArchetype ?? archetype, attempts, spentUsd };
     const action = result.revision?.action ?? "manual_review";
     if (action === "manual_review") break;
-    if (action === "switch_to_controlled_composite") archetype = spec.composition.fallback ?? "product_editorial";
-    else if (action === "use_original_photo") archetype = tried.has("product_scene") ? "product_editorial" : "product_scene";
+    if (action === "switch_to_controlled_composite") archetype = spec.composition.fallback ?? (fashionCampaign ? "fashion_poster" : "product_editorial");
+    else if (action === "use_original_photo") archetype = fashionCampaign ? "fashion_poster" : tried.has("product_scene") ? "product_editorial" : "product_scene";
     else if (action === "insert_real_capture") archetype = "device_laptop";
     else if (action === "enlarge_capture") archetype = tried.has("ui_focus") ? "browser_window" : "ui_focus";
     else if (action === "replace_logo_variant") logoConfig = { ...(logoConfig ?? {}), treatment: "halo" };

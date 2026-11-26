@@ -279,6 +279,41 @@ test("telas e rastreamento: texto exato da arte respeitado; assinaturas nunca v�
   assert.match(instruction, /PRODUTO IMUTÁVEL/);
 });
 
+test("CMKV usa pôster de campanha com a foto oficial e título maior; os outros workspaces mantêm seus arquétipos", async () => {
+  const { planText, renderArt } = await import("../scripts/editorial/codex-social-render.mjs");
+  const idea = IDEA({ title: "Chega mais perto", keyMessage: "Chega mais perto", cta: "Veja o catálogo", visualDirection: "Close editorial em luz de recorte futurista." });
+  const inputs = {
+    workspaceId: "cmkv", brandName: "CMKV Wears", businessKind: "physical_products", idea, allowAi: false, history: [],
+    ideaReferences: [{ id: "photo", source: "catalog", productCode: "000044", variantLabel: "Preto" }],
+  };
+  const { screens: [planned] } = planEditorialCreative({ ...inputs, presentation: "fashion_campaign" });
+  assert.equal(planned.spec.composition.archetype, "fashion_poster");
+  assert.match(planned.instruction, /campanha streetwear/);
+  assert.notEqual(planEditorialCreative(inputs).screens[0].spec.composition.archetype, "fashion_poster");
+  assert.ok(planText({ layout: "top", headline: idea.title, fashionCampaign: true }).title.size > planText({ layout: "top", headline: idea.title }).title.size);
+  const logo = (await svgPng('<rect x="25" y="25" width="140" height="100" fill="#fff"/>', 200, 160)).toString("base64");
+  const photo = await studioShirt("#191919");
+  const brand = { logos: [{ data: logo, variant: "PRIMARY", backgrounds: ["DARK"] }], profile: { identity: { colors: [{ hex: "#0A0A0A", role: "PRIMARY" }, { hex: "#C9A227", role: "ACCENT" }] } } };
+  const result = await produceScreen({ planned, brand, assets: { photo: { data: photo.toString("base64") } }, history: [], render: renderArt, archetypes: ARCHETYPES });
+  assert.equal(result.ok, true, JSON.stringify(result.attempts));
+  assert.equal(result.archetype, "fashion_poster");
+  assert.equal(result.quality.logo.placement, "top_right");
+  assert.equal(result.evidence.product.usedProductCode, "000044");
+  assert.equal(result.evidence.product.usedVariant, "Preto");
+  const base = await composeProduct("fashion_poster", { photos: [{ id: "photo", data: photo }], tones: TONES });
+  assert.deepEqual(base.labels, []);
+  assert.equal(base.protectedAreas.length, 1);
+
+  const darkScene = await svgPng('<rect width="1080" height="1350" fill="#151517"/>', 1080, 1350);
+  const sceneArt = await renderArt({
+    ...brand, logos: [{ data: logo, variant: "PRIMARY", backgrounds: ["LIGHT"] }],
+    base: darkScene.toString("base64"), headline: "O oeste encontra a rua", presentation: "fashion_campaign", layout: "top",
+    fidelity: { spec: { mode: "conceptual", subject: { kind: "concept" }, requiredReferences: [], blockers: [] }, operation: "ai_generation", transmittedReferenceIds: [] },
+  });
+  assert.ok(sceneArt.quality.textContrast >= 4.5);
+  assert.equal(sceneArt.gate.approved, true, JSON.stringify(sceneArt.gate.failures));
+});
+
 test("o piloto reprova fundo saturado e só aprova a arte final após revisar a direção visual", async () => {
   const { renderArt } = await import("../scripts/editorial/codex-social-render.mjs");
   const brandIdentity = {

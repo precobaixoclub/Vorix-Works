@@ -47,6 +47,7 @@ export type CompositionArchetype = {
 
 export const COMPOSITION_ARCHETYPES: readonly CompositionArchetype[] = [
   // Produto físico
+  { id: "fashion_poster", mode: "physical_product", label: "Pôster de moda", operation: "deterministic_composite", textLayout: "top", affinity: /\b(campanha|editorial|poster|moda|close|textura|futurista|recorte)\b/, intent: "Uma foto oficial dominante, luz de recorte e contraste de campanha. Manchete curta. Sem miniatura duplicada, rótulos de catálogo ou moldura de página." },
   { id: "product_studio", mode: "physical_product", label: "Produto em destaque (estúdio)", operation: "deterministic_composite", textLayout: "top", needsCutout: true, affinity: /\b(destaque|novidade|isolad\w*|estudio|vitrine|basic\w*|essencial)\b/, intent: "A peça original recortada, grande e centralizada, sobre fundo de estúdio nas cores da marca, com sombra de contato." },
   { id: "product_editorial", mode: "physical_product", label: "Composição editorial", operation: "deterministic_composite", textLayout: "left", affinity: /\b(editorial|revista|tendencia\w*|estilo|elegan\w*|classic\w*|atemporal)\b/, intent: "Foto original emoldurada em página editorial: coluna de texto à esquerda, foto alta à direita, fio de destaque e legenda da cor." },
   { id: "variant_lineup", mode: "physical_product", label: "Variações reais de cor", operation: "deterministic_composite", textLayout: "top", minVariants: 2, needsCutout: true, affinity: /\b(cor|cores|variac\w*|versao|versoes|escolh\w*|opc\w*|duas|tres|qual)\b/, intent: "Duas ou três cores REAIS do mesmo modelo em leque, com profundidade e etiquetas de cor — nunca grade de catálogo." },
@@ -68,6 +69,7 @@ export const archetypeById = (id: string) => COMPOSITION_ARCHETYPES.find((item) 
 
 export type ChooseCompositionInput = {
   mode: VisualMode;
+  presentation?: "fashion_campaign";
   idea: VisualIntentIdea;
   references: ResolvedReferences;
   history: readonly VisualFingerprint[];
@@ -93,8 +95,13 @@ function stableHash(value: string): number {
 export function chooseComposition(input: ChooseCompositionInput): CompositionChoice {
   const text = ideaText(input.idea);
   const variants = (input.references.primary ? 1 : 0) + input.references.variants.length;
-  const eligible = COMPOSITION_ARCHETYPES.filter((item) => item.mode === input.mode
-    && !(input.exclude ?? []).includes(item.id)
+  const available = COMPOSITION_ARCHETYPES.filter((item) => item.mode === input.mode && (
+    input.presentation === "fashion_campaign" && input.mode === "physical_product"
+      ? ["fashion_poster", "product_lifestyle", "variant_lineup"].includes(item.id)
+      : item.id !== "fashion_poster"
+  ));
+  const eligible = available.filter((item) =>
+    !(input.exclude ?? []).includes(item.id)
     && (input.allowAi || item.operation === "deterministic_composite")
     && (!item.minVariants || variants >= item.minVariants)
     && (!item.needsMobileCapture || [input.references.primary, ...input.references.variants].some((reference) => reference?.form === "mobile"))
@@ -106,7 +113,7 @@ export function chooseComposition(input: ChooseCompositionInput): CompositionCho
     if (series) return { archetype: series, score: 0, reasons: ["Mesma família visual da série (carrossel/campanha padronizada)."], alternatives: pool.filter((item) => item !== series).map((item) => item.id) };
   }
   if (!pool.length) {
-    const fallback = COMPOSITION_ARCHETYPES.find((item) => item.mode === input.mode && item.operation === "deterministic_composite")!;
+    const fallback = available.find((item) => item.operation === "deterministic_composite")!;
     return { archetype: fallback, score: 0, reasons: ["Único arquétipo disponível para este modo."], alternatives: [] };
   }
   const scored = pool.map((archetype) => {
@@ -122,7 +129,7 @@ export function chooseComposition(input: ChooseCompositionInput): CompositionCho
   ];
   // Já usados (ex.: telas anteriores do carrossel) voltam ao fim da fila: melhor repetir um arquétipo da
   // série do que ficar sem alternativa quando a peça é reprovada.
-  const excludedAgain = COMPOSITION_ARCHETYPES.filter((item) => item.mode === input.mode && (input.exclude ?? []).includes(item.id)
+  const excludedAgain = available.filter((item) => (input.exclude ?? []).includes(item.id)
     && (input.allowAi || item.operation === "deterministic_composite") && (!item.minVariants || variants >= item.minVariants)
     && (!item.needsMobileCapture || [input.references.primary, ...input.references.variants].some((reference) => reference?.form === "mobile"))
     && (!item.needsCutout || input.references.primary?.photoKind !== "scene"));
@@ -134,6 +141,7 @@ export type CreativeSpec = {
   brand: string;
   brandIdentity?: Pick<BrandIdentity, "colors" | "notes">;
   visualDirection?: string;
+  presentation?: "fashion_campaign";
   objective?: string;
   audience?: string;
   /** Produto (código + variante) ou funcionalidade divulgada. */
@@ -162,7 +170,7 @@ export type CreativeSpec = {
 
 export type BuildCreativeSpecInput = {
   workspaceId: string;
-  brand: { name: string; identity?: CreativeSpec["brandIdentity"] };
+  brand: { name: string; identity?: CreativeSpec["brandIdentity"]; presentation?: CreativeSpec["presentation"] };
   idea: VisualIntentIdea & { id: string; targetAudience?: string; cta?: string };
   screen: { headline: string; body?: string; cta?: string };
   decision: VisualIntentDecision;
@@ -184,7 +192,7 @@ export function buildCreativeSpec(input: BuildCreativeSpecInput): CreativeSpec {
   const direction = input.idea.visualDirection?.trim();
   const visualDirection = direction === "Seguir a identidade visual da marca." || direction === "Usar as imagens de referência da ideia." ? undefined : direction;
   const choice = chooseComposition({
-    mode: decision.mode, idea: input.idea, references, history: input.history, seriesKey: input.seriesKey,
+    mode: decision.mode, presentation: input.brand.presentation, idea: input.idea, references, history: input.history, seriesKey: input.seriesKey,
     seriesArchetype: input.seriesArchetype, allowAi: input.allowAi, exclude: input.excludeArchetypes, seed: input.idea.id,
   });
   const primary = references.primary;
@@ -217,6 +225,7 @@ export function buildCreativeSpec(input: BuildCreativeSpecInput): CreativeSpec {
     brand: input.brand.name,
     ...(brandIdentity ? { brandIdentity: { colors: brandIdentity.colors, notes: brandIdentity.notes } } : {}),
     ...(visualDirection ? { visualDirection } : {}),
+    ...(input.brand.presentation ? { presentation: input.brand.presentation } : {}),
     objective: input.idea.objective,
     audience: input.idea.targetAudience,
     subject,
@@ -227,7 +236,7 @@ export function buildCreativeSpec(input: BuildCreativeSpecInput): CreativeSpec {
     modeReasons: decision.reasons,
     composition: {
       archetype: choice.archetype.id, label: choice.archetype.label, operation: choice.archetype.operation, textLayout: choice.archetype.textLayout,
-      intent: choice.archetype.intent, ...(choice.archetype.fallback ? { fallback: choice.archetype.fallback } : {}), reasons: choice.reasons, alternatives: choice.alternatives,
+      intent: choice.archetype.intent, ...(choice.archetype.fallback ? { fallback: input.brand.presentation === "fashion_campaign" && decision.mode === "physical_product" ? "fashion_poster" : choice.archetype.fallback } : {}), reasons: choice.reasons, alternatives: choice.alternatives,
     },
     requiredReferences: [...(primary ? [primary] : []), ...references.variants].map((reference) => ({ id: reference.id, role: reference.role, ...(reference.variantLabel ? { label: reference.variantLabel } : reference.name ? { label: reference.name } : {}) })),
     complementaryReferences: references.complementary.map((reference) => ({ id: reference.id, role: reference.role })),
@@ -273,6 +282,7 @@ export function buildImageInstruction(spec: CreativeSpec, referenceOrder: readon
     `Marca: ${spec.brand}. Modo: ${spec.modeLabel}. Composição: ${spec.composition.label} — ${spec.composition.intent}`,
     `Mensagem da peça: ${spec.mainMessage}${spec.supportingText ? ` / ${spec.supportingText}` : ""}.`,
     ...sceneArtDirection(spec),
+    ...(spec.presentation === "fashion_campaign" ? ["Direção de campanha streetwear: um ponto focal forte, enquadramento de moda, contraste intencional, textura tátil e espaço para uma manchete curta. Quando o briefing pedir futurismo, use luz de recorte, reflexo metálico e perspectiva; evite interfaces, tabelas, grades de produtos, molduras de e-commerce e sci-fi decorativo."] : []),
     ...(attachments.length ? ["Imagens anexadas, nesta ordem:", ...attachments] : []),
   ];
   if (spec.mode === "physical_product") {

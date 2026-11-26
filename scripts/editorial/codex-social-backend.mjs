@@ -37,7 +37,7 @@ const brands = new Map([
   ["workspace-mwmumsxd-fmvh3h", { accounts: ["soc-mwmvbruu-sz6rkd12", "soc-mwmvbryk-dthxstki"], logo: {}, creative: { businessKind: "services" } }],
   ["workspace-mscc9pi2-jkvwbo", { accounts: ["soc-mwk1mgoy-xhcr2duq", "soc-mwk1my6f-lbham9eo"], logo: {}, creative: { businessKind: "software", features: VORIX_FEATURES } }],
   ["workspace-mwmu8kgf-uhe66l", { accounts: ["soc-mwmu9f8k-kj2covm2", "soc-mwmugp3j-hwva5nax"], logo: {}, creative: { businessKind: "unknown" } }],
-  [cmkvWorkspaceId, { accounts: ["soc-mwkwg3lc-zj3g4xyk", "soc-mwmuj7ud-3py2gdyo"], logo: {}, creative: { businessKind: "physical_products", products: cmkvEditorialProducts } }],
+  [cmkvWorkspaceId, { accounts: ["soc-mwkwg3lc-zj3g4xyk", "soc-mwmuj7ud-3py2gdyo"], logo: {}, creative: { businessKind: "physical_products", products: cmkvEditorialProducts, presentation: "fashion_campaign" } }],
 ]);
 const timezone = "America/Sao_Paulo";
 const prefix = "codex-editorial-v1";
@@ -126,16 +126,17 @@ function cmkvFallbackIdea(slot, products, previous) {
   const pair = [photos[uses % photos.length], photos[(uses + 1) % photos.length]];
   const colors = pair.map(photo => photo.color.toLocaleLowerCase("pt-BR"));
   const themes = [
-    ["Uma estampa, duas escolhas", "Qual cor você usaria com jeans?"],
-    ["Dois jeitos de usar a mesma estampa", "Qual cor combina mais com seu dia a dia?"],
-    ["O look começa pela cor", "Qual versão você colocaria no próximo look?"],
+    ["A cor muda tudo", "Já reparou como a mesma estampa muda de clima quando troca o fundo?", "Qual das duas você pegaria primeiro?"],
+    ["Qual vai com seu jeans?", "Pensa naquele jeans que você usa sem pensar. Agora imagina o desenho nas duas cores.", "Qual entraria no seu rodízio?"],
+    ["Mesma estampa. Outro clima.", "Tem cor que faz o traço aparecer de cara. Tem cor que deixa o detalhe pra quem chega perto.", "Qual dessas é mais a sua cara?"],
   ];
-  const [title, question] = themes[uses % themes.length];
+  const [title, hook, question] = themes[uses % themes.length];
   return parseManualEditorialIdea({
     title, format: "single_image", category: "Vitrine CMKV", approach: "Comparação de cores",
-    keyMessage: `${title}\n\n${colors.join(" ou ")}?`,
-    caption: `${question} Veja o modelo ${code} da CMKV em ${colors.join(" e ")} e confira as opções no catálogo.\n\n#CMKVWears #CamisetaEstampada #ModaCasual`,
-    cta: "Confira no catálogo", suggestedDate: slot.slice(0, 10),
+    keyMessage: title,
+    visualDirection: "Campanha de moda com as duas fotos reais do mesmo modelo, em luz de recorte. Proporções diferentes, tecido em destaque e uma manchete curta. Dourado discreto nos reflexos, sem rótulos de vitrine.",
+    caption: `${hook}\n\n${colors.join(" ou ")}? ${question} As fotos são do modelo ${code}.`,
+    cta: question, suggestedDate: slot.slice(0, 10),
     referenceImages: pair.map(photo => photo.url),
   }, `CMKV-AUTO-${slot.slice(0, 10)}-${slot.slice(11, 13)}`);
 }
@@ -262,7 +263,7 @@ async function planIdea(idea, creative, context) {
     }
   }
   const plan = planEditorialCreative({
-    workspaceId, brandName: context.brandName, brandIdentity: context.profile?.identity, businessKind: creative.businessKind, softwareFeatures: creative.features, idea,
+    workspaceId, brandName: context.brandName, brandIdentity: context.profile?.identity, presentation: creative.presentation, businessKind: creative.businessKind, softwareFeatures: creative.features, idea,
     ideaReferences, libraryCaptures: libraryCandidates, editorialProducts, history: context.history, allowAi: true,
   });
   const assets = {};
@@ -419,12 +420,14 @@ async function run() {
     const { url } = await c.objectStorage.put({ key, body, contentType: "image/jpeg" });
     media.push({ url, kind: "image", width, height, mimeType: "image/jpeg", sizeBytes: body.length });
   }
-  const input = { ...scope, base: { caption: idea.caption, media }, destinations: accounts.map(accountId => ({ accountId, format })) };
+  const campaignCta = brandConfig.creative?.presentation === "fashion_campaign" && idea.cta && !idea.caption.includes(idea.cta) ? idea.cta : undefined;
+  const caption = campaignCta ? `${idea.caption}\n\n${campaignCta}` : idea.caption;
+  const input = { ...scope, base: { caption, media }, destinations: accounts.map(accountId => ({ accountId, format })) };
   const checks = await c.social.posts.validate(input);
   for (const check of checks) requireCondition(!check.issues.length && !check.warnings.length, `${check.network}: ${[...check.issues.map(issue => issue.message), ...check.warnings].join(". ")}`);
   if (mode === "validate") return { validated: true, idea: idea.externalId, screens: media.length, networks: checks.map(check => check.network) };
   const seen = await db.query(`select count(*)::int as total from social_post_destinations d join publication_targets t on t.id=d.target_id
-    where d.tenant_id=$1 and d.workspace_id=$2 and t.status not in ('cancelled','failed') and d.caption=$3 and d.created_at >= $4`, [tenantId, workspaceId, idea.caption, idea.createdAt]);
+    where d.tenant_id=$1 and d.workspace_id=$2 and t.status not in ('cancelled','failed') and d.caption=$3 and d.created_at >= $4`, [tenantId, workspaceId, caption, idea.createdAt]);
   requireCondition(seen.rows[0].total === 0, "Já existe uma publicação com a mesma legenda desta pauta");
   const when = publishNow ? { mode: "now" } : { mode: "schedule", localDateTime: slot, timezone };
   const post = await c.social.posts.create({ ...input, actor, idempotencyKey, when, source: {

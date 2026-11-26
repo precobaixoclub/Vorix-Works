@@ -42,6 +42,7 @@ export type PlanEditorialCreativeInput = {
   workspaceId: string;
   brandName: string;
   brandIdentity?: CreativeSpec["brandIdentity"];
+  presentation?: CreativeSpec["presentation"];
   businessKind: BusinessKind;
   softwareFeatures?: readonly SoftwareFeature[];
   idea: EditorialIdeaForPlan;
@@ -130,7 +131,7 @@ export function planEditorialCreative(input: PlanEditorialCreativeInput): Editor
     const screenReferences = resolvedFor(screen);
     // Carrossel: cada tela com composição diferente (sem repetir a anterior); esgotou, recomeça.
     const spec = buildCreativeSpec({
-      workspaceId: input.workspaceId, brand: { name: input.brandName, identity: input.brandIdentity }, idea: { ...input.idea, objective: input.idea.commercialObjective }, screen,
+      workspaceId: input.workspaceId, brand: { name: input.brandName, identity: input.brandIdentity, presentation: input.presentation }, idea: { ...input.idea, objective: input.idea.commercialObjective }, screen,
       decision, references: screenReferences, history: input.history, allowAi: input.allowAi, seriesKey, excludeArchetypes: used,
     });
     if (used.includes(spec.composition.archetype)) used.length = 0;

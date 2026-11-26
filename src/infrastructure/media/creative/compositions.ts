@@ -230,12 +230,45 @@ async function sceneComposition(photo: ProductPhotoInput, cutout: ProductCutout,
 
 // ---------------------------------------------------------------- produto físico
 
+async function composeFashionPoster(photo: ProductPhotoInput, cutout: ProductCutout, tones: BrandTones, scene?: Buffer): Promise<CompositionResult> {
+  const backdrop = await fitBase(scene, tones, { x: 0.74, y: 0.62, r: 0.65, strength: 0.24 });
+  const light = svg(`<path d="M-32 1220 C242 820 730 620 1112 305" fill="none" stroke="${tones.accent}" stroke-opacity="0.3" stroke-width="2"/>`);
+  if (cutout.confidence >= 0.55 && cutout.quality.ok && cutout.bbox.y > 2) {
+    const hero = await placeCutout(cutout, 900, { centerX: 600, bottom: H - 26 });
+    return {
+      base: await compose(backdrop, [{ input: light, left: 0, top: 0 }, hero.shadow, hero.layer]),
+      layout: "top", labels: [], protectedAreas: [{ kind: "product", ...pct(hero.rect) }],
+      evidence: { product: productEvidence(photo, cutout, hero.rect) },
+    };
+  }
+
+  // Foto com o topo do modelo já cortado ou recorte frágil: uma única foto sangrada com corte
+  // fotográfico ao redor da estampa, preservando os pixels da peça e evitando apagar a silhueta.
+  const frame = { x: 0, y: 438, w: W, h: H - 438 };
+  const targetRatio = frame.w / frame.h;
+  const width = Math.min(cutout.width, Math.round(cutout.height * targetRatio));
+  const height = Math.min(cutout.height, Math.round(cutout.width / targetRatio));
+  const focus = await locatePrint(cutout);
+  const left = Math.max(0, Math.min(cutout.width - width, Math.round(focus.x + (focus.w - width) / 2)));
+  const top = Math.max(0, Math.min(cutout.height - height, Math.round(focus.y + (focus.h - height) / 2)));
+  const photoLayer = await sharp(cutout.photo).extract({ left, top, width, height }).resize(frame.w, frame.h, { fit: "fill" }).png().toBuffer();
+  const mask = svg(`<path d="M0 72 L${frame.w} 0 V${frame.h} H0Z" fill="#fff"/>`, frame.w, frame.h);
+  const hero = await sharp(photoLayer).composite([{ input: mask, blend: "dest-in" }]).png().toBuffer();
+  const seam = svg(`<path d="M0 ${frame.y + 72} L${W} ${frame.y}" stroke="${tones.accent}" stroke-opacity="0.8" stroke-width="3"/>`);
+  const product = { ...productEvidence(photo, cutout, frame), coverage: (frame.w * frame.h) / (W * H) * 0.6, cutout: { used: false, ok: true, reasons: [] } };
+  return {
+    base: await compose(backdrop, [{ input: light, left: 0, top: 0 }, { input: hero, left: frame.x, top: frame.y }, { input: seam, left: 0, top: 0 }]),
+    layout: "top", labels: [], protectedAreas: [{ kind: "product", ...pct(frame) }], evidence: { product },
+  };
+}
+
 export async function composeProduct(archetype: string, input: { photos: ProductPhotoInput[]; tones: BrandTones; scene?: Buffer }): Promise<CompositionResult> {
   const [primary, ...others] = input.photos;
   if (!primary) throw new Error("COMPOSITION_PRODUCT_PHOTO_MISSING: composição de produto sem fotografia original.");
   const cutout = await cutoutProduct(primary.data);
   const usable = cutout.confidence >= 0.55;
   const tones = input.tones;
+  if (archetype === "fashion_poster") return composeFashionPoster(primary, cutout, tones, input.scene);
 
   // Foto de cena (recorte com artefato): nunca recorta — usa a foto inteira, em tela cheia ou emoldurada.
   // Cena sem faixa livre para o texto: cai na foto emoldurada (editorial), abaixo.

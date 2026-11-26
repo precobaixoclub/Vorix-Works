@@ -195,13 +195,14 @@ function measure(text, size, lineMultiplier, fieldWidth) {
 }
 
 /** Bloco de texto para um layout, respeitando a faixa ocupada pela logo (topReserve/bottomReserve = limites em y). */
-export function planText({ layout, headline, body, cta, logoTopEdge, logoBottomEdge }) {
+export function planText({ layout, headline, body, cta, logoTopEdge, logoBottomEdge, fashionCampaign = false }) {
   const fieldWidth = layout === "left" ? 435 : WIDTH - 2 * TEXT_X;
   const start = layout === "left" ? Math.max(165, (logoTopEdge ?? 0) + 48) : Math.max(95, (logoTopEdge ?? 0) + 48);
   const floor = (logoBottomEdge ?? HEIGHT - 31) - 48;
-  for (let size = layout === "left" ? 61 : 74; size >= 35; size -= 2) {
-    const title = measure(headline, size, 1.08, fieldWidth);
-    const detail = measure(body, Math.max(26, Math.round(size * 0.48)), 1.19, fieldWidth);
+  const largest = fashionCampaign ? (layout === "left" ? 88 : 120) : (layout === "left" ? 61 : 74);
+  for (let size = largest; size >= 35; size -= 2) {
+    const title = measure(headline, size, fashionCampaign ? 0.98 : 1.08, fieldWidth);
+    const detail = measure(body, fashionCampaign ? 34 : Math.max(26, Math.round(size * 0.48)), 1.19, fieldWidth);
     const action = measure(cta, 29, 1.18, fieldWidth);
     const height = 66 + title.height + detail.height + action.height;
     if (!Number.isFinite(height)) continue;
@@ -217,7 +218,7 @@ function protectedPenalty(zone, areas) {
 }
 
 /** Escolhe layout do texto + posição da logo pelo conteúdo: protege rostos/produto e prefere regiões limpas. */
-export function chooseComposition({ raw, channels, protectedRects, requestedLayout, requestedPlacement, fixedPlacement, logoAspect, logoScale, headline, body, cta }) {
+export function chooseComposition({ raw, channels, protectedRects, requestedLayout, requestedPlacement, fixedPlacement, logoAspect, logoScale, headline, body, cta, fashionCampaign }) {
   const layouts = [...new Set([LAYOUTS.includes(requestedLayout) ? requestedLayout : "top", ...LAYOUTS])];
   const placements = fixedPlacement ? [fixedPlacement] : [...new Set([requestedPlacement, "bottom_right", "bottom_left", "top_left", "top_right", "top_center", "bottom_center"].filter((item) => PLACEMENTS.includes(item)))];
   const box = logoBox(logoAspect, logoScale);
@@ -226,7 +227,7 @@ export function chooseComposition({ raw, channels, protectedRects, requestedLayo
     for (const [order, placement] of placements.entries()) {
       const logo = logoRect(placement, box);
       const top = placement.startsWith("top");
-      const text = planText({ layout, headline, body, cta, logoTopEdge: top ? logo.y + logo.h : undefined, logoBottomEdge: top ? undefined : logo.y });
+      const text = planText({ layout, headline, body, cta, fashionCampaign, logoTopEdge: top ? logo.y + logo.h : undefined, logoBottomEdge: top ? undefined : logo.y });
       if (!text) continue;
       const zone = grow(text.rect, 24);
       if (intersection(grow(logo, 16), zone) > 0) continue;
@@ -338,9 +339,11 @@ async function catalogBase(photos, surface) {
 }
 
 export async function renderArt(request) {
-  const { base, catalogPhotos, profile, body, cta, layout, logoPlacement, protectedAreas, logoConfig } = request;
+  const { base, catalogPhotos, profile, body, layout, logoPlacement, protectedAreas, logoConfig } = request;
   const identity = profile?.identity;
-  const headline = identity?.typography?.headlineCase === "UPPERCASE" ? request.headline?.toLocaleUpperCase("pt-BR") : request.headline;
+  const fashionCampaign = request.presentation === "fashion_campaign";
+  const cta = fashionCampaign ? undefined : request.cta;
+  const headline = fashionCampaign || identity?.typography?.headlineCase === "UPPERCASE" ? request.headline?.toLocaleUpperCase("pt-BR") : request.headline;
   const colors = (identity?.colors ?? []).filter((color) => /^#[\da-f]{6}$/i.test(color.hex));
   const logosInput = request.logos?.length ? request.logos : request.logo ? [{ data: request.logo, variant: "PRIMARY", backgrounds: request.logoBackgrounds ?? [] }] : [];
   if (!logosInput.length) throw new Error("QUALITY_LOGO_MISSING: workspace sem logo oficial configurada");
@@ -350,7 +353,8 @@ export async function renderArt(request) {
   const lightBackground = /fundo\s+sempre\s+claro|nunca\s+escuro/i.test(brandNotes);
   const darkBrand = darkBackground || /preto tecnológico/i.test(brandNotes) || colors.some((color) => /preto tecnológico/i.test(color.name));
   const serif = identity?.typography?.family === "SERIF";
-  const light = !darkBrand && (lightBackground || serif || logosInput.every((logo) => (logo.backgrounds ?? []).includes("LIGHT") && !(logo.backgrounds ?? []).includes("DARK")));
+  const darkFashionPoster = fashionCampaign && request.composition?.archetype === "fashion_poster";
+  const light = !darkBrand && !darkFashionPoster && (lightBackground || serif || logosInput.every((logo) => (logo.backgrounds ?? []).includes("LIGHT") && !(logo.backgrounds ?? []).includes("DARK")));
   const lightest = [...colors].sort((a, b) => hexLuminance(b.hex) - hexLuminance(a.hex))[0]?.hex ?? "#FFFFFF";
   const darkest = [...colors].sort((a, b) => hexLuminance(a.hex) - hexLuminance(b.hex))[0]?.hex ?? "#0B0B10";
   const surface = light
@@ -372,12 +376,12 @@ export async function renderArt(request) {
   const canvas = await sharp(original).resize(WIDTH, HEIGHT, { fit: "cover" }).removeAlpha().raw().toBuffer({ resolveWithObject: true });
   const protectedRects = mapProtectedAreas(composition?.protectedAreas ?? catalog?.areas ?? protectedAreas, originalSize.width, originalSize.height);
   const logos = await Promise.all(logosInput.map(prepareLogo));
-  const fixedPlacement = brandLogoPlacement(profile, logoConfig);
-  const scale = clamp(Number(logoConfig?.scale) || 1, 0.6, 1.6);
+  const fixedPlacement = brandLogoPlacement(profile, logoConfig) ?? (darkFashionPoster ? "top_right" : undefined);
+  const scale = clamp(Number(logoConfig?.scale) || (fashionCampaign ? 0.82 : 1), 0.6, 1.6);
 
   const plan = chooseComposition({
     raw: canvas.data, channels: canvas.info.channels, protectedRects, requestedLayout: composition?.layout ?? layout, requestedPlacement: logoPlacement,
-    fixedPlacement, logoAspect: logos[0].aspect, logoScale: scale, headline, body, cta,
+    fixedPlacement, logoAspect: logos[0].aspect, logoScale: scale, headline, body, cta, fashionCampaign,
   });
   const issues = [];
   const textZone = grow(plan.text.rect, 24);
@@ -388,14 +392,19 @@ export async function renderArt(request) {
   }
   if (issues.length) throw new Error(`QUALITY_COMPOSITION: ${issues.join("; ")}`);
 
-  // Véu só onde o texto precisa, na intensidade que o contraste exige.
-  const surfaceLuminance = hexLuminance(surface);
+  // Na cena de campanha a zona real de texto pode ser escura mesmo com um logo para fundo claro.
   const textStats = regionStats(canvas.data, canvas.info.channels, plan.text.rect);
-  const veilAlpha = requiredVeilAlpha(textStats, hexLuminance(foreground), surfaceLuminance);
-  const veil = await veilLayer(plan.text.rect, plan.layout, veilAlpha, hexRgb(surface), protectedRects);
+  const useSceneTone = fashionCampaign && !catalog && !composition;
+  const sceneIsLight = textStats.mean >= 0.4;
+  const textSurface = useSceneTone ? (sceneIsLight ? lightest : darkest) : surface;
+  const textForeground = useSceneTone ? (sceneIsLight ? "#19151A" : "#FAFAFF") : foreground;
+  // Véu só onde o texto precisa, na intensidade que o contraste exige.
+  const surfaceLuminance = hexLuminance(textSurface);
+  const fgLum = hexLuminance(textForeground);
+  const veilAlpha = requiredVeilAlpha(textStats, fgLum, surfaceLuminance);
+  const veil = await veilLayer(plan.text.rect, plan.layout, veilAlpha, hexRgb(textSurface), protectedRects);
   const withVeil = await sharp(canvas.data, { raw: { width: WIDTH, height: HEIGHT, channels: canvas.info.channels } }).composite([{ input: veil }]).raw().toBuffer({ resolveWithObject: true });
   const finalTextStats = regionStats(withVeil.data, withVeil.info.channels, plan.text.rect);
-  const fgLum = hexLuminance(foreground);
   const textContrast = contrastRatio(fgLum, fgLum > surfaceLuminance ? finalTextStats.p90 : finalTextStats.p10);
   if ((catalog || composition) && textContrast < MIN_TEXT_CONTRAST) throw new Error("QUALITY_CONTRAST: texto da pauta abaixo de 4,5:1");
 
@@ -446,20 +455,21 @@ export async function renderArt(request) {
     { name: "Geist", data: await readFile(`${fontDir}/geist-regular.ttf`), weight: 400 },
     { name: "DM Serif Display", data: await readFile(`${fontDir}/dm-serif-display-regular.ttf`), weight: 400 },
   ];
+  if (fashionCampaign) fonts.push({ name: "Barlow Condensed", data: await readFile(`${fontDir}/barlow-condensed-bold.ttf`), weight: 700 });
   const el = (style, children) => ({ type: "div", props: { style: { display: "flex", ...style }, children } });
-  const group = (block, top, family, color) => el({ position: "absolute", left: TEXT_X, top, width: plan.text.fieldWidth, flexDirection: "column" },
-    block.lines.map((line) => el({ fontFamily: family, color, fontSize: block.size, height: block.line, whiteSpace: "nowrap" }, line)));
+  const group = (block, top, family, color, weight = 400) => el({ position: "absolute", left: TEXT_X, top, width: plan.text.fieldWidth, flexDirection: "column" },
+    block.lines.map((line) => el({ fontFamily: family, fontWeight: weight, color, fontSize: block.size, height: block.line, whiteSpace: "nowrap" }, line)));
   const { rect: textRect, title, detail, action } = plan.text;
   const lettering = Buffer.from(await satori(el({ width: WIDTH, height: HEIGHT, position: "relative" }, [
-    el({ position: "absolute", top: textRect.y, left: TEXT_X, width: 47, height: 5, borderRadius: 2, backgroundColor: accent }),
-    group(title, textRect.y + 28, serif ? "DM Serif Display" : "Geist", foreground),
-    group(detail, textRect.y + 45 + title.height, "Geist", foreground),
+    ...(!fashionCampaign ? [el({ position: "absolute", top: textRect.y, left: TEXT_X, width: 47, height: 5, borderRadius: 2, backgroundColor: accent })] : []),
+    group(title, textRect.y + 28, fashionCampaign ? "Barlow Condensed" : serif ? "DM Serif Display" : "Geist", textForeground, fashionCampaign ? 700 : 400),
+    group(detail, textRect.y + 45 + title.height, "Geist", textForeground),
     group(action, textRect.y + 66 + title.height + detail.height, "Geist", accentText),
     ...(catalog?.labels ?? []).map(({ left, width, top, color }) => el({
       position: "absolute", left, width, top, justifyContent: "center", fontFamily: "Geist", color: foreground, fontSize: 20,
     }, color)),
     // Rótulos da composição (cor da variante, "Estampa original", modelo) — nunca sobre o texto principal.
-    ...(composition?.labels ?? []).filter((label) => {
+    ...(fashionCampaign ? [] : composition?.labels ?? []).filter((label) => {
       const box = { x: label.left, y: label.top, w: label.width, h: (label.size ?? 22) * 1.4 };
       return intersection(box, grow(plan.text.rect, 8)) === 0 && intersection(box, grow(rect, 12)) === 0;
     }).map((label) => el({
@@ -534,7 +544,7 @@ async function fidelityReview({ request, jpeg, canvas, composition, protectedRec
   });
   evidence.variety = assessVariety(fingerprint, request.history ?? []);
   if (fidelity.aiReview) evidence.aiReview = fidelity.aiReview;
-  if (fidelity.spec.mode === "conceptual") {
+  if (fidelity.spec.mode === "conceptual" || fidelity.sceneReviewRequired === true) {
     evidence.scene = {
       reviewRequired: fidelity.sceneReviewRequired === true,
       review: fidelity.sceneReview,

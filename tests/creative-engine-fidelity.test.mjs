@@ -615,6 +615,9 @@ test("marca de produto físico: pauta sem palavra de produto mostra peça REAL d
   const decision = classifyVisualIntent({ businessKind: "physical_products", idea, references: [] });
   assert.equal(decision.mode, "physical_product");
   assert.equal(decision.demonstratesProduct, true);
+  // Caso real 2 (25/11/2026): "Seu treino, seu estilo" com "Conceito…"/"frase" na direção visual também é produto.
+  const treino = { title: "Seu treino, seu estilo", keyMessage: "Seu treino, seu estilo", visualDirection: "Conceito de academia escura. A frase entra grande à esquerda." };
+  assert.equal(classifyVisualIntent({ businessKind: "physical_products", idea: treino, references: [] }).mode, "physical_product");
   // Pedido institucional explícito continua conceitual (sem produto).
   assert.equal(classifyVisualIntent({ businessKind: "physical_products", idea: { title: "Nossos valores: o manifesto da marca" }, references: [] }).mode, "conceptual");
   // Serviços sem catálogo seguem conceituais como antes.

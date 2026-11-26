@@ -66,6 +66,9 @@ export function ideaText(idea: VisualIntentIdea): string {
 const PRODUCT_INTENT = /\b(camiset\w*|peca|pecas|estampa\w*|colec\w*|modelo|modelos|produto\w*|lancamento\w*|novidade\w*|chegou|vitrine|catalogo|cor|cores|variac\w*|tamanho\w*|tecido|caimento|look|oferta\w*|promoc\w*|desconto|compre|garanta|estoque|kit|sku)\b/;
 // Pede para mostrar o software funcionando.
 const SOFTWARE_INTENT = /\b(tela|telas|interface|sistema|plataforma|painel|dashboard|funcionalidade\w*|recurso\w*|ferramenta|app|aplicativo|como funciona|na pratica|demonstr\w*|veja|mostra\w*|caixa de entrada|inbox|historico|transcric\w*|resumo|gravac\w*|gravador|automac\w*|integrac\w*|whatsapp|crm|funil|kanban|relatorio\w*|agenda)\b/;
+// Só o pedido institucional de verdade. "Conceito", "frase", "tendência"… aparecem na direção visual de
+// pautas de produto ("Conceito western urbano") e não autorizam inventar a peça de uma marca com catálogo.
+const INSTITUTIONAL_INTENT = /\b(institucional|manifesto|valores|missao|proposito|bastidores|data comemorativa|feriado|bem-vindo|boas-vindas|agradec\w*)\b/;
 // Mensagem conceitual/institucional explícita.
 const CONCEPT_INTENT = /\b(institucional|manifesto|valores|missao|proposito|reflex\w*|frase|bastidores|cultura|data comemorativa|feriado|tendencia\w*|conceito|inspirac\w*|bem-vindo|boas-vindas|agradec\w*)\b/;
 
@@ -129,7 +132,7 @@ export function classifyVisualIntent(input: VisualIntentInput): VisualIntentDeci
   // Marca de produto físico sem pedido explícito de peça institucional: mostra uma peça REAL do catálogo
   // (o planejador escolhe no rodízio). Antes caía em "cena conceitual" e a IA desenhava a roupa do zero —
   // em produção (25/11/2026) a CMKV recebeu camiseta com estampa que não existe no catálogo.
-  if (input.businessKind === "physical_products" && !conceptAsked) {
+  if (input.businessKind === "physical_products" && !INSTITUTIONAL_INTENT.test(text)) {
     return {
       mode: "physical_product",
       source: "business_default",

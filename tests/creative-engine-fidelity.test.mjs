@@ -175,7 +175,7 @@ test("composição: arquétipos variam com o histórico e entre telas do carross
   // Regressão (26/11/2026): pauta conceitual reprovada por repetição precisa ter para onde trocar.
   const noRefs = { primary: undefined, variants: [], logos: [], complementary: [], transmitted: [], excluded: [], missing: [] };
   const conceptual = chooseComposition({ mode: "conceptual", idea: { title: "O robô aspirador passa embaixo?" }, references: noRefs, history: [], allowAi: true, seed: "a" });
-  assert.equal(conceptual.archetype.id, "concept_scene");
+  assert.equal(conceptual.archetype.operation, "ai_generation", "imagem gerada primeiro; a frase tipográfica fica como alternativa");
   assert.ok(conceptual.alternatives.includes("typographic_statement"), `alternativas: ${conceptual.alternatives}`);
 });
 
@@ -693,4 +693,25 @@ test("cena gerada com layout repetido: gera de novo com o texto em outra posiç�
   const switched = await produceScreen({ planned, brand: { name: "PBC", logos: [] }, assets: {}, history: [], render: copyRender, generateAi, archetypes: ARCHETYPES });
   assert.equal(switched.ok, true);
   assert.deepEqual(copies, ["concept_scene", "typographic_statement"]);
+});
+
+// Motor mais criativo (26/11/2026): pauta conceitual tem várias linguagens de imagem, alterna com o histórico.
+test("conceitual: várias linguagens de imagem (cena, close-up, metáfora, 3D); alterna com o histórico; carrossel gera IA só nas 2 primeiras telas", () => {
+  const noRefs = { primary: undefined, variants: [], logos: [], complementary: [], transmitted: [], excluded: [], missing: [] };
+  const aiConcepts = COMPOSITION_ARCHETYPES.filter((item) => item.mode === "conceptual" && item.operation === "ai_generation").map((item) => item.id);
+  assert.ok(aiConcepts.length >= 4, `linguagens: ${aiConcepts}`);
+  assert.equal(new Set(COMPOSITION_ARCHETYPES.filter((item) => aiConcepts.includes(item.id)).map((item) => item.textLayout)).size >= 3, true, "posições de texto variadas");
+  const recent = (id) => ({ archetype: id, textLayout: "top", productCount: 0, palette: [], dHash: "0".repeat(16) });
+  const idea = { title: "Impressora barata pode ter tinta cara" };
+  const first = chooseComposition({ mode: "conceptual", idea, references: noRefs, history: [], allowAi: true, seed: "pbc" });
+  const next = chooseComposition({ mode: "conceptual", idea, references: noRefs, history: [recent(first.archetype.id), recent(first.archetype.id)], allowAi: true, seed: "pbc" });
+  assert.notEqual(next.archetype.id, first.archetype.id, "não repete a linguagem das últimas peças");
+  assert.equal(next.archetype.operation, "ai_generation", "troca por outra imagem, não pela frase tipográfica");
+  const tech = chooseComposition({ mode: "conceptual", idea: { title: "Algo mais tecnológico e inovador", visualDirection: "visual digital, futurista, inteligência artificial" }, references: noRefs, history: [], allowAi: true, seed: "x" });
+  assert.equal(tech.archetype.id, "concept_3d");
+  const plan = planEditorialCreative({ workspaceId: "ws", brandName: "PBC", businessKind: "unknown", ideaReferences: [], history: [], allowAi: true,
+    idea: IDEA({ title: "Impressora", format: "carousel", carouselScript: [{ headline: "1" }, { headline: "2" }, { headline: "3" }, { headline: "4" }] }) });
+  const operations = plan.screens.map((item) => item.spec.composition.operation);
+  assert.deepEqual(operations.slice(0, 2), ["ai_generation", "ai_generation"]);
+  assert.ok(operations.slice(2).every((operation) => operation === "deterministic_composite"), `telas 3+: ${operations}`);
 });

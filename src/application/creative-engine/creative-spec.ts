@@ -61,7 +61,12 @@ export const COMPOSITION_ARCHETYPES: readonly CompositionArchetype[] = [
   { id: "phone_conversation", mode: "software", label: "Celular com a conversa", operation: "deterministic_composite", textLayout: "left", needsMobileCapture: true, affinity: /\b(whatsapp|celular|mensage\w*|cliente\w*|atendimento|responder|resposta)\b/, intent: "Celular com a coluna real da conversa, texto à esquerda." },
   { id: "browser_window", mode: "software", label: "Janela do sistema", operation: "deterministic_composite", textLayout: "top", affinity: /\b(tela|interface|relatorio\w*|calendario|agenda|kanban|funil|ideias|conteudo\w*)\b/, intent: "Janela do navegador grande e reta com a captura real, legível de ponta a ponta." },
   // Conceitual
-  { id: "concept_scene", mode: "conceptual", label: "Cena conceitual", operation: "ai_generation", textLayout: "top", affinity: /./, intent: "Cena fotográfica criada pela IA que traduz o conceito, na identidade da marca." },
+  // Várias linguagens para a mesma pauta conceitual (antes só havia a "cena fotográfica": toda peça saía como foto de
+  // banco de imagens com texto no topo, o Quality Gate reprovava por repetição e caía na frase tipográfica vazia).
+  { id: "concept_scene", mode: "conceptual", label: "Cena editorial", operation: "ai_generation", textLayout: "top", affinity: /^./, intent: "Fotografia editorial de uma cena real que traduz o conceito: pessoas ou ambiente com um momento verdadeiro, ângulo de revista, luz com intenção e as cores da marca na cena." },
+  { id: "concept_closeup", mode: "conceptual", label: "Close-up fotográfico", operation: "ai_generation", textLayout: "bottom", affinity: /^./, intent: "Close-up fotográfico (macro) do objeto ou detalhe central do tema, profundidade de campo rasa, textura tátil e luz dramática lateral; o objeto ocupa a parte de cima e o fundo desfocado deixa a base livre para o texto." },
+  { id: "concept_metaphor", mode: "conceptual", label: "Metáfora visual", operation: "ai_generation", textLayout: "left", affinity: /^./, intent: "Metáfora visual surpreendente: um único objeto ou situação simbólica que materializa a ideia de forma inesperada (still life conceitual), fotografado sobre fundo limpo nas cores da marca, com sombra marcada; o objeto fica à direita e a esquerda livre para o texto." },
+  { id: "concept_3d", mode: "conceptual", label: "3D tecnológico", operation: "ai_generation", textLayout: "bottom", affinity: /\b(tecnolog\w*|inova\w*|futur\w*|digital\w*|inteligencia|ia|automac\w*|app|aplicativo\w*|sistema\w*|dados|gadget\w*|eletronic\w*|robo\w*|smart|conectad\w*)\b/, intent: "Render 3D estilizado e moderno: objetos do tema simplificados em vidro, metal fosco e acrílico, luz de recorte nas cores da marca, profundidade e brilho sutil; composição limpa com o objeto principal no alto e a base livre para o texto." },
   { id: "typographic_statement", mode: "conceptual", label: "Manifesto tipográfico", operation: "deterministic_composite", textLayout: "top", onlyAsAlternative: true, affinity: /\b(frase|manifesto|pergunta|reflex\w*|valores|proposito|verdade)\b/, intent: "Peça tipográfica nas cores e fontes da marca, sem imagem gerada." },
 ];
 
@@ -300,7 +305,11 @@ export function buildImageInstruction(spec: CreativeSpec, referenceOrder: readon
       "Deixe a área reservada livre e plana (mesa/superfície limpa), com luz coerente para receber um dispositivo.",
     );
   } else {
-    lines.push("Traduza o conceito no estilo, com os elementos e a paleta da direção visual. Use fotografia crível se nenhum estilo for solicitado. Reserve as cores de apoio a pequenos detalhes quando o perfil pedir. Sem letras, números ou logotipos.");
+    lines.push(
+      `Traduza o conceito na linguagem "${spec.composition.label}" descrita acima, com os elementos e a paleta da direção visual (a direção diz O QUE mostrar; a composição diz COMO encenar).`,
+      "Direção de arte: um ponto focal forte, ângulo ou enquadramento incomum, luz com intenção e uma ideia visual que faça parar o scroll. Nada de banco de imagens genérico (pessoas sorrindo para a câmera, mesa de escritório arrumada sem propósito, aperto de mão).",
+      "Reserve as cores de apoio a pequenos detalhes quando o perfil pedir. Sem letras, números ou logotipos.",
+    );
   }
   lines.push("Evite: " + spec.avoid.join(", ") + ".");
   lines.push("Nenhum texto, letra, número, logotipo ou marca d'água na imagem — o texto é aplicado depois pelo renderizador.");

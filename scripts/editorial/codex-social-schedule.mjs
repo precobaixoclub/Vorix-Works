@@ -25,7 +25,10 @@ if (!["12", "19"].includes(hour) || !["schedule", "select", "validate", "reconci
 if (probeImage && mode !== "validate") throw new Error("Imagem de teste permitida apenas na validação");
 const slot = `${localTime().slice(0,10)}T${hour}:00`;
 if (mode === "schedule" && localTime() >= slot) throw new Error(`Horário ${slot} já passou`);
-if (mode === "publish" && (workspace !== cmkvWorkspaceId || localTime() < slot)) {
+// VORIX_EDITORIAL_IDEA (id ou código da pauta, só com uma marca indicada): refaz aquela pauta específica,
+// com chave própria — na CMKV pode publicar na hora (passando pela aprovação da marca, quando ligada).
+const onlyIdea = workspace && process.env.VORIX_EDITORIAL_IDEA ? process.env.VORIX_EDITORIAL_IDEA.trim() : undefined;
+if (mode === "publish" && (workspace !== cmkvWorkspaceId || (localTime() < slot && !onlyIdea))) {
   throw new Error("A recuperação imediata exige indicar a CMKV e um horário de hoje já encerrado");
 }
 const submitting = mode === "schedule" || mode === "publish";
@@ -162,9 +165,9 @@ async function sendToReview(workspaceId, entry) {
 }
 
 async function runWorkspace(workspaceId) {
-  const key = { workspaceId, slot };
+  const key = { workspaceId, slot, ...(onlyIdea ? { onlyIdea } : {}) };
   if (mode === "reconcile") return callContainer(backend, { ...key, action: "reconcile" });
-  const selection = await callContainer(backend, { ...key, action: "select", allowCreate: submitting, skipIdeaIds: reviewSkipIds(await readReviewQueue(), workspaceId) });
+  const selection = await callContainer(backend, { ...key, action: "select", allowCreate: submitting && !onlyIdea, skipIdeaIds: reviewSkipIds(await readReviewQueue(), workspaceId) });
   // Pautas bloqueadas (sem material obrigatório ou referência que não carrega): revisão manual, sem gerar.
   for (const item of selection.blocked ?? []) {
     if (item.ideaId) await sendToReview(workspaceId, { ideaId: item.ideaId, idea: item.idea, reason: `${item.reason}: ${(item.guidance ?? []).join(" ")}` });

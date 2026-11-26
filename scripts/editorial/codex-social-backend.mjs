@@ -321,7 +321,8 @@ async function run() {
   }
   const slot = request.slot;
   requireCondition(/^\d{4}-\d{2}-\d{2}T(?:12|19):00$/.test(slot), "Horário editorial inválido");
-  const idempotencyKey = `${prefix}:${slot}`;
+  // Pauta refeita à mão (onlyIdea) tem chave própria: não ocupa nem bloqueia o horário regular.
+  const idempotencyKey = request.onlyIdea ? `${prefix}:${slot}:refeita:${String(request.onlyIdea).slice(0, 80)}` : `${prefix}:${slot}`;
   const existing = await c.publicationRepository.getPlanByIdempotency({ ...scope, idempotencyKey: `social:${idempotencyKey}` });
   if (existing) return { existing: summarizes(await c.social.posts.get({ ...scope, postId: existing.id })) };
   if (mode === "report_failure") {
@@ -349,12 +350,17 @@ async function run() {
     const ideas = (await c.editorialIdeaRepository.listByWorkspace(workspaceId)).filter(idea => idea.status === "available" && (!idea.scheduledDate || idea.scheduledDate <= slot.slice(0,10)));
     const used = await db.query(`select source_artifacts->0->'payload'->>'editorialIdeaId' as id,
       source_artifacts->0->'payload'->'catalogProductCodes' as codes, source_artifacts->0->'payload'->'creative' as creative,
-      source_artifacts->0->'payload'->'imageUrls'->>0 as image from publication_plans
+      source_artifacts->0->'payload'->'imageUrls'->>0 as image, state from publication_plans
       where tenant_id=$1 and workspace_id=$2 and idempotency_key like $3 order by created_at desc`, [tenantId,workspaceId,`social:${prefix}:%`]);
-    const usedIds = new Set(used.rows.map(row => row.id));
+    // Publicação cancelada (recusada no WhatsApp ou sem resposta) devolve a pauta ao Bolsão — ela volta a ser
+    // candidata. Antes (26/11/2026) qualquer plano contava como "usado" e a pauta devolvida nunca mais saía.
+    const usedIds = new Set(used.rows.filter(row => row.state !== "cancelled").map(row => row.id));
     // Pautas na fila de revisão manual (reprovadas ou sem material) não voltam sozinhas para a automação.
     const reviewIds = new Set(Array.isArray(request.skipIdeaIds) ? request.skipIdeaIds.map(String) : []);
-    const candidates = ideas.filter(item => !usedIds.has(item.id) && !reviewIds.has(item.id) && ["single_image", "carousel"].includes(item.format)).sort(compareIdeas);
+    // Pauta indicada pelo operador (id ou código externo): só ela é considerada.
+    const only = request.onlyIdea ? String(request.onlyIdea) : undefined;
+    const candidates = ideas.filter(item => !usedIds.has(item.id) && !reviewIds.has(item.id) && ["single_image", "carousel"].includes(item.format)
+      && (!only || item.id === only || item.externalId === only)).sort(compareIdeas);
     const creative = brandConfig.creative ?? { businessKind: "unknown" };
     const { rows: [brandRow] } = await db.query("select profile from brand_visual_profiles where workspace_id=$1", [workspaceId]);
     const photos = creative.businessKind === "physical_products" ? await catalogPhotos() : [];
@@ -380,7 +386,7 @@ async function run() {
       const chosen = await tryIdea(idea);
       if (chosen) return chosen;
     }
-    if (workspaceId === cmkvWorkspaceId) {
+    if (workspaceId === cmkvWorkspaceId && !only) {
       // CMKV sem pauta viável: cria (ou retoma) a pauta automática do horário, com fotos oficiais do catálogo.
       const { idea } = await selectCmkvIdea({ slot, ideas, candidates: candidates.filter(item => item.externalId.startsWith("CMKV-AUTO-")), used: used.rows, allowCreate: request.allowCreate });
       const chosen = idea && await tryIdea(idea);

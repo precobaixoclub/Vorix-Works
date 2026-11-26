@@ -10,6 +10,7 @@ import { classifyObjectKeyOwner, parseOwnedObjectUrl, signForExternalPublication
 import { PRODUCT_THEME_DEMANDS, planEditorialCreative, rankProductsForIdea, rotationOrder, screensForIdea } from "./dist/application/creative-engine/plan-editorial-creative.js";
 import { COMPOSITION_ARCHETYPES } from "./dist/application/creative-engine/creative-spec.js";
 import { redactSecrets } from "./dist/application/creative-engine/creative-trace.js";
+import { rankIdeasForSlot } from "./dist/application/creative-engine/editorial-calendar.js";
 import { applyProductMemory, buildCreativeMemory, feedbackEventsFromRows, memoryGuidance } from "./dist/application/creative-engine/creative-memory.js";
 import { verifyApprovedArt } from "./dist/application/creative-engine/publication-guard.js";
 import { catalogPhotoSignals } from "./dist/infrastructure/media/creative/catalog-photo-signals.js";
@@ -125,11 +126,23 @@ async function brandFor(workspace, config, profile) {
   return { profile, name: workspace.name, logos, logoConfig: config?.logo ?? {} };
 }
 
-function compareIdeas(a, b) {
-  return (a.scheduledDate ?? "9999").localeCompare(b.scheduledDate ?? "9999")
-    || Number(b.priority === "high") - Number(a.priority === "high")
-    || (a.suggestedDate ?? "9999").localeCompare(b.suggestedDate ?? "9999")
-    || a.createdAt.localeCompare(b.createdAt) || a.externalId.localeCompare(b.externalId);
+/**
+ * Peças desta marca já publicadas ou agendadas perto do horário (14 dias para trás e tudo o que está à frente),
+ * de qualquer origem — piloto ou publicação manual. Base do calendário inteligente.
+ */
+async function nearbyPieces(allIdeas) {
+  const byId = new Map(allIdeas.map(idea => [idea.id, idea]));
+  const { rows } = await db.query(`select source_artifacts->0->'payload'->>'editorialIdeaId' as idea_id,
+      case when jsonb_typeof(source_artifacts->0->'payload'->'imageUrls')='array' then jsonb_array_length(source_artifacts->0->'payload'->'imageUrls') else 0 end as images,
+      coalesce(published_at, scheduled_at, created_at) as at
+    from publication_plans where tenant_id=$1 and workspace_id=$2 and state not in ('cancelled','failed','superseded')
+      and coalesce(published_at, scheduled_at, created_at) > now() - interval '14 days'
+    order by at desc limit 30`, [tenantId, workspaceId]);
+  return rows.map(row => {
+    const idea = row.idea_id ? byId.get(row.idea_id) : undefined;
+    return { ...(idea ? { ideaId: idea.id, title: idea.title, category: idea.category, approach: idea.approach, text: idea.keyMessage } : {}),
+      format: idea?.format ?? (Number(row.images) > 1 ? "carousel" : "single_image"), at: new Date(row.at).toISOString() };
+  });
 }
 
 async function cmkvCatalogPhotos() {
@@ -480,7 +493,8 @@ async function run() {
   requireCondition(selected.every(account => account?.publishable), "Conta social da marca indisponível");
 
   if (mode === "select") {
-    const ideas = (await c.editorialIdeaRepository.listByWorkspace(workspaceId)).filter(idea => idea.status === "available" && (!idea.scheduledDate || idea.scheduledDate <= slot.slice(0,10)));
+    const allIdeas = await c.editorialIdeaRepository.listByWorkspace(workspaceId);
+    const ideas = allIdeas.filter(idea => idea.status === "available" && (!idea.scheduledDate || idea.scheduledDate <= slot.slice(0,10)));
     const used = await db.query(`select source_artifacts->0->'payload'->>'editorialIdeaId' as id,
       source_artifacts->0->'payload'->'catalogProductCodes' as codes, source_artifacts->0->'payload'->'creative' as creative,
       source_artifacts->0->'payload'->'imageUrls'->>0 as image, state from publication_plans
@@ -495,8 +509,13 @@ async function run() {
     // Pauta com refação aberta (reprovada no WhatsApp com motivo) só sai pela própria refação.
     const { rows: redoing } = await db.query(`select idea_id from publication_redo_requests where workspace_id=$1 and status in ('pending','running')`, [workspaceId]);
     const redoIds = new Set(redoing.map(row => row.idea_id));
-    const candidates = ideas.filter(item => !usedIds.has(item.id) && !reviewIds.has(item.id) && ["single_image", "carousel"].includes(item.format)
-      && (only ? item.id === only || item.externalId === only : !redoIds.has(item.id))).sort(compareIdeas).map(withTextOverride);
+    const eligible = ideas.filter(item => !usedIds.has(item.id) && !reviewIds.has(item.id) && ["single_image", "carousel"].includes(item.format)
+      && (only ? item.id === only || item.externalId === only : !redoIds.has(item.id)));
+    // Calendário inteligente: data marcada pelo cliente na frente; entre as demais, variedade em relação ao que
+    // já foi ao ar ou está agendado perto do horário (categoria, abordagem, formato, assunto). Nada é descartado.
+    const ranking = rankIdeasForSlot(eligible, { slot, recent: await nearbyPieces(allIdeas) });
+    const candidates = ranking.map(entry => entry.idea).map(withTextOverride);
+    const calendar = ranking.slice(0, 3).map(entry => ({ idea: entry.idea.externalId, score: Number(entry.score.toFixed(2)), reasons: entry.reasons }));
     const creative = brandConfig.creative ?? { businessKind: "unknown" };
     const { rows: [brandRow] } = await db.query("select profile from brand_visual_profiles where workspace_id=$1", [workspaceId]);
     const photos = creative.businessKind === "physical_products" ? await catalogPhotos() : [];
@@ -521,7 +540,7 @@ async function run() {
         return undefined;
       }
       if (planned.blocked) { blocked.push({ ideaId: idea.id, idea: idea.externalId, mode: planned.plan.mode, reason: "REFERENCE_MISSING", guidance: planned.plan.blockers.filter(item => item.blocking).map(item => item.message) }); return undefined; }
-      return { idea, brand: await brandFor(workspace, brandConfig, context.profile), plan: planned.plan, assets: planned.assets, trace: { references: planned.traced }, productCodes: planned.productCodes, history: context.history, archetypes: ARCHETYPES, blocked,
+      return { idea, brand: await brandFor(workspace, brandConfig, context.profile), plan: planned.plan, assets: planned.assets, trace: { references: planned.traced }, productCodes: planned.productCodes, history: context.history, archetypes: ARCHETYPES, blocked, calendar,
         ...(context.memory ? { memory: memorySummary(context.memory) } : {}) };
     };
     for (const idea of candidates.filter(item => !item.externalId.startsWith("CMKV-AUTO-"))) {
@@ -534,7 +553,7 @@ async function run() {
       const chosen = idea && await tryIdea(idea);
       if (chosen) return chosen;
     }
-    return { brand: workspace.name, empty: true, blocked, videoIdeas: ideas.filter(item => item.format === "video").length };
+    return { brand: workspace.name, empty: true, blocked, calendar, videoIdeas: ideas.filter(item => item.format === "video").length };
   }
 
   // Publicar na hora: recuperação da CMKV ou pauta refeita/indicada (passa pela aprovação da marca, quando ligada).

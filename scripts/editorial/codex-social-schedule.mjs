@@ -250,11 +250,11 @@ async function runWorkspace(workspaceId) {
   }
   if (redoJob && (selection.existing || selection.empty)) throw new Error(selection.blocked?.[0]?.guidance?.[0] ?? "A pauta não pôde ser refeita");
   if (selection.existing || selection.empty) return selection;
-  const { idea, brand, plan, assets, history, archetypes, trace, productCodes, blocked, memory } = selection;
+  const { idea, brand, plan, assets, history, archetypes, trace, productCodes, blocked, memory, calendar } = selection;
   if (mode === "select") {
     return { brand: brand.name, idea: idea.externalId, title: idea.title, mode: plan.mode, modeReasons: plan.modeReasons, autoSelected: plan.autoSelected,
       screens: plan.screens.map(item => ({ archetype: item.spec.composition.archetype, operation: item.spec.composition.operation, references: item.transmitted.map(ref => `${ref.role}:${ref.id}`) })),
-      excluded: plan.excluded, blocked, slot, ...(memory ? { memory } : {}) };
+      excluded: plan.excluded, blocked, slot, ...(calendar ? { calendar } : {}), ...(memory ? { memory } : {}) };
   }
   const jobDir = await mkdtemp(join(agentHome, "jobs", "editorial-"));
   const user = (await readFile("/etc/passwd", "utf8")).split("\n").find(line => line.startsWith("vorix-codex:"))?.split(":");
@@ -349,6 +349,8 @@ async function runWorkspace(workspaceId) {
     const creative = {
       mode: plan.mode, modeReasons: plan.modeReasons, feature: plan.feature, autoSelected: plan.autoSelected, excluded: plan.excluded,
       archetypes: qualityReports.map(item => item.archetype), fingerprints, approvals: screenApprovals(results), trace: { version: 1, references: trace.references, operations },
+      // Por que esta pauta foi a escolhida do Bolsão (calendário inteligente).
+      ...(calendar?.[0] ? { calendar: calendar[0] } : {}),
       // Aprendizado aplicado nesta peça (para auditar o que a memória mudou).
       ...(memory?.lessons?.length || Object.keys(memory?.archetypeBias ?? {}).length ? { memory: { lessons: memory.lessons.map(item => item.category), archetypeBias: memory.archetypeBias, avoidProducts: memory.avoidProducts } } : {}),
     };

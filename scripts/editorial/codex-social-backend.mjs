@@ -338,8 +338,17 @@ async function run() {
   const slot = request.slot;
   requireCondition(/^\d{4}-\d{2}-\d{2}T(?:12|19):00$/.test(slot), "Horário editorial inválido");
   // Pauta refeita à mão (onlyIdea) tem chave própria: não ocupa nem bloqueia o horário regular.
-  const idempotencyKey = request.onlyIdea ? `${prefix}:${slot}:refeita:${String(request.onlyIdea).slice(0, 80)}` : `${prefix}:${slot}`;
-  const existing = await c.publicationRepository.getPlanByIdempotency({ ...scope, idempotencyKey: `social:${idempotencyKey}` });
+  // Tentativa anterior cancelada (recusada no WhatsApp) não trava a próxima: usa a chave seguinte (:2, :3…).
+  let idempotencyKey = `${prefix}:${slot}`;
+  let existing = await c.publicationRepository.getPlanByIdempotency({ ...scope, idempotencyKey: `social:${idempotencyKey}` });
+  if (request.onlyIdea) {
+    const base = `${prefix}:${slot}:refeita:${String(request.onlyIdea).slice(0, 80)}`;
+    for (let attempt = 1; attempt <= 20; attempt += 1) {
+      idempotencyKey = attempt === 1 ? base : `${base}:${attempt}`;
+      existing = await c.publicationRepository.getPlanByIdempotency({ ...scope, idempotencyKey: `social:${idempotencyKey}` });
+      if (existing?.state !== "cancelled") break;
+    }
+  }
   if (existing) return { existing: summarizes(await c.social.posts.get({ ...scope, postId: existing.id })) };
   if (mode === "report_failure") {
     if (!request.code || !["codex_auth", "preparation", "quality_review"].includes(request.code)) throw new Error("Categoria de falha editorial inválida");

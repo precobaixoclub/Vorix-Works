@@ -716,3 +716,11 @@ test("conceitual: várias linguagens de imagem (cena, close-up, metáfora, 3D); 
   assert.ok(operations.every((operation) => operation === "ai_generation"), `telas: ${operations}`);
   assert.ok(new Set(plan.screens.map((item) => item.spec.composition.archetype)).size >= 3, "linguagens variadas no carrossel");
 });
+
+test("linguagem que a marca não usa (3D numa marca de casamento) nunca é escolhida, nem repetida no fim do carrossel", () => {
+  const plan = planEditorialCreative({ workspaceId: "ws", brandName: "RAA", businessKind: "services", ideaReferences: [], history: [], allowAi: true, avoidArchetypes: ["concept_3d"],
+    idea: IDEA({ title: "Seu site de casamento digital e inovador", format: "carousel", carouselScript: [1, 2, 3, 4, 5].map((n) => ({ headline: String(n) })) }) });
+  const archetypes = plan.screens.map((item) => item.spec.composition.archetype);
+  assert.ok(!archetypes.includes("concept_3d"), `linguagens: ${archetypes}`);
+  assert.ok(plan.screens.every((item) => item.spec.composition.operation === "ai_generation" && !item.spec.composition.alternatives.includes("concept_3d")));
+});

@@ -349,7 +349,7 @@ async function runWorkspace(workspaceId) {
       archetypes: qualityReports.map(item => item.archetype), fingerprints, approvals: screenApprovals(results), trace: { version: 1, references: trace.references, operations },
     };
     return await submitArt(key, idea, brand, final, qualityReports, { creative, productCodes,
-      ...(redoJob ? { redoJobId: redoJob.id, ...(redo?.caption ? { captionOverride: redo.caption } : {}) } : {}) });
+      ...(redoJob ? { redoJobId: redoJob.id, textOverride: redo?.text, ...(redo?.caption ? { captionOverride: redo.caption } : {}) } : {}) });
   } finally {
     await rm(jobDir, { recursive: true, force: true });
   }

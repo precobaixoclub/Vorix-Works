@@ -85,6 +85,8 @@ export type ChooseCompositionInput = {
   allowAi: boolean;
   /** Arquétipos vetados nesta tentativa (ex.: reprovados por repetição). */
   exclude?: readonly string[];
+  /** Linguagens que a marca não usa (ex.: 3D tecnológico numa marca de casamento) — nunca escolhidas. */
+  avoid?: readonly string[];
   /** Semente estável (id da pauta) para desempate sem aleatoriedade. */
   seed: string;
 };
@@ -100,7 +102,7 @@ function stableHash(value: string): number {
 export function chooseComposition(input: ChooseCompositionInput): CompositionChoice {
   const text = ideaText(input.idea);
   const variants = (input.references.primary ? 1 : 0) + input.references.variants.length;
-  const available = COMPOSITION_ARCHETYPES.filter((item) => item.mode === input.mode && (
+  const available = COMPOSITION_ARCHETYPES.filter((item) => item.mode === input.mode && !(input.avoid ?? []).includes(item.id) && (
     input.presentation === "fashion_campaign" && input.mode === "physical_product"
       ? ["fashion_poster", "product_lifestyle", "variant_lineup"].includes(item.id)
       : item.id !== "fashion_poster"
@@ -195,6 +197,8 @@ export type BuildCreativeSpecInput = {
   seriesKey?: string;
   seriesArchetype?: string;
   excludeArchetypes?: readonly string[];
+  /** Linguagens que a marca não usa. */
+  avoidArchetypes?: readonly string[];
 };
 
 const PRODUCT_IMMUTABLE = ["forma e modelagem da peça", "cor comercial", "estampa (desenho, posição e proporção)", "logotipos e etiquetas visíveis", "variante anunciada"];
@@ -207,7 +211,7 @@ export function buildCreativeSpec(input: BuildCreativeSpecInput): CreativeSpec {
   const visualDirection = direction === "Seguir a identidade visual da marca." || direction === "Usar as imagens de referência da ideia." ? undefined : direction;
   const choice = chooseComposition({
     mode: decision.mode, presentation: input.brand.presentation, idea: input.idea, references, history: input.history, seriesKey: input.seriesKey,
-    seriesArchetype: input.seriesArchetype, allowAi: input.allowAi, exclude: input.excludeArchetypes, seed: input.idea.id,
+    seriesArchetype: input.seriesArchetype, allowAi: input.allowAi, exclude: input.excludeArchetypes, avoid: input.avoidArchetypes, seed: input.idea.id,
   });
   const primary = references.primary;
   const subject: CreativeSpec["subject"] = decision.mode === "physical_product"

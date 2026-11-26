@@ -100,6 +100,8 @@ export type PlanEditorialCreativeInput = {
   editorialProducts?: readonly CatalogProductForPlan[];
   history: readonly VisualFingerprint[];
   allowAi: boolean;
+  /** Linguagens que a marca não usa (ex.: "concept_3d" numa marca de casamento). */
+  avoidArchetypes?: readonly string[];
   explicitMode?: VisualMode;
 };
 
@@ -196,7 +198,7 @@ export function planEditorialCreative(input: PlanEditorialCreativeInput): Editor
     // Carrossel: cada tela com composição diferente (sem repetir a anterior); esgotou, recomeça.
     const spec = buildCreativeSpec({
       workspaceId: input.workspaceId, brand: { name: input.brandName, identity: input.brandIdentity, presentation: input.presentation }, idea: { ...input.idea, objective: input.idea.commercialObjective }, screen,
-      decision, references: screenReferences, history: input.history, allowAi, seriesKey, excludeArchetypes: used,
+      decision, references: screenReferences, history: input.history, allowAi, seriesKey, excludeArchetypes: used, avoidArchetypes: input.avoidArchetypes,
     });
     if (used.includes(spec.composition.archetype)) used.length = 0;
     used.push(spec.composition.archetype);

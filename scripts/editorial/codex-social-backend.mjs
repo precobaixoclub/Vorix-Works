@@ -63,7 +63,8 @@ const VORIX_FEATURES = [
 // logo.treatment: auto|none|shadow|halo|plate (auto = sem caixa, sombra suave só se faltar contraste);
 // logo.scale: 0.6–1.6. Sem configuração, vale o que as notas do Perfil da Marca dizem, senão o automático.
 const brands = new Map([
-  ["workspace-mwmumsxd-fmvh3h", { accounts: ["soc-mwmvbruu-sz6rkd12", "soc-mwmvbryk-dthxstki"], logo: {}, creative: { businessKind: "services" } }],
+  // Rumo ao Altar (casamento): sem a linguagem "3D tecnológico" — foge do clima romântico da marca.
+  ["workspace-mwmumsxd-fmvh3h", { accounts: ["soc-mwmvbruu-sz6rkd12", "soc-mwmvbryk-dthxstki"], logo: {}, creative: { businessKind: "services", avoidArchetypes: ["concept_3d"] } }],
   ["workspace-mscc9pi2-jkvwbo", { accounts: ["soc-mwk1mgoy-xhcr2duq", "soc-mwk1my6f-lbham9eo"], logo: {}, creative: { businessKind: "software", features: VORIX_FEATURES } }],
   ["workspace-mwmu8kgf-uhe66l", { accounts: ["soc-mwmu9f8k-kj2covm2", "soc-mwmugp3j-hwva5nax"], logo: {}, creative: { businessKind: "unknown" } }],
   [cmkvWorkspaceId, { accounts: ["soc-mwkwg3lc-zj3g4xyk", "soc-mwmuj7ud-3py2gdyo"], logo: {}, creative: { businessKind: "physical_products", products: cmkvEditorialProducts, productThemes: cmkvProductThemes, blockedProducts: cmkvThirdPartyBrandProducts, presentation: "fashion_campaign" } }],
@@ -303,7 +304,7 @@ async function planIdea(idea, creative, context) {
   }
   const plan = planEditorialCreative({
     workspaceId, brandName: context.brandName, brandIdentity: context.profile?.identity, presentation: creative.presentation, businessKind: creative.businessKind, softwareFeatures: creative.features, idea,
-    ideaReferences, libraryCaptures: libraryCandidates, editorialProducts, history: context.history, allowAi: true,
+    ideaReferences, libraryCaptures: libraryCandidates, editorialProducts, history: context.history, allowAi: true, avoidArchetypes: creative.avoidArchetypes,
   });
   const assets = {};
   const traced = [];
@@ -561,6 +562,17 @@ async function run() {
   await db.query(`update editorial_ideas set status=$4,status_changed_at=now(),updated_at=now()
     where id=$1 and workspace_id=$2 and tenant_id=$3 and status='available'`,
   [idea.id, workspaceId, tenantId, publishedOnBoth(post) ? "published" : "approved"]);
+  // Refação que deu certo: o texto reescrito pelo Codex fica gravado na pauta do Bolsão — se esta versão também
+  // for cancelada, a pauta não volta com a frase reprovada (26/11/2026: "Peito ou costas?" voltaria às 19h).
+  if (typeof request.redoJobId === "string" && request.textOverride) {
+    const rewritten = withTextOverride(idea);
+    const captionOverride = typeof request.captionOverride === "string" && request.captionOverride.trim() ? request.captionOverride.trim().slice(0, 2200) : null;
+    if (rewritten !== idea || captionOverride) {
+      await db.query(`update editorial_ideas set key_message=$4, creative_prompt=coalesce($5, creative_prompt), carousel_script=coalesce($6::jsonb, carousel_script), caption=coalesce($7, caption), updated_at=now()
+        where id=$1 and workspace_id=$2 and tenant_id=$3`,
+      [idea.id, workspaceId, tenantId, rewritten.keyMessage, rewritten.creativePrompt ?? null, rewritten !== idea && rewritten.carouselScript ? JSON.stringify(rewritten.carouselScript) : null, captionOverride]);
+    }
+  }
   return { [publishNow ? "submitted" : "scheduled"]: summarizes(post), idea: idea.externalId, slot };
 }
 

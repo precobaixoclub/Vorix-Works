@@ -7,7 +7,7 @@ import { resolveEffectiveEntitlements } from "./dist/application/billing/entitle
 import { parseManualEditorialIdea } from "./dist/domain/editorial/editorial-idea.model.js";
 import { hasPermission } from "./dist/domain/identity/identity.model.js";
 import { classifyObjectKeyOwner, parseOwnedObjectUrl, signForExternalPublication } from "./dist/shared/utils/object-url-signing.js";
-import { planEditorialCreative, rankProductsForIdea, rotationOrder } from "./dist/application/creative-engine/plan-editorial-creative.js";
+import { PRODUCT_THEME_DEMANDS, planEditorialCreative, rankProductsForIdea, rotationOrder } from "./dist/application/creative-engine/plan-editorial-creative.js";
 import { COMPOSITION_ARCHETYPES } from "./dist/application/creative-engine/creative-spec.js";
 import { redactSecrets } from "./dist/application/creative-engine/creative-trace.js";
 import { verifyApprovedArt } from "./dist/application/creative-engine/publication-guard.js";
@@ -17,20 +17,37 @@ import { dHash, sha256Prefix, siteCaptureScore } from "./dist/infrastructure/med
 // Loaded on stdin from the host, in the Vorix API container. The renderer has no DB access.
 const tenantId = "tenant-vorix";
 const cmkvWorkspaceId = "workspace-cee-prelaunch-mv47cmfh";
-// Estampas selecionadas do catálogo da CMKV para pautas criadas automaticamente.
-const cmkvEditorialProducts = ["000033", "000035", "000037", "000039", "000043", "000044", "000047", "000048"];
-// Do que cada estampa fala (conferido nas fotos do catálogo em 26/11/2026). O planejador escolhe a peça
-// que combina com o assunto da pauta; ocasião sem peça (academia, praia, frio, western) vai para revisão.
+// Estampas da CMKV — conferidas uma a uma nas fotos do catálogo em 26/11/2026 (o catálogo só diz "Camisa").
+// Do que cada estampa fala: o planejador escolhe a peça que combina com o assunto da pauta. Temas de
+// ocasião (fitness, praia, western, natal…) fazem a peça sair só em pauta daquela ocasião.
 const cmkvProductThemes = {
+  "000028": ["western", "country", "rodeio*", "fazenda", "rancho", "ranch", "boi", "longhorn"],
+  "000032": ["girassol", "girassois", "mudanca", "mudar", "inspira*", "proposito", "change", "flor*"],
   "000033": ["flor*", "floral", "natureza", "primavera", "supera*", "resilien*", "recomec*", "delicad*"],
+  "000034": ["fe", "deus", "god", "lua", "luas", "gratidao", "espiritual*", "abencoad*"],
   "000035": ["coracao", "coracoes", "amor", "amar", "carinho", "afeto", "romantic*", "minimalis*"],
+  "000036": ["amor", "amar", "coracao", "romantic*", "carinho", "namorad*", "apaixonad*"],
   "000037": ["fe", "deus", "gratidao", "grata", "espiritual*", "oracao", "abencoad*", "bencao"],
+  "000038": ["deus", "fe", "gratidao", "espiritual*", "abencoad*", "testemunho"],
   "000039": ["borboleta*", "leveza", "liberdade", "transforma*", "delicad*"],
+  "000040": ["praia", "pe na areia", "verao", "drink*", "coco", "chope", "ferias", "litoral"],
+  "000041": ["panda*", "fofo*", "fofura", "divertid*", "amizade", "amigos", "amigas", "turma", "bichinho*"],
+  "000042": ["paris", "viage*", "viajar", "torre eiffel", "franca", "sonho*", "turismo"],
   "000043": ["limao", "limoes", "limonada", "verao", "refrescan*", "fruta*", "piquenique", "alegria", "divertid*"],
   "000044": ["amor", "love", "romantic*", "namorad*", "casal", "coracao", "coracoes"],
+  "000045": ["fitness", "treino*", "academia", "malha*", "capivara", "motiva*", "foco", "disciplina", "supera*", "humor", "engracad*"],
+  "000046": ["natal", "natalin*", "papai noel", "fim de ano", "humor", "trocadilho"],
   "000047": ["amor", "love", "coracao", "coracoes", "onca", "animal print", "atitude", "ousad*"],
   "000048": ["borboleta*", "autoestima", "seja voce", "be yourself", "autentic*", "essencia", "transforma*", "rosa"],
+  "000049": ["borboleta*", "transforma*", "transforme", "mudanca", "recomec*", "renova*", "rosa"],
+  "000050": ["coracao", "coracoes", "amor", "carinho", "afeto"],
+  "000057": ["pet", "pets", "cachorro*", "cao", "caes", "gato*", "pata", "patinha*", "bicho*", "adocao"],
 };
+// Liberadas para as pautas automáticas: todas as estampas próprias acima.
+const cmkvEditorialProducts = Object.keys(cmkvProductThemes);
+// Logo de outra marca (Levi's, Adidas, Nike, Hugo Boss, Calvin Klein, Lacoste, Puma…): ficam no site, mas
+// NUNCA aparecem em post — nem no rodízio, nem anexadas à pauta (risco de denúncia de marca e queda do post).
+const cmkvThirdPartyBrandProducts = ["000001", "000002", "000003", "000004", "000005", "000006", "000007", "000010", "000011", "000012", "000013", "000014", "000015", "000016", "000017", "000018", "000019", "000020", "000021", "000022", "000023", "000024", "000025", "000026", "000027", "000029", "000030", "000031", "000051", "000052", "000053", "000054", "000055", "000056"];
 // Funcionalidades da Vorix que as peças podem demonstrar (a captura real vem da Biblioteca da marca).
 const VORIX_FEATURES = [
   { key: "atendimento_whatsapp", label: "Atendimento pelo WhatsApp", keywords: ["whatsapp", "atendimento", "mensagens", "responder", "caixa de entrada"] },
@@ -49,7 +66,7 @@ const brands = new Map([
   ["workspace-mwmumsxd-fmvh3h", { accounts: ["soc-mwmvbruu-sz6rkd12", "soc-mwmvbryk-dthxstki"], logo: {}, creative: { businessKind: "services" } }],
   ["workspace-mscc9pi2-jkvwbo", { accounts: ["soc-mwk1mgoy-xhcr2duq", "soc-mwk1my6f-lbham9eo"], logo: {}, creative: { businessKind: "software", features: VORIX_FEATURES } }],
   ["workspace-mwmu8kgf-uhe66l", { accounts: ["soc-mwmu9f8k-kj2covm2", "soc-mwmugp3j-hwva5nax"], logo: {}, creative: { businessKind: "unknown" } }],
-  [cmkvWorkspaceId, { accounts: ["soc-mwkwg3lc-zj3g4xyk", "soc-mwmuj7ud-3py2gdyo"], logo: {}, creative: { businessKind: "physical_products", products: cmkvEditorialProducts, productThemes: cmkvProductThemes, presentation: "fashion_campaign" } }],
+  [cmkvWorkspaceId, { accounts: ["soc-mwkwg3lc-zj3g4xyk", "soc-mwmuj7ud-3py2gdyo"], logo: {}, creative: { businessKind: "physical_products", products: cmkvEditorialProducts, productThemes: cmkvProductThemes, blockedProducts: cmkvThirdPartyBrandProducts, presentation: "fashion_campaign" } }],
 ]);
 const timezone = "America/Sao_Paulo";
 const prefix = "codex-editorial-v1";
@@ -165,7 +182,9 @@ async function selectCmkvIdea({ slot, ideas, candidates, used, allowCreate }) {
   }
   if (!allowCreate) return {};
   requireCondition(!current, "A pauta automática deste horário não tem fotos oficiais válidas");
-  const products = new Map(cmkvEditorialProducts.map(code => [code, []]));
+  // Pauta automática de vitrine (comparação de cores): só estampas de uso geral — nunca peça de ocasião (Natal, academia…).
+  const occasions = new Set(PRODUCT_THEME_DEMANDS.map(demand => demand.theme));
+  const products = new Map(cmkvEditorialProducts.filter(code => !cmkvProductThemes[code].some(theme => occasions.has(theme))).map(code => [code, []]));
   for (const photo of photos) {
     const group = products.get(photo.code);
     if (group && !group.some(entry => entry.color === photo.color || entry.url === photo.url)) group.push(photo);
@@ -242,6 +261,8 @@ async function planIdea(idea, creative, context) {
   const urls = new Map();
   for (const url of idea.referenceImages ?? []) {
     const photo = context.photosByUrl.get(url);
+    // Camiseta com logo de outra marca nunca vai para post, mesmo anexada à pauta: o planejador escolhe uma estampa própria.
+    if (photo && creative.blockedProducts?.includes(photo.code)) continue;
     const id = photo ? `produto:${photo.code}:${variantName(photo.color)}` : `pauta:${sha256Prefix(Buffer.from(url))}`;
     urls.set(id, url);
     const bytes = await ownedBytes(url);

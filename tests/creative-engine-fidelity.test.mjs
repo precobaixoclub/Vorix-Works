@@ -149,6 +149,10 @@ test("planejamento: a peça escolhida combina com o assunto da pauta; ocasião s
   assert.equal(withGym.blocked, false);
   assert.equal(withGym.resolved.primary.productCode, "000099");
   assert.deepEqual(rankProductsForIdea(products, IDEA({ title: "Leveza de borboleta" })).map((item) => item.code), ["000039", "000035", "000037"]);
+  // Peça de ocasião (academia, Natal…) não entra no rodízio de pauta comum, mesmo sendo a primeira da fila.
+  const occasion = [{ code: "000045", themes: ["fitness", "treino*"], photos: photos("000045") }, { code: "000046", themes: ["natal"], photos: photos("000046") }, ...products];
+  assert.equal(planEditorialCreative({ ...base, idea: IDEA({ title: "Combina sem copiar" }), editorialProducts: occasion }).resolved.primary.productCode, "000035");
+  assert.equal(planEditorialCreative({ ...base, idea: IDEA({ title: "Look para a ceia de Natal" }), editorialProducts: occasion }).resolved.primary.productCode, "000046");
 });
 
 test("composição: arquétipos variam com o histórico e entre telas do carrossel; sem IA autorizada, só composição controlada", () => {

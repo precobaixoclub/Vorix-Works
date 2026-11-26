@@ -37,7 +37,7 @@ export type PlanScreen = { headline: string; body?: string; cta?: string };
 
 /**
  * Produto do catálogo disponível para a peça (fotos por variante). `themes`: do que a estampa fala
- * (palavras sem acento; terminadas em "*" valem como prefixo) e os temas de uso (`fitness`, `praia`, `inverno`, `western`).
+ * (palavras sem acento; terminadas em "*" valem como prefixo) e os temas de ocasião (`fitness`, `praia`, `inverno`, `western`, `natal`).
  */
 export type CatalogProductForPlan = { code: string; themes?: readonly string[]; photos: ReadonlyArray<{ id: string; variantLabel: string; siteCaptureScore?: number; photoKind?: "studio" | "scene" }> };
 
@@ -50,6 +50,7 @@ export const PRODUCT_THEME_DEMANDS: ReadonlyArray<{ theme: string; label: string
   { theme: "praia", label: "praia", pattern: /\b(praia\w*|pe na areia|litoral|piscina)\b/ },
   { theme: "inverno", label: "frio/inverno", pattern: /\b(inverno|frio|moletom|casaco\w*)\b/ },
   { theme: "western", label: "estilo western/country", pattern: /\b(western|texas|cowboy\w*|cowgirl\w*|country|rodeio\w*|faroeste|velho oeste|o oeste)\b/ },
+  { theme: "natal", label: "Natal", pattern: /\b(natal|natalin\w*|papai noel|noel|ceia)\b/ },
 ];
 
 const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -67,12 +68,16 @@ export function matchedProductThemes(themes: readonly string[] | undefined, text
 
 /**
  * Ordena as peças para a pauta: só as que atendem à ocasião pedida (academia, praia…); entre elas, a que
- * mais fala do assunto da pauta primeiro; empate mantém a ordem recebida (rodízio).
+ * mais fala do assunto da pauta primeiro; empate mantém a ordem recebida (rodízio). Peça de ocasião
+ * (camiseta de academia, de praia, de Natal…) só entra em pauta daquela ocasião — nunca no rodízio geral.
  */
 export function rankProductsForIdea<T extends { themes?: readonly string[] }>(products: readonly T[], idea: EditorialIdeaForPlan): T[] {
   const text = ideaText(idea);
   const demands = themeDemands(text);
-  const fitting = products.filter((product) => demands.every((demand) => product.themes?.includes(demand.theme)));
+  const asked = new Set(demands.map((demand) => demand.theme));
+  const occasions = (product: T) => PRODUCT_THEME_DEMANDS.filter((demand) => product.themes?.includes(demand.theme)).map((demand) => demand.theme);
+  const fitting = products.filter((product) => demands.every((demand) => product.themes?.includes(demand.theme))
+    && occasions(product).every((theme) => asked.has(theme)));
   return fitting
     .map((product, index) => ({ product, index, score: matchedProductThemes(product.themes, text).length }))
     .sort((a, b) => b.score - a.score || a.index - b.index)

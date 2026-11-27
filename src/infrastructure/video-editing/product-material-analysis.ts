@@ -154,3 +154,11 @@ export async function trimLogo(file: string, output: string): Promise<{ width: n
   if (result.exitCode !== 0) throw new Error("falha ao recortar a logo");
   return { width: cw, height: ch, aspect: cw / ch };
 }
+
+/** Tom da logo (média de luz dos pixels opacos): escura → assinatura em fundo claro, e vice-versa. */
+export async function logoTone(file: string): Promise<"dark" | "light"> {
+  const data = await decodeRaw(file, "scale=96:-2,format=rgba", "rgba");
+  let sum = 0, n = 0;
+  for (let i = 0; i + 3 < data.length; i += 4) if (data[i + 3]! > 128) { sum += 0.2126 * data[i]! + 0.7152 * data[i + 1]! + 0.0722 * data[i + 2]!; n += 1; }
+  return n && sum / n < 110 ? "dark" : "light";
+}

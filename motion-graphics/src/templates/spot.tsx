@@ -34,6 +34,8 @@ export type SpotShot = {
   events?: number[];
   /** Montagem da estampa: retângulo de tela onde a estampa pousa (= posição dela no plano seguinte). */
   land?: Frac;
+  /** Palavras faladas (quadros locais): a legenda acende no tempo da narração. */
+  words?: { word: string; start: number; end: number }[];
   /** Colchetes de foco na estampa (plano de produto). */
   focus?: boolean;
   /** Cartão final: fotos em cartões no rodapé. */
@@ -47,6 +49,8 @@ export type SpotProps = Common & {
   cutout?: SpotCutout;
   logo?: string;
   logoAspect?: number;
+  /** Tom da logo oficial (escura/clara): a assinatura escolhe o fundo que a mantém legível, sem recolorir. */
+  logoTone?: "dark" | "light";
   palette: { dark: string; light: string; accent: string; ink: string };
   brandLabel?: string;
   /** Ênfase das palavras *marcadas*: cor de destaque ou bloco de destaque atrás da palavra. */
@@ -161,15 +165,18 @@ const Lines: React.FC<{ ctx: Ctx; text: SpotText; start: number; end: number; in
 };
 
 /** Legenda em pílula: as palavras acendem na ordem da leitura (retenção). */
-const CaptionPill: React.FC<{ ctx: Ctx; text: string; start: number; end: number; y?: number }> = ({ ctx, text, start, end, y }) => {
+const CaptionPill: React.FC<{ ctx: Ctx; text: string; start: number; end: number; y?: number; spoken?: { start: number; end: number }[] }> = ({ ctx, text, start, end, y, spoken }) => {
   const f = useCurrentFrame();
   const words = text.replace(/\*/g, "").split(/\s+/).filter(Boolean);
   const pin = progress(f, start, start + 10, ctx.m.out) * (1 - progress(f, end - 8, end, easeInOut));
   const per = Math.max(3, Math.min(8, Math.floor((end - start - 16) / Math.max(1, words.length))));
+  // Com narração, cada palavra acende quando é DITA (tempos do sintetizador), não num relógio fixo.
+  const lit = (i: number) => (spoken && spoken.length === words.length ? f >= spoken[i]!.start : f >= start + 4 + i * per);
+  const current = (i: number) => (spoken && spoken.length === words.length ? f >= spoken[i]!.start && f < spoken[i]!.end + 3 : i === Math.floor((f - start - 4) / per));
   return (
     <div style={{ position: "absolute", left: 0, right: 0, ...(y !== undefined ? { top: y - 40 } : { bottom: ctx.H - ctx.box.bottom + 40 }), display: "flex", justifyContent: "center", opacity: pin, transform: `translateY(${(1 - pin) * 20}px)` }}>
-      <div style={{ display: "flex", gap: 14, padding: "16px 30px", borderRadius: 20, background: "rgba(10,10,10,0.78)", backdropFilter: "blur(8px)", fontFamily: SANS, fontSize: 44, color: "#FFFFFF", boxShadow: "0 12px 30px rgba(0,0,0,0.35)" }}>
-        {words.map((w, i) => <span key={i} style={{ opacity: f >= start + 4 + i * per ? 1 : 0.38, color: f >= start + 4 + i * per && i === Math.floor((f - start - 4) / per) ? ctx.p.palette.accent : "#FFFFFF" }}>{w}</span>)}
+      <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "center", maxWidth: ctx.box.width, gap: "6px 16px", padding: "18px 34px", borderRadius: 22, background: "rgba(10,10,10,0.8)", backdropFilter: "blur(8px)", fontFamily: SANS, fontSize: 52, color: "#FFFFFF", boxShadow: "0 12px 30px rgba(0,0,0,0.35)" }}>
+        {words.map((w, i) => <span key={i} style={{ opacity: lit(i) ? 1 : 0.38, color: lit(i) && current(i) ? ctx.p.palette.accent : "#FFFFFF" }}>{w}</span>)}
       </div>
     </div>
   );
@@ -192,7 +199,7 @@ const FocusBrackets: React.FC<{ rect: Frac; color: string; start: number; end: n
 };
 
 /** Bloco de texto do plano: kicker com filete que se desenha + título; tinta escolhida pela luz da foto. */
-const TextBlock: React.FC<{ ctx: Ctx; texts: SpotText[]; placement: "top" | "bottom" | "center"; ink: string; start: number; end: number; align?: "left" | "center" }> = ({ ctx, texts, placement, ink, start, end, align }) => {
+const TextBlock: React.FC<{ ctx: Ctx; texts: SpotText[]; placement: "top" | "bottom" | "center"; ink: string; start: number; end: number; align?: "left" | "center"; spokenWords?: { start: number; end: number }[] }> = ({ ctx, texts, placement, ink, start, end, align, spokenWords }) => {
   const f = useCurrentFrame();
   const { box } = ctx;
   const al = align ?? ctx.p.align ?? (ctx.p.language === "editorial" ? "left" : "center");
@@ -203,7 +210,7 @@ const TextBlock: React.FC<{ ctx: Ctx; texts: SpotText[]; placement: "top" | "bot
   const pos: React.CSSProperties = placement === "top" ? { top: box.top + 10 } : placement === "bottom" ? { bottom: ctx.H - box.bottom + 10 } : { top: ctx.H * 0.5, transform: "translateY(-50%)" };
   return (
     <>
-    {captions.map((c, i) => <CaptionPill key={`c${i}`} ctx={ctx} text={c.text} start={start + 10} end={end} />)}
+    {captions.map((c, i) => <CaptionPill key={`c${i}`} ctx={ctx} text={c.text} start={start + 10} end={end} spoken={spokenWords} />)}
     <div style={{ position: "absolute", left: box.left, width: box.width, display: "flex", flexDirection: "column", alignItems: al === "center" ? "center" : "flex-start", gap: 18, ...pos }}>
       {kicker ? (
         <div style={{ display: "flex", alignItems: "center", gap: 18 }}>
@@ -329,7 +336,7 @@ const Fullbleed: ShotRender = ({ ctx, shot, D }) => {
       {shot.kind === "macro" ? <Sheen start={Math.round(D * 0.35)} dur={30} intensity={0.22} /> : null}
       {ctx.p.language === "cinematic" || shot.kind === "macro" ? <div style={{ position: "absolute", inset: 0, background: "radial-gradient(ellipse at 50% 46%, transparent 52%, rgba(0,0,0,0.5) 100%)" }} /> : null}
       {shot.focus && photo.print ? <FocusBrackets rect={toScreen(photo.print, rect, ctx.W, ctx.H)} color={ctx.p.palette.accent} start={tIn + 6} end={shot.frames} /> : null}
-      {texts.length ? <><Scrim placement={placement} color={scrim} H={ctx.H} opacity={progress(f, tIn - 4, tIn + 10) * (1 - progress(f, shot.frames - 8, shot.frames))} /><TextBlock ctx={ctx} texts={texts} placement={placement} ink={ink} start={tIn} end={shot.frames} /></> : null}
+      {texts.length ? <><Scrim placement={placement} color={scrim} H={ctx.H} opacity={progress(f, tIn - 4, tIn + 10) * (1 - progress(f, shot.frames - 8, shot.frames))} /><TextBlock ctx={ctx} texts={texts} placement={placement} ink={ink} start={tIn} end={shot.frames} spokenWords={shot.words} /></> : null}
     </AbsoluteFill>
   );
 };
@@ -350,7 +357,7 @@ const Bands: ShotRender = ({ ctx, shot, D }) => {
         if (!photo) return null;
         const rp = progress(f, events[i] ?? 0, (events[i] ?? 0) + 14, ctx.m.out);
         const base = bandFrame(photo, W / bandH, W);
-        const zoom = 1 - 0.06 * progress(f, 0, D, easeInOut);
+        const zoom = 1 - (shot.kind === "countdown" ? 0.22 : 0.06) * progress(f, 0, D, shot.kind === "countdown" ? ctx.m.inOut : easeInOut);
         const rect = { x: base.x + (base.w * (1 - zoom)) / 2, y: base.y + (base.h * (1 - zoom)) / 2, w: base.w * zoom, h: base.h * zoom };
         const fromLeft = i % 2 === 0;
         const label = progress(f, (events[i] ?? 0) + 8, (events[i] ?? 0) + 20, ctx.m.out) * (1 - progress(f, shot.frames - 8, shot.frames, easeInOut));
@@ -373,7 +380,7 @@ const Bands: ShotRender = ({ ctx, shot, D }) => {
           </div>
         );
       })}
-      {(shot.texts ?? []).filter((t) => t.role === "caption").map((c, i) => <CaptionPill key={i} ctx={ctx} text={c.text} start={(events[ids.length - 1] ?? 0) + 6} end={shot.frames} y={bandH + gap / 2} />)}
+      {(shot.texts ?? []).filter((t) => t.role === "caption").map((c, i) => <CaptionPill key={i} ctx={ctx} text={c.text} start={(events[ids.length - 1] ?? 0) + 6} end={shot.frames} y={bandH + gap / 2} spoken={shot.words} />)}
     </AbsoluteFill>
   );
 };
@@ -431,7 +438,9 @@ const TypeCard: ShotRender = ({ ctx, shot }) => {
 const LogoResolve: ShotRender = ({ ctx, shot }) => {
   const f = useCurrentFrame();
   const { W, H, p, box } = ctx;
-  const field = shot.field ?? p.palette.light;
+  const requested = shot.field ?? p.palette.light;
+  // Logo escura em fundo escuro (ou clara em fundo claro) some: troca o FUNDO, nunca a logo.
+  const field = p.logoTone === "dark" && luminance(requested) < 0.35 ? p.palette.light : p.logoTone === "light" && luminance(requested) > 0.6 ? p.palette.dark : requested;
   const start = (shot.transitionFrames ?? 0) + 1;
   const line = progress(f, start, start + 10, ctx.m.out);
   const open = progress(f, start + 7, start + 22, ctx.m.out);
@@ -463,7 +472,7 @@ const LogoResolve: ShotRender = ({ ctx, shot }) => {
       {cta ? (
         <div style={{ position: "absolute", left: 0, right: 0, top: buttonY, display: "flex", justifyContent: "center", opacity: clamp01(button * 1.5), transform: `scale(${0.7 + 0.3 * button})` }}>
           <div style={{ position: "relative", overflow: "hidden", display: "flex", alignItems: "center", gap: 18, padding: "26px 46px", borderRadius: 14, background: p.palette.accent, color: p.palette.dark, fontFamily: SANS, fontSize: 36, letterSpacing: "0.16em", textTransform: "uppercase", boxShadow: "0 18px 40px rgba(0,0,0,0.22)" }}>
-            {cta.text}<span style={{ fontSize: 34 }}>↗</span>
+            {cta.text}{/\b(site|link|loja|compr|acess|saiba)/i.test(cta.text) ? <span style={{ fontSize: 34 }}>↗</span> : null}
             <Sheen start={start + 52} dur={24} intensity={0.6} />
           </div>
         </div>
@@ -499,7 +508,8 @@ const HookType: ShotRender = ({ ctx, shot, D }) => {
   const top = below + 300 < ctx.box.bottom ? below : ctx.box.top + 10;
   return (
     <AbsoluteFill style={{ background: shot.field ?? ctx.p.palette.dark, overflow: "hidden" }}>
-      {photo && rect ? <Plate photo={photo} rect={rect} W={ctx.W} /> : null}
+      {photo && rect ? <div style={{ position: "absolute", inset: 0, transform: `scale(${1 + 0.14 * (1 - progress(f, 0, 9, ctx.m.out))})` }}><Plate photo={photo} rect={rect} W={ctx.W} /></div> : null}
+      {headline && pr && top < pr.y + pr.h ? <div style={{ position: "absolute", left: 0, right: 0, top: 0, height: top + 360, background: "linear-gradient(to bottom, rgba(0,0,0,0.62) 0%, rgba(0,0,0,0.45) 70%, transparent 100%)" }} /> : null}
       {headline ? (
         <div style={{ position: "absolute", left: ctx.box.left, width: ctx.box.width, top }}>
           <Lines ctx={{ ...ctx, p: { ...ctx.p, language: "graphic" } }} text={{ ...headline, text: headline.text }} start={0} end={shot.frames} ink={ctx.p.palette.light} align="center" maxWidth={ctx.box.width} scaleIn />
@@ -530,6 +540,23 @@ const TraceDraw: ShotRender = ({ ctx, shot, D }) => {
   const mask = `linear-gradient(to right, #000 ${edge - 1.5}%, transparent ${edge + 1.5}%)`;
   const field = shot.field ?? p.palette.dark;
   const texts = shot.texts ?? [];
+  const photo = shot.photo ? p.photos[shot.photo] : undefined;
+  if (photo?.print) {
+    const rect = cameraAt(ctx, photo, shot, f / D);
+    const pr = toScreen(photo.print, rect, W, H);
+    const fade = progress(f, s1 + 4, s1 + 22, easeInOut);
+    const goldMask: React.CSSProperties = { WebkitMaskImage: `url(${cut.src})`, maskImage: `url(${cut.src})`, WebkitMaskSize: "100% 100%", maskSize: "100% 100%" };
+    return (
+      <AbsoluteFill style={{ background: field, overflow: "hidden" }}>
+        <Plate photo={photo} rect={rect} W={W} />
+        <div style={{ position: "absolute", left: pr.x, top: pr.y, width: pr.w, height: pr.h, opacity: 1 - fade, WebkitMaskImage: dp >= 1 ? undefined : mask, maskImage: dp >= 1 ? undefined : mask }}>
+          <div style={{ position: "absolute", inset: 0, background: p.palette.accent, filter: "drop-shadow(0 0 10px rgba(255,210,90,0.9))", ...goldMask }} />
+        </div>
+        {dp > 0 && dp < 1 ? <div style={{ position: "absolute", left: pr.x + dp * pr.w - 12, top: pr.y + ty * pr.h - 12, width: 24, height: 24, borderRadius: "50%", background: "#FFFFFF", boxShadow: `0 0 26px 10px ${p.palette.accent}` }} /> : null}
+        {texts.length ? <TextBlock ctx={ctx} texts={texts} placement={shot.placement ?? "top"} ink={inkFor(ctx, photo, rect, shot.placement ?? "top").ink} start={(shot.transitionFrames ?? 0) + 4} end={shot.frames} spokenWords={shot.words} /> : null}
+      </AbsoluteFill>
+    );
+  }
   return (
     <AbsoluteFill style={{ background: field }}>
       <div style={{ position: "absolute", left: W * 0.5 - W * 0.65, top: assembled.y + gh / 2 - W * 0.65, width: W * 1.3, height: W * 1.3, borderRadius: "50%", opacity: 0.2 * (1 - lp), background: `radial-gradient(circle, ${p.palette.accent} 0%, transparent 60%)` }} />

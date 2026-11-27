@@ -18,7 +18,7 @@ function fit(photo: Photo, aspect: number, cx: number, cy: number, w: number, ma
   return { x, y, w: rw, h: rh };
 }
 
-export type Shot = "full" | "print" | "chest" | "top" | "bottom" | "macro" | "detail";
+export type Shot = "full" | "print" | "chest" | "top" | "bottom" | "macro" | "detail" | "detail2";
 
 /** Enquadramentos nomeados a partir da estampa (o que interessa no produto). */
 export function frame(photo: Photo, shot: Shot, aspect: number, frameW: number, maxZoom = 1.75): Frac {
@@ -31,7 +31,10 @@ export function frame(photo: Photo, shot: Shot, aspect: number, frameW: number, 
     case "print": return fit(photo, aspect, pcx, pcy + 0.06, p.w / 0.74, maxZoom, frameW);
     case "macro": return fit(photo, aspect, pcx, pcy, p.w / 0.92, maxZoom, frameW);
     // Recorte parcial (quiz, "segura o palpite"): um terço da estampa, perto, com a textura do tecido.
-    case "detail": return fit(photo, aspect, p.x + p.w * 0.28, pcy, p.w * 0.34, Math.max(maxZoom, 3), frameW);
+    // Fragmento de verdade (quiz): ~1/4 da estampa, perto, até 3,6× sobre os pixels originais.
+    case "detail": return fit(photo, aspect, p.x + p.w * 0.2, pcy, p.w * 0.26, Math.max(maxZoom, 3.6), frameW);
+    // Segunda pista: o outro lado da estampa (sem mostrar o conjunto).
+    case "detail2": return fit(photo, aspect, p.x + p.w * 0.82, pcy, p.w * 0.26, Math.max(maxZoom, 3.6), frameW);
     case "chest": return fit(photo, aspect, pcx, pcy + 0.12, p.w / 0.5, maxZoom, frameW);
     case "top": return fit(photo, aspect, 0.5, 0.0, 0.82, maxZoom, frameW);
     case "bottom": return fit(photo, aspect, 0.5, 1, 0.82, maxZoom, frameW);

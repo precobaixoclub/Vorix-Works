@@ -18,7 +18,7 @@ export type Brand = {
 /** Base HTTP local (o renderizador serve os arquivos do job e as fontes). */
 export type Common = { assetBase: string; brand: Brand; motion?: MotionProps; emotion?: string; safe?: Safe; timeline?: Record<string, number> };
 
-const FONT_FILES: Record<string, string> = { "Barlow Condensed": "barlow-condensed-bold.ttf", "DM Serif Display": "dm-serif-display-regular.ttf" };
+const FONT_FILES: Record<string, string> = { "Barlow Condensed": "barlow-condensed-bold.ttf", "DM Serif Display": "dm-serif-display-regular.ttf", Geist: "geist-regular.ttf" };
 
 /** Fontes da marca (TTF do repositório) carregadas antes do primeiro quadro. */
 export function useFonts(assetBase: string) {

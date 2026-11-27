@@ -3,6 +3,7 @@ import { Composition, registerRoot } from "remotion";
 import { useFonts, type Common } from "./lib/theme";
 import { DetailReveal, Lineup, ProductHero, type DetailRevealProps, type LineupProps, type ProductHeroProps } from "./templates/product";
 import { SoftwareFocus, SpeechCaptions, TitleCard, type SoftwareFocusProps, type SpeechCaptionsProps, type TitleCardProps } from "./templates/software-title-speech";
+import { Spot, type SpotProps } from "./templates/spot";
 
 /**
  * Uma composição ("Scene") com o template escolhido pelo diretor criativo. Duração, tamanho e fps vêm das
@@ -16,6 +17,7 @@ export type SceneProps = { width: number; height: number; fps: number; durationI
   | ({ template: "software_focus" } & SoftwareFocusProps)
   | ({ template: "title_card" } & TitleCardProps)
   | ({ template: "speech_captions" } & SpeechCaptionsProps)
+  | ({ template: "spot" } & SpotProps)
 );
 
 const Scene: React.FC<SceneProps> = (props) => {
@@ -27,6 +29,7 @@ const Scene: React.FC<SceneProps> = (props) => {
     case "software_focus": return <SoftwareFocus {...props} />;
     case "title_card": return <TitleCard {...props} />;
     case "speech_captions": return <SpeechCaptions {...props} />;
+    case "spot": return <Spot {...props} />;
   }
 };
 

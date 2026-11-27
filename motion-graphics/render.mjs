@@ -17,7 +17,7 @@ const require_crypto = () => ({ createHash });
 import { dirname, extname, join, normalize, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { bundle } from "@remotion/bundler";
-import { openBrowser, renderMedia, selectComposition } from "@remotion/renderer";
+import { openBrowser, renderMedia, renderStill, selectComposition } from "@remotion/renderer";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const FONTS = resolve(here, "..", "src", "infrastructure", "rendering", "assets");
@@ -90,7 +90,7 @@ async function fitted(jobDir, name, maxSide) {
 }
 
 /** Arquivo de cada template: a versão de uma cena só muda quando a base comum ou o SEU arquivo mudam. */
-const TEMPLATE_FILES = { product_hero: "product.tsx", detail_reveal: "product.tsx", lineup: "product.tsx", software_focus: "software-title-speech.tsx", title_card: "software-title-speech.tsx", speech_captions: "software-title-speech.tsx" };
+const TEMPLATE_FILES = { spot: "spot.tsx", product_hero: "product.tsx", detail_reveal: "product.tsx", lineup: "product.tsx", software_focus: "software-title-speech.tsx", title_card: "software-title-speech.tsx", speech_captions: "software-title-speech.tsx" };
 const BASE_VERSION = (() => {
   const hash = createHash("sha256");
   const walk = (dir) => { for (const name of readdirSync(dir).sort()) { const file = join(dir, name); if (statSync(file).isDirectory()) { if (name !== "templates") walk(file); } else hash.update(name).update(readFileSync(file)); } };
@@ -130,14 +130,8 @@ function serve(root, fontsDir) {
   return new Promise((ok) => server.listen(0, "127.0.0.1", () => ok(server)));
 }
 
-/**
- * Renderiza uma cena. `assets` são nomes de arquivo dentro de `jobDir` (viram URLs locais nas props: chaves
- * terminadas em "photo", "photos", "screenshot", "video", "logo").
- */
-export async function renderScene({ jobDir, outputPath, props, concurrency = Number(process.env.REMOTION_CONCURRENCY ?? 1), cacheDir, timeoutMs = 180_000, signal, onProgress, quality = process.env.REMOTION_QUALITY === "preview" ? "preview" : "final" }) {
-  const serveUrl = await bundleOnce(cacheDir);
-  const server = await serve(resolve(jobDir), FONTS);
-  const base = `http://127.0.0.1:${server.address().port}`;
+/** Props com os arquivos do job trocados por URLs do servidor local (e as imagens reduzidas uma vez). */
+async function prepareProps(jobDir, props, base) {
   const url = (name) => `${base}/${encodeURIComponent(name)}`;
   const inputProps = { ...props, assetBase: base };
   // Fundo desfocado pré-calculado uma vez (o desfoque por quadro no Chromium é o passo mais caro).
@@ -153,6 +147,21 @@ export async function renderScene({ jobDir, outputPath, props, concurrency = Num
   for (const key of ["photo", "screenshot", "logo"]) if (typeof inputProps[key] === "string") inputProps[key] = url(await fitted(jobDir, inputProps[key], MAX_SIDE[key]));
   if (typeof inputProps.video === "string") inputProps.video = url(inputProps.video);
   if (Array.isArray(inputProps.photos)) inputProps.photos = await Promise.all(inputProps.photos.map(async (name) => url(await fitted(jobDir, name, MAX_SIDE.photos))));
+  // Spot: fotos por id ({ src, w, h, ... }) e o recorte da estampa (PNG com transparência, sem reamostrar).
+  else if (inputProps.photos && typeof inputProps.photos === "object") inputProps.photos = Object.fromEntries(await Promise.all(Object.entries(inputProps.photos).map(async ([id, photo]) => [id, { ...photo, src: url(await fitted(jobDir, photo.src, MAX_SIDE.photos)) }])));
+  if (inputProps.cutout?.src) inputProps.cutout = { ...inputProps.cutout, src: url(inputProps.cutout.src) };
+  return inputProps;
+}
+
+/**
+ * Renderiza uma cena. `assets` são nomes de arquivo dentro de `jobDir` (viram URLs locais nas props: chaves
+ * terminadas em "photo", "photos", "screenshot", "video", "logo").
+ */
+export async function renderScene({ jobDir, outputPath, props, concurrency = Number(process.env.REMOTION_CONCURRENCY ?? 1), cacheDir, timeoutMs = 180_000, signal, onProgress, quality = process.env.REMOTION_QUALITY === "preview" ? "preview" : "final" }) {
+  const serveUrl = await bundleOnce(cacheDir);
+  const server = await serve(resolve(jobDir), FONTS);
+  const base = `http://127.0.0.1:${server.address().port}`;
+  const inputProps = await prepareProps(jobDir, props, base);
   const started = Date.now();
   const profile = quality === "preview" ? { scale: 0.5, crf: 23, jpegQuality: 70 } : { scale: 1, crf: 17, jpegQuality: 90 };
   const attempt = async () => {
@@ -185,6 +194,32 @@ export async function renderScene({ jobDir, outputPath, props, concurrency = Num
       frames = await attempt();
     }
     return { ms: Date.now() - started, frames, quality };
+  } finally {
+    server.close();
+    releaseLater();
+  }
+}
+
+/**
+ * Quadros parados de uma composição (storyboard visual, de baixo custo: nenhum vídeo é codificado).
+ * Grava `<outDir>/<prefixo>-<quadro>.jpg` e devolve os caminhos.
+ */
+export async function renderStills({ jobDir, props, frames, outDir, prefix = "quadro", scale = 0.5, cacheDir, timeoutMs = 120_000 }) {
+  const serveUrl = await bundleOnce(cacheDir);
+  const server = await serve(resolve(jobDir), FONTS);
+  const base = `http://127.0.0.1:${server.address().port}`;
+  const started = Date.now();
+  try {
+    const inputProps = await prepareProps(jobDir, props, base);
+    const puppeteerInstance = await browser();
+    const composition = await selectComposition({ serveUrl, id: "Scene", inputProps, timeoutInMilliseconds: timeoutMs, puppeteerInstance, ...(browserExecutable ? { browserExecutable } : {}) });
+    const files = [];
+    for (const frame of frames) {
+      const output = join(outDir, `${prefix}-${String(frame).padStart(4, "0")}.jpg`);
+      await renderStill({ serveUrl, composition, inputProps, frame: Math.min(composition.durationInFrames - 1, Math.max(0, frame)), output, imageFormat: "jpeg", jpegQuality: 85, scale, puppeteerInstance, timeoutInMilliseconds: timeoutMs, chromiumOptions: CHROMIUM, logLevel: "error", ...(browserExecutable ? { browserExecutable } : {}) });
+      files.push(output);
+    }
+    return { files, ms: Date.now() - started };
   } finally {
     server.close();
     releaseLater();

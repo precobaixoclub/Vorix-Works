@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { continueRender, delayRender, Easing, interpolate, spring, useCurrentFrame, useVideoConfig } from "remotion";
+import type { Motion, MotionProps, Safe } from "./motion";
 
 /** Região normalizada (0–1) da mídia original: estampa do produto ou componente da tela. */
 export type Region = { x: number; y: number; w: number; h: number };
@@ -15,7 +16,7 @@ export type Brand = {
 };
 
 /** Base HTTP local (o renderizador serve os arquivos do job e as fontes). */
-export type Common = { assetBase: string; brand: Brand };
+export type Common = { assetBase: string; brand: Brand; motion?: MotionProps; emotion?: string; safe?: Safe; timeline?: Record<string, number> };
 
 const FONT_FILES: Record<string, string> = { "Barlow Condensed": "barlow-condensed-bold.ttf", "DM Serif Display": "dm-serif-display-regular.ttf" };
 
@@ -55,13 +56,13 @@ export const onColor = (background: string, brand: Brand) => (luminance(backgrou
  * Título cinético: cada palavra sobe de trás de uma máscara, em sequência (não é fade em bloco).
  * `exitAt` (quadro) faz a saída para cima no fim da cena.
  */
-export const KineticText: React.FC<{ text: string; delay: number; size: number; color: string; font: string; weight?: number; stagger?: number; align?: "left" | "center"; exitAt?: number; lineHeight?: number; maxWidth?: number }> = ({ text, delay, size, color, font, weight = 700, stagger = 3, align = "center", exitAt, lineHeight = 1.02, maxWidth }) => {
+export const KineticText: React.FC<{ text: string; delay: number; size: number; color: string; font: string; weight?: number; stagger?: number; align?: "left" | "center"; exitAt?: number; lineHeight?: number; maxWidth?: number; motion?: Motion }> = ({ text, delay, size, color, font, weight = 700, stagger = 3, align = "center", exitAt, lineHeight = 1.02, maxWidth, motion }) => {
   const frame = useCurrentFrame();
   const words = text.split(/\s+/).filter(Boolean);
   return (
-    <div style={{ display: "flex", flexWrap: "wrap", justifyContent: align === "center" ? "center" : "flex-start", gap: `0 ${size * 0.24}px`, fontFamily: font, fontSize: size, fontWeight: weight, color, lineHeight, letterSpacing: font === "Barlow Condensed" ? "0.01em" : "-0.01em", maxWidth, textTransform: font === "Barlow Condensed" ? "uppercase" : "none" }}>
+    <div style={{ display: "flex", flexWrap: "wrap", justifyContent: align === "center" ? "center" : "flex-start", gap: `0 ${size * 0.24}px`, fontFamily: font, fontSize: size, fontWeight: weight, color, lineHeight, letterSpacing: motion ? `${motion.letterSpacing}em` : font === "Barlow Condensed" ? "0.01em" : "-0.01em", maxWidth, textTransform: (motion ? motion.upper : font === "Barlow Condensed") ? "uppercase" : "none" }}>
       {words.map((word, index) => {
-        const p = progress(frame, delay + index * stagger, delay + index * stagger + 14);
+        const p = progress(frame, delay + index * stagger, delay + index * stagger + 14, motion?.out ?? ease);
         const out = exitAt === undefined ? 0 : progress(frame, exitAt + index * 1.5, exitAt + index * 1.5 + 10, easeInOut);
         return (
           <span key={index} style={{ display: "inline-block", overflow: "hidden", paddingBottom: size * 0.08 }}>
@@ -91,14 +92,16 @@ export const LightSweep: React.FC<{ start: number; duration: number; angle?: num
 };
 
 /** Granulação/vinheta suave: tira a cara de "slide" de fundos chapados. */
-export const Atmosphere: React.FC<{ color: string; glow: string }> = ({ color, glow }) => {
+export const Atmosphere: React.FC<{ color: string; glow: string; grain?: number; glowStrength?: number }> = ({ color, glow, grain = 0.15, glowStrength = 0.35 }) => {
   const frame = useCurrentFrame();
   const { width, height, durationInFrames } = useVideoConfig();
   const t = frame / Math.max(1, durationInFrames);
   return (
     <div style={{ position: "absolute", inset: 0, background: color, overflow: "hidden" }}>
-      <div style={{ position: "absolute", width: width * 1.4, height: width * 1.4, left: width * (-0.2 + 0.25 * t), top: height * (0.05 + 0.1 * t), borderRadius: "50%", background: `radial-gradient(circle, ${glow}55 0%, ${glow}00 62%)` }} />
+      <div style={{ position: "absolute", width: width * 1.4, height: width * 1.4, left: width * (-0.2 + 0.25 * t), top: height * (0.05 + 0.1 * t), borderRadius: "50%", background: `radial-gradient(circle, ${glow}${Math.round(Math.min(1, glowStrength) * 160).toString(16).padStart(2, "0")} 0%, ${glow}00 62%)` }} />
       <div style={{ position: "absolute", inset: 0, background: "radial-gradient(ellipse at 50% 45%, rgba(0,0,0,0) 55%, rgba(0,0,0,0.35) 100%)" }} />
+      {/* Granulação de filme (textura de marca; muda a cada quadro para não "congelar"). */}
+      {grain > 0 ? <svg style={{ position: "absolute", left: 0, top: 0, opacity: grain * 0.22, mixBlendMode: "overlay", transform: "scale(3)", transformOrigin: "0 0" }} width={Math.ceil(width / 3)} height={Math.ceil(height / 3)}><filter id="g"><feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves={2} seed={frame % 7} /></filter><rect width="100%" height="100%" filter="url(#g)" /></svg> : null}
     </div>
   );
 };

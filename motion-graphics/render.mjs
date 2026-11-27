@@ -5,6 +5,11 @@
 //   só durante o render, somente da pasta do job (sem travessia de caminho).
 // - Concorrência do Chromium limitada (padrão 1 no VPS): o worker já garante um render por vez, e a cena do
 //   Remotion roda ANTES dos passos do FFmpeg — os dois nunca disputam a CPU ao mesmo tempo.
+// - O Chromium é aberto uma vez e reaproveitado entre as cenas do mesmo vídeo; fecha sozinho depois de um
+//   tempo ocioso (devolve a memória ao worker) e é reaberto se cair no meio de um render.
+// - Imagens maiores que o necessário são reduzidas UMA vez (sem recriar nada: só reamostragem), o que tira
+//   decodificação pesada de cada quadro. Capturas de tela mantêm resolução alta para a lupa.
+// - Perfis: "final" (padrão, qualidade de entrega) e "preview" (metade da resolução, para iteração rápida).
 import { createServer } from "node:http";
 import { createReadStream, existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { createHash } from "node:crypto";
@@ -12,7 +17,7 @@ const require_crypto = () => ({ createHash });
 import { dirname, extname, join, normalize, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { bundle } from "@remotion/bundler";
-import { renderMedia, selectComposition } from "@remotion/renderer";
+import { openBrowser, renderMedia, selectComposition } from "@remotion/renderer";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const FONTS = resolve(here, "..", "src", "infrastructure", "rendering", "assets");
@@ -49,6 +54,55 @@ export const TEMPLATES_VERSION = (() => {
   return hash.digest("hex").slice(0, 16);
 })();
 
+const CHROMIUM = { gl: "swangle" };
+let browserPromise;
+let idleTimer;
+async function browser() {
+  clearTimeout(idleTimer);
+  browserPromise ??= openBrowser("chrome", { chromiumOptions: CHROMIUM, logLevel: "error", ...(browserExecutable ? { browserExecutable } : {}) });
+  return browserPromise;
+}
+export async function closeBrowser() {
+  clearTimeout(idleTimer);
+  const pending = browserPromise;
+  browserPromise = undefined;
+  if (pending) await pending.then((b) => b.close({ silent: true })).catch(() => undefined);
+}
+function releaseLater() {
+  clearTimeout(idleTimer);
+  idleTimer = setTimeout(() => void closeBrowser(), Number(process.env.REMOTION_BROWSER_IDLE_MS ?? 30_000));
+  idleTimer.unref?.();
+}
+
+/** Lado maior máximo por papel (px). O quadro é 1080×1920; o macro do detalhe amplia até ~3,4× e a lupa da tela, mais. */
+const MAX_SIDE = { photo: 3200, photos: 3200, logo: 1600, screenshot: 4096 };
+async function fitted(jobDir, name, maxSide) {
+  if (!/.(png|jpe?g|webp)$/i.test(name)) return name;
+  const { default: sharp } = await import("sharp");
+  const meta = await sharp(join(jobDir, name)).metadata();
+  if (Math.max(meta.width ?? 0, meta.height ?? 0) <= maxSide) return name;
+  const out = `fit${maxSide}-${name}`;
+  if (!existsSync(join(jobDir, out))) {
+    const image = sharp(join(jobDir, name)).rotate().resize({ width: maxSide, height: maxSide, fit: "inside", kernel: "lanczos3" });
+    await (/.png$/i.test(name) ? image.png() : /.webp$/i.test(name) ? image.webp({ quality: 95 }) : image.jpeg({ quality: 94, chromaSubsampling: "4:4:4" })).toFile(join(jobDir, out));
+  }
+  return out;
+}
+
+/** Arquivo de cada template: a versão de uma cena só muda quando a base comum ou o SEU arquivo mudam. */
+const TEMPLATE_FILES = { product_hero: "product.tsx", detail_reveal: "product.tsx", lineup: "product.tsx", software_focus: "software-title-speech.tsx", title_card: "software-title-speech.tsx", speech_captions: "software-title-speech.tsx" };
+const BASE_VERSION = (() => {
+  const hash = createHash("sha256");
+  const walk = (dir) => { for (const name of readdirSync(dir).sort()) { const file = join(dir, name); if (statSync(file).isDirectory()) { if (name !== "templates") walk(file); } else hash.update(name).update(readFileSync(file)); } };
+  walk(join(here, "src"));
+  return hash.digest("hex");
+})();
+export function templateVersion(template) {
+  const file = TEMPLATE_FILES[template];
+  if (!file) return TEMPLATES_VERSION;
+  return createHash("sha256").update(BASE_VERSION).update(readFileSync(join(here, "src", "templates", file))).digest("hex").slice(0, 16);
+}
+
 function bundleOnce(cacheDir) {
   bundlePromise ??= bundle({ entryPoint: join(here, "src", "index.tsx"), outDir: cacheDir ? resolve(cacheDir, "remotion-bundle") : undefined, enableCaching: true });
   return bundlePromise;
@@ -80,7 +134,7 @@ function serve(root, fontsDir) {
  * Renderiza uma cena. `assets` são nomes de arquivo dentro de `jobDir` (viram URLs locais nas props: chaves
  * terminadas em "photo", "photos", "screenshot", "video", "logo").
  */
-export async function renderScene({ jobDir, outputPath, props, concurrency = Number(process.env.REMOTION_CONCURRENCY ?? 1), cacheDir, timeoutMs = 180_000, signal, onProgress }) {
+export async function renderScene({ jobDir, outputPath, props, concurrency = Number(process.env.REMOTION_CONCURRENCY ?? 1), cacheDir, timeoutMs = 180_000, signal, onProgress, quality = process.env.REMOTION_QUALITY === "preview" ? "preview" : "final" }) {
   const serveUrl = await bundleOnce(cacheDir);
   const server = await serve(resolve(jobDir), FONTS);
   const base = `http://127.0.0.1:${server.address().port}`;
@@ -96,11 +150,14 @@ export async function renderScene({ jobDir, outputPath, props, concurrency = Num
     }
     inputProps.backdrop = url(blurred);
   }
-  for (const key of ["photo", "screenshot", "video", "logo"]) if (typeof inputProps[key] === "string") inputProps[key] = url(inputProps[key]);
-  if (Array.isArray(inputProps.photos)) inputProps.photos = inputProps.photos.map(url);
+  for (const key of ["photo", "screenshot", "logo"]) if (typeof inputProps[key] === "string") inputProps[key] = url(await fitted(jobDir, inputProps[key], MAX_SIDE[key]));
+  if (typeof inputProps.video === "string") inputProps.video = url(inputProps.video);
+  if (Array.isArray(inputProps.photos)) inputProps.photos = await Promise.all(inputProps.photos.map(async (name) => url(await fitted(jobDir, name, MAX_SIDE.photos))));
   const started = Date.now();
-  try {
-    const composition = await selectComposition({ serveUrl, id: "Scene", inputProps, timeoutInMilliseconds: timeoutMs, ...(browserExecutable ? { browserExecutable } : {}) });
+  const profile = quality === "preview" ? { scale: 0.5, crf: 23, jpegQuality: 70 } : { scale: 1, crf: 17, jpegQuality: 90 };
+  const attempt = async () => {
+    const puppeteerInstance = await browser();
+    const composition = await selectComposition({ serveUrl, id: "Scene", inputProps, timeoutInMilliseconds: timeoutMs, puppeteerInstance, ...(browserExecutable ? { browserExecutable } : {}) });
     let cancel;
     if (signal) {
       const { makeCancelSignal } = await import("@remotion/renderer");
@@ -109,14 +166,27 @@ export async function renderScene({ jobDir, outputPath, props, concurrency = Num
       signal.addEventListener("abort", () => made.cancel(), { once: true });
     }
     await renderMedia({
-      serveUrl, composition, inputProps, codec: "h264", crf: 17, pixelFormat: "yuv420p", outputLocation: outputPath, concurrency,
-      timeoutInMilliseconds: timeoutMs, chromiumOptions: { gl: "swangle" }, ...(browserExecutable ? { browserExecutable } : {}),
+      serveUrl, composition, inputProps, codec: "h264", crf: profile.crf, scale: profile.scale, jpegQuality: profile.jpegQuality, pixelFormat: "yuv420p", outputLocation: outputPath, concurrency,
+      timeoutInMilliseconds: timeoutMs, chromiumOptions: CHROMIUM, puppeteerInstance, ...(browserExecutable ? { browserExecutable } : {}),
       // Memória: o worker tem 2 GiB. Cache de quadros de vídeo limitado (o padrão cresce até estourar).
       offthreadVideoCacheSizeInBytes: Number(process.env.REMOTION_VIDEO_CACHE_BYTES ?? 256 * 1024 * 1024), offthreadVideoThreads: 1, logLevel: "error", ...(cancel ? { cancelSignal: cancel } : {}),
       onProgress: ({ progress }) => onProgress?.(progress),
     });
-    return { ms: Date.now() - started, frames: composition.durationInFrames };
+    return composition.durationInFrames;
+  };
+  try {
+    let frames;
+    try {
+      frames = await attempt();
+    } catch (error) {
+      if (signal?.aborted || !/target closed|protocol error|session closed|disconnected|browser has|crash|ECONNRESET/i.test(String(error?.message ?? error))) throw error;
+      // Chromium caiu ou ficou inconsistente: fecha, abre outro e tenta UMA vez.
+      await closeBrowser();
+      frames = await attempt();
+    }
+    return { ms: Date.now() - started, frames, quality };
   } finally {
     server.close();
+    releaseLater();
   }
 }

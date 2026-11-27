@@ -6,7 +6,8 @@ import assert from "node:assert/strict";
 import { analyzeFrames, compareProfiles, detectCuts, dominantPalette, referenceGuidance, shotStats } from "../dist/application/video-editing/reference-profile.js";
 import { alignmentBetween, components, extractPrint, groupElements } from "../dist/application/video-editing/print-extraction.js";
 import { compileProposal, proposalDistance, readingSeconds, scoreProposal, selectProposal, tasteViolations, validateProposal } from "../dist/application/video-editing/spot-storyboard.js";
-import { deriveBrandTaste, editorialVerdict, normalizeFeedbackInput, VIDEO_TASTE_PATTERNS } from "../dist/domain/video-editing/brand-video-taste.js";
+import { editorialVerdict, normalizeFeedbackInput, tasteFromMemory, videoFeedbackEvents, VIDEO_TASTE_PATTERNS } from "../dist/domain/video-editing/brand-video-taste.js";
+import { buildCreativeMemory } from "../dist/application/creative-engine/creative-memory.js";
 import { normalizeReferenceVideos, parseManualEditorialIdea } from "../dist/domain/editorial/editorial-idea.model.js";
 import { composeScore } from "../dist/infrastructure/video-editing/score-composer.js";
 import { VideoProjectsService } from "../dist/application/video-editing/video-projects.service.js";
@@ -105,20 +106,29 @@ const scene = (kind, beats, extra = {}) => ({ kind, purpose: kind, beats, materi
 function proposal(id, language, scenes, extra = {}) {
   return { id, title: id, concept: "c", script: ["a", "b", "c"], language, emphasis: "color", align: "left", artDirection: "", animationLanguage: "", audioTreatment: { mood: "elegant", bpm: 120, notes: "" }, fromStructureReference: "", fromAestheticReference: "", materialsNeeded: [], technicalResources: [], limitations: [], scenes, ...extra };
 }
+// Quiz no padrão novo: pistas em fragmentos, pergunta, tensão, e o traço completo só como PAGAMENTO da revelação.
 const QUIZ = (id, language, hookCam = { from: "detail", to: "detail" }, logoMaterials = ["LOGO"]) => proposal(id, language, [
-  scene("hook_type", 4, { camera: hookCam, texts: [{ role: "headline", text: "Já viu esse *traço*?" }] }),
-  scene("trace_draw", 4),
-  scene("bands", 6, { materials: ["M1", "M2"], texts: [{ role: "label", text: "A" }, { role: "label", text: "B" }, { role: "caption", text: "A ou B?" }] }),
-  scene("countdown", 6, { materials: ["M1", "M2"] }),
-  scene("fullbleed", 6, { camera: { from: "detail", to: "full" }, transition: "iris_print", texts: [{ role: "headline", text: "Era a *A*." }] }),
-  scene("variant_cycle", 8, { materials: ["M1", "M3"], transition: "color_wipe", camera: { from: "chest", to: "chest" } }),
-  scene("logo_resolve", 8, { materials: logoMaterials, texts: [{ role: "headline", text: "Você acertou?" }, { role: "cta", text: "Conta: A ou B" }] }),
+  scene("hook_type", 4, { camera: hookCam, role: "hook", texts: [{ role: "headline", text: "Já viu esse *traço*?" }] }),
+  scene("macro", 3, { camera: { from: "detail2", to: "detail2" }, role: "clue" }),
+  scene("bands", 6, { materials: ["M1", "M2"], role: "question", texts: [{ role: "label", text: "A" }, { role: "label", text: "B" }, { role: "caption", text: "A ou B?" }] }),
+  scene("countdown", 6, { materials: ["M1", "M2"], role: "tension" }),
+  scene("trace_draw", 6, { camera: { from: "chest", to: "chest" }, transition: "iris_print", role: "reveal", texts: [{ role: "headline", text: "Era a *A*." }] }),
+  scene("variant_cycle", 8, { materials: ["M1", "M3"], transition: "color_wipe", camera: { from: "chest", to: "chest" }, role: "proof" }),
+  scene("logo_resolve", 8, { materials: logoMaterials, role: "cta", texts: [{ role: "headline", text: "Você acertou?" }, { role: "cta", text: "Conta: A ou B" }] }),
 ]);
 
 test("storyboard: validação mede gancho, leitura, revelação (spoiler), material e CTA", () => {
   assert.deepEqual(validateProposal(QUIZ("P1", "cinematic"), CTX), []);
   const spoiler = validateProposal(QUIZ("P2", "cinematic", { from: "macro", to: "detail" }), CTX);
   assert.ok(spoiler.some((i) => i.code === "spoiler"), "gancho que mostra a estampa inteira antes de 'Era a A'");
+  // O desenho da prova anterior (traço completo ANTES da pergunta) agora é reprovado: quebra o mistério.
+  const old = QUIZ("P5", "cinematic");
+  old.scenes[1] = scene("trace_draw", 3, { role: "clue" });
+  assert.ok(validateProposal(old, CTX).some((i) => i.code === "spoiler" && i.scene === 1));
+  // Redundância, fala que não cabe e ritmo uniforme.
+  const flat = proposal("P6", "graphic", [scene("hook_type", 4, { role: "hook", texts: [{ role: "headline", text: "Olha" }] }), scene("macro", 4, { role: "clue" }), scene("macro", 4, { role: "clue" }), scene("fullbleed", 4, { role: "proof", narration: { line: "Uma fala longa demais para caber neste plano tão curto de agora mesmo, viu", pauseAfterMs: 300, delivery: "" } }), scene("logo_resolve", 8, { materials: ["LOGO"], role: "cta", texts: [{ role: "cta", text: "Comente" }] })]);
+  const codes2 = validateProposal(flat, CTX).map((i) => i.code);
+  for (const code of ["redundant", "narration_long", "narration_fit", "flat_rhythm"]) assert.ok(codes2.includes(code), code);
   const bad = proposal("P3", "graphic", [scene("hook_type", 6, { texts: [{ role: "headline", text: "Uma frase longa demais para gancho" }] }), scene("fullbleed", 10, { materials: ["X9"] }), scene("bands", 4), scene("type_card", 4)]);
   const codes = validateProposal(bad, CTX).map((i) => i.code);
   for (const code of ["hook", "material", "variants", "long_static", "cta"]) assert.ok(codes.includes(code), code);
@@ -179,11 +189,24 @@ test("diretor de storyboard: schema estrito (3 propostas), prompt com pauta, ref
 test("gosto da marca: reprovação com motivo, derivação e veredito — só pessoa aprova o padrão comercial", () => {
   assert.throws(() => normalizeFeedbackInput({ verdict: "rejected" }), /diga o que estava errado/);
   assert.deepEqual(normalizeFeedbackInput({ verdict: "rejected", patterns: ["slideshow", "inexistente"] }).patterns, ["slideshow"]);
-  const f = (verdict, patterns, at, note) => ({ id: at, tenantId: "t", workspaceId: "w", versionId: "v1", verdict, patterns, reviewerId: "u", createdAt: at, ...(note ? { note } : {}) });
-  const taste = deriveBrandTaste([f("rejected", ["foto_em_cartao_sobre_fundo_desfocado", "slideshow"], "2026-11-01", "parece slide"), f("approved", ["montagem_da_estampa", "slideshow"], "2026-11-02"), f("rejected", ["slideshow"], "2026-11-03")]);
-  assert.deepEqual(taste.rejected.sort(), ["foto_em_cartao_sobre_fundo_desfocado", "slideshow"]);
-  assert.deepEqual(taste.preferred, ["montagem_da_estampa"]);
-  assert.equal(taste.notes[0], "Reprovado: parece slide");
+  const f = (verdict, patterns, at, note, projectId = "p1") => ({ id: at, tenantId: "t", workspaceId: "w", projectId, versionId: `v-${at}`, verdict, patterns, reviewerId: "u", createdAt: at, ...(note ? { note } : {}) });
+  const now = new Date("2026-11-10T00:00:00Z");
+  const taste = (items) => tasteFromMemory(buildCreativeMemory(videoFeedbackEvents(items), { workspaceId: "w", now }));
+  // Uma crítica pontual NÃO vira proibição: fica só observada.
+  const once = taste([f("rejected", ["slideshow"], "2026-11-01", "parece slide")]);
+  assert.deepEqual(once.rejected, []);
+  assert.deepEqual(once.observed, ["slideshow"]);
+  // Duas pautas diferentes com o mesmo problema: aí sim vira algo a evitar (memória criativa existente).
+  const twice = taste([f("rejected", ["slideshow", "narracao_artificial"], "2026-11-01", "voz robótica", "p1"), f("rejected", ["slideshow"], "2026-11-03", "", "p2"), f("approved", ["montagem_da_estampa"], "2026-11-04", "", "p3"), f("approved", ["montagem_da_estampa"], "2026-11-05", "", "p4")]);
+  assert.deepEqual(twice.rejected, ["slideshow"]);
+  assert.deepEqual(twice.preferred, ["montagem_da_estampa"]);
+  // A mesma pauta reprovada duas vezes é preferência daquela peça, não da marca.
+  assert.deepEqual(taste([f("rejected", ["slideshow"], "2026-11-01"), f("rejected", ["slideshow"], "2026-11-02")]).rejected, []);
+  // Expira: fora da janela de 60 dias não conta.
+  assert.deepEqual(tasteFromMemory(buildCreativeMemory(videoFeedbackEvents([f("rejected", ["slideshow"], "2026-11-01", "", "p1"), f("rejected", ["slideshow"], "2026-11-03", "", "p2")]), { workspaceId: "w", now: new Date("2027-03-01T00:00:00Z") })).rejected, []);
+  // O motivo entra na leitura por categoria (voz) e vira orientação quando se repete.
+  const voice = taste([f("rejected", ["narracao_artificial"], "2026-11-01", "voz robótica", "p1"), f("rejected", [], "2026-11-02", "a narração ficou artificial", "p2")]);
+  assert.ok(voice.notes.some((n) => /Voz: fala natural/.test(n)));
   assert.equal(editorialVerdict({ technical: "needs_revision", feedback: [] }).status, "blocked_technical");
   assert.equal(editorialVerdict({ technical: "ready_for_review", feedback: [], advisory: "Codex: parece ótimo" }).status, "awaiting_human", "a revisão do Codex nunca aprova");
   assert.equal(editorialVerdict({ technical: "ready_for_review", feedback: [f("approved", [], "2026-11-04")] }).status, "approved_commercial");
@@ -198,10 +221,11 @@ test("serviço: avaliação humana aprova a versão no fluxo de sempre; reprova�
   const scope = { tenantId: "t", workspaceId: "w" };
   await assert.rejects(service.recordFeedback(scope, "nao-existe", "u", { verdict: "rejected", patterns: ["slideshow"] }), /não encontrada/);
   await assert.rejects(service.recordFeedback(scope, "x", "u", { verdict: "rejected" }), /diga o que estava errado/);
-  await feedbackRepository.record({ id: "f1", tenantId: "t", workspaceId: "w", verdict: "rejected", patterns: ["cartoes_de_foto"], note: "sem grade de fotos", reviewerId: "u", createdAt: "2026-11-27T10:00:00Z" });
-  await feedbackRepository.record({ id: "f2", tenantId: "t", workspaceId: "outro", verdict: "rejected", patterns: ["slideshow"], reviewerId: "u", createdAt: "2026-11-27T10:00:00Z" });
+  await feedbackRepository.record({ id: "f1", tenantId: "t", workspaceId: "w", projectId: "p1", verdict: "rejected", patterns: ["cartoes_de_foto"], note: "sem grade de fotos", reviewerId: "u", createdAt: new Date().toISOString() });
+  await feedbackRepository.record({ id: "f2", tenantId: "t", workspaceId: "w", projectId: "p2", verdict: "rejected", patterns: ["cartoes_de_foto"], reviewerId: "u", createdAt: new Date().toISOString() });
+  await feedbackRepository.record({ id: "f3", tenantId: "t", workspaceId: "outro", projectId: "p9", verdict: "rejected", patterns: ["slideshow"], reviewerId: "u", createdAt: new Date().toISOString() });
   const taste = await service.brandTaste(scope);
-  assert.deepEqual(taste.rejected, ["cartoes_de_foto"], "gosto é por marca (workspace)");
+  assert.deepEqual(taste.rejected, ["cartoes_de_foto"], "gosto é por marca (workspace) e vem da memória criativa");
 });
 
 // ------------------------------------------------------------------ Bolsão: vídeos de referência

@@ -86,8 +86,10 @@ export function videoRedoScope(plan: VideoEditPlan, request: string): VideoRedoS
   if (BROAD_REQUEST.test(text)) {
     return { mode: "abrangente", reading: "o motivo pede mudança de ritmo/organização/composição: todas as cenas podem mudar", permissions: { ...videoRevisionPermissions(plan, request), visualClipIds: ids, textClipIds: ids, captions: true, logo: true, audio: true } };
   }
-  const permissions = conversationalScope(plan, request);
-  const all = permissions.visualClipIds.length === ids.length;
+  const scoped = conversationalScope(plan, request);
+  const all = scoped.visualClipIds.length === ids.length;
+  // Abrangente vale por inteiro (logo, áudio e legendas também podem mudar); pontual segue o que foi citado.
+  const permissions = all ? { ...scoped, textClipIds: ids, captions: true, logo: true, audio: true } : scoped;
   const scenes = [...new Set([...permissions.visualClipIds, ...permissions.textClipIds])].map((id) => ids.indexOf(id) + 1).sort((a, b) => a - b);
   return { mode: all ? "abrangente" : "pontual", permissions, reading: all ? "mudança global (duração/ordem/estilo)" : `só pode mudar: ${[scenes.length ? `cena(s) ${scenes.join(", ")}` : "", permissions.audio ? "áudio" : "", permissions.captions ? "legendas" : "", permissions.logo ? "logo" : ""].filter(Boolean).join(", ") || "nada identificado"}` };
 }

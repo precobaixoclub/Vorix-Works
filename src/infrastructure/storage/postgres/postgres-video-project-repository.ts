@@ -62,9 +62,9 @@ export class PostgresVideoProjectRepository implements VideoProjectRepositoryPor
 
   private async insertVersion(client: Pick<Pool, "query">, version: Omit<VideoVersion, "number">, number: number) {
     const result = await client.query<VersionRow>(
-      `insert into video_versions (id, project_id, tenant_id, workspace_id, number, parent_version_id, request, status, progress, warnings, max_attempts, created_by, created_at, updated_at)
-       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,'[]'::jsonb,$10,$11,$12,$12) returning *`,
-      [version.id, version.projectId, version.tenantId, version.workspaceId, number, version.parentVersionId ?? null, version.request, version.status, version.progress, version.maxAttempts, version.createdBy ?? null, version.createdAt],
+      `insert into video_versions (id, project_id, tenant_id, workspace_id, number, parent_version_id, request, status, progress, warnings, max_attempts, created_by, created_at, updated_at, draft)
+       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,'[]'::jsonb,$10,$11,$12,$12,$13::jsonb) returning *`,
+      [version.id, version.projectId, version.tenantId, version.workspaceId, number, version.parentVersionId ?? null, version.request, version.status, version.progress, version.maxAttempts, version.createdBy ?? null, version.createdAt, version.draft ? JSON.stringify(version.draft) : null],
     );
     return toVersion(result.rows[0]!);
   }

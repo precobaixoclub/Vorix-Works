@@ -8,6 +8,7 @@
  * Variáveis: DATABASE_URL, JWT_SECRET, OBJECT_STORAGE_* (mesmas da API), ANTHROPIC_API_KEY (ou a
  * chave do painel admin), VIDEO_AI_MODEL, VIDEO_WORK_DIR, VIDEO_RENDER_THREADS (2),
  * VIDEO_RENDER_PRESET (veryfast), VIDEO_MAX_DURATION_SECONDS (90), VIDEO_MUSIC_LIBRARY_DIR (opcional),
+ * VIDEO_PROCEDURAL_MUSIC (true: trilha original sintetizada quando não há biblioteca),
  * MEETINGS_WHISPER_* (mesma transcrição do Meetings).
  */
 
@@ -30,7 +31,8 @@ import { LocalObjectStorage } from "../../infrastructure/storage/local-object-st
 import { S3ObjectStorage } from "../../infrastructure/storage/s3-object-storage.js";
 import { PostgresVideoProjectRepository } from "../../infrastructure/storage/postgres/postgres-video-project-repository.js";
 import { FfmpegEditExecutor, pruneVideoCache } from "../../infrastructure/video-editing/ffmpeg-edit-executor.js";
-import { analyzeVideo, probeMedia, runFfmpegCapture } from "../../infrastructure/video-editing/ffmpeg-media-analysis.js";
+import { analyzeVideo, probeMedia, renderContactSheet, runFfmpegCapture } from "../../infrastructure/video-editing/ffmpeg-media-analysis.js";
+import { musicSeed, proceduralMusicArgs } from "../../infrastructure/video-editing/procedural-music.js";
 import { WhisperVideoTranscriber } from "../../infrastructure/video-editing/whisper-video-transcriber.js";
 
 const env = process.env;
@@ -117,6 +119,10 @@ async function main() {
       if (result.exitCode !== 0) throw new Error("falha ao gerar a capa do vídeo");
     },
     transcribe: (videoPath, dir) => transcriber.transcribe(videoPath, dir),
+    contactSheet: async (videoPath, sheetPath, durationSeconds, aspect) => {
+      const tiles = Math.min(20, Math.max(6, Math.ceil(durationSeconds)));
+      await renderContactSheet(videoPath, sheetPath, { everySeconds: durationSeconds / tiles, columns: aspect === "16:9" ? 4 : 5, tileWidth: aspect === "16:9" ? 480 : aspect === "1:1" ? 360 : 270, maxTiles: tiles });
+    },
     resolveBrand: async (project, logoPath) => {
       const workspace = await platform.workspaceRepository.getById(project.workspaceId);
       const identityResult = await brands.resolveForCreative(project.workspaceId).catch(() => undefined);
@@ -129,7 +135,7 @@ async function main() {
       const probe = await probeMedia(target);
       return { style: resolved.style, logo: { fileName: basename(target), width: probe.video?.width, height: probe.video?.height, hasAudio: false } };
     },
-    ...(musicDir && existsSync(musicDir)
+    ...(musicDir && existsSync(musicDir) && existsSync(join(musicDir, "manifest.json"))
       ? {
           // Biblioteca licenciada: manifest.json com [{ file, durationSeconds, mood, license }].
           pickMusic: async (_project, destinationDir) => {
@@ -145,7 +151,18 @@ async function main() {
             return { fileName, durationSeconds: track.durationSeconds };
           },
         }
-      : {}),
+      : env.VIDEO_PROCEDURAL_MUSIC?.trim() !== "false"
+        ? {
+            // Sem biblioteca licenciada: trilha ORIGINAL sintetizada (sem obra de terceiros).
+            pickMusic: async (project, destinationDir) => {
+              const fileName = "song-original.wav";
+              const seconds = (project.settings.targetDurationSeconds ?? 60) + 10;
+              const result = await runFfmpegCapture(proceduralMusicArgs({ mood: project.settings.editing, seconds, seed: musicSeed(project.id), output: join(destinationDir, fileName) }), { timeoutMs: 120_000 });
+              if (result.exitCode !== 0) return undefined;
+              return { fileName, durationSeconds: Math.ceil(seconds) };
+            },
+          }
+        : {}),
     log,
   };
 

@@ -9,6 +9,7 @@
 
 import { randomUUID } from "node:crypto";
 import type { VideoAspect } from "../../domain/video-editing/video-edit-plan.js";
+import { validateVideoEditDraftStructure, type VideoEditDraft } from "../ai-gateway/schemas/video-edit-draft.v1.js";
 import type { VideoMaterialRole, VideoProject, VideoProjectMaterial, VideoProjectRepositoryPort, VideoProjectScope, VideoProjectSettings, VideoVersion } from "../ports/video-project-repository.port.js";
 
 export class VideoProjectError extends Error {
@@ -45,8 +46,14 @@ export type CreateVideoProjectInput = {
   request: string;
   settings: VideoProjectSettings;
   materials: { url: string; role?: VideoMaterialRole; label?: string }[];
+  /**
+   * Rascunho pronto do diretor criativo do piloto automático (Codex): o worker não chama a IA paga,
+   * só valida e monta o plano. Exige `settings.origin` (a pauta do Bolsão de onde veio).
+   */
+  presetDraft?: unknown;
 };
 
+const ACTIVE = new Set(["queued", "planning", "rendering", "verifying"]);
 const VIDEO_EXT = /\.(mp4|mov)$/i;
 const IMAGE_EXT = /\.(jpe?g|png|webp)$/i;
 const CONTENT_TYPES: Record<string, string> = { mp4: "video/mp4", mov: "video/quicktime", jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png", webp: "image/webp" };
@@ -90,6 +97,15 @@ export class VideoProjectsService {
     if (input.materials.length > this.limits.maxMaterials) throw new VideoProjectError("INVALID", `No máximo ${this.limits.maxMaterials} materiais por vídeo.`);
     if (input.settings.targetDurationSeconds !== undefined && (input.settings.targetDurationSeconds < 5 || input.settings.targetDurationSeconds > 90)) throw new VideoProjectError("INVALID", "Duração entre 5 e 90 segundos.");
     if (input.settings.music && !this.deps.musicLibraryAvailable) throw new VideoProjectError("INVALID", "Trilha sonora ainda não está disponível.");
+    let presetDraft: VideoEditDraft | undefined;
+    if (input.presetDraft !== undefined || input.settings.origin) {
+      if (input.settings.origin?.kind !== "editorial_pilot" || !input.settings.origin.ideaId) throw new VideoProjectError("INVALID", "Rascunho pronto só para o piloto automático (pauta do Bolsão).");
+    }
+    if (input.presetDraft !== undefined) {
+      const structure = validateVideoEditDraftStructure(input.presetDraft);
+      if (!structure.valid) throw new VideoProjectError("INVALID", `Rascunho inválido: ${structure.errors.slice(0, 3).join("; ")}`);
+      presetDraft = structure.data;
+    }
 
     const seen = new Set<string>();
     const materials: VideoProjectMaterial[] = input.materials.map((material, index) => {
@@ -103,7 +119,7 @@ export class VideoProjectsService {
       const extension = key.slice(key.lastIndexOf(".") + 1).toLowerCase();
       const role: VideoMaterialRole = material.role ?? (kind === "video" ? "footage" : "product_photo");
       if (kind === "video" && !["footage", "screen_recording"].includes(role)) throw new VideoProjectError("INVALID", `Material ${index + 1}: vídeo precisa ser gravação ou gravação de tela.`);
-      if (kind === "image" && !["product_photo", "screenshot", "reference"].includes(role)) throw new VideoProjectError("INVALID", `Material ${index + 1}: imagem precisa ser produto, captura de tela ou referência.`);
+      if (kind === "image" && !["product_photo", "screenshot", "reference", "generated"].includes(role)) throw new VideoProjectError("INVALID", `Material ${index + 1}: imagem precisa ser produto, captura de tela, referência ou imagem gerada.`);
       return { id: `M${index + 1}`, objectKey: key, kind, role, ...(material.label ? { label: material.label.slice(0, 80) } : {}), contentType: CONTENT_TYPES[extension]! };
     });
     if (materials.filter((m) => m.kind === "video").length > this.limits.maxVideos) throw new VideoProjectError("INVALID", `No máximo ${this.limits.maxVideos} vídeos por projeto.`);
@@ -123,7 +139,7 @@ export class VideoProjectsService {
       createdAt: now,
       updatedAt: now,
     };
-    const version: VideoVersion = { id: this.id("vver"), projectId: project.id, ...input.scope, number: 1, request, status: "queued", progress: 0, warnings: [], attempts: 0, maxAttempts: 2, cancelRequested: false, createdBy: input.userId, createdAt: now, updatedAt: now };
+    const version: VideoVersion = { id: this.id("vver"), projectId: project.id, ...input.scope, number: 1, request, status: "queued", progress: 0, warnings: [], attempts: 0, maxAttempts: 2, cancelRequested: false, createdBy: input.userId, createdAt: now, updatedAt: now, ...(presetDraft ? { draft: presetDraft } : {}) };
     await this.deps.repository.createProject(project, version);
     return { project, version };
   }
@@ -134,6 +150,7 @@ export class VideoProjectsService {
     const request = this.request(input.request);
     const project = await this.deps.repository.getProject(input.scope, input.projectId);
     if (!project) throw new VideoProjectError("NOT_FOUND", "Projeto de vídeo não encontrado.");
+    if (project.settings.origin) throw new VideoProjectError("CONFLICT", "Vídeo do piloto automático: a alteração é pedida na aprovação pelo WhatsApp.");
     const versions = await this.deps.repository.listVersions(input.scope, project.id);
     if (versions.some((v) => ["queued", "planning", "rendering", "verifying"].includes(v.status))) throw new VideoProjectError("CONFLICT", "Já existe uma versão em produção neste vídeo. Aguarde terminar.");
     const base = input.fromVersionId ? versions.find((v) => v.id === input.fromVersionId) : versions.find((v) => v.plan && v.draft && ["ready_for_review", "needs_revision", "approved"].includes(v.status));
@@ -141,6 +158,37 @@ export class VideoProjectsService {
     await this.assertQuota(input.scope);
     const now = this.now().toISOString();
     return this.deps.repository.addVersion({ id: this.id("vver"), projectId: project.id, ...input.scope, parentVersionId: base.id, request, status: "queued", progress: 0, warnings: [], attempts: 0, maxAttempts: 2, cancelRequested: false, createdBy: input.userId, createdAt: now, updatedAt: now });
+  }
+
+  /**
+   * Nova versão do piloto (refação pelo motivo da reprovação ou correção da revisão visual), com o
+   * rascunho pronto revisado. O worker confere o escopo do motivo contra a versão de origem.
+   */
+  async reviseWithDraft(input: { scope: VideoProjectScope; userId: string; projectId: string; fromVersionId: string; reason: string; draft: unknown }): Promise<VideoVersion> {
+    await this.assertEnabled(input.scope);
+    const reason = this.request(input.reason);
+    const project = await this.deps.repository.getProject(input.scope, input.projectId);
+    if (!project || project.settings.origin?.kind !== "editorial_pilot") throw new VideoProjectError("NOT_FOUND", "Projeto do piloto não encontrado.");
+    const versions = await this.deps.repository.listVersions(input.scope, project.id);
+    if (versions.some((v) => ACTIVE.has(v.status))) throw new VideoProjectError("CONFLICT", "Já existe uma versão em produção neste vídeo.");
+    const base = versions.find((v) => v.id === input.fromVersionId);
+    // Versão só de transcrição (aguardando o rascunho): a nova não tem origem a respeitar.
+    const transcriptOnly = base?.stage === "awaiting_draft" && !base.plan;
+    if (!base || (!base.plan && !transcriptOnly)) throw new VideoProjectError("CONFLICT", "A versão de origem não tem plano.");
+    const structure = validateVideoEditDraftStructure(input.draft);
+    if (!structure.valid) throw new VideoProjectError("INVALID", `Rascunho inválido: ${structure.errors.slice(0, 3).join("; ")}`);
+    await this.assertQuota(input.scope);
+    const now = this.now().toISOString();
+    return this.deps.repository.addVersion({ id: this.id("vver"), projectId: project.id, ...input.scope, parentVersionId: transcriptOnly ? undefined : base.id, request: reason, status: "queued", progress: 0, warnings: [], attempts: 0, maxAttempts: 2, cancelRequested: false, createdBy: input.userId, createdAt: now, updatedAt: now, draft: structure.data });
+  }
+
+  /** Versão do piloto, com o plano (para a revisão visual e a refação no servidor). */
+  async pilotVersion(scope: VideoProjectScope, versionId: string) {
+    const version = await this.deps.repository.getVersion(scope, versionId);
+    if (!version) throw new VideoProjectError("NOT_FOUND", "Versão não encontrada.");
+    const project = await this.deps.repository.getProject(scope, version.projectId);
+    if (project?.settings.origin?.kind !== "editorial_pilot") throw new VideoProjectError("NOT_FOUND", "Versão não é do piloto.");
+    return { version, project };
   }
 
   async cancel(scope: VideoProjectScope, versionId: string) {

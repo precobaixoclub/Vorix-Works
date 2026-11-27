@@ -14,7 +14,7 @@ import { join } from "node:path";
 import type { VideoEditExecutor } from "../ports/video-edit-executor.port.js";
 import type { VideoProject, VideoProjectRepositoryPort, VideoVersion, VideoVersionPatch } from "../ports/video-project-repository.port.js";
 import type { BrandStyle, PlanningMaterial } from "./build-plan-from-draft.js";
-import type { PlanningOutcome, VideoEditPlanningService } from "./plan-video-edit.js";
+import { planFromPresetDraft, type PlanningOutcome, type VideoEditPlanningService } from "./plan-video-edit.js";
 import { buildSentences, type Transcript } from "./transcript-tools.js";
 import { evaluateVideoQualityGate, type GateAnalysis } from "./video-quality-gate.js";
 
@@ -33,6 +33,8 @@ export type VideoWorkerDeps = {
   analyze: (path: string, hasAudio: boolean) => Promise<GateAnalysis>;
   poster: (videoPath: string, posterPath: string) => Promise<void>;
   transcribe: (videoPath: string, workDir: string) => Promise<Transcript>;
+  /** Prancha de quadros (JPEG) do vídeo final — usada na revisão visual do piloto. Opcional. */
+  contactSheet?: (videoPath: string, sheetPath: string, durationSeconds: number, aspect: string) => Promise<void>;
   /** Estilo da marca do workspace + logo (baixado para `logoPath`, se houver). */
   resolveBrand: (project: VideoProject, logoPath: string) => Promise<{ style: BrandStyle; logo?: MediaFacts & { fileName: string } }>;
   /** Biblioteca de trilhas licenciadas; ausente = sem trilha. */
@@ -50,6 +52,11 @@ const AI_MESSAGES: Record<string, string> = {
   invalid_output: "A IA devolveu um plano inválido. Tente de novo.",
   content_blocked: "O pedido foi bloqueado pela política de conteúdo.",
 };
+
+/** Chave da prancha de quadros de uma versão (derivada do id; sem coluna no banco). */
+export function videoSheetKey(tenantId: string, workspaceId: string, versionId: string): string {
+  return `${tenantId}/${workspaceId}/video-${versionId}-sheet.jpg`;
+}
 
 export async function processNextVideoVersion(deps: VideoWorkerDeps): Promise<{ versionId: string; status: VideoVersion["status"] } | undefined> {
   const claimed = await deps.repository.claimNext({ workerId: deps.workerId, leaseMs: deps.leaseMs });
@@ -105,6 +112,11 @@ export async function processNextVideoVersion(deps: VideoWorkerDeps): Promise<{ 
       transcripts[material.id] = await deps.transcribe(sources[material.id]!, dir);
     }
     if (speech.length > 0) await deps.repository.saveTranscripts(project.id, transcripts);
+    // Piloto com gravação de fala e ainda sem rascunho: só transcreve. O diretor criativo (Codex) escolhe
+    // as frases pelos ids e manda o rascunho numa nova versão.
+    if (project.settings.origin?.kind === "editorial_pilot" && !version.draft) {
+      return await finish({ status: "needs_revision", stage: "awaiting_draft", progress: 100, message: "Transcrição pronta; aguardando o rascunho do diretor criativo." });
+    }
     for (const material of materials) if (material.hasSpeech && !(transcripts[material.id]?.segments.length)) material.hasSpeech = false;
 
     // Marca, logo e trilha.
@@ -145,7 +157,14 @@ export async function processNextVideoVersion(deps: VideoWorkerDeps): Promise<{ 
       recentStrategies: await deps.repository.latestStrategies(scope, 5),
     };
     let outcome: PlanningOutcome;
-    if (version.parentVersionId) {
+    const pilot = project.settings.origin?.kind === "editorial_pilot";
+    if (pilot || (version.draft && !version.plan)) {
+      // Rascunho pronto do diretor criativo do piloto (Codex): sem IA paga, mesma validação e construtor.
+      progress("planning", 22, "Montando o plano do diretor criativo");
+      const parent = version.parentVersionId ? await deps.repository.getVersion(scope, version.parentVersionId) : undefined;
+      if (version.parentVersionId && !parent?.plan) throw new Error("versão de origem sem plano");
+      outcome = planFromPresetDraft(parent?.plan ? { ...request, request: parent.plan.prompt } : request, version.draft, parent?.plan ? { plan: parent.plan, reason: version.request } : undefined);
+    } else if (version.parentVersionId) {
       const parent = await deps.repository.getVersion(scope, version.parentVersionId);
       if (!parent?.plan || !parent.draft) throw new Error("versão de origem sem plano");
       outcome = await deps.planner.revise(request, { draft: parent.draft, plan: parent.plan }, version.request);
@@ -189,6 +208,11 @@ export async function processNextVideoVersion(deps: VideoWorkerDeps): Promise<{ 
     const posterKey = `${project.tenantId}/${project.workspaceId}/video-${version.id}.jpg`;
     await deps.uploadFile(outputKey, output, "video/mp4");
     await deps.uploadFile(posterKey, posterPath, "image/jpeg");
+    if (deps.contactSheet) {
+      // Mesma chave derivada do id da versão: o piloto lê a prancha sem coluna nova no banco.
+      const sheetPath = join(dir, "sheet.jpg");
+      await deps.contactSheet(output, sheetPath, outcome.plan.durationSeconds, outcome.plan.aspect).then(() => deps.uploadFile(videoSheetKey(project.tenantId, project.workspaceId, version.id), sheetPath, "image/jpeg")).catch((error) => log("prancha não gerada", { versionId: version.id, message: error instanceof Error ? error.message : String(error) }));
+    }
     log("versão pronta", { versionId: version.id, gate: gate.status, renderMs });
     return await finish({
       status: gate.status === "ready_for_review" ? "ready_for_review" : "needs_revision",

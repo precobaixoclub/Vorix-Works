@@ -12,7 +12,7 @@
 import { randomUUID } from "node:crypto";
 import type { AiFailureCategory, AiGatewayPort } from "../ports/ai-gateway.port.js";
 import { VIDEO_EDIT_PLANNING_POLICY } from "../ai-gateway/policies.js";
-import type { VideoEditDraft } from "../ai-gateway/schemas/video-edit-draft.v1.js";
+import { applyVideoEditDraftSemanticValidation, validateVideoEditDraftStructure, type VideoEditDraft } from "../ai-gateway/schemas/video-edit-draft.v1.js";
 import type { VideoEditPlanningContext } from "../ai-gateway/prompts/video-edit-plan.v1.js";
 import type { VideoEditPlan } from "../../domain/video-editing/video-edit-plan.js";
 import { buildPlanFromDraft, type BuildPlanContext } from "./build-plan-from-draft.js";
@@ -176,4 +176,25 @@ export class VideoEditPlanningService {
     }
     return { ok: false, category: "plan_rejected", message: "Revisão não concluída.", issues: [], usage };
   }
+}
+
+/**
+ * Rascunho que já chega pronto — escrito pelo diretor criativo do piloto automático (Codex, no
+ * servidor), não pela IA paga do gateway. Passa pela MESMA validação (estrutura, materiais e frases
+ * existentes, nada de número inventado) e pelo mesmo construtor determinístico. Numa versão derivada
+ * (refação), o escopo do motivo vale igual à revisão por conversa: mexer fora dele é recusado.
+ */
+export function planFromPresetDraft(request: PlanningRequest, raw: unknown, previous?: { plan: VideoEditPlan; reason: string }): PlanningOutcome {
+  const usage: PlanningUsage = { calls: 0, inputTokens: 0, outputTokens: 0, costUsd: 0 };
+  const structure = validateVideoEditDraftStructure(raw);
+  if (!structure.valid) return { ok: false, category: "plan_rejected", message: "Rascunho do diretor criativo inválido.", issues: [...structure.errors], usage };
+  const semantic = applyVideoEditDraftSemanticValidation(structure.data, promptInput(request, {}));
+  if (!semantic.valid) return { ok: false, category: "plan_rejected", message: "Rascunho do diretor criativo recusado pela validação.", issues: [...semantic.errors], usage };
+  const built = buildPlanFromDraft(semantic.data, request);
+  if (!built.ok) return { ok: false, category: "plan_rejected", message: "O plano do diretor criativo não pôde ser montado.", issues: built.issues, usage };
+  if (previous) {
+    const problems = videoRevisionViolations(scopeView(previous.plan), scopeView(built.plan), conversationalScope(previous.plan, previous.reason));
+    if (problems.length) return { ok: false, category: "out_of_scope", message: "A nova versão mexeu em partes que o motivo não pedia.", issues: problems, usage };
+  }
+  return { ok: true, draft: semantic.data, plan: built.plan, warnings: [...semantic.warnings, ...built.warnings], rationale: semantic.data.rationale, usage };
 }

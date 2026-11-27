@@ -9,7 +9,8 @@ import type { VideoEditDraft } from "../ai-gateway/schemas/video-edit-draft.v1.j
 import type { Transcript } from "../video-editing/transcript-tools.js";
 
 export type VideoMaterialKind = "video" | "image";
-export type VideoMaterialRole = "footage" | "screen_recording" | "product_photo" | "screenshot" | "reference";
+/** `generated` = imagem conceitual criada por IA (nunca produto nem tela). */
+export type VideoMaterialRole = "footage" | "screen_recording" | "product_photo" | "screenshot" | "reference" | "generated";
 
 export type VideoProjectMaterial = {
   /** "M1", "M2"… — o id que a IA enxerga. */
@@ -28,6 +29,8 @@ export type VideoProjectSettings = {
   transitions: "suaves" | "moderadas" | "marcantes";
   captions: boolean;
   music: boolean;
+  /** Projeto aberto pelo piloto automático a partir de uma pauta do Bolsão: toda versão traz o rascunho pronto. */
+  origin?: { kind: "editorial_pilot"; ideaId: string; externalId?: string };
 };
 
 export type VideoProject = {

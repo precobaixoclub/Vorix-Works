@@ -298,6 +298,8 @@ export type ApiConfig = {
   /** Marketing › Criar vídeo com IA — ativação gradual por workspace (VIDEO_ENGINE_WORKSPACES = ids
    * separados por vírgula, ou "*"). Vazio = desligado em todo lugar (rollback = apagar a variável). */
   videoEngine: { enabledWorkspaces: readonly string[]; allWorkspaces: boolean; musicLibraryAvailable: boolean };
+  /** Movimento por IA (motor híbrido). Desligado e com limite US$ 0 por padrão: nenhuma chamada paga sem configuração explícita. */
+  videoMotion: { enabled: boolean; workspaces: readonly string[]; monthlyUsdPerWorkspace: number; maxUsdPerGeneration: number; provider: string; model: string; googleApiKey?: string; runwayApiKey?: string };
   /** Upload de mídia (foto/vídeo) para posts — hospeda num bucket S3-compatível (AWS S3, Cloudflare
    * R2, DigitalOcean Spaces, MinIO) para gerar a URL pública que TikTok/Meta exigem. */
   objectStorage: {
@@ -743,6 +745,16 @@ export function loadApiConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
     radar: {
       enabled: env.RADAR_ENABLED?.trim() === "true",
       aiEnabled: env.RADAR_AI_ENABLED?.trim() === "true",
+    },
+    videoMotion: {
+      enabled: env.VIDEO_MOTION_ENABLED?.trim() === "true",
+      workspaces: (env.VIDEO_MOTION_WORKSPACES ?? "").split(",").map((id) => id.trim()).filter(Boolean),
+      monthlyUsdPerWorkspace: Math.max(0, Number(env.VIDEO_MOTION_MONTHLY_USD ?? "0") || 0),
+      maxUsdPerGeneration: Math.max(0, Number(env.VIDEO_MOTION_MAX_USD_PER_CLIP ?? "1") || 0),
+      provider: env.VIDEO_MOTION_PROVIDER?.trim() || "google-veo",
+      model: env.VIDEO_MOTION_MODEL?.trim() || "veo-3.1-fast-generate-preview",
+      ...(env.VIDEO_MOTION_GOOGLE_API_KEY?.trim() ? { googleApiKey: env.VIDEO_MOTION_GOOGLE_API_KEY.trim() } : {}),
+      ...(env.VIDEO_MOTION_RUNWAY_API_KEY?.trim() ? { runwayApiKey: env.VIDEO_MOTION_RUNWAY_API_KEY.trim() } : {}),
     },
     videoEngine: {
       enabledWorkspaces: (env.VIDEO_ENGINE_WORKSPACES ?? "").split(",").map((id) => id.trim()).filter((id) => id && id !== "*"),

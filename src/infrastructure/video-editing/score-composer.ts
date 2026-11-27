@@ -13,8 +13,14 @@ import { writeFile } from "node:fs/promises";
 
 export type ScoreMood = "elegant" | "pop" | "cinematic";
 export type ScoreSection = { from: number; to: number; energy: number; kind: string };
-export type ScoreEvent = { at: number; kind: "hit" | "pop" | "whoosh" | "switch" | "land" | "riser_end" | "logo" | "click"; strength: number };
-export type ScoreInput = { bpm: number; seconds: number; mood: ScoreMood; sections: ScoreSection[]; events: ScoreEvent[]; seed?: number; tailSeconds?: number };
+export type ScoreEvent = { at: number; kind: "hit" | "pop" | "whoosh" | "switch" | "land" | "riser_end" | "logo" | "click" | "tension_stop" | "drop"; strength: number };
+export type ScoreInput = {
+  bpm: number; seconds: number; mood: ScoreMood; sections: ScoreSection[]; events: ScoreEvent[]; seed?: number; tailSeconds?: number;
+  /** Ducking EXATO: intervalos em que a voz fala (segundos) e quanto a trilha abaixa (dB). */
+  duck?: { intervals: { from: number; to: number }[]; depthDb: number };
+  /** Swing das colcheias (0 = reto; 0,08 = suingado). */
+  swing?: number;
+};
 
 const SR = 48000;
 const TAU = Math.PI * 2;
@@ -220,6 +226,29 @@ export function composeScore(input: ScoreInput): { left: Float32Array; right: Fl
       }
     }
   }
+  // Motivo melódico (identidade): 4 notas por compasso nas seções de pista/pergunta, com variação a cada
+  // 2 compassos (a última nota sobe ou desce) — a trilha deixa de ser um laço de acordes.
+  const motif = [0, 2, 4, 2];
+  const swing = input.swing ?? (input.mood === "cinematic" ? 0 : 0.06);
+  for (let bar = 0; bar < bars; bar += 1) {
+    const t0 = bar * 4 * beat;
+    const e = energyAt(t0);
+    if (kindAt(t0) === "logo_resolve" || e < 0.5 || e > 0.95) continue;
+    const root = chordNotes(mood.root, mood.prog[bar % 4]!, mood.minor)[0]! + 24;
+    const steps = [0, 0.75, 1.5, 2.5];
+    motif.forEach((degree, k) => {
+      const varied = k === 3 && bar % 2 === 1 ? degree + (bar % 4 === 1 ? 2 : -1) : degree;
+      const interval = scale[((varied % scale.length) + scale.length) % scale.length]! + 12 * Math.floor(varied / scale.length);
+      const at = t0 + steps[k]! * beat + (k % 2 ? swing * beat : 0);
+      add(at, input.mood === "cinematic" ? bell(root + interval - 12) : pluck(root + interval, seed + bar * 4 + k, 0.5), "music", input.mood === "cinematic" ? 0.18 : 0.34, (k - 1.5) * 0.2, 0.4);
+    });
+  }
+  // Virada: semicolcheias de clap na meia batida antes de uma subida de energia.
+  input.sections.forEach((s, k) => {
+    const prev = input.sections[k - 1];
+    if (!prev || s.energy - prev.energy < 0.25 || input.mood === "cinematic") return;
+    for (let j = 0; j < 4; j += 1) add(s.from - beat / 2 + j * beat / 8, clap(seed + 900 + k * 8 + j), "drums", 0.18 + j * 0.06, 0, 0.2);
+  });
   // Eventos do storyboard: cada movimento visual tem o seu som (melódico, não ruído aleatório).
   input.events.forEach((ev, i) => {
     const chord = chordNotes(mood.root, mood.prog[Math.floor(ev.at / (beat * 4)) % 4]!, mood.minor);
@@ -232,10 +261,18 @@ export function composeScore(input: ScoreInput): { left: Float32Array; right: Fl
       case "riser_end": add(Math.max(0, ev.at - beat * 2), riser(seed + i, beat * 2), "fx", 0.35, 0, 0.3); break;
       case "logo": add(ev.at, impact(seed + i, 0.55), "fx", 0.6, 0, 0.5); for (const m of chord) add(ev.at, bell(m + 24), "music", 0.32, 0, 0.6); break;
       case "click": add(ev.at, (t) => (t > 0.02 ? NaN : Math.sin(TAU * 2200 * t) * Math.exp(-t * 300)), "fx", 0.25, 0, 0.1); break;
+      // Tensão: um riser que termina no SILÊNCIO (a música segura uma batida antes da resposta).
+      case "tension_stop": add(Math.max(0, ev.at - beat * 2), riser(seed + i, beat * 2), "fx", 0.4, 0, 0.35); break;
+      // Revelação: impacto + bumbo + prato (ruído brilhante longo) e o motivo volta.
+      case "drop": add(ev.at, impact(seed + i, 1), "fx", 0.85, 0, 0.5); add(ev.at, kick(1.4), "drums", 0.95); add(ev.at, noiseVoice(seed + 77 + i, 1.6, 2.2, 6500, "high", 0.5), "fx", 0.22, 0, 0.6); break;
     }
   });
+  const stops = input.events.filter((e) => e.kind === "tension_stop").map((e) => ({ from: e.at, to: e.at + beat }));
+  const inStop = (t: number) => stops.some((w) => t >= w.from - 0.01 && t < w.to);
+  for (let k = notes.length - 1; k >= 0; k -= 1) if (notes[k]!.bus !== "fx" && inStop(notes[k]!.at)) notes.splice(k, 1);
   notes.sort((a, b) => a.at - b.at);
   const left = new Float32Array(total), right = new Float32Array(total);
+  const fxL = new Float32Array(total), fxR = new Float32Array(total);
   const send = new Float32Array(total);
   const kickEnv = new Float32Array(total);
   for (const n of notes) {
@@ -244,19 +281,32 @@ export function composeScore(input: ScoreInput): { left: Float32Array; right: Fl
     for (let i = start; i < total; i += 1) {
       const v = n.voice((i - start) / SR);
       if (Number.isNaN(v)) break;
-      left[i]! += v * gl; right[i]! += v * gr;
+      if (n.bus === "fx") { fxL[i]! += v * gl; fxR[i]! += v * gr; } else { left[i]! += v * gl; right[i]! += v * gr; }
       send[i]! += v * n.gain * n.send;
       if (n.bus === "drums" && n.gain >= 0.85) kickEnv[i] = Math.max(kickEnv[i]!, Math.exp(-((i - start) / SR) * 9));
     }
   }
   // Sidechain leve (respiração do pad/baixo com o bumbo), reverb e limitador suave.
   const rl = new Reverb(0), rr = new Reverb(23);
+  // Envelope da música: zera (com 25 ms de rampa) nas janelas de tensão; abaixa sob a voz (120/350 ms).
+  const musicGain = new Float32Array(total).fill(1);
+  for (const w of stops) for (let i = Math.floor(w.from * SR); i < Math.min(total, Math.floor(w.to * SR)); i += 1) musicGain[i] = Math.min(musicGain[i]!, Math.min(1, Math.max(0, (Math.floor(w.from * SR) + 0.025 * SR - i) / (0.025 * SR))));
+  const duckGain = new Float32Array(total).fill(1);
+  if (input.duck?.intervals.length) {
+    const floor = 10 ** (-Math.abs(input.duck.depthDb) / 20);
+    const target = new Float32Array(total).fill(1);
+    for (const iv of input.duck.intervals) for (let i = Math.max(0, Math.floor(iv.from * SR)); i < Math.min(total, Math.floor(iv.to * SR)); i += 1) target[i] = floor;
+    let g = 1;
+    const att = Math.exp(-1 / (0.12 * SR)), rel = Math.exp(-1 / (0.35 * SR));
+    for (let i = 0; i < total; i += 1) { const coef = target[i]! < g ? att : rel; g = target[i]! + (g - target[i]!) * coef; duckGain[i] = g; }
+  }
   let peak = 0;
   for (let i = 0; i < total; i += 1) {
-    const duck = 1 - 0.35 * kickEnv[i]!;
+    const duck = (1 - 0.35 * kickEnv[i]!) * musicGain[i]! * duckGain[i]!;
+    const fxDuck = duckGain[i]!;
     const wl = rl.run(send[i]!), wr = rr.run(send[i]!);
-    left[i] = Math.tanh((left[i]! * duck + wl * 0.9) * 0.9);
-    right[i] = Math.tanh((right[i]! * duck + wr * 0.9) * 0.9);
+    left[i] = Math.tanh((left[i]! * duck + fxL[i]! * fxDuck + wl * 0.9 * duckGain[i]!) * 0.9);
+    right[i] = Math.tanh((right[i]! * duck + fxR[i]! * fxDuck + wr * 0.9 * duckGain[i]!) * 0.9);
     peak = Math.max(peak, Math.abs(left[i]!), Math.abs(right[i]!));
   }
   const norm = peak > 0 ? 0.89 / peak : 1;

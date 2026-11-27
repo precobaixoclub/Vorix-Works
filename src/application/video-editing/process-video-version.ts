@@ -170,6 +170,8 @@ export async function processNextVideoVersion(deps: VideoWorkerDeps): Promise<{ 
       outcome = await deps.planner.revise(request, { draft: parent.draft, plan: parent.plan }, version.request);
     } else outcome = await deps.planner.create(request);
     if (!outcome.ok) {
+      // Rascunho do piloto recusado: o motivo exato volta para o diretor criativo corrigir.
+      if (pilot || version.draft) return await finish({ status: "failed", stage: "planning", usage: outcome.usage, error: `${outcome.message} ${outcome.issues.slice(0, 4).join("; ")}`.slice(0, 600), warnings: outcome.issues.slice(0, 10) });
       const retry = RETRYABLE_AI.has(outcome.category) && version.attempts < version.maxAttempts;
       log("planejamento falhou", { versionId: version.id, category: outcome.category, retry });
       return await finish({ status: retry ? "queued" : "failed", stage: "planning", usage: outcome.usage, error: AI_MESSAGES[outcome.category] ?? outcome.message, message: retry ? "IA indisponível; nova tentativa em seguida." : undefined, warnings: outcome.issues.slice(0, 10) });

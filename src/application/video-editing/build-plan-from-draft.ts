@@ -38,6 +38,8 @@ export type BrandStyle = {
   darkHex: string;
   displayFont?: string;
   bodyFont?: string;
+  /** Cor do cartão final quando não é a primária (a logo disponível pede outro fundo). */
+  cardHex?: string;
   glossary?: BrandGlossary;
   ctaExamples?: string[];
 };
@@ -86,6 +88,11 @@ function contrastText(background: string, brand: BrandStyle): string {
   // Cruzamento do WCAG: escolhe sempre a cor de texto com maior contraste (dourado pede texto escuro).
   return luminance(background) > 0.179 ? brand.darkHex : "#FFFFFF";
 }
+function mix(hex: string, other: string, amount: number): string {
+  const a = hexToRgb(hex);
+  const b = hexToRgb(other);
+  return `#${a.map((v, i) => Math.round(v * (1 - amount) + b[i]! * amount).toString(16).padStart(2, "0")).join("").toUpperCase()}`;
+}
 function darken(hex: string, amount: number): string {
   return `#${hexToRgb(hex).map((v) => Math.round(v * (1 - amount)).toString(16).padStart(2, "0")).join("").toUpperCase()}`;
 }
@@ -129,7 +136,10 @@ export function buildPlanFromDraft(draft: VideoEditDraft, context: BuildPlanCont
     let duration = scene.durationSeconds;
     let speech = false;
     if (scene.materialId === cardId) {
-      asset = { id: cardId, kind: "card", role: "card", card: { colorHex: context.brand.primaryHex.toUpperCase(), gradientToHex: darken(context.brand.primaryHex, luminance(context.brand.primaryHex) > 0.5 ? 0.14 : 0.38) } };
+      // Cartão: cor da marca com a logo certa; preto puro ganha um toque da cor de destaque (nunca "tela preta").
+      const base = context.brand.cardHex ?? context.brand.primaryHex;
+      const cardColor = luminance(base) < 0.012 ? mix(base, context.brand.accentHex, 0.22) : base.toUpperCase();
+      asset = { id: cardId, kind: "card", role: "card", card: { colorHex: cardColor, gradientToHex: darken(cardColor, luminance(cardColor) > 0.5 ? 0.14 : 0.38) } };
     } else {
       const material = materials.get(scene.materialId);
       if (!material || material.kind === "audio") {
@@ -196,6 +206,11 @@ export function buildPlanFromDraft(draft: VideoEditDraft, context: BuildPlanCont
       return { id: `t${index + 1}-${textIndex + 1}`, role: text.role, text: text.text.trim(), startOffsetSeconds: 0, durationSeconds: 0, position, animation: text.animation, style: textStyle(text.role, context) };
     });
     if (overlays.length === 2 && overlays[0]!.position === overlays[1]!.position) overlays[1]!.position = overlays[0]!.position === "top" ? "bottom" : "top";
+    // Painel do split com dois textos: um em cima e outro embaixo (no centro e no topo eles se encostam).
+    if (layout === "split" && overlays.length === 2) {
+      overlays[0]!.position = "top";
+      overlays[1]!.position = "bottom";
+    }
 
     built.push({
       speech,

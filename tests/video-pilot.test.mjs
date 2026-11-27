@@ -279,3 +279,21 @@ test("aprovação: vídeo anexado quando cabe; acima do limite (ou falha no envi
 
   assert.doesNotMatch(approvalRequestText({ brand: "X", code: "AB12", networks: ["instagram"], screens: 3 }), /Reels/, "carrossel continua igual");
 });
+
+test("cartão final: marca preta com logo só para fundo claro → cartão claro COM a logo; preto puro sem logo ganha destaque", () => {
+  const identity = (logos) => ({ profileId: "p", workspaceId: "ws", version: 1, updatedAt: "", identity: { colors: [{ hex: "#0A0A0A", role: "PRIMARY" }, { hex: "#C9A227", role: "ACCENT" }, { hex: "#FFFFFF", role: "NEUTRAL" }], typography: { family: "SANS" }, style: { primary: "PREMIUM", traits: [] } }, logos });
+  const cmkv = videoBrandStyle({ brandName: "CMKV", identity: identity([{ assetId: "l1", backgrounds: ["LIGHT"], priority: 1, url: "objectkey:t/w/l1.png" }]) });
+  assert.equal(cmkv.logo?.assetId, "l1", "logo oficial usada");
+  assert.equal(cmkv.style.cardHex, "#FFFFFF", "cartão na cor clara da marca");
+  const draft = toDraft(codexOutput());
+  const built = planFromPresetDraft(request({ brand: cmkv.style, logoMaterialId: undefined }), draft);
+  assert.equal(built.ok, true, built.issues?.join("; "));
+  assert.equal(built.plan.assets.find((asset) => asset.kind === "card").card.colorHex, "#FFFFFF");
+  assert.equal(built.plan.look.backgroundHex, "#0A0A0A", "painel do split segue a cor principal");
+  const noLogo = planFromPresetDraft(request({ brand: { ...brand, primaryHex: "#050505", accentHex: "#C9A227" } }), draft);
+  assert.notEqual(noLogo.plan.assets.find((asset) => asset.kind === "card").card.colorHex, "#050505", "sem logo e preto puro: o cartão não vira tela preta");
+  const twoTexts = structuredClone(draft);
+  twoTexts.scenes[3].texts = [{ role: "headline", text: "Resposta: A", position: "center", animation: "fade" }, { role: "subtitle", text: "B era a outra", position: "center", animation: "fade" }];
+  const stacked = planFromPresetDraft(request(), twoTexts);
+  assert.deepEqual(stacked.plan.clips[3].overlays.map((overlay) => overlay.position), ["top", "bottom"], "dois textos no painel: em cima e embaixo");
+});

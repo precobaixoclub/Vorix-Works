@@ -47,9 +47,25 @@ export function videoBrandStyle(input: { brandName: string; toneOfVoice?: string
     displayFont: serif ? "DM Serif Display" : "Barlow Condensed",
     glossary,
   };
-  // O cartão final usa a cor primária: logo escolhido pelo fundo real (claro/escuro).
-  // Cruzamento do WCAG (0,179): acima disso, texto/logo escuro tem mais contraste que o claro.
+  // O cartão final usa a cor primária com a logo feita para esse fundo (claro/escuro; cruzamento do WCAG
+  // em 0,179). Sem logo para a cor primária, o cartão passa para a cor neutra da marca que tem logo
+  // (ex.: CMKV preta com logo só para fundo claro → cartão branco com a logo oficial), em vez de sair sem marca.
   const surface = luminance(primary) > 0.179 ? "light" : "dark";
-  const logo = input.identity ? selectBrandLogoForSurface(input.identity.logos, surface) : undefined;
+  let logo = input.identity ? selectBrandLogoForSurface(input.identity.logos, surface) : undefined;
+  const fitsSurface = (candidate: typeof logo, wanted: "light" | "dark") => Boolean(candidate?.backgrounds?.some((background) => background.toLowerCase() === wanted));
+  if (input.identity && logo && !fitsSurface(logo, surface)) {
+    const other = surface === "dark" ? "light" : "dark";
+    const alternative = selectBrandLogoForSurface(input.identity.logos, other);
+    if (alternative && fitsSurface(alternative, other)) {
+      logo = alternative;
+      style.cardHex = other === "light" ? light : dark;
+    }
+  } else if (input.identity && !logo) {
+    const alternative = selectBrandLogoForSurface(input.identity.logos, surface === "dark" ? "light" : "dark");
+    if (alternative) {
+      logo = alternative;
+      style.cardHex = surface === "dark" ? light : dark;
+    }
+  }
   return { style, ...(logo ? { logo: { url: logo.url, assetId: logo.assetId } } : {}) };
 }

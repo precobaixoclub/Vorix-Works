@@ -1,0 +1,10 @@
+# Narração local (worker de vídeo). Python 3.11. Modelos em TTS_MODEL_DIR (não versionados):
+#   Piper  pt_BR-faber-medium.onnx(.json)  — https://huggingface.co/rhasspy/piper-voices (dataset CC0)
+#   Kokoro kokoro-v1.0.onnx + voices-v1.0.bin — https://github.com/thewh1teagle/kokoro-onnx (pesos Apache-2.0)
+piper-tts==1.8.0
+kokoro-onnx==0.6.1
+numpy
+psutil
+# Só para o banco de vozes (bench_voices.py): inteligibilidade com o Whisper.
+faster-whisper==1.2.1
+soundfile

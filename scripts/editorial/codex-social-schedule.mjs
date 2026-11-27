@@ -48,8 +48,16 @@ function processOutput(program, args, stdin, timeout, extra = {}) {
     child.once("error", error => { clearTimeout(timer); reject(error); });
     child.once("close", code => {
       clearTimeout(timer);
-      if (code === 0) resolve(Buffer.concat(out).toString("utf8").trim());
-      else reject(new Error(Buffer.concat(errors).toString("utf8").trim().split("\n").slice(-5).join("\n") || `Processo retornou código ${code}`));
+      const stdout = Buffer.concat(out).toString("utf8").trim();
+      if (code === 0) return resolve(stdout);
+      const stderr = Buffer.concat(errors).toString("utf8").trim().split("\n").slice(-5).join("\n");
+      const codexError = program === "runuser" ? stdout.split("\n").flatMap(line => {
+        try {
+          const event = JSON.parse(line);
+          return event.type === "turn.failed" ? [event.error?.message] : event.type === "error" ? [event.message] : [];
+        } catch { return []; }
+      }).filter(Boolean).at(-1) : undefined;
+      reject(new Error(String(codexError || stderr || `Processo retornou código ${code}`).slice(0, 900)));
     });
     child.stdin.end(stdin);
   });

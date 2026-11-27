@@ -276,6 +276,18 @@ test("reenquadramento entra na fala: tela na janela de cima, pessoa no quadro in
   }
 });
 
+test("ritmo da emoção acelera sem ferir o tempo de leitura (caso real: CTA de energia na marca tech)", () => {
+  const d = { schemaVersion: 1, strategy: "s", rationale: "", captions: false, music: "none", logo: "none", warnings: [], story: "dor → prova → ação", scenes: [
+    scene("M1", "hook", { emotion: "curiosity", durationSeconds: 3 }),
+    scene("CARD", "cta", { emotion: "energy", durationSeconds: 2.8, design: { template: "title_card", lines: ["O contexto segue com a conversa"], cta: "Conheça a Vorix" } }),
+  ] };
+  const built = buildPlanFromDraft(d, ctx([shot("M1")]));
+  assert.equal(built.ok, true, built.issues?.join("; "));
+  const check = built.plan.direction.checks.find((c) => c.id === "reading_time");
+  assert.equal(check.status, "pass", check.detail);
+  assert.ok(built.plan.clips[0].durationSeconds < 3, "cena sem texto continua acelerada pela emoção");
+});
+
 test("applyAudiovisualDirection não muda tempos do plano", () => {
   const built = buildPlanFromDraft({ schemaVersion: 1, strategy: "s", rationale: "", captions: false, music: "none", logo: "none", warnings: [], scenes: [scene("M1", "hook", { emotion: "energy" }), scene("M2", "cta", { emotion: "urgency", transitionIn: "push_up" })] }, ctx([shot("M1"), shot("M2")]));
   const before = built.plan.clips.map((c) => [c.recordStartSeconds, c.durationSeconds]);

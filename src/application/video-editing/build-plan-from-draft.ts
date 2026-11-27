@@ -302,7 +302,13 @@ export function buildPlanFromDraft(draft: VideoEditDraft, context: BuildPlanCont
     }
   });
   // Ritmo pela emoção: cenas flexíveis ficam mais longas (sofisticação, desejo) ou mais curtas (urgência).
-  if (directed) for (const item of built) if (item.flexible) item.clip.durationSeconds *= sceneDirection(brandMotion, item.clip.emotion as Emotion | undefined).pace;
+  // Textos que aparecem na cena (os mesmos que a verificação de leitura do Quality Gate conta).
+  const textsOf = (clip: (typeof built)[number]["clip"]) => [...clip.overlays.map((o) => o.text), ...((clip.design?.props.lines as string[] | undefined) ?? []), ...[clip.design?.props.headline, clip.design?.props.label, clip.design?.props.kicker].filter((t): t is string => typeof t === "string")];
+  // A aceleração da emoção nunca deixa a cena abaixo do tempo de leitura do texto.
+  if (directed) for (const item of built) if (item.flexible) {
+    const texts = textsOf(item.clip);
+    item.clip.durationSeconds = Math.max(item.clip.durationSeconds * sceneDirection(brandMotion, item.clip.emotion as Emotion | undefined).pace, texts.length ? readingSeconds(texts) + 0.05 : 0);
+  }
 
   // Transições: duração pela intensidade pedida; fala → fala é sempre corte (vozes não se sobrepõem).
   const transitionSeconds = TRANSITION_SECONDS[context.style.transitions];
@@ -339,7 +345,6 @@ export function buildPlanFromDraft(draft: VideoEditDraft, context: BuildPlanCont
   // Beat Sync: cortes das cenas flexíveis encaixados na batida quando cabem (sem cortar o tempo de leitura).
   let beat: { bpm: number; snapped: number; cuts: number } | undefined;
   if (directed && context.beats?.times.length && built.length > 1) {
-    const textsOf = (clip: (typeof built)[number]["clip"]) => [...clip.overlays.map((o) => o.text), ...((clip.design?.props.lines as string[] | undefined) ?? []), ...[clip.design?.props.headline, clip.design?.props.label].filter((t): t is string => typeof t === "string")];
     const snap = snapCutsToBeats({ durations: built.map((item) => item.clip.durationSeconds), overlaps: built.map((_, index) => overlapOf(index)), flexible: built.map((item) => item.flexible), minimums: built.map((item) => readingSeconds(textsOf(item.clip))), beats: context.beats.times });
     snap.durations.forEach((duration, index) => { built[index]!.clip.durationSeconds = duration; });
     beat = { bpm: context.beats.bpm, snapped: snap.snapped, cuts: snap.cuts };

@@ -15,6 +15,12 @@ const rgb = (value: string) => [1, 3, 5].map((i) => parseInt(value.slice(i, i + 
 
 export type Rect = { x: number; y: number; w: number; h: number };
 
+/** Cor de fundo da marca escura demais para servir de cenário (vira "vazio preto"). */
+function darkLook(look: EditLook): boolean {
+  const [r, g, b] = rgb(look.backgroundHex);
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b < 40;
+}
+
 /** Gradiente vertical da marca como fonte (sem entrada). */
 function gradientSource(look: EditLook, cw: number, ch: number, label: string): string {
   const [r0, g0, b0] = rgb(look.backgroundHex);
@@ -87,9 +93,12 @@ export function layoutBase(layout: EditSceneLayout, clip: EditClip, look: EditLo
     return {
       parallaxForeground: false,
       chain: [
-        gradientSource(look, cw, ch, "bg"),
+        // Marca escura: o fundo é a própria foto desfocada (profundidade) em vez de um vazio quase preto.
+        ...(darkLook(look)
+          ? [`[0:v]split=2[fsrc][fcard]`, `[fsrc]scale=${cw}:${ch}:force_original_aspect_ratio=increase,crop=${cw}:${ch},scale=${even(cw / 24)}:${even(ch / 24)},gblur=sigma=10,scale=${cw}:${ch}:flags=bicubic,eq=brightness=-0.16:saturation=0.75,format=rgb24[bg]`]
+          : [gradientSource(look, cw, ch, "bg")]),
         ...shadow(rect, radius, blur, "bg", "bgs", shadowOffset),
-        `[0:v]scale=${rect.w}:${rect.h}:flags=lanczos,format=rgba,${roundedAlpha(radius)}[card]`,
+        `[${darkLook(look) ? "fcard" : "0:v"}]scale=${rect.w}:${rect.h}:flags=lanczos,format=rgba,${roundedAlpha(radius)}[card]`,
         `[bgs][card]overlay=x=${rect.x}:y=${rect.y},format=rgb24,setsar=1[b]`,
       ].join(";"),
     };

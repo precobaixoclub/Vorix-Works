@@ -74,7 +74,7 @@ function ease(duration: number): string {
 }
 
 /** `easeSeconds`: o movimento se completa nesse tempo (punch-in) em vez de durar a cena toda. */
-type Motion = { zoomFrom: number; zoomTo: number; shiftX: [number, number]; shiftY: [number, number]; easeSeconds?: number };
+type Motion = { zoomFrom: number; zoomTo: number; shiftX: [number, number]; shiftY: [number, number]; easeSeconds?: number; tail?: number };
 
 function motionOf(clip: EditClip): Motion | null {
   const amount = MAX_MOTION * clip.motion.intensity;
@@ -95,7 +95,8 @@ function motionOf(clip: EditClip): Motion | null {
     case "pan_down":
       return { zoomFrom: over, zoomTo: over, shiftX: [0, 0], shiftY: [shift, -shift] };
     case "punch_in":
-      return { zoomFrom: 1, zoomTo: 1 + amount * 0.8, shiftX: [0, 0], shiftY: [0, 0], easeSeconds: 0.45 };
+      // Impacto rápido e depois continua aproximando devagar (não congela).
+      return { zoomFrom: 1, zoomTo: 1 + amount * 0.8, shiftX: [0, 0], shiftY: [0, 0], easeSeconds: 0.45, tail: amount * 0.35 };
     case "drift":
       return { zoomFrom: over, zoomTo: over, shiftX: [-shift, shift], shiftY: [shift * 0.6, -shift * 0.6] };
     default:
@@ -110,7 +111,7 @@ function motionOf(clip: EditClip): Motion | null {
 function zoompanFilter(motion: Motion | null, duration: number, fps: number, W: number, H: number): string {
   if (!motion) return `scale=${W}:${H}:flags=lanczos`;
   const p = `st(0\\,clip(on/${fps}/${n(motion.easeSeconds ?? duration)}\\,0\\,1));ld(0)*ld(0)*(3-2*ld(0))`;
-  const z = `${n(motion.zoomFrom)}+(${n(motion.zoomTo - motion.zoomFrom)})*(${p})`;
+  const z = `${n(motion.zoomFrom)}+(${n(motion.zoomTo - motion.zoomFrom)})*(${p})${motion.tail ? `+${n(motion.tail)}*clip(on/${fps}/${n(duration)},0,1)` : ""}`;
   const dx = `(${n(motion.shiftX[0])}+(${n(motion.shiftX[1] - motion.shiftX[0])})*(${p}))`;
   const dy = `(${n(motion.shiftY[0])}+(${n(motion.shiftY[1] - motion.shiftY[0])})*(${p}))`;
   return `zoompan=z='${z}':x='max(0\\,min(iw-iw/zoom\\,(iw-iw/zoom)/2-${dx}*iw/zoom))':y='max(0\\,min(ih-ih/zoom\\,(ih-ih/zoom)/2+${dy}*ih/zoom))':d=1:s=${W}x${H}:fps=${fps}`;

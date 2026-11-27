@@ -112,7 +112,7 @@ test("construtor: paleta da marca, aparelho pela orientação da captura, lupa v
   const { plan } = result;
   assert.deepEqual(plan.look, { backgroundHex: "#B5546B", accentHex: "#E8C07A", panelTextHex: "#FFFFFF" });
   assert.deepEqual(plan.clips.map((clip) => clip.layout), ["device_laptop", "device_phone", "device_laptop", "split", "framed"]);
-  assert.ok(plan.clips.slice(0, 4).every((clip) => clip.motion.intensity <= 0.25), "aparelho/painel com câmera contida");
+  assert.ok(plan.clips.slice(0, 4).every((clip) => clip.motion.intensity <= 0.35), "aparelho/painel com câmera contida");
   assert.equal(plan.clips[3].overlays[0].position, "center", "texto central no painel do split é permitido");
   assert.equal(plan.clips[3].overlays[0].animation, "kinetic");
   assert.ok(plan.clips.slice(1).every((clip) => clip.transitionIn.type === "wipe" && clip.transitionIn.durationSeconds > 0), "wipe sobrepõe as cenas");

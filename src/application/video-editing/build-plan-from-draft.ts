@@ -70,7 +70,8 @@ export type BuildPlanResult = { ok: true; plan: VideoEditPlan; warnings: string[
 
 const FPS = 30;
 const OVERLAP = new Set<EditTransitionType>(OVERLAP_TRANSITIONS);
-const INTENSITY = { subtle: 0.2, medium: 0.4, strong: 0.6 } as const;
+// Movimento visível (Ken Burns de ~6% a ~15% na cena): abaixo disso a peça parece apresentação de fotos.
+const INTENSITY = { subtle: 0.35, medium: 0.6, strong: 0.85 } as const;
 const TRANSITION_SECONDS = { suaves: 0.6, moderadas: 0.45, marcantes: 0.3 } as const;
 const FOCUS = { center: [0.5, 0.5], top: [0.5, 0.3], bottom: [0.5, 0.7], left: [0.3, 0.5], right: [0.7, 0.5] } as const;
 
@@ -107,7 +108,8 @@ function textStyle(role: EditTextRole, context: BuildPlanContext): EditTextStyle
     cta: { size: 0.05, background: brand.accentHex, font: display },
     price: { size: 0.05, background: brand.lightHex, font: display },
     subtitle: { size: 0.038, background: brand.darkHex, font: brand.bodyFont ?? display },
-    caption: { size: 0.042, font: brand.bodyFont ?? display },
+    // Legenda da fala: sans bold, sempre (serifa com contorno embola as letras no celular).
+    caption: { size: 0.05, background: "#141414", font: "Barlow Condensed" },
   };
   const spec = base[role];
   return { size: Math.min(0.12, round3(spec.size * scale)), colorHex: spec.background ? contrastText(spec.background, brand) : "#FFFFFF", backgroundHex: spec.background, bold: spec.font !== "DM Serif Display", fontFamily: spec.font };
@@ -136,10 +138,12 @@ export function buildPlanFromDraft(draft: VideoEditDraft, context: BuildPlanCont
     let duration = scene.durationSeconds;
     let speech = false;
     if (scene.materialId === cardId) {
-      // Cartão: cor da marca com a logo certa; preto puro ganha um toque da cor de destaque (nunca "tela preta").
-      const base = context.brand.cardHex ?? context.brand.primaryHex;
+      // Cartão: cor principal da marca. O cartão FINAL com logo usa a cor que a logo oficial pede (cardHex);
+      // preto puro ganha um toque da cor de destaque (nunca "tela preta").
+      const closing = index === draft.scenes.length - 1 && draft.logo === "end" && Boolean(context.logoMaterialId) && Boolean(context.brand.cardHex);
+      const base = closing ? context.brand.cardHex! : context.brand.primaryHex;
       const cardColor = luminance(base) < 0.012 ? mix(base, context.brand.accentHex, 0.22) : base.toUpperCase();
-      asset = { id: cardId, kind: "card", role: "card", card: { colorHex: cardColor, gradientToHex: darken(cardColor, luminance(cardColor) > 0.5 ? 0.14 : 0.38) } };
+      asset = { id: closing ? "CARDEND" : cardId, kind: "card", role: "card", card: { colorHex: cardColor, gradientToHex: darken(cardColor, luminance(cardColor) > 0.5 ? 0.14 : 0.38) } };
     } else {
       const material = materials.get(scene.materialId);
       if (!material || material.kind === "audio") {
@@ -174,6 +178,13 @@ export function buildPlanFromDraft(draft: VideoEditDraft, context: BuildPlanCont
     let zoom: number | undefined;
     if (material?.role === "footage" && context.aspect !== "16:9") fit = "fill";
     if (material?.role === "screen_recording" && fit === "fit" && context.aspect === "9:16") zoom = 1.4;
+    // Vídeo com composição pedida (framed/split/aparelho): mostrar o quadro inteiro (gravação de tela não
+    // pode perder as laterais no vertical), com aproximação para leitura.
+    const videoWhole = asset.kind === "video" && scene.layout && scene.layout !== "full" && scene.layout !== "parallax" && scene.layout !== "inset";
+    if (videoWhole) {
+      fit = "fit";
+      zoom = context.aspect === "9:16" && (asset.width ?? 0) > (asset.height ?? 0) ? 1.3 : undefined;
+    }
     const [focusX, focusY] = FOCUS[scene.focus];
 
     const protectedMedia = asset.protectedFidelity === true;
@@ -184,7 +195,7 @@ export function buildPlanFromDraft(draft: VideoEditDraft, context: BuildPlanCont
     // Composição: só imagem; aparelho só para captura real; lupa só para produto.
     let layout = scene.layout ?? "full";
     if (layout !== "full" && asset.kind !== "image") {
-      warnings.push(`${path}: composição ${layout} é só para imagem; usada tela cheia`);
+      if (!videoWhole) warnings.push(`${path}: composição ${layout} é só para imagem; usada tela cheia`);
       layout = "full";
     }
     if ((layout === "device_phone" || layout === "device_laptop") && asset.role !== "screenshot") layout = "framed";
@@ -194,7 +205,13 @@ export function buildPlanFromDraft(draft: VideoEditDraft, context: BuildPlanCont
     if (layout === "device_phone" && landscape) layout = "device_laptop";
 
     // Aparelho/painel: a câmera anda pouco (o aparelho não pode sair do quadro).
-    if (layout === "device_phone" || layout === "device_laptop" || layout === "split") intensity = Math.min(intensity, 0.25);
+    if (layout === "device_phone" || layout === "device_laptop" || layout === "split") intensity = Math.min(intensity, 0.35);
+    // Foto parada não existe em Reels: "static" em imagem vira deriva lenta (cartão com texto continua parado).
+    let motionType = scene.motion;
+    if (motionType === "static" && asset.kind === "image") {
+      motionType = "drift";
+      intensity = Math.max(intensity, 0.3);
+    }
 
     const overlays: EditTextOverlay[] = scene.texts.map((text, textIndex) => {
       let position: EditTextPosition = text.position;
@@ -215,7 +232,7 @@ export function buildPlanFromDraft(draft: VideoEditDraft, context: BuildPlanCont
     built.push({
       speech,
       flexible: asset.kind !== "video",
-      clip: { id: `c${index + 1}`, assetId: asset.id, purpose: scene.purpose, sourceInSeconds: round3(sourceIn), durationSeconds: duration, motion: { type: scene.motion, intensity }, framing: { fit: asset.kind === "card" ? "fill" : fit, focusX, focusY, ...(zoom ? { zoom } : {}) }, transitionIn: { type: scene.transitionIn, durationSeconds: 0 }, overlays, keepSourceAudio: speech, ...(layout !== "full" ? { layout } : {}) },
+      clip: { id: `c${index + 1}`, assetId: asset.id, purpose: scene.purpose, sourceInSeconds: round3(sourceIn), durationSeconds: duration, motion: { type: motionType, intensity }, framing: { fit: asset.kind === "card" ? "fill" : fit, focusX, focusY, ...(zoom ? { zoom } : {}) }, transitionIn: { type: scene.transitionIn, durationSeconds: 0 }, overlays, keepSourceAudio: speech, ...(layout !== "full" ? { layout } : {}) },
     });
   });
   if (issues.length > 0) return { ok: false, issues, warnings };
@@ -247,7 +264,7 @@ export function buildPlanFromDraft(draft: VideoEditDraft, context: BuildPlanCont
     const current = flexible.reduce((sum, item) => sum + item.clip.durationSeconds, 0);
     if (flexible.length > 0 && current > 0 && available > 0) {
       const factor = available / current;
-      for (const item of flexible) item.clip.durationSeconds = Math.max(1.2, Math.min(item.clip.assetId === cardId ? 5 : 6, item.clip.durationSeconds * factor));
+      for (const item of flexible) item.clip.durationSeconds = Math.max(1.2, Math.min(item.clip.assetId === cardId || item.clip.assetId === "CARDEND" ? 5 : 6, item.clip.durationSeconds * factor));
     }
     const final = total();
     if (Math.abs(final - context.targetDurationSeconds) / context.targetDurationSeconds > 0.15) warnings.push(`duração final ${final.toFixed(1)}s difere da pedida (${context.targetDurationSeconds}s): a fala escolhida tem esse tempo`);
@@ -281,7 +298,7 @@ export function buildPlanFromDraft(draft: VideoEditDraft, context: BuildPlanCont
       .flatMap((assetId) => captionsFromTranscript(clips, assetId, context.transcripts[assetId] ?? { segments: [] }, { glossary: context.brand.glossary }))
       .sort((a, b) => a.startSeconds - b.startSeconds);
     const style = textStyle("caption", context);
-    captions = { enabled: true, style: context.aspect === "16:9" ? { ...style, backgroundHex: "#141414" } : style, position: "bottom", segments };
+    captions = { enabled: true, style: { ...style, colorHex: "#FFFFFF", bold: true }, position: "bottom", segments };
   }
 
   // Trilha.
@@ -299,7 +316,7 @@ export function buildPlanFromDraft(draft: VideoEditDraft, context: BuildPlanCont
   if (logoMaterial && draft.logo !== "none" && logoMaterial.width && logoMaterial.height) {
     addAsset({ id: logoMaterial.id, kind: "image", role: "logo", fileName: logoMaterial.fileName, width: logoMaterial.width, height: logoMaterial.height });
     const last = clips[clips.length - 1]!;
-    if (draft.logo === "end" && last.assetId === cardId) {
+    if (draft.logo === "end" && (last.assetId === cardId || last.assetId === "CARDEND")) {
       logo = { assetId: logoMaterial.id, placement: "center", scale: context.aspect === "16:9" ? 0.28 : context.aspect === "1:1" ? 0.4 : 0.46, startSeconds: round3(last.recordStartSeconds + 0.3), durationSeconds: round3(last.durationSeconds - 0.3) };
       last.overlays = last.overlays.map((overlay) => (overlay.position === "center" ? { ...overlay, position: "bottom" } : overlay));
     } else {

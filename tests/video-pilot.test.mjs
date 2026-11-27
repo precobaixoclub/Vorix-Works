@@ -286,9 +286,11 @@ test("cartão final: marca preta com logo só para fundo claro → cartão claro
   assert.equal(cmkv.logo?.assetId, "l1", "logo oficial usada");
   assert.equal(cmkv.style.cardHex, "#FFFFFF", "cartão na cor clara da marca");
   const draft = toDraft(codexOutput());
-  const built = planFromPresetDraft(request({ brand: cmkv.style, logoMaterialId: undefined }), draft);
+  const withLogo = { materials: [...photos, { id: "LOGO", fileName: "logo-src.png", kind: "image", role: "logo", width: 600, height: 300 }], logoMaterialId: "LOGO" };
+  const built = planFromPresetDraft(request({ brand: cmkv.style, ...withLogo }), draft);
   assert.equal(built.ok, true, built.issues?.join("; "));
-  assert.equal(built.plan.assets.find((asset) => asset.kind === "card").card.colorHex, "#FFFFFF");
+  assert.equal(built.plan.assets.find((asset) => asset.id === "CARDEND").card.colorHex, "#FFFFFF", "cartão final na cor que a logo pede");
+  assert.ok(built.plan.logo, "logo no cartão final");
   assert.equal(built.plan.look.backgroundHex, "#0A0A0A", "painel do split segue a cor principal");
   const noLogo = planFromPresetDraft(request({ brand: { ...brand, primaryHex: "#050505", accentHex: "#C9A227" } }), draft);
   assert.notEqual(noLogo.plan.assets.find((asset) => asset.kind === "card").card.colorHex, "#050505", "sem logo e preto puro: o cartão não vira tela preta");
@@ -296,4 +298,31 @@ test("cartão final: marca preta com logo só para fundo claro → cartão claro
   twoTexts.scenes[3].texts = [{ role: "headline", text: "Resposta: A", position: "center", animation: "fade" }, { role: "subtitle", text: "B era a outra", position: "center", animation: "fade" }];
   const stacked = planFromPresetDraft(request(), twoTexts);
   assert.deepEqual(stacked.plan.clips[3].overlays.map((overlay) => overlay.position), ["top", "bottom"], "dois textos no painel: em cima e embaixo");
+});
+
+test("refação: pontual preserva o que não foi criticado; abrangente permite reorganizar; decisão registrada", async () => {
+  const { videoRedoScope } = await import("../dist/application/video-editing/plan-video-edit.js");
+  const { scopedReason } = await import("../scripts/editorial/video-director.mjs");
+  const draft = toDraft(codexOutput());
+  const base = planFromPresetDraft(request(), draft);
+  // Reorganizar (tirar uma cena e trocar a ordem) com motivo PONTUAL é recusado…
+  const reordered = structuredClone(draft);
+  reordered.scenes = [reordered.scenes[0], reordered.scenes[3], reordered.scenes[1], reordered.scenes[4]];
+  reordered.scenes[0].texts[0].text = "Qual é o seu?";
+  const pontual = planFromPresetDraft(request(), reordered, { plan: base.plan, reason: "troque o texto da abertura" });
+  assert.equal(pontual.ok, false);
+  assert.match(pontual.message, /refação pontual/);
+  // …e aceito quando o motivo pede ritmo/organização.
+  const broad = planFromPresetDraft(request(), reordered, { plan: base.plan, reason: "o vídeo ficou lento e com cara de apresentação de slides" });
+  assert.equal(broad.ok, true, broad.issues?.join("; "));
+  assert.ok(broad.warnings.some((w) => w.startsWith("refação abrangente")), "decisão registrada na versão");
+  assert.equal(videoRedoScope(base.plan, "Ajuste abrangente (ritmo, organização e composição): melhore").mode, "abrangente");
+  assert.equal(videoRedoScope(base.plan, "troque a música").mode, "pontual");
+  // O cliente citou uma parte específica: pontual mesmo que o diretor sugira abrangente.
+  assert.equal(scopedReason({ reason: "troque o texto da abertura", scope: "abrangente", from: "cliente" }).mode, "pontual");
+  const generic = scopedReason({ reason: "não ficou bom, faltou energia", scope: "abrangente", justification: "o cliente critica o vídeo todo", from: "cliente" });
+  assert.equal(generic.mode, "abrangente");
+  assert.match(generic.reason, /^Ajuste abrangente/);
+  assert.deepEqual(generic.trace, { from: "cliente", requested: "abrangente", applied: "abrangente", justification: "o cliente critica o vídeo todo", specificPartsCited: false });
+  assert.equal(scopedReason({ reason: "na quarta cena aproxime", scope: "abrangente", from: "revisao" }).mode, "abrangente", "o revisor pode pedir abrangente");
 });

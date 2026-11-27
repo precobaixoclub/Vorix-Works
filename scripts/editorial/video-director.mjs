@@ -69,7 +69,8 @@ const RULES = `Regras (obrigatórias):
 6. Ritmo de Reels: cenas de 1,5 a 3,5 s; no máximo 2 tipos de transição além do corte; fala para fala é corte.
 7. Não pode parecer apresentação de fotos: use 2 a 4 composições diferentes ("layout"): parallax (profundidade, bom para gancho), framed (produto num cartão), split (foto + painel da marca com o texto; o texto vai para o painel e pode ficar no centro), inset (lupa num detalhe; focus onde o detalhe está), device_phone/device_laptop (captura de tela real dentro do aparelho), full (tela cheia). "kinetic" faz as palavras entrarem uma a uma; punch_in é aproximação rápida; drift é deriva lenta.
 8. Detalhe de captura de tela: layout full com focus na região (o sistema amplia aquela parte e ela fica legível); framed/split/device mostram a tela inteira (contexto, não leitura). Produto e tela: sempre inteiros e fiéis; texto nunca no centro de um produto fora do split. Captura de tela só em full/framed/split/device. Imagem gerada por IA (papel generated) é só clima/conceito — nunca representa o produto nem a tela.
-9. Use cada material no máximo 2 vezes. Não repita a estratégia das peças recentes da marca.`;
+9. Vídeo: layout "framed" mostra o quadro INTEIRO (use para gravação de tela — no vertical, "full" corta as laterais); "full" preenche o quadro (bom para pessoa falando).
+10. Use cada material no máximo 2 vezes. Não repita a estratégia das peças recentes da marca.`;
 
 function materialLines(materials, sentences = []) {
   return materials.map((m, index) => `- ${m.id} · ${m.kind}${m.kind === "video" && sentences.some((s) => s.materialId === m.id) ? " COM FALA (escolha pelas frases: sentenceIds; sourceStartSeconds null)" : ""} · ${m.role}${m.label ? ` · "${m.label}"` : ""}${m.width && m.height ? ` · ${m.width > m.height * 1.05 ? "horizontal" : m.height > m.width * 1.05 ? "vertical" : "quadrado"}` : ""}${m.thumb ? ` · imagem anexada nº ${index + 1}` : ""}`);
@@ -106,11 +107,12 @@ export function directorPrompt({ selection, materials, sentences = [], targetSec
 /** Revisão editorial (visão) da prancha de quadros: o Quality Gate técnico já passou; aqui é a peça. */
 export const reviewSchema = {
   type: "object", additionalProperties: false,
-  required: ["hookInFirstSeconds", "textReadable", "brandConsistent", "materialFaithful", "notSlideshow", "findings", "verdict", "revisionRequest"],
+  required: ["hookInFirstSeconds", "textReadable", "brandConsistent", "materialFaithful", "notSlideshow", "findings", "verdict", "revisionRequest", "revisionScope"],
   properties: {
     hookInFirstSeconds: { type: "boolean" }, textReadable: { type: "boolean" }, brandConsistent: { type: "boolean" },
     materialFaithful: { type: "boolean" }, notSlideshow: { type: "boolean" },
     findings: { type: "array", maxItems: 8, items: str(240) }, verdict: enumOf(["approve", "revise", "reject"]), revisionRequest: str(300),
+    revisionScope: enumOf(["pontual", "abrangente"]),
   },
 };
 
@@ -122,7 +124,8 @@ export function reviewPrompt({ selection, plan, gate }) {
     `O controle técnico já aprovou (formato, áudio, quadros pretos, legibilidade medida): ${gate?.status ?? "?"}.`,
     ``,
     `Avalie como diretor(a) de criação: gancho visível no começo; textos legíveis e sem erro de português; coerência com a marca; produto/tela fiéis (sem deformação ou corte que esconda o principal); ritmo e composição que não pareçam apresentação de fotos.`,
-    `verdict: "approve" se pode ir ao cliente; "revise" se um ajuste pontual resolve (descreva em revisionRequest, em português, citando a cena: "deixe a abertura…", "na terceira cena…"); "reject" só para problema grave (material errado, texto ofensivo, produto deformado). Não reprove por gosto pessoal. Não gere imagens nem execute comandos. Responda só o JSON.`,
+    `revisionScope: "pontual" se o ajuste é em cenas/textos específicos; "abrangente" se o problema é de ritmo, organização ou composição do vídeo como um todo.
+verdict: "approve" se pode ir ao cliente; "revise" se um ajuste pontual resolve (descreva em revisionRequest, em português, citando a cena: "deixe a abertura…", "na terceira cena…"); "reject" só para problema grave (material errado, texto ofensivo, produto deformado). Não reprove por gosto pessoal. Não gere imagens nem execute comandos. Responda só o JSON.`,
   ].join("\n");
 }
 
@@ -132,13 +135,34 @@ export function reviewOutcome(raw) {
   const checks = ["hookInFirstSeconds", "textReadable", "brandConsistent", "materialFaithful", "notSlideshow"].filter((key) => raw[key] === false);
   // Aprovação com item crítico reprovado não vale: vira ajuste.
   const verdict = raw.verdict === "approve" && checks.some((key) => key === "textReadable" || key === "materialFaithful") ? "revise" : raw.verdict;
-  return { verdict, findings: [...(raw.findings ?? []), ...checks.map((key) => `item reprovado: ${key}`)].slice(0, 10), revisionRequest: String(raw.revisionRequest ?? "").trim().slice(0, 300) };
+  // Falta de ritmo/composição (cara de apresentação) é problema do vídeo inteiro: ajuste abrangente.
+  const scope = raw.revisionScope === "abrangente" || checks.includes("notSlideshow") ? "abrangente" : "pontual";
+  return { verdict, scope, findings: [...(raw.findings ?? []), ...checks.map((key) => `item reprovado: ${key}`)].slice(0, 10), revisionRequest: String(raw.revisionRequest ?? "").trim().slice(0, 300) };
 }
 
 export const redoSchema = {
   type: "object", additionalProperties: false, required: ["draft", "changeSummary"],
-  properties: { draft: directorSchema, changeSummary: str(240) },
+  properties: { draft: directorSchema, changeSummary: str(240), scope: enumOf(["pontual", "abrangente"]), scopeJustification: str(300) },
 };
+redoSchema.required.push("scope", "scopeJustification");
+
+// Partes específicas citadas pelo cliente: aí a correção é pontual, mesmo que o diretor ache que caberia mais.
+const SPECIFIC_PARTS = /\b(abertura|inicio|comeco|gancho|final|encerramento|fim|ultima cena|cta|primeira|segunda|terceira|quarta|quinta|sexta|\d+[ªa]? cena|cena \d+|texto|titulo|frase|musica|trilha|legenda|logo)\b/;
+const normalize = (text) => String(text ?? "").normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
+
+/**
+ * Motivo enviado ao motor. Abrangente (ritmo/organização/composição) recebe o marcador explícito que a trava
+ * reconhece; pontual segue como está (só o que foi citado muda). Devolve também o registro da decisão.
+ */
+export function scopedReason({ reason, scope, justification, from = "cliente" }) {
+  const specific = SPECIFIC_PARTS.test(normalize(reason));
+  const broad = scope === "abrangente" && (from === "revisao" || !specific);
+  return {
+    reason: broad ? `Ajuste abrangente (ritmo, organização e composição): ${reason}` : reason,
+    mode: broad ? "abrangente" : "pontual",
+    trace: { from, requested: scope ?? "pontual", applied: broad ? "abrangente" : "pontual", justification: justification ?? null, specificPartsCited: specific },
+  };
+}
 
 /** Refação pelo motivo da reprovação no WhatsApp: muda SÓ o que o motivo pede (o sistema confere). */
 export function redoPrompt({ job, previousDraft, materials, findings }) {
@@ -155,7 +179,8 @@ export function redoPrompt({ job, previousDraft, materials, findings }) {
     ``,
     RULES,
     ``,
-    `Devolva em "draft" o rascunho COMPLETO da nova versão (mesmo formato), mudando somente o que o motivo critica — cenas, textos, trilha ou logo que o cliente não criticou ficam IDÊNTICOS (o sistema recusa mudança fora do motivo). changeSummary: uma frase para o cliente com o que mudou.`,
+    `Classifique o motivo em "scope": "pontual" quando ele cita partes específicas (abertura, uma cena, um texto, a música, a logo) — aí SÓ essas partes mudam e o resto fica IDÊNTICO; "abrangente" quando pede ritmo, organização, composição ou o vídeo como um todo — aí você pode reorganizar as cenas. Justifique em scopeJustification citando o trecho do motivo. O sistema confere: se o cliente citou partes específicas, vale o pontual.`,
+    `Devolva em "draft" o rascunho COMPLETO da nova versão (mesmo formato). changeSummary: uma frase para o cliente com o que mudou.`,
   ].filter((line) => line !== undefined).join("\n");
 }
 

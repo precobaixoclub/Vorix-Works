@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import { chown, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { isAbsolute, join, relative, sep } from "node:path";
 import { addToReviewQueue, reviewSkipIds } from "./creative-pipeline.mjs";
-import { conceptImagePrompt, conceptImageSchema, directorPrompt, directorSchema, redoPrompt, redoSchema, reviewOutcome, reviewPrompt, reviewSchema, targetSecondsFor, toDraft } from "./video-director.mjs";
+import { conceptImagePrompt, conceptImageSchema, directorPrompt, directorSchema, redoPrompt, redoSchema, reviewOutcome, reviewPrompt, reviewSchema, scopedReason, targetSecondsFor, toDraft } from "./video-director.mjs";
 
 /**
  * Piloto automático — RAMO DE VÍDEO (Reels) a partir das pautas "video" do Bolsão. Não é um segundo piloto:
@@ -154,6 +154,30 @@ async function editorialReview(jobDir, selection, status, operations) {
   }
 }
 
+/**
+ * Nova versão por um pedido de ajuste (revisão do Codex ou reprovação do cliente), com o escopo decidido e
+ * registrado: pontual (só o citado muda) ou abrangente (ritmo/organização/composição). Recusa por mexer
+ * fora do escopo volta UMA vez ao Codex com o motivo exato; o limite de refações do cliente segue o da API.
+ */
+async function reviseWithScope(workspaceId, fromVersionId, request, operations, makeDraft) {
+  const scoped = scopedReason(request);
+  operations.push({ step: "escopo do ajuste", ...scoped.trace });
+  let correction;
+  for (let round = 0; round < 2; round += 1) {
+    const draft = await makeDraft(correction);
+    const revised = await callContainer({ workspaceId, action: "video_revise", versionId: fromVersionId, reason: scoped.reason, draft }).catch((error) => ({ error: error.message }));
+    if (!revised.versionId) {
+      operations.push({ step: "nova versão", outcome: "failed", detail: String(revised.error).slice(0, 200) });
+      return { error: revised.error, scoped };
+    }
+    const status = await waitVersion(workspaceId, revised.versionId);
+    operations.push({ step: `nova versão v${status.number}`, outcome: status.status, detail: String(status.error ?? (status.warnings ?? []).find((item) => item.startsWith("refação")) ?? "").slice(0, 300) });
+    if (status.status === "ready_for_review" || round === 1 || !/não pedia/.test(status.error ?? "")) return { status, scoped };
+    correction = `a versão anterior foi recusada: ${status.error}. Mantenha IDÊNTICO tudo o que o pedido não citou.`;
+  }
+  return { scoped };
+}
+
 function slotFor() {
   const now = localTime();
   const today = `${now.slice(0, 10)}T${VIDEO_HOUR}:00`;
@@ -212,16 +236,17 @@ async function runWorkspace(workspaceId) {
     // Revisão editorial (até 1 ajuste). Inconclusiva ou reprovada: revisão manual, nunca agenda sozinha.
     let review = await editorialReview(jobDir, selection, status, operations);
     if (review.verdict === "revise" && review.revisionRequest) {
-      const { output, ms } = await codex(jobDir, { prompt: `${directorPrompt({ selection, materials: selection.materials ?? materials, sentences: [], targetSeconds: targetSecondsFor(idea) })}\n\nRASCUNHO ATUAL (JSON do motor): ${JSON.stringify(status.draft)}\nAJUSTE PEDIDO PELA REVISÃO: ${review.revisionRequest}\nDevolva o rascunho completo com o ajuste; mantenha o resto igual.`, schema: directorSchema, images: await writeImages(jobDir, selection.materials ?? materials) });
-      operations.push({ step: "ajuste da revisão", engine: "codex", durationMs: ms });
-      const revised = await callContainer({ workspaceId, action: "video_revise", versionId: status.versionId, reason: review.revisionRequest, draft: toDraft(output) }).catch((error) => ({ error: error.message }));
-      if (revised.versionId) {
-        const next = await waitVersion(workspaceId, revised.versionId);
-        if (next.status === "ready_for_review") {
-          status = next;
-          review = await editorialReview(jobDir, selection, status, operations);
-        } else operations.push({ step: "ajuste da revisão", outcome: "failed", detail: String(next.error ?? next.status).slice(0, 200) });
-      } else operations.push({ step: "ajuste da revisão", outcome: "failed", detail: String(revised.error).slice(0, 200) });
+      const pictures = await writeImages(jobDir, selection.materials ?? materials);
+      const base = status;
+      const result = await reviseWithScope(workspaceId, base.versionId, { reason: review.revisionRequest, scope: review.scope, from: "revisao" }, operations, async (correction) => {
+        const { output, ms } = await codex(jobDir, { prompt: `${directorPrompt({ selection, materials: selection.materials ?? materials, sentences: [], targetSeconds: targetSecondsFor(idea) })}\n\nRASCUNHO ATUAL (JSON do motor): ${JSON.stringify(base.draft)}\nAJUSTE PEDIDO PELA REVISÃO (${review.scope}): ${review.revisionRequest}\n${review.scope === "abrangente" ? "Ajuste abrangente: pode reorganizar ritmo, ordem e composição." : "Ajuste pontual: mude só o que foi pedido e mantenha o resto IDÊNTICO."}${correction ? `\nCORREÇÃO: ${correction}` : ""}\nDevolva o rascunho completo.`, schema: directorSchema, images: pictures });
+        operations.push({ step: "ajuste da revisão", engine: "codex", durationMs: ms });
+        return toDraft(output);
+      });
+      if (result.status?.status === "ready_for_review") {
+        status = result.status;
+        review = await editorialReview(jobDir, selection, status, operations);
+      }
     }
     if (review.verdict !== "approve") throw new Error(`QUALITY_GATE: revisão editorial ${review.verdict} — ${review.findings.join("; ")}`.slice(0, 600));
     const result = await callContainer({ workspaceId, action: mode === "validate" ? "video_validate" : "video_schedule", ideaId: idea.id, updatedAt: idea.updatedAt, versionId: status.versionId, sha256: status.output.sha256, slot,
@@ -248,11 +273,20 @@ async function redoWorkspace(workspaceId) {
     if (job.video.sha256 && previous.output?.sha256 && previous.output.sha256 !== job.video.sha256) throw new Error("A versão reprovada não confere com a enviada ao cliente");
     const sheet = await sheetFile(jobDir, previous, "reprovado.jpg");
     const materials = Object.values(previous.draft?.scenes ?? []).map((scene) => scene.materialId).filter((id, index, all) => id !== "CARD" && all.indexOf(id) === index).map((id) => ({ id, kind: "image", role: "material" }));
-    const { output, ms } = await codex(jobDir, { prompt: redoPrompt({ job, previousDraft: previous.draft, materials }), schema: redoSchema, images: sheet ? [sheet] : [] });
-    operations.push({ step: "refação (plano)", engine: "codex", durationMs: ms });
-    const revised = await callContainer({ workspaceId, action: "video_revise", versionId: previous.versionId, reason: job.reason, draft: toDraft(output.draft) });
-    const status = await waitVersion(workspaceId, revised.versionId);
-    if (status.status !== "ready_for_review") throw new Error(status.error ?? `a nova versão ficou ${status.status}`);
+    let output;
+    const first = await codex(jobDir, { prompt: redoPrompt({ job, previousDraft: previous.draft, materials }), schema: redoSchema, images: sheet ? [sheet] : [] });
+    output = first.output;
+    operations.push({ step: "refação (plano)", engine: "codex", durationMs: first.ms });
+    let firstDraft = toDraft(output.draft);
+    const result = await reviseWithScope(workspaceId, previous.versionId, { reason: job.reason, scope: output.scope, justification: output.scopeJustification, from: "cliente" }, operations, async (correction) => {
+      if (!correction) return firstDraft;
+      const again = await codex(jobDir, { prompt: `${redoPrompt({ job, previousDraft: previous.draft, materials })}\nCORREÇÃO: ${correction}`, schema: redoSchema, images: sheet ? [sheet] : [] });
+      operations.push({ step: "refação (correção do escopo)", engine: "codex", durationMs: again.ms });
+      output = again.output;
+      return toDraft(again.output.draft);
+    });
+    const status = result.status;
+    if (!status || status.status !== "ready_for_review") throw new Error(status?.error ?? result.error ?? `a nova versão ficou ${status?.status}`);
     const selection = { brand: job.brand ?? "a marca", idea: job.idea };
     const review = await editorialReview(jobDir, selection, status, operations);
     if (review.verdict !== "approve") throw new Error(`revisão editorial ${review.verdict} — ${review.findings.join("; ")}`.slice(0, 400));

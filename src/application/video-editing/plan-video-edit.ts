@@ -70,6 +70,28 @@ const ORDINALS: Record<string, number> = { primeira: 1, segunda: 2, terceira: 3,
  * "terceira cena", "música", "legenda", "transições", "duração"). Sem nada reconhecível, cai na
  * regra da refação pelo WhatsApp (\`videoRevisionPermissions\`).
  */
+/**
+ * Pedido ABRANGENTE: ritmo, organização, composição, estilo ou o vídeo como um todo. Aí a nova versão pode
+ * reorganizar as cenas (o cliente pediu isso). Sem isso, a correção é PONTUAL: só o que foi citado muda.
+ * "Ajuste abrangente" é o marcador explícito usado pelo piloto quando o revisor/diretor classifica assim.
+ */
+const BROAD_REQUEST = /\b(ajuste abrangente|ritmo|dinamic|lent[oa]|arrastad|monoton|cansativ|parad[oa]|cara de (slide|apresenta)|apresentacao de fotos|slideshow|organiza|reorganiz|sequencia|ordem|estrutura|narrativ|historia|composic|enquadramentos?|layout|criativ|profission|amador|generic|sem graca|chat[oa]|refa(ca|z|zer) (tudo|o video|inteir)|video (todo|inteiro)|todo o video|outro estilo|mude tudo|troque tudo|nao gostei do video)/;
+
+export type VideoRedoScope = { mode: "pontual" | "abrangente"; permissions: VideoRevisionPermissions; reading: string };
+
+/** Escopo da refação com o modo explícito (registrado na versão para rastreabilidade). */
+export function videoRedoScope(plan: VideoEditPlan, request: string): VideoRedoScope {
+  const text = request.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
+  const ids = plan.clips.map((clip) => clip.id);
+  if (BROAD_REQUEST.test(text)) {
+    return { mode: "abrangente", reading: "o motivo pede mudança de ritmo/organização/composição: todas as cenas podem mudar", permissions: { ...videoRevisionPermissions(plan, request), visualClipIds: ids, textClipIds: ids, captions: true, logo: true, audio: true } };
+  }
+  const permissions = conversationalScope(plan, request);
+  const all = permissions.visualClipIds.length === ids.length;
+  const scenes = [...new Set([...permissions.visualClipIds, ...permissions.textClipIds])].map((id) => ids.indexOf(id) + 1).sort((a, b) => a - b);
+  return { mode: all ? "abrangente" : "pontual", permissions, reading: all ? "mudança global (duração/ordem/estilo)" : `só pode mudar: ${[scenes.length ? `cena(s) ${scenes.join(", ")}` : "", permissions.audio ? "áudio" : "", permissions.captions ? "legendas" : "", permissions.logo ? "logo" : ""].filter(Boolean).join(", ") || "nada identificado"}` };
+}
+
 export function conversationalScope(plan: VideoEditPlan, request: string): VideoRevisionPermissions {
   const fallback = videoRevisionPermissions(plan, request);
   const text = request.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
@@ -152,7 +174,7 @@ export class VideoEditPlanningService {
    */
   async revise(request: PlanningRequest, previous: { draft: VideoEditDraft; plan: VideoEditPlan }, revisionRequest: string): Promise<PlanningOutcome> {
     const usage: PlanningUsage = { calls: 0, inputTokens: 0, outputTokens: 0, costUsd: 0 };
-    const permissions = conversationalScope(previous.plan, revisionRequest);
+    const permissions = videoRedoScope(previous.plan, revisionRequest).permissions;
     const index = (clipId: string) => previous.plan.clips.findIndex((clip) => clip.id === clipId);
     const visual = permissions.visualClipIds.map(index).filter((i) => i >= 0);
     const texts = permissions.textClipIds.map(index).filter((i) => i >= 0);
@@ -192,9 +214,13 @@ export function planFromPresetDraft(request: PlanningRequest, raw: unknown, prev
   if (!semantic.valid) return { ok: false, category: "plan_rejected", message: "Rascunho do diretor criativo recusado pela validação.", issues: [...semantic.errors], usage };
   const built = buildPlanFromDraft(semantic.data, request);
   if (!built.ok) return { ok: false, category: "plan_rejected", message: "O plano do diretor criativo não pôde ser montado.", issues: built.issues, usage };
+  let trace: string | undefined;
   if (previous) {
-    const problems = videoRevisionViolations(scopeView(previous.plan), scopeView(built.plan), conversationalScope(previous.plan, previous.reason));
-    if (problems.length) return { ok: false, category: "out_of_scope", message: "A nova versão mexeu em partes que o motivo não pedia.", issues: problems, usage };
+    // Pontual: o que não foi criticado fica idêntico. Abrangente: reorganizar é permitido (foi pedido).
+    const scope = videoRedoScope(previous.plan, previous.reason);
+    trace = `refação ${scope.mode}: ${scope.reading}`;
+    const problems = videoRevisionViolations(scopeView(previous.plan), scopeView(built.plan), scope.permissions);
+    if (problems.length) return { ok: false, category: "out_of_scope", message: `A nova versão mexeu em partes que o motivo não pedia (${trace}).`, issues: problems, usage };
   }
-  return { ok: true, draft: semantic.data, plan: built.plan, warnings: [...semantic.warnings, ...built.warnings], rationale: semantic.data.rationale, usage };
+  return { ok: true, draft: semantic.data, plan: built.plan, warnings: [...(trace ? [trace] : []), ...semantic.warnings, ...built.warnings], rationale: semantic.data.rationale, usage };
 }

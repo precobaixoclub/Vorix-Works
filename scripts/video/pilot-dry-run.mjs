@@ -10,7 +10,7 @@
 import { spawn } from "node:child_process";
 import { chown, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { directorPrompt, directorSchema, redoPrompt, redoSchema, reviewOutcome, reviewPrompt, reviewSchema, targetSecondsFor, toDraft } from "./video-director.mjs";
+import { directorPrompt, directorSchema, redoPrompt, redoSchema, reviewOutcome, reviewPrompt, reviewSchema, scopedReason, targetSecondsFor, toDraft } from "./video-director.mjs";
 
 const [container, outDir, only = "A,B,C,D,E"] = process.argv.slice(2);
 if (!container || !outDir) throw new Error("Uso: node pilot-dry-run.mjs <container> <saida> [A,B,C,D,E]");
@@ -168,12 +168,22 @@ async function produce(name, { selection, materials, workspaceId, settings, sent
     let verdict = await review(jobDir, name, selection, status);
     entry.steps.push({ step: "Codex: revisão v1", ms: verdict.ms, verdict: verdict.verdict, findings: verdict.findings, revisionRequest: verdict.revisionRequest });
     if (verdict.verdict === "revise" && verdict.revisionRequest) {
-      const adjust = await codex(jobDir, { prompt: `${directorPrompt({ selection, materials, sentences, targetSeconds: settings.targetDurationSeconds })}\n\nRASCUNHO ATUAL (JSON do motor): ${JSON.stringify(status.draft)}\nAJUSTE PEDIDO PELA REVISÃO: ${verdict.revisionRequest}\nDevolva o rascunho completo com o ajuste; mantenha o resto igual.`, schema: directorSchema, images: await images(jobDir, materials) });
-      entry.steps.push({ step: "Codex: ajuste", ms: adjust.ms });
-      rendered = await sampled(() => inContainer({ ...common, versionId: `${name.toLowerCase()}-v2`, parentVersionId: status.versionId, request: verdict.revisionRequest, draft: toDraft(adjust.output) }));
-      const next = rendered.result;
-      entry.steps.push({ step: "render v2 (ajuste)", ms: rendered.ms, renderMs: next.renderMs, peakMemMiB: rendered.peakMemMiB, status: next.status, gate: next.gate?.status, error: next.error, warnings: next.warnings?.slice(0, 5) });
-      await saveOutputs(name, next);
+      // Mesma regra do orquestrador: escopo decidido e registrado; recusa por escopo volta uma vez ao Codex.
+      const scoped = scopedReason({ reason: verdict.revisionRequest, scope: verdict.scope, from: "revisao" });
+      entry.steps.push({ step: "escopo do ajuste", ...scoped.trace });
+      const base = status;
+      let next;
+      let correction;
+      for (let round = 0; round < 2; round += 1) {
+        const adjust = await codex(jobDir, { prompt: `${directorPrompt({ selection, materials, sentences, targetSeconds: settings.targetDurationSeconds })}\n\nRASCUNHO ATUAL (JSON do motor): ${JSON.stringify(base.draft)}\nAJUSTE PEDIDO PELA REVISÃO (${scoped.mode}): ${verdict.revisionRequest}\n${scoped.mode === "abrangente" ? "Ajuste abrangente: pode reorganizar ritmo, ordem e composição." : "Ajuste pontual: mude só o que foi pedido e mantenha o resto IDÊNTICO."}${correction ? `\nCORREÇÃO: ${correction}` : ""}\nDevolva o rascunho completo.`, schema: directorSchema, images: await images(jobDir, materials) });
+        entry.steps.push({ step: round ? "Codex: ajuste (correção do escopo)" : "Codex: ajuste", ms: adjust.ms });
+        rendered = await sampled(() => inContainer({ ...common, versionId: `${name.toLowerCase()}-v2${round ? "b" : ""}`, parentVersionId: base.versionId, request: scoped.reason, draft: toDraft(adjust.output) }));
+        next = rendered.result;
+        entry.steps.push({ step: `render v2${round ? "b" : ""} (ajuste)`, ms: rendered.ms, renderMs: next.renderMs, peakMemMiB: rendered.peakMemMiB, status: next.status, gate: next.gate?.status, error: next.error, scope: next.warnings?.find((w) => w.startsWith("refação")) });
+        await saveOutputs(name, next);
+        if (next.status === "ready_for_review" || !/não pedia/.test(next.error ?? "")) break;
+        correction = `a versão anterior foi recusada: ${next.error}. Mantenha IDÊNTICO tudo o que o pedido não citou.`;
+      }
       if (next.status === "ready_for_review") {
         status = next;
         verdict = await review(jobDir, name, selection, status);
@@ -233,32 +243,61 @@ try {
     await produce("C", { selection, materials, workspaceId: RAA, settings: settings(30), sentences: transcribed.result.sentences, transcribedFrom: { projectId } });
     report.tests.C.steps.unshift(...steps);
   }
-  if (tests.has("D") && a?.status?.status === "ready_for_review") {
-    say("D: refação — motivo simulado de reprovação no WhatsApp, só o que foi criticado muda");
+  /** Refação pelo motivo do cliente (WhatsApp simulado): mesmo fluxo do orquestrador (escopo + 1 correção). */
+  async function redoCase(key, reason, versionSuffix) {
     const jobDir = await jobDirectory();
     try {
-      const job = { reason: "A abertura ficou fraca: troque o texto do gancho por uma pergunta mais curiosa", reasons: ["A abertura ficou fraca: troque o texto do gancho por uma pergunta mais curiosa"], idea: a.selection.idea };
+      const job = { reason, reasons: [reason], idea: a.selection.idea };
       const sheet = join(jobDir, "reprovado.jpg");
       await writeFile(sheet, Buffer.from(a.status.output.sheet, "base64"), { mode: 0o644 });
-      const redo = await codex(jobDir, { prompt: redoPrompt({ job, previousDraft: a.status.draft, materials: a.selection.materials.map(({ thumb, ...m }) => m) }), schema: redoSchema, images: [sheet] });
-      const rendered = await sampled(() => inContainer({ action: "render", projectId: a.projectId, workspaceId: CMKV, ideaId: a.selection.idea.id, materials: a.selection.materials, settings: settings(20), request: job.reason, versionId: "d-refacao", parentVersionId: a.status.versionId, draft: toDraft(redo.output.draft) }));
-      const status = rendered.result;
-      await saveOutputs("D", status);
-      const verdict = status.status === "ready_for_review" ? await review(jobDir, "D", a.selection, status) : { verdict: "n/a" };
-      const changed = status.plan ? status.plan.clips.map((clip, i) => JSON.stringify(clip) !== JSON.stringify(a.status.plan.clips[i]) ? i + 1 : null).filter(Boolean) : [];
-      report.tests.D = { reason: job.reason, changeSummary: redo.output.changeSummary, codexMs: redo.ms, renderMs: status.renderMs, firstRenderMs: a.status.renderMs, ms: rendered.ms, peakMemMiB: rendered.peakMemMiB, status: status.status, error: status.error, issues: status.warnings?.slice(0, 6), scenesChanged: changed, review: verdict.verdict, findings: verdict.findings, file: status.output?.file, sha256: status.output?.sha256 };
-      if (status.status === "ready_for_review") a.redo = status;
+      const materials = a.selection.materials.map(({ thumb, ...m }) => m);
+      const steps = [];
+      let output;
+      let status;
+      let scoped;
+      let correction;
+      let rendered;
+      for (let round = 0; round < 2; round += 1) {
+        const redo = await codex(jobDir, { prompt: `${redoPrompt({ job, previousDraft: a.status.draft, materials })}${correction ? `\nCORREÇÃO: ${correction}` : ""}`, schema: redoSchema, images: [sheet] });
+        output = redo.output;
+        scoped = scopedReason({ reason, scope: output.scope, justification: output.scopeJustification, from: "cliente" });
+        steps.push({ step: round ? "Codex: refação (correção do escopo)" : "Codex: refação", ms: redo.ms, scope: scoped.trace });
+        rendered = await sampled(() => inContainer({ action: "render", projectId: a.projectId, workspaceId: CMKV, ideaId: a.selection.idea.id, materials: a.selection.materials, settings: settings(targetSecondsFor(a.selection.idea)), request: scoped.reason, versionId: `${versionSuffix}${round ? "b" : ""}`, parentVersionId: a.status.versionId, draft: toDraft(output.draft) }));
+        status = rendered.result;
+        steps.push({ step: "render", ms: rendered.ms, renderMs: status.renderMs, peakMemMiB: rendered.peakMemMiB, status: status.status, error: status.error, scope: status.warnings?.find((w) => w.startsWith("refação")) });
+        await saveOutputs(key, status);
+        if (status.status === "ready_for_review" || !/não pedia/.test(status.error ?? "")) break;
+        correction = `a versão anterior foi recusada: ${status.error}. Mantenha IDÊNTICO tudo o que o motivo não citou.`;
+      }
+      const verdict = status.status === "ready_for_review" ? await review(jobDir, key, a.selection, status) : { verdict: "n/a" };
+      const before = a.status.plan.clips;
+      const changed = status.plan ? status.plan.clips.map((clip, i) => JSON.stringify(clip) !== JSON.stringify(before[i]) ? i + 1 : null).filter(Boolean) : [];
+      report.tests[key] = { reason, applied: scoped.mode, scopeTrace: scoped.trace, changeSummary: output.changeSummary, steps, renderMs: status.renderMs, firstRenderMs: a.status.renderMs, status: status.status, error: status.error,
+        scenesBefore: before.length, scenesAfter: status.plan?.clips.length, scenesChanged: changed, review: verdict.verdict, findings: verdict.findings, file: status.output?.file, sha256: status.output?.sha256 };
+      return status.status === "ready_for_review" ? { status, verdict } : undefined;
     } finally {
       await rm(jobDir, { recursive: true, force: true });
     }
   }
-  if (tests.has("E") && a?.status?.status === "ready_for_review" && a.verdict?.verdict === "approve") {
+  if (tests.has("D") && a?.status?.status === "ready_for_review") {
+    say("D1: refação PONTUAL — o cliente critica só o texto da abertura");
+    const d1 = await redoCase("D1", "A abertura ficou fraca: troque o texto do gancho por uma pergunta mais curiosa", "d1-refacao");
+    say("D2: refação ABRANGENTE — o cliente critica o ritmo do vídeo inteiro");
+    const d2 = await redoCase("D2", "O vídeo ficou lento e com cara de apresentação de fotos. Quero mais ritmo e mais variedade de enquadramento.", "d2-refacao");
+    const best = [d2, d1].find((item) => item?.verdict?.verdict === "approve") ?? d1 ?? d2;
+    if (best) { a.redo = best.status; a.redoVerdict = best.verdict.verdict; }
+  }
+  if (tests.has("E") && (a?.redo ?? a?.status)?.status === "ready_for_review") {
     say("E: preparação da aprovação (sem publicar, sem enviar): hash, validação do Reels nas contas, texto do WhatsApp");
     const final = a.redo ?? a.status;
+    // Trava do hash: o arquivo que vai ao WhatsApp e à publicação é o mesmo revisado (o backend recusa outro).
     const media = [{ url: `https://storage.invalid/assets/tenant-vorix/${CMKV}/ensaio-video-${final.output.sha256.slice(0, 20)}.mp4`, kind: "video", width: 1080, height: 1920, mimeType: "video/mp4", sizeBytes: final.output.sizeBytes, durationSec: final.plan.durationSeconds, hasAudio: true }];
     const validation = await inContainer({ action: "social_validate", workspaceId: CMKV, accounts: CMKV_ACCOUNTS, caption: a.selection.idea.caption, media }, 300000);
     const preview = await inContainer({ action: "approval_preview", file: final.output.file, brand: a.selection.brand, caption: a.selection.idea.caption, when: "hoje às 20:00", networks: validation.checks.map((check) => check.network) }, 120000);
-    report.tests.E = { versionId: final.versionId, sha256: final.output.sha256, review: a.redo ? report.tests.D.review : a.verdict?.verdict, validation, approval: preview, published: false, sent: false };
+    const approvalRequired = await inContainer({ action: "approval_rule", workspaces: [CMKV, VORIX, RAA] }, 120000);
+    const reviewVerdict = a.redo ? a.redoVerdict : a.verdict?.verdict;
+    // No piloto real só segue para o agendamento com a revisão editorial aprovada; senão vai para revisão manual.
+    report.tests.E = { versionId: final.versionId, sha256: final.output.sha256, review: reviewVerdict, pilotWouldSchedule: reviewVerdict === "approve", manualReviewInstead: reviewVerdict !== "approve", approvalRequired, validation, approval: preview, published: false, sent: false };
   }
 } catch (error) {
   report.error = error.message.slice(0, 1500);

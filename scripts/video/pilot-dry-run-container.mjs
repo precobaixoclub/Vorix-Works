@@ -99,7 +99,22 @@ async function approvalPreview() {
     text: approvalRequestText({ brand: request.brand, code: "TESTE", networks: request.networks ?? ["instagram"], when: request.when, caption: request.caption, screens: 0, video: attached ? {} : { link: "https://…/assets/…-video-<hash>.mp4?sig=…" } }) };
 }
 
-const actions = { render, social_validate: socialValidate, approval_preview: approvalPreview };
+/** Só leitura: a marca exige aprovação pelo WhatsApp antes de publicar? (a trava real do agendamento) */
+async function approvalRule() {
+  const { buildApiContainer } = await import("./dist/interfaces/api/di/container.js");
+  const { loadApiConfig } = await import("./dist/interfaces/api/config/api-config.js");
+  const c = buildApiContainer(loadApiConfig());
+  try {
+    const out = {};
+    for (const workspaceId of request.workspaces) out[workspaceId] = c.whatsappApprovals ? await c.whatsappApprovals.requiresApproval({ tenantId: "tenant-vorix", workspaceId }) : "serviço indisponível";
+    return out;
+  } finally {
+    await c.pool?.end().catch(() => undefined);
+    await c.identity?.pool?.end().catch(() => undefined);
+  }
+}
+
+const actions = { render, social_validate: socialValidate, approval_preview: approvalPreview, approval_rule: approvalRule };
 try {
   console.log(JSON.stringify(await actions[request.action]()));
 } catch (error) {

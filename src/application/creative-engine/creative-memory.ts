@@ -26,6 +26,10 @@ export type CreativeFeedbackEvent = {
   /** Linguagem visual (arquétipo) de cada tela, na ordem. */
   archetypes: readonly string[];
   productCodes: readonly string[];
+  /** Padrões de vídeo marcados na avaliação (`VIDEO_TASTE_PATTERNS`): o que agradou ou o que errou. */
+  patterns?: readonly string[];
+  /** De onde veio: aprovação pelo WhatsApp (publicação) ou revisão do vídeo na tela. */
+  source?: "whatsapp" | "video_review";
 };
 
 export type LessonTarget = "image" | "video" | "redo";
@@ -53,6 +57,11 @@ export type CreativeMemory = {
   archetypeBias: Record<string, number>;
   /** Peças reprovadas por produto em pautas diferentes: vão para o fim do rodízio (não são bloqueadas). */
   avoidProducts: string[];
+  /**
+   * Padrões de vídeo: evitar = reprovado em ≥ 2 pautas e mais reprovado que aprovado; preferir = aprovado
+   * em ≥ 2 pautas sem reprovação. Uma crítica pontual fica só em `observedPatterns` (não proíbe nada).
+   */
+  videoPatterns: { avoid: string[]; prefer: string[]; observed: string[] };
 };
 
 export const MEMORY_WINDOW_DAYS = 60;
@@ -73,6 +82,13 @@ const GUIDANCE: Record<FeedbackCategory, { text: string; appliesTo: LessonTarget
   repeticao: { text: "Variedade: mude enquadramento e linguagem em relação às peças recentes.", appliesTo: ["image", "video"] },
   informacao: { text: "Informação: nunca invente preço, prazo, promoção ou característica que a pauta não traz.", appliesTo: ["redo", "video"] },
   audio: { text: "Áudio: música abaixo da fala, sem estourar, narração clara.", appliesTo: ["video"] },
+  voz: { text: "Voz: fala natural, frases curtas, pausas no lugar certo; nada de leitura robótica.", appliesTo: ["video"] },
+  trilha: { text: "Trilha: com ritmo e intenção, acompanhando os cortes; sem laço eletrônico repetitivo.", appliesTo: ["video"] },
+  ritmo: { text: "Ritmo: pistas rápidas, respiro antes da revelação; nenhuma cena parada sem função.", appliesTo: ["video"] },
+  edicao: { text: "Edição: cada corte entrega uma informação nova; sem planos repetidos.", appliesTo: ["video"] },
+  animacao: { text: "Animação: movimento com intenção, poucas transições e coerentes; nada de efeito por efeito.", appliesTo: ["video"] },
+  abertura: { text: "Abertura: o primeiro segundo já prende (detalhe intrigante + frase curta + impacto sonoro).", appliesTo: ["video"] },
+  cta: { text: "Encerramento: resposta/benefício + uma ação clara; não repetir a pergunta do gancho.", appliesTo: ["video"] },
 };
 
 const cleanExample = (value: string) => value.replace(/[\r\n]+/g, " ").replace(/["“”]/g, "'").replace(/\s+/g, " ").trim().slice(0, 120);
@@ -118,8 +134,16 @@ export function buildCreativeMemory(
   const archetypeRejections = new Map<string, Set<string>>();
   const archetypeApprovals = new Map<string, number>();
   const productRejections = new Map<string, Set<string>>();
+  const patternRejections = new Map<string, Set<string>>();
+  const patternApprovals = new Map<string, Set<string>>();
   for (const event of recent) {
     const idea = event.ideaId ?? event.publicationId;
+    for (const pattern of new Set(event.patterns ?? [])) {
+      const map = event.decision === "approve" ? patternApprovals : patternRejections;
+      const set = map.get(pattern) ?? new Set<string>();
+      set.add(idea);
+      map.set(pattern, set);
+    }
     if (event.decision === "approve") {
       sample.approved += 1;
       for (const archetype of new Set(event.archetypes)) archetypeApprovals.set(archetype, (archetypeApprovals.get(archetype) ?? 0) + 1);
@@ -175,7 +199,13 @@ export function buildCreativeMemory(
     if (bias) archetypeBias[archetype] = Number(bias.toFixed(2));
   }
   const avoidProducts = [...productRejections].filter(([, ideas]) => ideas.size >= minDistinct).map(([code]) => code).sort();
-  return { workspaceId: options.workspaceId, windowDays, sample, lessons, observed, archetypeBias, avoidProducts };
+  const approvedOf = (pattern: string) => patternApprovals.get(pattern)?.size ?? 0;
+  const videoPatterns = {
+    avoid: [...patternRejections].filter(([pattern, ideas]) => ideas.size >= minDistinct && ideas.size > approvedOf(pattern)).map(([pattern]) => pattern).sort(),
+    prefer: [...patternApprovals].filter(([pattern, ideas]) => ideas.size >= minDistinct && !patternRejections.has(pattern)).map(([pattern]) => pattern).sort(),
+    observed: [...patternRejections].filter(([, ideas]) => ideas.size < minDistinct).map(([pattern]) => pattern).sort(),
+  };
+  return { workspaceId: options.workspaceId, windowDays, sample, lessons, observed, archetypeBias, avoidProducts, videoPatterns };
 }
 
 /** Orientações da memória para um motor (imagem/carrossel, vídeo ou a reescrita da refação). */

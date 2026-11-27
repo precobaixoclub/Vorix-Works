@@ -22,6 +22,14 @@ export const FEEDBACK_CATEGORIES = [
   "repeticao",
   "informacao",
   "audio",
+  // Vídeo: o que mais pesa na qualidade percebida de uma peça audiovisual.
+  "voz",
+  "trilha",
+  "ritmo",
+  "edicao",
+  "animacao",
+  "abertura",
+  "cta",
 ] as const;
 export type FeedbackCategory = (typeof FEEDBACK_CATEGORIES)[number];
 
@@ -39,6 +47,13 @@ export const FEEDBACK_CATEGORY_LABELS: Readonly<Record<FeedbackCategory, string>
   repeticao: "conteúdo repetido",
   informacao: "informação incorreta",
   audio: "áudio (música, narração)",
+  voz: "voz/narração",
+  trilha: "trilha sonora",
+  ritmo: "ritmo",
+  edicao: "edição/cortes",
+  animacao: "animações/transições",
+  abertura: "abertura/gancho",
+  cta: "encerramento/CTA",
 };
 
 /** Categorias que falam da IMAGEM (cena, composição) — as que pesam contra uma linguagem visual. */
@@ -103,7 +118,14 @@ const PATTERNS: Array<[FeedbackCategory, RegExp]> = [
   ["qualidade_imagem", /\b(pixelad\w*|borrad\w*|desfocad\w*|serrilhad\w*|recorte\w*|recortad\w*|distorc\w*|deformad\w*|baixa qualidade|resoluc\w*|emenda\w*|costura)\b/],
   ["repeticao", /\b(repetid\w*|repetiu|repete|igual|iguais|mesma coisa|parecid[oa]s?|sempre a mesma|sempre o mesmo|ja (?:foi |foram )?(?:usad|postad|publicad)\w*|ja (?:vi|usei|usamos|postei|postamos))\b/],
   ["informacao", /\b(preco\w*|valor errado|informac\w* errad\w*|data errad\w*|nao existe|nao temos|nao vendemos|nao oferecemos|inventou|inventad[oa])\b/],
-  ["audio", /\b(musica\w*|trilha\w*|som|audio|volume|narrac\w*|locuc\w*|locutor\w*|voz)\b/],
+  ["voz", /\b(voz|narrac\w*|locuc\w*|locutor\w*|robotic\w*|robo|sotaque|pronunci\w*|entonac\w*|falad[oa]|fala)\b/],
+  ["trilha", /\b(musica\w*|trilha\w*|batida|beat|melodia)\b/],
+  ["ritmo", /\b(ritmo|lent[oa]s?|arrastad\w*|corrid[oa]|demorad\w*|devagar|rapido demais|cansativ\w*)\b/],
+  ["edicao", /\b(edic\w*|cortes?|montagem|sequencia)\b/],
+  ["animacao", /\b(animac\w*|efeitos?|transic\w*|moviment\w*|exagerad\w*|piscando)\b/],
+  ["abertura", /\b(abertura|inicio|comeco|gancho|primeiros segundos)\b/],
+  ["cta", /\b(cta|encerramento|fechamento|botao|chamada final|final fraco|terminou)\b/],
+  ["audio", /\b(som|audio|volume|alto demais|baixo demais|estourad\w*)\b/],
   ["imagem", /\b(imagem|imagens|foto|fotos|fotografi\w*|cena\w*|visual|ilustrac\w*|desenho\w*|fundo|cenario|composic\w*|enquadr\w*)\b/],
 ];
 const NO_REDO = /\b(nao (quero|vou|precisa|e para|e pra|da para|da pra) (mais )?(postar|publicar|refazer|usar)|nao (posta|publica|refaz)\b|cancela\w*|deixa (pra|para) la|esquece|desist\w*|nao faz sentido (postar|publicar)|fora de (epoca|contexto)|nao combina com a gente|nao e (nosso|nossa) (publico|marca))/;
@@ -127,7 +149,7 @@ export function interpretRejection(reason: string | undefined, options: { screen
       image: has(...IMAGE_CATEGORIES) || has("produto"),
       product: has("produto"),
       logo: has("logo"),
-      audio: has("audio"),
+      audio: has("audio", "voz", "trilha"),
     };
   const screens = referencedScreens(text, screenCount);
   return { categories: specific, changes, ...(screens ? { screens } : {}), noRedo, oneOff: ONE_OFF.test(text), unclear };

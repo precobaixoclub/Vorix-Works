@@ -12,7 +12,8 @@ import type { VideoAspect } from "../../domain/video-editing/video-edit-plan.js"
 import { validateVideoEditDraftStructure, type VideoEditDraft } from "../ai-gateway/schemas/video-edit-draft.v1.js";
 import type { VideoMaterialRole, VideoProject, VideoProjectMaterial, VideoProjectRepositoryPort, VideoProjectScope, VideoProjectSettings, VideoVersion } from "../ports/video-project-repository.port.js";
 import type { VideoBrandFeedbackRepositoryPort } from "../ports/video-brand-feedback-repository.port.js";
-import { deriveBrandTaste, editorialVerdict, normalizeFeedbackInput } from "../../domain/video-editing/brand-video-taste.js";
+import { editorialVerdict, normalizeFeedbackInput, tasteFromMemory, videoFeedbackEvents } from "../../domain/video-editing/brand-video-taste.js";
+import { buildCreativeMemory } from "../creative-engine/creative-memory.js";
 
 export class VideoProjectError extends Error {
   constructor(readonly code: "DISABLED" | "INVALID" | "NOT_FOUND" | "LIMIT" | "CONFLICT", message: string) {
@@ -226,7 +227,7 @@ export class VideoProjectsService {
   /** Preferências e reprovações da marca (vão ao diretor criativo e à seleção de propostas). */
   async brandTaste(scope: VideoProjectScope) {
     const feedback = this.deps.feedbackRepository ? await this.deps.feedbackRepository.listByWorkspace({ ...scope, limit: 200 }) : [];
-    return deriveBrandTaste(feedback);
+    return tasteFromMemory(buildCreativeMemory(videoFeedbackEvents(feedback), { workspaceId: scope.workspaceId, now: this.now() }));
   }
 
   async list(scope: VideoProjectScope) {

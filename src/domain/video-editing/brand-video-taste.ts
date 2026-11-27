@@ -27,6 +27,17 @@ export const VIDEO_TASTE_PATTERNS = {
   gancho_tipografico: "Gancho tipográfico gigante no 1º quadro",
   fundo_escuro: "Fundo escuro com um acento",
   legenda_em_pilula: "Legenda em pílula que acende",
+  narracao_artificial: "Narração artificial/robótica",
+  pausas_inadequadas: "Pausas fora do lugar",
+  ritmo_inconsistente: "Ritmo inconsistente",
+  cenas_redundantes: "Cenas visualmente redundantes",
+  movimento_sem_intencao: "Movimento sem intenção",
+  audio_desequilibrado: "Áudio desequilibrado (voz × trilha)",
+  sem_progressao: "Falta de progressão",
+  encerramento_fraco: "Encerramento fraco",
+  revelacao_antecipada: "Revela antes da hora (quebra o mistério)",
+  narracao_envolvente: "Narração envolvente",
+  trilha_com_identidade: "Trilha com identidade",
 } as const;
 export type VideoTastePattern = keyof typeof VIDEO_TASTE_PATTERNS;
 export const isVideoTastePattern = (value: string): value is VideoTastePattern => Object.prototype.hasOwnProperty.call(VIDEO_TASTE_PATTERNS, value);
@@ -46,25 +57,39 @@ export type VideoBrandFeedback = {
   createdAt: string;
 };
 
-export type BrandTaste = { preferred: VideoTastePattern[]; rejected: VideoTastePattern[]; notes: string[]; reviews: number };
+export type BrandTaste = { preferred: string[]; rejected: string[]; notes: string[]; reviews: number; observed: string[] };
 
 /**
- * Preferências da marca a partir das avaliações: um padrão REPROVADO mais vezes do que aprovado vira
- * proibido; um aprovado sem reprovação vira preferido. As notas mais recentes vão inteiras ao diretor.
+ * Avaliações da tela → eventos da MEMÓRIA CRIATIVA existente (`creative-engine/creative-memory.ts`), a
+ * mesma que lê as aprovações do WhatsApp. O projeto de vídeo conta como "pauta" (2 reprovações da
+ * mesma versão/pauta não viram regra da marca). O motivo junta a nota e os rótulos dos padrões, para a
+ * leitura por categoria (voz, ritmo, trilha…) funcionar igual à do WhatsApp.
  */
-export function deriveBrandTaste(feedback: readonly VideoBrandFeedback[], maxNotes = 6): BrandTaste {
-  const score = new Map<VideoTastePattern, { up: number; down: number }>();
-  for (const item of feedback) {
-    for (const pattern of item.patterns) {
-      const s = score.get(pattern) ?? { up: 0, down: 0 };
-      if (item.verdict === "approved") s.up += 1; else s.down += 1;
-      score.set(pattern, s);
-    }
-  }
-  const rejected = [...score].filter(([, s]) => s.down > 0 && s.down >= s.up).map(([p]) => p);
-  const preferred = [...score].filter(([, s]) => s.up > 0 && s.down === 0).map(([p]) => p);
-  const notes = [...feedback].sort((a, b) => b.createdAt.localeCompare(a.createdAt)).filter((f) => f.note).slice(0, maxNotes).map((f) => `${f.verdict === "approved" ? "Aprovado" : "Reprovado"}: ${f.note}`);
-  return { preferred, rejected, notes, reviews: feedback.length };
+export function videoFeedbackEvents(feedback: readonly VideoBrandFeedback[]) {
+  return feedback.map((f) => ({
+    workspaceId: f.workspaceId,
+    publicationId: f.versionId ?? f.id,
+    ...(f.projectId ? { ideaId: f.projectId } : {}),
+    decision: f.verdict === "approved" ? ("approve" as const) : ("reject" as const),
+    reason: [f.note, ...f.patterns.map((p) => VIDEO_TASTE_PATTERNS[p])].filter(Boolean).join(". "),
+    at: f.createdAt,
+    format: "video" as const,
+    archetypes: [] as string[],
+    productCodes: [] as string[],
+    patterns: f.patterns,
+    source: "video_review" as const,
+  }));
+}
+
+/** Gosto da marca lido da memória criativa (só o que se repetiu; o pontual fica em `observed`). */
+export function tasteFromMemory(memory: { videoPatterns?: { avoid: string[]; prefer: string[]; observed: string[] }; lessons: { guidance: string; appliesTo: string[] }[]; sample: { approved: number; rejected: number; ignored: number } }): BrandTaste {
+  return {
+    preferred: memory.videoPatterns?.prefer ?? [],
+    rejected: memory.videoPatterns?.avoid ?? [],
+    observed: memory.videoPatterns?.observed ?? [],
+    notes: memory.lessons.filter((l) => l.appliesTo.includes("video")).map((l) => l.guidance),
+    reviews: memory.sample.approved + memory.sample.rejected + memory.sample.ignored,
+  };
 }
 
 export type EditorialVerdict = { status: "blocked_technical" | "awaiting_human" | "approved_commercial" | "rejected"; reason: string };

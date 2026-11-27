@@ -6,6 +6,7 @@ Wants=network-online.target
 [Service]
 Type=oneshot
 WorkingDirectory=/opt/vorix-editorial
-ExecStart=/usr/bin/flock --nonblock /run/vorix-editorial.lock /usr/bin/node /opt/vorix-editorial/codex-social-schedule.mjs auto
+# A rodada tem horário fixo e não é repetida pelo timer quando coincide com uma refação.
+ExecStart=/usr/bin/flock --wait 300 /run/vorix-editorial.lock /usr/bin/node /opt/vorix-editorial/codex-social-schedule.mjs auto
 TimeoutStartSec=45min
 InaccessiblePaths=/opt/zuno /root /var/lib/docker

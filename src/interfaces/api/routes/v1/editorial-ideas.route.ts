@@ -94,16 +94,22 @@ function packMessage(error: unknown): never {
  * gravadas sem assinatura: a resposta JSON autenticada assina na hora para o navegador.
  */
 function ownReferenceImages(content: EditorialIdeaContent, tenantId: string, workspaceId: string): EditorialIdeaContent {
-  if (!content.referenceImages?.length || !isObjectUrlSigningConfigured()) return content;
-  const referenceImages = content.referenceImages.map((url) => {
+  if ((!content.referenceImages?.length && !content.referenceVideos?.length) || !isObjectUrlSigningConfigured()) return content;
+  const own = (url: string, what: string) => {
     const parsed = parseOwnedObjectUrl(url);
     const owner = parsed ? classifyObjectKeyOwner(parsed.key) : undefined;
     if (!owner || owner.kind !== "workspace" || owner.tenantId !== tenantId || owner.workspaceId !== workspaceId) {
-      throw new ValidationError("Imagem de referência inválida: envie a imagem pelo botão da própria ideia.");
+      throw new ValidationError(`${what} de referência inválido(a): envie o arquivo pelo botão da própria ideia.`);
     }
     return stripObjectUrlSignature(url);
-  });
-  return { ...content, referenceImages };
+  };
+  // Vídeos de referência seguem a mesma regra: só arquivo enviado pela equipe ao storage do workspace
+  // (nunca um link de terceiros baixado pelo motor).
+  return {
+    ...content,
+    ...(content.referenceImages?.length ? { referenceImages: content.referenceImages.map((url) => own(url, "Imagem")) } : {}),
+    ...(content.referenceVideos?.length ? { referenceVideos: content.referenceVideos.map((video) => ({ ...video, url: own(video.url, "Vídeo") })) } : {}),
+  };
 }
 
 /** Hoje no fuso de São Paulo (AAAA-MM-DD): o calendário editorial é da equipe, não do servidor. */

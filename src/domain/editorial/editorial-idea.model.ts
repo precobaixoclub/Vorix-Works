@@ -59,7 +59,19 @@ export type EditorialIdeaContent = {
   /** Imagens de referência da pauta (URLs canônicas do storage do workspace, até 6): a arte usa
    * estas imagens — nunca banco de fotos genérico — quando presentes. */
   referenceImages?: readonly string[];
+  /** Vídeos profissionais de REFERÊNCIA (até 3), cada um com o papel que deve orientar a criação. */
+  referenceVideos?: readonly ReferenceVideo[];
 };
+
+/**
+ * Papel de um vídeo de referência: estrutura (gancho, ritmo, cortes, progressão, texto curto, CTA),
+ * estética (composição, elegância, transições, organização, acabamento) ou ambos. A referência orienta
+ * a linguagem; a peça continua original, com os materiais e a identidade da marca.
+ */
+export const REFERENCE_VIDEO_ROLES = ["structure", "aesthetic", "both"] as const;
+export type ReferenceVideoRole = (typeof REFERENCE_VIDEO_ROLES)[number];
+export const REFERENCE_VIDEO_ROLE_LABEL: Readonly<Record<ReferenceVideoRole, string>> = Object.freeze({ structure: "Estrutura e ritmo", aesthetic: "Estética e acabamento", both: "Estrutura e estética" });
+export type ReferenceVideo = { url: string; role: ReferenceVideoRole; note?: string };
 
 export type EditorialIdea = EditorialIdeaContent & {
   id: string;
@@ -196,6 +208,7 @@ export function parseEditorialPack(input: unknown): EditorialIdeaContent[] {
 // ---------------------------------------------------------------------------------------------
 
 export const EDITORIAL_REFERENCE_IMAGES_MAX = 6;
+export const EDITORIAL_REFERENCE_VIDEOS_MAX = 3;
 export const MANUAL_EXTERNAL_ID_PREFIX = "IDEIA";
 
 function optionalText(item: Record<string, unknown>, field: string, max: number, fallback: string): string {
@@ -217,6 +230,27 @@ export function normalizeReferenceImages(value: unknown): string[] {
     if (url.length > 2000 || !/^https?:\/\//i.test(url)) throw new EditorialPackError("imagem de referência inválida.");
   }
   return urls;
+}
+
+/** Vídeos de referência: URL http(s) + papel + nota (opcional), sem repetir a URL, no máximo 3. */
+export function normalizeReferenceVideos(value: unknown): ReferenceVideo[] {
+  if (value === undefined || value === null) return [];
+  if (!Array.isArray(value)) throw new EditorialPackError("vídeos de referência precisam ser uma lista.");
+  const seen = new Set<string>();
+  const videos: ReferenceVideo[] = [];
+  for (const raw of value) {
+    const item = typeof raw === "string" ? { url: raw } : raw && typeof raw === "object" ? (raw as Record<string, unknown>) : undefined;
+    const url = typeof item?.url === "string" ? item.url.trim() : "";
+    if (!url || seen.has(url)) continue;
+    if (url.length > 2000 || !/^https?:\/\//i.test(url)) throw new EditorialPackError("vídeo de referência inválido.");
+    const role = item?.role ?? "both";
+    if (!REFERENCE_VIDEO_ROLES.includes(role as ReferenceVideoRole)) throw new EditorialPackError(`papel "${String(role)}" inválido para o vídeo de referência.`);
+    const note = typeof item?.note === "string" ? item.note.trim().slice(0, 600) : "";
+    seen.add(url);
+    videos.push({ url, role: role as ReferenceVideoRole, ...(note ? { note } : {}) });
+  }
+  if (videos.length > EDITORIAL_REFERENCE_VIDEOS_MAX) throw new EditorialPackError(`no máximo ${EDITORIAL_REFERENCE_VIDEOS_MAX} vídeos de referência por ideia.`);
+  return videos;
 }
 
 /** Próximo código de ideia manual do workspace (IDEIA-001, IDEIA-002…), sem colidir com os existentes. */
@@ -246,6 +280,7 @@ export function parseManualEditorialIdea(input: unknown, externalId: string): Ed
   const keyMessage = optionalText(item, "keyMessage", LIMITS.keyMessage, title);
   const creativePrompt = normalizeCreativePrompt(item.creativePrompt);
   const referenceImages = normalizeReferenceImages(item.referenceImages);
+  const referenceVideos = normalizeReferenceVideos(item.referenceVideos);
   return {
     externalId,
     title,
@@ -265,6 +300,7 @@ export function parseManualEditorialIdea(input: unknown, externalId: string): Ed
     priority: priority as EditorialIdeaPriority,
     ...(creativePrompt ? { creativePrompt } : {}),
     ...(referenceImages.length ? { referenceImages } : {}),
+    ...(referenceVideos.length ? { referenceVideos } : {}),
   };
 }
 

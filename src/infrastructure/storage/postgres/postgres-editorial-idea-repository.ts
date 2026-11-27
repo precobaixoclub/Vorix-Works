@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { Pool } from "pg";
 import type { EditorialIdeaRepositoryPort } from "../../../application/ports/editorial-idea-repository.port.js";
-import type { CarouselSlide, EditorialIdea, EditorialIdeaFormat, EditorialIdeaPriority, EditorialIdeaStatus, VideoScene } from "../../../domain/editorial/editorial-idea.model.js";
+import type { CarouselSlide, EditorialIdea, EditorialIdeaFormat, EditorialIdeaPriority, EditorialIdeaStatus, ReferenceVideo, VideoScene } from "../../../domain/editorial/editorial-idea.model.js";
 
 type Row = {
   id: string; tenant_id: string; workspace_id: string; external_id: string; title: string; category: string;
@@ -9,16 +9,16 @@ type Row = {
   approach: string; visual_direction: string; narrative_structure: string; carousel_script: CarouselSlide[] | null;
   video_script: VideoScene[] | null; caption: string; cta: string; priority: string; status: string;
   suggested_date: string | null; scheduled_date: string | null; execution_run_id: string | null;
-  creative_prompt: string | null; reference_images: string[] | null; status_changed_at: Date; created_at: Date; updated_at: Date;
+  creative_prompt: string | null; reference_images: string[] | null; reference_videos: ReferenceVideo[] | null; status_changed_at: Date; created_at: Date; updated_at: Date;
 };
 
 // `date` volta como texto AAAA-MM-DD (sem fuso): nunca vira um Date em UTC que "muda de dia".
 const COLUMNS = `id, tenant_id, workspace_id, external_id, title, category, commercial_objective, target_audience, concept,
   key_message, format, approach, visual_direction, narrative_structure, carousel_script, video_script, caption, cta,
   priority, status, to_char(suggested_date, 'YYYY-MM-DD') as suggested_date, to_char(scheduled_date, 'YYYY-MM-DD') as scheduled_date,
-  execution_run_id, creative_prompt, reference_images, status_changed_at, created_at, updated_at`;
+  execution_run_id, creative_prompt, reference_images, reference_videos, status_changed_at, created_at, updated_at`;
 
-/** Adapter Postgres — `db/migrations/0197_editorial_ideas.sql` (+0199 prompt, +0201 imagens de referência). */
+/** Adapter Postgres — `db/migrations/0197_editorial_ideas.sql` (+0199 prompt, +0201 imagens, +0211 vídeos de referência). */
 export class PostgresEditorialIdeaRepository implements EditorialIdeaRepositoryPort {
   constructor(private readonly pool: Pool) {}
 
@@ -42,15 +42,15 @@ export class PostgresEditorialIdeaRepository implements EditorialIdeaRepositoryP
         const result = await client.query(
           `insert into editorial_ideas (id, tenant_id, workspace_id, external_id, title, category, commercial_objective, target_audience,
              concept, key_message, format, approach, visual_direction, narrative_structure, carousel_script, video_script, caption, cta,
-             priority, suggested_date, creative_prompt, reference_images)
-           values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15::jsonb, $16::jsonb, $17, $18, $19, $20::date, $21, $22::jsonb)
+             priority, suggested_date, creative_prompt, reference_images, reference_videos)
+           values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15::jsonb, $16::jsonb, $17, $18, $19, $20::date, $21, $22::jsonb, $23::jsonb)
            on conflict (workspace_id, external_id) do nothing`,
           [
             `edi-${randomUUID()}`, input.tenantId, input.workspaceId, idea.externalId, idea.title, idea.category, idea.commercialObjective,
             idea.targetAudience, idea.concept, idea.keyMessage, idea.format, idea.approach, idea.visualDirection, idea.narrativeStructure,
             idea.carouselScript ? JSON.stringify(idea.carouselScript) : null, idea.videoScript ? JSON.stringify(idea.videoScript) : null,
             idea.caption, idea.cta, idea.priority, idea.suggestedDate ?? null, idea.creativePrompt ?? null,
-            JSON.stringify(idea.referenceImages ?? []),
+            JSON.stringify(idea.referenceImages ?? []), JSON.stringify(idea.referenceVideos ?? []),
           ],
         );
         created += result.rowCount ?? 0;
@@ -87,7 +87,7 @@ export class PostgresEditorialIdeaRepository implements EditorialIdeaRepositoryP
          title = $3, category = $4, commercial_objective = $5, target_audience = $6, concept = $7, key_message = $8,
          format = $9, approach = $10, visual_direction = $11, narrative_structure = $12, carousel_script = $13::jsonb,
          video_script = $14::jsonb, caption = $15, cta = $16, priority = $17, creative_prompt = $18, reference_images = $19::jsonb,
-         updated_at = now()
+         reference_videos = $20::jsonb, updated_at = now()
        where workspace_id = $1 and id = $2
        returning ${COLUMNS}`,
       [
@@ -95,6 +95,7 @@ export class PostgresEditorialIdeaRepository implements EditorialIdeaRepositoryP
         content.keyMessage, content.format, content.approach, content.visualDirection, content.narrativeStructure,
         content.carouselScript ? JSON.stringify(content.carouselScript) : null, content.videoScript ? JSON.stringify(content.videoScript) : null,
         content.caption, content.cta, content.priority, content.creativePrompt ?? null, JSON.stringify(content.referenceImages ?? []),
+        JSON.stringify(content.referenceVideos ?? []),
       ],
     );
     return result.rows[0] ? toDomain(result.rows[0]) : undefined;
@@ -120,6 +121,7 @@ function toDomain(row: Row): EditorialIdea {
     ...(row.execution_run_id ? { executionRunId: row.execution_run_id } : {}),
     ...(row.creative_prompt ? { creativePrompt: row.creative_prompt } : {}),
     ...(row.reference_images?.length ? { referenceImages: row.reference_images } : {}),
+    ...(row.reference_videos?.length ? { referenceVideos: row.reference_videos } : {}),
     statusChangedAt: row.status_changed_at.toISOString(), createdAt: row.created_at.toISOString(), updatedAt: row.updated_at.toISOString(),
   };
 }

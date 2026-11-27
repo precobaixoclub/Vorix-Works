@@ -11,6 +11,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { uploadPublicationMedia } from "@/features/media-upload/api";
 import { cn } from "@/lib/utils";
 import { referenceThumb } from "./reference-images";
+import { ReferenceVideosField } from "./ReferenceVideosField";
 import type { EditorialIdea, EditorialIdeaFormat, EditorialIdeaInput } from "./api";
 
 export const MAX_REFERENCE_IMAGES = 6;
@@ -48,6 +49,8 @@ export function IdeaEditor({ workspaceId, idea, categories, onClose, onSave }: {
   const [keyMessage, setKeyMessage] = useState(idea && idea.keyMessage !== idea.title ? idea.keyMessage : "");
   const [slides, setSlides] = useState<Slide[]>(() => initialSlides(idea));
   const [references, setReferences] = useState<string[]>(idea?.referenceImages ?? []);
+  const [referenceVideos, setReferenceVideos] = useState(idea?.referenceVideos ?? []);
+  const [uploadingVideo, setUploadingVideo] = useState(false);
   const [caption, setCaption] = useState(idea && idea.caption !== idea.keyMessage ? idea.caption : "");
   const [cta, setCta] = useState(idea && idea.cta !== "Saiba mais no link da bio" ? idea.cta : "");
   const [targetAudience, setTargetAudience] = useState(idea && idea.targetAudience !== "Público da marca" ? idea.targetAudience : "");
@@ -62,7 +65,7 @@ export function IdeaEditor({ workspaceId, idea, categories, onClose, onSave }: {
 
   const filledSlides = slides.filter((slide) => slide.headline.trim());
   const carouselInvalid = format === "carousel" && filledSlides.length < 2;
-  const canSave = title.trim().length > 0 && !carouselInvalid && !uploading && !saving;
+  const canSave = title.trim().length > 0 && !carouselInvalid && !uploading && !uploadingVideo && !saving;
 
   async function addFiles(files: FileList | File[] | null) {
     if (!files) return;
@@ -107,6 +110,7 @@ export function IdeaEditor({ workspaceId, idea, categories, onClose, onSave }: {
         ...(creativePrompt.trim() ? { creativePrompt: creativePrompt.trim() } : {}),
         ...(format === "carousel" ? { carouselScript: filledSlides.map((slide) => ({ headline: slide.headline.trim(), body: slide.body.trim() || slide.headline.trim() })) } : {}),
         referenceImages: references,
+        ...(format === "video" ? { referenceVideos: referenceVideos.map(({ note, ...video }) => ({ ...video, ...(note?.trim() ? { note: note.trim() } : {}) })) } : {}),
       });
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Não foi possível salvar a ideia.");
@@ -206,6 +210,8 @@ export function IdeaEditor({ workspaceId, idea, categories, onClose, onSave }: {
             </div>
             <input ref={fileInput} type="file" accept="image/jpeg,image/png,image/webp" multiple className="hidden" onChange={(event) => void addFiles(event.target.files)} />
           </section>
+
+          {format === "video" ? <ReferenceVideosField workspaceId={workspaceId} value={referenceVideos} onChange={setReferenceVideos} onUploading={setUploadingVideo} /> : null}
 
           <section className="rounded-xl border border-primary/40 bg-primary/5 p-4">
             <div className="mb-1.5 flex items-center justify-between gap-2">

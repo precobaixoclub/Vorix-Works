@@ -40,6 +40,8 @@ export type EditorialIdea = {
   creativePrompt?: string;
   /** Imagens de referência da ideia (URLs já assinadas para exibir): a arte parte delas. */
   referenceImages?: string[];
+  /** Vídeos de referência (papel + nota) — o motor mede a linguagem e cria uma peça original. */
+  referenceVideos?: ReferenceVideo[];
   statusChangedAt: string;
   createdAt?: string;
 };
@@ -59,7 +61,16 @@ export type EditorialIdeaInput = {
   carouselScript?: { headline: string; body: string }[];
   priority?: "high" | "normal";
   referenceImages?: string[];
+  referenceVideos?: ReferenceVideo[];
 };
+
+export type ReferenceVideoRole = "structure" | "aesthetic" | "both";
+export type ReferenceVideo = { url: string; role: ReferenceVideoRole; note?: string };
+export const REFERENCE_VIDEO_ROLE_OPTIONS: { value: ReferenceVideoRole; label: string }[] = [
+  { value: "structure", label: "Estrutura e ritmo" },
+  { value: "aesthetic", label: "Estética e acabamento" },
+  { value: "both", label: "Os dois" },
+];
 
 /** Situações do bolsão para quem olha: dá para usar (Pendente), já virou post (Usada) ou foi tirada
  * de uso por você (Inativa — o piloto automático e o calendário ignoram). */

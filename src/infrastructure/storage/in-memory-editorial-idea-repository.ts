@@ -46,7 +46,7 @@ export class InMemoryEditorialIdeaRepository implements EditorialIdeaRepositoryP
   async replaceContent(workspaceId: string, id: string, content: Parameters<EditorialIdeaRepositoryPort["replaceContent"]>[2]): Promise<EditorialIdea | undefined> {
     const idea = await this.get(workspaceId, id);
     if (!idea) return undefined;
-    const { carouselScript: _c, videoScript: _v, creativePrompt: _p, referenceImages: _r, ...kept } = idea;
+    const { carouselScript: _c, videoScript: _v, creativePrompt: _p, referenceImages: _r, referenceVideos: _rv, ...kept } = idea;
     const next: EditorialIdea = { ...kept, ...content, id, externalId: idea.externalId, updatedAt: this.now().toISOString() };
     this.ideas.set(id, next);
     return next;

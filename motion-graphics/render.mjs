@@ -19,6 +19,27 @@ const FONTS = resolve(here, "..", "src", "infrastructure", "rendering", "assets"
 const TYPES = { ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp", ".mp4": "video/mp4", ".mov": "video/quicktime", ".ttf": "font/ttf" };
 let bundlePromise;
 
+/**
+ * Chromium baixado pelo `ensureBrowser()` dentro da pasta DESTE pacote. O Remotion procura em
+ * `<cwd>/node_modules/.remotion` por padrão — o worker roda em /app, então o caminho é informado aqui.
+ */
+function findBrowser() {
+  if (process.env.REMOTION_BROWSER_EXECUTABLE) return process.env.REMOTION_BROWSER_EXECUTABLE;
+  const root = join(here, "node_modules", ".remotion");
+  if (!existsSync(root)) return undefined;
+  const stack = [root];
+  while (stack.length) {
+    const dir = stack.pop();
+    for (const name of readdirSync(dir)) {
+      const file = join(dir, name);
+      if (statSync(file).isDirectory()) stack.push(file);
+      else if (name === "chrome-headless-shell" || name === "chrome-headless-shell.exe") return file;
+    }
+  }
+  return undefined;
+}
+const browserExecutable = findBrowser();
+
 /** Hash do código das composições: entra na chave do cache das cenas (template novo = render novo). */
 export const TEMPLATES_VERSION = (() => {
   const { createHash } = require_crypto();
@@ -79,7 +100,7 @@ export async function renderScene({ jobDir, outputPath, props, concurrency = Num
   if (Array.isArray(inputProps.photos)) inputProps.photos = inputProps.photos.map(url);
   const started = Date.now();
   try {
-    const composition = await selectComposition({ serveUrl, id: "Scene", inputProps, timeoutInMilliseconds: timeoutMs });
+    const composition = await selectComposition({ serveUrl, id: "Scene", inputProps, timeoutInMilliseconds: timeoutMs, ...(browserExecutable ? { browserExecutable } : {}) });
     let cancel;
     if (signal) {
       const { makeCancelSignal } = await import("@remotion/renderer");
@@ -89,7 +110,7 @@ export async function renderScene({ jobDir, outputPath, props, concurrency = Num
     }
     await renderMedia({
       serveUrl, composition, inputProps, codec: "h264", crf: 17, pixelFormat: "yuv420p", outputLocation: outputPath, concurrency,
-      timeoutInMilliseconds: timeoutMs, chromiumOptions: { gl: "swangle" }, logLevel: "error", ...(cancel ? { cancelSignal: cancel } : {}),
+      timeoutInMilliseconds: timeoutMs, chromiumOptions: { gl: "swangle" }, ...(browserExecutable ? { browserExecutable } : {}), logLevel: "error", ...(cancel ? { cancelSignal: cancel } : {}),
       onProgress: ({ progress }) => onProgress?.(progress),
     });
     return { ms: Date.now() - started, frames: composition.durationInFrames };

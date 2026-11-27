@@ -21,7 +21,7 @@ ENV NODE_ENV=production \
     OMP_NUM_THREADS=1
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      python3 python3-venv libgomp1 ca-certificates curl xz-utils tini \
+      python3 python3-venv libgomp1 ca-certificates curl xz-utils tini \n      libnss3 libdbus-1-3 libatk1.0-0 libatk-bridge2.0-0 libgbm1 libasound2 libxrandr2 libxkbcommon0 \n      libxfixes3 libxcomposite1 libxdamage1 libpango-1.0-0 libcairo2 libcups2 \
     && rm -rf /var/lib/apt/lists/*
 
 COPY scripts/install-ffmpeg-linux.sh /tmp/install-ffmpeg-linux.sh
@@ -37,6 +37,14 @@ COPY package.json package-lock.json ./
 RUN npm ci --omit=dev && npm cache clean --force
 COPY --from=build /app/dist ./dist
 COPY scripts/meetings/faster_whisper_transcribe.py ./scripts/meetings/faster_whisper_transcribe.py
+# Motion design (Remotion): composições + Chromium headless. Licença: gratuita até 3 pessoas na organização;
+# acima disso exige Company License (ver docs/remotion-motion-design.md).
+COPY motion-graphics/package.json motion-graphics/package-lock.json ./motion-graphics/
+RUN cd motion-graphics && npm ci --omit=dev && npm cache clean --force
+COPY motion-graphics/src ./motion-graphics/src
+COPY motion-graphics/render.mjs ./motion-graphics/render.mjs
+COPY src/infrastructure/rendering/assets ./src/infrastructure/rendering/assets
+RUN chown -R node:node /app/motion-graphics     && su node -s /bin/sh -c "cd /app/motion-graphics && node --input-type=module -e \"import('@remotion/renderer').then((m) => m.ensureBrowser())\""
 RUN mkdir -p /data/whisper-cache /data/video-work && chown -R node:node /data
 USER node
 ENTRYPOINT ["/usr/bin/tini", "--", "node", "dist/interfaces/worker/video-worker.js"]

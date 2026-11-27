@@ -1,0 +1,21 @@
+{
+  "name": "vorix-motion-graphics",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Cenas de motion design (Remotion) do motor de vídeo da Vorix. Renderizadas pelo worker e montadas pelo FFmpeg.",
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@remotion/bundler": "4.0.547",
+    "@remotion/renderer": "4.0.547",
+    "react": "19.2.0",
+    "react-dom": "19.2.0",
+    "remotion": "4.0.547"
+  },
+  "devDependencies": {
+    "@types/react": "19.2.2",
+    "typescript": "5.9.3"
+  }
+}

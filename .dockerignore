@@ -9,3 +9,4 @@ docs
 .env
 .env.*
 !.env.example
+motion-graphics/node_modules

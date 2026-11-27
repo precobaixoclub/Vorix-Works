@@ -18,22 +18,24 @@ const str = () => ({ type: "string" });
 /** Cenas de motion design renderizadas pelo Remotion (o FFmpeg monta a peça). */
 export const DESIGN_TEMPLATES = ["product_hero", "detail_reveal", "lineup", "software_focus", "title_card", "speech_captions"];
 export const MODALITIES = ["original_footage", "animated_photo", "motion_graphics", "software_demo", "ai_motion"];
+/** Emoção de cada cena (Emotion Engine): muda ritmo, intensidade, curvas, transições, som e composição. */
+export const EMOTIONS = ["curiosity", "desire", "urgency", "trust", "sophistication", "energy", "authority", "surprise", "identification"];
 const enumOf = (values) => ({ type: "string", enum: values });
 
 /** Schema ESTRITO (todas as chaves obrigatórias; opcionais como null) para o `--output-schema` do Codex. */
 export const directorSchema = {
   type: "object", additionalProperties: false,
-  required: ["concept", "strategy", "rationale", "scenes", "captions", "music", "logo", "warnings"],
+  required: ["concept", "story", "strategy", "rationale", "scenes", "captions", "music", "sfx", "logo", "warnings"],
   properties: {
     concept: { type: "object", additionalProperties: false, required: ["hook", "arc", "feeling"], properties: { hook: str(160), arc: str(300), feeling: str(120) } },
-    strategy: str(60), rationale: str(900),
+    story: str(300), strategy: str(60), rationale: str(900),
     scenes: {
       type: "array", minItems: 3, maxItems: 10,
       items: {
         type: "object", additionalProperties: false,
-        required: ["materialId", "purpose", "modality", "motionPrompt", "design", "durationSeconds", "sentenceIds", "sourceStartSeconds", "motion", "layout", "motionIntensity", "focus", "region", "transitionIn", "texts"],
+        required: ["materialId", "purpose", "emotion", "modality", "motionPrompt", "design", "durationSeconds", "sentenceIds", "sourceStartSeconds", "motion", "layout", "motionIntensity", "focus", "region", "transitionIn", "texts"],
         properties: {
-          materialId: str(20), purpose: enumOf(PURPOSES), modality: enumOf(MODALITIES), motionPrompt: { type: ["string", "null"] },
+          materialId: str(20), purpose: enumOf(PURPOSES), emotion: enumOf(EMOTIONS), modality: enumOf(MODALITIES), motionPrompt: { type: ["string", "null"] },
           design: { type: ["object", "null"], additionalProperties: false, required: ["template", "kicker", "headline", "label", "lines", "cta", "emphasis", "extraMaterialIds"], properties: {
             template: enumOf(DESIGN_TEMPLATES), kicker: { type: ["string", "null"] }, headline: { type: ["string", "null"] }, label: { type: ["string", "null"] },
             lines: { type: "array", maxItems: 3, items: { type: "string" } }, cta: { type: ["string", "null"] }, emphasis: { type: "array", maxItems: 6, items: { type: "string" } }, extraMaterialIds: { type: "array", maxItems: 2, items: { type: "string" } },
@@ -49,7 +51,7 @@ export const directorSchema = {
         },
       },
     },
-    captions: { type: "boolean" }, music: enumOf(["none", "subtle", "present"]), logo: enumOf(["none", "end", "corner"]),
+    captions: { type: "boolean" }, music: enumOf(["none", "subtle", "present"]), sfx: enumOf(["auto", "none"]), logo: enumOf(["none", "end", "corner"]),
     warnings: { type: "array", maxItems: 10, items: str(240) },
   },
 };
@@ -68,8 +70,11 @@ export function toDraft(output) {
     schemaVersion: 1,
     strategy: String(output.strategy ?? "").slice(0, 60) || "reels",
     rationale: [output.concept?.hook && `Gancho: ${output.concept.hook}`, output.concept?.arc && `Arco: ${output.concept.arc}`, output.rationale].filter(Boolean).join(" · ").slice(0, 900),
+    ...(cut(output.story, 300) ? { story: cut(output.story, 300) } : {}),
+    ...(output.sfx === "auto" || output.sfx === "none" ? { sfx: output.sfx } : {}),
     scenes: (output.scenes ?? []).slice(0, 14).map((scene) => ({
       materialId: String(scene.materialId).slice(0, 20), purpose: scene.purpose, durationSeconds: scene.durationSeconds,
+      ...(EMOTIONS.includes(scene.emotion) ? { emotion: scene.emotion } : {}),
       ...(MODALITIES.includes(scene.modality) ? { modality: scene.modality } : {}),
       ...(scene.design && DESIGN_TEMPLATES.includes(scene.design.template) ? { design: designOf(scene.design) } : {}),
       ...(scene.modality === "ai_motion" && typeof scene.motionPrompt === "string" && scene.motionPrompt.trim() ? { motionPrompt: scene.motionPrompt.trim().slice(0, 400) } : {}),
@@ -128,10 +133,22 @@ export function directorPrompt({ selection, materials, sentences = [], targetSec
 - product_hero (foto de produto): a foto original entra por máscara com câmera em perspectiva e reflexo; kicker curto + headline; com region na estampa e label, desenha um callout em volta dela. Bom para abertura ou apresentação.
 - detail_reveal (foto de produto + region OBRIGATÓRIA na estampa): começa no macro da estampa e a câmera abre até a peça inteira; label aparece no fim. Bom para "pista → resposta" e prova de acabamento.
 - lineup (foto de produto + extraMaterialIds com 1–2 outras fotos de produto): variantes em cartões com profundidade; headline.
-- software_focus (captura de tela + region OBRIGATÓRIA no componente + label): a tela entra em perspectiva, o cursor vai até a função, clica, a câmera aproxima e um holofote destaca a função; label curto (o que a função faz).
+- software_focus (captura de tela + region OBRIGATÓRIA no componente + label): a tela inteira fica nítida em cima, o cursor vai até a função e clica, e uma lupa com os pixels reais da região cresce a partir dela até o painel de baixo (a tela não é escurecida); label curto (o que a função faz). A region deve conter o componente inteiro e legível (bordas, rótulos, valores).
 - title_card (CARD): abertura/encerramento com tipografia cinética (lines: 1–3 linhas curtas), forma gráfica, logo oficial (no encerramento com logo "end") e cta.
-- speech_captions (vídeo COM FALA + sentenceIds): legendas dinâmicas palavra a palavra e selo contextual nas palavras de emphasis (2–4 palavras-chave ditas no trecho). Use layout framed para gravação de tela (mostra o quadro inteiro).
+- speech_captions (vídeo COM FALA + sentenceIds): legendas dinâmicas palavra a palavra e selo contextual nas palavras de emphasis (2–4 palavras-chave ditas no trecho). Material horizontal é REENQUADRADO automaticamente: o recorte acompanha a região que muda/importa (cursor, rosto, conteúdo) com movimento suave; gravação de tela ocupa a janela de cima e as legendas ficam embaixo, sem cobrir a tela.
 Em cena com design, texts = [] (os textos ficam no design). Não use o mesmo template mais de 2 vezes; varie com material real.`,
+    `DIREÇÃO AUDIOVISUAL (você decide; o sistema executa):
+- story: a história do vídeo em uma frase (tensão → virada → ação). Cada cena serve a um passo dela.
+- emotion de cada cena (curiosity, desire, urgency, trust, sophistication, energy, authority, surprise, identification): a emoção muda de verdade o ritmo (duração), a força do movimento, as curvas, a transição, a densidade de efeitos sonoros e a trilha. Escolha pela função da cena (gancho: curiosity/surprise; produto: desire/sophistication; prova: trust/authority; dor: identification; oferta/chamada: urgency/energy). Evite a mesma emoção em todas as cenas, e evite trocar a cada corte sem motivo: a continuidade emocional também conta.
+- Remotion (design) onde muda a leitura; FFmpeg (design null) onde o material real já conta sozinho. Critérios:
+  · Trecho COM FALA: use speech_captions. É ele que reenquadra a gravação horizontal acompanhando o que está sendo mostrado e põe a legenda dinâmica; uma region estática congela o recorte e perde o que a fala aponta.
+  · Função de software a demonstrar: use software_focus (cursor, clique e lupa nítida da função real) ao menos uma vez; recortes estáticos seguidos da mesma tela viram leitura de print, não demonstração.
+  · Produto físico: a primeira aparição da peça ganha revelação (detail_reveal do macro à peça, ou product_hero); variantes lado a lado em lineup comparam melhor que fotos paradas em sequência.
+  · Cartões estáticos com corte seco em sequência são slideshow: pelo menos metade das cenas precisa de movimento motivado (animação ou câmera).
+- Preserve o original: foto, estampa, tela e logo nunca são recriados; animação é câmera, máscara e camada sobre o original.
+- sfx: use "auto" por padrão — efeitos curtos e discretos (próprios da Vorix) nos eventos visuais (clique no clique, revelação na revelação, transição na transição); a densidade vem da emoção e a paleta da marca (marca sóbria recebe poucos efeitos suaves), e sob a fala eles são abaixados ou omitidos. "none" só quando a peça pede silêncio além da trilha (depoimento íntimo, luto, pedido explícito da pauta).
+- Ritmo: os cortes podem cair nas batidas da trilha, mas nunca encurtando o tempo de leitura; nem todo corte precisa estar na batida.
+- Continuidade: a mesma peça/tela em sequência é corte (não transição); a transição tem motivo visual (direção do movimento, revelação). O CTA fecha a história, com a marca.`,
     aiMotion?.enabled ? `MOVIMENTO POR IA LIBERADO nesta peça: no máximo ${aiMotion.maxScenes ?? 2} cena(s) ai_motion, só sobre product_photo, ${aiMotion.seconds ?? 4}–8 s cada, ~US$ ${Number(aiMotion.usdPerScene ?? 0).toFixed(2)} por cena. Se o clipe não preservar a estampa, o sistema volta para a foto original.` : `MOVIMENTO POR IA NÃO LIBERADO: nunca use modality ai_motion.`,
     `Quando a pauta pedir contagem, use um único texto "3 2 1" com animation countdown num plano de pelo menos 2 s. O motor separa os dígitos no tempo, mantendo o mesmo plano.`,
     materials.some((m) => m.role === "product_photo") ? `PRODUTO FÍSICO: escolha a construção pela promessa da pauta. Em quiz, abra com um macro isolado do traço exato, sem entregar a resposta no fundo. Mostre opções distinguíveis em enquadramentos diferentes. Se houver contagem, use uma única tomada com region.start em que a câmera abre continuamente sobre a estampa, ou dois cortes com diferença clara de escala. Evite três fotos fixas para contar. Revele o MESMO arquivo e a MESMA cor da pista. Deixe a peça em cena para a chamada comercial, idealmente no mesmo plano da revelação. Em prova de acabamento, mostre detalhe seguido de peça inteira, sem inventar benefício. Nunca use cartela só para contagem.` : undefined,

@@ -499,7 +499,7 @@ async function videoModules() {
     import("./dist/application/creative-engine/creative-memory.js"),
   ]);
   const config = loadApiConfig();
-  return { service: route.buildVideoProjectsService({ pool: db, objectStorage: c.objectStorage, videoEngine: config.videoEngine }), videoSheetKey: processing.videoSheetKey, buildSentences: transcript.buildSentences, engine: config.videoEngine, rankIdeasForSlot: calendar.rankIdeasForSlot, memory };
+  return { service: route.buildVideoProjectsService({ pool: db, objectStorage: c.objectStorage, videoEngine: config.videoEngine }), videoSheetKey: processing.videoSheetKey, videoSourcePreviewKey: processing.videoSourcePreviewKey, buildSentences: transcript.buildSentences, engine: config.videoEngine, rankIdeasForSlot: calendar.rankIdeasForSlot, memory };
 }
 
 /** Peças da marca perto do horário (14 dias), para a variedade do calendário. */
@@ -635,7 +635,7 @@ function videoPostSummary(post) {
 
 async function videoAction(workspace, brandConfig) {
   const modules = await videoModules();
-  const { service, videoSheetKey, buildSentences, engine } = modules;
+  const { service, videoSheetKey, videoSourcePreviewKey, buildSentences, engine } = modules;
   const creative = brandConfig.creative ?? { businessKind: "unknown" };
   const date = typeof request.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(request.date) ? request.date : undefined;
   requireCondition(engine.allWorkspaces || engine.enabledWorkspaces.includes(workspaceId), "Motor de vídeo não habilitado para esta marca");
@@ -726,11 +726,18 @@ async function videoAction(workspace, brandConfig) {
       output = { sha256: createHash("sha256").update(bytes).digest("hex"), sizeBytes: bytes.length, ...(sheet ? { sheet } : {}) };
     }
     const needsSentences = version.stage === "awaiting_draft" || version.plan?.clips.some((clip) => clip.keepSourceAudio);
+    const sourcePreviews = request.withMedia && (done || version.stage === "awaiting_draft") ? Object.fromEntries(
+      (await Promise.all(project.materials.filter((material) => material.kind === "video").map(async (material) => {
+        const key = videoSourcePreviewKey(tenantId, workspaceId, project.id, material.id);
+        try { return [material.id, (await keyBytes(key)).toString("base64")]; } catch { return undefined; }
+      }))).filter(Boolean)
+    ) : undefined;
     return {
       versionId: version.id, projectId: project.id, number: version.number, status: version.status, stage: version.stage, progress: version.progress, message: version.message, error: version.error,
       warnings: version.warnings, gate: version.gate, draft: version.draft, renderMs: version.renderMs,
       plan: version.plan ? { strategy: version.plan.strategy, durationSeconds: version.plan.durationSeconds, clips: version.plan.clips.map((clip) => ({ id: clip.id, purpose: clip.purpose, assetId: clip.assetId, layout: clip.layout ?? "full", motion: clip.motion.type, region: clip.framing.region, transition: clip.transitionIn.type, recordStartSeconds: clip.recordStartSeconds, durationSeconds: clip.durationSeconds, texts: clip.overlays.map((overlay) => overlay.text) })) } : undefined,
       ...(needsSentences ? { sentences: buildSentences(Object.entries(project.transcripts).map(([materialId, transcript]) => ({ materialId, transcript }))).map((s) => ({ id: s.id, materialId: s.materialId, start: s.start, end: s.end, text: s.text })) } : {}),
+      ...(sourcePreviews ? { sourcePreviews } : {}),
       ...(output ? { output } : {}),
     };
   }

@@ -23,7 +23,7 @@ import { LocalObjectStorage } from "../../infrastructure/storage/local-object-st
 import { S3ObjectStorage } from "../../infrastructure/storage/s3-object-storage.js";
 import { PostgresVideoProjectRepository } from "../../infrastructure/storage/postgres/postgres-video-project-repository.js";
 import { FfmpegEditExecutor } from "../../infrastructure/video-editing/ffmpeg-edit-executor.js";
-import { analyzeVideo, probeMedia, renderSceneContactSheet, runFfmpegCapture } from "../../infrastructure/video-editing/ffmpeg-media-analysis.js";
+import { analyzeVideo, probeMedia, renderContactSheet, renderSceneContactSheet, runFfmpegCapture } from "../../infrastructure/video-editing/ffmpeg-media-analysis.js";
 import { musicSeed, proceduralMusicArgs } from "../../infrastructure/video-editing/procedural-music.js";
 import { WhisperVideoTranscriber } from "../../infrastructure/video-editing/whisper-video-transcriber.js";
 
@@ -114,6 +114,8 @@ export async function createVideoWorkerRuntime(overrides: Partial<VideoWorkerDep
     },
     transcribe: (videoPath, dir) => transcriber.transcribe(videoPath, dir),
     contactSheet: renderSceneContactSheet,
+    sourcePreview: (videoPath, sheetPath, durationSeconds, signal) =>
+      renderContactSheet(videoPath, sheetPath, { everySeconds: Math.max(0.2, durationSeconds / 8), columns: 2, tileWidth: 460, maxTiles: 8, signal }),
     resolveBrand: async (project, logoPath) => {
       const workspace = await platform.workspaceRepository.getById(project.workspaceId);
       const identityResult = await brands.resolveForCreative(project.workspaceId).catch(() => undefined);

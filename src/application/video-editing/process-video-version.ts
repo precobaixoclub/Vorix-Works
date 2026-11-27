@@ -36,6 +36,7 @@ export type VideoWorkerDeps = {
   transcribe: (videoPath: string, workDir: string) => Promise<Transcript>;
   /** Prancha de quadros (JPEG) do vídeo final — usada na revisão visual do piloto. Opcional. */
   contactSheet?: (videoPath: string, sheetPath: string, plan: VideoEditPlan) => Promise<void>;
+  sourcePreview?: (videoPath: string, sheetPath: string, durationSeconds: number, signal: AbortSignal) => Promise<void>;
   /** Estilo da marca do workspace + logo (baixado para `logoPath`, se houver). */
   resolveBrand: (project: VideoProject, logoPath: string) => Promise<{ style: BrandStyle; logo?: MediaFacts & { fileName: string } }>;
   /** Biblioteca de trilhas licenciadas; ausente = sem trilha. */
@@ -57,6 +58,10 @@ const AI_MESSAGES: Record<string, string> = {
 /** Chave da prancha de quadros de uma versão (derivada do id; sem coluna no banco). */
 export function videoSheetKey(tenantId: string, workspaceId: string, versionId: string): string {
   return `${tenantId}/${workspaceId}/video-${versionId}-sheet.jpg`;
+}
+
+export function videoSourcePreviewKey(tenantId: string, workspaceId: string, projectId: string, materialId: string): string {
+  return `${tenantId}/${workspaceId}/video-${projectId}-source-${materialId}.jpg`;
 }
 
 export async function processNextVideoVersion(deps: VideoWorkerDeps): Promise<{ versionId: string; status: VideoVersion["status"] } | undefined> {
@@ -113,9 +118,17 @@ export async function processNextVideoVersion(deps: VideoWorkerDeps): Promise<{ 
       transcripts[material.id] = await deps.transcribe(sources[material.id]!, dir);
     }
     if (speech.length > 0) await deps.repository.saveTranscripts(project.id, transcripts);
-    // Piloto com gravação de fala e ainda sem rascunho: só transcreve. O diretor criativo (Codex) escolhe
-    // as frases pelos ids e manda o rascunho numa nova versão.
+    // O Codex recebe a transcrição e uma prancha da fonte antes de mandar o rascunho numa nova versão.
     if (project.settings.origin?.kind === "editorial_pilot" && !version.draft) {
+      if (deps.sourcePreview) for (const material of materials) {
+        if (controller.signal.aborted) throw new Error("cancelado");
+        if (material.kind !== "video" || !material.durationSeconds) continue;
+        const sheet = join(dir, `source-${material.id}.jpg`);
+        await deps.sourcePreview(sources[material.id]!, sheet, material.durationSeconds, controller.signal)
+          .then(() => deps.uploadFile(videoSourcePreviewKey(project.tenantId, project.workspaceId, project.id, material.id), sheet, "image/jpeg"))
+          .catch((error) => log("prancha de origem não gerada", { versionId: version.id, materialId: material.id, message: String(error) }));
+      }
+      if (controller.signal.aborted) throw new Error("cancelado");
       return await finish({ status: "needs_revision", stage: "awaiting_draft", progress: 100, message: "Transcrição pronta; aguardando o rascunho do diretor criativo." });
     }
     for (const material of materials) if (material.hasSpeech && !(transcripts[material.id]?.segments.length)) material.hasSpeech = false;

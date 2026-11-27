@@ -141,10 +141,10 @@ export function parseAnalysis(stderr: string, analysisMs = 0): VideoAnalysis {
 }
 
 /** Folha de contato (um quadro a cada `everySeconds`) para revisão visual humana/IA. */
-export async function renderContactSheet(input: string, output: string, options: { everySeconds: number; columns: number; tileWidth: number; maxTiles?: number }): Promise<void> {
+export async function renderContactSheet(input: string, output: string, options: { everySeconds: number; columns: number; tileWidth: number; maxTiles?: number; signal?: AbortSignal }): Promise<void> {
   const rows = Math.max(1, Math.ceil((options.maxTiles ?? 12) / options.columns));
   const filter = `fps=1/${options.everySeconds},scale=${options.tileWidth}:-2,tile=${options.columns}x${rows}:padding=6:margin=6:color=0x111111`;
-  const result = await runFfmpegCapture(["-y", "-i", input, "-vf", filter, "-frames:v", "1", output], { timeoutMs: 120_000 });
+  const result = await runFfmpegCapture(["-y", "-i", input, "-vf", filter, "-frames:v", "1", output], { timeoutMs: 120_000, signal: options.signal });
   if (result.exitCode !== 0) throw new Error(`Falha ao gerar folha de contato: ${result.stderr.split(/\r?\n/).filter(Boolean).slice(-3).join(" | ")}`);
 }
 

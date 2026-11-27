@@ -12,10 +12,10 @@ import { validateVideoEditDraftStructure } from "../dist/application/ai-gateway/
 import { planFromPresetDraft } from "../dist/application/video-editing/plan-video-edit.js";
 import { InMemoryVideoProjectRepository } from "../dist/infrastructure/storage/in-memory-video-project-repository.js";
 import { VideoProjectsService } from "../dist/application/video-editing/video-projects.service.js";
-import { processNextVideoVersion, videoSheetKey } from "../dist/application/video-editing/process-video-version.js";
+import { processNextVideoVersion, videoSheetKey, videoSourcePreviewKey } from "../dist/application/video-editing/process-video-version.js";
 import { videoBrandStyle } from "../dist/application/video-editing/brand-style.js";
 import { FfmpegEditExecutor } from "../dist/infrastructure/video-editing/ffmpeg-edit-executor.js";
-import { probeMedia, analyzeVideo, runFfmpegCapture, renderSceneContactSheet } from "../dist/infrastructure/video-editing/ffmpeg-media-analysis.js";
+import { probeMedia, analyzeVideo, runFfmpegCapture, renderContactSheet, renderSceneContactSheet } from "../dist/infrastructure/video-editing/ffmpeg-media-analysis.js";
 import { proceduralMusicArgs, musicSeed } from "../dist/infrastructure/video-editing/procedural-music.js";
 import { approvalRequestText } from "../dist/application/approvals/whatsapp-approval.js";
 import { canonicalApprovalPhone, WhatsappApprovalService } from "../dist/application/approvals/whatsapp-approval-service.js";
@@ -172,6 +172,7 @@ async function pilotFixture({ withSpeech = false, draft } = {}) {
     poster: async (videoPath, posterPath) => { await runFfmpegCapture(["-y", "-ss", "0.5", "-i", videoPath, "-frames:v", "1", posterPath]); },
     transcribe: async () => transcript,
     contactSheet: renderSceneContactSheet,
+    sourcePreview: (videoPath, output, seconds, signal) => renderContactSheet(videoPath, output, { everySeconds: seconds / 8, columns: 2, tileWidth: 160, maxTiles: 8, signal }),
     resolveBrand: async () => ({ style: { ...videoBrandStyle({ brandName: "CMKV" }).style, ...brand } }),
     pickMusic: async (project, destinationDir) => {
       const fileName = "song-original.wav";
@@ -199,7 +200,7 @@ test("worker do piloto: rascunho pronto → plano sem IA paga → render com tri
   }
 });
 
-test("worker do piloto: gravação com fala sem rascunho só transcreve e aguarda o diretor; nunca chama a IA paga", { timeout: 120_000 }, async () => {
+test("worker do piloto: transcrição e prancha de origem ficam disponíveis antes do rascunho", { timeout: 120_000 }, async () => {
   const fx = await pilotFixture({ withSpeech: true });
   try {
     const result = await processNextVideoVersion(fx.deps);
@@ -207,7 +208,9 @@ test("worker do piloto: gravação com fala sem rascunho só transcreve e aguard
     assert.equal(result.status, "needs_revision", done.error);
     assert.equal(done.stage, "awaiting_draft");
     assert.ok((await fx.repository.getProject(A, "p1")).transcripts.M3, "transcrição guardada para o Codex escolher as frases");
-    assert.equal(fx.uploads.length, 0);
+    const sourcePreview = videoSourcePreviewKey(A.tenantId, A.workspaceId, "p1", "M3");
+    assert.deepEqual(fx.uploads, [sourcePreview]);
+    assert.ok(statSync(join(fx.bucket, sourcePreview)).size > 1000);
   } finally {
     await cleanup(fx.root);
   }

@@ -96,7 +96,7 @@ async function waitVersion(workspaceId, versionId, timeoutMs = 30 * 60000) {
   for (;;) {
     const status = await callContainer({ workspaceId, action: "video_status", versionId });
     if (!["queued", "planning", "rendering", "verifying"].includes(status.status)) {
-      return ["ready_for_review", "needs_revision"].includes(status.status) && status.stage !== "awaiting_draft"
+      return ["ready_for_review", "needs_revision"].includes(status.status)
         ? callContainer({ workspaceId, action: "video_status", versionId, withMedia: true }) : status;
     }
     if (Date.now() > deadline) throw new Error(`O vídeo não ficou pronto em ${Math.round(timeoutMs / 60000)} min (fila do worker)`);
@@ -130,6 +130,13 @@ async function writeImages(jobDir, materials) {
     files.push(file);
   }
   return files;
+}
+
+function withSourcePreviews(materials, status) {
+  return materials.map((material) => {
+    const thumb = status?.sourcePreviews?.[material.id];
+    return material.kind === "video" && thumb && !material.thumb ? { ...material, thumb, label: `${material.label ?? "gravação"} (prancha da mídia original em ordem temporal)` } : material;
+  });
 }
 
 async function sheetFile(jobDir, status, name) {
@@ -200,17 +207,19 @@ async function runWorkspace(workspaceId) {
     if (selection.resume) {
       // Vídeo desta pauta já em produção (rodada anterior interrompida): continua dele.
       status = await waitVersion(workspaceId, selection.resume.versionId);
-    } else {
+    }
+    if (!selection.resume || status.stage === "awaiting_draft") {
       if (!materials.length) materials = await conceptImages(jobDir, workspaceId, selection, operations);
       const speech = materials.some((material) => material.kind === "video");
       const settings = { targetDurationSeconds: targetSecondsFor(idea, { speech }), editing: "dinamico", transitions: "moderadas", captions: true, music: Boolean(selection.musicAvailable) };
       const queueMaterials = materials.map(({ objectKey, role, label }) => ({ objectKey, role, label }));
-      if (speech) {
+      if (speech && status?.stage !== "awaiting_draft") {
         // Gravação com fala: o worker transcreve primeiro; o Codex escolhe as frases pelos ids.
         const queued = await callContainer({ workspaceId, action: "video_queue", ideaId: idea.id, updatedAt: idea.updatedAt, materials: queueMaterials, settings, draft: null });
         status = await waitVersion(workspaceId, queued.versionId);
         if (status.stage !== "awaiting_draft") throw new Error(status.error ?? "A transcrição da gravação falhou");
       }
+      materials = withSourcePreviews(materials, status);
       const images = await writeImages(jobDir, materials);
       // Versão só de transcrição: as tentativas de plano partem dela (a fala não é transcrita de novo).
       const transcribed = status?.stage === "awaiting_draft" ? status : undefined;
@@ -236,6 +245,7 @@ async function runWorkspace(workspaceId) {
     // Revisão editorial (até 1 ajuste). Inconclusiva ou reprovada: revisão manual, nunca agenda sozinha.
     let review = await editorialReview(jobDir, selection, status, operations);
     if (review.verdict === "revise" && review.revisionRequest) {
+      materials = withSourcePreviews(materials, status);
       const pictures = await writeImages(jobDir, materials);
       const base = status;
       const sentences = base.sentences ?? [];

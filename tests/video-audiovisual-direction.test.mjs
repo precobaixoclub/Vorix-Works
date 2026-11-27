@@ -187,6 +187,10 @@ test("composição: vitrine sem sobreposição e lupa da tela dentro da área se
   assert.ok(inside(wide.card, box) && inside(wide.loupe, box) && !overlaps(wide.card, wide.loupe));
   assert.ok(wide.view.x0 >= wide.crop.x - 1e-9 && wide.view.x1 + wide.view.w <= wide.crop.x + wide.crop.w + 1e-9, "a janela anda só dentro da região");
   assert.ok(wide.view.x1 > wide.view.x0, "região maior que a janela: a lupa percorre");
+  // Captura vertical de celular: a tela inteira continua com pelo menos metade da altura útil.
+  const phone = softwareFocusLayout(900 / 1950, { x: 0.05, y: 0.2, w: 0.9, h: 0.25 }, box, 170, 36, 900);
+  assert.ok(phone.card.h >= (box.bottom - box.top - 170) * 0.5, `tela do celular reconhecível (${phone.card.h.toFixed(0)} px)`);
+  assert.ok(inside(phone.loupe, box) && !overlaps(phone.card, phone.loupe));
 });
 
 // ---------------------------------------------------------------- integração: construtor + plano + compilador

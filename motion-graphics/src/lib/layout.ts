@@ -66,7 +66,8 @@ export function softwareFocusLayout(shotAspect: number, region: { x: number; y: 
   const viewW = Math.min(r.w, loupeW / (zoomSrc * srcW));
   let viewH = r.h;
   let loupeH = viewH * srcH * zoomSrc;
-  const maxLoupeH = availH * 0.48;
+  // Captura vertical (celular) precisa de mais altura para a tela inteira continuar reconhecível.
+  const maxLoupeH = availH * (shotAspect < 1 ? 0.34 : 0.48);
   if (loupeH > maxLoupeH) {
     loupeH = maxLoupeH;
     viewH = loupeH / (srcH * zoomSrc);

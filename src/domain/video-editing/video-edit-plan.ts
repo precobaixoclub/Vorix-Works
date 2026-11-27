@@ -40,7 +40,7 @@ export type VideoEditMode = "edit_footage" | "images_ad";
 export type EditMediaKind = "video" | "image" | "audio" | "card";
 
 /** `generated` = imagem criada por IA (cena conceitual): nunca produto nem tela de software. */
-export type EditMediaRole = "footage" | "product_photo" | "screenshot" | "logo" | "music" | "narration" | "reference" | "card" | "generated";
+export type EditMediaRole = "footage" | "product_photo" | "screenshot" | "logo" | "music" | "narration" | "reference" | "card" | "generated" | "sfx";
 
 export type EditMediaAsset = {
   id: string;
@@ -147,6 +147,8 @@ export type EditClip = {
   overlays: EditTextOverlay[];
   /** Vídeo com fala: manter o áudio original do trecho. */
   keepSourceAudio: boolean;
+  /** Intenção emocional da cena (Emotion Engine): já aplicada em ritmo, movimento, transição e som. */
+  emotion?: string;
   /** Composição da cena; ausente = `full`. */
   layout?: EditSceneLayout;
   /**
@@ -159,6 +161,7 @@ export type EditClip = {
 
 export const DESIGN_TEMPLATES = ["product_hero", "detail_reveal", "lineup", "software_focus", "title_card", "speech_captions"] as const;
 export type EditDesignTemplate = (typeof DESIGN_TEMPLATES)[number];
+export type EditSfxCue = { assetId: string; atSeconds: number; gainDb: number };
 export type EditDesign = { template: EditDesignTemplate; props: Record<string, unknown> };
 
 export type EditCaptionWord = { text: string; startSeconds: number; endSeconds: number };
@@ -217,6 +220,10 @@ export type VideoEditPlan = {
   strategy: string;
   /** Cores da marca para as composições `framed`/`split`/`parallax`/`device_*`. */
   look?: EditLook;
+  /** Efeitos sonoros sincronizados com eventos visuais (Sound Design Engine). */
+  sfx?: EditSfxCue[];
+  /** Registro da direção audiovisual (identidade de movimento, batida, verificações objetivas). */
+  direction?: { story?: string; brandMotion?: Record<string, unknown>; beat?: { bpm: number; snapped: number; cuts: number }; checks?: { id: string; label: string; kind: string; status: string; detail: string }[] };
   /** Pedido original do usuário, guardado para histórico — nunca interpretado pelo executor. */
   prompt: string;
 };
@@ -459,5 +466,11 @@ export function validateVideoEditPlan(plan: VideoEditPlan): PlanValidation {
     }
   }
 
+  for (const [index, cue] of (plan.sfx ?? []).entries()) {
+    const asset = plan.assets.find((item) => item.id === cue.assetId);
+    if (!asset || asset.kind !== "audio" || asset.role !== "sfx") issues.push({ path: `sfx[${index}]`, message: "efeito sonoro sem asset de áudio" });
+    if (!(cue.atSeconds >= 0 && cue.atSeconds < plan.durationSeconds)) issues.push({ path: `sfx[${index}]`, message: "efeito fora do vídeo" });
+    if (!(cue.gainDb <= 0 && cue.gainDb >= -40)) issues.push({ path: `sfx[${index}]`, message: "ganho do efeito fora de -40..0 dB" });
+  }
   return { valid: issues.length === 0, issues };
 }

@@ -100,6 +100,15 @@ test("executor: cena animada renderizada antes do FFmpeg, cache pela versão dos
     const changed = fakeRenderer("v2");
     await run(changed.renderer, 3);
     assert.deepEqual(changed.calls, ["product_hero"], "template novo: renderiza de novo");
+    // Versão por template: mudar OUTRO template não invalida esta cena; mudar o dela, sim.
+    const other = fakeRenderer("v3");
+    other.renderer.versionOf = (template) => (template === "product_hero" ? "p1" : "x2");
+    await run(other.renderer, 5);
+    assert.deepEqual(other.calls, ["product_hero"]);
+    const otherChanged = fakeRenderer("v4");
+    otherChanged.renderer.versionOf = (template) => (template === "product_hero" ? "p1" : "x3");
+    await run(otherChanged.renderer, 6);
+    assert.deepEqual(otherChanged.calls, [], "outro template mudou: esta cena continua no cache");
     await assert.rejects(run(undefined, 4), /renderizador de cenas não está disponível/);
   } finally {
     await cleanup(dir);

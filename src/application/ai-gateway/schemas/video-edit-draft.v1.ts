@@ -42,6 +42,8 @@ const sceneSchema = z
     layout: z.enum(LAYOUTS).optional(),
     modality: z.enum(SCENE_MODALITIES).optional(),
     motionPrompt: z.string().min(1).max(400).optional(),
+    /** Intenção emocional da cena (Emotion Engine). */
+    emotion: z.enum(["curiosity", "desire", "urgency", "trust", "sophistication", "energy", "authority", "surprise", "identification"]).optional(),
     /** Cena de motion design (Remotion): template + textos curtos; o construtor monta as props. */
     design: z.object({
       template: z.enum(DESIGN_TEMPLATE_NAMES),
@@ -66,6 +68,10 @@ const sceneSchema = z
 const draftSchema = z
   .object({
     schemaVersion: z.literal(VIDEO_EDIT_DRAFT_SCHEMA_VERSION),
+    /** História que o vídeo conta (diretor audiovisual). */
+    story: z.string().max(300).optional(),
+    /** Efeitos sonoros: automáticos pelos eventos visuais, ou nenhum. */
+    sfx: z.enum(["auto", "none"]).optional(),
     strategy: z.string().min(1).max(60),
     rationale: z.string().max(900),
     scenes: z.array(sceneSchema).min(1).max(14),

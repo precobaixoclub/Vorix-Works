@@ -182,7 +182,10 @@ test("render real: todas as composições num MP4 aprovado pelo Quality Gate", {
     const probe = await probeMedia(out);
     const analysis = await analyzeVideo(out, { hasAudio: true });
     const gate = evaluateVideoQualityGate({ plan: built.plan, probe: { exists: true, sizeBytes: result.sizeBytes, ...probe }, analysis, compilerWarnings: result.warnings, brandHasLogo: false });
-    assert.equal(gate.status, "ready_for_review", gate.failures.join("; "));
+    // A vitrine usa 5 transições de propósito (cobertura do compilador): o critério audiovisual de
+    // continuidade a reprova — e essa deve ser a ÚNICA reprovação (todo o resto do gate passa).
+    assert.deepEqual(gate.failures.filter((failure) => !failure.startsWith("Transições consistentes")), [], gate.failures.join("; "));
+    assert.ok(gate.failures.some((failure) => failure.startsWith("Transições consistentes: 5 tipos")), "excesso de tipos de transição é reprovado");
     assert.ok(Math.abs(probe.durationSeconds - built.plan.durationSeconds) < 0.2);
     assert.equal(result.warnings.filter((w) => w.includes("composição")).length, 0, result.warnings.join("; "));
     const sheet = join(dir, "sheet.jpg");

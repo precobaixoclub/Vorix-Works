@@ -61,7 +61,7 @@ export type FfmpegEditExecutorOptions = {
 };
 
 /** Cena de motion design → MP4 no `jobDir` (os arquivos citados nas props já estão lá, pelo nome). */
-export type SceneRenderer = { version?: string; render(input: { jobDir: string; outputPath: string; props: Record<string, unknown>; signal?: AbortSignal }): Promise<{ ms: number }> };
+export type SceneRenderer = { version?: string; /** Versão por template (cache mais fino); ausente = `version`. */ versionOf?: (template: string) => string; quality?: "final" | "preview"; render(input: { jobDir: string; outputPath: string; props: Record<string, unknown>; signal?: AbortSignal }): Promise<{ ms: number }> };
 
 /** Versão das composições: muda a chave do cache quando os templates mudam. */
 export const MOTION_DESIGN_VERSION = "remotion-1";
@@ -148,7 +148,7 @@ export class FfmpegEditExecutor implements VideoEditExecutor {
       const assets = new Map(plan.assets.map((asset) => [asset.id, asset]));
       // Arquivos citados nas props das cenas animadas (logo do encerramento, variantes do lineup) também vão para o job.
       const designFiles = new Set(plan.clips.flatMap((clip) => (clip.design ? Object.values(clip.design.props).flatMap((value) => (Array.isArray(value) ? value : [value])) : [])).filter((value): value is string => typeof value === "string"));
-      const needed = new Set<string>([...plan.clips.map((clip) => clip.assetId), ...plan.assets.filter((asset) => asset.fileName && designFiles.has(asset.fileName)).map((asset) => asset.id), ...(plan.logo ? [plan.logo.assetId] : []), ...(plan.music ? [plan.music.assetId] : []), ...(plan.narration ? [plan.narration.assetId] : [])]);
+      const needed = new Set<string>([...plan.clips.map((clip) => clip.assetId), ...plan.assets.filter((asset) => asset.fileName && designFiles.has(asset.fileName)).map((asset) => asset.id), ...(plan.logo ? [plan.logo.assetId] : []), ...(plan.music ? [plan.music.assetId] : []), ...(plan.narration ? [plan.narration.assetId] : []), ...(plan.sfx ?? []).map((cue) => cue.assetId)]);
       let sourceBytes = 0;
       const staged: { id: string; from: string; to: string }[] = [];
       for (const id of needed) {
@@ -194,6 +194,7 @@ export class FfmpegEditExecutor implements VideoEditExecutor {
       // Motion design (Remotion): cada cena vira um MP4 ANTES dos passos do FFmpeg (um processo por vez, sem
       // disputa de CPU) e entra no plano como clipe de vídeo comum. Cache por workspace pelo conteúdo.
       let planToCompile = plan;
+      const designStats = { total: 0, hits: 0, ms: 0 };
       const designClips = plan.clips.filter((clip) => clip.design);
       if (designClips.length) {
         if (!this.options.sceneRenderer) throw new Error("Plano com motion design, mas o renderizador de cenas não está disponível neste worker.");
@@ -201,15 +202,17 @@ export class FfmpegEditExecutor implements VideoEditExecutor {
         if (cacheDirDesign) await mkdir(cacheDirDesign, { recursive: true });
         const extraAssets: typeof plan.assets = [];
         const replaced = new Map<string, (typeof plan.clips)[number]>();
+        designStats.total = designClips.length;
         for (const clip of designClips) {
           checkCancel();
           const props = { ...clip.design!.props, template: clip.design!.template, width: plan.width, height: plan.height, fps: plan.fps, durationInFrames: Math.max(1, Math.round(clip.durationSeconds * plan.fps)) };
           const referenced = Object.values(clip.design!.props).flatMap((item) => (Array.isArray(item) ? item : [item])).filter((item): item is string => typeof item === "string" && known.has(item));
-          const key = createHash("sha256").update(JSON.stringify({ v: `${MOTION_DESIGN_VERSION}:${this.options.sceneRenderer.version ?? ""}`, props, files: referenced.map((file) => known.get(file)) })).digest("hex").slice(0, 32);
+          const key = createHash("sha256").update(JSON.stringify({ v: `${MOTION_DESIGN_VERSION}:${this.options.sceneRenderer.versionOf?.(clip.design!.template) ?? this.options.sceneRenderer.version ?? ""}:${this.options.sceneRenderer.quality ?? "final"}`, props, files: referenced.map((file) => known.get(file)) })).digest("hex").slice(0, 32);
           const fileName = `design-${clip.id}.mp4`;
           const cached = cacheDirDesign ? join(cacheDirDesign, `design-${key}.mp4`) : null;
           progress("rendering_clips", 5, `Animando a cena ${clip.id}`);
-          if (cached && existsSync(cached)) await place(cached, join(jobDir, fileName));
+          const sceneStarted = Date.now();
+          if (cached && existsSync(cached)) { await place(cached, join(jobDir, fileName)); designStats.hits += 1; }
           else {
             await this.options.sceneRenderer.render({ jobDir, outputPath: join(jobDir, fileName), props, signal }).catch((error: unknown) => {
               if (signal?.aborted) throw new VideoRenderCancelledError();
@@ -217,6 +220,7 @@ export class FfmpegEditExecutor implements VideoEditExecutor {
             });
             if (cached) await place(join(jobDir, fileName), cached).catch(() => undefined);
           }
+          designStats.ms += Date.now() - sceneStarted;
           known.set(fileName, key);
           const probe = await probeMedia(join(jobDir, fileName));
           const assetId = `design-${clip.id}`;
@@ -290,7 +294,7 @@ export class FfmpegEditExecutor implements VideoEditExecutor {
         timings,
         engine: { product: "FFmpeg", version: /ffmpeg version (\S+)/.exec(version)?.[1] ?? "?", codec: "H264/AAC" },
         operationsSent: compiled.steps.length,
-        details: { cacheHits, steps: stepTimings, textLayouts: ass.layouts, hasAudio: compiled.hasAudio, totalFrames: compiled.totalFrames },
+        details: { cacheHits, design: designStats, steps: stepTimings, textLayouts: ass.layouts, hasAudio: compiled.hasAudio, totalFrames: compiled.totalFrames },
       };
     } finally {
       if (!this.options.keepWorkDir) await rm(jobDir, { recursive: true, force: true }).catch(() => undefined);

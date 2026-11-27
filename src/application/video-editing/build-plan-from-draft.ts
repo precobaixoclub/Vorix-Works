@@ -9,6 +9,9 @@
 
 import type { EditClip, EditDesign, EditMediaAsset, EditTextOverlay, EditTextPosition, EditTextRole, EditTextStyle, EditTransitionType, VideoAspect, VideoEditPlan } from "../../domain/video-editing/video-edit-plan.js";
 import { OVERLAP_TRANSITIONS, VIDEO_FORMATS, validateVideoEditPlan } from "../../domain/video-editing/video-edit-plan.js";
+import { brandMotionProfile, readingSeconds, sceneDirection, snapCutsToBeats, type BrandMotion, type Emotion } from "./audiovisual-direction.js";
+import { applyAudiovisualDirection } from "./apply-audiovisual-direction.js";
+import type { RoiSample } from "./reframe-track.js";
 import type { VideoEditDraft } from "../ai-gateway/schemas/video-edit-draft.v1.js";
 import { captionsFromTranscript, chooseFraming, snapRangeToWords, transcriptWords, type BrandGlossary, type Transcript, type TranscriptSentence } from "./transcript-tools.js";
 
@@ -53,6 +56,12 @@ export type VideoStyleOptions = {
 };
 
 export type BuildPlanContext = {
+  /** Direção audiovisual (opcional): batidas da trilha, região de interesse dos vídeos, biblioteca de efeitos. */
+  beats?: { bpm: number; times: number[] };
+  roi?: Record<string, { samples: RoiSample[]; aspect: number }>;
+  sfxLibrary?: boolean;
+  businessKind?: string;
+  brandMotion?: Partial<BrandMotion>;
   planId: string;
   workspaceId: string;
   aspect: VideoAspect;
@@ -269,11 +278,31 @@ export function buildPlanFromDraft(draft: VideoEditDraft, context: BuildPlanCont
     built.push({
       speech,
       flexible: asset.kind !== "video",
-      clip: { id: `c${index + 1}`, assetId: asset.id, purpose: scene.purpose, sourceInSeconds: round3(sourceIn), durationSeconds: duration, motion: { type: motionType, intensity }, framing: { fit: asset.kind === "card" ? "fill" : fit, focusX, focusY, ...(zoom ? { zoom } : {}), ...(region ? { region } : {}) }, transitionIn: { type: scene.transitionIn, durationSeconds: 0 }, overlays: design ? [] : overlays, keepSourceAudio: speech, ...(layout !== "full" && !design ? { layout } : {}), ...(design ? { design } : {}) },
+      clip: { id: `c${index + 1}`, assetId: asset.id, purpose: scene.purpose, sourceInSeconds: round3(sourceIn), durationSeconds: duration, motion: { type: motionType, intensity }, framing: { fit: asset.kind === "card" ? "fill" : fit, focusX, focusY, ...(zoom ? { zoom } : {}), ...(region ? { region } : {}) }, transitionIn: { type: scene.transitionIn, durationSeconds: 0 }, overlays: design ? [] : overlays, keepSourceAudio: speech, ...(scene.emotion ? { emotion: scene.emotion } : {}), ...(layout !== "full" && !design ? { layout } : {}), ...(design ? { design } : {}) },
     });
   });
   if (issues.length > 0) return { ok: false, issues, warnings };
   if (built.length === 0) return { ok: false, issues: ["nenhuma cena utilizável"], warnings };
+
+  // Identidade de movimento da marca (Brand Motion System): personalidade, curvas, transições e som.
+  const brandMotion = brandMotionProfile({ tone: context.brand.tone, displayFont: context.brand.displayFont, businessKind: context.businessKind ?? (context.materials.some((m) => m.role === "screenshot" || m.role === "screen_recording") ? "software" : undefined), override: context.brandMotion });
+  // Transições motivadas: mesmo material em sequência = corte (continuidade do plano); fora da família da
+  // marca, a transição vira a da emoção dentro da família (consistência entre as cenas).
+  // Só para rascunhos DIRIGIDOS (história ou emoção por cena): rascunhos antigos seguem exatamente como antes.
+  const directed = Boolean(draft.story) || built.some((item) => item.clip.emotion);
+  if (directed) built.forEach((item, index) => {
+    if (index === 0) return;
+    const previous = built[index - 1]!;
+    const t = item.clip.transitionIn.type;
+    if (previous.clip.assetId === item.clip.assetId && previous.clip.assetId !== cardId) item.clip.transitionIn = { type: "cut", durationSeconds: 0 };
+    else if (t !== "cut" && t !== "dip_to_black" && !brandMotion.transitions.includes(t)) {
+      const replacement = sceneDirection(brandMotion, item.clip.emotion as Emotion | undefined).transition;
+      warnings.push(`cena ${index + 1}: transição ${t} fora da identidade de movimento da marca; usada ${replacement}`);
+      item.clip.transitionIn = { type: replacement, durationSeconds: 0 };
+    }
+  });
+  // Ritmo pela emoção: cenas flexíveis ficam mais longas (sofisticação, desejo) ou mais curtas (urgência).
+  if (directed) for (const item of built) if (item.flexible) item.clip.durationSeconds *= sceneDirection(brandMotion, item.clip.emotion as Emotion | undefined).pace;
 
   // Transições: duração pela intensidade pedida; fala → fala é sempre corte (vozes não se sobrepõem).
   const transitionSeconds = TRANSITION_SECONDS[context.style.transitions];
@@ -305,6 +334,15 @@ export function buildPlanFromDraft(draft: VideoEditDraft, context: BuildPlanCont
     }
     const final = total();
     if (Math.abs(final - context.targetDurationSeconds) / context.targetDurationSeconds > 0.15) warnings.push(`duração final ${final.toFixed(1)}s difere da pedida (${context.targetDurationSeconds}s): a fala escolhida tem esse tempo`);
+  }
+
+  // Beat Sync: cortes das cenas flexíveis encaixados na batida quando cabem (sem cortar o tempo de leitura).
+  let beat: { bpm: number; snapped: number; cuts: number } | undefined;
+  if (directed && context.beats?.times.length && built.length > 1) {
+    const textsOf = (clip: (typeof built)[number]["clip"]) => [...clip.overlays.map((o) => o.text), ...((clip.design?.props.lines as string[] | undefined) ?? []), ...[clip.design?.props.headline, clip.design?.props.label].filter((t): t is string => typeof t === "string")];
+    const snap = snapCutsToBeats({ durations: built.map((item) => item.clip.durationSeconds), overlaps: built.map((_, index) => overlapOf(index)), flexible: built.map((item) => item.flexible), minimums: built.map((item) => readingSeconds(textsOf(item.clip))), beats: context.beats.times });
+    snap.durations.forEach((duration, index) => { built[index]!.clip.durationSeconds = duration; });
+    beat = { bpm: context.beats.bpm, snapped: snap.snapped, cuts: snap.cuts };
   }
 
   // Alinha ao quadro, ajusta transições longas demais e encadeia na linha do tempo.
@@ -388,6 +426,14 @@ export function buildPlanFromDraft(draft: VideoEditDraft, context: BuildPlanCont
     look: { backgroundHex: context.brand.primaryHex.toUpperCase(), accentHex: context.brand.accentHex.toUpperCase(), panelTextHex: contrastText(context.brand.primaryHex, context.brand).toUpperCase() },
     prompt: context.request.slice(0, 4000),
   };
+  // Direção audiovisual: emoção e marca no movimento, props das cenas animadas, reenquadramento, som.
+  warnings.push(...applyAudiovisualDirection(plan, {
+    brandMotion,
+    ...(draft.story ? { story: draft.story } : {}),
+    ...(context.roi ? { roi: context.roi } : {}),
+    ...(beat ? { beat } : {}),
+    sfx: { enabled: Boolean(context.sfxLibrary) && (draft.sfx === "auto" || (directed && draft.sfx !== "none")), assetFor: (kind) => ({ id: `SFX_${kind}`, fileName: `sfx-${kind}.wav` }) },
+  }));
   const validation = validateVideoEditPlan(plan);
   if (!validation.valid) return { ok: false, issues: validation.issues.map((issue) => `${issue.path}: ${issue.message}`), warnings };
   return { ok: true, plan, warnings };
@@ -428,7 +474,7 @@ function buildDesign(scene: VideoEditDraft["scenes"][number], asset: EditMediaAs
     }
     case "software_focus":
       if (asset.kind !== "image" || asset.role !== "screenshot" || !region || !spec.label) return fail("exige captura real, a região da função e um rótulo");
-      Object.assign(props, { screenshot: asset.fileName, shotAspect: aspect, region, label: spec.label, headline: spec.headline });
+      Object.assign(props, { screenshot: asset.fileName, shotAspect: aspect, ...(asset.width ? { shotWidth: asset.width } : {}), region, label: spec.label, headline: spec.headline });
       break;
     case "title_card": {
       if (asset.kind !== "card") return fail("é cena de cartão");

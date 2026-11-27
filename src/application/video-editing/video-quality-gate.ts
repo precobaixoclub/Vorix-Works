@@ -134,6 +134,11 @@ export function evaluateVideoQualityGate(input: VideoQualityGateInput): VideoQua
   const otherWarnings = input.compilerWarnings.filter((w) => !/texto|legenda/.test(w));
   if (otherWarnings.length > 0) add("compiler", "Avisos de execução", "warn", otherWarnings.join("; "));
 
+  // Direção audiovisual: verificações OBJETIVAS do plano (as subjetivas ficam com a revisão visual).
+  for (const check of input.plan.direction?.checks ?? []) {
+    if (check.kind !== "objective") continue;
+    add(`av_${check.id}`, check.label, check.status === "fail" ? "fail" : check.status === "warn" ? "warn" : "pass", check.detail);
+  }
   return finalize(checks);
 }
 

@@ -26,6 +26,10 @@ import { FfmpegEditExecutor, type SceneRenderer } from "../../infrastructure/vid
 import { pathToFileURL } from "node:url";
 import { analyzeVideo, probeMedia, renderContactSheet, renderSceneContactSheet, runFfmpegCapture } from "../../infrastructure/video-editing/ffmpeg-media-analysis.js";
 import { musicSeed, proceduralMusicArgs } from "../../infrastructure/video-editing/procedural-music.js";
+import { analyzeBeats } from "../../infrastructure/video-editing/audio-analysis.js";
+import { analyzeRegionOfInterest } from "../../infrastructure/video-editing/reframe-analysis.js";
+import { sfxFile } from "../../infrastructure/video-editing/sfx-library.js";
+import type { SfxKind } from "../../application/video-editing/audiovisual-direction.js";
 import { WhisperVideoTranscriber } from "../../infrastructure/video-editing/whisper-video-transcriber.js";
 
 const env = process.env;
@@ -53,8 +57,9 @@ async function loadSceneRenderer(workDir: string): Promise<{ sceneRenderer?: Sce
   const entry = resolve(env.VIDEO_MOTION_GRAPHICS_DIR?.trim() || "motion-graphics", "render.mjs");
   if (!existsSync(entry)) return {};
   try {
-    const module = (await import(pathToFileURL(entry).href)) as { TEMPLATES_VERSION?: string; renderScene: (input: Record<string, unknown>) => Promise<{ ms: number }> };
-    return { sceneRenderer: { version: module.TEMPLATES_VERSION, render: (input) => module.renderScene({ ...input, concurrency: int(env.REMOTION_CONCURRENCY, 1), cacheDir: join(workDir, "remotion"), timeoutMs: int(env.REMOTION_TIMEOUT_MS, 240_000) }) } };
+    const module = (await import(pathToFileURL(entry).href)) as { TEMPLATES_VERSION?: string; templateVersion?: (template: string) => string; renderScene: (input: Record<string, unknown>) => Promise<{ ms: number }> };
+    const quality = env.REMOTION_QUALITY?.trim() === "preview" ? "preview" : "final";
+    return { sceneRenderer: { version: module.TEMPLATES_VERSION, ...(module.templateVersion ? { versionOf: module.templateVersion } : {}), quality, render: (input) => module.renderScene({ ...input, quality, concurrency: int(env.REMOTION_CONCURRENCY, 1), cacheDir: join(workDir, "remotion"), timeoutMs: int(env.REMOTION_TIMEOUT_MS, 240_000) }) } };
   } catch (error) {
     log("motion design indisponível", { message: error instanceof Error ? error.message : String(error) });
     return {};
@@ -132,6 +137,9 @@ export async function createVideoWorkerRuntime(overrides: Partial<VideoWorkerDep
       if (result.exitCode !== 0) throw new Error("falha ao gerar a capa do vídeo");
     },
     transcribe: (videoPath, dir) => transcriber.transcribe(videoPath, dir),
+    analyzeBeats: (musicPath) => analyzeBeats(musicPath),
+    analyzeRoi: (videoPath, durationSeconds) => analyzeRegionOfInterest(videoPath, { start: 0, duration: durationSeconds }),
+    sfxFile: (kind) => sfxFile(join(workDir, "sfx"), kind as SfxKind),
     contactSheet: renderSceneContactSheet,
     sourcePreview: (videoPath, sheetPath, durationSeconds, signal) =>
       renderContactSheet(videoPath, sheetPath, { everySeconds: Math.max(0.2, durationSeconds / 8), columns: 2, tileWidth: 460, maxTiles: 8, signal }),

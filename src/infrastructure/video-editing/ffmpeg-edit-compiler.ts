@@ -424,7 +424,22 @@ export function compileFfmpegEdit(input: CompileFfmpegInput): CompiledFfmpegEdit
       musicBus = "[musd]";
     }
   }
-  const audioBuses = [speechBus, musicBus].filter((bus): bus is string => Boolean(bus));
+  // Efeitos sonoros: cada um no seu instante e ganho (o plano já reduziu os que caem sob a fala).
+  let sfxBus: string | null = null;
+  const cues = (plan.sfx ?? []).filter((cue) => assets.get(cue.assetId)?.fileName);
+  if (cues.length) {
+    cues.forEach((cue, index) => {
+      inputs.push("-i", assets.get(cue.assetId)!.fileName!);
+      filters.push(`[${nextInput}:a]aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo,volume=${n(cue.gainDb, 1)}dB,adelay=${Math.round(cue.atSeconds * 1000)}:all=1[fx${index}]`);
+      nextInput += 1;
+    });
+    if (cues.length === 1) sfxBus = "[fx0]";
+    else {
+      filters.push(`${cues.map((_, index) => `[fx${index}]`).join("")}amix=inputs=${cues.length}:normalize=0:duration=longest[fxbus]`);
+      sfxBus = "[fxbus]";
+    }
+  }
+  const audioBuses = [speechBus, musicBus, sfxBus].filter((bus): bus is string => Boolean(bus));
   const hasAudio = audioBuses.length > 0;
   if (hasAudio) {
     const mixed = audioBuses.length === 1 ? audioBuses[0]! : "[amixed]";

@@ -36,6 +36,10 @@ export type VideoWorkerDeps = {
   transcribe: (videoPath: string, workDir: string) => Promise<Transcript>;
   /** Prancha de quadros (JPEG) do vídeo final — usada na revisão visual do piloto. Opcional. */
   contactSheet?: (videoPath: string, sheetPath: string, plan: VideoEditPlan) => Promise<void>;
+  /** Direção audiovisual (opcionais): batidas da trilha, região de interesse dos vídeos e efeitos sonoros. */
+  analyzeBeats?: (musicPath: string) => Promise<{ bpm: number; beats: number[] }>;
+  analyzeRoi?: (videoPath: string, durationSeconds: number) => Promise<{ t: number; cx: number; cy: number; weight: number }[]>;
+  sfxFile?: (kind: string) => Promise<string>;
   sourcePreview?: (videoPath: string, sheetPath: string, durationSeconds: number, signal: AbortSignal) => Promise<void>;
   /** Estilo da marca do workspace + logo (baixado para `logoPath`, se houver). */
   resolveBrand: (project: VideoProject, logoPath: string) => Promise<{ style: BrandStyle; logo?: MediaFacts & { fileName: string } }>;
@@ -151,6 +155,22 @@ export async function processNextVideoVersion(deps: VideoWorkerDeps): Promise<{ 
       }
     }
 
+    // Direção audiovisual: batidas da trilha e região de interesse dos vídeos (falhas não bloqueiam o vídeo).
+    const audiovisualContext = async () => {
+      const extra: { beats?: { bpm: number; times: number[] }; roi?: Record<string, { samples: { t: number; cx: number; cy: number; weight: number }[]; aspect: number }>; sfxLibrary?: boolean } = { sfxLibrary: Boolean(deps.sfxFile) };
+      if (musicMaterialId && deps.analyzeBeats) {
+        const beats = await deps.analyzeBeats(sources[musicMaterialId]!).catch(() => undefined);
+        if (beats?.beats.length) extra.beats = { bpm: beats.bpm, times: beats.beats };
+      }
+      if (deps.analyzeRoi) {
+        for (const material of materials.filter((m) => m.kind === "video" && m.role !== "generated_motion" && (m.width ?? 0) > (m.height ?? 0) * 1.05)) {
+          const samples = await deps.analyzeRoi(sources[material.id]!, Math.min(180, material.durationSeconds ?? 60)).catch(() => undefined);
+          if (samples?.length) (extra.roi ??= {})[material.id] = { samples, aspect: (material.width ?? 16) / (material.height ?? 9) };
+        }
+      }
+      return extra;
+    };
+
     // Planejamento por IA.
     progress("planning", 22, "A IA está planejando a edição");
     const scope = { tenantId: project.tenantId, workspaceId: project.workspaceId };
@@ -168,6 +188,7 @@ export async function processNextVideoVersion(deps: VideoWorkerDeps): Promise<{ 
       brand: brand.style,
       logoMaterialId,
       musicMaterialId,
+      ...(await audiovisualContext()),
       recentStrategies: await deps.repository.latestStrategies(scope, 5),
     };
     let outcome: PlanningOutcome;
@@ -195,6 +216,10 @@ export async function processNextVideoVersion(deps: VideoWorkerDeps): Promise<{ 
     // Render.
     const output = join(dir, "final.mp4");
     const started = Date.now();
+    // Efeitos sonoros do plano: arquivos da biblioteca local (gerados uma vez).
+    for (const asset of outcome.plan.assets) {
+      if (asset.role === "sfx" && deps.sfxFile) sources[asset.id] = await deps.sfxFile(asset.id.replace(/^SFX_/, ""));
+    }
     const result = await deps.executor.execute({
       jobId: `job-${version.id.toLowerCase().replace(/[^a-z0-9-]/g, "-")}`.slice(0, 60),
       plan: outcome.plan,

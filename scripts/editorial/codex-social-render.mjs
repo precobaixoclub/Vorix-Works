@@ -133,6 +133,7 @@ export async function prepareLogo(logo) {
     png: trimmed.data, width: trimmed.info.width, height: trimmed.info.height, aspect: trimmed.info.width / trimmed.info.height,
     // Tons claro e escuro da própria logo: logo bicolor (contorno vivo + miolo escuro) é legível pelo tom que contrasta.
     luminance: weight ? luminance / weight : 0.5, tones: [quantile(0.15), quantile(0.85)],
+    fullMarkTones: [quantile(0.05), quantile(0.5), quantile(0.95)],
     knockedOut, variant: logo.variant ?? "PRIMARY", backgrounds: logo.backgrounds ?? [],
   };
 }
@@ -414,11 +415,20 @@ export async function renderArt(request) {
   // Logo: versão compatível com o fundo real daquele canto; tratamento só se o contraste pedir.
   const background = regionStats(withVeil.data, withVeil.info.channels, plan.logo);
   const tone = background.mean < 0.2 ? "DARK" : "LIGHT";
+  const fullMark = logoConfig?.preserveWordmarkContrast === true;
+  const minimumLogoContrast = fullMark ? 4.5 : MIN_LOGO_CONTRAST;
+  const backgroundTones = [background.p10, background.mean, background.p90];
+  const inkContrast = (ink) => Math.min(...backgroundTones.map((value) => contrastRatio(ink, value)));
+  const readableContrast = (logo) => fullMark
+    ? Math.min(...logo.fullMarkTones.map(inkContrast))
+    : logoLegibility(logo, background.mean);
   // O rótulo do cadastro é conferido com a cor real do arquivo: versão "para fundo escuro" que é escura
   // (ou vice-versa) não conta como compatível e vira aviso no relatório.
   const assetWarnings = logos.filter((logo) => mislabeled(logo)).map((logo) => `versão ${logo.variant} da logo está cadastrada para fundo ${logo.backgrounds.includes("DARK") ? "escuro, mas é escura" : "claro, mas é clara"}`);
-  const ranked = logos.map((logo) => ({ logo, contrast: logoLegibility(logo, background.mean), compatible: !mislabeled(logo) && (logo.backgrounds.length === 0 || logo.backgrounds.includes(tone)) }))
-    .sort((a, b) => (Number(b.compatible) * 2 + Math.min(b.contrast, MIN_LOGO_CONTRAST + 1.5)) - (Number(a.compatible) * 2 + Math.min(a.contrast, MIN_LOGO_CONTRAST + 1.5)));
+  const rank = (entry) => Number(fullMark && entry.contrast >= minimumLogoContrast) * 10
+    + Number(entry.compatible) * 2 + Math.min(entry.contrast, minimumLogoContrast + 1.5);
+  const ranked = logos.map((logo) => ({ logo, contrast: readableContrast(logo), compatible: !mislabeled(logo) && (logo.backgrounds.length === 0 || logo.backgrounds.includes(tone)) }))
+    .sort((a, b) => rank(b) - rank(a));
   const chosen = ranked[0];
   const box = { w: Math.round(Math.min(plan.logo.w, plan.logo.h * chosen.logo.aspect)), h: Math.round(Math.min(plan.logo.h, plan.logo.w / chosen.logo.aspect)) };
   const rect = { x: plan.logo.x + Math.round((plan.logo.w - box.w) / 2), y: plan.logo.y + Math.round((plan.logo.h - box.h) / 2), ...box };
@@ -427,17 +437,23 @@ export async function renderArt(request) {
   const requestedTreatment = ["none", "shadow", "halo", "plate"].includes(logoConfig?.treatment) ? logoConfig.treatment : "auto";
   // Sem contraste suficiente: versão monocromática da logo oficial (branca no escuro, preta no claro), nítida —
   // o halo/sombra desfocado parecia um borrão (retorno do usuário, 25/11/2026). Halo/sombra só se a marca pedir.
-  const treatment = requestedTreatment !== "auto" ? requestedTreatment : chosen.contrast >= MIN_LOGO_CONTRAST ? "none" : "mono";
+  const treatment = fullMark && chosen.contrast < minimumLogoContrast ? "mono" :
+    requestedTreatment !== "auto" ? requestedTreatment : chosen.contrast >= minimumLogoContrast ? "none" : "mono";
   const glowRgb = hexRgb(chosen.logo.luminance > 0.4 ? darkest : lightest);
   const layers = [];
   let logoContrast = chosen.contrast;
   let logoPng = chosen.logo.png;
+  let monoColor;
   if (treatment === "mono") {
-    const ink = background.mean < 0.35 ? [250, 250, 250] : [17, 17, 17];
+    const inks = tone === "DARK" ? ["#DEDBE5", "#FAFAFA", "#111111", "#000000"] : ["#111111", "#000000", "#DEDBE5", "#FAFAFA"];
+    const score = (color) => inkContrast(hexLuminance(color));
+    monoColor = fullMark ? inks.find((color) => score(color) >= minimumLogoContrast) ?? inks.sort((a, b) => score(b) - score(a))[0]
+      : background.mean < 0.35 ? "#FAFAFA" : "#111111";
+    const ink = hexRgb(monoColor);
     const { data: px, info } = await sharp(chosen.logo.png).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
     for (let index = 0; index < px.length; index += 4) { px[index] = ink[0]; px[index + 1] = ink[1]; px[index + 2] = ink[2]; }
     logoPng = await sharp(px, { raw: { width: info.width, height: info.height, channels: 4 } }).png().toBuffer();
-    logoContrast = contrastRatio(relativeLuminance(...ink), background.mean);
+    logoContrast = fullMark ? score(monoColor) : contrastRatio(relativeLuminance(...ink), background.mean);
   } else if (treatment === "plate") {
     const plate = Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${rect.w + 36}" height="${rect.h + 28}"><rect width="100%" height="100%" rx="14" fill="${chosen.logo.luminance > 0.4 ? darkest : lightest}"/></svg>`);
     layers.push({ input: plate, left: rect.x - 18, top: rect.y - 14 });
@@ -449,7 +465,7 @@ export async function renderArt(request) {
     logoContrast = logoLegibility(chosen.logo, background.mean * (1 - glow.strength) + glowLum * glow.strength);
   }
   // Logo pouco legível não derruba a peça (a marca perderia o horário): vira aviso no relatório de qualidade.
-  const legibilityWarnings = logoContrast < 1.6 ? [`logo pouco legível mesmo com halo (contraste ${logoContrast.toFixed(2)})`] : [];
+  const legibilityWarnings = logoContrast < (fullMark ? minimumLogoContrast : 1.6) ? [`logo pouco legível (contraste ${logoContrast.toFixed(2)}:1)`] : [];
   layers.push({ input: await sharp(logoPng).resize(rect.w, rect.h, { fit: "contain", background: "#00000000" }).png().toBuffer(), left: rect.x, top: rect.y });
 
   // Texto (satori), na área planejada.
@@ -485,10 +501,10 @@ export async function renderArt(request) {
   const round = (value) => Math.round(value * 100) / 100;
   const quality = {
     layout: plan.layout, requestedLayout: layout ?? null, textRect: plan.text.rect, veilAlpha: round(veilAlpha), textContrast: round(textContrast),
-    logo: { variant: chosen.logo.variant, placement: plan.placement, fixedByBrand: Boolean(fixedPlacement), treatment, contrast: round(logoContrast), rawContrast: round(chosen.contrast), knockedOut: chosen.logo.knockedOut, rect },
+    logo: { variant: chosen.logo.variant, placement: plan.placement, fixedByBrand: Boolean(fixedPlacement), treatment, ...(monoColor ? { color: monoColor } : {}), contrast: round(logoContrast), rawContrast: round(chosen.contrast), knockedOut: chosen.logo.knockedOut, rect },
     protectedAreas: protectedRects.map((area) => ({ kind: area.kind, x: Math.round(area.x), y: Math.round(area.y), w: Math.round(area.w), h: Math.round(area.h) })),
     issues: textContrast < 3 ? [`contraste do texto ${round(textContrast)}:1`] : [],
-    warnings: [...assetWarnings, ...legibilityWarnings, ...(chosen.contrast < MIN_LOGO_CONTRAST ? [`logo com contraste ${round(chosen.contrast)}:1 sem tratamento — falta uma versão oficial adequada a este fundo`] : [])],
+    warnings: [...assetWarnings, ...legibilityWarnings, ...(chosen.contrast < minimumLogoContrast ? [`logo com contraste ${round(chosen.contrast)}:1 sem tratamento — falta uma versão oficial adequada a este fundo`] : [])],
   };
   // Quality Gate de fidelidade (quando o agendador manda o plano): produto, tela, texto e repetição.
   const strictBackground = darkBackground ? "dark" : lightBackground ? "light" : undefined;
@@ -540,7 +556,7 @@ async function fidelityReview({ request, jpeg, canvas, composition, protectedRec
     coversProduct: protectedRects.some((area) => area.kind === "product" && intersection(textZone, area) / (area.w * area.h) > 0.35),
     marginOk: plan.text.rect.x >= MARGIN - 1 && plan.text.rect.x + plan.text.rect.w <= WIDTH - MARGIN + 1,
   };
-  evidence.logo = { ok: logoContrast >= 1.6, warnings: quality.warnings };
+  evidence.logo = { ok: logoContrast >= (request.logoConfig?.preserveWordmarkContrast === true ? 4.5 : 1.6), warnings: quality.warnings };
   const fingerprint = await fingerprintArt(jpeg, {
     archetype: composition?.appliedArchetype ?? request.composition?.archetype ?? fidelity.archetype ?? "ai_scene", textLayout: plan.layout,
     productCount: request.composition?.products?.length ?? (evidence.product ? 1 : 0), ...(fidelity.seriesKey ? { seriesKey: fidelity.seriesKey } : {}),

@@ -167,3 +167,19 @@ test("logo bicolor (contorno vivo e miolo escuro) sobre fundo escuro é legível
   const result = await renderArt({ ...TEXT, profile: PROFILE_DARK, base: await base("#0B1028"), layout: "top", logoPlacement: "bottom_right", logos: [{ data, variant: "PRIMARY", backgrounds: ["LIGHT", "DARK"] }] });
   assert.equal(result.quality.logo.treatment, "none", `contraste ${result.quality.logo.contrast}`);
 });
+
+test("Vorix: o símbolo roxo não dispensa contraste nas letras da assinatura", async () => {
+  const source = '<svg xmlns="http://www.w3.org/2000/svg" width="440" height="150"><path fill="#A35BFF" d="M10 15h40l40 70 40-70h40L90 140z"/><path fill="#141414" d="M180 18h38v115h-38zm63 0h38v115h-38zm63 0h38v115h-38zm63 0h38v115h-38z"/></svg>';
+  const data = (await sharp(Buffer.from(source)).png().toBuffer()).toString("base64");
+  const logos = [{ data, variant: "LIGHT", backgrounds: ["DARK"] }];
+  const input = { ...TEXT, profile: PROFILE_DARK, base: await base("#171320"), layout: "top", logoPlacement: "bottom_right", logos };
+  const generic = await renderArt(input);
+  assert.equal(generic.quality.logo.treatment, "none", "somente o roxo já passa na regra anterior");
+  const result = await renderArt({ ...input, logoConfig: { preserveWordmarkContrast: true } });
+  assert.equal(result.quality.logo.treatment, "mono");
+  assert.ok(result.quality.logo.contrast >= 4.5);
+  assert.ok(result.quality.logo.rawContrast < 1.5);
+  const { rect, color } = result.quality.logo;
+  const raw = await pixels(result.image);
+  assert.ok(distance(at(raw, rect.x + rect.w * 0.95, rect.y + rect.h / 2), hex(color)) < 32, "as letras escuras da logo ficaram claras");
+});

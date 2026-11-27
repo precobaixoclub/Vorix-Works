@@ -57,6 +57,7 @@ const VORIX_FEATURES = [
   { key: "continuidade_atendimento", label: "Histórico e continuidade do atendimento", keywords: ["historico", "continuidade", "transferencia", "repasse", "muda de pessoa", "proximo atendente", "contexto"] },
   { key: "conteudo_ia", label: "Produção de conteúdo com IA", keywords: ["conteudo", "conteudos", "posts", "redes sociais", "calendario", "pautas", "marketing"] },
   { key: "reunioes_analise", label: "Gravação e análise de reuniões", keywords: ["reuniao", "reunioes", "gravacao", "gravador", "transcricao", "resumo", "decisoes", "ata"] },
+  { key: "editor_site", label: "Editor de site e loja da Vorix", keywords: ["pagina", "site", "landing page", "editor do site", "pagina publicada", "navegacao", "clique"] },
 ];
 // Por workspace: contas IG+FB e, opcionalmente, como aplicar a logo nesta marca.
 // creative.businessKind decide o modo das pautas (produto físico / software / conceitual); creative.products
@@ -68,7 +69,7 @@ const VORIX_FEATURES = [
 const brands = new Map([
   // Rumo ao Altar (casamento): sem a linguagem "3D tecnológico" — foge do clima romântico da marca.
   ["workspace-mwmumsxd-fmvh3h", { accounts: ["soc-mwmvbruu-sz6rkd12", "soc-mwmvbryk-dthxstki"], logo: {}, creative: { businessKind: "services", avoidArchetypes: ["concept_3d"] } }],
-  ["workspace-mscc9pi2-jkvwbo", { accounts: ["soc-mwk1mgoy-xhcr2duq", "soc-mwk1my6f-lbham9eo"], logo: {}, creative: { businessKind: "software", features: VORIX_FEATURES } }],
+  ["workspace-mscc9pi2-jkvwbo", { accounts: ["soc-mwk1mgoy-xhcr2duq", "soc-mwk1my6f-lbham9eo"], logo: { preserveWordmarkContrast: true }, creative: { businessKind: "software", features: VORIX_FEATURES } }],
   ["workspace-mwmu8kgf-uhe66l", { accounts: ["soc-mwmu9f8k-kj2covm2", "soc-mwmugp3j-hwva5nax"], logo: {}, creative: { businessKind: "unknown" } }],
   [cmkvWorkspaceId, { accounts: ["soc-mwkwg3lc-zj3g4xyk", "soc-mwmuj7ud-3py2gdyo"], logo: {}, creative: { businessKind: "physical_products", products: cmkvEditorialProducts, productThemes: cmkvProductThemes, blockedProducts: cmkvThirdPartyBrandProducts, presentation: "fashion_campaign" } }],
 ]);
@@ -295,6 +296,9 @@ async function visualHistory(usedRows) {
 
 /** Monta o plano criativo de uma pauta e os arquivos originais das referências escolhidas. */
 async function planIdea(idea, creative, context) {
+  const titleAndMessage = `${idea.title} ${idea.keyMessage ?? ""}`.normalize("NFD").replace(/\p{M}/gu, "");
+  const siteFeature = context.requireRealScreen && /\b(paginas?|sites?|landing pages?)\b/i.test(titleAndMessage)
+    ? creative.features?.find(feature => feature.key === "editor_site") : undefined;
   const ideaReferences = [];
   const urls = new Map();
   for (const url of idea.referenceImages ?? []) {
@@ -310,7 +314,13 @@ async function planIdea(idea, creative, context) {
   const captureMeta = new Map();
   const libraryCandidates = [];
   if (creative.businessKind === "software") {
-    for (const capture of context.captures) { libraryCandidates.push(capture.candidate); urls.set(capture.candidate.id, capture.url); captureMeta.set(capture.candidate.id, capture.meta); }
+    const editorialSiteCaptures = siteFeature && context.captures.some(capture => capture.meta.feature === siteFeature.key && capture.candidate.tags.includes("view:editorial"));
+    for (const capture of context.captures) {
+      if (context.requireRealScreen && capture.meta.form !== "desktop") continue;
+      if (siteFeature && capture.meta.feature !== siteFeature.key) continue;
+      if (editorialSiteCaptures && !capture.candidate.tags.includes("view:editorial")) continue;
+      libraryCandidates.push(capture.candidate); urls.set(capture.candidate.id, capture.url); captureMeta.set(capture.candidate.id, capture.meta);
+    }
   }
   // Produtos liberados para pauta automática, em rodízio: só o primeiro com foto utilizável é medido.
   const editorialProducts = [];
@@ -343,19 +353,31 @@ async function planIdea(idea, creative, context) {
     }
   }
   const plan = planEditorialCreative({
-    workspaceId, brandName: context.brandName, brandIdentity: context.profile?.identity, presentation: creative.presentation, businessKind: creative.businessKind, softwareFeatures: creative.features, idea,
-    ideaReferences, libraryCaptures: libraryCandidates, editorialProducts, history: context.history, allowAi: true, avoidArchetypes: creative.avoidArchetypes,
+    workspaceId, brandName: context.brandName, brandIdentity: context.profile?.identity, presentation: creative.presentation, businessKind: creative.businessKind, softwareFeatures: siteFeature ? [siteFeature] : creative.features, idea,
+    ideaReferences, libraryCaptures: libraryCandidates, editorialProducts, history: context.history, allowAi: !context.requireRealScreen,
+    avoidArchetypes: context.requireRealScreen ? [...(creative.avoidArchetypes ?? []), "phone_conversation"] : creative.avoidArchetypes,
+    ...(context.requireRealScreen ? { explicitMode: "software" } : {}),
     ...(context.memory ? { memory: { archetypeBias: context.memory.archetypeBias, guidance: memoryGuidance(context.memory, "image") } } : {}),
   });
   const assets = {};
   const traced = [];
-  for (const reference of plan.resolved.transmitted) {
+  const screenReferences = [...new Map([...plan.resolved.transmitted, ...plan.screens.flatMap(item => item.transmitted)].map(reference => [reference.id, reference])).values()];
+  for (const reference of screenReferences) {
     const url = urls.get(reference.id);
     if (!url) continue;
     const bytes = reference.role === "software_capture" ? await ownedBytes(url) : await sharp(await ownedBytes(url)).rotate().resize({ width: 1600, height: 1600, fit: "inside", withoutEnlargement: true }).png().toBuffer();
     const meta = await sharp(bytes).metadata();
     assets[reference.id] = { data: bytes.toString("base64"), ...(captureMeta.get(reference.id) ?? {}) };
     traced.push({ id: reference.id, source: reference.source, role: reference.role, sha256: sha256Prefix(bytes), bytes: bytes.length, width: meta.width, height: meta.height, ...(reference.productCode ? { productCode: reference.productCode, variantLabel: reference.variantLabel } : {}) });
+  }
+  if (context.requireRealScreen && !plan.blocked) {
+    requireCondition(plan.screens.every(item => item.transmitted.some(ref => ref.role === "software_capture" && assets[ref.id])), "A refação exige captura real em todas as artes.");
+    const desktopLayouts = ["device_laptop", "browser_window", "ui_focus"];
+    for (const [index, { spec }] of plan.screens.entries()) {
+      const archetype = desktopLayouts[index % desktopLayouts.length];
+      Object.assign(spec.composition, { archetype, operation: "deterministic_composite",
+        alternatives: desktopLayouts.filter(id => id !== archetype) });
+    }
   }
   return {
     plan: {
@@ -959,6 +981,8 @@ async function run() {
     const photos = creative.businessKind === "physical_products" ? await catalogPhotos() : [];
     const context = {
       brandName: workspace.name, profile: brandRow?.profile, used: used.rows, photos, photosByUrl: new Map(photos.map(photo => [photo.url, photo])),
+      requireRealScreen: creative.businessKind === "software" && Boolean(only) &&
+        /\b(?:telas?|capturas?|prints?|interfaces?)\s+(?:(?:do|da|de)\s+\w+\s+)?(?:reais?|originais?|verdadeiras?)\b/i.test(String(request.redoReason ?? "").normalize("NFD").replace(/\p{M}/gu, "")),
       captures: creative.businessKind === "software" ? await libraryCaptures() : [], // Peça cancelada (reprovada no WhatsApp) nunca foi ao ar: não conta como repetição — senão a refação reprova
       // a tela que ficou igual à da versão reprovada (26/11/2026).
       history: await visualHistory(used.rows.filter(row => row.state !== "cancelled")),

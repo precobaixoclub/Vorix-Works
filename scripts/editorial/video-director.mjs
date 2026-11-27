@@ -5,12 +5,12 @@
 // valida e executa — o construtor determinístico do motor calcula cortes, tempos e filtros.
 
 export const MOTIONS = ["static", "push_in", "pull_out", "pan_left", "pan_right", "pan_up", "pan_down", "punch_in", "drift"];
-export const LAYOUTS = ["full", "framed", "split", "parallax", "inset", "device_phone", "device_laptop"];
+export const LAYOUTS = ["full", "framed", "split", "parallax", "inset", "device_phone", "device_laptop", "stage"];
 export const TRANSITIONS = ["cut", "cross_dissolve", "dip_to_black", "push_left", "push_up", "zoom_in", "blur", "circle_open", "wipe", "flash", "smooth_left"];
 const PURPOSES = ["hook", "product", "detail", "benefit", "proof", "variety", "demo", "context", "cta"];
 const TEXT_ROLES = ["hook", "headline", "cta", "price", "subtitle"];
 const POSITIONS = ["top", "center", "bottom", "lower_third"];
-const ANIMATIONS = ["fade", "slide_up", "pop", "kinetic", "none"];
+const ANIMATIONS = ["fade", "slide_up", "pop", "kinetic", "countdown", "none"];
 
 // Sem maxLength: o modo estrito do --output-schema não garante a restrição; o corte é feito em toDraft.
 const str = () => ({ type: "string" });
@@ -27,11 +27,15 @@ export const directorSchema = {
       type: "array", minItems: 3, maxItems: 10,
       items: {
         type: "object", additionalProperties: false,
-        required: ["materialId", "purpose", "durationSeconds", "sentenceIds", "sourceStartSeconds", "motion", "layout", "motionIntensity", "focus", "transitionIn", "texts"],
+        required: ["materialId", "purpose", "durationSeconds", "sentenceIds", "sourceStartSeconds", "motion", "layout", "motionIntensity", "focus", "region", "transitionIn", "texts"],
         properties: {
           materialId: str(20), purpose: enumOf(PURPOSES), durationSeconds: { type: "number", minimum: 0.8, maximum: 12 },
           sentenceIds: { type: "array", maxItems: 12, items: str(10) }, sourceStartSeconds: { type: ["number", "null"] },
           motion: enumOf(MOTIONS), layout: enumOf(LAYOUTS), motionIntensity: enumOf(["subtle", "medium", "strong"]),
+          region: { type: ["object", "null"], additionalProperties: false, required: ["x", "y", "width", "height", "start"], properties: {
+            x: { type: "number" }, y: { type: "number" }, width: { type: "number" }, height: { type: "number" },
+            start: { type: ["object", "null"], additionalProperties: false, required: ["x", "y", "scale"], properties: { x: { type: "number" }, y: { type: "number" }, scale: { type: "number" } } },
+          } },
           focus: enumOf(["center", "top", "bottom", "left", "right"]), transitionIn: enumOf(TRANSITIONS),
           texts: { type: "array", maxItems: 2, items: { type: "object", additionalProperties: false, required: ["role", "text", "position", "animation"], properties: { role: enumOf(TEXT_ROLES), text: str(70), position: enumOf(POSITIONS), animation: enumOf(ANIMATIONS) } } },
         },
@@ -52,6 +56,7 @@ export function toDraft(output) {
       materialId: String(scene.materialId).slice(0, 20), purpose: scene.purpose, durationSeconds: scene.durationSeconds,
       ...(scene.sentenceIds?.length ? { sentenceIds: scene.sentenceIds.slice(0, 12).map((id) => String(id).slice(0, 10)) } : {}),
       ...(typeof scene.sourceStartSeconds === "number" ? { sourceStartSeconds: Math.max(0, scene.sourceStartSeconds) } : {}),
+      ...(scene.region ? { region: { x: scene.region.x, y: scene.region.y, width: scene.region.width, height: scene.region.height, ...(scene.region.start ? { start: scene.region.start } : {}) } } : {}),
       motion: scene.motion, ...(scene.layout && scene.layout !== "full" && scene.materialId !== "CARD" ? { layout: scene.layout } : {}),
       motionIntensity: scene.motionIntensity, focus: scene.focus, transitionIn: scene.transitionIn,
       texts: (scene.texts ?? []).slice(0, 2).map((text) => ({ role: text.role, text: String(text.text).trim().slice(0, 70), position: text.position, animation: text.animation })).filter((text) => text.text),
@@ -65,15 +70,16 @@ const RULES = `Regras (obrigatórias):
 2. Vídeo com fala: escolha frases pelo id (sentenceIds), CONSECUTIVAS e na ordem, com começo e fim de ideia; nunca mude o sentido. Pule hesitações e repetições. Vídeo sem fala: sourceStartSeconds. Imagem/cartão: sentenceIds [] e sourceStartSeconds null.
 3. Você não escreve fala nem legenda: legendas saem da transcrição. Textos na tela são títulos curtos (gancho e CTA com até 6 palavras), português do Brasil natural.
 4. Nunca invente preço, desconto, prazo, número, garantia ou característica que não esteja na pauta. Na dúvida, não afirme.
-5. Gancho nos primeiros 2 segundos (movimento + texto forte). Termine com chamada para ação (normalmente um CARD).
-6. Ritmo de Reels: cenas de 1,5 a 3,5 s; no máximo 2 tipos de transição além do corte; fala para fala é corte.
-7. Não pode parecer apresentação de fotos: use 2 a 4 composições diferentes ("layout"): parallax (profundidade, bom para gancho), framed (produto num cartão), split (foto + painel da marca com o texto; o texto vai para o painel e pode ficar no centro), inset (lupa num detalhe; focus onde o detalhe está), device_phone/device_laptop (captura de tela real dentro do aparelho), full (tela cheia). "kinetic" faz as palavras entrarem uma a uma; punch_in é aproximação rápida; drift é deriva lenta.
-8. Detalhe de captura de tela: layout full com focus na região (o sistema amplia aquela parte e ela fica legível); framed/split/device mostram a tela inteira (contexto, não leitura). Produto e tela: sempre inteiros e fiéis; texto nunca no centro de um produto fora do split. Captura de tela só em full/framed/split/device. Imagem gerada por IA (papel generated) é só clima/conceito — nunca representa o produto nem a tela.
-9. Vídeo: layout "framed" mostra o quadro INTEIRO (use para gravação de tela — no vertical, "full" corta as laterais); "full" preenche o quadro (bom para pessoa falando).
-10. Use cada material no máximo 2 vezes. Não repita a estratégia das peças recentes da marca.`;
+5. Entregue o primeiro motivo para continuar assistindo nos primeiros 2 s e a ação ao final. Use texto com voz de gente. Corta o que não muda a informação. Evite sequência de títulos, números soltos e cartelas; preserve pausa só se ela ajuda leitura ou fala.
+6. Corte na mudança de informação. Use até dois tipos de transição além do corte, com motivo visual; fala para fala é corte. Efeitos de saída só se ajudam a ligar duas cenas.
+7. Layouts: stage (somente product_photo: foto original inteira entra sobre a cor da marca, com até 1 texto no painel abaixo), parallax (foto em primeiro plano, fundo separado), framed (quadro inteiro), split (imagem e painel separado), device_phone/device_laptop (captura real contextualizada), full (tela cheia ou detalhe com region). Inset usa só foco aproximado; para um detalhe específico use region.
+8. Para region use layout full e motion static. Escolha x/y do canto superior esquerdo e width/height como frações da mídia original, cada lado com pelo menos 0.10 e dentro da imagem. Em fotografia, region.start abre de um plano mais fechado até o retângulo completo da própria estampa: scale inicial de 0.28–0.95, x/y de 0 (encosta à esquerda/topo) a 1 (encosta à direita/base) dentro do espaço disponível do retângulo final. Use start null quando o quadro deve ficar estável, inclusive em vídeo. Use region null quando mostrar a mídia inteira. Textos no topo ou rodapé. Em gravação de tela use framed para visão geral e region para região estável; full sem region corta as laterais de footage horizontal verticalizado.
+9. Imagem gerada é material conceitual. Preserve cor, traço, proporção e variante das fotos originais. Movimento fotográfico é enquadramento ou camada gráfica. Não descreva como gestos, tecido em movimento ou câmera filmando uma pessoa.
+10. Evite reutilização, exceto quando o segundo uso dá sentido ao primeiro, como detalhe e revelação. Evite estratégias recentes.`;
 
 function materialLines(materials, sentences = []) {
-  return materials.map((m, index) => `- ${m.id} · ${m.kind}${m.kind === "video" && sentences.some((s) => s.materialId === m.id) ? " COM FALA (escolha pelas frases: sentenceIds; sourceStartSeconds null)" : ""} · ${m.role}${m.label ? ` · "${m.label}"` : ""}${m.width && m.height ? ` · ${m.width > m.height * 1.05 ? "horizontal" : m.height > m.width * 1.05 ? "vertical" : "quadrado"}` : ""}${m.thumb ? ` · imagem anexada nº ${index + 1}` : ""}`);
+  let attachment = 0;
+  return materials.map((m) => `- ${m.id} · ${m.kind}${m.kind === "video" && sentences.some((s) => s.materialId === m.id) ? " COM FALA (escolha pelas frases: sentenceIds; sourceStartSeconds null)" : ""} · ${m.role}${m.label ? ` · "${m.label}"` : ""}${m.width && m.height ? ` · ${m.width > m.height * 1.05 ? "horizontal" : m.height > m.width * 1.05 ? "vertical" : "quadrado"}` : ""}${m.thumb ? ` · imagem anexada nº ${++attachment}` : ""}`);
 }
 
 /** Prompt do plano: pauta + marca + materiais (imagens anexadas na mesma ordem) + frases da fala. */
@@ -98,19 +104,25 @@ export function directorPrompt({ selection, materials, sentences = [], targetSec
     sentences.length ? `\nFRASES DA FALA (id · material · início–fim · texto):\n${sentences.map((s) => `- ${s.id} · ${s.materialId} · ${s.start.toFixed(1)}–${s.end.toFixed(1)}s · "${s.text}"`).join("\n")}` : undefined,
     ``,
     RULES,
+    `Quando a pauta pedir contagem, use um único texto "3 2 1" com animation countdown num plano de pelo menos 2 s. O motor separa os dígitos no tempo, mantendo o mesmo plano.`,
+    materials.some((m) => m.role === "product_photo") ? `PRODUTO FÍSICO: escolha a construção pela promessa da pauta. Em quiz, abra com um macro isolado do traço exato, sem entregar a resposta no fundo. Mostre opções distinguíveis em enquadramentos diferentes. Se houver contagem, use uma única tomada com region.start em que a câmera abre continuamente sobre a estampa, ou dois cortes com diferença clara de escala. Evite três fotos fixas para contar. Revele o MESMO arquivo e a MESMA cor da pista. Deixe a peça em cena para a chamada comercial, idealmente no mesmo plano da revelação. Em prova de acabamento, mostre detalhe seguido de peça inteira, sem inventar benefício. Nunca use cartela só para contagem.` : undefined,
+    materials.some((m) => m.role === "screenshot" || m.role === "screen_recording") ? `TELA REAL: mostre a dor e a prova da solução (ação, contexto preservado, resultado). Alterne um plano que localiza o fluxo e um region legível do componente real (inclua suas bordas e espaço para texto da interface). Evite repetir a mesma tela em molduras diferentes. Reserve a moldura para contexto. Chamada ligada ao benefício demonstrado. Evite zoom que corte controles ou informação essencial.` : undefined,
+    sentences.length ? `FALA: abra com a primeira afirmação que se sustenta sozinha. Faça o plano acompanhar a mudança de assunto e preserve respirações e palavras de ligação. Use blocos completos, na ordem, e escolha o enquadramento para a informação que a fala descreve. Evite título que espelha a legenda. CTA vem da pauta. A fala é o eixo e a trilha fica atrás.` : undefined,
     ``,
     `Devolva: concept (gancho, arco narrativo, sensação), strategy (rótulo curto), rationale, scenes, captions (legendas da fala: true só se houver fala), music, logo ("end" para fechar com a marca), warnings (o que a pauta pede e os materiais não permitem).`,
-    correction ? `\nCORREÇÃO OBRIGATÓRIA (a versão anterior foi recusada): ${correction}` : undefined,
+    correction ? `\nCORREÇÃO OBRIGATÓRIA: ${correction}` : undefined,
   ].filter((line) => line !== undefined && line !== null && line !== false).join("\n");
 }
 
 /** Revisão editorial (visão) da prancha de quadros: o Quality Gate técnico já passou; aqui é a peça. */
 export const reviewSchema = {
   type: "object", additionalProperties: false,
-  required: ["hookInFirstSeconds", "textReadable", "brandConsistent", "materialFaithful", "notSlideshow", "findings", "verdict", "revisionRequest", "revisionScope"],
+  required: ["hookInFirstSeconds", "textReadable", "brandConsistent", "materialFaithful", "notSlideshow", "motionVaried", "compositionVaried", "subjectClear", "narrativeProgression", "closingAction", "findings", "verdict", "revisionRequest", "revisionScope"],
   properties: {
     hookInFirstSeconds: { type: "boolean" }, textReadable: { type: "boolean" }, brandConsistent: { type: "boolean" },
     materialFaithful: { type: "boolean" }, notSlideshow: { type: "boolean" },
+    motionVaried: { type: "boolean" }, compositionVaried: { type: "boolean" }, subjectClear: { type: "boolean" },
+    narrativeProgression: { type: "boolean" }, closingAction: { type: "boolean" },
     findings: { type: "array", maxItems: 8, items: str(240) }, verdict: enumOf(["approve", "revise", "reject"]), revisionRequest: str(300),
     revisionScope: enumOf(["pontual", "abrangente"]),
   },
@@ -118,13 +130,13 @@ export const reviewSchema = {
 
 export function reviewPrompt({ selection, plan, gate }) {
   return [
-    `Você revisa um Reels (9:16) da marca ${selection.brand} antes de ele ir para a aprovação do cliente no WhatsApp. A imagem anexada é uma prancha com quadros do vídeo em ordem (esquerda→direita, cima→baixo, ~1 quadro por segundo).`,
-    `Pauta: ${selection.idea.title}${selection.idea.keyMessage ? ` — ${selection.idea.keyMessage}` : ""}`,
-    `Plano: ${plan.strategy}, ${plan.durationSeconds.toFixed(1)} s; cenas: ${plan.clips.map((clip, index) => `${index + 1}) ${clip.purpose}/${clip.layout}${clip.texts.length ? ` "${clip.texts.join(" | ")}"` : ""}`).join("; ")}`,
+    `Você decide se um Reels 9:16 de ${selection.brand} tem qualidade publicitária para ser enviado ao cliente. Na prancha de 3 colunas cada linha mostra começo, meio e fim útil da cena. Em pranchas antigas (outra quantidade de colunas), leia os quadros em ordem. A prancha permite avaliar diferenças visuais amostradas, sem áudio ou movimento contínuo.`,
+    `Pauta: ${selection.idea.title}${selection.idea.keyMessage ? ` — ${selection.idea.keyMessage}` : ""}. Chamada esperada: ${selection.idea.cta ?? "a ação indicada pela pauta"}.`,
+    `Plano: ${plan.strategy}, ${plan.durationSeconds.toFixed(1)} s; cenas: ${plan.clips.map((clip, index) => `${index + 1}) ${clip.recordStartSeconds == null ? "" : clip.recordStartSeconds.toFixed(1) + "s "}${clip.purpose}/${clip.layout}/${clip.motion} ${clip.assetId}${clip.region ? (clip.region.start ? " (detalhe abre em movimento contínuo)" : " (região de detalhe)") : ""}${clip.texts.length ? ` "${clip.texts.join(" | ")}"` : ""}`).join("; ")}`,
     `O controle técnico já aprovou (formato, áudio, quadros pretos, legibilidade medida): ${gate?.status ?? "?"}.`,
     ``,
-    `Avalie como diretor(a) de criação: gancho visível no começo; textos legíveis e sem erro de português; coerência com a marca; produto/tela fiéis (sem deformação ou corte que esconda o principal); ritmo e composição que não pareçam apresentação de fotos.`,
-    `revisionScope: "pontual" se o ajuste é em cenas/textos específicos; "abrangente" se o problema é de ritmo, organização ou composição do vídeo como um todo.
+    `Compare começo, meio e fim da mesma cena e cenas adjacentes. notSlideshow avalia se a sucessão tem ação editorial, diferença de escala ou nova informação; texto mudando sobre o mesmo quadro não comprova isso. motionVaried reprova o mesmo zoom/deriva em sequência ou imobilidade sem função; compositionVaried reprova o mesmo quadro com troca de foto. Um detalhe, uma pausa de leitura ou uma fala podem ficar estáveis se passam informação e a sequência progride. subjectClear exige a pista, estampa ou função identificável no tamanho do celular. materialFaithful exige a variante correta, sem deformação nem corte de conteúdo decisivo. narrativeProgression exige gancho, desenvolvimento e resposta/benefício. closingAction exige próxima ação legível com ligação à promessa. Verifique também gancho inicial, leitura e consistência de marca. Nomeie os problemas em findings com cena, segundo aproximado, evidência e correção executável. Não presuma que todo movimento descrito no plano realmente apareceu.`,
+    `Mesmo com aprovação, registre em findings o que os quadros comprovam sobre a abertura, a progressão e o fechamento. revisionScope: "pontual" se o ajuste é em cenas/textos específicos; "abrangente" se o problema é de ritmo, organização ou composição do vídeo como um todo.
 verdict: "approve" se pode ir ao cliente; "revise" se um ajuste pontual resolve (descreva em revisionRequest, em português, citando a cena: "deixe a abertura…", "na terceira cena…"); "reject" só para problema grave (material errado, texto ofensivo, produto deformado). Não reprove por gosto pessoal. Não gere imagens nem execute comandos. Responda só o JSON.`,
   ].join("\n");
 }
@@ -132,11 +144,12 @@ verdict: "approve" se pode ir ao cliente; "revise" se um ajuste pontual resolve 
 /** Leitura da revisão: sem resposta válida = inconclusiva (nunca aprova sozinha). */
 export function reviewOutcome(raw) {
   if (!raw || !["approve", "revise", "reject"].includes(raw.verdict)) return { verdict: "inconclusive", findings: [] };
-  const checks = ["hookInFirstSeconds", "textReadable", "brandConsistent", "materialFaithful", "notSlideshow"].filter((key) => raw[key] === false);
-  // Aprovação com item crítico reprovado não vale: vira ajuste.
-  const verdict = raw.verdict === "approve" && checks.some((key) => key === "textReadable" || key === "materialFaithful") ? "revise" : raw.verdict;
+  const keys = ["hookInFirstSeconds", "textReadable", "brandConsistent", "materialFaithful", "notSlideshow", "motionVaried", "compositionVaried", "subjectClear", "narrativeProgression", "closingAction"];
+  const checks = keys.filter((key) => raw[key] === false);
+  if (raw.verdict === "approve" && keys.some((key) => typeof raw[key] !== "boolean")) return { verdict: "inconclusive", findings: ["revisão sem os critérios editoriais obrigatórios"] };
+  const verdict = raw.verdict === "approve" && checks.length ? "revise" : raw.verdict;
   // Falta de ritmo/composição (cara de apresentação) é problema do vídeo inteiro: ajuste abrangente.
-  const scope = raw.revisionScope === "abrangente" || checks.includes("notSlideshow") ? "abrangente" : "pontual";
+  const scope = raw.revisionScope === "abrangente" || checks.some((key) => ["notSlideshow", "motionVaried", "compositionVaried", "narrativeProgression"].includes(key)) ? "abrangente" : "pontual";
   return { verdict, scope, findings: [...(raw.findings ?? []), ...checks.map((key) => `item reprovado: ${key}`)].slice(0, 10), revisionRequest: String(raw.revisionRequest ?? "").trim().slice(0, 300) };
 }
 

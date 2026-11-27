@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { validSourceRegion } from "../../../domain/video-editing/video-edit-plan.js";
 
 /**
  * `VideoEditDraftV1` — operação `video_edit_planning`. A IA decide a edição em ALTO NÍVEL: ordem
@@ -11,11 +12,11 @@ export const VIDEO_EDIT_DRAFT_SCHEMA_VERSION = 1;
 
 const SCENE_PURPOSES = ["hook", "product", "detail", "benefit", "proof", "variety", "demo", "context", "cta"] as const;
 const MOTIONS = ["static", "push_in", "pull_out", "pan_left", "pan_right", "pan_up", "pan_down", "punch_in", "drift"] as const;
-const LAYOUTS = ["full", "framed", "split", "parallax", "inset", "device_phone", "device_laptop"] as const;
+const LAYOUTS = ["full", "framed", "split", "parallax", "inset", "device_phone", "device_laptop", "stage"] as const;
 const TRANSITIONS = ["cut", "cross_dissolve", "dip_to_black", "push_left", "push_up", "zoom_in", "blur", "circle_open", "wipe", "flash", "smooth_left"] as const;
 const TEXT_ROLES = ["hook", "headline", "cta", "price", "subtitle"] as const;
 const POSITIONS = ["top", "center", "bottom", "lower_third"] as const;
-const ANIMATIONS = ["fade", "slide_up", "pop", "kinetic", "none"] as const;
+const ANIMATIONS = ["fade", "slide_up", "pop", "kinetic", "countdown", "none"] as const;
 
 const textSchema = z
   .object({
@@ -24,7 +25,8 @@ const textSchema = z
     position: z.enum(POSITIONS),
     animation: z.enum(ANIMATIONS),
   })
-  .strict();
+  .strict()
+  .refine((item) => item.animation !== "countdown" || item.text === "3 2 1", "A contagem usa exatamente '3 2 1'");
 
 const sceneSchema = z
   .object({
@@ -37,6 +39,9 @@ const sceneSchema = z
     layout: z.enum(LAYOUTS).optional(),
     motionIntensity: z.enum(["subtle", "medium", "strong"]),
     focus: z.enum(["center", "top", "bottom", "left", "right"]),
+    region: z.object({ x: z.number(), y: z.number(), width: z.number(), height: z.number(),
+      start: z.object({ x: z.number(), y: z.number(), scale: z.number() }).strict().optional() }).strict()
+      .refine(validSourceRegion, "Região de origem fora da foto ou captura").optional(),
     transitionIn: z.enum(TRANSITIONS),
     texts: z.array(textSchema).max(2),
   })
@@ -85,6 +90,7 @@ export const VIDEO_EDIT_DRAFT_TOOL_INPUT_SCHEMA: Record<string, unknown> = {
           sourceStartSeconds: { type: "number", minimum: 0, description: "Só para vídeo SEM fala: segundo da fonte onde a cena começa." },
           motion: { type: "string", enum: [...MOTIONS], description: "punch_in = aproximação rápida (gancho); drift = deriva diagonal lenta." },
           layout: { type: "string", enum: [...LAYOUTS], description: "Composição (só imagem): full = tela cheia; framed = produto num cartão sobre a cor da marca; split = foto + painel da marca com o texto; parallax = produto em camada sobre fundo (profundidade); inset = lupa no detalhe; device_phone/device_laptop = captura real dentro de um aparelho." },
+          region: { type: "object", additionalProperties: false, required: ["x", "y", "width", "height"], properties: { x: { type: "number" }, y: { type: "number" }, width: { type: "number" }, height: { type: "number" }, start: { type: "object", additionalProperties: false, required: ["x", "y", "scale"], properties: { x: { type: "number" }, y: { type: "number" }, scale: { type: "number" } } } }, description: "Retângulo normalizado em full. Em foto, start inicia com um recorte menor e abre até o retângulo completo." },
           motionIntensity: { type: "string", enum: ["subtle", "medium", "strong"] },
           focus: { type: "string", enum: ["center", "top", "bottom", "left", "right"], description: "Onde está o assunto principal no material." },
           transitionIn: { type: "string", enum: [...TRANSITIONS], description: "Transição de entrada da cena." },

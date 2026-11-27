@@ -11,6 +11,7 @@
 
 import { mkdir, rm } from "node:fs/promises";
 import { join } from "node:path";
+import type { VideoEditPlan } from "../../domain/video-editing/video-edit-plan.js";
 import type { VideoEditExecutor } from "../ports/video-edit-executor.port.js";
 import type { VideoProject, VideoProjectRepositoryPort, VideoVersion, VideoVersionPatch } from "../ports/video-project-repository.port.js";
 import type { BrandStyle, PlanningMaterial } from "./build-plan-from-draft.js";
@@ -34,7 +35,7 @@ export type VideoWorkerDeps = {
   poster: (videoPath: string, posterPath: string) => Promise<void>;
   transcribe: (videoPath: string, workDir: string) => Promise<Transcript>;
   /** Prancha de quadros (JPEG) do vídeo final — usada na revisão visual do piloto. Opcional. */
-  contactSheet?: (videoPath: string, sheetPath: string, durationSeconds: number, aspect: string) => Promise<void>;
+  contactSheet?: (videoPath: string, sheetPath: string, plan: VideoEditPlan) => Promise<void>;
   /** Estilo da marca do workspace + logo (baixado para `logoPath`, se houver). */
   resolveBrand: (project: VideoProject, logoPath: string) => Promise<{ style: BrandStyle; logo?: MediaFacts & { fileName: string } }>;
   /** Biblioteca de trilhas licenciadas; ausente = sem trilha. */
@@ -213,7 +214,7 @@ export async function processNextVideoVersion(deps: VideoWorkerDeps): Promise<{ 
     if (deps.contactSheet) {
       // Mesma chave derivada do id da versão: o piloto lê a prancha sem coluna nova no banco.
       const sheetPath = join(dir, "sheet.jpg");
-      await deps.contactSheet(output, sheetPath, outcome.plan.durationSeconds, outcome.plan.aspect).then(() => deps.uploadFile(videoSheetKey(project.tenantId, project.workspaceId, version.id), sheetPath, "image/jpeg")).catch((error) => log("prancha não gerada", { versionId: version.id, message: error instanceof Error ? error.message : String(error) }));
+      await deps.contactSheet(output, sheetPath, outcome.plan).then(() => deps.uploadFile(videoSheetKey(project.tenantId, project.workspaceId, version.id), sheetPath, "image/jpeg")).catch((error) => log("prancha não gerada", { versionId: version.id, message: error instanceof Error ? error.message : String(error) }));
     }
     log("versão pronta", { versionId: version.id, gate: gate.status, renderMs });
     return await finish({

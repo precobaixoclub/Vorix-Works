@@ -2,17 +2,18 @@
 // movimentos novos, texto cinético e o render real de todas elas pelo FFmpeg empacotado.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, readFileSync } from "node:fs";
+import sharp from "sharp";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawn } from "node:child_process";
 import { createRequire } from "node:module";
 import { validateVideoEditPlan } from "../dist/domain/video-editing/video-edit-plan.js";
 import { compileFfmpegEdit } from "../dist/infrastructure/video-editing/ffmpeg-edit-compiler.js";
-import { buildAss } from "../dist/infrastructure/video-editing/ass-subtitles.js";
+import { buildAss, collectTextWindows } from "../dist/infrastructure/video-editing/ass-subtitles.js";
 import { splitAreas } from "../dist/infrastructure/video-editing/scene-compositions.js";
 import { FfmpegEditExecutor } from "../dist/infrastructure/video-editing/ffmpeg-edit-executor.js";
-import { probeMedia, analyzeVideo } from "../dist/infrastructure/video-editing/ffmpeg-media-analysis.js";
+import { probeMedia, analyzeVideo, renderSceneContactSheet } from "../dist/infrastructure/video-editing/ffmpeg-media-analysis.js";
 import { evaluateVideoQualityGate } from "../dist/application/video-editing/video-quality-gate.js";
 import { buildPlanFromDraft } from "../dist/application/video-editing/build-plan-from-draft.js";
 import { validateVideoEditDraftStructure } from "../dist/application/ai-gateway/schemas/video-edit-draft.v1.js";
@@ -122,6 +123,27 @@ test("DaVinci (estacionado) recusa explicitamente as composições e efeitos que
   assert.throws(() => compileEditPlan(composedPlan(), { jobId: "job-x" }), (error) => error instanceof PlanCompilationError && /composição "parallax"/.test(error.message) && /texto cinético/.test(error.message) && /movimento "punch_in"/.test(error.message));
 });
 
+test("região de origem validada, preservada no plano e ampliada sem reenquadramento", () => {
+  const input = { schemaVersion: 1, strategy: "detalhe", rationale: "", captions: false, music: "none", logo: "none", warnings: [], scenes: [
+    scene("M1", "full", { region: { x: 0.27, y: 0.31, width: 0.52, height: 0.24 } }),
+    scene("M2", "stage"),
+  ] };
+  const materials = [material("M1", "screenshot", 1920, 1080), material("M2", "product_photo", 1200, 1500)];
+  assert.equal(validateVideoEditDraftStructure(input).valid, true);
+  const plan = buildPlanFromDraft(input, ctx(materials)).plan;
+  assert.deepEqual(plan.clips[0].framing.region, input.scenes[0].region);
+  assert.equal(plan.clips[0].framing.fit, "fit");
+  assert.equal(plan.clips[0].motion.type, "static");
+  assert.equal(plan.clips[1].layout, "stage");
+  assert.deepEqual(issues(plan), []);
+  const invalid = structuredClone(input);
+  invalid.scenes[0].region.width = 0.9;
+  assert.equal(validateVideoEditDraftStructure(invalid).valid, false);
+  invalid.scenes[0].region.width = 0.52;
+  invalid.scenes[0].layout = "stage";
+  assert.equal(buildPlanFromDraft(invalid, ctx(materials)).ok, false);
+});
+
 function makeImage(output, width, height, source = "testsrc2") {
   return new Promise((resolve, reject) => {
     const child = spawn(ffmpeg, ["-hide_banner", "-y", "-f", "lavfi", "-i", `${source}=s=${width}x${height}:d=1`, "-frames:v", "1", output], { stdio: ["ignore", "ignore", "pipe"] });
@@ -144,10 +166,16 @@ test("render real: todas as composições num MP4 aprovado pelo Quality Gate", {
       scene("M1", "inset", { transitionIn: "circle_open", durationSeconds: 1.6 }),
       scene("M1", "split", { transitionIn: "blur", durationSeconds: 1.6, texts: [{ role: "headline", text: "Painel da marca", position: "center", animation: "fade" }] }),
       scene("M2", "device_laptop", { transitionIn: "flash", durationSeconds: 1.6 }),
+      scene("M2", "full", { transitionIn: "cut", durationSeconds: 1.6, region: { x: 0.31, y: 0.12, width: 0.65, height: 0.52 } }),
+      scene("M1", "full", { transitionIn: "cut", durationSeconds: 2.2, region: { x: 0.12, y: 0.1, width: 0.72, height: 0.7, start: { x: 0.8, y: 0.2, scale: 0.4 } }, texts: [{ role: "headline", text: "3 2 1", position: "bottom", animation: "countdown" }] }),
+      scene("M1", "stage", { motion: "pan_right", transitionIn: "cut", durationSeconds: 1.6 }),
       scene("CARD", null, { motion: "static", transitionIn: "wipe", durationSeconds: 1.6, texts: [{ role: "cta", text: "Saiba mais", position: "center", animation: "pop" }] }),
     ] };
     const built = buildPlanFromDraft(draft, { ...ctx(materials), aspect: "1:1", musicMaterialId: "SONG", style: { editing: "dinamico", transitions: "marcantes", captions: false, music: true } });
     assert.equal(built.ok, true, built.issues?.join("; "));
+    const countdown = collectTextWindows(built.plan, []).filter((window) => /^[123]$/.test(window.text));
+    assert.deepEqual(countdown.map((window) => window.text), ["3", "2", "1"]);
+    assert.equal(countdown[0].endSeconds, countdown[1].startSeconds);
     const executor = new FfmpegEditExecutor({ workRoot: join(dir, "work"), ffmpeg: { threads: 2, preset: "veryfast" }, minFreeBytes: 1 });
     const out = join(dir, "out.mp4");
     const result = await executor.execute({ jobId: "job-comp-1", plan: built.plan, mediaSources: { M1: join(dir, "photo.png"), M2: join(dir, "shot.png"), SONG: join(dir, "song.wav") }, outputPath: out });
@@ -157,6 +185,15 @@ test("render real: todas as composições num MP4 aprovado pelo Quality Gate", {
     assert.equal(gate.status, "ready_for_review", gate.failures.join("; "));
     assert.ok(Math.abs(probe.durationSeconds - built.plan.durationSeconds) < 0.2);
     assert.equal(result.warnings.filter((w) => w.includes("composição")).length, 0, result.warnings.join("; "));
+    const sheet = join(dir, "sheet.jpg");
+    await renderSceneContactSheet(out, sheet, built.plan);
+    const sheetBytes = readFileSync(sheet);
+    const sheetInfo = await sharp(sheetBytes).metadata();
+    assert.equal(sheetInfo.width, 3 * 300 + 4 * 6);
+    assert.equal(sheetInfo.height, 9 * 300 + 10 * 6);
+    const strip = (column) => sharp(sheetBytes).extract({ left: column * 306 + 56, top: 6 * 306 + 56, width: 200, height: 160 }).greyscale().raw().toBuffer();
+    const [first, last] = await Promise.all([strip(0), strip(2)]);
+    assert.ok(first.reduce((sum, value, index) => sum + Math.abs(value - last[index]), 0) / first.length > 6, "o zoom muda o conteúdo visível do detalhe");
   } finally {
     await cleanup(dir);
   }

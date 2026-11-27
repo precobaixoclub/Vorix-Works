@@ -23,7 +23,7 @@ import { LocalObjectStorage } from "../../infrastructure/storage/local-object-st
 import { S3ObjectStorage } from "../../infrastructure/storage/s3-object-storage.js";
 import { PostgresVideoProjectRepository } from "../../infrastructure/storage/postgres/postgres-video-project-repository.js";
 import { FfmpegEditExecutor } from "../../infrastructure/video-editing/ffmpeg-edit-executor.js";
-import { analyzeVideo, probeMedia, renderContactSheet, runFfmpegCapture } from "../../infrastructure/video-editing/ffmpeg-media-analysis.js";
+import { analyzeVideo, probeMedia, renderSceneContactSheet, runFfmpegCapture } from "../../infrastructure/video-editing/ffmpeg-media-analysis.js";
 import { musicSeed, proceduralMusicArgs } from "../../infrastructure/video-editing/procedural-music.js";
 import { WhisperVideoTranscriber } from "../../infrastructure/video-editing/whisper-video-transcriber.js";
 
@@ -113,10 +113,7 @@ export async function createVideoWorkerRuntime(overrides: Partial<VideoWorkerDep
       if (result.exitCode !== 0) throw new Error("falha ao gerar a capa do vídeo");
     },
     transcribe: (videoPath, dir) => transcriber.transcribe(videoPath, dir),
-    contactSheet: async (videoPath, sheetPath, durationSeconds, aspect) => {
-      const tiles = Math.min(20, Math.max(6, Math.ceil(durationSeconds)));
-      await renderContactSheet(videoPath, sheetPath, { everySeconds: durationSeconds / tiles, columns: aspect === "16:9" ? 4 : 5, tileWidth: aspect === "16:9" ? 480 : aspect === "1:1" ? 360 : 270, maxTiles: tiles });
-    },
+    contactSheet: renderSceneContactSheet,
     resolveBrand: async (project, logoPath) => {
       const workspace = await platform.workspaceRepository.getById(project.workspaceId);
       const identityResult = await brands.resolveForCreative(project.workspaceId).catch(() => undefined);

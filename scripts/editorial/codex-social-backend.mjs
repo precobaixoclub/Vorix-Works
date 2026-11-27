@@ -725,12 +725,12 @@ async function videoAction(workspace, brandConfig) {
       try { sheet = (await keyBytes(videoSheetKey(tenantId, workspaceId, version.id))).toString("base64"); } catch { /* prancha não gerada: revisão só pelo relatório */ }
       output = { sha256: createHash("sha256").update(bytes).digest("hex"), sizeBytes: bytes.length, ...(sheet ? { sheet } : {}) };
     }
-    const awaiting = version.stage === "awaiting_draft";
+    const needsSentences = version.stage === "awaiting_draft" || version.plan?.clips.some((clip) => clip.keepSourceAudio);
     return {
       versionId: version.id, projectId: project.id, number: version.number, status: version.status, stage: version.stage, progress: version.progress, message: version.message, error: version.error,
       warnings: version.warnings, gate: version.gate, draft: version.draft, renderMs: version.renderMs,
-      plan: version.plan ? { strategy: version.plan.strategy, durationSeconds: version.plan.durationSeconds, clips: version.plan.clips.map((clip) => ({ id: clip.id, purpose: clip.purpose, assetId: clip.assetId, layout: clip.layout ?? "full", motion: clip.motion.type, transition: clip.transitionIn.type, durationSeconds: clip.durationSeconds, texts: clip.overlays.map((overlay) => overlay.text) })) } : undefined,
-      ...(awaiting ? { sentences: buildSentences(Object.entries(project.transcripts).map(([materialId, transcript]) => ({ materialId, transcript }))).map((s) => ({ id: s.id, materialId: s.materialId, start: s.start, end: s.end, text: s.text })) } : {}),
+      plan: version.plan ? { strategy: version.plan.strategy, durationSeconds: version.plan.durationSeconds, clips: version.plan.clips.map((clip) => ({ id: clip.id, purpose: clip.purpose, assetId: clip.assetId, layout: clip.layout ?? "full", motion: clip.motion.type, region: clip.framing.region, transition: clip.transitionIn.type, recordStartSeconds: clip.recordStartSeconds, durationSeconds: clip.durationSeconds, texts: clip.overlays.map((overlay) => overlay.text) })) } : undefined,
+      ...(needsSentences ? { sentences: buildSentences(Object.entries(project.transcripts).map(([materialId, transcript]) => ({ materialId, transcript }))).map((s) => ({ id: s.id, materialId: s.materialId, start: s.start, end: s.end, text: s.text })) } : {}),
       ...(output ? { output } : {}),
     };
   }

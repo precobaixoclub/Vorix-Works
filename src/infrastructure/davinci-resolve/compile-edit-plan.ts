@@ -268,9 +268,11 @@ export function compileEditPlan(plan: VideoEditPlan, options: CompileOptions): C
     ...plan.assets.filter((asset) => asset.kind === "card").map((asset) => `cartão "${asset.id}"`),
     ...(plan.narration ? ["narração"] : []),
     ...plan.clips.filter((clip) => clip.layout && clip.layout !== "full").map((clip) => `composição "${clip.layout}"`),
+    ...plan.clips.filter((clip) => clip.framing.region).map((clip) => `região de origem em "${clip.id}"`),
     ...plan.clips.filter((clip) => ["punch_in", "drift"].includes(clip.motion.type)).map((clip) => `movimento "${clip.motion.type}"`),
     ...plan.clips.filter((clip) => ["blur", "circle_open", "wipe", "flash", "smooth_left"].includes(clip.transitionIn.type)).map((clip) => `transição "${clip.transitionIn.type}"`),
     ...plan.clips.flatMap((clip) => clip.overlays).filter((overlay) => overlay.animation === "kinetic").map(() => "texto cinético"),
+    ...plan.clips.flatMap((clip) => clip.overlays).filter((overlay) => overlay.animation === "countdown").map(() => "contagem sobreposta"),
   ];
   if (unsupported.length > 0) throw new PlanCompilationError(`Recursos não suportados pelo executor DaVinci (estacionado): ${unsupported.join(", ")}.`);
   const conventions = options.conventions ?? DEFAULT_CONVENTIONS;

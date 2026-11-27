@@ -8,6 +8,7 @@
  */
 
 import { spawn } from "node:child_process";
+import type { VideoEditPlan } from "../../domain/video-editing/video-edit-plan.js";
 import { resolveFfmpegBinaryPath } from "../video-rendering/ffmpeg-binary.js";
 
 export type CaptureResult = { exitCode: number | null; stderr: string; durationMs: number };
@@ -145,6 +146,25 @@ export async function renderContactSheet(input: string, output: string, options:
   const filter = `fps=1/${options.everySeconds},scale=${options.tileWidth}:-2,tile=${options.columns}x${rows}:padding=6:margin=6:color=0x111111`;
   const result = await runFfmpegCapture(["-y", "-i", input, "-vf", filter, "-frames:v", "1", output], { timeoutMs: 120_000 });
   if (result.exitCode !== 0) throw new Error(`Falha ao gerar folha de contato: ${result.stderr.split(/\r?\n/).filter(Boolean).slice(-3).join(" | ")}`);
+}
+
+/** Três amostras por cena, fora da sobreposição das transições. Um único decode. */
+export async function renderSceneContactSheet(input: string, output: string, plan: Pick<VideoEditPlan, "clips" | "fps" | "aspect">): Promise<void> {
+  const frames = plan.clips.flatMap((clip, index) => {
+    const start = Math.round(clip.recordStartSeconds * plan.fps);
+    const end = start + Math.round(clip.durationSeconds * plan.fps) - 1;
+    const previous = plan.clips[index - 1];
+    const next = plan.clips[index + 1];
+    const cleanStart = previous ? Math.max(start, Math.round((previous.recordStartSeconds + previous.durationSeconds) * plan.fps)) : start;
+    const cleanEnd = next ? Math.min(end, Math.round(next.recordStartSeconds * plan.fps) - 1) : end;
+    const [first, last] = cleanEnd - cleanStart >= 4 ? [cleanStart, cleanEnd] : [start, end];
+    return [0.10, 0.52, 0.88].map((fraction) => first + Math.round((last - first) * fraction));
+  });
+  const sample = frames.map((frame) => `eq(n,${frame})`).join("+");
+  const width = plan.aspect === "16:9" ? 420 : plan.aspect === "1:1" ? 300 : 252;
+  const filter = `select='${sample}',scale=${width}:-2,tile=3x${plan.clips.length}:padding=6:margin=6:color=0x111111`;
+  const result = await runFfmpegCapture(["-y", "-i", input, "-vf", filter, "-frames:v", "1", "-q:v", "3", output], { timeoutMs: 120_000 });
+  if (result.exitCode !== 0) throw new Error(`Falha ao gerar a prancha de cenas: ${result.stderr.split(/\r?\n/).filter(Boolean).slice(-3).join(" | ")}`);
 }
 
 /** PNG transparente na resolução do quadro — o "portador" da camada de textos no DaVinci. */

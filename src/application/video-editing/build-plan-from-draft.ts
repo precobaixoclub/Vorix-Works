@@ -185,6 +185,19 @@ export function buildPlanFromDraft(draft: VideoEditDraft, context: BuildPlanCont
       fit = "fit";
       zoom = context.aspect === "9:16" && (asset.width ?? 0) > (asset.height ?? 0) ? 1.3 : undefined;
     }
+    const region = scene.region;
+    if (region) {
+      if (asset.kind === "card" || (scene.layout && scene.layout !== "full") || (region.start && asset.kind !== "image")) {
+        issues.push(`${path}: região exige composição full em foto/captura e só pode abrir em foto`);
+        return;
+      }
+      fit = "fit";
+      zoom = undefined;
+    }
+    if (scene.layout === "stage" && (asset.kind !== "image" || asset.role !== "product_photo")) {
+      issues.push(`${path}: stage exige foto original de produto`);
+      return;
+    }
     const [focusX, focusY] = FOCUS[scene.focus];
 
     const protectedMedia = asset.protectedFidelity === true;
@@ -208,7 +221,10 @@ export function buildPlanFromDraft(draft: VideoEditDraft, context: BuildPlanCont
     if (layout === "device_phone" || layout === "device_laptop" || layout === "split") intensity = Math.min(intensity, 0.35);
     // Foto parada não existe em Reels: "static" em imagem vira deriva lenta (cartão com texto continua parado).
     let motionType = scene.motion;
-    if (motionType === "static" && asset.kind === "image") {
+    if (region) {
+      motionType = "static";
+      intensity = 0;
+    } else if (motionType === "static" && asset.kind === "image") {
       motionType = "drift";
       intensity = Math.max(intensity, 0.3);
     }
@@ -232,7 +248,7 @@ export function buildPlanFromDraft(draft: VideoEditDraft, context: BuildPlanCont
     built.push({
       speech,
       flexible: asset.kind !== "video",
-      clip: { id: `c${index + 1}`, assetId: asset.id, purpose: scene.purpose, sourceInSeconds: round3(sourceIn), durationSeconds: duration, motion: { type: motionType, intensity }, framing: { fit: asset.kind === "card" ? "fill" : fit, focusX, focusY, ...(zoom ? { zoom } : {}) }, transitionIn: { type: scene.transitionIn, durationSeconds: 0 }, overlays, keepSourceAudio: speech, ...(layout !== "full" ? { layout } : {}) },
+      clip: { id: `c${index + 1}`, assetId: asset.id, purpose: scene.purpose, sourceInSeconds: round3(sourceIn), durationSeconds: duration, motion: { type: motionType, intensity }, framing: { fit: asset.kind === "card" ? "fill" : fit, focusX, focusY, ...(zoom ? { zoom } : {}), ...(region ? { region } : {}) }, transitionIn: { type: scene.transitionIn, durationSeconds: 0 }, overlays, keepSourceAudio: speech, ...(layout !== "full" ? { layout } : {}) },
     });
   });
   if (issues.length > 0) return { ok: false, issues, warnings };

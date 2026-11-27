@@ -15,7 +15,7 @@ import { VideoProjectsService } from "../dist/application/video-editing/video-pr
 import { processNextVideoVersion, videoSheetKey } from "../dist/application/video-editing/process-video-version.js";
 import { videoBrandStyle } from "../dist/application/video-editing/brand-style.js";
 import { FfmpegEditExecutor } from "../dist/infrastructure/video-editing/ffmpeg-edit-executor.js";
-import { probeMedia, analyzeVideo, runFfmpegCapture, renderContactSheet } from "../dist/infrastructure/video-editing/ffmpeg-media-analysis.js";
+import { probeMedia, analyzeVideo, runFfmpegCapture, renderSceneContactSheet } from "../dist/infrastructure/video-editing/ffmpeg-media-analysis.js";
 import { proceduralMusicArgs, musicSeed } from "../dist/infrastructure/video-editing/procedural-music.js";
 import { approvalRequestText } from "../dist/application/approvals/whatsapp-approval.js";
 import { canonicalApprovalPhone, WhatsappApprovalService } from "../dist/application/approvals/whatsapp-approval-service.js";
@@ -82,11 +82,16 @@ test("diretor: schemas estritos para o --output-schema do Codex; saída vira ras
 test("revisão editorial: sem resposta é inconclusiva; aprovação com texto ilegível vira ajuste", () => {
   assert.equal(reviewOutcome(undefined).verdict, "inconclusive");
   assert.equal(reviewOutcome({ verdict: "talvez" }).verdict, "inconclusive");
-  const base = { hookInFirstSeconds: true, textReadable: true, brandConsistent: true, materialFaithful: true, notSlideshow: true, findings: [], revisionRequest: "" };
+  const base = { hookInFirstSeconds: true, textReadable: true, brandConsistent: true, materialFaithful: true, notSlideshow: true, motionVaried: true, compositionVaried: true, subjectClear: true, narrativeProgression: true, closingAction: true, findings: [], revisionRequest: "" };
   assert.equal(reviewOutcome({ ...base, verdict: "approve" }).verdict, "approve");
   const unreadable = reviewOutcome({ ...base, textReadable: false, verdict: "approve" });
   assert.equal(unreadable.verdict, "revise");
   assert.ok(unreadable.findings.includes("item reprovado: textReadable"));
+  for (const criterion of Object.keys(base).filter((key) => typeof base[key] === "boolean")) {
+    assert.equal(reviewOutcome({ ...base, [criterion]: false, verdict: "approve" }).verdict, "revise", criterion);
+    assert.equal(reviewOutcome({ ...base, [criterion]: undefined, verdict: "approve" }).verdict, "inconclusive", criterion);
+  }
+  assert.equal(reviewOutcome({ ...base, compositionVaried: false, verdict: "revise", revisionScope: "pontual" }).scope, "abrangente");
 });
 
 // ---------- rascunho pronto (sem IA paga) ----------
@@ -166,7 +171,7 @@ async function pilotFixture({ withSpeech = false, draft } = {}) {
     analyze: (path, hasAudio) => analyzeVideo(path, { hasAudio }),
     poster: async (videoPath, posterPath) => { await runFfmpegCapture(["-y", "-ss", "0.5", "-i", videoPath, "-frames:v", "1", posterPath]); },
     transcribe: async () => transcript,
-    contactSheet: (videoPath, sheetPath, durationSeconds) => renderContactSheet(videoPath, sheetPath, { everySeconds: durationSeconds / 8, columns: 4, tileWidth: 180, maxTiles: 8 }),
+    contactSheet: renderSceneContactSheet,
     resolveBrand: async () => ({ style: { ...videoBrandStyle({ brandName: "CMKV" }).style, ...brand } }),
     pickMusic: async (project, destinationDir) => {
       const fileName = "song-original.wav";

@@ -17,7 +17,7 @@
  */
 
 import { createHash } from "node:crypto";
-import type { EditClip, EditMediaAsset, VideoEditPlan } from "../../domain/video-editing/video-edit-plan.js";
+import type { EditClip, EditMediaAsset, EditSourceRegion, VideoEditPlan } from "../../domain/video-editing/video-edit-plan.js";
 import { validateVideoEditPlan } from "../../domain/video-editing/video-edit-plan.js";
 import { layoutBase } from "./scene-compositions.js";
 
@@ -137,7 +137,23 @@ function framingFilter(clip: EditClip, cw: number, ch: number): string {
   return baseFraming(clip, cw, ch) + zoomTail;
 }
 
+function regionCrop(region: EditSourceRegion): string {
+  const dimension = (axis: string, fraction: number) => `trunc(${axis}*${n(fraction, 7)}/2)*2`;
+  return `crop=w='${dimension("iw", region.width)}':h='${dimension("ih", region.height)}':x='${dimension("iw", region.x)}':y='${dimension("ih", region.y)}'`;
+}
+
 function baseFraming(clip: EditClip, cw: number, ch: number): string {
+  const region = clip.framing.region;
+  if (region) {
+    const frameWidth = even(cw * 0.94);
+    const frameHeight = even(ch * 0.52);
+    return [
+      regionCrop(region),
+      `scale=${frameWidth}:${frameHeight}:force_original_aspect_ratio=decrease:force_divisible_by=2:flags=lanczos`,
+      `pad=${cw}:${ch}:x=(ow-iw)/2:y=(oh-ih)/2:color=0x141414`,
+      "setsar=1",
+    ].join(",");
+  }
   if (clip.framing.fit === "fill") {
     return `scale=${cw}:${ch}:force_original_aspect_ratio=increase:flags=lanczos,crop=${cw}:${ch}:x='(iw-ow)*${n(clip.framing.focusX)}':y='(ih-oh)*${n(clip.framing.focusY)}',setsar=1`;
   }
@@ -211,7 +227,8 @@ export function compileFfmpegEdit(input: CompileFfmpegInput): CompiledFfmpegEdit
   layout.forEach(({ clip, asset, frames }, index) => {
     const duration = frames / fps;
     const isVideo = asset.kind === "video";
-    const ss = isVideo ? 1 : options.supersample;
+    const region = clip.framing.region;
+    const ss = isVideo || clip.layout === "stage" || (region && !region.start) ? 1 : options.supersample;
     const cw = even(W * ss);
     const ch = even(H * ss);
     const motion = motionOf(clip);
@@ -236,7 +253,18 @@ export function compileFfmpegEdit(input: CompileFfmpegInput): CompiledFfmpegEdit
       const baseInput = asset.kind === "card" ? ["-f", "lavfi", "-i", cardSource(asset, cw, ch)] : ["-i", asset.fileName!];
       const baseChain = asset.kind === "card" ? `[0:v]format=rgb24,${cardGradient(asset)},setsar=1[b]` : composed ? composed.chain : `[0:v]format=rgb24,${framingFilter(clip, cw, ch)}[b]`;
       const imageTail = [...fades, `fps=${fps}`, "format=yuv420p", "setsar=1"].join(",");
-      if (composed?.parallaxForeground) {
+      if (region?.start && ratio > 0) {
+        // O quadro de saída tem a proporção do recorte final; só a janela interna abre.
+        const detailRatio = ratio * region.width / region.height;
+        const w = even(Math.min(W * 0.94, H * 0.66 * detailRatio));
+        const h = even(w / detailRatio);
+        const base = `[0:v]format=rgb24,${regionCrop(region)},scale=${w * ss}:${h * ss}:flags=lanczos,setsar=1[b]`;
+        steps.push({ kind: "base", id: clip.id, output: baseName, args: ["-hide_banner", "-y", ...limitInputs(baseInput), "-filter_complex", base, "-map", "[b]", "-frames:v", "1", "-update", "1", baseName], timeoutMs: 90_000, cacheKey: "cacheable" });
+        inputArgs = ["-i", baseName];
+        const progress = `st(0\\,clip(on/${Math.max(1, Math.round(frames * 0.94) - 1)}\\,0\\,1));ld(0)*ld(0)*(3-2*ld(0))`;
+        const zoom = `1+${n(1 / region.start.scale - 1)}*(1-(${progress}))`;
+        chain = `[0:v]zoompan=z='${zoom}':x='(iw-iw/zoom)*${n(region.start.x)}':y='(ih-ih/zoom)*${n(region.start.y)}':d=${frames}:s=${w}x${h}:fps=${fps},pad=${W}:${H}:x=(ow-iw)/2:y=(oh-ih)/2:color=0x141414,${imageTail}[v]`;
+      } else if (composed?.parallaxForeground) {
         // Parallax: fundo e primeiro plano em arquivos separados; o fundo aproxima devagar e o produto
         // desliza na frente — profundidade real, não um zoom único.
         const fgName = `fg-${index + 1}-${hash({ a: asset, l: layoutKind, look: plan.look, W, H })}.png`;
@@ -246,7 +274,14 @@ export function compileFfmpegEdit(input: CompileFfmpegInput): CompiledFfmpegEdit
         const drift = Math.round(W * 0.035);
         const e = `(st(0\,clip(t/${n(duration)}\,0\,1));ld(0)*ld(0)*(3-2*ld(0)))`;
         const bgMotion: Motion = { zoomFrom: 1, zoomTo: 1.08, shiftX: [0.01, -0.01], shiftY: [0, 0] };
-        chain = `[0:v]setpts=PTS-STARTPTS,${zoompanFilter(bgMotion, duration, fps, W, H)}[bgv];[1:v]setpts=PTS-STARTPTS,format=rgba[fgv];[bgv][fgv]overlay=x='${-drift}+${2 * drift}*${e}':y='${Math.round(H * 0.012)}-${Math.round(H * 0.024)}*${e}':format=auto,${imageTail}[v]`;
+        if (layoutKind === "stage") {
+          const enter = ease(Math.min(0.48, duration * 0.45));
+          const rise = Math.round(H * 0.14);
+          const side = clip.motion.type === "pan_right" ? -Math.round(W * 0.075) : clip.motion.type === "pan_left" ? Math.round(W * 0.075) : 0;
+          chain = `[0:v]scale=${W}:${H}:flags=lanczos[bgv];[1:v]format=rgba,fade=t=in:st=0:d=0.24:alpha=1[fgv];[bgv][fgv]overlay=x='${side}*(1-(${enter}))':y='${rise}*(1-(${enter}))-${Math.round(H * 0.012)}*${e}':format=auto,${imageTail}[v]`;
+        } else {
+          chain = `[0:v]setpts=PTS-STARTPTS,${zoompanFilter(bgMotion, duration, fps, W, H)}[bgv];[1:v]setpts=PTS-STARTPTS,format=rgba[fgv];[bgv][fgv]overlay=x='${-drift}+${2 * drift}*${e}':y='${Math.round(H * 0.012)}-${Math.round(H * 0.024)}*${e}':format=auto,${imageTail}[v]`;
+        }
       } else {
         steps.push({ kind: "base", id: clip.id, output: baseName, args: ["-hide_banner", "-y", ...limitInputs(baseInput), "-filter_complex", baseChain, "-map", "[b]", "-frames:v", "1", "-update", "1", baseName], timeoutMs: 90_000, cacheKey: "cacheable" });
         inputArgs = ["-loop", "1", "-framerate", String(fps), "-t", n(duration + 0.5, 3), "-i", baseName];

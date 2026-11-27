@@ -106,7 +106,11 @@ export function collectTextWindows(plan: VideoEditPlan, warnings: string[]): Tex
     for (const overlay of clip.overlays) {
       const start = clip.recordStartSeconds + overlay.startOffsetSeconds;
       const area = textArea(clip.layout, plan.aspect, plan.width, plan.height);
-      windows.push({ text: overlay.text, role: overlay.role, style: overlay.style, position: overlay.position, animation: overlay.animation, startSeconds: start, endSeconds: Math.min(plan.durationSeconds, start + overlay.durationSeconds), isCaption: false, ...(area ? { area } : {}) });
+      const window: TextWindow = { text: overlay.text, role: overlay.role, style: overlay.style, position: overlay.position, animation: overlay.animation, startSeconds: start, endSeconds: Math.min(plan.durationSeconds, start + overlay.durationSeconds), isCaption: false, ...(area ? { area } : {}) };
+      if (overlay.animation === "countdown") {
+        const beat = (window.endSeconds - start) / 3;
+        ["3", "2", "1"].forEach((text, index) => windows.push({ ...window, text, animation: "none", startSeconds: start + index * beat, endSeconds: start + (index + 1) * beat }));
+      } else windows.push(window);
     }
   }
   const titles = [...windows];

@@ -80,7 +80,7 @@ const MOTION_TYPES: readonly string[] = ["static", "push_in", "pull_out", "pan_l
  * - `inset`: foto inteira + lupa circular ampliando o detalhe no ponto de foco;
  * - `device_phone`/`device_laptop`: captura real dentro de um celular/notebook desenhado.
  */
-export const SCENE_LAYOUTS = ["full", "framed", "split", "parallax", "inset", "device_phone", "device_laptop"] as const;
+export const SCENE_LAYOUTS = ["full", "framed", "split", "parallax", "inset", "device_phone", "device_laptop", "stage"] as const;
 export type EditSceneLayout = (typeof SCENE_LAYOUTS)[number];
 
 /** Cores da marca usadas pelas composições (fundos, painéis, molduras). */
@@ -91,12 +91,21 @@ export type EditMotion = { type: EditMotionType; intensity: number };
 
 /** Enquadramento: `fill` preenche o quadro (pode cortar bordas); `fit` mostra a mídia inteira sobre um fundo desfocado da própria mídia. */
 /** `zoom` (1–2.5) aproxima além do enquadramento base, mantendo o foco — ex.: gravação de tela no 9:16. */
-export type EditFraming = { fit: "fill" | "fit"; focusX: number; focusY: number; zoom?: number };
+export type EditSourceRegion = { x: number; y: number; width: number; height: number; start?: { x: number; y: number; scale: number } };
+export type EditFraming = { fit: "fill" | "fit"; focusX: number; focusY: number; zoom?: number; region?: EditSourceRegion };
+
+export function validSourceRegion(region: EditSourceRegion): boolean {
+  const { x, y, width, height, start } = region;
+  return [x, y, width, height].every(Number.isFinite) && x >= 0 && y >= 0
+    && width >= 0.1 && height >= 0.1 && x + width <= 1 && y + height <= 1
+    && (start === undefined || (Boolean(start) && [start.x, start.y, start.scale].every(Number.isFinite)
+      && start.x >= 0 && start.x <= 1 && start.y >= 0 && start.y <= 1 && start.scale >= 0.28 && start.scale <= 0.95));
+}
 
 export type EditTextRole = "hook" | "headline" | "caption" | "cta" | "price" | "subtitle";
 export type EditTextPosition = "top" | "center" | "bottom" | "lower_third";
 /** `kinetic`: as palavras entram uma a uma. */
-export type EditTextAnimation = "fade" | "slide_up" | "pop" | "kinetic" | "none";
+export type EditTextAnimation = "fade" | "slide_up" | "pop" | "kinetic" | "countdown" | "none";
 
 export type EditTextStyle = {
   /** Altura da fonte como fração da altura do quadro (0.02–0.12). */
@@ -337,6 +346,11 @@ export function validateVideoEditPlan(plan: VideoEditPlan): PlanValidation {
     else {
       if (clip.framing.zoom !== undefined && (!finite(clip.framing.zoom) || clip.framing.zoom < 1 || clip.framing.zoom > 2.5)) issues.push({ path: `${path}.framing.zoom`, message: "zoom de enquadramento fora de 1–2,5" });
       if (asset?.protectedFidelity && (clip.framing.zoom ?? 1) > 1.6) issues.push({ path: `${path}.framing.zoom`, message: "zoom forte demais para produto/tela protegidos" });
+      if (clip.framing.region !== undefined && (!clip.framing.region || !validSourceRegion(clip.framing.region) || (clip.layout ?? "full") !== "full"
+        || !asset || !["image", "video"].includes(asset.kind) || (clip.framing.region.start && asset.kind !== "image")
+        || clip.framing.fit !== "fit" || clip.framing.zoom !== undefined || clip.motion?.type !== "static")) {
+        issues.push({ path: `${path}.framing.region`, message: "região inválida ou incompatível com o quadro de detalhe" });
+      }
       for (const key of ["focusX", "focusY"] as const) {
         if (!finite(clip.framing[key]) || clip.framing[key] < 0 || clip.framing[key] > 1) issues.push({ path: `${path}.framing.${key}`, message: "foco fora de 0–1" });
       }
@@ -351,6 +365,7 @@ export function validateVideoEditPlan(plan: VideoEditPlan): PlanValidation {
       if (asset?.kind !== "image") issues.push({ path: `${path}.layout`, message: "composição só para imagem (vídeo e cartão usam full)" });
       if ((layout === "device_phone" || layout === "device_laptop") && asset?.role !== "screenshot") issues.push({ path: `${path}.layout`, message: "moldura de aparelho só para captura de tela real" });
       if (layout === "inset" && asset?.role === "screenshot") issues.push({ path: `${path}.layout`, message: "lupa de detalhe é para produto, não para tela" });
+      if (layout === "stage" && asset?.role !== "product_photo") issues.push({ path: `${path}.layout`, message: "entrada de produto exige foto original do produto" });
       if (!plan.look) issues.push({ path: `${path}.layout`, message: "composição exige as cores da marca (look)" });
     }
     if (clip.keepSourceAudio && asset?.kind !== "video") issues.push({ path: `${path}.keepSourceAudio`, message: "só vídeo tem áudio de origem" });
@@ -359,6 +374,9 @@ export function validateVideoEditPlan(plan: VideoEditPlan): PlanValidation {
       const opath = `${path}.overlays[${overlayIndex}]`;
       if (!ID_PATTERN.test(overlay.id ?? "")) issues.push({ path: `${opath}.id`, message: "id inválido" });
       checkText(overlay.text, `${opath}.text`, issues);
+      if (overlay.animation === "countdown" && (overlay.text !== "3 2 1" || overlay.durationSeconds < 1.2)) {
+        issues.push({ path: opath, message: "a contagem deve ter texto '3 2 1' e durar ao menos 1,2 s" });
+      }
       checkStyle(overlay.style, `${opath}.style`, issues);
       if (!finite(overlay.startOffsetSeconds) || overlay.startOffsetSeconds < 0 || !finite(overlay.durationSeconds) || overlay.durationSeconds < 0.3 || overlay.startOffsetSeconds + overlay.durationSeconds > clip.durationSeconds + EPSILON) {
         issues.push({ path: opath, message: "texto fora do intervalo do clipe" });

@@ -65,6 +65,7 @@ export function splitAreas(aspect: VideoAspect, W: number, H: number): { photo: 
 
 /** Onde os textos de uma cena podem ficar (em pixels do quadro final); `undefined` = quadro inteiro. */
 export function textArea(layout: EditSceneLayout | undefined, aspect: VideoAspect, W: number, H: number): Rect | undefined {
+  if (layout === "stage") return { x: 0, y: even(H * 0.68), w: W, h: even(H * 0.18) };
   return layout === "split" ? splitAreas(aspect, W, H).panel : undefined;
 }
 
@@ -151,23 +152,27 @@ export function layoutBase(layout: EditSceneLayout, clip: EditClip, look: EditLo
     };
   }
 
-  if (layout === "parallax") {
+  if (layout === "parallax" || layout === "stage") {
     // Fundo: a própria foto ampliada, desfocada e escurecida (vira campo de cor); primeiro plano: a foto
     // num cartão arredondado com sombra, já no tamanho final e com alfa, para o overlay em movimento.
     const box = aspect === "9:16" ? [0.88, 0.7, 0.5] : aspect === "1:1" ? [0.74, 0.76, 0.5] : [0.46, 0.82, 0.5];
-    const rect = fitRect(ratio, W * box[0]!, H * box[1]!, W / 2, H * box[2]!);
+    const stage = layout === "stage";
+    const rect = stage ? fitRect(ratio, W * 0.9, H * 0.61, W / 2, H * 0.36)
+      : fitRect(ratio, W * box[0]!, H * box[1]!, W / 2, H * box[2]!);
     const r1 = Math.round(0.03 * Math.min(W, H));
     const b1 = Math.round(0.018 * Math.min(W, H));
     const pad = b1 * 3;
     return {
       parallaxForeground: true,
       chain: [
-        `[0:v]split=2[pa][pb]`,
-        `[pa]scale=${cw}:${ch}:force_original_aspect_ratio=increase,crop=${cw}:${ch},scale=${even(cw / 24)}:${even(ch / 24)},gblur=sigma=10,scale=${cw}:${ch}:flags=bicubic,eq=brightness=-0.12:saturation=0.8,format=rgb24,setsar=1[b]`,
+        ...(stage ? [gradientSource(look, cw, ch, "b")] : [
+          `[0:v]split=2[pa][pb]`,
+          `[pa]scale=${cw}:${ch}:force_original_aspect_ratio=increase,crop=${cw}:${ch},scale=${even(cw / 24)}:${even(ch / 24)},gblur=sigma=10,scale=${cw}:${ch}:flags=bicubic,eq=brightness=-0.12:saturation=0.8,format=rgb24,setsar=1[b]`,
+        ]),
         `color=c=black@0.0:s=${W}x${H}:d=1,format=rgba[canvas]`,
         `color=c=black:s=${even(rect.w + pad * 2)}x${even(rect.h + pad * 2)}:d=1,format=rgba,geq=r=0:g=0:b=0:a='130*lte(hypot(max(0\\,abs(X-W/2)-(${n(rect.w / 2 - r1, 1)}))\\,max(0\\,abs(Y-H/2)-(${n(rect.h / 2 - r1, 1)})))\\,${r1})',gblur=sigma=${b1}[psh]`,
         `[canvas][psh]overlay=x=${rect.x - pad}:y=${rect.y - pad + Math.round(0.012 * H)}:format=auto[cs]`,
-        `[pb]scale=${rect.w}:${rect.h}:flags=lanczos,format=rgba,${roundedAlpha(r1)}[pcard]`,
+        `[${stage ? "0:v" : "pb"}]scale=${rect.w}:${rect.h}:flags=lanczos,format=rgba,${roundedAlpha(r1)}[pcard]`,
         `[cs][pcard]overlay=x=${rect.x}:y=${rect.y}:format=auto,format=rgba[f]`,
       ].join(";"),
     };

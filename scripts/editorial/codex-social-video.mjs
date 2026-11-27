@@ -236,10 +236,11 @@ async function runWorkspace(workspaceId) {
     // Revisão editorial (até 1 ajuste). Inconclusiva ou reprovada: revisão manual, nunca agenda sozinha.
     let review = await editorialReview(jobDir, selection, status, operations);
     if (review.verdict === "revise" && review.revisionRequest) {
-      const pictures = await writeImages(jobDir, selection.materials ?? materials);
+      const pictures = await writeImages(jobDir, materials);
       const base = status;
+      const sentences = base.sentences ?? [];
       const result = await reviseWithScope(workspaceId, base.versionId, { reason: review.revisionRequest, scope: review.scope, from: "revisao" }, operations, async (correction) => {
-        const { output, ms } = await codex(jobDir, { prompt: `${directorPrompt({ selection, materials: selection.materials ?? materials, sentences: [], targetSeconds: targetSecondsFor(idea) })}\n\nRASCUNHO ATUAL (JSON do motor): ${JSON.stringify(base.draft)}\nAJUSTE PEDIDO PELA REVISÃO (${review.scope}): ${review.revisionRequest}\n${review.scope === "abrangente" ? "Ajuste abrangente: pode reorganizar ritmo, ordem e composição." : "Ajuste pontual: mude só o que foi pedido e mantenha o resto IDÊNTICO."}${correction ? `\nCORREÇÃO: ${correction}` : ""}\nDevolva o rascunho completo.`, schema: directorSchema, images: pictures });
+        const { output, ms } = await codex(jobDir, { prompt: `${directorPrompt({ selection, materials, sentences, targetSeconds: targetSecondsFor(idea, { speech: sentences.length > 0 }) })}\n\nRASCUNHO ATUAL (JSON do motor): ${JSON.stringify(base.draft)}\nAJUSTE PEDIDO PELA REVISÃO (${review.scope}): ${review.revisionRequest}\n${review.scope === "abrangente" ? "Ajuste abrangente: pode reorganizar ritmo, ordem e composição." : "Ajuste pontual: mude só o que foi pedido e mantenha o resto IDÊNTICO."}${correction ? `\nCORREÇÃO: ${correction}` : ""}\nDevolva o rascunho completo.`, schema: directorSchema, images: pictures });
         operations.push({ step: "ajuste da revisão", engine: "codex", durationMs: ms });
         return toDraft(output);
       });

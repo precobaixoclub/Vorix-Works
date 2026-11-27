@@ -22,7 +22,8 @@ import { buildPlatformRepositories } from "../../infrastructure/storage/build-pl
 import { LocalObjectStorage } from "../../infrastructure/storage/local-object-storage.js";
 import { S3ObjectStorage } from "../../infrastructure/storage/s3-object-storage.js";
 import { PostgresVideoProjectRepository } from "../../infrastructure/storage/postgres/postgres-video-project-repository.js";
-import { FfmpegEditExecutor } from "../../infrastructure/video-editing/ffmpeg-edit-executor.js";
+import { FfmpegEditExecutor, type SceneRenderer } from "../../infrastructure/video-editing/ffmpeg-edit-executor.js";
+import { pathToFileURL } from "node:url";
 import { analyzeVideo, probeMedia, renderContactSheet, renderSceneContactSheet, runFfmpegCapture } from "../../infrastructure/video-editing/ffmpeg-media-analysis.js";
 import { musicSeed, proceduralMusicArgs } from "../../infrastructure/video-editing/procedural-music.js";
 import { WhisperVideoTranscriber } from "../../infrastructure/video-editing/whisper-video-transcriber.js";
@@ -42,6 +43,23 @@ function buildStorage(): ObjectStoragePort {
   return new S3ObjectStorage({ bucket: required("OBJECT_STORAGE_BUCKET"), accessKeyId: required("OBJECT_STORAGE_ACCESS_KEY_ID"), secretAccessKey: required("OBJECT_STORAGE_SECRET_ACCESS_KEY"), region: env.OBJECT_STORAGE_REGION?.trim() || "auto", ...(env.OBJECT_STORAGE_ENDPOINT?.trim() ? { endpoint: env.OBJECT_STORAGE_ENDPOINT.trim() } : {}), forcePathStyle: env.OBJECT_STORAGE_FORCE_PATH_STYLE?.trim() !== "false" });
 }
 
+
+/**
+ * Motion design (Remotion), opcional: carregado só se o pacote `motion-graphics` estiver presente e
+ * VIDEO_MOTION_GRAPHICS não for "false". Concorrência do Chromium limitada (REMOTION_CONCURRENCY, padrão 1).
+ */
+async function loadSceneRenderer(workDir: string): Promise<{ sceneRenderer?: SceneRenderer }> {
+  if (env.VIDEO_MOTION_GRAPHICS?.trim() === "false") return {};
+  const entry = resolve(env.VIDEO_MOTION_GRAPHICS_DIR?.trim() || "motion-graphics", "render.mjs");
+  if (!existsSync(entry)) return {};
+  try {
+    const module = (await import(pathToFileURL(entry).href)) as { TEMPLATES_VERSION?: string; renderScene: (input: Record<string, unknown>) => Promise<{ ms: number }> };
+    return { sceneRenderer: { version: module.TEMPLATES_VERSION, render: (input) => module.renderScene({ ...input, concurrency: int(env.REMOTION_CONCURRENCY, 1), cacheDir: join(workDir, "remotion"), timeoutMs: int(env.REMOTION_TIMEOUT_MS, 240_000) }) } };
+  } catch (error) {
+    log("motion design indisponível", { message: error instanceof Error ? error.message : String(error) });
+    return {};
+  }
+}
 
 export type VideoWorkerRuntime = { deps: VideoWorkerDeps; workDir: string; close: () => Promise<void> };
 
@@ -81,6 +99,7 @@ export async function createVideoWorkerRuntime(overrides: Partial<VideoWorkerDep
     cacheRoot: join(workDir, "cache"),
     ffmpeg: { threads: int(env.VIDEO_RENDER_THREADS, 2), preset: (env.VIDEO_RENDER_PRESET?.trim() as "veryfast" | undefined) || "veryfast" },
     limits: { maxDurationSeconds: int(env.VIDEO_MAX_DURATION_SECONDS, 90) },
+    ...(await loadSceneRenderer(workDir)),
   });
   const transcriber = new WhisperVideoTranscriber({
     pythonPath: env.MEETINGS_WHISPER_PYTHON?.trim() || "python3",

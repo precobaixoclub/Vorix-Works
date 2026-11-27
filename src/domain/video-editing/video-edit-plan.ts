@@ -149,7 +149,17 @@ export type EditClip = {
   keepSourceAudio: boolean;
   /** Composição da cena; ausente = `full`. */
   layout?: EditSceneLayout;
+  /**
+   * Cena de MOTION DESIGN renderizada pelo Remotion (template + props) antes da montagem. O clipe resultante
+   * entra na timeline como vídeo; o FFmpeg continua cuidando de transições, áudio, legendas e exportação.
+   * Props referenciam arquivos do job pelo nome (os mesmos `fileName` dos assets).
+   */
+  design?: EditDesign;
 };
+
+export const DESIGN_TEMPLATES = ["product_hero", "detail_reveal", "lineup", "software_focus", "title_card", "speech_captions"] as const;
+export type EditDesignTemplate = (typeof DESIGN_TEMPLATES)[number];
+export type EditDesign = { template: EditDesignTemplate; props: Record<string, unknown> };
 
 export type EditCaptionWord = { text: string; startSeconds: number; endSeconds: number };
 
@@ -369,6 +379,15 @@ export function validateVideoEditPlan(plan: VideoEditPlan): PlanValidation {
       if (!plan.look) issues.push({ path: `${path}.layout`, message: "composição exige as cores da marca (look)" });
     }
     if (clip.keepSourceAudio && asset?.kind !== "video") issues.push({ path: `${path}.keepSourceAudio`, message: "só vídeo tem áudio de origem" });
+    if (clip.design) {
+      if (!(DESIGN_TEMPLATES as readonly string[]).includes(clip.design.template)) issues.push({ path: `${path}.design`, message: "template de motion design desconhecido" });
+      if (!clip.design.props || typeof clip.design.props !== "object" || JSON.stringify(clip.design.props).length > 20_000) issues.push({ path: `${path}.design`, message: "props do motion design inválidas" });
+      if (clip.durationSeconds > 12) issues.push({ path: `${path}.design`, message: "cena de motion design de até 12 s" });
+      const files = new Set(plan.assets.map((item) => item.fileName).filter(Boolean));
+      for (const value of Object.values(clip.design.props ?? {}).flatMap((item) => (Array.isArray(item) ? item : [item]))) {
+        if (typeof value === "string" && /.(png|jpe?g|webp|mp4|mov)$/i.test(value) && !files.has(value)) issues.push({ path: `${path}.design`, message: `arquivo ${value} não pertence ao plano` });
+      }
+    }
 
     (clip.overlays ?? []).forEach((overlay, overlayIndex) => {
       const opath = `${path}.overlays[${overlayIndex}]`;

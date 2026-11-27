@@ -56,7 +56,15 @@ export type FfmpegEditExecutorOptions = {
   minFreeBytes?: number;
   /** Mantém a pasta do job (depuração/prova). Padrão: apaga ao final. */
   keepWorkDir?: boolean;
+  /** Renderizador das cenas de motion design (Remotion). Ausente: plano com `design` é recusado. */
+  sceneRenderer?: SceneRenderer;
 };
+
+/** Cena de motion design → MP4 no `jobDir` (os arquivos citados nas props já estão lá, pelo nome). */
+export type SceneRenderer = { version?: string; render(input: { jobDir: string; outputPath: string; props: Record<string, unknown>; signal?: AbortSignal }): Promise<{ ms: number }> };
+
+/** Versão das composições: muda a chave do cache quando os templates mudam. */
+export const MOTION_DESIGN_VERSION = "remotion-1";
 
 async function place(from: string, to: string): Promise<void> {
   await rm(to, { force: true });
@@ -138,7 +146,9 @@ export class FfmpegEditExecutor implements VideoEditExecutor {
     await mkdir(join(jobDir, "fonts"), { recursive: true });
     try {
       const assets = new Map(plan.assets.map((asset) => [asset.id, asset]));
-      const needed = new Set<string>([...plan.clips.map((clip) => clip.assetId), ...(plan.logo ? [plan.logo.assetId] : []), ...(plan.music ? [plan.music.assetId] : []), ...(plan.narration ? [plan.narration.assetId] : [])]);
+      // Arquivos citados nas props das cenas animadas (logo do encerramento, variantes do lineup) também vão para o job.
+      const designFiles = new Set(plan.clips.flatMap((clip) => (clip.design ? Object.values(clip.design.props).flatMap((value) => (Array.isArray(value) ? value : [value])) : [])).filter((value): value is string => typeof value === "string"));
+      const needed = new Set<string>([...plan.clips.map((clip) => clip.assetId), ...plan.assets.filter((asset) => asset.fileName && designFiles.has(asset.fileName)).map((asset) => asset.id), ...(plan.logo ? [plan.logo.assetId] : []), ...(plan.music ? [plan.music.assetId] : []), ...(plan.narration ? [plan.narration.assetId] : [])]);
       let sourceBytes = 0;
       const staged: { id: string; from: string; to: string }[] = [];
       for (const id of needed) {
@@ -181,7 +191,43 @@ export class FfmpegEditExecutor implements VideoEditExecutor {
         await writeFile(join(jobDir, assFile), ass.content, "utf8");
         for (const file of ass.fontFiles) await copyFile(file, join(jobDir, "fonts", basename(file)));
       }
-      const compiled = compileFfmpegEdit({ plan, facts, options: { ...this.options.ffmpeg, assFile, fontsDir: assFile ? "fonts" : undefined } });
+      // Motion design (Remotion): cada cena vira um MP4 ANTES dos passos do FFmpeg (um processo por vez, sem
+      // disputa de CPU) e entra no plano como clipe de vídeo comum. Cache por workspace pelo conteúdo.
+      let planToCompile = plan;
+      const designClips = plan.clips.filter((clip) => clip.design);
+      if (designClips.length) {
+        if (!this.options.sceneRenderer) throw new Error("Plano com motion design, mas o renderizador de cenas não está disponível neste worker.");
+        const cacheDirDesign = this.options.cacheRoot ? join(this.options.cacheRoot, plan.workspaceId) : null;
+        if (cacheDirDesign) await mkdir(cacheDirDesign, { recursive: true });
+        const extraAssets: typeof plan.assets = [];
+        const replaced = new Map<string, (typeof plan.clips)[number]>();
+        for (const clip of designClips) {
+          checkCancel();
+          const props = { ...clip.design!.props, template: clip.design!.template, width: plan.width, height: plan.height, fps: plan.fps, durationInFrames: Math.max(1, Math.round(clip.durationSeconds * plan.fps)) };
+          const referenced = Object.values(clip.design!.props).flatMap((item) => (Array.isArray(item) ? item : [item])).filter((item): item is string => typeof item === "string" && known.has(item));
+          const key = createHash("sha256").update(JSON.stringify({ v: `${MOTION_DESIGN_VERSION}:${this.options.sceneRenderer.version ?? ""}`, props, files: referenced.map((file) => known.get(file)) })).digest("hex").slice(0, 32);
+          const fileName = `design-${clip.id}.mp4`;
+          const cached = cacheDirDesign ? join(cacheDirDesign, `design-${key}.mp4`) : null;
+          progress("rendering_clips", 5, `Animando a cena ${clip.id}`);
+          if (cached && existsSync(cached)) await place(cached, join(jobDir, fileName));
+          else {
+            await this.options.sceneRenderer.render({ jobDir, outputPath: join(jobDir, fileName), props, signal }).catch((error: unknown) => {
+              if (signal?.aborted) throw new VideoRenderCancelledError();
+              throw new VideoRenderStepError(clip.id, `motion design ${clip.id}: ${error instanceof Error ? error.message.slice(0, 300) : String(error)}`, []);
+            });
+            if (cached) await place(join(jobDir, fileName), cached).catch(() => undefined);
+          }
+          known.set(fileName, key);
+          const probe = await probeMedia(join(jobDir, fileName));
+          const assetId = `design-${clip.id}`;
+          facts[assetId] = { hasAudio: Boolean(probe.audio), durationSeconds: probe.durationSeconds, width: probe.video?.width, height: probe.video?.height };
+          extraAssets.push({ id: assetId, kind: "video", role: "footage", fileName, width: plan.width, height: plan.height, sourceDurationSeconds: probe.durationSeconds ?? clip.durationSeconds });
+          const { design: _design, layout: _layout, ...rest } = clip;
+          replaced.set(clip.id, { ...rest, assetId, sourceInSeconds: 0, framing: { fit: "fill", focusX: 0.5, focusY: 0.5 }, motion: { type: "static", intensity: 0 }, keepSourceAudio: clip.keepSourceAudio && Boolean(probe.audio) });
+        }
+        planToCompile = { ...plan, assets: [...plan.assets, ...extraAssets], clips: plan.clips.map((clip) => replaced.get(clip.id) ?? clip) };
+      }
+      const compiled = compileFfmpegEdit({ plan: planToCompile, facts, options: { ...this.options.ffmpeg, assFile, fontsDir: assFile ? "fonts" : undefined } });
       timings.compile = Date.now() - t0;
 
       // Execução com cache por workspace e progresso ponderado por quadros.

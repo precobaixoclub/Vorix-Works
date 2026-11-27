@@ -7,7 +7,7 @@
  * transcrição, trilha e logo. O que a IA pedir e for incompatível vira aviso, nunca erro silencioso.
  */
 
-import type { EditClip, EditMediaAsset, EditTextOverlay, EditTextPosition, EditTextRole, EditTextStyle, EditTransitionType, VideoAspect, VideoEditPlan } from "../../domain/video-editing/video-edit-plan.js";
+import type { EditClip, EditDesign, EditMediaAsset, EditTextOverlay, EditTextPosition, EditTextRole, EditTextStyle, EditTransitionType, VideoAspect, VideoEditPlan } from "../../domain/video-editing/video-edit-plan.js";
 import { OVERLAP_TRANSITIONS, VIDEO_FORMATS, validateVideoEditPlan } from "../../domain/video-editing/video-edit-plan.js";
 import type { VideoEditDraft } from "../ai-gateway/schemas/video-edit-draft.v1.js";
 import { captionsFromTranscript, chooseFraming, snapRangeToWords, transcriptWords, type BrandGlossary, type Transcript, type TranscriptSentence } from "./transcript-tools.js";
@@ -253,10 +253,23 @@ export function buildPlanFromDraft(draft: VideoEditDraft, context: BuildPlanCont
       overlays[1]!.position = "bottom";
     }
 
+    // Motion design (Remotion): o template certo para o material; os textos vão para a cena animada.
+    let design: EditDesign | undefined;
+    if (scene.design) {
+      const closingLogo = index === draft.scenes.length - 1 && draft.logo === "end" && context.logoMaterialId ? materials.get(context.logoMaterialId) : undefined;
+      const made = buildDesign(scene, asset, material, { context, sourceIn, duration, path, logo: closingLogo, materials });
+      if ("error" in made) warnings.push(made.error);
+      else {
+        design = made.design;
+        if (made.logo) addAsset({ id: made.logo.id, kind: "image", role: "logo", fileName: made.logo.fileName, width: made.logo.width, height: made.logo.height });
+        for (const extra of made.extraAssets) addAsset(extra);
+      }
+    }
+
     built.push({
       speech,
       flexible: asset.kind !== "video",
-      clip: { id: `c${index + 1}`, assetId: asset.id, purpose: scene.purpose, sourceInSeconds: round3(sourceIn), durationSeconds: duration, motion: { type: motionType, intensity }, framing: { fit: asset.kind === "card" ? "fill" : fit, focusX, focusY, ...(zoom ? { zoom } : {}), ...(region ? { region } : {}) }, transitionIn: { type: scene.transitionIn, durationSeconds: 0 }, overlays, keepSourceAudio: speech, ...(layout !== "full" ? { layout } : {}) },
+      clip: { id: `c${index + 1}`, assetId: asset.id, purpose: scene.purpose, sourceInSeconds: round3(sourceIn), durationSeconds: duration, motion: { type: motionType, intensity }, framing: { fit: asset.kind === "card" ? "fill" : fit, focusX, focusY, ...(zoom ? { zoom } : {}), ...(region ? { region } : {}) }, transitionIn: { type: scene.transitionIn, durationSeconds: 0 }, overlays: design ? [] : overlays, keepSourceAudio: speech, ...(layout !== "full" && !design ? { layout } : {}), ...(design ? { design } : {}) },
     });
   });
   if (issues.length > 0) return { ok: false, issues, warnings };
@@ -322,7 +335,10 @@ export function buildPlanFromDraft(draft: VideoEditDraft, context: BuildPlanCont
       .flatMap((assetId) => captionsFromTranscript(clips, assetId, context.transcripts[assetId] ?? { segments: [] }, { glossary: context.brand.glossary }))
       .sort((a, b) => a.startSeconds - b.startSeconds);
     const style = textStyle("caption", context);
-    captions = { enabled: true, style: { ...style, colorHex: "#FFFFFF", bold: true }, position: "bottom", segments };
+    // Cena de fala animada (Remotion) já traz as legendas dinâmicas: sem legenda dupla nesse trecho.
+    const animated = clips.filter((clip) => clip.design?.template === "speech_captions");
+    const kept = segments.filter((segment) => !animated.some((clip) => segment.startSeconds < clip.recordStartSeconds + clip.durationSeconds && segment.endSeconds > clip.recordStartSeconds));
+    if (kept.length) captions = { enabled: true, style: { ...style, colorHex: "#FFFFFF", bold: true }, position: "bottom", segments: kept };
   }
 
   // Trilha.
@@ -337,7 +353,10 @@ export function buildPlanFromDraft(draft: VideoEditDraft, context: BuildPlanCont
   // Logo.
   let logo: VideoEditPlan["logo"];
   const logoMaterial = context.logoMaterialId ? materials.get(context.logoMaterialId) : undefined;
-  if (logoMaterial && draft.logo !== "none" && logoMaterial.width && logoMaterial.height) {
+  const closingDesign = clips[clips.length - 1]?.design;
+  if (closingDesign?.template === "title_card" && closingDesign.props.logo) {
+    // O encerramento animado já mostra a logo oficial: sem sobrepor outra.
+  } else if (logoMaterial && draft.logo !== "none" && logoMaterial.width && logoMaterial.height) {
     addAsset({ id: logoMaterial.id, kind: "image", role: "logo", fileName: logoMaterial.fileName, width: logoMaterial.width, height: logoMaterial.height });
     const last = clips[clips.length - 1]!;
     if (draft.logo === "end" && (last.assetId === cardId || last.assetId === "CARDEND")) {
@@ -372,4 +391,63 @@ export function buildPlanFromDraft(draft: VideoEditDraft, context: BuildPlanCont
   const validation = validateVideoEditPlan(plan);
   if (!validation.valid) return { ok: false, issues: validation.issues.map((issue) => `${issue.path}: ${issue.message}`), warnings };
   return { ok: true, plan, warnings };
+}
+
+type DesignInput = { context: BuildPlanContext; sourceIn: number; duration: number; path: string; logo?: PlanningMaterial; materials: Map<string, PlanningMaterial> };
+type DesignResult = { design: EditDesign; logo?: PlanningMaterial; extraAssets: EditMediaAsset[] } | { error: string };
+
+const clean = (value: Record<string, unknown>) => Object.fromEntries(Object.entries(value).filter(([, item]) => item !== undefined));
+
+/** Props da cena animada a partir da escolha do diretor. Material incompatível: a cena segue sem animação. */
+function buildDesign(scene: VideoEditDraft["scenes"][number], asset: EditMediaAsset, material: PlanningMaterial | undefined, input: DesignInput): DesignResult {
+  const spec = scene.design!;
+  const { brand, style } = input.context;
+  const display = (brand.displayFont ?? (style.editing === "elegante" ? "DM Serif Display" : "Barlow Condensed")) === "DM Serif Display" ? "DM Serif Display" : "Barlow Condensed";
+  const props: Record<string, unknown> = { brand: { name: brand.name, primary: brand.primaryHex.toUpperCase(), accent: brand.accentHex.toUpperCase(), light: brand.lightHex.toUpperCase(), dark: brand.darkHex.toUpperCase(), display } };
+  const region = scene.region ? { x: scene.region.x, y: scene.region.y, w: scene.region.width, h: scene.region.height } : undefined;
+  const aspect = (asset.width ?? 1) / (asset.height ?? 1);
+  const photo = asset.kind === "image" && (asset.role === "product_photo" || asset.role === "generated");
+  const fail = (why: string): DesignResult => ({ error: `${input.path}: animação ${spec.template} indisponível (${why}); cena sem animação` });
+  const extraAssets: EditMediaAsset[] = [];
+  switch (spec.template) {
+    case "product_hero":
+      if (!photo) return fail("exige foto do produto");
+      Object.assign(props, { photo: asset.fileName, photoAspect: aspect, kicker: spec.kicker, headline: spec.headline, detail: region, detailLabel: region ? spec.label : undefined });
+      break;
+    case "detail_reveal":
+      if (!photo || !region) return fail("exige foto do produto e a região da estampa");
+      Object.assign(props, { photo: asset.fileName, photoAspect: aspect, detail: region, label: spec.label ?? spec.headline });
+      break;
+    case "lineup": {
+      if (!photo) return fail("exige fotos do produto");
+      const extras = (spec.extraMaterialIds ?? []).map((id) => input.materials.get(id)).filter((item): item is PlanningMaterial => Boolean(item && item.kind === "image" && item.role === "product_photo"));
+      if (!extras.length) return fail("exige ao menos duas fotos de produto");
+      for (const extra of extras) extraAssets.push({ id: extra.id, kind: "image", role: "product_photo", fileName: extra.fileName, width: extra.width, height: extra.height, protectedFidelity: true });
+      Object.assign(props, { photos: [asset.fileName, ...extras.map((extra) => extra.fileName)], photoAspect: aspect, headline: spec.headline });
+      break;
+    }
+    case "software_focus":
+      if (asset.kind !== "image" || asset.role !== "screenshot" || !region || !spec.label) return fail("exige captura real, a região da função e um rótulo");
+      Object.assign(props, { screenshot: asset.fileName, shotAspect: aspect, region, label: spec.label, headline: spec.headline });
+      break;
+    case "title_card": {
+      if (asset.kind !== "card") return fail("é cena de cartão");
+      const lines = spec.lines?.length ? spec.lines : scene.texts.map((text) => text.text).slice(0, 2);
+      if (!lines.length) return fail("sem texto");
+      const light = Boolean(brand.cardHex) && brand.cardHex!.toUpperCase() === brand.lightHex.toUpperCase();
+      const logo = input.logo?.width ? input.logo : undefined;
+      Object.assign(props, { lines, cta: spec.cta ?? scene.texts.find((text) => text.role === "cta")?.text, background: light ? "light" : "primary", logo: logo?.fileName });
+      return { design: { template: spec.template, props: clean(props) }, extraAssets, ...(logo ? { logo } : {}) };
+    }
+    case "speech_captions": {
+      if (asset.kind !== "video" || !material) return fail("exige gravação com fala");
+      const words = transcriptWords(input.context.transcripts[material.id] ?? { segments: [] })
+        .filter((word) => word.start >= input.sourceIn - 0.05 && word.end <= input.sourceIn + input.duration + 0.05)
+        .map((word) => ({ text: word.word.trim(), start: round3(word.start - input.sourceIn), end: round3(word.end - input.sourceIn) }));
+      if (!words.length) return fail("sem palavras da transcrição no trecho");
+      Object.assign(props, { video: asset.fileName, sourceStart: round3(input.sourceIn), words, emphasis: spec.emphasis ?? [], fit: material.role === "screen_recording" || (scene.layout && scene.layout !== "full") ? "contain" : "cover", region, videoAspect: aspect });
+      break;
+    }
+  }
+  return { design: { template: spec.template, props: clean(props) }, extraAssets };
 }

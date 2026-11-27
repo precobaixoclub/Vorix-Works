@@ -15,6 +15,8 @@ const ANIMATIONS = ["fade", "slide_up", "pop", "kinetic", "countdown", "none"];
 // Sem maxLength: o modo estrito do --output-schema não garante a restrição; o corte é feito em toDraft.
 const str = () => ({ type: "string" });
 /** Modalidade da cena no motor híbrido (o FFmpeg monta todas; só ai_motion chama um provedor pago). */
+/** Cenas de motion design renderizadas pelo Remotion (o FFmpeg monta a peça). */
+export const DESIGN_TEMPLATES = ["product_hero", "detail_reveal", "lineup", "software_focus", "title_card", "speech_captions"];
 export const MODALITIES = ["original_footage", "animated_photo", "motion_graphics", "software_demo", "ai_motion"];
 const enumOf = (values) => ({ type: "string", enum: values });
 
@@ -29,9 +31,13 @@ export const directorSchema = {
       type: "array", minItems: 3, maxItems: 10,
       items: {
         type: "object", additionalProperties: false,
-        required: ["materialId", "purpose", "modality", "motionPrompt", "durationSeconds", "sentenceIds", "sourceStartSeconds", "motion", "layout", "motionIntensity", "focus", "region", "transitionIn", "texts"],
+        required: ["materialId", "purpose", "modality", "motionPrompt", "design", "durationSeconds", "sentenceIds", "sourceStartSeconds", "motion", "layout", "motionIntensity", "focus", "region", "transitionIn", "texts"],
         properties: {
-          materialId: str(20), purpose: enumOf(PURPOSES), modality: enumOf(MODALITIES), motionPrompt: { type: ["string", "null"] }, durationSeconds: { type: "number", minimum: 0.8, maximum: 12 },
+          materialId: str(20), purpose: enumOf(PURPOSES), modality: enumOf(MODALITIES), motionPrompt: { type: ["string", "null"] },
+          design: { type: ["object", "null"], additionalProperties: false, required: ["template", "kicker", "headline", "label", "lines", "cta", "emphasis", "extraMaterialIds"], properties: {
+            template: enumOf(DESIGN_TEMPLATES), kicker: { type: ["string", "null"] }, headline: { type: ["string", "null"] }, label: { type: ["string", "null"] },
+            lines: { type: "array", maxItems: 3, items: { type: "string" } }, cta: { type: ["string", "null"] }, emphasis: { type: "array", maxItems: 6, items: { type: "string" } }, extraMaterialIds: { type: "array", maxItems: 2, items: { type: "string" } },
+          } }, durationSeconds: { type: "number", minimum: 0.8, maximum: 12 },
           sentenceIds: { type: "array", maxItems: 12, items: str(10) }, sourceStartSeconds: { type: ["number", "null"] },
           motion: enumOf(MOTIONS), layout: enumOf(LAYOUTS), motionIntensity: enumOf(["subtle", "medium", "strong"]),
           region: { type: ["object", "null"], additionalProperties: false, required: ["x", "y", "width", "height", "start"], properties: {
@@ -48,6 +54,14 @@ export const directorSchema = {
   },
 };
 
+const cut = (value, max) => (typeof value === "string" && value.trim() ? value.trim().slice(0, max) : undefined);
+function designOf(design) {
+  const out = { template: design.template, kicker: cut(design.kicker, 40), headline: cut(design.headline, 60), label: cut(design.label, 40), cta: cut(design.cta, 36),
+    lines: (design.lines ?? []).map((line) => cut(line, 40)).filter(Boolean).slice(0, 3), emphasis: (design.emphasis ?? []).map((item) => cut(item, 24)).filter(Boolean).slice(0, 6),
+    extraMaterialIds: (design.extraMaterialIds ?? []).map((item) => cut(item, 20)).filter(Boolean).slice(0, 2) };
+  return Object.fromEntries(Object.entries(out).filter(([, value]) => value !== undefined && !(Array.isArray(value) && !value.length)));
+}
+
 /** Saída do Codex → rascunho do motor (`VideoEditDraftV1`): tira os nulos e listas vazias opcionais. */
 export function toDraft(output) {
   return {
@@ -57,6 +71,7 @@ export function toDraft(output) {
     scenes: (output.scenes ?? []).slice(0, 14).map((scene) => ({
       materialId: String(scene.materialId).slice(0, 20), purpose: scene.purpose, durationSeconds: scene.durationSeconds,
       ...(MODALITIES.includes(scene.modality) ? { modality: scene.modality } : {}),
+      ...(scene.design && DESIGN_TEMPLATES.includes(scene.design.template) ? { design: designOf(scene.design) } : {}),
       ...(scene.modality === "ai_motion" && typeof scene.motionPrompt === "string" && scene.motionPrompt.trim() ? { motionPrompt: scene.motionPrompt.trim().slice(0, 400) } : {}),
       ...(scene.sentenceIds?.length ? { sentenceIds: scene.sentenceIds.slice(0, 12).map((id) => String(id).slice(0, 10)) } : {}),
       ...(typeof scene.sourceStartSeconds === "number" ? { sourceStartSeconds: Math.max(0, scene.sourceStartSeconds) } : {}),
@@ -109,6 +124,14 @@ export function directorPrompt({ selection, materials, sentences = [], targetSec
     sentences.length ? `\nFRASES DA FALA (id · material · início–fim · texto):\n${sentences.map((s) => `- ${s.id} · ${s.materialId} · ${s.start.toFixed(1)}–${s.end.toFixed(1)}s · "${s.text}"`).join("\n")}` : undefined,
     ``,
     RULES,
+    `MOTION DESIGN (campo design; null = cena montada pelo FFmpeg como antes). Use animação onde ela muda a leitura, não em toda cena; o resto do vídeo pode ser corte seco de material real. Templates:
+- product_hero (foto de produto): a foto original entra por máscara com câmera em perspectiva e reflexo; kicker curto + headline; com region na estampa e label, desenha um callout em volta dela. Bom para abertura ou apresentação.
+- detail_reveal (foto de produto + region OBRIGATÓRIA na estampa): começa no macro da estampa e a câmera abre até a peça inteira; label aparece no fim. Bom para "pista → resposta" e prova de acabamento.
+- lineup (foto de produto + extraMaterialIds com 1–2 outras fotos de produto): variantes em cartões com profundidade; headline.
+- software_focus (captura de tela + region OBRIGATÓRIA no componente + label): a tela entra em perspectiva, o cursor vai até a função, clica, a câmera aproxima e um holofote destaca a função; label curto (o que a função faz).
+- title_card (CARD): abertura/encerramento com tipografia cinética (lines: 1–3 linhas curtas), forma gráfica, logo oficial (no encerramento com logo "end") e cta.
+- speech_captions (vídeo COM FALA + sentenceIds): legendas dinâmicas palavra a palavra e selo contextual nas palavras de emphasis (2–4 palavras-chave ditas no trecho). Use layout framed para gravação de tela (mostra o quadro inteiro).
+Em cena com design, texts = [] (os textos ficam no design). Não use o mesmo template mais de 2 vezes; varie com material real.`,
     aiMotion?.enabled ? `MOVIMENTO POR IA LIBERADO nesta peça: no máximo ${aiMotion.maxScenes ?? 2} cena(s) ai_motion, só sobre product_photo, ${aiMotion.seconds ?? 4}–8 s cada, ~US$ ${Number(aiMotion.usdPerScene ?? 0).toFixed(2)} por cena. Se o clipe não preservar a estampa, o sistema volta para a foto original.` : `MOVIMENTO POR IA NÃO LIBERADO: nunca use modality ai_motion.`,
     `Quando a pauta pedir contagem, use um único texto "3 2 1" com animation countdown num plano de pelo menos 2 s. O motor separa os dígitos no tempo, mantendo o mesmo plano.`,
     materials.some((m) => m.role === "product_photo") ? `PRODUTO FÍSICO: escolha a construção pela promessa da pauta. Em quiz, abra com um macro isolado do traço exato, sem entregar a resposta no fundo. Mostre opções distinguíveis em enquadramentos diferentes. Se houver contagem, use uma única tomada com region.start em que a câmera abre continuamente sobre a estampa, ou dois cortes com diferença clara de escala. Evite três fotos fixas para contar. Revele o MESMO arquivo e a MESMA cor da pista. Deixe a peça em cena para a chamada comercial, idealmente no mesmo plano da revelação. Em prova de acabamento, mostre detalhe seguido de peça inteira, sem inventar benefício. Nunca use cartela só para contagem.` : undefined,

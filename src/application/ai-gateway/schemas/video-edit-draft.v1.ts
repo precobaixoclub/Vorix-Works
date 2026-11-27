@@ -14,6 +14,7 @@ const SCENE_PURPOSES = ["hook", "product", "detail", "benefit", "proof", "variet
 const MOTIONS = ["static", "push_in", "pull_out", "pan_left", "pan_right", "pan_up", "pan_down", "punch_in", "drift"] as const;
 const LAYOUTS = ["full", "framed", "split", "parallax", "inset", "device_phone", "device_laptop", "stage"] as const;
 /** Modalidade audiovisual da cena (motor híbrido). `ai_motion` só com foto oficial e geração autorizada. */
+export const DESIGN_TEMPLATE_NAMES = ["product_hero", "detail_reveal", "lineup", "software_focus", "title_card", "speech_captions"] as const;
 export const SCENE_MODALITIES = ["original_footage", "animated_photo", "motion_graphics", "software_demo", "ai_motion"] as const;
 const TRANSITIONS = ["cut", "cross_dissolve", "dip_to_black", "push_left", "push_up", "zoom_in", "blur", "circle_open", "wipe", "flash", "smooth_left"] as const;
 const TEXT_ROLES = ["hook", "headline", "cta", "price", "subtitle"] as const;
@@ -41,6 +42,17 @@ const sceneSchema = z
     layout: z.enum(LAYOUTS).optional(),
     modality: z.enum(SCENE_MODALITIES).optional(),
     motionPrompt: z.string().min(1).max(400).optional(),
+    /** Cena de motion design (Remotion): template + textos curtos; o construtor monta as props. */
+    design: z.object({
+      template: z.enum(DESIGN_TEMPLATE_NAMES),
+      kicker: z.string().min(1).max(40).optional(),
+      headline: z.string().min(1).max(60).optional(),
+      label: z.string().min(1).max(40).optional(),
+      lines: z.array(z.string().min(1).max(40)).max(3).optional(),
+      cta: z.string().min(1).max(36).optional(),
+      emphasis: z.array(z.string().min(1).max(24)).max(6).optional(),
+      extraMaterialIds: z.array(z.string().min(1).max(20)).max(2).optional(),
+    }).strict().optional(),
     motionIntensity: z.enum(["subtle", "medium", "strong"]),
     focus: z.enum(["center", "top", "bottom", "left", "right"]),
     region: z.object({ x: z.number(), y: z.number(), width: z.number(), height: z.number(),
@@ -165,7 +177,8 @@ export function applyVideoEditDraftSemanticValidation(draft: VideoEditDraft, inp
         }
       }
     }
-    for (const text of scene.texts) {
+    const designTexts = scene.design ? [scene.design.kicker, scene.design.headline, scene.design.label, scene.design.cta, ...(scene.design.lines ?? [])].filter((item): item is string => Boolean(item)).map((item) => ({ text: item })) : [];
+    for (const text of [...scene.texts, ...designTexts]) {
       // Preço, porcentagem ou número só se vierem do pedido/dados: a IA não inventa oferta.
       for (const number of text.text.match(/\d+[.,]?\d*\s*%?/g) ?? []) {
         if (!sourceText.includes(number.replace(/\s/g, "").replace(/%$/, ""))) errors.push(`${path}: o número "${number.trim()}" não está no pedido nem nos dados do produto`);
@@ -173,6 +186,6 @@ export function applyVideoEditDraftSemanticValidation(draft: VideoEditDraft, inp
       if (/r\$/i.test(text.text) && !/r\$/i.test(sourceText)) errors.push(`${path}: preço não informado no pedido`);
     }
   });
-  if (!draft.scenes.some((scene) => scene.purpose === "cta" || scene.texts.some((text) => text.role === "cta"))) warnings.push("sem chamada para ação");
+  if (!draft.scenes.some((scene) => scene.purpose === "cta" || Boolean(scene.design?.cta) || scene.texts.some((text) => text.role === "cta"))) warnings.push("sem chamada para ação");
   return errors.length > 0 ? { valid: false, errors } : { valid: true, data: draft, warnings };
 }

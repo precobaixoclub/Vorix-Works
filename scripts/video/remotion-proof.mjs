@@ -202,8 +202,25 @@ async function run(spec) {
   return report;
 }
 
+// Q: a pauta REAL do Bolsão da CMKV (CMKV-QUIZ-RECORTE) no motor ATUAL — o "antes" da reformulação criativa
+// (mesmas fotos oficiais 000037 e 000043 que a nova direção usa).
+async function caseQ() {
+  const CAT = join(ROOT, "reformulacao", "material", "catalogo");
+  const pauta = JSON.parse(await readFile(join(ROOT, "reformulacao", "pauta-CMKV-QUIZ-RECORTE.json"), "utf8"));
+  const materials = [await material("M1", join(CAT, "000037-preto.jpg"), "image", "product_photo", "camiseta preta — modelo 000037 (estampa ♡fé em traço)"), await material("M2", join(CAT, "000043-preto.jpg"), "image", "product_photo", "camiseta preta — modelo 000043 (estampa limonada)"), await material("LOGO", join(B0, "cmkv-logo.png"), "image", "logo"), await material("MUS", join(B0, "music-original.wav"), "audio", "music")];
+  const draft = { schemaVersion: 1, strategy: "quiz", rationale: "Recorte, A ou B, revelação, assinatura.", story: "O recorte intriga, as duas opções desafiam, a revelação responde.", sfx: "auto", captions: false, music: "present", logo: "end", warnings: [], scenes: [
+    scene("M1", "hook", { durationSeconds: 3, emotion: "curiosity", texts: [{ role: "hook", text: "Você reconhece esse traço?", position: "top", animation: "none" }] }),
+    scene("M2", "variety", { durationSeconds: 5, emotion: "curiosity", modality: "motion_graphics", design: { template: "lineup", headline: "A ou B?", extraMaterialIds: ["M1"] } }),
+    scene("M1", "product", { durationSeconds: 5, emotion: "desire", modality: "motion_graphics", design: { template: "product_hero", headline: "Era a A." } }),
+    scene("CARD", "cta", { durationSeconds: 4, emotion: "trust", modality: "motion_graphics", design: { template: "title_card", lines: ["CMKV 000037"], cta: "Conta: A ou B?" } }),
+  ] };
+  const brand = { name: "CMKV Wears", primaryHex: "#0A0A0A", accentHex: "#C9A227", lightHex: "#FFFFFF", darkHex: "#111111", displayFont: "DM Serif Display", cardHex: "#FFFFFF", tone: "premium, editorial, streetwear sofisticado" };
+  const idea = { title: pauta.title, keyMessage: pauta.key_message, cta: pauta.cta, concept: pauta.concept, narrativeStructure: pauta.narrative_structure, visualDirection: pauta.visual_direction };
+  return { key: "Q", name: "Q-cmkv-quiz", draft, materials, brand, idea, style: { editing: "dinamico", transitions: "moderadas", captions: false, music: true }, logo: "LOGO", music: "MUS" };
+}
+
 try {
-  for (const [key, make] of [["A", caseA], ["B", caseB], ["C", caseC]]) {
+  for (const [key, make] of [["A", caseA], ["B", caseB], ["C", caseC], ["Q", caseQ]]) {
     if (!only.has(key)) continue;
     try { await run(await make()); } catch (error) {
       console.error(`[prova] ${key} FALHOU: ${error.message}`);

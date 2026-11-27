@@ -41,15 +41,17 @@ for (const name of list.split(",")) {
     const images = JSON.parse(await readFile(join(dir, `${name}-imagens.json`), "utf8"));
     const staged = [];
     for (const image of images) {
-      const target = join(jobDir, basename(image));
-      await copyFile(join(dir, basename(image)), target);
+      // Caminhos emitidos no Windows chegam com "\": o nome do arquivo é o mesmo nos dois sistemas.
+      const name = basename(image.replaceAll("\\", "/"));
+      const target = join(jobDir, name);
+      await copyFile(join(dir, name), target);
       staged.push(target);
     }
     const schemaFile = join(jobDir, "schema.json");
     await copyFile(join(dir, "schema.json"), schemaFile);
     const started = Date.now();
     const events = await run("runuser", [...agent, "--ask-for-approval", "never", "exec", "--model", "gpt-6.2-sol", "--ephemeral", "--sandbox", "read-only", "--skip-git-repo-check",
-      "--cd", jobDir, "--json", "--output-schema", schemaFile, ...staged.flatMap((path) => ["--image", path]), "-"], `${prompt}\nNão gere imagens e não execute comandos.`, 400000);
+      "--cd", jobDir, "--json", "--output-schema", schemaFile, ...staged.flatMap((path) => ["--image", path]), "-"], `${prompt}\nNão gere imagens e não execute comandos.`, Number(process.env.CODEX_TIMEOUT_MS ?? 400000));
     const last = events.split("\n").flatMap((line) => { try { const e = JSON.parse(line); return e.type === "item.completed" && e.item?.type === "agent_message" ? [e.item.text] : []; } catch { return []; } }).at(-1);
     if (!last) throw new Error("Codex sem resposta");
     const output = JSON.parse(last);

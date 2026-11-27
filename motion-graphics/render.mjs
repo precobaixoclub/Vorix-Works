@@ -110,7 +110,9 @@ export async function renderScene({ jobDir, outputPath, props, concurrency = Num
     }
     await renderMedia({
       serveUrl, composition, inputProps, codec: "h264", crf: 17, pixelFormat: "yuv420p", outputLocation: outputPath, concurrency,
-      timeoutInMilliseconds: timeoutMs, chromiumOptions: { gl: "swangle" }, ...(browserExecutable ? { browserExecutable } : {}), logLevel: "error", ...(cancel ? { cancelSignal: cancel } : {}),
+      timeoutInMilliseconds: timeoutMs, chromiumOptions: { gl: "swangle" }, ...(browserExecutable ? { browserExecutable } : {}),
+      // Memória: o worker tem 2 GiB. Cache de quadros de vídeo limitado (o padrão cresce até estourar).
+      offthreadVideoCacheSizeInBytes: Number(process.env.REMOTION_VIDEO_CACHE_BYTES ?? 256 * 1024 * 1024), offthreadVideoThreads: 1, logLevel: "error", ...(cancel ? { cancelSignal: cancel } : {}),
       onProgress: ({ progress }) => onProgress?.(progress),
     });
     return { ms: Date.now() - started, frames: composition.durationInFrames };

@@ -106,7 +106,7 @@ export async function processNextVideoVersion(deps: VideoWorkerDeps): Promise<{ 
       await deps.downloadObject(material.objectKey, path);
       const facts = await deps.probe(path);
       sources[material.id] = path;
-      materials.push({ id: material.id, fileName, kind: material.kind, role: material.role, label: material.label, width: facts.width, height: facts.height, durationSeconds: facts.durationSeconds, hasSpeech: material.kind === "video" ? facts.hasAudio : undefined });
+      materials.push({ id: material.id, fileName, kind: material.kind, role: material.role, label: material.label, width: facts.width, height: facts.height, durationSeconds: facts.durationSeconds, hasSpeech: material.kind === "video" && material.role !== "generated_motion" ? facts.hasAudio : undefined });
     }
 
     // Transcrição (cache no projeto: alterações não transcrevem de novo).

@@ -10,7 +10,7 @@ import type { Transcript } from "../video-editing/transcript-tools.js";
 
 export type VideoMaterialKind = "video" | "image";
 /** `generated` = imagem conceitual criada por IA (nunca produto nem tela). */
-export type VideoMaterialRole = "footage" | "screen_recording" | "product_photo" | "screenshot" | "reference" | "generated";
+export type VideoMaterialRole = "footage" | "screen_recording" | "product_photo" | "screenshot" | "reference" | "generated" | "generated_motion";
 
 export type VideoProjectMaterial = {
   /** "M1", "M2"… — o id que a IA enxerga. */

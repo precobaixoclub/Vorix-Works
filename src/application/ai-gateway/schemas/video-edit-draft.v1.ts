@@ -13,6 +13,8 @@ export const VIDEO_EDIT_DRAFT_SCHEMA_VERSION = 1;
 const SCENE_PURPOSES = ["hook", "product", "detail", "benefit", "proof", "variety", "demo", "context", "cta"] as const;
 const MOTIONS = ["static", "push_in", "pull_out", "pan_left", "pan_right", "pan_up", "pan_down", "punch_in", "drift"] as const;
 const LAYOUTS = ["full", "framed", "split", "parallax", "inset", "device_phone", "device_laptop", "stage"] as const;
+/** Modalidade audiovisual da cena (motor híbrido). `ai_motion` só com foto oficial e geração autorizada. */
+export const SCENE_MODALITIES = ["original_footage", "animated_photo", "motion_graphics", "software_demo", "ai_motion"] as const;
 const TRANSITIONS = ["cut", "cross_dissolve", "dip_to_black", "push_left", "push_up", "zoom_in", "blur", "circle_open", "wipe", "flash", "smooth_left"] as const;
 const TEXT_ROLES = ["hook", "headline", "cta", "price", "subtitle"] as const;
 const POSITIONS = ["top", "center", "bottom", "lower_third"] as const;
@@ -37,6 +39,8 @@ const sceneSchema = z
     sourceStartSeconds: z.number().min(0).max(3600).optional(),
     motion: z.enum(MOTIONS),
     layout: z.enum(LAYOUTS).optional(),
+    modality: z.enum(SCENE_MODALITIES).optional(),
+    motionPrompt: z.string().min(1).max(400).optional(),
     motionIntensity: z.enum(["subtle", "medium", "strong"]),
     focus: z.enum(["center", "top", "bottom", "left", "right"]),
     region: z.object({ x: z.number(), y: z.number(), width: z.number(), height: z.number(),

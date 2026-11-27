@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import { chown, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { isAbsolute, join, relative, sep } from "node:path";
 import { addToReviewQueue, reviewSkipIds } from "./creative-pipeline.mjs";
-import { conceptImagePrompt, conceptImageSchema, directorPrompt, directorSchema, redoPrompt, redoSchema, reviewOutcome, reviewPrompt, reviewSchema, scopedReason, targetSecondsFor, toDraft } from "./video-director.mjs";
+import { categoryReviewOutcome, categoryReviewPrompt, conceptImagePrompt, conceptImageSchema, directorPrompt, directorSchema, fidelityReviewOutcome, fidelityReviewPrompt, fidelityReviewSchema, redoPrompt, redoSchema, reviewCategory, reviewSchemaFor, scopedReason, targetSecondsFor, toDraft } from "./video-director.mjs";
 
 /**
  * Piloto automático — RAMO DE VÍDEO (Reels) a partir das pautas "video" do Bolsão. Não é um segundo piloto:
@@ -151,8 +151,11 @@ async function editorialReview(jobDir, selection, status, operations) {
   const sheet = await sheetFile(jobDir, status, `prancha-${status.number}.jpg`);
   if (!sheet || !status.plan) return { verdict: "inconclusive", findings: ["prancha de quadros indisponível"] };
   try {
-    const { output, ms } = await codex(jobDir, { prompt: reviewPrompt({ selection, plan: status.plan, gate: status.gate }), schema: reviewSchema, images: [sheet], timeout: 180000 });
-    const outcome = reviewOutcome(output);
+    // Critérios comerciais pelo tipo de peça (roupa, software, fala); movimento gerado exige fidelidade.
+    const category = reviewCategory({ businessKind: selection.businessKind, materials: selection.materials ?? [], sentences: status.sentences ?? [] });
+    const aiMotion = Boolean(status.draft?.scenes?.some((scene) => scene.modality === "ai_motion"));
+    const { output, ms } = await codex(jobDir, { prompt: categoryReviewPrompt({ selection, plan: status.plan, gate: status.gate, category, aiMotion }), schema: reviewSchemaFor(category, { aiMotion }), images: [sheet], timeout: 180000 });
+    const outcome = categoryReviewOutcome(output, { category, aiMotion });
     operations.push({ step: `revisão editorial v${status.number}`, engine: "codex", durationMs: ms, outcome: outcome.verdict });
     return outcome;
   } catch (error) {
@@ -183,6 +186,35 @@ async function reviseWithScope(workspaceId, fromVersionId, request, operations, 
     correction = `a versão anterior foi recusada: ${status.error}. Mantenha IDÊNTICO tudo o que o pedido não citou.`;
   }
   return { scoped };
+}
+
+async function applyAiMotion(jobDir, workspaceId, selection, materials, queueMaterials, draft, operations) {
+  const extra = [];
+  const scenes = draft.scenes.filter((scene) => scene.modality === "ai_motion");
+  if (!scenes.length || !selection.motion?.enabled) return { draft, extra };
+  for (const scene of scenes.slice(0, selection.motion.maxScenes ?? 1)) {
+    const photo = materials.find((material) => material.id === scene.materialId && material.role === "product_photo");
+    if (!photo || !scene.motionPrompt) continue;
+    const generated = await callContainer({ workspaceId, action: "video_motion_generate", objectKey: photo.objectKey, prompt: scene.motionPrompt, seconds: scene.durationSeconds, ideaId: selection.idea.id }).catch((error) => ({ ok: false, reason: error.message }));
+    operations.push({ step: "movimento por IA", provider: selection.motion.provider, model: selection.motion.model, estimatedUsd: generated.estimatedUsd, outcome: generated.ok ? "gerado" : generated.status ?? "falhou", detail: String(generated.reason ?? "").slice(0, 200) });
+    if (!generated.ok) continue;
+    const original = join(jobDir, `fidelidade-original-${generated.id}.jpg`);
+    const sheet = join(jobDir, `fidelidade-prancha-${generated.id}.jpg`);
+    await writeFile(original, Buffer.from(generated.original, "base64"), { mode: 0o644 });
+    await writeFile(sheet, Buffer.from(generated.fidelitySheet, "base64"), { mode: 0o644 });
+    let review = { approved: false, findings: ["revisão de fidelidade indisponível"] };
+    try {
+      const { output } = await codex(jobDir, { prompt: fidelityReviewPrompt({ label: photo.label }), schema: fidelityReviewSchema, images: [original, sheet], timeout: 180000 });
+      review = fidelityReviewOutcome(output);
+    } catch (error) { review = { approved: false, findings: [error.message.slice(0, 200)] }; }
+    const decided = await callContainer({ workspaceId, action: "video_motion_decide", id: generated.id, approved: review.approved, findings: review.findings });
+    operations.push({ step: "fidelidade do movimento", outcome: decided.status, detail: review.findings.join("; ").slice(0, 300) });
+    if (decided.status !== "approved" || !decided.clipObjectKey) continue;
+    const id = `M${queueMaterials.length + extra.length + 1}`;
+    extra.push({ objectKey: decided.clipObjectKey, role: "generated_motion", label: `movimento gerado da foto oficial (${photo.label ?? photo.id})` });
+    scene.materialId = id;
+  }
+  return { draft, extra };
 }
 
 function slotFor() {
@@ -225,13 +257,17 @@ async function runWorkspace(workspaceId) {
       const transcribed = status?.stage === "awaiting_draft" ? status : undefined;
       let correction;
       for (let round = 0; round < 2; round += 1) {
-        const { output, ms } = await codex(jobDir, { prompt: directorPrompt({ selection, materials, sentences: transcribed?.sentences ?? [], targetSeconds: settings.targetDurationSeconds, correction }), schema: directorSchema, images });
+        const { output, ms } = await codex(jobDir, { prompt: directorPrompt({ selection, materials, sentences: transcribed?.sentences ?? [], targetSeconds: settings.targetDurationSeconds, correction, aiMotion: transcribed ? undefined : selection.motion }), schema: directorSchema, images });
         operations.push({ step: round ? "plano (correção)" : "plano", engine: "codex", durationMs: ms });
-        const draft = toDraft(output);
+        let draft = toDraft(output);
+        // Movimento por IA (só se liberado para a marca): cada clipe passa pela fidelidade automática e pela
+        // revisão visual; reprovado é descartado e a cena volta para a foto original.
+        const motion = transcribed ? { draft, extra: [] } : await applyAiMotion(jobDir, workspaceId, selection, materials, queueMaterials, draft, operations);
+        draft = motion.draft;
         try {
           const queued = transcribed
             ? await callContainer({ workspaceId, action: "video_revise", versionId: transcribed.versionId, reason: selection.request, draft })
-            : await callContainer({ workspaceId, action: "video_queue", ideaId: idea.id, updatedAt: idea.updatedAt, materials: queueMaterials, settings, draft });
+            : await callContainer({ workspaceId, action: "video_queue", ideaId: idea.id, updatedAt: idea.updatedAt, materials: [...queueMaterials, ...motion.extra], settings, draft });
           status = await waitVersion(workspaceId, queued.versionId);
         } catch (error) {
           status = { status: "failed", error: error.message };

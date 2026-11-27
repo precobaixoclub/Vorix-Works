@@ -118,7 +118,7 @@ export class VideoProjectsService {
       if (!kind) throw new VideoProjectError("INVALID", `Material ${index + 1}: use MP4, MOV, JPEG, PNG ou WEBP.`);
       const extension = key.slice(key.lastIndexOf(".") + 1).toLowerCase();
       const role: VideoMaterialRole = material.role ?? (kind === "video" ? "footage" : "product_photo");
-      if (kind === "video" && !["footage", "screen_recording"].includes(role)) throw new VideoProjectError("INVALID", `Material ${index + 1}: vídeo precisa ser gravação ou gravação de tela.`);
+      if (kind === "video" && !["footage", "screen_recording", "generated_motion"].includes(role)) throw new VideoProjectError("INVALID", `Material ${index + 1}: vídeo precisa ser gravação ou gravação de tela.`);
       if (kind === "image" && !["product_photo", "screenshot", "reference", "generated"].includes(role)) throw new VideoProjectError("INVALID", `Material ${index + 1}: imagem precisa ser produto, captura de tela, referência ou imagem gerada.`);
       return { id: `M${index + 1}`, objectKey: key, kind, role, ...(material.label ? { label: material.label.slice(0, 80) } : {}), contentType: CONTENT_TYPES[extension]! };
     });

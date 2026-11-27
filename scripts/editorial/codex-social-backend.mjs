@@ -502,6 +502,20 @@ async function videoModules() {
   return { service: route.buildVideoProjectsService({ pool: db, objectStorage: c.objectStorage, videoEngine: config.videoEngine }), videoSheetKey: processing.videoSheetKey, videoSourcePreviewKey: processing.videoSourcePreviewKey, buildSentences: transcript.buildSentences, engine: config.videoEngine, rankIdeasForSlot: calendar.rankIdeasForSlot, memory };
 }
 
+async function videoMotionModules() {
+  const { buildMotionGenerationService } = await import("./dist/infrastructure/video-motion/build-motion-service.js");
+  return buildMotionGenerationService({ config: loadApiConfig().videoMotion, pool: db, storage: c.objectStorage });
+}
+
+async function videoMotionStatus() {
+  const { service, defaults } = await videoMotionModules();
+  const config = loadApiConfig().videoMotion;
+  const allowed = config.enabled && (config.workspaces.includes("*") || config.workspaces.includes(workspaceId));
+  const estimate = service.estimate(defaults.provider, defaults.model, 4);
+  const budget = await service.budget(scope);
+  return { enabled: allowed && budget.remainingUsd >= estimate.usd, provider: defaults.provider, model: defaults.model, seconds: estimate.seconds, usdPerScene: estimate.usd, maxScenes: Math.max(0, Math.min(2, Math.floor(budget.remainingUsd / Math.max(0.01, estimate.usd)))), ...budget };
+}
+
 /** Peças da marca perto do horário (14 dias), para a variedade do calendário. */
 async function videoRecentPieces(allIdeas) {
   const byId = new Map(allIdeas.map((idea) => [idea.id, idea]));
@@ -673,6 +687,8 @@ async function videoAction(workspace, brandConfig) {
       ...(resume ? { resume: { projectId: resume.project_id, versionId: resume.version_id, status: resume.status, stage: resume.stage } } : { materials: await videoMaterials(idea, creative, modules) }),
       brandStyle: { name: workspace.name, tone: identity?.toneOfVoice ?? identity?.tone, colors: Array.isArray(identity?.colors) ? identity.colors.slice(0, 6) : undefined },
       businessKind: creative.businessKind, musicAvailable: engine.musicLibraryAvailable,
+      // Movimento por IA: só informado ao diretor quando liberado para a marca, com custo e saldo do mês.
+      motion: await videoMotionStatus().catch(() => ({ enabled: false })),
       recentStrategies: strategies.map((row) => row.strategy).filter(Boolean),
       ...(memory ? { lessons: modules.memory.memoryGuidance(memory, "video") } : {}),
       calendar: ranking.slice(0, 3).map((entry) => ({ idea: entry.idea.externalId, score: Number(entry.score.toFixed(2)), reasons: entry.reasons })),
@@ -684,6 +700,28 @@ async function videoAction(workspace, brandConfig) {
     const idea = await c.editorialIdeaRepository.get(workspaceId, String(request.ideaId));
     requireCondition(idea?.format === "video", "Pauta de vídeo não encontrada");
     return { id: idea.id, status: idea.status, updatedAt: idea.updatedAt };
+  }
+
+  if (mode === "video_motion_generate") {
+    // Movimento por IA a partir da FOTO OFICIAL: custo estimado, limite do mês, registro, fidelidade automática.
+    // Bloqueado (sem chamada paga) se desligado, sem chave ou sem saldo — o piloto usa a foto original.
+    const { service, defaults } = await videoMotionModules();
+    const key = String(request.objectKey ?? "");
+    requireCondition(classifyObjectKeyOwner(key)?.workspaceId === workspaceId, "Foto fora do workspace");
+    const bytes = await keyBytes(key);
+    const jpeg = await sharp(bytes).rotate().resize({ width: 1440, height: 1920, fit: "inside", withoutEnlargement: true }).jpeg({ quality: 92 }).toBuffer();
+    const estimate = service.estimate(defaults.provider, defaults.model, Number(request.seconds) || 4);
+    const outcome = await service.generate({ scope, provider: defaults.provider, model: defaults.model, source: { objectKey: key, bytes: jpeg, mimeType: "image/jpeg" }, prompt: String(request.prompt ?? "").slice(0, 1500),
+      seconds: estimate.seconds, aspect: "9:16", ...(request.region ? { region: request.region } : {}), origin: { ideaId: request.ideaId ?? null, kind: "editorial_pilot" } });
+    if (!outcome.ok) return { ok: false, id: outcome.generation.id, status: outcome.generation.status, reason: outcome.reason, estimatedUsd: outcome.generation.estimatedUsd };
+    return { ok: true, id: outcome.generation.id, clipObjectKey: outcome.generation.clipObjectKey, seconds: outcome.generation.seconds, estimatedUsd: outcome.generation.estimatedUsd,
+      fidelity: outcome.generation.fidelity, fidelitySheet: outcome.fidelitySheet.toString("base64"), original: (await sharp(bytes).rotate().resize({ width: 640, withoutEnlargement: true }).jpeg({ quality: 82 }).toBuffer()).toString("base64") };
+  }
+
+  if (mode === "video_motion_decide") {
+    const { service } = await videoMotionModules();
+    const decided = await service.decide(scope, String(request.id), { approved: request.approved === true, findings: Array.isArray(request.findings) ? request.findings.map(String).slice(0, 10) : [], reviewer: "codex" });
+    return { id: decided.id, status: decided.status, clipObjectKey: decided.clipObjectKey ?? null };
   }
 
   if (mode === "video_upload") {

@@ -12,7 +12,8 @@ import { OVERLAP_TRANSITIONS, VIDEO_FORMATS, validateVideoEditPlan } from "../..
 import type { VideoEditDraft } from "../ai-gateway/schemas/video-edit-draft.v1.js";
 import { captionsFromTranscript, chooseFraming, snapRangeToWords, transcriptWords, type BrandGlossary, type Transcript, type TranscriptSentence } from "./transcript-tools.js";
 
-export type PlanningMaterialRole = "footage" | "screen_recording" | "product_photo" | "screenshot" | "logo" | "music" | "narration" | "reference" | "generated";
+/** `generated_motion` = clipe de movimento por IA a partir da foto oficial, APROVADO na fidelidade. */
+export type PlanningMaterialRole = "footage" | "screen_recording" | "product_photo" | "screenshot" | "logo" | "music" | "narration" | "reference" | "generated" | "generated_motion";
 
 export type PlanningMaterial = {
   /** Id exposto à IA ("M1", "M2"…); vira o id do asset no plano. */
@@ -131,8 +132,15 @@ export function buildPlanFromDraft(draft: VideoEditDraft, context: BuildPlanCont
   type Built = { clip: Omit<EditClip, "recordStartSeconds">; speech: boolean; flexible: boolean };
   const built: Built[] = [];
 
-  draft.scenes.forEach((scene, index) => {
+  draft.scenes.forEach((original, index) => {
     const path = `cena ${index + 1}`;
+    // Movimento por IA sem clipe aprovado (desligado, sem orçamento ou reprovado na fidelidade): a cena usa a
+    // foto original como fotografia animada — nunca some, nunca usa um clipe não aprovado.
+    let scene = original;
+    if (scene.modality === "ai_motion" && materials.get(scene.materialId)?.role !== "generated_motion") {
+      warnings.push(`${path}: movimento por IA indisponível; usada a foto original`);
+      scene = { ...scene, modality: "animated_photo" };
+    }
     let asset: EditMediaAsset;
     let sourceIn = 0;
     let duration = scene.durationSeconds;
@@ -150,7 +158,7 @@ export function buildPlanFromDraft(draft: VideoEditDraft, context: BuildPlanCont
         issues.push(`${path}: material "${scene.materialId}" inválido`);
         return;
       }
-      asset = { id: material.id, kind: material.kind, role: material.role === "product_photo" ? "product_photo" : material.role === "screenshot" || material.role === "screen_recording" ? "screenshot" : material.role === "logo" ? "logo" : material.role === "generated" && material.kind === "image" ? "generated" : "footage", fileName: material.fileName, width: material.width, height: material.height, sourceDurationSeconds: material.durationSeconds, protectedFidelity: material.role === "product_photo" || material.role === "screenshot" || material.role === "screen_recording" };
+      asset = { id: material.id, kind: material.kind, role: material.role === "product_photo" ? "product_photo" : material.role === "screenshot" || material.role === "screen_recording" ? "screenshot" : material.role === "logo" ? "logo" : material.role === "generated" && material.kind === "image" ? "generated" : "footage", fileName: material.fileName, width: material.width, height: material.height, sourceDurationSeconds: material.durationSeconds, protectedFidelity: material.role === "product_photo" || material.role === "screenshot" || material.role === "screen_recording" || material.role === "generated_motion" };
       if (material.kind === "video") {
         if (scene.sentenceIds?.length) {
           const picked = scene.sentenceIds.map((id) => sentences.get(id)).filter((sentence): sentence is TranscriptSentence => Boolean(sentence));

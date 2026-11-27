@@ -6,14 +6,15 @@
 //   nenhuma pauta é criada no Bolsão, nenhum post é criado e nenhuma mensagem é enviada.
 // - Pautas sintéticas (B, C) existem só na memória deste ensaio.
 //
-// Uso (root, no servidor): node pilot-dry-run.mjs <container> <saida> [A,B,C,D,E]
+// Uso (root, no servidor): node pilot-dry-run.mjs <container> <saida> [A,B,C,D,E] [pauta CMKV] [nota de direção CMKV]
 import { spawn } from "node:child_process";
 import { chown, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { directorPrompt, directorSchema, redoPrompt, redoSchema, reviewOutcome, reviewPrompt, reviewSchema, scopedReason, targetSecondsFor, toDraft } from "./video-director.mjs";
 
-const [container, outDir, only = "A,B,C,D,E"] = process.argv.slice(2);
+const [container, outDir, only = "A,B,C,D,E", cmkvIdea, cmkvDirection] = process.argv.slice(2);
 if (!container || !outDir) throw new Error("Uso: node pilot-dry-run.mjs <container> <saida> [A,B,C,D,E]");
+await mkdir(outDir, { recursive: true });
 const tests = new Set(only.split(","));
 const here = new URL("./", import.meta.url);
 const backendSource = await readFile(new URL("codex-social-backend.mjs", here), "utf8");
@@ -138,13 +139,13 @@ async function review(jobDir, name, selection, status) {
 }
 
 /** Mesma lógica do orquestrador: plano → render → revisão (até 1 ajuste). */
-async function produce(name, { selection, materials, workspaceId, settings, sentences = [], transcribedFrom }) {
+async function produce(name, { selection, materials, workspaceId, settings, sentences = [], transcribedFrom, initialCorrection }) {
   const jobDir = await jobDirectory();
   const entry = { brand: selection.brand, idea: selection.idea.title, materials: materials.map(({ thumb, ...rest }) => rest), steps: [] };
   report.tests[name] = entry;
   const projectId = `ensaio-${name.toLowerCase()}-${Date.now().toString(36)}`;
   try {
-    const plan = await codex(jobDir, { prompt: directorPrompt({ selection, materials, sentences, targetSeconds: settings.targetDurationSeconds }), schema: directorSchema, images: await images(jobDir, materials) });
+    const plan = await codex(jobDir, { prompt: directorPrompt({ selection, materials, sentences, targetSeconds: settings.targetDurationSeconds, correction: initialCorrection }), schema: directorSchema, images: await images(jobDir, materials) });
     entry.steps.push({ step: "Codex: plano", ms: plan.ms });
     entry.concept = plan.output.concept;
     const draft = toDraft(plan.output);
@@ -166,7 +167,7 @@ async function produce(name, { selection, materials, workspaceId, settings, sent
     }
     if (status.status !== "ready_for_review") return { status, entry, projectId: common.projectId };
     let verdict = await review(jobDir, name, selection, status);
-    entry.steps.push({ step: "Codex: revisão v1", ms: verdict.ms, verdict: verdict.verdict, findings: verdict.findings, revisionRequest: verdict.revisionRequest });
+    entry.steps.push({ step: "Codex: revisão v1", ms: verdict.ms, verdict: verdict.verdict, findings: verdict.findings, revisionRequest: verdict.revisionRequest, raw: verdict.raw });
     if (verdict.verdict === "revise" && verdict.revisionRequest) {
       // Mesma regra do orquestrador: escopo decidido e registrado; recusa por escopo volta uma vez ao Codex.
       const scoped = scopedReason({ reason: verdict.revisionRequest, scope: verdict.scope, from: "revisao" });
@@ -179,7 +180,7 @@ async function produce(name, { selection, materials, workspaceId, settings, sent
         entry.steps.push({ step: round ? "Codex: ajuste (correção do escopo)" : "Codex: ajuste", ms: adjust.ms });
         rendered = await sampled(() => inContainer({ ...common, versionId: `${name.toLowerCase()}-v2${round ? "b" : ""}`, parentVersionId: base.versionId, request: scoped.reason, draft: toDraft(adjust.output) }));
         next = rendered.result;
-        entry.steps.push({ step: `render v2${round ? "b" : ""} (ajuste)`, ms: rendered.ms, renderMs: next.renderMs, peakMemMiB: rendered.peakMemMiB, status: next.status, gate: next.gate?.status, error: next.error, scope: next.warnings?.find((w) => w.startsWith("refação")) });
+        entry.steps.push({ step: `render v2${round ? "b" : ""} (ajuste)`, ms: rendered.ms, renderMs: next.renderMs, peakMemMiB: rendered.peakMemMiB, peakCpuPercent: rendered.peakCpuPercent, status: next.status, gate: next.gate?.status, error: next.error, scope: next.warnings?.find((w) => w.startsWith("refação")) });
         await saveOutputs(name, next);
         if (next.status === "ready_for_review" || !/não pedia/.test(next.error ?? "")) break;
         correction = `a versão anterior foi recusada: ${next.error}. Mantenha IDÊNTICO tudo o que o pedido não citou.`;
@@ -187,7 +188,7 @@ async function produce(name, { selection, materials, workspaceId, settings, sent
       if (next.status === "ready_for_review") {
         status = next;
         verdict = await review(jobDir, name, selection, status);
-        entry.steps.push({ step: "Codex: revisão v2", ms: verdict.ms, verdict: verdict.verdict, findings: verdict.findings });
+        entry.steps.push({ step: "Codex: revisão v2", ms: verdict.ms, verdict: verdict.verdict, findings: verdict.findings, revisionRequest: verdict.revisionRequest, raw: verdict.raw });
       }
     }
     entry.final = { versionId: status.versionId, file: status.output?.file, sha256: status.output?.sha256, sizeBytes: status.output?.sizeBytes, durationSeconds: status.plan?.durationSeconds, strategy: status.plan?.strategy, layouts: status.plan?.clips.map((c) => c.layout), music: status.plan?.music, review: verdict.verdict };
@@ -211,12 +212,13 @@ try {
   let a;
   if (tests.has("A") || tests.has("D") || tests.has("E")) {
     say("A: pauta real de vídeo da CMKV (Bolsão) → seleção pelo backend do piloto");
-    const selection = await backend({ action: "video_select", workspaceId: CMKV, date: new Date().toISOString().slice(0, 10) });
+    const selection = await backend({ action: "video_select", workspaceId: CMKV, date: new Date().toISOString().slice(0, 10), onlyIdea: cmkvIdea });
     if (selection.empty || !selection.materials?.length) throw new Error(`A: sem pauta/material (${JSON.stringify(selection).slice(0, 300)})`);
-    a = await produce("A", { selection, materials: selection.materials, workspaceId: CMKV, settings: settings(targetSecondsFor(selection.idea)) });
+    if (cmkvIdea === "CMKV-QUIZ-RECORTE" && selection.idea.title !== "De qual camiseta é esse traço?") throw new Error("A: o título da pauta não corresponde ao quiz");
+    a = await produce("A", { selection, materials: selection.materials, workspaceId: CMKV, settings: settings(targetSecondsFor(selection.idea)), initialCorrection: cmkvDirection });
     a.selection = selection;
     report.tests.A.calendar = selection.calendar;
-    if (a.draft) {
+    if (a.draft && !cmkvIdea) {
       say("A: versão 'antes' (mesmo rascunho, recursos do motor antigo)");
       const before = await sampled(() => inContainer({ action: "render", projectId: `ensaio-antes-${Date.now().toString(36)}`, workspaceId: CMKV, ideaId: selection.idea.id, title: "antes", materials: selection.materials, settings: settings(20), request: selection.request, versionId: "antes-v1", draft: legacyDraft(a.draft) }));
       report.tests.A.before = { ms: before.ms, renderMs: before.result.renderMs, status: before.result.status, file: before.result.output?.file, durationSeconds: before.result.plan?.durationSeconds };
@@ -231,16 +233,20 @@ try {
     await produce("B", { selection, materials: selection.materials, workspaceId: VORIX, settings: settings(20) });
   }
   if (tests.has("C")) {
-    say("C: gravação bruta com fala → transcrição (worker) → Codex escolhe as frases → Reels ~30 s");
-    const idea = synthetic(RAA, { externalId: "ENSAIO-VIDEO-RAA", title: "Lista de presentes sem taxa", keyMessage: "Os noivos recebem os presentes no Pix, sem taxa, e montam o site em um minuto.", cta: "Crie o seu site", caption: "Presentes no Pix, sem taxa. #casamento" });
+    say("C: gravação bruta com fala → transcrição (worker) → Codex escolhe as frases → Reels focado no Pix");
+    const idea = synthetic(RAA, { externalId: "ENSAIO-VIDEO-RAA", title: "Lista de presentes sem taxa", keyMessage: "Os noivos recebem os presentes no Pix, sem taxa.", cta: "Crie o seu site", caption: "Presentes no Pix, sem taxa. #casamento" });
     const selection = { brand: "Rumo ao Altar", idea, request: `Pauta: ${idea.title}\nMensagem: ${idea.keyMessage}\nChamada: ${idea.cta}\nLegenda: ${idea.caption}` };
-    const materials = [{ id: "M1", objectKey: "local/raw-recording.mp4", kind: "video", role: "footage", label: "gravação bruta com fala (tela do site + narração)" }];
+    const materials = [{ id: "M1", objectKey: "local/raw-recording.mp4", kind: "video", role: "screen_recording", label: "tela do site com narração; prancha da mídia completa, quadros em sequência" }];
+    const direction = "Foque no Pix. Guarde a pergunta sobre a taxa e a resposta da fala, na ordem. A interface bruta não acompanha a narração quando ela passa a RSVP, QR Code e preços: omita essas frases. No trecho falado sobre receber no Pix (aproximadamente 23–31 s da fonte), abra um detalhe estável do cartão Lista de presentes com region {x:0.48,y:0.25,width:0.42,height:0.32,start:null}; esse retângulo foi conferido durante a rolagem e inclui bordas, título, ícone e a frase do Pix. Antes dele, a pergunta entra com voz sobre uma visão geral. Feche com logo e «Crie o seu site», CTA sem animação e com tempo de leitura.";
+    const videoSettings = settings(16);
     const projectId = `ensaio-c-${Date.now().toString(36)}`;
-    const transcribed = await sampled(() => inContainer({ action: "render", projectId, workspaceId: RAA, ideaId: idea.id, title: idea.title, materials, settings: settings(30), request: selection.request, versionId: "c-transcricao" }));
-    report.tests.C = { steps: [{ step: "transcrição (worker, faster-whisper)", ms: transcribed.ms, peakMemMiB: transcribed.peakMemMiB, stage: transcribed.result.stage, sentences: transcribed.result.sentences?.length }] };
+    const transcribed = await sampled(() => inContainer({ action: "render", projectId, workspaceId: RAA, ideaId: idea.id, title: idea.title, materials, settings: videoSettings, request: selection.request, versionId: "c-transcricao" }));
+    report.tests.C = { steps: [{ step: "transcrição e prancha de origem (worker, faster-whisper)", ms: transcribed.ms, peakMemMiB: transcribed.peakMemMiB, peakCpuPercent: transcribed.peakCpuPercent, stage: transcribed.result.stage, sentences: transcribed.result.sentences?.length }] };
     if (transcribed.result.stage !== "awaiting_draft") throw new Error(`C: transcrição não concluída (${transcribed.result.error ?? transcribed.result.status})`);
+    if (!transcribed.result.sourcePreviews?.M1) throw new Error("C: o worker não produziu a prancha do material narrado");
+    materials[0].thumb = transcribed.result.sourcePreviews.M1;
     const steps = report.tests.C.steps;
-    await produce("C", { selection, materials, workspaceId: RAA, settings: settings(30), sentences: transcribed.result.sentences, transcribedFrom: { projectId } });
+    await produce("C", { selection, materials, workspaceId: RAA, settings: videoSettings, sentences: transcribed.result.sentences, transcribedFrom: { projectId }, initialCorrection: direction });
     report.tests.C.steps.unshift(...steps);
   }
   /** Refação pelo motivo do cliente (WhatsApp simulado): mesmo fluxo do orquestrador (escopo + 1 correção). */

@@ -16,7 +16,7 @@ const OUT = "/work/out";
 
 async function render() {
   const { InMemoryVideoProjectRepository } = await import("./dist/infrastructure/storage/in-memory-video-project-repository.js");
-  const { processNextVideoVersion, videoSheetKey } = await import("./dist/application/video-editing/process-video-version.js");
+  const { processNextVideoVersion, videoSheetKey, videoSourcePreviewKey } = await import("./dist/application/video-editing/process-video-version.js");
   const { createVideoWorkerRuntime } = await import("./dist/interfaces/worker/video-worker-runtime.js");
   const { buildSentences } = await import("./dist/application/video-editing/transcript-tools.js");
   await mkdir(STATE, { recursive: true });
@@ -58,7 +58,7 @@ async function render() {
   await writeFile(statePath, JSON.stringify(state));
   const result = { versionId: done.id, number: done.number, status: done.status, stage: done.stage, error: done.error, message: done.message, warnings: done.warnings, gate: done.gate, draft: done.draft, renderMs: done.renderMs, totalMs: Date.now() - started, usage: done.usage, logs };
   if (done.plan) {
-    result.plan = { strategy: done.plan.strategy, durationSeconds: done.plan.durationSeconds, music: Boolean(done.plan.music), clips: done.plan.clips.map((clip) => ({ id: clip.id, purpose: clip.purpose, assetId: clip.assetId, layout: clip.layout ?? "full", motion: clip.motion.type, transition: clip.transitionIn.type, durationSeconds: clip.durationSeconds, texts: clip.overlays.map((overlay) => overlay.text) })) };
+    result.plan = { strategy: done.plan.strategy, durationSeconds: done.plan.durationSeconds, music: Boolean(done.plan.music), clips: done.plan.clips.map((clip) => ({ id: clip.id, purpose: clip.purpose, assetId: clip.assetId, layout: clip.layout ?? "full", motion: clip.motion.type, region: clip.framing.region, transition: clip.transitionIn.type, recordStartSeconds: clip.recordStartSeconds, durationSeconds: clip.durationSeconds, texts: clip.overlays.map((overlay) => overlay.text) })) };
     await writeFile(join(OUT, `plan-${done.id}.json`), JSON.stringify(done.plan, null, 2));
   }
   const mp4 = join(OUT, `video-${done.id}.mp4`);
@@ -68,7 +68,14 @@ async function render() {
     const sheet = join(OUT, basename(videoSheetKey("tenant-vorix", request.workspaceId, done.id)));
     if (existsSync(sheet)) result.output.sheet = (await readFile(sheet)).toString("base64");
   }
-  if (done.stage === "awaiting_draft") result.sentences = buildSentences(Object.entries(project.transcripts).map(([materialId, transcript]) => ({ materialId, transcript }))).map((s) => ({ id: s.id, materialId: s.materialId, start: s.start, end: s.end, text: s.text }));
+  if (done.stage === "awaiting_draft") {
+    result.sentences = buildSentences(Object.entries(project.transcripts).map(([materialId, transcript]) => ({ materialId, transcript }))).map((s) => ({ id: s.id, materialId: s.materialId, start: s.start, end: s.end, text: s.text }));
+    result.sourcePreviews = {};
+    for (const material of project.materials.filter((m) => m.kind === "video")) {
+      const sheet = join(OUT, basename(videoSourcePreviewKey("tenant-vorix", request.workspaceId, request.projectId, material.id)));
+      if (existsSync(sheet)) result.sourcePreviews[material.id] = (await readFile(sheet)).toString("base64");
+    }
+  }
   return result;
 }
 

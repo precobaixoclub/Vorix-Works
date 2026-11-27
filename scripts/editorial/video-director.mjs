@@ -68,11 +68,11 @@ const RULES = `Regras (obrigatórias):
 5. Gancho nos primeiros 2 segundos (movimento + texto forte). Termine com chamada para ação (normalmente um CARD).
 6. Ritmo de Reels: cenas de 1,5 a 3,5 s; no máximo 2 tipos de transição além do corte; fala para fala é corte.
 7. Não pode parecer apresentação de fotos: use 2 a 4 composições diferentes ("layout"): parallax (profundidade, bom para gancho), framed (produto num cartão), split (foto + painel da marca com o texto; o texto vai para o painel e pode ficar no centro), inset (lupa num detalhe; focus onde o detalhe está), device_phone/device_laptop (captura de tela real dentro do aparelho), full (tela cheia). "kinetic" faz as palavras entrarem uma a uma; punch_in é aproximação rápida; drift é deriva lenta.
-8. Produto e tela: sempre inteiros e fiéis; texto nunca no centro de um produto fora do split. Captura de tela só em full/framed/split/device. Imagem gerada por IA (papel generated) é só clima/conceito — nunca representa o produto nem a tela.
+8. Detalhe de captura de tela: layout full com focus na região (o sistema amplia aquela parte e ela fica legível); framed/split/device mostram a tela inteira (contexto, não leitura). Produto e tela: sempre inteiros e fiéis; texto nunca no centro de um produto fora do split. Captura de tela só em full/framed/split/device. Imagem gerada por IA (papel generated) é só clima/conceito — nunca representa o produto nem a tela.
 9. Use cada material no máximo 2 vezes. Não repita a estratégia das peças recentes da marca.`;
 
-function materialLines(materials) {
-  return materials.map((m, index) => `- ${m.id} · ${m.kind} · ${m.role}${m.label ? ` · "${m.label}"` : ""}${m.width && m.height ? ` · ${m.width > m.height * 1.05 ? "horizontal" : m.height > m.width * 1.05 ? "vertical" : "quadrado"}` : ""}${m.thumb ? ` · imagem anexada nº ${index + 1}` : ""}`);
+function materialLines(materials, sentences = []) {
+  return materials.map((m, index) => `- ${m.id} · ${m.kind}${m.kind === "video" && sentences.some((s) => s.materialId === m.id) ? " COM FALA (escolha pelas frases: sentenceIds; sourceStartSeconds null)" : ""} · ${m.role}${m.label ? ` · "${m.label}"` : ""}${m.width && m.height ? ` · ${m.width > m.height * 1.05 ? "horizontal" : m.height > m.width * 1.05 ? "vertical" : "quadrado"}` : ""}${m.thumb ? ` · imagem anexada nº ${index + 1}` : ""}`);
 }
 
 /** Prompt do plano: pauta + marca + materiais (imagens anexadas na mesma ordem) + frases da fala. */
@@ -93,7 +93,7 @@ export function directorPrompt({ selection, materials, sentences = [], targetSec
     selection.lessons?.length ? `Aprendizado da marca (o cliente já reprovou isto — não repita):\n${selection.lessons.map((item) => `- ${item}`).join("\n")}` : undefined,
     ``,
     `MATERIAIS (as imagens anexadas seguem esta ordem):`,
-    ...materialLines(materials),
+    ...materialLines(materials, sentences),
     sentences.length ? `\nFRASES DA FALA (id · material · início–fim · texto):\n${sentences.map((s) => `- ${s.id} · ${s.materialId} · ${s.start.toFixed(1)}–${s.end.toFixed(1)}s · "${s.text}"`).join("\n")}` : undefined,
     ``,
     RULES,
@@ -173,3 +173,10 @@ export function conceptImagePrompt({ selection, index, total }) {
 }
 
 export const conceptImageSchema = { type: "object", additionalProperties: false, required: ["image"], properties: { image: { type: "string" } } };
+
+/** Duração pedida pela pauta ("Vídeo 9:16 de 17 segundos") ou o padrão do formato (Reels ~20 s; fala ~30 s). */
+export function targetSecondsFor(idea, { speech = false } = {}) {
+  const text = `${idea?.visualDirection ?? ""} ${idea?.keyMessage ?? ""} ${idea?.creativePrompt ?? ""}`;
+  const asked = Number(text.match(/\b(\d{1,2})\s*(?:s\b|seg\b|segundos)/i)?.[1]);
+  return Number.isFinite(asked) && asked >= 8 ? Math.min(45, asked) : speech ? 30 : 20;
+}

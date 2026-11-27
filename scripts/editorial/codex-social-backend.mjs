@@ -478,6 +478,7 @@ async function claimRedo() {
   } };
 }
 
+// >>> RAMO DE VÍDEO (Reels) — início do bloco autocontido
 // ---------------------------------------------------------------- vídeo (Reels) a partir de pauta "video"
 
 // Chave própria das publicações de vídeo e horário próprio (20h): não ocupa nem desloca os horários das
@@ -486,14 +487,39 @@ const videoPrefix = "codex-editorial-video-v1";
 const VIDEO_HOUR = "20";
 const VIDEO_MAX_MATERIALS = 6;
 
+// Bloco AUTOCONTIDO: só depende do que existe em qualquer versão deste backend (requireCondition,
+// actorForPublish, catalogPhotos, libraryCaptures, ownedBytes, variantName, brands) e carrega o resto do
+// dist sob demanda — as rodadas de imagem/carrossel não passam a depender de nada do vídeo.
 async function videoModules() {
-  const [route, processing, transcript] = await Promise.all([
+  const [route, processing, transcript, calendar, memory] = await Promise.all([
     import("./dist/interfaces/api/routes/v1/video-projects.route.js"),
     import("./dist/application/video-editing/process-video-version.js"),
     import("./dist/application/video-editing/transcript-tools.js"),
+    import("./dist/application/creative-engine/editorial-calendar.js"),
+    import("./dist/application/creative-engine/creative-memory.js"),
   ]);
   const config = loadApiConfig();
-  return { service: route.buildVideoProjectsService({ pool: db, objectStorage: c.objectStorage, videoEngine: config.videoEngine }), videoSheetKey: processing.videoSheetKey, buildSentences: transcript.buildSentences, engine: config.videoEngine };
+  return { service: route.buildVideoProjectsService({ pool: db, objectStorage: c.objectStorage, videoEngine: config.videoEngine }), videoSheetKey: processing.videoSheetKey, buildSentences: transcript.buildSentences, engine: config.videoEngine, rankIdeasForSlot: calendar.rankIdeasForSlot, memory };
+}
+
+/** Peças da marca perto do horário (14 dias), para a variedade do calendário. */
+async function videoRecentPieces(allIdeas) {
+  const byId = new Map(allIdeas.map((idea) => [idea.id, idea]));
+  const { rows } = await db.query(`select source_artifacts->0->'payload'->>'editorialIdeaId' as idea_id, coalesce(published_at, scheduled_at, created_at) as at
+    from publication_plans where tenant_id=$1 and workspace_id=$2 and state not in ('cancelled','failed','superseded')
+      and coalesce(published_at, scheduled_at, created_at) > now() - interval '14 days' order by at desc limit 30`, [tenantId, workspaceId]);
+  return rows.map((row) => { const idea = row.idea_id ? byId.get(row.idea_id) : undefined;
+    return { ...(idea ? { ideaId: idea.id, title: idea.title, category: idea.category, approach: idea.approach, text: idea.keyMessage } : {}), format: idea?.format ?? "single_image", at: new Date(row.at).toISOString() }; });
+}
+
+/** Aprovações/reprovações desta marca no WhatsApp (só leitura, só deste workspace). */
+async function videoBrandMemory(memory) {
+  const { rows } = await db.query(`select q.workspace_id, q.publication_id, q.decision, q.reason, q.decided_at,
+      jsonb_build_object('editorialIdeaId', p.source_artifacts->0->'payload'->'editorialIdeaId', 'catalogProductCodes', p.source_artifacts->0->'payload'->'catalogProductCodes',
+        'creative', jsonb_build_object('archetypes', p.source_artifacts->0->'payload'->'creative'->'archetypes')) as payload
+    from publication_approval_requests q join publication_plans p on p.id=q.publication_id and p.tenant_id=q.tenant_id and p.workspace_id=q.workspace_id
+    where q.tenant_id=$1 and q.workspace_id=$2 and q.decision is not null and q.decided_at > now() - interval '60 days' order by q.decided_at desc limit 120`, [tenantId, workspaceId]);
+  return memory.buildCreativeMemory(memory.feedbackEventsFromRows(rows), { workspaceId });
 }
 
 async function keyBytes(key) {
@@ -524,7 +550,7 @@ function videoRequestText(idea) {
  * fotos oficiais do catálogo (nunca peça com logo de terceiros), capturas reais do software pela
  * funcionalidade da pauta. Sem nada: o diretor criativo cria imagens conceituais (cenário "só a ideia").
  */
-async function videoMaterials(idea, creative) {
+async function videoMaterials(idea, creative, modules) {
   const materials = [];
   const photos = creative.businessKind === "physical_products" ? await catalogPhotos() : [];
   const photosByUrl = new Map(photos.map((photo) => [photo.url, photo]));
@@ -544,11 +570,31 @@ async function videoMaterials(idea, creative) {
       width: meta.width, height: meta.height, thumb: await thumbnail(bytes), ...(photo ? { productCode: photo.code } : {}) });
   }
   if (!materials.length && creative.businessKind === "physical_products" && creative.products?.length) {
+    // Pauta que cita os modelos pelo código (ex.: quiz "000037 e 000043"): exatamente essas peças, até 3 fotos
+    // de cores diferentes de cada (nunca peça com logo de terceiros).
+    const cited = [...new Set(`${idea.title} ${idea.keyMessage ?? ""} ${idea.visualDirection ?? ""} ${idea.creativePrompt ?? ""}`.match(/\b0\d{5}\b/g) ?? [])]
+      .filter((code) => creative.products.includes(code) && !creative.blockedProducts?.includes(code)).slice(0, 3);
+    for (const code of cited) {
+      const seen = new Set();
+      for (const photo of photos.filter((item) => item.code === code)) {
+        const label = variantName(photo.color);
+        const key = ownedKey(photo.url);
+        if (!key || seen.has(label) || seen.size >= (cited.length > 1 ? 2 : 3)) continue;
+        const bytes = await ownedBytes(photo.url);
+        const signals = await catalogPhotoSignals(bytes, label);
+        if (signals.siteCaptureScore >= 0.62 || signals.variantColorCheck?.consistent === false) continue;
+        seen.add(label);
+        const meta = await sharp(bytes).metadata();
+        materials.push({ objectKey: key, kind: "image", role: "product_photo", label: `camiseta ${label.toLocaleLowerCase("pt-BR")} — estampa ${code}`, width: meta.width, height: meta.height, thumb: await thumbnail(bytes), productCode: code });
+      }
+    }
+  }
+  if (!materials.length && creative.businessKind === "physical_products" && creative.products?.length) {
     // Rodízio de estampas próprias, pelo assunto da pauta: a primeira peça com fotos de cores diferentes.
-    const memory = await brandMemory().catch(() => undefined);
+    const memory = await videoBrandMemory(modules.memory).catch(() => undefined);
     const usedRows = (await db.query(`select source_artifacts->0->'payload'->'catalogProductCodes' as codes from publication_plans
       where tenant_id=$1 and workspace_id=$2 and idempotency_key like $3 order by created_at desc limit 30`, [tenantId, workspaceId, `social:${prefix}%`])).rows;
-    const rotated = applyProductMemory(rotationOrder(creative.products.filter((code) => !creative.blockedProducts?.includes(code)), usedRows), memory).map((code) => ({ code, themes: creative.productThemes?.[code] ?? [] }));
+    const rotated = modules.memory.applyProductMemory(rotationOrder(creative.products.filter((code) => !creative.blockedProducts?.includes(code)), usedRows), memory).map((code) => ({ code, themes: creative.productThemes?.[code] ?? [] }));
     const ranked = rankProductsForIdea(rotated, idea);
     for (const { code } of ranked.length ? ranked : rotated) {
       const seen = new Set();
@@ -588,7 +634,8 @@ function videoPostSummary(post) {
 }
 
 async function videoAction(workspace, brandConfig) {
-  const { service, videoSheetKey, buildSentences, engine } = await videoModules();
+  const modules = await videoModules();
+  const { service, videoSheetKey, buildSentences, engine } = modules;
   const creative = brandConfig.creative ?? { businessKind: "unknown" };
   const date = typeof request.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(request.date) ? request.date : undefined;
   requireCondition(engine.allWorkspaces || engine.enabledWorkspaces.includes(workspaceId), "Motor de vídeo não habilitado para esta marca");
@@ -611,23 +658,23 @@ async function videoAction(workspace, brandConfig) {
     const only = request.onlyIdea ? String(request.onlyIdea) : undefined;
     const eligible = ideas.filter((idea) => (only ? idea.id === only || idea.externalId === only : !used.has(idea.id) && !skip.has(idea.id)));
     const resume = !only && open.find((row) => eligible.some((idea) => idea.id === row.idea_id) && !["failed", "cancelled", "approved"].includes(row.status));
-    const ranking = rankIdeasForSlot(eligible, { slot, recent: await nearbyPieces(allIdeas) });
+    const ranking = modules.rankIdeasForSlot(eligible, { slot, recent: await videoRecentPieces(allIdeas) });
     const idea = resume ? eligible.find((item) => item.id === resume.idea_id) : ranking[0]?.idea;
     if (!idea) return { brand: workspace.name, empty: true, videoIdeas: ideas.length };
     const { rows: [brandRow] } = await db.query("select profile from brand_visual_profiles where workspace_id=$1", [workspaceId]);
     const identity = brandRow?.profile?.identity;
     const { rows: strategies } = await db.query(`select v.plan->>'strategy' as strategy from video_versions v join video_projects p on p.id=v.project_id
       where p.workspace_id=$1 and v.plan is not null order by v.created_at desc limit 5`, [workspaceId]);
-    const memory = await brandMemory().catch(() => undefined);
+    const memory = await videoBrandMemory(modules.memory).catch(() => undefined);
     return {
       brand: workspace.name, slot,
       idea: { id: idea.id, externalId: idea.externalId, title: idea.title, keyMessage: idea.keyMessage, caption: idea.caption, cta: idea.cta, visualDirection: idea.visualDirection, category: idea.category, updatedAt: idea.updatedAt },
       request: videoRequestText(idea),
-      ...(resume ? { resume: { projectId: resume.project_id, versionId: resume.version_id, status: resume.status, stage: resume.stage } } : { materials: await videoMaterials(idea, creative) }),
+      ...(resume ? { resume: { projectId: resume.project_id, versionId: resume.version_id, status: resume.status, stage: resume.stage } } : { materials: await videoMaterials(idea, creative, modules) }),
       brandStyle: { name: workspace.name, tone: identity?.toneOfVoice ?? identity?.tone, colors: Array.isArray(identity?.colors) ? identity.colors.slice(0, 6) : undefined },
       businessKind: creative.businessKind, musicAvailable: engine.musicLibraryAvailable,
       recentStrategies: strategies.map((row) => row.strategy).filter(Boolean),
-      ...(memory ? { lessons: memoryGuidance(memory, "video") } : {}),
+      ...(memory ? { lessons: modules.memory.memoryGuidance(memory, "video") } : {}),
       calendar: ranking.slice(0, 3).map((entry) => ({ idea: entry.idea.externalId, score: Number(entry.score.toFixed(2)), reasons: entry.reasons })),
     };
   }
@@ -719,7 +766,10 @@ async function videoAction(workspace, brandConfig) {
   const options = await c.social.posts.composerOptions(scope);
   const selected = brandConfig.accounts.map((id) => options.find((account) => account.accountId === id));
   requireCondition(selected.every((account) => account?.publishable), "Conta social da marca indisponível");
-  requireCondition(selected.every((account) => account.formats.some((item) => item.format === "reel")), "Uma das redes da marca não aceita Reels");
+  // Reels só nas redes cuja conta aceita o formato (ex.: Página do Facebook sem Reels habilitado fica de fora e é registrada).
+  const reelAccounts = selected.filter((account) => account.formats.some((item) => item.format === "reel"));
+  requireCondition(reelAccounts.some((account) => account.network === "instagram"), "O Instagram da marca não aceita Reels");
+  const skippedNetworks = selected.filter((account) => !reelAccounts.includes(account)).map((account) => account.network);
   // Endereço pelo conteúdo (hash no nome): a mídia publicada nunca é trocada por outra versão.
   const key = `assets/${tenantId}/${workspaceId}/${idea.id}-video-${sha256.slice(0, 20)}.mp4`;
   const { url } = await c.objectStorage.put({ key, body: bytes, contentType: "video/mp4" });
@@ -732,10 +782,10 @@ async function videoAction(workspace, brandConfig) {
   const scopeRedo = typeof request.redoJobId === "string";
   const campaignCta = creative.presentation === "fashion_campaign" && idea.cta && !idea.caption.includes(idea.cta) ? idea.cta : undefined;
   const caption = campaignCta ? `${idea.caption}\n\n${campaignCta}` : idea.caption;
-  const input = { ...scope, base: { caption, media }, destinations: brandConfig.accounts.map((accountId) => ({ accountId, format: "reel" })) };
+  const input = { ...scope, base: { caption, media }, destinations: reelAccounts.map((account) => ({ accountId: account.accountId, format: "reel" })) };
   const checks = await c.social.posts.validate(input);
   for (const check of checks) requireCondition(!check.issues.length && !check.warnings.length, `${check.network}: ${[...check.issues.map((issue) => issue.message), ...check.warnings].join(". ")}`);
-  if (mode === "video_validate") return { validated: true, idea: idea.externalId, sha256, sizeBytes: bytes.length, durationSeconds: version.plan.durationSeconds, networks: checks.map((check) => check.network), format: "reel" };
+  if (mode === "video_validate") return { validated: true, idea: idea.externalId, sha256, sizeBytes: bytes.length, durationSeconds: version.plan.durationSeconds, networks: checks.map((check) => check.network), skippedNetworks, format: "reel" };
   // Vídeo que o cliente já reprovou (mesmo arquivo, mesma legenda) nunca volta.
   const { rows: rejectedRows } = await db.query(`select p.id, p.source_artifacts->0->'payload'->>'videoSha256' as sha,
       (select d.caption from social_post_destinations d where d.publication_id=p.id order by d.created_at limit 1) as caption
@@ -768,8 +818,9 @@ async function videoAction(workspace, brandConfig) {
       [request.redoJobId, post.id, workspaceId, typeof request.changeSummary === "string" ? request.changeSummary.slice(0, 300) : null]);
   }
   await db.query(`update editorial_ideas set status='approved',status_changed_at=now(),updated_at=now() where id=$1 and workspace_id=$2 and tenant_id=$3 and status='available'`, [idea.id, workspaceId, tenantId]);
-  return { [publishNow ? "submitted" : "scheduled"]: videoPostSummary(post), idea: idea.externalId, slot, sha256 };
+  return { [publishNow ? "submitted" : "scheduled"]: videoPostSummary(post), idea: idea.externalId, slot, sha256, skippedNetworks };
 }
+// <<< RAMO DE VÍDEO (Reels) — fim do bloco autocontido
 
 async function run() {
   const brandConfig = brands.get(workspaceId);

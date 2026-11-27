@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import { chown, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { isAbsolute, join, relative, sep } from "node:path";
 import { addToReviewQueue, reviewSkipIds } from "./creative-pipeline.mjs";
-import { conceptImagePrompt, conceptImageSchema, directorPrompt, directorSchema, redoPrompt, redoSchema, reviewOutcome, reviewPrompt, reviewSchema, toDraft } from "./video-director.mjs";
+import { conceptImagePrompt, conceptImageSchema, directorPrompt, directorSchema, redoPrompt, redoSchema, reviewOutcome, reviewPrompt, reviewSchema, targetSecondsFor, toDraft } from "./video-director.mjs";
 
 /**
  * Piloto automático — RAMO DE VÍDEO (Reels) a partir das pautas "video" do Bolsão. Não é um segundo piloto:
@@ -25,7 +25,6 @@ const executable = "/opt/vorix-editorial/tools/node_modules/.bin/codex";
 const container = process.env.VORIX_VIDEO_CONTAINER || "zuno-zuno-api-1";
 const timezone = "America/Sao_Paulo";
 const VIDEO_HOUR = "20";
-const TARGET_SECONDS = 20;
 const workspaces = ["workspace-mwmumsxd-fmvh3h", "workspace-mscc9pi2-jkvwbo", "workspace-mwmu8kgf-uhe66l", "workspace-cee-prelaunch-mv47cmfh"];
 const [mode = "run", workspace] = process.argv.slice(2);
 if (!["run", "validate", "redo"].includes(mode) || (workspace && !workspaces.includes(workspace)) || (mode === "redo" && !workspace)) throw new Error("Uso: node codex-social-video.mjs run|validate [workspace] · redo <workspace>");
@@ -180,7 +179,7 @@ async function runWorkspace(workspaceId) {
     } else {
       if (!materials.length) materials = await conceptImages(jobDir, workspaceId, selection, operations);
       const speech = materials.some((material) => material.kind === "video");
-      const settings = { targetDurationSeconds: speech ? 30 : TARGET_SECONDS, editing: "dinamico", transitions: "moderadas", captions: true, music: Boolean(selection.musicAvailable) };
+      const settings = { targetDurationSeconds: targetSecondsFor(idea, { speech }), editing: "dinamico", transitions: "moderadas", captions: true, music: Boolean(selection.musicAvailable) };
       const queueMaterials = materials.map(({ objectKey, role, label }) => ({ objectKey, role, label }));
       if (speech) {
         // Gravação com fala: o worker transcreve primeiro; o Codex escolhe as frases pelos ids.
@@ -213,7 +212,7 @@ async function runWorkspace(workspaceId) {
     // Revisão editorial (até 1 ajuste). Inconclusiva ou reprovada: revisão manual, nunca agenda sozinha.
     let review = await editorialReview(jobDir, selection, status, operations);
     if (review.verdict === "revise" && review.revisionRequest) {
-      const { output, ms } = await codex(jobDir, { prompt: `${directorPrompt({ selection, materials: selection.materials ?? materials, sentences: [], targetSeconds: TARGET_SECONDS })}\n\nRASCUNHO ATUAL (JSON do motor): ${JSON.stringify(status.draft)}\nAJUSTE PEDIDO PELA REVISÃO: ${review.revisionRequest}\nDevolva o rascunho completo com o ajuste; mantenha o resto igual.`, schema: directorSchema, images: await writeImages(jobDir, selection.materials ?? materials) });
+      const { output, ms } = await codex(jobDir, { prompt: `${directorPrompt({ selection, materials: selection.materials ?? materials, sentences: [], targetSeconds: targetSecondsFor(idea) })}\n\nRASCUNHO ATUAL (JSON do motor): ${JSON.stringify(status.draft)}\nAJUSTE PEDIDO PELA REVISÃO: ${review.revisionRequest}\nDevolva o rascunho completo com o ajuste; mantenha o resto igual.`, schema: directorSchema, images: await writeImages(jobDir, selection.materials ?? materials) });
       operations.push({ step: "ajuste da revisão", engine: "codex", durationMs: ms });
       const revised = await callContainer({ workspaceId, action: "video_revise", versionId: status.versionId, reason: review.revisionRequest, draft: toDraft(output) }).catch((error) => ({ error: error.message }));
       if (revised.versionId) {

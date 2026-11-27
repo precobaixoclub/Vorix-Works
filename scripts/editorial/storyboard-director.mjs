@@ -4,7 +4,7 @@
 //
 // O Codex NÃO escolhe a vencedora nem declara padrão comercial: a seleção usa critérios medidos e a
 // aprovação final é humana (ver docs/video-reformulacao-criativa.md).
-import { SPOT_FRAMINGS, SPOT_LANGUAGES, SPOT_SHOT_KINDS, SPOT_TRANSITIONS } from "../../dist/application/video-editing/spot-storyboard.js";
+import { NARRATIVE_ROLES, SPOT_FRAMINGS, SPOT_LANGUAGES, SPOT_SHOT_KINDS, SPOT_TRANSITIONS } from "../../dist/application/video-editing/spot-storyboard.js";
 
 const str = (max = 400) => ({ type: "string", maxLength: max });
 const obj = (properties) => ({ type: "object", additionalProperties: false, required: Object.keys(properties), properties });
@@ -47,6 +47,8 @@ export function storyboardSchema() {
     field: { type: "string", enum: ["dark", "light", "accent", "fabric"] },
     focus: { type: "boolean" },
     storyboardNote: str(300),
+    role: { type: "string", enum: [...NARRATIVE_ROLES] },
+    narration: obj({ line: str(110), pauseAfterMs: { type: "integer", minimum: 0, maximum: 1200 }, delivery: str(120) }),
   });
   const proposal = obj({
     id: { type: "string", enum: ["P1", "P2", "P3"] },
@@ -65,6 +67,8 @@ export function storyboardSchema() {
     technicalResources: { type: "array", maxItems: 8, items: str(120) },
     limitations: { type: "array", maxItems: 6, items: str(200) },
     scenes: { type: "array", minItems: 4, maxItems: 9, items: scene },
+    campaignKind: { type: "string", enum: ["moda", "tecnologia", "casamento", "ofertas"] },
+    voiceDirection: str(240),
   });
   return obj({ proposals: { type: "array", minItems: 3, maxItems: 3, items: proposal } });
 }
@@ -113,6 +117,8 @@ export function storyboardPrompt({ idea, brand, materials, references = [], tast
   lines.push("Enquadramentos (camera.from/to): full (corpo), chest (peito), print (estampa a 74% da largura), macro (estampa a 92%), detail (um terço da estampa, bem perto), top, bottom.");
   lines.push("Transições:", ...Object.entries(TRANSITIONS).map(([k, v]) => `- ${k}: ${v}`));
   lines.push("Campos de cor (field): dark, light, accent ou fabric (a cor da peça).");
+  lines.push("Enquadramento detail2 = outra parte da estampa (o lado direito), para uma segunda pista.");
+  lines.push("Papel narrativo (role) de cada plano: hook, clue (pista), question, tension, reveal, proof (prova do produto), offer, cta. Nenhum plano sem função; nenhum plano repetindo o anterior.");
   lines.push("", "REGRAS:");
   lines.push("1. As três propostas precisam ser VISUALMENTE DISTINTAS: linguagens diferentes (editorial, graphic, cinematic — uma de cada), aberturas diferentes e sequências de planos diferentes. Proibido entregar variações pequenas da mesma ideia.");
   lines.push("2. Todas unem a referência de ESTRUTURA (prender nos primeiros segundos, progressão clara, texto curto, CTA claro) com a de ESTÉTICA (visual limpo e premium, transições coordenadas, organização dos elementos) — com a identidade da marca.");
@@ -121,7 +127,18 @@ export function storyboardPrompt({ idea, brand, materials, references = [], tast
   lines.push("5. Movimento com intenção: nenhum plano parado; mas não acumule efeitos — no máximo 3 tipos de transição por proposta.");
   lines.push("6. Produto: as fotos são oficiais — nunca peça para recolorir, redesenhar, escurecer ou distorcer a estampa. A estampa é a protagonista. Mostre a peça inteira pelo menos uma vez.");
   lines.push("7. Texto: frases curtas; marque a palavra de ênfase com *asteriscos*; caption = legenda em pílula que acende palavra a palavra (use em 1 ou 2 planos, no máximo); label em bands = letra da opção.");
-  lines.push("8. Último plano: logo_resolve com headline curto e cta (a chamada da pauta).");
+  lines.push("8. Último plano: logo_resolve com headline curto e cta (a chamada da pauta). Não repita a pergunta do gancho depois da resposta: feche com a resposta/benefício e a ação.");
+  lines.push("", "IMPACTO (anúncio que performa, não demonstração de efeitos):");
+  lines.push("- O 1º quadro já é o gancho: um detalhe intrigante + pergunta ou afirmação curta; o som bate junto.");
+  lines.push("- Curiosidade e progressão: cada plano entrega UMA informação nova (pista → pista → pergunta → tensão → revelação → prova → CTA).");
+  lines.push("- Ritmo VARIÁVEL: pistas rápidas (2–3 batidas), um respiro antes da revelação, impacto na revelação, fechamento que respira.");
+  lines.push("- Em quiz/revelação, PRESERVE O MISTÉRIO: antes do plano reveal, mostre só fragmentos (detail/detail2) e a comparação; o traço/estampa completo e a peça inteira aparecem só a partir da revelação (ex.: trace_draw como PAGAMENTO da revelação).");
+  lines.push("- Texto na tela: no máximo 5 palavras por plano. Animação só quando conta algo.");
+  lines.push("", "NARRAÇÃO (escrita para VOZ humana, em português do Brasil falado):");
+  lines.push("- Uma fala curta por plano (até 10 palavras) ou vazia quando o plano deve respirar; nunca leia o texto da tela palavra por palavra.");
+  lines.push("- Frases como alguém diria a um amigo: 'Olha esse traço.', 'Pensa rápido.', 'Era a A.' Use reticências para suspense e *asteriscos* na palavra de ênfase.");
+  lines.push("- pauseAfterMs = respiro depois da fala; delivery = como dizer (ex.: 'baixo, curioso', 'sorrindo, com certeza').");
+  lines.push("- campaignKind define a interpretação: moda (envolvente e sofisticada), tecnologia (clara, segura, dinâmica), casamento (acolhedora, emocional), ofertas (enérgica sem soar artificial). voiceDirection resume a voz em uma frase.");
   if (taste.rejected.length || taste.preferred.length) lines.push(`9. Preferências da marca registradas por humanos — evite: ${taste.rejected.join(", ") || "—"}; prefira: ${taste.preferred.join(", ") || "—"}.`);
   lines.push("", "Em cada proposta preencha: conceito, roteiro (frases), cenas (storyboardNote descreve o quadro como um storyboard), direção de arte, linguagem de animação, tratamento de áudio (mood/bpm), o que vem de cada referência, materiais necessários, recursos técnicos e limitações previstas (o que só filmagem real ou outra foto resolveria).");
   lines.push("Responda só o JSON do schema.");

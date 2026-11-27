@@ -11,10 +11,16 @@ export const SPOT_SHOT_KINDS = ["hook_type", "print_assemble", "trace_draw", "fu
 export type SpotShotKind = (typeof SPOT_SHOT_KINDS)[number];
 export const SPOT_TRANSITIONS = ["cut", "color_wipe", "mask_reveal", "iris_print", "match_print", "dissolve", "slide_up"] as const;
 export type SpotTransition = (typeof SPOT_TRANSITIONS)[number];
-export const SPOT_FRAMINGS = ["full", "print", "chest", "top", "bottom", "macro", "detail"] as const;
+export const SPOT_FRAMINGS = ["full", "print", "chest", "top", "bottom", "macro", "detail", "detail2"] as const;
 export type SpotFraming = (typeof SPOT_FRAMINGS)[number];
 export const SPOT_LANGUAGES = ["editorial", "graphic", "cinematic"] as const;
 export type SpotLanguage = (typeof SPOT_LANGUAGES)[number];
+
+/** Função narrativa do plano: nenhum plano existe só para "ocupar tempo". */
+export const NARRATIVE_ROLES = ["hook", "clue", "question", "tension", "reveal", "proof", "offer", "cta"] as const;
+export type NarrativeRole = (typeof NARRATIVE_ROLES)[number];
+/** Fala do plano (roteiro para VOZ humana) com a orientação de interpretação. */
+export type SceneNarration = { line: string; pauseAfterMs: number; delivery: string };
 
 export type ProposalText = { role: "headline" | "kicker" | "label" | "cta" | "body" | "caption"; text: string };
 export type ProposalScene = {
@@ -29,6 +35,8 @@ export type ProposalScene = {
   field: "dark" | "light" | "accent" | "fabric";
   focus: boolean;
   storyboardNote: string;
+  role?: NarrativeRole;
+  narration?: SceneNarration;
 };
 export type CreativeProposal = {
   id: string;
@@ -47,6 +55,9 @@ export type CreativeProposal = {
   technicalResources: string[];
   limitations: string[];
   scenes: ProposalScene[];
+  /** Tipo de campanha (define a interpretação da voz) e direção de voz em uma frase. */
+  campaignKind?: "moda" | "tecnologia" | "casamento" | "ofertas";
+  voiceDirection?: string;
 };
 
 export type SpotMaterial = { id: string; kind: "product_photo" | "logo"; name?: string; fabricHex?: string; hasPrint?: boolean };
@@ -94,6 +105,32 @@ export function validateProposal(p: CreativeProposal, ctx: SpotContext): Proposa
   if (first && reveals && (["full", "chest", "print", "macro"].includes(first.camera.from) || ["full", "chest", "print", "macro"].includes(first.camera.to))) {
     issues.push({ scene: 0, code: "spoiler", message: `o gancho mostra a estampa inteira (câmera ${first.camera.from}→${first.camera.to}) antes da revelação; num quiz o gancho segura o palpite com detail→detail` });
   }
+  // Mistério: antes do plano de revelação, nenhum plano mostra a estampa INTEIRA da resposta (traço,
+  // montagem ou foto aberta). A comparação A/B é a pergunta — essa pode mostrar as opções.
+  const revealAt = p.scenes.findIndex((s) => s.role === "reveal" || s.texts.some((t) => /\b(era a|era o|era b|resposta)/i.test(t.text.replace(/\*/g, ""))));
+  if (revealAt > 0) {
+    p.scenes.slice(1, revealAt).forEach((s, k) => {
+      const opens = s.kind === "trace_draw" || s.kind === "print_assemble" || ((s.kind === "fullbleed" || s.kind === "macro") && !["detail", "detail2"].includes(s.camera.to));
+      if (opens) issues.push({ scene: k + 1, code: "spoiler", message: `plano ${k + 2} (${s.kind}) mostra a estampa inteira antes da revelação: guarde o traço completo para a revelação` });
+    });
+  }
+  // Redundância: dois planos seguidos com o mesmo tipo, os mesmos materiais e a mesma câmera.
+  p.scenes.forEach((s, i) => {
+    const prev = p.scenes[i - 1];
+    if (prev && prev.kind === s.kind && prev.materials.join() === s.materials.join() && prev.camera.from === s.camera.from && prev.camera.to === s.camera.to) issues.push({ scene: i, code: "redundant", message: `plano ${i + 1} repete o plano ${i} (mesmo tipo, material e câmera)` });
+  });
+  // Narração: frase curta e que caiba no plano (≈ 14 caracteres/s falados + a pausa).
+  p.scenes.forEach((s, i) => {
+    if (!s.narration?.line) return;
+    const words = s.narration.line.replace(/\*/g, "").split(/\s+/).filter(Boolean).length;
+    const speak = s.narration.line.replace(/\*/g, "").length / 14 + (s.narration.pauseAfterMs ?? 0) / 1000 * 0.5 + 0.15;
+    if (words > 12) issues.push({ scene: i, code: "narration_long", message: `fala do plano ${i + 1} tem ${words} palavras (máx. 12): escreva como se fala` });
+    if (speak > s.beats * beat + 0.35) issues.push({ scene: i, code: "narration_fit", message: `fala do plano ${i + 1} pede ~${speak.toFixed(1)} s e o plano tem ${(s.beats * beat).toFixed(1)} s` });
+  });
+  const durations = p.scenes.slice(0, -1).map((s) => s.beats * beat);
+  const mean = durations.reduce((a, b) => a + b, 0) / Math.max(1, durations.length);
+  const cv = Math.sqrt(durations.reduce((a, d) => a + (d - mean) ** 2, 0) / Math.max(1, durations.length)) / Math.max(0.01, mean);
+  if (durations.length >= 4 && cv < 0.18) issues.push({ code: "flat_rhythm", message: `ritmo uniforme (variação ${Math.round(cv * 100)}%): alterne planos rápidos de pista com um respiro antes da revelação` });
   const last = p.scenes[p.scenes.length - 1];
   if (!last || last.kind !== "logo_resolve" || !last.texts.some((t) => t.role === "cta")) issues.push({ code: "cta", message: "o último plano precisa ser a assinatura com CTA" });
   return issues;
@@ -163,15 +200,23 @@ export function scoreProposal(p: CreativeProposal, ctx: SpotContext, targets: Re
   const pref = taste.preferred.filter((k) => PATTERN_OF[k]?.(p)).length;
   const rej = taste.rejected.filter((k) => PATTERN_OF[k]?.(p));
   const c = (key: string, label: string, weight: number, score: number, evidence: string) => ({ key, label, weight, score: Math.max(0, Math.min(1, score)), evidence });
+  const roles = p.scenes.map((s) => s.role).filter(Boolean) as NarrativeRole[];
+  const arc = (roles[0] === "hook" ? 0.3 : 0) + (roles.includes("reveal") || roles.includes("proof") ? 0.3 : 0) + (roles[roles.length - 1] === "cta" ? 0.2 : 0) + (new Set(roles).size >= 4 ? 0.2 : 0) - issues.filter((i) => i.code === "redundant").length * 0.25;
+  const durs = secs.slice(0, -1);
+  const meanD = durs.reduce((a, b) => a + b, 0) / Math.max(1, durs.length);
+  const cvD = Math.sqrt(durs.reduce((a, d) => a + (d - meanD) ** 2, 0) / Math.max(1, durs.length)) / Math.max(0.01, meanD);
+  const narrationIssues = issues.filter((i) => i.code === "narration_long" || i.code === "narration_fit").length;
   const criteria = [
-    c("hook", "Gancho nos 2 primeiros segundos", 0.18, (secs[0]! <= 2.2 ? 0.5 : 0) + (hookWords <= 4 ? 0.3 : hookWords <= 5 ? 0.15 : 0) + (productKinds.has(first.kind) ? 0.2 : 0), `${secs[0]!.toFixed(1)} s, ${hookWords} palavras, ${first.kind}`),
-    c("rhythm", "Ritmo da referência de estrutura", 0.14, targets.structureMedianShot ? 1 - Math.min(1, Math.abs(median - targets.structureMedianShot) / (targets.structureMedianShot * 1.5)) : 0.5, `plano mediano ${median.toFixed(2)} s × referência ${targets.structureMedianShot?.toFixed(2) ?? "—"} s`),
-    c("product", "Produto em cena", 0.16, productShare / 0.85, `${Math.round(productShare * 100)}% do tempo com o produto`),
-    c("movement", "Movimento com intenção (sem cena parada)", 0.12, moving, `${Math.round(moving * 100)}% dos planos com movimento/animação`),
-    c("aesthetic", "Linguagem da referência de estética", 0.12, targets.aestheticLuma !== undefined ? (targets.aestheticLuma < 100 ? darkShare : 1 - darkShare) * 0.6 + (transitionKinds <= 3 ? 0.4 : 0.1) : 0.5, `${Math.round(darkShare * 100)}% de planos escuros, ${transitionKinds} tipos de transição`),
-    c("legibility", "Tempo de leitura e lógica da revelação", 0.1, (1 - readingFails / Math.max(1, p.scenes.length)) * (issues.some((i) => i.code === "spoiler") ? 0.4 : 1), `${readingFails} plano(s) curtos para o texto${issues.some((i) => i.code === "spoiler") ? "; gancho entrega a resposta" : ""}`),
+    c("hook", "Gancho nos 2 primeiros segundos", 0.16, (secs[0]! <= 2.2 ? 0.5 : 0) + (hookWords <= 4 ? 0.3 : hookWords <= 5 ? 0.15 : 0) + (productKinds.has(first.kind) ? 0.2 : 0), `${secs[0]!.toFixed(1)} s, ${hookWords} palavras, ${first.kind}`),
+    c("rhythm", "Ritmo da referência de estrutura", 0.1, targets.structureMedianShot ? 1 - Math.min(1, Math.abs(median - targets.structureMedianShot) / (targets.structureMedianShot * 1.5)) : 0.5, `plano mediano ${median.toFixed(2)} s × referência ${targets.structureMedianShot?.toFixed(2) ?? "—"} s`),
+    c("product", "Produto em cena", 0.14, productShare / 0.85, `${Math.round(productShare * 100)}% do tempo com o produto`),
+    c("movement", "Movimento com intenção (sem cena parada)", 0.1, moving, `${Math.round(moving * 100)}% dos planos com movimento/animação`),
+    c("aesthetic", "Linguagem da referência de estética", 0.1, targets.aestheticLuma !== undefined ? (targets.aestheticLuma < 100 ? darkShare : 1 - darkShare) * 0.6 + (transitionKinds <= 3 ? 0.4 : 0.1) : 0.5, `${Math.round(darkShare * 100)}% de planos escuros, ${transitionKinds} tipos de transição`),
+    c("legibility", "Leitura, fala e mistério até a revelação", 0.1, (1 - (readingFails + narrationIssues) / Math.max(1, p.scenes.length)) * (issues.some((i) => i.code === "spoiler") ? 0.4 : 1), `${readingFails} plano(s) curtos para o texto, ${narrationIssues} fala(s) fora do tempo${issues.some((i) => i.code === "spoiler") ? "; revela antes da hora" : ""}`),
     c("cta", "CTA claro no fim", 0.08, issues.some((i) => i.code === "cta") ? 0 : 1, p.scenes[p.scenes.length - 1]?.texts.find((t) => t.role === "cta")?.text ?? "sem CTA"),
-    c("feasibility", "Viável com os materiais (sem inventar)", 0.06, 1 - Math.min(1, issues.filter((i) => ["material", "cutout", "variants", "kind"].includes(i.code)).length / 2), `${issues.filter((i) => ["material", "cutout", "variants", "kind"].includes(i.code)).length} pendência(s) de material`),
+    c("feasibility", "Viável com os materiais (sem inventar)", 0.05, 1 - Math.min(1, issues.filter((i) => ["material", "cutout", "variants", "kind"].includes(i.code)).length / 2), `${issues.filter((i) => ["material", "cutout", "variants", "kind"].includes(i.code)).length} pendência(s) de material`),
+    c("narrative", "Progressão narrativa (gancho → pista → revelação → CTA, sem plano redundante)", 0.08, arc, roles.length ? roles.join(" → ") : "sem papéis narrativos"),
+    c("variation", "Ritmo variável", 0.05, Math.min(1, cvD / 0.35), `variação da duração dos planos ${Math.round(cvD * 100)}%`),
     c("taste", "Preferências e reprovações da marca", 0.04, rej.length ? 0 : taste.preferred.length ? pref / taste.preferred.length : 0.5, rej.length ? `reprovado pela marca: ${rej.join(", ")}` : `${pref}/${taste.preferred.length} preferências atendidas`),
   ];
   const totalScore = criteria.reduce((a, k) => a + k.weight * k.score, 0) - (rej.length ? 0.15 : 0) - (issues.some((i) => ["material", "kind", "cta", "cutout"].includes(i.code)) ? 0.3 : 0);
@@ -193,11 +238,11 @@ export function selectProposal(list: CreativeProposal[], ctx: SpotContext, targe
 // Compilação (quadros na grade da batida + eventos de áudio)
 // ---------------------------------------------------------------------------------------------
 
-export type AudioEvent = { frame: number; kind: "hit" | "pop" | "whoosh" | "switch" | "land" | "riser_end" | "logo" | "click"; strength: number };
+export type AudioEvent = { frame: number; kind: "hit" | "pop" | "whoosh" | "switch" | "land" | "riser_end" | "logo" | "click" | "tension_stop" | "drop"; strength: number };
 export type CompiledShot = {
   kind: SpotShotKind; from: number; frames: number; photo?: string; photos?: string[]; camera: { from: SpotFraming; to: SpotFraming };
   texts: ProposalText[]; placement: "top" | "bottom" | "center"; field: string; transition: SpotTransition; transitionFrames: number; transitionColor?: string;
-  events?: number[]; focus?: boolean; strip?: string[];
+  events?: number[]; focus?: boolean; strip?: string[]; role?: NarrativeRole; narration?: SceneNarration;
 };
 export type CompiledSpot = { durationInFrames: number; fps: number; bpm: number; beatFrames: number; shots: CompiledShot[]; audio: AudioEvent[]; sections: { from: number; to: number; energy: number; kind: SpotShotKind }[] };
 
@@ -275,6 +320,13 @@ export function compileProposal(p: CreativeProposal, ctx: SpotContext, elementCo
       if (s.texts.some((t) => t.role === "cta")) audio.push({ frame: cursor + tf + 31, kind: "click", strength: 0.6 });
     }
     if (i > 0 && transition !== "cut" && s.kind !== "logo_resolve") audio.push({ frame: cursor, kind: "whoosh", strength: transition === "match_print" ? 0.3 : 0.6 });
+    if (s.role) shot.role = s.role;
+    if (s.narration?.line) shot.narration = s.narration;
+    // Tensão → revelação: a música SEGURA uma batida antes e cai junto com a resposta.
+    if (s.role === "reveal" && i > 0) {
+      audio.push({ frame: Math.max(0, cursor - Math.round(beatFrames)), kind: "tension_stop", strength: 1 });
+      audio.push({ frame: cursor, kind: "drop", strength: 1 });
+    }
     shots.push(shot);
     cursor += frames;
   });

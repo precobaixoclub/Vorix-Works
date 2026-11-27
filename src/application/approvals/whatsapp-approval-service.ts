@@ -98,6 +98,10 @@ export type WhatsappApprovalServiceDeps = {
   };
   /** Bytes de uma mídia da publicação (URL do próprio armazenamento). */
   loadMedia(url: string): Promise<{ data: Buffer; mimeType: string }>;
+  /** Link assinado para assistir a uma mídia (vídeo grande demais para anexar no WhatsApp). */
+  mediaLink?: (url: string) => string;
+  /** Maior vídeo anexado direto no WhatsApp (padrão 15 MB); acima disso vai o link. */
+  maxVideoBytes?: number;
   idGenerator: () => string;
   now?: () => Date;
   log?: (message: string, extra?: Record<string, unknown>) => void;
@@ -262,10 +266,31 @@ export class WhatsappApprovalService {
           const mediaUrl = `data:${file.mimeType};base64,${file.data.toString("base64")}`;
           await this.deliver(settings.connectionId, rule.approverPhone, (to) => provider.sendImage({ externalSessionId: session, to, mediaUrl }), request.id);
         }
+        // Vídeo (Reels): o MESMO arquivo que será publicado. Anexado quando cabe; senão (ou se o envio
+        // falhar por tamanho/formato), vai um link assinado para assistir — nunca outra versão.
+        const video = post.media.find((media) => media.kind === "video");
+        let videoLink: string | undefined;
+        if (video) {
+          const file = await this.deps.loadMedia(video.url);
+          let attached = false;
+          if (file.data.length <= (this.deps.maxVideoBytes ?? 15 * 1024 * 1024)) {
+            const mediaUrl = `data:video/mp4;base64,${file.data.toString("base64")}`;
+            try {
+              await this.deliver(settings.connectionId, rule.approverPhone, (to) => provider.sendVideo({ externalSessionId: session, to, mediaUrl }), request.id);
+              attached = true;
+            } catch (error) {
+              this.deps.log?.("whatsapp approval: vídeo não anexado, segue o link", { publicationId: item.publicationId, detail: error instanceof Error ? error.message.slice(0, 200) : String(error) });
+            }
+          }
+          if (!attached) {
+            videoLink = this.deps.mediaLink?.(video.url);
+            if (!videoLink) throw new Error("vídeo grande demais para o WhatsApp e sem link de prévia");
+          }
+        }
         // Outro pedido já aguardando este aprovador: "1" sozinho seria ambíguo — a mensagem já orienta com o código.
         const othersOpen = (await this.deps.repository.listOpenByPhone(settings.connectionId, rule.approverPhone)).some((open) => open.id !== request.id);
         const redo = await this.deps.repository.findRedoByResult?.(item.publicationId).catch(() => undefined);
-        const text = approvalRequestText({ brand: workspace?.name ?? "marca", code: request.code, networks: post.networks, when: formatWhen(post.scheduledAt, post.timezone), caption: post.caption, screens: images.length, withCode: othersOpen, ...(redo ? { redo: { ...redo, max: MAX_REDO_ATTEMPTS } } : {}) });
+        const text = approvalRequestText({ brand: workspace?.name ?? "marca", code: request.code, networks: post.networks, when: formatWhen(post.scheduledAt, post.timezone), caption: post.caption, screens: images.length, withCode: othersOpen, ...(video ? { video: { ...(videoLink ? { link: videoLink } : {}) } } : {}), ...(redo ? { redo: { ...redo, max: MAX_REDO_ATTEMPTS } } : {}) });
         await this.deliver(settings.connectionId, rule.approverPhone, (to) => provider.sendText({ externalSessionId: session, to, body: text }), request.id);
         await this.deps.repository.updateRequest(request.id, { status: "sent", sentAt: this.now().toISOString() });
         sent += 1;

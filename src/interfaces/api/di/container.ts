@@ -1660,6 +1660,8 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
         if (!response.ok) throw new Error(`mídia indisponível (${response.status})`);
         return { data: Buffer.from(await response.arrayBuffer()), mimeType: response.headers.get("content-type") ?? "image/jpeg" };
       },
+      // Vídeo grande para anexar: link assinado (vale até a publicação, como o das plataformas).
+      mediaLink: (url) => signForExternalPublication(url),
       // Ideia do Bolsão só vira "feita" se aprovada: reprovada/sem resposta, volta a ficar disponível.
       onNotApproved: async ({ tenantId, workspaceId, publicationId }) => {
         await repositories.pool!.query(`update editorial_ideas i set status='available', status_changed_at=now(), updated_at=now()
@@ -1676,7 +1678,8 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
         const { rows: [count] } = await pool.query(`select count(*)::int as total from publication_redo_requests where idea_id=$1 and created_at > now() - interval '2 days'`, [plan.idea_id]);
         const attempt = (count?.total ?? 0) + 1;
         if (attempt > MAX_REDO_ATTEMPTS) return { queued: false, attempt };
-        const slot = String(plan.idempotency_key ?? "").match(/\d{4}-\d{2}-\d{2}T(?:12|19):00/)?.[0] ?? null;
+        // 12h/19h: imagens e carrosséis; 20h: vídeos (Reels) do piloto.
+        const slot = String(plan.idempotency_key ?? "").match(/\d{4}-\d{2}-\d{2}T(?:12|19|20):00/)?.[0] ?? null;
         await pool.query(`insert into publication_redo_requests (id, tenant_id, workspace_id, publication_id, idea_id, reason, attempt, slot)
           values ($1,$2,$3,$4,$5,$6,$7,$8) on conflict (publication_id) do nothing`,
         [`redo-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`, tenantId, workspaceId, publicationId, plan.idea_id, reason.slice(0, 300), attempt, slot]);

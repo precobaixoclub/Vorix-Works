@@ -63,24 +63,26 @@ export const phoneDigits = (value: string) => value.replace(/\D/g, "");
 const NETWORK_LABEL: Record<string, string> = { instagram: "Instagram", facebook: "Facebook", tiktok: "TikTok", youtube: "YouTube", kwai: "Kwai" };
 
 /** `withCode`: já há outro pedido aguardando este aprovador — a resposta precisa do código (ou citar a mensagem). */
-export function approvalRequestText(input: { brand: string; code: string; networks: string[]; when?: string; caption?: string; screens: number; withCode?: boolean; redo?: { attempt: number; max: number; reason: string; changes?: string } }): string {
+export function approvalRequestText(input: { brand: string; code: string; networks: string[]; when?: string; caption?: string; screens: number; withCode?: boolean; redo?: { attempt: number; max: number; reason: string; changes?: string }; video?: { link?: string } }): string {
   const networks = input.networks.map((network) => NETWORK_LABEL[network] ?? network).join(" + ") || "redes sociais";
   const caption = (input.caption ?? "").trim();
   return [
     `*Aprovação de publicação — ${input.brand}*`,
     ...(input.redo ? [`🔁 Versão refeita (ajuste ${input.redo.attempt} de ${input.redo.max}) — você pediu: “${input.redo.reason}”`] : []),
     ...(input.redo?.changes ? [input.redo.changes] : []),
-    `${networks} · ${input.when ? `agendada para ${input.when}` : "publicar assim que aprovar"}${input.screens > 1 ? ` · carrossel com ${input.screens} imagens` : ""}`,
+    `${networks} · ${input.when ? `agendada para ${input.when}` : "publicar assim que aprovar"}${input.video ? " · vídeo (Reels)" : input.screens > 1 ? ` · carrossel com ${input.screens} imagens` : ""}`,
+    // Vídeo grande demais para anexar: a pessoa assiste pelo link (a versão é a mesma que será publicada).
+    ...(input.video?.link ? [`Assista ao vídeo: ${input.video.link}`] : []),
     ...(caption ? ["", `Legenda: ${caption.length > 600 ? `${caption.slice(0, 600)}…` : caption}`] : []),
     "",
     ...(input.withCode
       ? [
         `Há mais de uma publicação aguardando você. Responda *1 ${input.code}* para aprovar ou *2 ${input.code}* para reprovar (pode escrever o motivo depois).`,
-        `Ou toque em *Responder* nesta mensagem (ou na imagem) e mande só *1* ou *2*.`,
+        `Ou toque em *Responder* nesta mensagem (ou ${input.video ? "no vídeo" : "na imagem"}) e mande só *1* ou *2*.`,
       ]
       : [
         `Responda *1* para aprovar ou *2* para reprovar (pode escrever o motivo depois do 2).`,
-        `Também vale tocar em *Responder* nesta mensagem ou na imagem.`,
+        `Também vale tocar em *Responder* nesta mensagem ou ${input.video ? "no vídeo" : "na imagem"}.`,
       ]),
     `Código: *${input.code}*`,
   ].join("\n");

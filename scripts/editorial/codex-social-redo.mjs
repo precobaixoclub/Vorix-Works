@@ -63,7 +63,9 @@ for (const workspaceId of workspaces) {
     let failure;
     try {
       await writeFile(file, JSON.stringify(job), { mode: 0o600 });
-      const result = await run("/usr/bin/node", [new URL("codex-social-schedule.mjs", basedir).pathname, hour, mode, workspaceId], {
+      // Vídeo (Reels) reprovado: o orquestrador de vídeo refaz a partir da versão reprovada (mesmo Codex, mesma trava).
+      const video = Boolean(job.video);
+      const result = await run("/usr/bin/node", video ? [new URL("codex-social-video.mjs", basedir).pathname, "redo", workspaceId] : [new URL("codex-social-schedule.mjs", basedir).pathname, hour, mode, workspaceId], {
         timeout: 40 * 60000, env: { ...process.env, VORIX_EDITORIAL_IDEA: job.idea.externalId ?? job.idea.id, VORIX_REDO_JOB: file },
       });
       const last = result.stdout.trim().split("\n").at(-1) ?? "";

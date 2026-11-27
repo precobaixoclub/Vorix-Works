@@ -464,7 +464,10 @@ async function claimRedo() {
       ...(base ? { base, layout: meta.layout, logoPlacement: meta.logoPlacement, protectedAreas: meta.protectedAreas ?? [], ...(meta.aiReview ? { aiReview: meta.aiReview } : {}), ...(meta.sceneReview ? { sceneReview: meta.sceneReview } : {}) } : {}) });
   }
   const hint = resolveRedoScope({ reason: job.reason, screenCount: screensForIdea(idea).length });
+  // Vídeo reprovado: a refação parte da versão exata que foi ao WhatsApp (o orquestrador de vídeo refaz).
+  const video = typeof plan?.payload?.videoVersionId === "string" ? { versionId: plan.payload.videoVersionId, projectId: plan.payload.videoProjectId, sha256: plan.payload.videoSha256 } : undefined;
   return { job: {
+    ...(video ? { video, brand: (await c.workspaceRepository.getById(workspaceId))?.name } : {}),
     id: job.id, reason: job.reason, attempt: job.attempt, slot: job.slot, previousImage, memory: memoryGuidance(memory, "redo"),
     previousScreens, previousVersionProducts: Array.isArray(plan?.payload?.catalogProductCodes) ? plan.payload.catalogProductCodes.map(String) : [],
     scopeHint: { text: hint.text, image: hint.image, caption: hint.caption, product: hint.product, logo: hint.logo, unclear: hint.reading.unclear, changed: hint.changed, kept: hint.kept },
@@ -473,6 +476,299 @@ async function claimRedo() {
     idea: { id: idea.id, externalId: idea.externalId, title: idea.title, format: idea.format, category: idea.category, keyMessage: idea.keyMessage, caption: idea.caption,
       cta: idea.cta, visualDirection: idea.visualDirection, screens: screensForIdea(idea), carouselScript: idea.carouselScript ?? [] },
   } };
+}
+
+// ---------------------------------------------------------------- vídeo (Reels) a partir de pauta "video"
+
+// Chave própria das publicações de vídeo e horário próprio (20h): não ocupa nem desloca os horários das
+// 12h/19h das imagens e carrosséis.
+const videoPrefix = "codex-editorial-video-v1";
+const VIDEO_HOUR = "20";
+const VIDEO_MAX_MATERIALS = 6;
+
+async function videoModules() {
+  const [route, processing, transcript] = await Promise.all([
+    import("./dist/interfaces/api/routes/v1/video-projects.route.js"),
+    import("./dist/application/video-editing/process-video-version.js"),
+    import("./dist/application/video-editing/transcript-tools.js"),
+  ]);
+  const config = loadApiConfig();
+  return { service: route.buildVideoProjectsService({ pool: db, objectStorage: c.objectStorage, videoEngine: config.videoEngine }), videoSheetKey: processing.videoSheetKey, buildSentences: transcript.buildSentences, engine: config.videoEngine };
+}
+
+async function keyBytes(key) {
+  const response = await fetch(signForExternalPublication(c.objectStorage.resolvePublicUrl(key)), { signal: AbortSignal.timeout(60000) });
+  requireCondition(response.ok, `Arquivo do workspace indisponível (${response.status})`);
+  return Buffer.from(await response.arrayBuffer());
+}
+
+/** Miniatura JPEG para o diretor criativo (Codex) enxergar o material. */
+async function thumbnail(bytes) {
+  return (await sharp(bytes).rotate().resize({ width: 640, height: 640, fit: "inside", withoutEnlargement: true }).jpeg({ quality: 78 }).toBuffer()).toString("base64");
+}
+
+const ownedKey = (url) => {
+  const key = parseOwnedObjectUrl(url)?.key;
+  const owner = key && classifyObjectKeyOwner(key);
+  return owner?.kind === "workspace" && owner.tenantId === tenantId && owner.workspaceId === workspaceId ? key : undefined;
+};
+
+/** Texto do pedido do vídeo (vai para a validação: número/preço só se estiver aqui). */
+function videoRequestText(idea) {
+  return [`Pauta: ${idea.title}`, idea.keyMessage && `Mensagem: ${idea.keyMessage}`, idea.cta && `Chamada: ${idea.cta}`, idea.visualDirection && `Direção visual: ${idea.visualDirection}`, idea.caption && `Legenda: ${idea.caption}`]
+    .filter(Boolean).join("\n").replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, " ").slice(0, 1450);
+}
+
+/**
+ * Materiais da pauta de vídeo: anexos da pauta (foto, captura, gravação), senão o que a marca tem —
+ * fotos oficiais do catálogo (nunca peça com logo de terceiros), capturas reais do software pela
+ * funcionalidade da pauta. Sem nada: o diretor criativo cria imagens conceituais (cenário "só a ideia").
+ */
+async function videoMaterials(idea, creative) {
+  const materials = [];
+  const photos = creative.businessKind === "physical_products" ? await catalogPhotos() : [];
+  const photosByUrl = new Map(photos.map((photo) => [photo.url, photo]));
+  for (const url of idea.referenceImages ?? []) {
+    if (materials.length >= VIDEO_MAX_MATERIALS) break;
+    const key = ownedKey(url);
+    if (!key) continue;
+    const photo = photosByUrl.get(url);
+    if (photo && creative.blockedProducts?.includes(photo.code)) continue;
+    const video = /\.(mp4|mov)$/i.test(key);
+    if (video) { materials.push({ objectKey: key, kind: "video", role: "footage", label: "gravação anexada à pauta" }); continue; }
+    const bytes = await ownedBytes(url);
+    const meta = await sharp(bytes).metadata();
+    const site = photo ? 0 : await siteCaptureScore(bytes);
+    materials.push({ objectKey: key, kind: "image", role: photo ? "product_photo" : site >= 0.62 ? "screenshot" : "reference",
+      label: photo ? `produto ${photo.code} (${variantName(photo.color)})` : site >= 0.62 ? "captura de tela anexada" : "imagem anexada à pauta",
+      width: meta.width, height: meta.height, thumb: await thumbnail(bytes), ...(photo ? { productCode: photo.code } : {}) });
+  }
+  if (!materials.length && creative.businessKind === "physical_products" && creative.products?.length) {
+    // Rodízio de estampas próprias, pelo assunto da pauta: a primeira peça com fotos de cores diferentes.
+    const memory = await brandMemory().catch(() => undefined);
+    const usedRows = (await db.query(`select source_artifacts->0->'payload'->'catalogProductCodes' as codes from publication_plans
+      where tenant_id=$1 and workspace_id=$2 and idempotency_key like $3 order by created_at desc limit 30`, [tenantId, workspaceId, `social:${prefix}%`])).rows;
+    const rotated = applyProductMemory(rotationOrder(creative.products.filter((code) => !creative.blockedProducts?.includes(code)), usedRows), memory).map((code) => ({ code, themes: creative.productThemes?.[code] ?? [] }));
+    const ranked = rankProductsForIdea(rotated, idea);
+    for (const { code } of ranked.length ? ranked : rotated) {
+      const seen = new Set();
+      for (const photo of photos.filter((item) => item.code === code)) {
+        const label = variantName(photo.color);
+        const key = ownedKey(photo.url);
+        if (!key || seen.has(label) || materials.length >= 3) continue;
+        const bytes = await ownedBytes(photo.url);
+        const signals = await catalogPhotoSignals(bytes, label);
+        if (signals.siteCaptureScore >= 0.62 || signals.variantColorCheck?.consistent === false) continue;
+        seen.add(label);
+        const meta = await sharp(bytes).metadata();
+        materials.push({ objectKey: key, kind: "image", role: "product_photo", label: `camiseta ${label.toLocaleLowerCase("pt-BR")} — estampa ${code}`, width: meta.width, height: meta.height, thumb: await thumbnail(bytes), productCode: code });
+      }
+      if (materials.length) break;
+    }
+  }
+  if (!materials.length && creative.businessKind === "software") {
+    // Capturas reais da funcionalidade de que a pauta fala (etiqueta feature: na Biblioteca).
+    const text = `${idea.title} ${idea.keyMessage ?? ""} ${idea.visualDirection ?? ""}`.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
+    const feature = (creative.features ?? []).map((item) => ({ item, hits: item.keywords.filter((word) => text.includes(word)).length })).sort((a, b) => b.hits - a.hits)[0];
+    const captures = await libraryCaptures();
+    const chosen = captures.filter((capture) => !feature?.hits || capture.meta.feature === feature.item.key).slice(0, 4);
+    for (const capture of chosen.length ? chosen : captures.slice(0, 4)) {
+      const key = ownedKey(capture.url);
+      if (!key) continue;
+      const bytes = await ownedBytes(capture.url);
+      const meta = await sharp(bytes).metadata();
+      materials.push({ objectKey: key, kind: "image", role: "screenshot", label: `${capture.candidate.name}${capture.meta.feature ? ` (${capture.meta.feature})` : ""}`, width: meta.width, height: meta.height, thumb: await thumbnail(bytes) });
+    }
+  }
+  return materials.map((material, index) => ({ id: `M${index + 1}`, ...material }));
+}
+
+function videoPostSummary(post) {
+  return { id: post.id, state: post.state, destinations: post.destinations.map(({ network, state, format }) => ({ network, state, format })) };
+}
+
+async function videoAction(workspace, brandConfig) {
+  const { service, videoSheetKey, buildSentences, engine } = await videoModules();
+  const creative = brandConfig.creative ?? { businessKind: "unknown" };
+  const date = typeof request.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(request.date) ? request.date : undefined;
+  requireCondition(engine.allWorkspaces || engine.enabledWorkspaces.includes(workspaceId), "Motor de vídeo não habilitado para esta marca");
+
+  if (mode === "video_select") {
+    requireCondition(date, "Data do vídeo inválida");
+    const slot = `${date}T${VIDEO_HOUR}:00`;
+    const allIdeas = await c.editorialIdeaRepository.listByWorkspace(workspaceId);
+    const ideas = allIdeas.filter((idea) => idea.format === "video" && idea.status === "available" && (!idea.scheduledDate || idea.scheduledDate <= date));
+    // Pauta com vídeo em produção (ou pronto e ainda não agendado): retoma em vez de abrir outro.
+    const { rows: open } = await db.query(`select p.id as project_id, p.settings->'origin'->>'ideaId' as idea_id, v.id as version_id, v.status, v.stage
+      from video_projects p join lateral (select id, status, stage from video_versions where project_id=p.id order by number desc limit 1) v on true
+      where p.tenant_id=$1 and p.workspace_id=$2 and p.settings->'origin'->>'kind'='editorial_pilot' and p.created_at > now() - interval '3 days'
+      order by p.created_at desc`, [tenantId, workspaceId]);
+    const { rows: usedRows } = await db.query(`select source_artifacts->0->'payload'->>'editorialIdeaId' as id, state from publication_plans
+      where tenant_id=$1 and workspace_id=$2 and idempotency_key like $3`, [tenantId, workspaceId, `social:${videoPrefix}:%`]);
+    const used = new Set(usedRows.filter((row) => row.state !== "cancelled").map((row) => row.id));
+    const { rows: redoing } = await db.query(`select idea_id from publication_redo_requests where workspace_id=$1 and status in ('pending','running')`, [workspaceId]);
+    const skip = new Set([...(Array.isArray(request.skipIdeaIds) ? request.skipIdeaIds.map(String) : []), ...redoing.map((row) => row.idea_id)]);
+    const only = request.onlyIdea ? String(request.onlyIdea) : undefined;
+    const eligible = ideas.filter((idea) => (only ? idea.id === only || idea.externalId === only : !used.has(idea.id) && !skip.has(idea.id)));
+    const resume = !only && open.find((row) => eligible.some((idea) => idea.id === row.idea_id) && !["failed", "cancelled", "approved"].includes(row.status));
+    const ranking = rankIdeasForSlot(eligible, { slot, recent: await nearbyPieces(allIdeas) });
+    const idea = resume ? eligible.find((item) => item.id === resume.idea_id) : ranking[0]?.idea;
+    if (!idea) return { brand: workspace.name, empty: true, videoIdeas: ideas.length };
+    const { rows: [brandRow] } = await db.query("select profile from brand_visual_profiles where workspace_id=$1", [workspaceId]);
+    const identity = brandRow?.profile?.identity;
+    const { rows: strategies } = await db.query(`select v.plan->>'strategy' as strategy from video_versions v join video_projects p on p.id=v.project_id
+      where p.workspace_id=$1 and v.plan is not null order by v.created_at desc limit 5`, [workspaceId]);
+    const memory = await brandMemory().catch(() => undefined);
+    return {
+      brand: workspace.name, slot,
+      idea: { id: idea.id, externalId: idea.externalId, title: idea.title, keyMessage: idea.keyMessage, caption: idea.caption, cta: idea.cta, visualDirection: idea.visualDirection, category: idea.category, updatedAt: idea.updatedAt },
+      request: videoRequestText(idea),
+      ...(resume ? { resume: { projectId: resume.project_id, versionId: resume.version_id, status: resume.status, stage: resume.stage } } : { materials: await videoMaterials(idea, creative) }),
+      brandStyle: { name: workspace.name, tone: identity?.toneOfVoice ?? identity?.tone, colors: Array.isArray(identity?.colors) ? identity.colors.slice(0, 6) : undefined },
+      businessKind: creative.businessKind, musicAvailable: engine.musicLibraryAvailable,
+      recentStrategies: strategies.map((row) => row.strategy).filter(Boolean),
+      ...(memory ? { lessons: memoryGuidance(memory, "video") } : {}),
+      calendar: ranking.slice(0, 3).map((entry) => ({ idea: entry.idea.externalId, score: Number(entry.score.toFixed(2)), reasons: entry.reasons })),
+    };
+  }
+
+  if (mode === "video_idea") {
+    // Consulta leve (refação): situação atual da pauta.
+    const idea = await c.editorialIdeaRepository.get(workspaceId, String(request.ideaId));
+    requireCondition(idea?.format === "video", "Pauta de vídeo não encontrada");
+    return { id: idea.id, status: idea.status, updatedAt: idea.updatedAt };
+  }
+
+  if (mode === "video_upload") {
+    // Imagem conceitual gerada pelo Codex (cenário "só a ideia"): vai para o storage do workspace.
+    requireCondition(typeof request.data === "string" && typeof request.ideaId === "string", "Upload de imagem inválido");
+    const png = await sharp(Buffer.from(request.data, "base64")).rotate().resize({ width: 2048, height: 2048, fit: "inside", withoutEnlargement: true }).png().toBuffer();
+    const meta = await sharp(png).metadata();
+    const key = `assets/${tenantId}/${workspaceId}/video-gen/${String(request.ideaId).slice(0, 60)}-${createHash("sha256").update(png).digest("hex").slice(0, 20)}.png`;
+    await c.objectStorage.put({ key, body: png, contentType: "image/png" });
+    return { objectKey: key, width: meta.width, height: meta.height };
+  }
+
+  const actor = await actorForPublish();
+
+  if (mode === "video_queue") {
+    const idea = await c.editorialIdeaRepository.get(workspaceId, request.ideaId);
+    requireCondition(idea?.status === "available" && idea.format === "video" && idea.updatedAt === request.updatedAt, "A pauta mudou durante a preparação do vídeo");
+    requireCondition(Array.isArray(request.materials) && request.materials.length >= 1 && request.materials.length <= VIDEO_MAX_MATERIALS, "Materiais do vídeo inválidos");
+    for (const material of request.materials) requireCondition(typeof material.objectKey === "string" && classifyObjectKeyOwner(material.objectKey)?.workspaceId === workspaceId, "Material fora do workspace");
+    const settings = request.settings ?? {};
+    const { project, version } = await service.create({
+      scope: scope, userId: actor.userId, title: `Pauta ${idea.externalId} — ${idea.title}`.slice(0, 120), aspect: "9:16", request: videoRequestText(idea),
+      settings: { targetDurationSeconds: Math.max(8, Math.min(60, Number(settings.targetDurationSeconds) || 20)), editing: ["dinamico", "elegante", "direto"].includes(settings.editing) ? settings.editing : "dinamico",
+        transitions: ["suaves", "moderadas", "marcantes"].includes(settings.transitions) ? settings.transitions : "moderadas", captions: settings.captions !== false, music: Boolean(settings.music) && engine.musicLibraryAvailable,
+        origin: { kind: "editorial_pilot", ideaId: idea.id, externalId: idea.externalId } },
+      materials: request.materials.map((material) => ({ url: c.objectStorage.resolvePublicUrl(material.objectKey), role: material.role, ...(material.label ? { label: String(material.label).slice(0, 80) } : {}) })),
+      ...(request.draft ? { presetDraft: request.draft } : {}),
+    });
+    return { projectId: project.id, versionId: version.id };
+  }
+
+  if (mode === "video_status") {
+    const { version, project } = await service.pilotVersion(scope, String(request.versionId));
+    const done = ["ready_for_review", "needs_revision", "approved"].includes(version.status) && version.outputKey;
+    let output;
+    if (done && request.withMedia) {
+      const bytes = await keyBytes(version.outputKey);
+      let sheet;
+      try { sheet = (await keyBytes(videoSheetKey(tenantId, workspaceId, version.id))).toString("base64"); } catch { /* prancha não gerada: revisão só pelo relatório */ }
+      output = { sha256: createHash("sha256").update(bytes).digest("hex"), sizeBytes: bytes.length, ...(sheet ? { sheet } : {}) };
+    }
+    const awaiting = version.stage === "awaiting_draft";
+    return {
+      versionId: version.id, projectId: project.id, number: version.number, status: version.status, stage: version.stage, progress: version.progress, message: version.message, error: version.error,
+      warnings: version.warnings, gate: version.gate, draft: version.draft, renderMs: version.renderMs,
+      plan: version.plan ? { strategy: version.plan.strategy, durationSeconds: version.plan.durationSeconds, clips: version.plan.clips.map((clip) => ({ id: clip.id, purpose: clip.purpose, assetId: clip.assetId, layout: clip.layout ?? "full", motion: clip.motion.type, transition: clip.transitionIn.type, durationSeconds: clip.durationSeconds, texts: clip.overlays.map((overlay) => overlay.text) })) } : undefined,
+      ...(awaiting ? { sentences: buildSentences(Object.entries(project.transcripts).map(([materialId, transcript]) => ({ materialId, transcript }))).map((s) => ({ id: s.id, materialId: s.materialId, start: s.start, end: s.end, text: s.text })) } : {}),
+      ...(output ? { output } : {}),
+    };
+  }
+
+  if (mode === "video_revise") {
+    requireCondition(request.draft && typeof request.reason === "string", "Revisão de vídeo inválida");
+    const { version } = await service.pilotVersion(scope, String(request.versionId));
+    const next = await service.reviseWithDraft({ scope: scope, userId: actor.userId, projectId: version.projectId, fromVersionId: version.id, reason: request.reason, draft: request.draft });
+    return { versionId: next.id, number: next.number };
+  }
+
+  if (mode === "video_report") {
+    // Falha ou revisão manual de uma pauta de vídeo: um alerta por pauta (e-mail da plataforma).
+    const detail = typeof request.detail === "string" ? redactSecrets(request.detail).replace(/[\u0000-\u001f]+/g, " ").slice(0, 600) : "";
+    const body = `Marca: ${workspace.name}\nVídeo (Reels) da pauta ${String(request.idea ?? "").slice(0, 80)} não foi agendado e foi para revisão manual.${detail ? `\n${detail}` : ""}`;
+    await db.query("select enqueue_platform_email_alert('publication_failed', $1, 'Vídeo do piloto em revisão', $2, $3)", [`editorial-video:${workspaceId}:${String(request.ideaId ?? date ?? "")}`.slice(0, 160), body, `/workspaces/${workspaceId}/ideias`]);
+    return { reported: true };
+  }
+
+  requireCondition(mode === "video_schedule" || mode === "video_validate", "Operação de vídeo inválida");
+  const idea = await c.editorialIdeaRepository.get(workspaceId, request.ideaId);
+  requireCondition(idea?.status === "available" && idea.format === "video" && idea.updatedAt === request.updatedAt, "A pauta mudou durante a produção do vídeo");
+  const { version, project } = await service.pilotVersion(scope, String(request.versionId));
+  requireCondition(project.settings.origin?.ideaId === idea.id, "O vídeo não é desta pauta");
+  requireCondition(version.status === "ready_for_review" && version.gate?.status === "ready_for_review" && version.outputKey && version.plan, "O vídeo não passou no controle de qualidade");
+  // Trava: só segue o arquivo EXATO que foi revisado (hash conferido aqui, no backend).
+  const bytes = await keyBytes(version.outputKey);
+  const sha256 = createHash("sha256").update(bytes).digest("hex");
+  requireCondition(typeof request.sha256 === "string" && request.sha256 === sha256, "O vídeo mudou depois da revisão — publicação bloqueada");
+  requireCondition(version.plan.aspect === "9:16" && version.plan.durationSeconds >= 5 && version.plan.durationSeconds <= 90, "Vídeo fora do formato do Reels");
+  const slot = request.slot;
+  requireCondition(typeof slot === "string" && /^\d{4}-\d{2}-\d{2}T\d{2}:00$/.test(slot), "Horário do vídeo inválido");
+  const options = await c.social.posts.composerOptions(scope);
+  const selected = brandConfig.accounts.map((id) => options.find((account) => account.accountId === id));
+  requireCondition(selected.every((account) => account?.publishable), "Conta social da marca indisponível");
+  requireCondition(selected.every((account) => account.formats.some((item) => item.format === "reel")), "Uma das redes da marca não aceita Reels");
+  // Endereço pelo conteúdo (hash no nome): a mídia publicada nunca é trocada por outra versão.
+  const key = `assets/${tenantId}/${workspaceId}/${idea.id}-video-${sha256.slice(0, 20)}.mp4`;
+  const { url } = await c.objectStorage.put({ key, body: bytes, contentType: "video/mp4" });
+  let coverUrl;
+  if (version.posterKey) {
+    const poster = await keyBytes(version.posterKey);
+    coverUrl = (await c.objectStorage.put({ key: `assets/${tenantId}/${workspaceId}/${idea.id}-video-${sha256.slice(0, 20)}.jpg`, body: poster, contentType: "image/jpeg" })).url;
+  }
+  const media = [{ url, kind: "video", width: 1080, height: 1920, mimeType: "video/mp4", sizeBytes: bytes.length, durationSec: Math.round(version.plan.durationSeconds * 10) / 10, hasAudio: true, ...(coverUrl ? { coverUrl } : {}) }];
+  const scopeRedo = typeof request.redoJobId === "string";
+  const campaignCta = creative.presentation === "fashion_campaign" && idea.cta && !idea.caption.includes(idea.cta) ? idea.cta : undefined;
+  const caption = campaignCta ? `${idea.caption}\n\n${campaignCta}` : idea.caption;
+  const input = { ...scope, base: { caption, media }, destinations: brandConfig.accounts.map((accountId) => ({ accountId, format: "reel" })) };
+  const checks = await c.social.posts.validate(input);
+  for (const check of checks) requireCondition(!check.issues.length && !check.warnings.length, `${check.network}: ${[...check.issues.map((issue) => issue.message), ...check.warnings].join(". ")}`);
+  if (mode === "video_validate") return { validated: true, idea: idea.externalId, sha256, sizeBytes: bytes.length, durationSeconds: version.plan.durationSeconds, networks: checks.map((check) => check.network), format: "reel" };
+  // Vídeo que o cliente já reprovou (mesmo arquivo, mesma legenda) nunca volta.
+  const { rows: rejectedRows } = await db.query(`select p.id, p.source_artifacts->0->'payload'->>'videoSha256' as sha,
+      (select d.caption from social_post_destinations d where d.publication_id=p.id order by d.created_at limit 1) as caption
+    from publication_approval_requests q join publication_plans p on p.id=q.publication_id and p.tenant_id=q.tenant_id and p.workspace_id=q.workspace_id
+    where q.tenant_id=$1 and q.workspace_id=$2 and q.decision='reject' and p.source_artifacts->0->'payload'->>'editorialIdeaId'=$3`, [tenantId, workspaceId, idea.id]);
+  requireCondition(!rejectedRows.some((row) => row.sha === sha256), "Este é o mesmo vídeo que o cliente reprovou — publicação bloqueada.");
+  let idempotencyKey = `${videoPrefix}:${slot}`;
+  if (scopeRedo || request.onlyIdea) {
+    const base = `${videoPrefix}:${slot}:refeita:${idea.id}`;
+    for (let attempt = 1; attempt <= 20; attempt += 1) {
+      idempotencyKey = attempt === 1 ? base : `${base}:${attempt}`;
+      const found = await c.publicationRepository.getPlanByIdempotency({ ...scope, idempotencyKey: `social:${idempotencyKey}` });
+      if (found?.state !== "cancelled") break;
+    }
+  }
+  const existing = await c.publicationRepository.getPlanByIdempotency({ ...scope, idempotencyKey: `social:${idempotencyKey}` });
+  if (existing && existing.state !== "cancelled") return { existing: videoPostSummary(await c.social.posts.get({ ...scope, postId: existing.id })) };
+  const publishNow = request.publishNow === true;
+  // Registro do motor (estratégia, composições, Quality Gate, revisão visual do Codex), limitado em tamanho.
+  const recordText = redactSecrets(JSON.stringify({ strategy: version.plan.strategy, durationSeconds: version.plan.durationSeconds, layouts: version.plan.clips.map((clip) => clip.layout ?? "full"), gate: version.gate.status, review: request.review ?? null, trace: request.trace ?? null }));
+  const videoRecord = { video: recordText.length < 60000 ? JSON.parse(recordText) : { strategy: version.plan.strategy, gate: version.gate.status } };
+  const post = await c.social.posts.create({ ...input, actor, idempotencyKey, when: publishNow ? { mode: "now" } : { mode: "schedule", localDateTime: slot, timezone }, source: {
+    artifacts: [{ artifactId: idea.id, artifactType: "video", schemaId: "social.post", schemaVersion: 1, checksum: sha256,
+      payload: { editorialIdeaId: idea.id, externalId: idea.externalId, videoUrl: url, videoVersionId: version.id, videoProjectId: project.id, videoSha256: sha256,
+        creative: videoRecord,
+        ...(scopeRedo ? { redoJobId: request.redoJobId } : {}) } }],
+  } });
+  if (scopeRedo) {
+    await db.query(`update publication_redo_requests set status='done', result_publication_id=$2, change_summary=$4, updated_at=now() where id=$1 and workspace_id=$3`,
+      [request.redoJobId, post.id, workspaceId, typeof request.changeSummary === "string" ? request.changeSummary.slice(0, 300) : null]);
+  }
+  await db.query(`update editorial_ideas set status='approved',status_changed_at=now(),updated_at=now() where id=$1 and workspace_id=$2 and tenant_id=$3 and status='available'`, [idea.id, workspaceId, tenantId]);
+  return { [publishNow ? "submitted" : "scheduled"]: videoPostSummary(post), idea: idea.externalId, slot, sha256 };
 }
 
 async function run() {
@@ -486,6 +782,8 @@ async function run() {
     return { brand: workspace.name, reconciled: true };
   }
   if (mode === "claim_redo") return claimRedo();
+  // Vídeo (Reels) a partir de pauta "video" do Bolsão: ramo próprio, sem tocar no fluxo de imagem/carrossel.
+  if (typeof mode === "string" && mode.startsWith("video_")) return videoAction(workspace, brandConfig);
   // Consulta (só leitura): o que a marca já ensinou ao piloto.
   if (mode === "memory") return { brand: workspace.name, memory: memorySummary(await brandMemory()) };
   if (mode === "finish_redo") {

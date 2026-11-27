@@ -1,0 +1,10 @@
+[Unit]
+Description=Preparação diária dos vídeos (Reels) do Vorix — agendados para as 20h, com aprovação pelo WhatsApp
+
+[Timer]
+OnCalendar=*-*-* 09:40:00 America/Sao_Paulo
+AccuracySec=1s
+Persistent=false
+
+[Install]
+WantedBy=timers.target

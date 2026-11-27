@@ -11,6 +11,8 @@ import { randomUUID } from "node:crypto";
 import type { VideoAspect } from "../../domain/video-editing/video-edit-plan.js";
 import { validateVideoEditDraftStructure, type VideoEditDraft } from "../ai-gateway/schemas/video-edit-draft.v1.js";
 import type { VideoMaterialRole, VideoProject, VideoProjectMaterial, VideoProjectRepositoryPort, VideoProjectScope, VideoProjectSettings, VideoVersion } from "../ports/video-project-repository.port.js";
+import type { VideoBrandFeedbackRepositoryPort } from "../ports/video-brand-feedback-repository.port.js";
+import { deriveBrandTaste, editorialVerdict, normalizeFeedbackInput } from "../../domain/video-editing/brand-video-taste.js";
 
 export class VideoProjectError extends Error {
   constructor(readonly code: "DISABLED" | "INVALID" | "NOT_FOUND" | "LIMIT" | "CONFLICT", message: string) {
@@ -33,6 +35,8 @@ export type VideoProjectsServiceDeps = {
   /** URL de prévia/uso para uma chave (assinada quando o storage é privado). */
   previewUrl: (objectKey: string) => string;
   musicLibraryAvailable: boolean;
+  /** Avaliações humanas por marca (aprovação editorial e reprovações com motivo). */
+  feedbackRepository?: VideoBrandFeedbackRepositoryPort;
   limits?: Partial<VideoLimits>;
   now?: () => Date;
   idGenerator?: (prefix: string) => string;
@@ -201,6 +205,28 @@ export class VideoProjectsService {
     const version = await this.deps.repository.approve(scope, versionId, userId, this.now());
     if (!version) throw new VideoProjectError("CONFLICT", "Só uma versão pronta para revisão pode ser aprovada.");
     return this.present(version);
+  }
+
+  /**
+   * Avaliação HUMANA de uma versão: "aprovado" (com o que agradou) também aprova a versão no fluxo de
+   * sempre; "reprovado" exige motivo (padrão do vocabulário ou nota). Isto — e não o Quality Gate nem a
+   * revisão do Codex — é o que declara o padrão comercial.
+   */
+  async recordFeedback(scope: VideoProjectScope, versionId: string, userId: string, input: { verdict?: unknown; patterns?: unknown; note?: unknown }) {
+    if (!this.deps.feedbackRepository) throw new VideoProjectError("DISABLED", "Avaliações de vídeo indisponíveis.");
+    let normalized;
+    try { normalized = normalizeFeedbackInput(input); } catch (error) { throw new VideoProjectError("INVALID", String((error as Error).message).replace(/^VIDEO_FEEDBACK_INVALID:\s*/, "")); }
+    const version = await this.deps.repository.getVersion(scope, versionId);
+    if (!version) throw new VideoProjectError("NOT_FOUND", "Versão não encontrada.");
+    if (normalized.verdict === "approved" && version.status !== "approved") await this.approve(scope, versionId, userId);
+    const feedback = await this.deps.feedbackRepository.record({ id: this.id("vfb"), tenantId: scope.tenantId, workspaceId: scope.workspaceId, projectId: version.projectId, versionId, ...normalized, reviewerId: userId, createdAt: this.now().toISOString() });
+    return { feedback, editorial: editorialVerdict({ technical: version.gate?.status ?? version.status, feedback: [feedback] }) };
+  }
+
+  /** Preferências e reprovações da marca (vão ao diretor criativo e à seleção de propostas). */
+  async brandTaste(scope: VideoProjectScope) {
+    const feedback = this.deps.feedbackRepository ? await this.deps.feedbackRepository.listByWorkspace({ ...scope, limit: 200 }) : [];
+    return deriveBrandTaste(feedback);
   }
 
   async list(scope: VideoProjectScope) {

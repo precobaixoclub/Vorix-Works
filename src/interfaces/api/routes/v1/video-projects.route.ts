@@ -4,6 +4,8 @@ import type { ObjectStoragePort } from "../../../../application/ports/object-sto
 import { VideoProjectsService as VideoProjectsServiceImpl } from "../../../../application/video-editing/video-projects.service.js";
 import { InMemoryVideoProjectRepository } from "../../../../infrastructure/storage/in-memory-video-project-repository.js";
 import { PostgresVideoProjectRepository } from "../../../../infrastructure/storage/postgres/postgres-video-project-repository.js";
+import { InMemoryVideoBrandFeedbackRepository } from "../../../../infrastructure/storage/in-memory-video-brand-feedback-repository.js";
+import { PostgresVideoBrandFeedbackRepository } from "../../../../infrastructure/storage/postgres/postgres-video-brand-feedback-repository.js";
 import { classifyObjectKeyOwner, OBJECT_URL_TTL, parseOwnedObjectUrl, signOwnedUrl } from "../../../../shared/utils/object-url-signing.js";
 import type { WorkspaceRepositoryPort } from "../../../../application/ports/workspace-repository.port.js";
 import { VideoProjectError, type VideoProjectsService } from "../../../../application/video-editing/video-projects.service.js";
@@ -27,11 +29,23 @@ export function buildVideoProjectsService(input: { pool?: pg.Pool; objectStorage
     urlToKey: (url) => parseOwnedObjectUrl(url)?.key,
     previewUrl: (key) => signOwnedUrl(input.objectStorage.resolvePublicUrl(key), OBJECT_URL_TTL.preview),
     musicLibraryAvailable: engine.musicLibraryAvailable,
+    feedbackRepository: input.pool ? new PostgresVideoBrandFeedbackRepository(input.pool) : new InMemoryVideoBrandFeedbackRepository(),
   });
 }
 
 const WORKSPACE_QUERY = { type: "object", required: ["workspaceId"], properties: { workspaceId: { type: "string", minLength: 1, maxLength: 80 } } } as const;
 const ID_PARAMS = { type: "object", required: ["id"], properties: { id: { type: "string", minLength: 1, maxLength: 80 } } } as const;
+const FEEDBACK_BODY = {
+  type: "object",
+  required: ["workspaceId", "verdict"],
+  additionalProperties: false,
+  properties: {
+    workspaceId: { type: "string", minLength: 1, maxLength: 80 },
+    verdict: { type: "string", enum: ["approved", "rejected"] },
+    patterns: { type: "array", maxItems: 20, items: { type: "string", maxLength: 60 } },
+    note: { type: "string", maxLength: 1000 },
+  },
+} as const;
 
 const CREATE_BODY = {
   type: "object",
@@ -142,5 +156,17 @@ export async function registerVideoProjectsRoutes(app: FastifyInstance, deps: Vi
   app.post("/video-versions/:id/approve", { schema: { params: ID_PARAMS, body: WORKSPACE_BODY } }, async (request) => {
     const { principal, scope } = await scopeOf(request, "publication:create", (request.body as { workspaceId: string }).workspaceId);
     return successEnvelope(await deps.service.approve(scope, (request.params as { id: string }).id, principal.userId).catch(translate), request.id);
+  });
+
+  // Avaliação humana com motivo: aprova (gostei de…) ou reprova (o problema era…). Alimenta o gosto da marca.
+  app.post("/video-versions/:id/feedback", { schema: { params: ID_PARAMS, body: FEEDBACK_BODY } }, async (request) => {
+    const body = request.body as { workspaceId: string; verdict: string; patterns?: string[]; note?: string };
+    const { principal, scope } = await scopeOf(request, body.verdict === "approved" ? "publication:create" : "asset:update", body.workspaceId);
+    return successEnvelope(await deps.service.recordFeedback(scope, (request.params as { id: string }).id, principal.userId, body).catch(translate), request.id);
+  });
+
+  app.get("/video-brand-taste", { schema: { querystring: WORKSPACE_QUERY } }, async (request) => {
+    const { scope } = await scopeOf(request, "asset:read", (request.query as { workspaceId: string }).workspaceId);
+    return successEnvelope(await deps.service.brandTaste(scope).catch(translate), request.id);
   });
 }

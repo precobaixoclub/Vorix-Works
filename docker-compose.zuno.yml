@@ -503,7 +503,7 @@ services:
 
   # Motor de vídeo (Marketing › Criar vídeo com IA). DESLIGADO por padrão: só sobe com
   # `--profile video` (ativação aprovada). Um render por vez (a fila garante), limites da medição
-  # controlada (2 vCPU / 2 GiB, sem swap extra) e prioridade de CPU abaixo dos demais serviços.
+  # controlada (2 vCPU / 3 GiB, sem swap extra: o Remotion com Chromium chegou a 1,97 GiB na prova) e prioridade de CPU abaixo dos demais serviços.
   video-worker:
     profiles: ["video"]
     logging: *bounded-logging
@@ -535,9 +535,9 @@ services:
       - zuno_meetings_models:/data/whisper-cache
     networks: [zuno_network]
     init: true
-    mem_limit: 2048m
+    mem_limit: 3072m
     mem_reservation: 128m
-    memswap_limit: 2048m
+    memswap_limit: 3072m
     cpus: 2.0
     cpu_shares: 256
     pids_limit: 256

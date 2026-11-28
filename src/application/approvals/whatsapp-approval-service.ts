@@ -72,6 +72,11 @@ export interface WhatsappApprovalRepositoryPort {
 export type ApprovalPostView = {
   state: string; scheduledAt?: string; timezone?: string; caption?: string; networks: string[];
   media: Array<{ url: string; kind: string; mimeType?: string }>;
+  /**
+   * SOMENTE APROVAÇÃO: o pedido registra a decisão humana e NUNCA agenda nem publica — aprovar não chama
+   * `posts.approve`, reprovar não dispara refação automática (que publicaria) e sem resposta não há prazo.
+   */
+  approvalOnly?: { ideaTitle?: string; production?: string; durationSeconds?: number; concept?: string; sha256?: string };
 };
 
 export type WhatsappApprovalServiceDeps = {
@@ -91,6 +96,8 @@ export type WhatsappApprovalServiceDeps = {
    * esperar a conciliação do piloto (que só roda perto das 12h/19h). Devolve quantas ideias mudaram.
    */
   completePublishedIdeas?: () => Promise<number>;
+  /** Decisão de um pedido "somente aprovação": registrada na execução de origem (sem publicar nada). */
+  onApprovalOnlyDecision?: (input: { tenantId: string; workspaceId: string; publicationId: string; decision: "approve" | "reject"; reason?: string; reviewerUserId: string }) => Promise<void>;
   posts: {
     get(input: { tenantId: string; workspaceId: string; postId: string }): Promise<ApprovalPostView>;
     approve(input: { tenantId: string; workspaceId: string; postId: string; actor: { userId: string; role: TenantRole } }): Promise<unknown>;
@@ -290,7 +297,7 @@ export class WhatsappApprovalService {
         // Outro pedido já aguardando este aprovador: "1" sozinho seria ambíguo — a mensagem já orienta com o código.
         const othersOpen = (await this.deps.repository.listOpenByPhone(settings.connectionId, rule.approverPhone)).some((open) => open.id !== request.id);
         const redo = await this.deps.repository.findRedoByResult?.(item.publicationId).catch(() => undefined);
-        const text = approvalRequestText({ brand: workspace?.name ?? "marca", code: request.code, networks: post.networks, when: formatWhen(post.scheduledAt, post.timezone), caption: post.caption, screens: images.length, withCode: othersOpen, ...(video ? { video: { ...(videoLink ? { link: videoLink } : {}) } } : {}), ...(redo ? { redo: { ...redo, max: MAX_REDO_ATTEMPTS } } : {}) });
+        const text = approvalRequestText({ brand: workspace?.name ?? "marca", code: request.code, networks: post.networks, when: formatWhen(post.scheduledAt, post.timezone), caption: post.caption, screens: images.length, withCode: othersOpen, ...(video ? { video: { ...(videoLink ? { link: videoLink } : {}) } } : {}), ...(redo ? { redo: { ...redo, max: MAX_REDO_ATTEMPTS } } : {}), ...(post.approvalOnly ? { approvalOnly: post.approvalOnly } : {}) });
         await this.deliver(settings.connectionId, rule.approverPhone, (to) => provider.sendText({ externalSessionId: session, to, body: text }), request.id);
         await this.deps.repository.updateRequest(request.id, { status: "sent", sentAt: this.now().toISOString() });
         sent += 1;
@@ -354,6 +361,16 @@ export class WhatsappApprovalService {
         const actor = await this.actorFor(request);
         const post = await this.deps.posts.get(key);
         if (post.state !== "AWAITING_APPROVAL") throw new Error("a publicação não está mais aguardando aprovação");
+        if (post.approvalOnly) {
+          const decision = request.decision === "approve" ? "approve" : "reject";
+          await this.deps.onApprovalOnlyDecision?.({ ...key, publicationId: request.publicationId, decision, ...(request.reason ? { reason: request.reason } : {}), reviewerUserId: actor.userId });
+          // O post era só o veículo do pedido: encerrado sem publicar (o arquivo aprovado fica na execução de origem).
+          await this.deps.posts.cancel({ ...key, actor });
+          await this.sendText(request.connectionId, request.approverPhone, decision === "approve" ? approvalAckText.approvedOnly(brand) : approvalAckText.rejectedOnly(brand, request.reason)).catch(() => undefined);
+          await this.deps.repository.updateRequest(request.id, { status: "applied", appliedAt: this.now().toISOString(), detail: `somente aprovação: ${decision === "approve" ? "aprovado" : "reprovado"} pela pessoa; nada foi agendado nem publicado${post.approvalOnly.sha256 ? ` · sha256 ${post.approvalOnly.sha256.slice(0, 16)}` : ""}` });
+          applied += 1;
+          continue;
+        }
         if (request.decision === "approve") {
           await this.deps.posts.approve({ ...key, actor });
           await this.sendText(request.connectionId, request.approverPhone, approvalAckText.approved(brand, formatWhen(post.scheduledAt, post.timezone))).catch(() => undefined);
@@ -387,6 +404,7 @@ export class WhatsappApprovalService {
         await this.deps.repository.updateRequest(request.id, { status: "expired", detail: `publicação mudou para ${post.state} fora do WhatsApp` });
         continue;
       }
+      if (post.approvalOnly) continue;
       if (!post.scheduledAt || Date.parse(post.scheduledAt) - this.now().getTime() > TIMEOUT_MARGIN_MS) continue;
       const rule = await this.deps.repository.getRule(request.tenantId, request.workspaceId);
       const brand = await this.brand(request);

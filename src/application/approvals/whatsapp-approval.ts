@@ -63,9 +63,24 @@ export const phoneDigits = (value: string) => value.replace(/\D/g, "");
 const NETWORK_LABEL: Record<string, string> = { instagram: "Instagram", facebook: "Facebook", tiktok: "TikTok", youtube: "YouTube", kwai: "Kwai" };
 
 /** `withCode`: já há outro pedido aguardando este aprovador — a resposta precisa do código (ou citar a mensagem). */
-export function approvalRequestText(input: { brand: string; code: string; networks: string[]; when?: string; caption?: string; screens: number; withCode?: boolean; redo?: { attempt: number; max: number; reason: string; changes?: string }; video?: { link?: string } }): string {
+export function approvalRequestText(input: { brand: string; code: string; networks: string[]; when?: string; caption?: string; screens: number; withCode?: boolean; redo?: { attempt: number; max: number; reason: string; changes?: string }; video?: { link?: string }; approvalOnly?: { ideaTitle?: string; production?: string; durationSeconds?: number; concept?: string } }): string {
   const networks = input.networks.map((network) => NETWORK_LABEL[network] ?? network).join(" + ") || "redes sociais";
   const caption = (input.caption ?? "").trim();
+  if (input.approvalOnly) {
+    const only = input.approvalOnly;
+    return [
+      `🎬 *Novo vídeo para aprovação — ${input.brand}*`,
+      ...(only.ideaTitle ? [`Ideia: ${only.ideaTitle}`] : []),
+      `Produção: ${only.production ?? input.code}${only.durationSeconds ? ` · ${Math.round(only.durationSeconds)} s` : ""}`,
+      ...(only.concept ? ["", only.concept.length > 400 ? `${only.concept.slice(0, 400)}…` : only.concept] : []),
+      ...(input.video?.link ? ["", `Assista ao vídeo: ${input.video.link}`] : []),
+      "",
+      "Somente aprovação: nada será agendado nem publicado automaticamente.",
+      input.withCode ? `Responda *1 ${input.code}* para aprovar ou *2 ${input.code}* e o que precisa mudar.` : "Responda *1* para aprovar ou *2* e o que precisa mudar.",
+      `Também vale tocar em *Responder* no vídeo.`,
+      `Código: *${input.code}*`,
+    ].join("\n");
+  }
   return [
     `*Aprovação de publicação — ${input.brand}*`,
     ...(input.redo ? [`🔁 Versão refeita (ajuste ${input.redo.attempt} de ${input.redo.max}) — você pediu: “${input.redo.reason}”`] : []),
@@ -102,6 +117,8 @@ export const approvalAckText = {
   ambiguous: (codes: string[]) => `Há ${codes.length} publicações aguardando sua aprovação. Toque em *Responder* na imagem da publicação e mande *1* ou *2* — ou responda com o código, por exemplo: *1 ${codes[0]}* ou *2 ${codes[0]} motivo*. Códigos: ${codes.join(", ")}.`,
   unknownCode: (code: string) => `Não encontrei uma publicação aguardando aprovação com o código ${code}.`,
   failed: (brand: string, detail: string) => `⚠️ Não consegui aplicar sua resposta na publicação de ${brand}: ${detail}`,
+  approvedOnly: (brand: string) => `✅ Aprovado — ${brand}. Registrei sua aprovação deste vídeo; nada foi agendado nem publicado.`,
+  rejectedOnly: (brand: string, reason?: string) => `❌ Ajustes pedidos — ${brand}${reason ? ` (motivo: ${reason})` : ""}. Registrei o motivo para a refação direcionada; nada foi publicado.`,
   test: (brand: string) => `Teste de aprovação — ${brand}. Quando houver uma publicação para aprovar, ela chega aqui. Responda *1* para aprovar ou *2* para reprovar.`,
 };
 

@@ -1650,7 +1650,18 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
         get: async (input) => {
           const view = await socialPosts.get(input);
           const first = view.destinations[0];
-          return { state: view.state, scheduledAt: view.scheduledAt, timezone: view.timezone, caption: first?.caption, networks: [...new Set(view.destinations.map((destination) => destination.network))], media: (first?.media ?? []).map((media) => ({ url: media.url, kind: media.kind, mimeType: media.mimeType })) };
+          // Marcação "somente aprovação" gravada no payload de origem pelo piloto (campanha de prova): o pedido
+          // registra a decisão e nunca agenda nem publica.
+          const { rows: [origin] } = repositories.pool
+            ? await repositories.pool.query(`select source_artifacts->0->'payload' as payload from publication_plans where id=$1 and tenant_id=$2 and workspace_id=$3`, [input.postId, input.tenantId, input.workspaceId])
+            : { rows: [] as { payload?: Record<string, unknown> }[] };
+          const only = origin?.payload && (origin.payload as Record<string, unknown>).approvalOnly === true ? origin.payload as Record<string, unknown> : undefined;
+          return { state: view.state, scheduledAt: view.scheduledAt, timezone: view.timezone, caption: first?.caption, networks: [...new Set(view.destinations.map((destination) => destination.network))], media: (first?.media ?? []).map((media) => ({ url: media.url, kind: media.kind, mimeType: media.mimeType })),
+            ...(only ? { approvalOnly: {
+              ...(typeof only.ideaTitle === "string" ? { ideaTitle: only.ideaTitle } : {}), ...(typeof only.videoVersionId === "string" ? { production: only.videoVersionId } : {}),
+              ...(typeof only.durationSeconds === "number" ? { durationSeconds: only.durationSeconds } : {}), ...(typeof only.concept === "string" ? { concept: only.concept } : {}),
+              ...(typeof only.videoSha256 === "string" ? { sha256: only.videoSha256 } : {}),
+            } } : {}) };
         },
         approve: (input) => socialPosts.approve(input),
         cancel: (input) => socialPosts.cancel(input),
@@ -1668,6 +1679,17 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
           from publication_plans p where p.id=$1 and p.tenant_id=$2 and p.workspace_id=$3
             and i.tenant_id=p.tenant_id and i.workspace_id=p.workspace_id and i.id = p.source_artifacts->0->'payload'->>'editorialIdeaId'
             and i.status='approved'`, [publicationId, tenantId, workspaceId]);
+      },
+      // Somente aprovação: a decisão humana vai para a versão do vídeo (aprovada, ou reprovada com o motivo que
+      // orienta a refação direcionada) pelo MESMO caminho da avaliação na tela — nada é agendado nem publicado.
+      onApprovalOnlyDecision: async ({ tenantId, workspaceId, publicationId, decision, reason, reviewerUserId }) => {
+        const pool = repositories.pool;
+        if (!pool) return;
+        const { rows: [plan] } = await pool.query(`select source_artifacts->0->'payload'->>'videoVersionId' as version_id from publication_plans where id=$1 and tenant_id=$2 and workspace_id=$3`, [publicationId, tenantId, workspaceId]);
+        if (!plan?.version_id) return;
+        const { buildVideoProjectsService } = await import("../routes/v1/video-projects.route.js");
+        const videos = buildVideoProjectsService({ pool, objectStorage, ...(config?.videoEngine ? { videoEngine: config.videoEngine } : {}) });
+        await videos.recordFeedback({ tenantId, workspaceId }, plan.version_id, reviewerUserId, decision === "approve" ? { verdict: "approved", ...(reason ? { note: reason } : {}) } : { verdict: "rejected", note: reason?.trim() || "reprovado pelo WhatsApp sem motivo escrito" });
       },
       // Reprovada com motivo: agenda a refação para o piloto (host), que refaz com o Codex e reenvia para aprovação.
       onRejectedForRedo: async ({ tenantId, workspaceId, publicationId, reason }) => {

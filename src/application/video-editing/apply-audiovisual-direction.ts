@@ -16,6 +16,10 @@ export const TEMPLATE_TIMELINE: Record<string, Record<string, number>> = {
   software_focus: { moveStart: 0.12, click: 0.32, zoomStart: 0.38, zoomEnd: 0.6, callout: 0.58 },
   title_card: { lines: 0.05, cta: 0.45 },
   speech_captions: {},
+  clock: { lines: 0.06, accelStart: 0.12, stop: 0.74 },
+  counter: { count: 0.08, land: 0.55, lines: 0.6 },
+  versus: { split: 0.04, take: 0.5, win: 0.72 },
+  mask_reveal: { open: 0.08, full: 0.5, text: 0.42 },
 };
 
 /** Altura da janela de vídeo das gravações de tela no template de fala (fração do quadro). */
@@ -34,6 +38,10 @@ function designEvents(clip: EditClip, index: number): VisualEvent[] {
     case "lineup": return [{ atSeconds: at(tl.first!), kind: "reveal", strength: 0.6, clipIndex: index }];
     case "software_focus": return [{ atSeconds: at(tl.click!), kind: "click", strength: 1, clipIndex: index }, { atSeconds: at(tl.zoomStart!), kind: "move", strength: 0.6, clipIndex: index }, { atSeconds: at(tl.callout!), kind: "text", strength: 0.45, clipIndex: index }];
     case "title_card": return [{ atSeconds: at(tl.lines!), kind: "text", strength: 0.5, clipIndex: index }, ...(clip.design.props.cta ? [{ atSeconds: at(tl.cta!), kind: "impact" as const, strength: 0.7, clipIndex: index }] : [])];
+    case "clock": return [{ atSeconds: at(tl.lines!), kind: "text", strength: 0.4, clipIndex: index }, { atSeconds: at(tl.accelStart!), kind: "move", strength: 0.6, clipIndex: index }, { atSeconds: at(tl.stop!), kind: "impact", strength: 1, clipIndex: index }];
+    case "counter": return [{ atSeconds: at(tl.count!), kind: "move", strength: 0.5, clipIndex: index }, { atSeconds: at(tl.land!), kind: "impact", strength: 0.8, clipIndex: index }];
+    case "versus": return [{ atSeconds: at(tl.split!), kind: "reveal", strength: 0.5, clipIndex: index }, { atSeconds: at(tl.take!), kind: "move", strength: 0.7, clipIndex: index }, { atSeconds: at(tl.win!), kind: "impact", strength: 0.8, clipIndex: index }];
+    case "mask_reveal": return [{ atSeconds: at(tl.open!), kind: "reveal", strength: 0.9, clipIndex: index }, { atSeconds: at(tl.text!), kind: "text", strength: 0.5, clipIndex: index }];
     default: return [];
   }
 }

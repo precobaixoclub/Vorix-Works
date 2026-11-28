@@ -490,6 +490,33 @@ function buildDesign(scene: VideoEditDraft["scenes"][number], asset: EditMediaAs
       Object.assign(props, { lines, cta: spec.cta ?? scene.texts.find((text) => text.role === "cta")?.text, background: light ? "light" : "primary", logo: logo?.fileName });
       return { design: { template: spec.template, props: clean(props) }, extraAssets, ...(logo ? { logo } : {}) };
     }
+    case "clock": {
+      // Motion graphics conceitual (sem material): relógio que acelera e para — tempo, prazo, rotina.
+      if (asset.kind !== "card") return fail("é cena de cartão");
+      const lines = spec.lines?.length ? spec.lines : scene.texts.map((text) => text.text).slice(0, 2);
+      if (!lines.length) return fail("sem texto");
+      Object.assign(props, { lines, label: spec.label });
+      break;
+    }
+    case "counter": {
+      // Só o número que está na pauta: sem dígito no rótulo, a cena segue sem animação (nunca inventa número).
+      if (asset.kind !== "card") return fail("é cena de cartão");
+      if (!spec.label || !/\d/.test(spec.label)) return fail("exige o número exato da pauta em label");
+      Object.assign(props, { value: spec.label, lines: spec.lines?.length ? spec.lines : spec.headline ? [spec.headline] : [] });
+      break;
+    }
+    case "versus": {
+      if (asset.kind !== "card") return fail("é cena de cartão");
+      const sides = spec.lines?.length ? spec.lines : scene.texts.map((text) => text.text);
+      if (sides.length < 2) return fail("exige os dois lados em lines");
+      Object.assign(props, { left: sides[0], right: sides[1], kicker: spec.kicker ?? spec.headline });
+      break;
+    }
+    case "mask_reveal":
+      // Revelação de uma imagem (metáfora gerada, produto, referência) por máscara com paralaxe.
+      if (asset.kind !== "image") return fail("exige uma imagem");
+      Object.assign(props, { photo: asset.fileName, photoAspect: aspect, headline: spec.headline, kicker: spec.kicker });
+      break;
     case "speech_captions": {
       if (asset.kind !== "video" || !material) return fail("exige gravação com fala");
       const words = transcriptWords(input.context.transcripts[material.id] ?? { segments: [] })

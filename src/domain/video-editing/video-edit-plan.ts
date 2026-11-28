@@ -159,7 +159,7 @@ export type EditClip = {
   design?: EditDesign;
 };
 
-export const DESIGN_TEMPLATES = ["product_hero", "detail_reveal", "lineup", "software_focus", "title_card", "speech_captions"] as const;
+export const DESIGN_TEMPLATES = ["product_hero", "detail_reveal", "lineup", "software_focus", "title_card", "speech_captions", "clock", "counter", "versus", "mask_reveal"] as const;
 export type EditDesignTemplate = (typeof DESIGN_TEMPLATES)[number];
 export type EditSfxCue = { assetId: string; atSeconds: number; gainDb: number };
 export type EditDesign = { template: EditDesignTemplate; props: Record<string, unknown> };

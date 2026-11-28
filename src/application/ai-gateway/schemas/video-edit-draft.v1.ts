@@ -14,7 +14,7 @@ const SCENE_PURPOSES = ["hook", "product", "detail", "benefit", "proof", "variet
 const MOTIONS = ["static", "push_in", "pull_out", "pan_left", "pan_right", "pan_up", "pan_down", "punch_in", "drift"] as const;
 const LAYOUTS = ["full", "framed", "split", "parallax", "inset", "device_phone", "device_laptop", "stage"] as const;
 /** Modalidade audiovisual da cena (motor híbrido). `ai_motion` só com foto oficial e geração autorizada. */
-export const DESIGN_TEMPLATE_NAMES = ["product_hero", "detail_reveal", "lineup", "software_focus", "title_card", "speech_captions"] as const;
+export const DESIGN_TEMPLATE_NAMES = ["product_hero", "detail_reveal", "lineup", "software_focus", "title_card", "speech_captions", "clock", "counter", "versus", "mask_reveal"] as const;
 export const SCENE_MODALITIES = ["original_footage", "animated_photo", "motion_graphics", "software_demo", "ai_motion"] as const;
 const TRANSITIONS = ["cut", "cross_dissolve", "dip_to_black", "push_left", "push_up", "zoom_in", "blur", "circle_open", "wipe", "flash", "smooth_left"] as const;
 const TEXT_ROLES = ["hook", "headline", "cta", "price", "subtitle"] as const;

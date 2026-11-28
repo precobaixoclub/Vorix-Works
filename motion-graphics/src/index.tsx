@@ -4,6 +4,7 @@ import { useFonts, type Common } from "./lib/theme";
 import { DetailReveal, Lineup, ProductHero, type DetailRevealProps, type LineupProps, type ProductHeroProps } from "./templates/product";
 import { SoftwareFocus, SpeechCaptions, TitleCard, type SoftwareFocusProps, type SpeechCaptionsProps, type TitleCardProps } from "./templates/software-title-speech";
 import { Spot, type SpotProps } from "./templates/spot";
+import { Clock, Counter, MaskReveal, Versus, type ClockProps, type CounterProps, type MaskRevealProps, type VersusProps } from "./templates/concept";
 
 /**
  * Uma composição ("Scene") com o template escolhido pelo diretor criativo. Duração, tamanho e fps vêm das
@@ -18,6 +19,10 @@ export type SceneProps = { width: number; height: number; fps: number; durationI
   | ({ template: "title_card" } & TitleCardProps)
   | ({ template: "speech_captions" } & SpeechCaptionsProps)
   | ({ template: "spot" } & SpotProps)
+  | ({ template: "clock" } & ClockProps)
+  | ({ template: "counter" } & CounterProps)
+  | ({ template: "versus" } & VersusProps)
+  | ({ template: "mask_reveal" } & MaskRevealProps)
 );
 
 const Scene: React.FC<SceneProps> = (props) => {
@@ -30,6 +35,10 @@ const Scene: React.FC<SceneProps> = (props) => {
     case "title_card": return <TitleCard {...props} />;
     case "speech_captions": return <SpeechCaptions {...props} />;
     case "spot": return <Spot {...props} />;
+    case "clock": return <Clock {...props} />;
+    case "counter": return <Counter {...props} />;
+    case "versus": return <Versus {...props} />;
+    case "mask_reveal": return <MaskReveal {...props} />;
   }
 };
 

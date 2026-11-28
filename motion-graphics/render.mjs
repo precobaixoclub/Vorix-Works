@@ -90,7 +90,7 @@ async function fitted(jobDir, name, maxSide) {
 }
 
 /** Arquivo de cada template: a versão de uma cena só muda quando a base comum ou o SEU arquivo mudam. */
-const TEMPLATE_FILES = { spot: "spot.tsx", product_hero: "product.tsx", detail_reveal: "product.tsx", lineup: "product.tsx", software_focus: "software-title-speech.tsx", title_card: "software-title-speech.tsx", speech_captions: "software-title-speech.tsx" };
+const TEMPLATE_FILES = { spot: "spot.tsx", product_hero: "product.tsx", detail_reveal: "product.tsx", lineup: "product.tsx", software_focus: "software-title-speech.tsx", title_card: "software-title-speech.tsx", speech_captions: "software-title-speech.tsx", clock: "concept.tsx", counter: "concept.tsx", versus: "concept.tsx", mask_reveal: "concept.tsx" };
 const BASE_VERSION = (() => {
   const hash = createHash("sha256");
   const walk = (dir) => { for (const name of readdirSync(dir).sort()) { const file = join(dir, name); if (statSync(file).isDirectory()) { if (name !== "templates") walk(file); } else hash.update(name).update(readFileSync(file)); } };

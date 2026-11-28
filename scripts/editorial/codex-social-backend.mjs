@@ -915,8 +915,16 @@ async function videoAction(workspace, brandConfig) {
     from publication_approval_requests q join publication_plans p on p.id=q.publication_id and p.tenant_id=q.tenant_id and p.workspace_id=q.workspace_id
     where q.tenant_id=$1 and q.workspace_id=$2 and q.decision='reject' and p.source_artifacts->0->'payload'->>'editorialIdeaId'=$3`, [tenantId, workspaceId, idea.id]);
   requireCondition(!rejectedRows.some((row) => row.sha === sha256), "Este é o mesmo vídeo que o cliente reprovou — publicação bloqueada.");
-  let idempotencyKey = `${videoPrefix}:${slot}`;
-  if (scopeRedo || request.onlyIdea) {
+  // SOMENTE APROVAÇÃO (campanha de prova): o post é só o veículo do pedido no WhatsApp — nunca agenda nem publica.
+  // Exige a regra de aprovação ligada (sem ela o post nasceria agendado) e confere o estado depois de criar.
+  const approvalOnly = request.approvalOnly === true;
+  if (approvalOnly) {
+    requireCondition(request.publishNow !== true, "Somente aprovação nunca publica agora");
+    const { rows: [rule] } = await db.query(`select enabled, approver_phone from whatsapp_approval_rules where tenant_id=$1 and workspace_id=$2`, [tenantId, workspaceId]);
+    requireCondition(rule?.enabled === true && Boolean(rule.approver_phone), "Aprovação pelo WhatsApp desligada para esta marca — envio bloqueado (sem ela o vídeo seria agendado)");
+  }
+  let idempotencyKey = approvalOnly ? `${videoPrefix}:${slot}:aprovacao:${idea.id}` : `${videoPrefix}:${slot}`;
+  if (!approvalOnly && (scopeRedo || request.onlyIdea)) {
     const base = `${videoPrefix}:${slot}:refeita:${idea.id}`;
     for (let attempt = 1; attempt <= 20; attempt += 1) {
       idempotencyKey = attempt === 1 ? base : `${base}:${attempt}`;
@@ -934,8 +942,15 @@ async function videoAction(workspace, brandConfig) {
     artifacts: [{ artifactId: idea.id, artifactType: "video", schemaId: "social.post", schemaVersion: 1, checksum: sha256,
       payload: { editorialIdeaId: idea.id, externalId: idea.externalId, videoUrl: url, videoVersionId: version.id, videoProjectId: project.id, videoSha256: sha256,
         creative: videoRecord,
+        ...(approvalOnly ? { approvalOnly: true, ideaTitle: idea.title, durationSeconds: Math.round(version.plan.durationSeconds * 10) / 10, concept: String(request.concept ?? "").slice(0, 400) } : {}),
         ...(scopeRedo ? { redoJobId: request.redoJobId } : {}) } }],
   } });
+  if (approvalOnly && post.state !== "AWAITING_APPROVAL") {
+    // Nunca deixa um post de prova agendado: cancela na hora e para.
+    await c.social.posts.cancel({ ...scope, postId: post.id, actor }).catch(() => undefined);
+    throw new Error(`Post de aprovação nasceu em ${post.state} (esperado AWAITING_APPROVAL) — cancelado, nada será publicado`);
+  }
+  if (approvalOnly) return { awaitingApproval: videoPostSummary(post), idea: idea.externalId, sha256, durationSeconds: version.plan.durationSeconds, skippedNetworks };
   if (scopeRedo) {
     await db.query(`update publication_redo_requests set status='done', result_publication_id=$2, change_summary=$4, updated_at=now() where id=$1 and workspace_id=$3`,
       [request.redoJobId, post.id, workspaceId, typeof request.changeSummary === "string" ? request.changeSummary.slice(0, 300) : null]);

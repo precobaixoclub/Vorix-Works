@@ -16,6 +16,8 @@ import { categoryReviewOutcome, categoryReviewPrompt, conceptImagePrompt, concep
  * Reels com o hash do MP4 → a marca aprova pelo WhatsApp → publica exatamente o arquivo aprovado.
  *
  * Uso: node codex-social-video.mjs run|validate [workspace]   ·   node codex-social-video.mjs redo <workspace> (VORIX_REDO_JOB)
+ *      node codex-social-video.mjs approval <workspace> (VORIX_EDITORIAL_IDEA = pauta): mesma produção, termina num
+ *      pedido SOMENTE APROVAÇÃO no WhatsApp — nunca agenda nem publica (campanha de prova).
  */
 
 const basedir = new URL("./", import.meta.url);
@@ -27,7 +29,8 @@ const timezone = "America/Sao_Paulo";
 const VIDEO_HOUR = "20";
 const workspaces = ["workspace-mwmumsxd-fmvh3h", "workspace-mscc9pi2-jkvwbo", "workspace-mwmu8kgf-uhe66l", "workspace-cee-prelaunch-mv47cmfh"];
 const [mode = "run", workspace] = process.argv.slice(2);
-if (!["run", "validate", "redo"].includes(mode) || (workspace && !workspaces.includes(workspace)) || (mode === "redo" && !workspace)) throw new Error("Uso: node codex-social-video.mjs run|validate [workspace] · redo <workspace>");
+const onlyIdea = process.env.VORIX_EDITORIAL_IDEA?.trim() || undefined;
+if (!["run", "validate", "redo", "approval"].includes(mode) || (workspace && !workspaces.includes(workspace)) || (["redo", "approval"].includes(mode) && !workspace) || (mode === "approval" && !onlyIdea)) throw new Error("Uso: node codex-social-video.mjs run|validate [workspace] · redo <workspace> · approval <workspace> (VORIX_EDITORIAL_IDEA)");
 const backend = await readFile(new URL("codex-social-backend.mjs", basedir), "utf8");
 const agent = ["-u", "vorix-codex", "--", "env", "-i", "PATH=/usr/local/bin:/usr/bin:/bin", `HOME=${agentHome}`, `CODEX_HOME=${agentHome}/.codex`, executable];
 const localTime = () => new Intl.DateTimeFormat("sv-SE", { timeZone: timezone, dateStyle: "short", timeStyle: "short", hour12: false }).format(new Date()).replace(" ", "T");
@@ -228,7 +231,7 @@ function slotFor() {
 
 async function runWorkspace(workspaceId) {
   const slot = slotFor();
-  const selection = await callContainer({ workspaceId, action: "video_select", date: slot.slice(0, 10), skipIdeaIds: reviewSkipIds(await readReviewQueue(), workspaceId) });
+  const selection = await callContainer({ workspaceId, action: "video_select", date: slot.slice(0, 10), skipIdeaIds: reviewSkipIds(await readReviewQueue(), workspaceId), ...(onlyIdea ? { onlyIdea } : {}) });
   if (selection.empty) return { brand: selection.brand, empty: true, videoIdeas: selection.videoIdeas };
   const idea = selection.idea;
   const operations = [];
@@ -245,6 +248,8 @@ async function runWorkspace(workspaceId) {
     if (!selection.resume || status.stage === "awaiting_draft") {
       if (!materials.length) materials = await conceptImages(jobDir, workspaceId, selection, operations);
       const speech = materials.some((material) => material.kind === "video");
+      // Sem gravação com fala, a voz conta a história: o diretor escreve a locução e o worker grava (voz local).
+      selection.narration = !speech;
       const settings = { targetDurationSeconds: targetSecondsFor(idea, { speech }), editing: "dinamico", transitions: "moderadas", captions: true, music: Boolean(selection.musicAvailable) };
       const queueMaterials = materials.map(({ objectKey, role, label }) => ({ objectKey, role, label }));
       if (speech && status?.stage !== "awaiting_draft") {
@@ -260,7 +265,7 @@ async function runWorkspace(workspaceId) {
       let correction;
       for (let round = 0; round < 2; round += 1) {
         const brief = selection.creativeBrief;
-        const { output, ms } = await codex(jobDir, { prompt: directorPrompt({ selection, materials, sentences: transcribed?.sentences ?? [], targetSeconds: settings.targetDurationSeconds, correction, aiMotion: transcribed ? undefined : selection.motion }), schema: brief ? directorSchemaWith(brief.schema) : directorSchema, images });
+        const { output, ms } = await codex(jobDir, { prompt: directorPrompt({ selection, materials, sentences: transcribed?.sentences ?? [], targetSeconds: settings.targetDurationSeconds, correction, aiMotion: transcribed ? undefined : selection.motion }), schema: brief || selection.narration ? directorSchemaWith(brief?.schema, { voiceover: Boolean(selection.narration) }) : directorSchema, images });
         operations.push({ step: round ? "plano (correção)" : "plano", engine: "codex", durationMs: ms });
         if (brief && output.direction && !direction) {
           // Diretor Criativo: o backend confere a escolha (filmagem inexistente, repetição, linguagem pedida).
@@ -317,6 +322,7 @@ async function runWorkspace(workspaceId) {
     }
     if (review.verdict !== "approve") throw new Error(`QUALITY_GATE: revisão editorial ${review.verdict} — ${review.findings.join("; ")}`.slice(0, 600));
     const result = await callContainer({ workspaceId, action: mode === "validate" ? "video_validate" : "video_schedule", ideaId: idea.id, updatedAt: idea.updatedAt, versionId: status.versionId, sha256: status.output.sha256, slot,
+      ...(mode === "approval" ? { approvalOnly: true, concept: direction ? `${direction.record.name} — ${direction.record.idea}` : "" } : {}),
       review: { verdict: review.verdict, findings: review.findings, ...(review.originalityScore !== undefined ? { originalityScore: review.originalityScore } : {}) }, ...(direction ? { direction: direction.record } : {}), trace: { operations, totalMs: Date.now() - started } });
     return { brand: selection.brand, idea: idea.externalId, versionId: status.versionId, ...(direction ? { direction: direction.record } : {}), durationSeconds: status.plan?.durationSeconds, strategy: status.plan?.strategy, sha256: status.output.sha256, review: review.verdict, operations, totalMs: Date.now() - started, ...result };
   } catch (error) {

@@ -334,3 +334,71 @@ test("refação: pontual preserva o que não foi criticado; abrangente permite r
   assert.deepEqual(generic.trace, { from: "cliente", requested: "abrangente", applied: "abrangente", justification: "o cliente critica o vídeo todo", specificPartsCited: false });
   assert.equal(scopedReason({ reason: "na quarta cena aproxime", scope: "abrangente", from: "revisao" }).mode, "abrangente", "o revisor pode pedir abrangente");
 });
+
+// ---------- locução no motor operacional (voz simulada por tons; montagem, plano, mixagem e QG reais) ----------
+
+test("worker com locução: a fala guia a duração da cena, entra no início da cena, legenda das palavras ouvidas e trilha abaixada", { timeout: 300_000 }, async () => {
+  const { assembleVoiceTrack } = await import("../dist/infrastructure/video-editing/audio-master.js");
+  const lines = [
+    { scene: 0, text: "Você ainda pesquisa loja por loja?", intent: "curiosidade" },
+    { scene: 2, text: "Aqui as ofertas ficam num lugar só, atualizadas o dia todo.", intent: "explicacao" },
+  ];
+  const fx = await pilotFixture({ draft: toDraft({ ...codexOutput(), voiceover: { kind: "ofertas", lines } }) });
+  try {
+    fx.repository.projects.get("p1").settings.captions = true; // o piloto cria o projeto com legendas ligadas
+    const synthesized = [];
+    fx.deps.narrate = {
+      synthesize: async ({ lines: asked, dir }) => {
+        const takes = [];
+        for (const [index, line] of asked.entries()) {
+          const seconds = 1.4 + index * 2.2; // a 2ª fala (3,6 s) é maior que a cena pedida (3 s): a cena precisa esticar
+          const file = join(dir, `tom-${index}.wav`);
+          await runFfmpegCapture(["-y", "-f", "lavfi", "-i", `sine=frequency=${300 + index * 120}:duration=${seconds}`, "-ar", "48000", "-ac", "1", file]);
+          takes.push({ file, seconds });
+          synthesized.push(line.text);
+        }
+        return takes;
+      },
+      assemble: (input) => assembleVoiceTrack(input),
+    };
+    // "Whisper" da faixa montada: as palavras do roteiro, nos tempos em que cada fala foi encaixada.
+    fx.deps.transcribe = async () => ({ segments: [] });
+    const realTranscribe = async (track) => {
+      const plan = (await fx.repository.getVersion(A, "v1")).plan;
+      const words = [];
+      for (const line of lines) {
+        const clip = plan?.clips.find((item) => item.id === `c${line.scene + 1}`);
+        const start = (clip?.recordStartSeconds ?? 0) + 0.15;
+        line.text.split(" ").forEach((word, i) => words.push({ word: ` ${word}`, start: start + i * 0.3, end: start + i * 0.3 + 0.25 }));
+      }
+      return { segments: [{ start: 0, end: 30, text: lines.map((l) => l.text).join(" "), words }] };
+    };
+    fx.deps.transcribe = realTranscribe;
+    const result = await processNextVideoVersion(fx.deps);
+    const done = await fx.repository.getVersion(A, "v1");
+    assert.equal(result.status, "ready_for_review", done.error ?? JSON.stringify(done.warnings));
+    assert.deepEqual(synthesized, lines.map((l) => l.text), "uma gravação por fala, na ordem");
+    const plan = done.plan;
+    assert.equal(plan.narration.assetId, "NARRATION");
+    assert.ok(plan.assets.some((asset) => asset.id === "NARRATION" && asset.kind === "audio" && asset.role === "narration"));
+    assert.equal(plan.music.duckUnderSpeech, true, "trilha abaixa sob a voz");
+    const third = plan.clips.find((clip) => clip.id === "c3");
+    assert.ok(third.durationSeconds >= 0.15 + 3.6 + 0.3 - 0.001, `cena 3 esticou para caber a fala (${third.durationSeconds})`);
+    assert.ok(plan.captions?.segments.length >= 3 && plan.captions.segments.every((segment) => segment.words?.length), "legenda palavra a palavra");
+    assert.ok(plan.captions.segments[0].startSeconds >= plan.clips[0].recordStartSeconds, "legenda começa com a fala da 1ª cena");
+  } finally {
+    await cleanup(fx.root);
+  }
+});
+
+test("worker: rascunho com locução sem voz configurada falha com motivo claro (nunca sai sem a fala)", { timeout: 120_000 }, async () => {
+  const fx = await pilotFixture({ draft: toDraft({ ...codexOutput(), voiceover: { lines: [{ scene: 0, text: "Você ainda compara preço loja por loja?", intent: "curiosidade" }] } }) });
+  try {
+    const result = await processNextVideoVersion(fx.deps);
+    const done = await fx.repository.getVersion(A, "v1");
+    assert.equal(result.status, "failed");
+    assert.match(done.error, /voz local não está configurada/);
+  } finally {
+    await cleanup(fx.root);
+  }
+});

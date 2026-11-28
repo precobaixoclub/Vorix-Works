@@ -56,14 +56,44 @@ export const directorSchema = {
   },
 };
 
+/** Intenção de cada fala da locução (define velocidade e entonação no worker). */
+export const SPEECH_INTENTS = ["curiosidade", "surpresa", "entusiasmo", "explicacao", "emocao", "chamada"];
+export const CAMPAIGN_KINDS = ["moda", "tecnologia", "casamento", "ofertas"];
+
+/** Locução escrita pelo diretor (gravada pelo worker com voz local): uma fala por cena. */
+export const voiceoverSchema = {
+  type: ["object", "null"], additionalProperties: false, required: ["kind", "lines"],
+  properties: {
+    kind: enumOf(CAMPAIGN_KINDS),
+    lines: { type: "array", items: { type: "object", additionalProperties: false, required: ["scene", "text", "intent"],
+      properties: { scene: { type: "integer" }, text: str(), intent: enumOf(SPEECH_INTENTS) } } },
+  },
+};
+
 /**
  * Schema do plano COM a direção criativa (Diretor Criativo Autônomo): o Codex concebe 3 conceitos internos,
- * escolhe um e, na MESMA resposta, planeja o vídeo que o executa — nenhuma chamada extra.
+ * escolhe um e, na MESMA resposta, planeja o vídeo que o executa — nenhuma chamada extra. Com `voiceover`,
+ * o mesmo plano traz a locução (sem gravação com fala, a voz conta a história).
  */
-export function directorSchemaWith(directionSchema) {
-  if (!directionSchema) return directorSchema;
-  return { ...directorSchema, required: ["direction", ...directorSchema.required], properties: { direction: directionSchema, ...directorSchema.properties } };
+export function directorSchemaWith(directionSchema, { voiceover = false } = {}) {
+  if (!directionSchema && !voiceover) return directorSchema;
+  return {
+    ...directorSchema,
+    required: [...(directionSchema ? ["direction"] : []), ...directorSchema.required, ...(voiceover ? ["voiceover"] : [])],
+    properties: { ...(directionSchema ? { direction: directionSchema } : {}), ...directorSchema.properties, ...(voiceover ? { voiceover: voiceoverSchema } : {}) },
+  };
 }
+
+/** Regras da locução (as mesmas medidas nas referências do cliente no laboratório de sincronia). */
+export const VOICEOVER_RULES = [
+  "LOCUÇÃO (voiceover — você ESCREVE a fala que o sistema grava com voz natural):",
+  "- Um locutor CONTANDO a história, não legendas lidas. TEXTO CONTÍNUO: cada cena diz a sua frase e a seguinte continua o raciocínio. Frases COMPLETAS e conversadas (6–14 palavras); 1–4 palavras só como virada ('E sabe o melhor?').",
+  "- Fale COM quem assiste (você/seu/sua), ligue as frases com conectivos naturais ('E…', 'É só…'). Arco: dor/pergunta → o que é e por que importa → virada → marca + chamada.",
+  "- A voz começa na 1ª cena e vai até a chamada; no máximo uma cena sem fala (respiro antes da revelação). A DURAÇÃO DA FALA MANDA: a cena se estica para caber a frase inteira — escreva o que cabe em ~2–4 s por cena.",
+  "- TEXTO DA TELA = PALAVRAS-CHAVE DA FALA daquela cena (até 5 palavras, mesma grafia e ordem). Nunca leia códigos, URLs ou números longos; nunca fale preço, desconto, percentual ou valor que não esteja na pauta.",
+  "- Sem reticências. intent de cada fala: curiosidade, surpresa, entusiasmo, explicacao, emocao ou chamada. kind: o tipo da campanha (ofertas, tecnologia, moda, casamento).",
+  "- lines[].scene = índice da cena (0 = primeira). A última fala é a chamada da pauta, em voz.",
+];
 
 const cut = (value, max) => (typeof value === "string" && value.trim() ? value.trim().slice(0, max) : undefined);
 function designOf(design) {
@@ -114,7 +144,20 @@ export function toDraft(output) {
       texts: (scene.texts ?? []).slice(0, 2).map((text) => ({ role: text.role, text: String(text.text).trim().slice(0, 70), position: text.position, animation: text.animation })).filter((text) => text.text),
     })),
     captions: Boolean(output.captions), music: output.music, logo: output.logo, warnings: (output.warnings ?? []).slice(0, 10).map((item) => String(item).slice(0, 240)),
+    ...voiceoverOf(output),
   };
+}
+
+/** Locução do diretor → rascunho: só falas com texto, de cenas que existem, uma por cena, na ordem. */
+function voiceoverOf(output) {
+  const count = Math.min(14, (output.scenes ?? []).length);
+  const seen = new Set();
+  const lines = (output.voiceover?.lines ?? [])
+    .map((line) => ({ scene: Number(line.scene), text: String(line.text ?? "").replace(/\s+/g, " ").replace(/\.{3}|…/g, ".").trim().slice(0, 180), intent: SPEECH_INTENTS.includes(line.intent) ? line.intent : "explicacao" }))
+    .filter((line) => Number.isInteger(line.scene) && line.scene >= 0 && line.scene < count && line.text.length >= 2 && !seen.has(line.scene) && seen.add(line.scene))
+    .sort((a, b) => a.scene - b.scene)
+    .slice(0, 12);
+  return lines.length ? { voiceover: { ...(CAMPAIGN_KINDS.includes(output.voiceover?.kind) ? { kind: output.voiceover.kind } : {}), lines } } : {};
 }
 
 const RULES = `Regras (obrigatórias):
@@ -158,7 +201,8 @@ export function directorPrompt({ selection, materials, sentences = [], targetSec
     ...materialLines(materials, sentences),
     sentences.length ? `\nFRASES DA FALA (id · material · início–fim · texto):\n${sentences.map((s) => `- ${s.id} · ${s.materialId} · ${s.start.toFixed(1)}–${s.end.toFixed(1)}s · "${s.text}"`).join("\n")}` : undefined,
     ``,
-    RULES,
+    selection.narration ? RULES.replace(/3\. Você não escreve fala nem legenda:[^\n]*/, "3. Não há gravação com fala: VOCÊ escreve a locução (voiceover) e as legendas saem da voz gravada. Textos na tela são palavras-chave curtas da fala (gancho e CTA com até 6 palavras).") : RULES,
+    ...(selection.narration ? [``, ...VOICEOVER_RULES] : []),
     `MOTION DESIGN (campo design; null = cena montada pelo FFmpeg como antes). Use animação onde ela muda a leitura, não em toda cena; o resto do vídeo pode ser corte seco de material real. Templates:
 - product_hero (foto de produto): a foto original entra por máscara com câmera em perspectiva e reflexo; kicker curto + headline; com region na estampa e label, desenha um callout em volta dela. Bom para abertura ou apresentação.
 - detail_reveal (foto de produto + region OBRIGATÓRIA na estampa): começa no macro da estampa e a câmera abre até a peça inteira; label aparece no fim. Bom para "pista → resposta" e prova de acabamento.
@@ -190,7 +234,7 @@ Em cena com design, texts = [] (os textos ficam no design). Não use o mesmo tem
     materials.some((m) => m.role === "screenshot" || m.role === "screen_recording") ? `TELA REAL: mostre a dor e a prova da solução (ação, contexto preservado, resultado). Alterne um plano que localiza o fluxo e um region legível do componente real (inclua suas bordas e espaço para texto da interface). Evite repetir a mesma tela em molduras diferentes. Reserve a moldura para contexto. Chamada ligada ao benefício demonstrado. Evite zoom que corte controles ou informação essencial.` : undefined,
     sentences.length ? `FALA: abra com a primeira afirmação que se sustenta sozinha. Faça o plano acompanhar a mudança de assunto e preserve respirações e palavras de ligação. Use blocos completos, na ordem, e escolha o enquadramento para a informação que a fala descreve. Evite título que espelha a legenda. CTA vem da pauta. A fala é o eixo e a trilha fica atrás.` : undefined,
     ``,
-    `Devolva: ${selection.creativeBrief ? "direction (os 3 conceitos internos e o escolhido), " : ""}concept (gancho, arco narrativo, sensação), strategy (rótulo curto), rationale, scenes, captions (legendas da fala: true só se houver fala), music, logo ("end" para fechar com a marca), warnings (o que a pauta pede e os materiais não permitem).`,
+    `Devolva: ${selection.creativeBrief ? "direction (os 3 conceitos internos e o escolhido), " : ""}${selection.narration ? "voiceover (a locução, uma fala por cena), " : ""}concept (gancho, arco narrativo, sensação), strategy (rótulo curto), rationale, scenes, captions (legendas da fala: true só se houver fala), music, logo ("end" para fechar com a marca), warnings (o que a pauta pede e os materiais não permitem).`,
     correction ? `\nCORREÇÃO OBRIGATÓRIA: ${correction}` : undefined,
   ].filter((line) => line !== undefined && line !== null && line !== false).join("\n");
 }

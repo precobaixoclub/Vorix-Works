@@ -38,7 +38,7 @@ export async function masterAudio(input: { video: string; music: string; voice?:
 }
 
 /** Monta a faixa de voz: cada fala (WAV mono) no instante dela, silêncio entre elas. */
-export async function assembleVoiceTrack(input: { lines: { file: string; at: number }[]; seconds: number; output: string }): Promise<void> {
+export async function assembleVoiceTrack(input: { lines: { file: string; at: number; from?: number; to?: number }[]; seconds: number; output: string }): Promise<void> {
   const { readWavMono } = await import("./av-measure.js");
   const { writeWav } = await import("./score-composer.js");
   const rate = 48000;
@@ -51,7 +51,14 @@ export async function assembleVoiceTrack(input: { lines: { file: string; at: num
     if (r.exitCode !== 0) throw new Error("falha ao reamostrar a fala");
     const wav = await readWavMono(resampled);
     const start = Math.floor(line.at * rate);
-    for (let i = 0; i < wav.samples.length && start + i < track.length; i += 1) track[start + i] += wav.samples[i]!;
+    const a = Math.max(0, Math.floor((line.from ?? 0) * rate));
+    const b = Math.min(wav.samples.length, line.to === undefined ? wav.samples.length : Math.ceil(line.to * rate));
+    // Rampas de 8 ms nas bordas da fatia (corte na respiração sem clique).
+    const ramp = Math.floor(0.008 * rate);
+    for (let i = a; i < b && start + i - a < track.length; i += 1) {
+      const g = Math.min(1, (i - a) / ramp, (b - 1 - i) / ramp);
+      track[start + i - a] += wav.samples[i]! * Math.max(0, g);
+    }
   }
   await writeWav(input.output, track, track);
 }

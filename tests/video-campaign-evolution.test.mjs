@@ -68,6 +68,12 @@ test("trilha: segura uma batida antes da revelação e abaixa EXATAMENTE onde h�
   const before = rms(ducked.left, 4.3, 4.9) / rms(plain.left, 4.3, 4.9);
   assert.ok(before < 0.6, `trilha abaixa sob a voz (×${before.toFixed(2)})`);
   assert.ok(Math.abs(rms(ducked.left, 0.5, 1.5) - rms(plain.left, 0.5, 1.5)) < 1e-6, "fora da voz, nada muda");
+  // Antecipação: na 1ª sílaba (primeiros 100 ms) a trilha já está baixa.
+  const onset = rms(ducked.left, 4.0, 4.1) / rms(plain.left, 4.0, 4.1);
+  assert.ok(onset < 0.6, `trilha já baixa quando a voz entra (×${onset.toFixed(2)})`);
+  // Profundidade por trecho: fala logo depois da queda abaixa mais.
+  const deep = composeScore({ ...base, duck: { intervals: [{ from: 4, to: 5, depthDb: 17 }], depthDb: 9 } });
+  assert.ok(rms(deep.left, 4.3, 4.9) < rms(ducked.left, 4.3, 4.9) * 0.7, "trecho com profundidade própria abaixa mais");
 });
 
 test("compilação: revelação gera tensão e queda na trilha; fala e papel vão para o plano", () => {

@@ -17,7 +17,8 @@ export type ScoreEvent = { at: number; kind: "hit" | "pop" | "whoosh" | "switch"
 export type ScoreInput = {
   bpm: number; seconds: number; mood: ScoreMood; sections: ScoreSection[]; events: ScoreEvent[]; seed?: number; tailSeconds?: number;
   /** Ducking EXATO: intervalos em que a voz fala (segundos) e quanto a trilha abaixa (dB). */
-  duck?: { intervals: { from: number; to: number }[]; depthDb: number };
+  /** Ducking sob a voz. `depthDb` por trecho sobrepõe o geral (ex.: fala logo depois de um impacto). */
+  duck?: { intervals: { from: number; to: number; depthDb?: number }[]; depthDb: number; lookaheadSeconds?: number };
   /** Swing das colcheias (0 = reto; 0,08 = suingado). */
   swing?: number;
 };
@@ -293,9 +294,13 @@ export function composeScore(input: ScoreInput): { left: Float32Array; right: Fl
   for (const w of stops) for (let i = Math.floor(w.from * SR); i < Math.min(total, Math.floor(w.to * SR)); i += 1) musicGain[i] = Math.min(musicGain[i]!, Math.min(1, Math.max(0, (Math.floor(w.from * SR) + 0.025 * SR - i) / (0.025 * SR))));
   const duckGain = new Float32Array(total).fill(1);
   if (input.duck?.intervals.length) {
-    const floor = 10 ** (-Math.abs(input.duck.depthDb) / 20);
+    // Antecipação (padrão 0,12 s = uma constante de ataque): a música já está baixa quando a 1ª sílaba entra.
+    const ahead = input.duck.lookaheadSeconds ?? 0.12;
     const target = new Float32Array(total).fill(1);
-    for (const iv of input.duck.intervals) for (let i = Math.max(0, Math.floor(iv.from * SR)); i < Math.min(total, Math.floor(iv.to * SR)); i += 1) target[i] = floor;
+    for (const iv of input.duck.intervals) {
+      const floor = 10 ** (-Math.abs(iv.depthDb ?? input.duck.depthDb) / 20);
+      for (let i = Math.max(0, Math.floor((iv.from - ahead) * SR)); i < Math.min(total, Math.floor(iv.to * SR)); i += 1) target[i] = Math.min(target[i]!, floor);
+    }
     let g = 1;
     const att = Math.exp(-1 / (0.12 * SR)), rel = Math.exp(-1 / (0.35 * SR));
     for (let i = 0; i < total; i += 1) { const coef = target[i]! < g ? att : rel; g = target[i]! + (g - target[i]!) * coef; duckGain[i] = g; }

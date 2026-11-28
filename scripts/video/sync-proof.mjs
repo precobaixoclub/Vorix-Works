@@ -24,11 +24,12 @@ import { WhisperVideoTranscriber } from "../../dist/infrastructure/video-editing
 import { composeScoreFile } from "../../dist/infrastructure/video-editing/score-composer.js";
 import { assembleVoiceTrack, masterAudio, processVoice } from "../../dist/infrastructure/video-editing/audio-master.js";
 import { frameHash, motionBetween, pitchStd, readWavMono } from "../../dist/infrastructure/video-editing/av-measure.js";
-import { analyzeReferenceVideo, measureLoudness } from "../../dist/infrastructure/video-editing/reference-video-analysis.js";
+import { analyzeNarration, analyzeReferenceVideo, measureLoudness } from "../../dist/infrastructure/video-editing/reference-video-analysis.js";
+import { compareNarration, narrationGuidance, narrationTarget } from "../../dist/application/video-editing/narration-profile.js";
 import { analyzeVideo, probeMedia, runFfmpegCapture } from "../../dist/infrastructure/video-editing/ffmpeg-media-analysis.js";
 import { logoTone } from "../../dist/infrastructure/video-editing/product-material-analysis.js";
 import { closeBrowser, renderScene, renderStills } from "../../motion-graphics/render.mjs";
-import { revisionPrompt, revisionSchema, storyboardPrompt, storyboardSchema } from "../editorial/storyboard-director.mjs";
+import { narrationRules, revisionPrompt, revisionSchema, storyboardPrompt, storyboardSchema } from "../editorial/storyboard-director.mjs";
 
 const has = (name) => process.argv.includes(name);
 const ROOT = resolve("artifacts");
@@ -85,7 +86,7 @@ const narrationSchema = () => ({
   properties: {
     scenes: { type: "array", minItems: 4, maxItems: 9, items: { type: "object", additionalProperties: false, required: ["index", "narration", "texts"], properties: {
       index: { type: "integer", minimum: 0, maximum: 8 },
-      narration: { type: "object", additionalProperties: false, required: ["line", "intent", "pauseAfterMs"], properties: { line: { type: "string", maxLength: 100 }, intent: { type: "string", enum: ["curiosidade", "surpresa", "entusiasmo", "explicacao", "emocao", "chamada"] }, pauseAfterMs: { type: "integer", minimum: 0, maximum: 600 } } },
+      narration: { type: "object", additionalProperties: false, required: ["line", "intent", "pauseAfterMs"], properties: { line: { type: "string", maxLength: 120 }, intent: { type: "string", enum: ["curiosidade", "surpresa", "entusiasmo", "explicacao", "emocao", "chamada"] }, pauseAfterMs: { type: "integer", minimum: 0, maximum: 600 } } },
       texts: { type: "array", maxItems: 4, items: { type: "object", additionalProperties: false, required: ["role", "text"], properties: { role: { type: "string", enum: ["headline", "kicker", "label", "cta", "caption"] }, text: { type: "string", maxLength: 80 } } } },
     } } },
     notes: { type: "array", maxItems: 6, items: { type: "string", maxLength: 200 } },
@@ -147,6 +148,86 @@ async function emit() {
   console.log(`[emit] B: ${promptB.length} car. · C: ${promptC.length} car., ${images.length} imagens · memória: ${memory.videoPatterns.observed.length} padrões observados, ${memory.videoPatterns.avoid.length} a evitar (1 pauta ≠ regra)`);
 }
 
+// ------------------------------------------------------------------ narração das referências (vídeos do cliente)
+const REF_VIDEOS = [
+  { label: "Referência 1 (site de casamento, 42 s)", file: "C:/Users/Cleverton/Downloads/Videos Exemplo/WhatsApp Video 2026-11-05 at 08.49.00.mp4" },
+  { label: "Referência 2 (comparador de preços, 25 s)", file: "C:/Users/Cleverton/Downloads/Videos Exemplo/WhatsApp Video 2026-11-11 at 01.56.33.mp4" },
+];
+
+async function refs() {
+  const dir = join(OUT, "narracao-referencias");
+  await mkdir(dir, { recursive: true });
+  const measured = [];
+  for (const r of REF_VIDEOS) measured.push({ label: r.label, profile: await analyzeNarration(r.file, asr, dir) });
+  const target = narrationTarget(measured.map((m) => m.profile));
+  const plans = JSON.parse(await readFile(join(OUT, "planos.json"), "utf8"));
+  const ours = {};
+  for (const name of ["A-versao-anterior", "B-narracao-corrigida", "C-evolucao-completa", "D-narracao-referencia"]) {
+    const file = join(OUT, "entrega", `${name}.mp4`);
+    if (!existsSync(file)) continue;
+    const plan = plans.find((v) => v.name === name);
+    const script = plan ? plan.shots.map((s) => s.narration?.line ?? "").join(" ").replace(/\*/g, "") : undefined;
+    const profile = await analyzeNarration(file, asr, dir);
+    ours[name] = { profile, findings: compareNarration(profile, target, script) };
+  }
+  const out = { references: measured, target, guidance: narrationGuidance(measured), ours };
+  await writeFile(join(OUT, "narracao-referencias.json"), JSON.stringify(out, null, 2));
+  for (const g of out.guidance) console.log(`[ref] ${g}`);
+  for (const [k, v] of Object.entries(ours)) console.log(`[nós] ${k}: ${v.profile.wordsPerPhrase} palavras/fala · ${v.profile.syllablesPerSecond} síl/s · voz ${Math.round(v.profile.coverage * 100)}% · respiro ${v.profile.pauseMedian}/${v.profile.pauseMax} s · voz/trilha ${v.profile.voiceOverMusicDb} dB → ${v.findings.map((f) => `${f.code} (${f.evidence})`).join("; ") || "dentro do alvo"}`);
+}
+
+async function emitD() {
+  const dir = join(CODEX, "d");
+  await mkdir(dir, { recursive: true });
+  const measured = JSON.parse(await readFile(join(OUT, "narracao-referencias.json"), "utf8"));
+  const { proposal: c } = await narrationLines("C");
+  const findings = measured.ours["C-evolucao-completa"].findings;
+  const prompt = [
+    `Você é o redator e diretor de locução de um anúncio vertical que JÁ TEM a montagem visual aprovada (conceito: ${c.conceptDevice}). NÃO mude cenas, tipos de plano, câmeras nem materiais.`,
+    "Reescreva a FALA de cada cena e o TEXTO DA TELA para a narração soar como a dos vídeos de referência do cliente: um locutor contando a história, não legendas lidas.",
+    "", "AVALIAÇÃO HUMANA:", ...HUMAN_TEXT.map((h) => `- ${h}`), "- Cliente: a narração pode melhorar usando como exemplo a locução dos vídeos de referência.",
+    "", "O QUE A MEDIÇÃO DA VERSÃO ATUAL ACUSA (versus as referências):", ...findings.map((f) => `- ${f.code}: ${f.evidence}`),
+    "", "EXEMPLOS DE LOCUÇÃO (transcrição dos vídeos de referência; use o ESTILO, o ritmo e a estrutura, não copie frases: a marca e o produto aqui são outros):",
+    ...measured.references.map((r) => `${r.label}:\n${r.profile.phrases.map((p) => `  ${p.start.toFixed(1)} s · ${p.text}`).join("\n")}`),
+    "", ...narrationRules(measured.guidance),
+    "", "Para ESTA peça (quiz de moda, marca premium):",
+    "- Comece falando com quem assiste sobre o detalhe da estampa e proponha o jogo (A ou B) logo em seguida.",
+    "- A cena de tensão (type_card) pode ficar em silêncio OU ter uma frase curta de virada; a revelação vem logo depois, com a resposta e o porquê (o traço contínuo que forma 'fé', com flores e borboleta).",
+    "- Nas cenas de prova, fale do produto (estampa Fé, também em branco e bege). O código 000037 fica SÓ na tela (headline), nunca na fala.",
+    "- Assinatura: a voz fecha com a chamada da pauta, exatamente \"Conta se você foi de A ou de B.\"; o cta na tela continua esse texto.",
+    "- Rótulos A/B continuam como label.",
+    "- Fatos: só estes:", ...FACTS.map((f) => `  · ${f}`),
+    "", "CENAS (index, tipo, papel, batidas, textos atuais, fala atual):",
+    ...c.scenes.map((s, i) => `- ${i}: ${s.kind} (${s.role}, ${s.beats} batidas) · textos: ${s.texts.map((t) => `${t.role}:"${t.text}"`).join(", ") || "—"} · fala: "${s.narration?.line ?? ""}"`),
+    "", "Devolva TODAS as cenas (mesmos índices; fala vazia \"\" só no respiro de tensão, se escolher) e notas curtas do que mudou. Responda só o JSON do schema.",
+  ].join("\n");
+  await writeFile(join(dir, "CMKV-fala-D-prompt.txt"), prompt);
+  await copyFile(join(OUT, "entrega", "quadros-C-evolucao-completa.jpg"), join(dir, "quadros-C.jpg"));
+  await writeFile(join(dir, "CMKV-fala-D-imagens.json"), JSON.stringify([join(dir, "quadros-C.jpg")]));
+  await writeFile(join(dir, "schema.json"), JSON.stringify(narrationSchema()));
+  console.log(`[emit-d] ${prompt.length} caracteres · ${findings.length} achados da C`);
+}
+
+async function renderD() {
+  const reviewDir = join(OUT, "revisao");
+  await mkdir(reviewDir, { recursive: true });
+  const { proposal } = await narrationLines("D");
+  const issues = validateProposal(proposal, spotContext(MATS())).filter((i) => i.code.startsWith("narration"));
+  console.log(`[D] validação da fala: ${issues.map((i) => `${i.code}: ${i.message}`).join(" | ") || "ok"}`);
+  // Voz acima da trilha: as referências medem 5,5 e 12,5 dB (mediana ~9); a C ficou em 5,6 → ducking 14 dB.
+  const v = await renderVersion("D-narracao-referencia", "D", "kokoro-dora", "bloco", { duckDb: 14 });
+  const report = JSON.parse(await readFile(join(OUT, "relatorio-qualidade.json"), "utf8"));
+  report[v.name] = { ...(await qualityReport(v, reviewDir)), alignment: v.alignment, timeline: v.tl, renderMs: v.renderMs, totalMs: v.totalMs };
+  await writeFile(join(OUT, "relatorio-qualidade.json"), JSON.stringify(report, (k, val) => (typeof val === "bigint" ? val.toString(16) : val), 2));
+  const plans = JSON.parse(await readFile(join(OUT, "planos.json"), "utf8")).filter((x) => x.name !== v.name);
+  plans.push({ name: v.name, proposal: v.p, shots: v.shots.map((s) => ({ kind: s.kind, role: s.role, from: +(s.from / FPS).toFixed(2), to: +((s.from + s.frames) / FPS).toFixed(2), frameFrom: s.from, frames: s.frames, transition: s.transition, texts: s.texts, narration: s.narration, words: s.words })), blocks: v.groups.map((g, k) => ({ text: g.text, at: v.tl.blockOffsets[k], seconds: g.seconds })) });
+  await writeFile(join(OUT, "planos.json"), JSON.stringify(plans, null, 2));
+  const r = report[v.name];
+  console.log(`[QG] ${v.name}: técnico ${r.technical.status} · ${r.technical.volume} · ${(v.durationInFrames / FPS).toFixed(1)} s · ${(v.totalMs / 1000).toFixed(0)} s de render`);
+  for (const rec of r.editorial.recommendations.slice(0, 8)) console.log(`      ${rec}`);
+  console.log(`[tempo] notas: ${v.tl.notes.join("; ") || "—"}`);
+}
+
 // ------------------------------------------------------------------ laboratório de narração
 const syl = (t) => (t.toLowerCase().match(/[aeiouáéíóúâêôãõà]+/g) ?? []).length;
 
@@ -158,7 +239,14 @@ async function narrationLines(which) {
     return { proposal: { ...p, scenes }, notes: r.notes };
   }
   const sel = JSON.parse(await readFile(join(OUT, "selecao-C.json"), "utf8"));
-  return { proposal: (await proposalsC()).find((p) => p.id === sel.chosen), notes: [] };
+  const c = (await proposalsC()).find((p) => p.id === sel.chosen);
+  if (which === "D") {
+    // D = conceito visual da C + fala reescrita no estilo medido das referências (locução contínua).
+    const r = JSON.parse(await readFile(join(CODEX, "d", "CMKV-fala-D-codex.json"), "utf8"));
+    const scenes = c.scenes.map((s, i) => { const n = r.scenes.find((x) => x.index === i); return n ? { ...s, narration: { ...s.narration, ...n.narration, delivery: "" }, texts: n.texts.length ? n.texts : s.texts } : s; });
+    return { proposal: { ...c, scenes }, notes: r.notes };
+  }
+  return { proposal: c, notes: [] };
 }
 
 const linesOf = (p) => p.scenes.map((s, i) => ({ scene: i, text: s.narration?.line?.trim() ?? "", intent: s.narration?.intent ?? "explicacao" })).filter((l) => l.text);
@@ -359,7 +447,7 @@ async function speechLed(which, voiceKey, strategy) {
   return { p, groups, alignment, tl, shots, durationInFrames, compiled, sceneWords, sceneBlock, slices };
 }
 
-async function renderVersion(name, which, voiceKey, strategy) {
+async function renderVersion(name, which, voiceKey, strategy, opts = {}) {
   const material = MATS();
   const started = Date.now();
   const r = await speechLed(which, voiceKey, strategy);
@@ -384,7 +472,7 @@ async function renderVersion(name, which, voiceKey, strategy) {
   });
   const ENERGY = { hook_type: 0.75, type_mask: 0.7, editorial_split: 0.75, trace_draw: 0.6, fullbleed: 0.85, macro: 0.6, bands: 0.9, countdown: 0.7, variant_cycle: 1, logo_resolve: 0.45, print_assemble: 0.55, type_card: 0.6 };
   const music = join(OUT, `${name}-trilha.wav`);
-  await composeScoreFile(music, { bpm: r.p.audioTreatment.bpm, seconds, mood: r.p.audioTreatment.mood, sections: r.shots.map((s) => ({ from: s.from / FPS, to: (s.from + s.frames) / FPS, energy: ENERGY[s.kind] ?? 0.7, kind: s.kind })), events, tailSeconds: 0.2, seed: 41, duck: { intervals: intervals.map((iv) => (events.some((e) => (e.kind === "drop" || e.kind === "hit") && iv.from >= e.at - 0.1 && iv.from - e.at < 1.2) ? { ...iv, depthDb: 17 } : iv)), depthDb: 11 } });
+  await composeScoreFile(music, { bpm: r.p.audioTreatment.bpm, seconds, mood: r.p.audioTreatment.mood, sections: r.shots.map((s) => ({ from: s.from / FPS, to: (s.from + s.frames) / FPS, energy: ENERGY[s.kind] ?? 0.7, kind: s.kind })), events, tailSeconds: 0.2, seed: 41, duck: { intervals: intervals.map((iv) => (events.some((e) => (e.kind === "drop" || e.kind === "hit") && iv.from >= e.at - 0.1 && iv.from - e.at < 1.2) ? { ...iv, depthDb: (opts.duckDb ?? 11) + 6 } : iv)), depthDb: opts.duckDb ?? 11 } });
   const out = join(OUT, "entrega", `${name}.mp4`);
   await mkdir(join(OUT, "entrega"), { recursive: true });
   const m = await masterAudio({ video, music, voice, output: out });
@@ -515,6 +603,9 @@ try {
   else if (has("--storyboards")) await storyboards();
   else if (has("--diversify")) await diversify();
   else if (has("--render")) await render();
+  else if (has("--refs")) await refs();
+  else if (has("--emit-d")) await emitD();
+  else if (has("--render-d")) await renderD();
   else console.log("Use --emit, --lab, --storyboards, --diversify ou --render.");
 } finally {
   await closeBrowser();

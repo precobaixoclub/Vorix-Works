@@ -144,3 +144,47 @@ A avaliação desta pauta virou eventos da **memória criativa existente** (`art
 ## 8. Rollback
 
 São commits locais separados por frente. A narração só liga com `TTS_PYTHON` e `TTS_MODEL_DIR` configurados. O worker e o piloto continuam no caminho antigo até haver deploy autorizado.
+
+## 9. Narração no estilo das referências do cliente (versão D)
+
+Pedido: melhorar a narração usando como exemplo a locução dos dois vídeos de referência (site de casamento, 42 s; comparador de preços, 25 s).
+
+**Medição** (`narration-profile.ts` + `analyzeNarration`: Whisper com tempo por palavra e níveis fala × respiros, com a mesma régua para as referências e para as nossas versões):
+
+| | Ref. 1 | Ref. 2 | A | B | C | **D** |
+|---|---|---|---|---|---|---|
+| Palavras por fala (mediana) | 5,5 | 6 | 3,5 | 4 | 3 | **7** |
+| Sílabas/s (no conjunto) | 5,3 | 6,7 | 4,2 | 4,4 | 4,0 | **5,9** |
+| Voz cobre o vídeo | 78% | 81% | 68% | 68% | 57% | **77%** |
+| Respiro entre falas (mediana / máx.) | 0,5 / 1,5 s | 0,36 / 1,1 s | 0,76 / 1,6 s | 0,53 / 1,1 s | 0,58 / 1,7 s | **0,44 / 1,0 s** |
+| Voz acima da trilha | 5,6 dB | 14 dB | 4,7 dB | 4,4 dB | 5,4 dB | **9,6 dB** |
+| Lê código ("000037") | — | — | não | sim | sim | **não** |
+
+**Causa encontrada:** o prompt do diretor pedia "uma fala curta por plano (até 10 palavras)", dava "Pensa rápido." e "Era a A." como exemplos e mandava usar reticências. O resultado foi uma legenda lida em voz alta. Cada frase saía rápida (7–9 síl/s), mas os fragmentos separados por silêncio deixavam o conjunto **lento** (4 síl/s), que foi a percepção do cliente. Além disso, a regra "tela = fala" encolhia a fala ao tamanho da legenda.
+
+**Mudanças:**
+- **Perfil de narração** ao lado do perfil visual das referências: palavras por fala, velocidade, cobertura, respiros, voz × trilha, perguntas, conectivos e 2ª pessoa. `narrationGuidance` e `compareNarration` produzem achados com número.
+- **Regras de narração do diretor** (`narrationRules`, as mesmas para o storyboard e para a reescrita):
+  - locução contínua que atravessa os planos, com frases completas e conversadas;
+  - fala com "você", com conectivos e com o arco dor/desejo → benefício → virada → marca e chamada;
+  - **nunca ler códigos**;
+  - **tela = palavras-chave da fala** (um trecho do que é dito).
+- **Validação do storyboard:**
+  - `narration_fragmented`: mediana abaixo de 4 palavras;
+  - `narration_code`: código lido em voz alta;
+  - limite de 16 palavras por fala (antes 12).
+- **Mixagem da D:** ducking de 14 dB (antes 11) para a voz chegar à mediana das referências.
+
+**D** = o conceito visual da C com a fala reescrita pelo Codex a partir das transcrições e dos números das referências (estilo, não frases):
+
+> Você viu onde essa linha começa? Ela sai do coração e vira ramo. Qual tem esse detalhe, A ou B? Guarda seu palpite que eu já mostro. É a A. Um traço só desenha fé, flores e borboleta. Essa é a estampa Fé da CMKV. E ela também vem em branco e bege. Conta se você foi de A ou de B.
+
+Resultado:
+- QG técnico **aprovado**;
+- sincronia com média de **10 ms** e máximo de **27 ms** (12/12 palavras);
+- 12/12 palavras da tela reconhecidas com a música;
+- 20 s de vídeo, render em 246 s.
+
+Recomendações editoriais que ficam para a escuta:
+- duas falas medidas como rápidas (7,3 e 8,3 síl/s);
+- os dois planos de prova seguidos continuam.

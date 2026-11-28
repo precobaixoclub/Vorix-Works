@@ -7,9 +7,9 @@
  *    composta com os mesmos números — o corte cai na batida por construção, não por ajuste posterior).
  */
 
-export const SPOT_SHOT_KINDS = ["hook_type", "print_assemble", "trace_draw", "fullbleed", "macro", "bands", "variant_cycle", "countdown", "type_card", "logo_resolve"] as const;
+export const SPOT_SHOT_KINDS = ["hook_type", "type_mask", "editorial_split", "print_assemble", "trace_draw", "fullbleed", "macro", "bands", "variant_cycle", "countdown", "type_card", "logo_resolve"] as const;
 export type SpotShotKind = (typeof SPOT_SHOT_KINDS)[number];
-export const SPOT_TRANSITIONS = ["cut", "color_wipe", "mask_reveal", "iris_print", "match_print", "dissolve", "slide_up"] as const;
+export const SPOT_TRANSITIONS = ["cut", "color_wipe", "mask_reveal", "iris_print", "match_print", "dissolve", "slide_up", "morph"] as const;
 export type SpotTransition = (typeof SPOT_TRANSITIONS)[number];
 export const SPOT_FRAMINGS = ["full", "print", "chest", "top", "bottom", "macro", "detail", "detail2"] as const;
 export type SpotFraming = (typeof SPOT_FRAMINGS)[number];
@@ -20,7 +20,7 @@ export type SpotLanguage = (typeof SPOT_LANGUAGES)[number];
 export const NARRATIVE_ROLES = ["hook", "clue", "question", "tension", "reveal", "proof", "offer", "cta"] as const;
 export type NarrativeRole = (typeof NARRATIVE_ROLES)[number];
 /** Fala do plano (roteiro para VOZ humana) com a orientação de interpretação. */
-export type SceneNarration = { line: string; pauseAfterMs: number; delivery: string };
+export type SceneNarration = { line: string; pauseAfterMs: number; delivery: string; intent?: "curiosidade" | "surpresa" | "entusiasmo" | "explicacao" | "emocao" | "chamada" };
 
 export type ProposalText = { role: "headline" | "kicker" | "label" | "cta" | "body" | "caption"; text: string };
 export type ProposalScene = {
@@ -58,12 +58,14 @@ export type CreativeProposal = {
   /** Tipo de campanha (define a interpretação da voz) e direção de voz em uma frase. */
   campaignKind?: "moda" | "tecnologia" | "casamento" | "ofertas";
   voiceDirection?: string;
+  /** Dispositivo narrativo do conceito (o "como conta"): base da comparação ENTRE conceitos. */
+  conceptDevice?: string;
 };
 
 export type SpotMaterial = { id: string; kind: "product_photo" | "logo"; name?: string; fabricHex?: string; hasPrint?: boolean };
 export type SpotContext = { fps: number; materials: SpotMaterial[]; hasCutout: boolean; palette: { dark: string; light: string; accent: string; ink: string } };
 
-const TRANSITION_FRAMES: Record<SpotTransition, number> = { cut: 0, color_wipe: 12, mask_reveal: 10, iris_print: 12, match_print: 8, dissolve: 10, slide_up: 10 };
+const TRANSITION_FRAMES: Record<SpotTransition, number> = { cut: 0, color_wipe: 12, mask_reveal: 10, iris_print: 12, match_print: 8, dissolve: 10, slide_up: 10, morph: 14 };
 /** Leitura: ~15 caracteres/s + 0,6 s para "achar" o texto (mesma régua do Quality Gate). */
 export const readingSeconds = (text: string) => 0.6 + text.replace(/\*/g, "").length / 15;
 
@@ -85,7 +87,7 @@ export function validateProposal(p: CreativeProposal, ctx: SpotContext): Proposa
   p.scenes.forEach((s, i) => {
     if (!SPOT_SHOT_KINDS.includes(s.kind)) issues.push({ scene: i, code: "kind", message: `tipo de plano desconhecido: ${s.kind}` });
     for (const id of s.materials) if (!ids.has(id)) issues.push({ scene: i, code: "material", message: `material inexistente: ${id}` });
-    const needsPhoto = ["hook_type", "fullbleed", "macro", "bands", "variant_cycle"].includes(s.kind);
+    const needsPhoto = ["hook_type", "type_mask", "editorial_split", "fullbleed", "macro", "bands", "variant_cycle"].includes(s.kind);
     if (needsPhoto && !s.materials.some((id) => photos.has(id))) issues.push({ scene: i, code: "material", message: `${s.kind} sem foto do produto` });
     if ((s.kind === "bands" || s.kind === "variant_cycle") && s.materials.filter((id) => photos.has(id)).length < 2) issues.push({ scene: i, code: "variants", message: `${s.kind} precisa de 2+ variantes` });
     if ((s.kind === "print_assemble" || s.kind === "trace_draw") && !ctx.hasCutout) issues.push({ scene: i, code: "cutout", message: "montagem/traço da estampa sem recorte confiável" });
@@ -148,10 +150,18 @@ function jaccard(a: string[], b: string[]) {
 }
 
 /** Duas propostas são "a mesma com retoques" se dividem linguagem, abertura e quase toda a sequência. */
+const STOP = new Set(["a", "o", "e", "de", "da", "do", "que", "com", "para", "em", "um", "uma", "na", "no", "os", "as", "se", "por", "ao", "dos", "das", "mais"]);
+const conceptTokens = (p: CreativeProposal) => new Set(`${p.conceptDevice ?? ""} ${p.concept}`.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length > 2 && !STOP.has(w)));
+
+/** Duas propostas são "a mesma com retoques" se dividem conceito, linguagem, abertura e quase toda a sequência. */
 export function proposalDistance(a: CreativeProposal, b: CreativeProposal) {
   const seqA = a.scenes.map((s) => s.kind), seqB = b.scenes.map((s) => s.kind);
-  const diffs = [a.language !== b.language, seqA[0] !== seqB[0], jaccard(seqA, seqB) < 0.5, a.emphasis !== b.emphasis || a.align !== b.align, Math.abs(a.audioTreatment.bpm - b.audioTreatment.bpm) >= 10];
-  return { differences: diffs.filter(Boolean).length, sequenceSimilarity: Math.round(jaccard(seqA, seqB) * 100) / 100, distinct: diffs.filter(Boolean).length >= 3 };
+  const ta = conceptTokens(a), tb = conceptTokens(b);
+  const conceptSimilarity = [...ta].filter((w) => tb.has(w)).length / Math.max(1, new Set([...ta, ...tb]).size);
+  const diffs = [a.language !== b.language, seqA[0] !== seqB[0], jaccard(seqA, seqB) < 0.5, a.emphasis !== b.emphasis || a.align !== b.align, Math.abs(a.audioTreatment.bpm - b.audioTreatment.bpm) >= 10, conceptSimilarity < 0.3];
+  const differences = diffs.filter(Boolean).length;
+  // Conceito parecido + sequência parecida = variação do mesmo vídeo, mesmo com cores/fonte diferentes.
+  return { differences, sequenceSimilarity: Math.round(jaccard(seqA, seqB) * 100) / 100, conceptSimilarity: Math.round(conceptSimilarity * 100) / 100, distinct: differences >= 3 && !(conceptSimilarity >= 0.3 && jaccard(seqA, seqB) >= 0.5) };
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -182,7 +192,7 @@ const PATTERN_OF: Record<string, (p: CreativeProposal) => boolean> = {
 };
 export const BRAND_PATTERNS = Object.keys(PATTERN_OF);
 
-export function scoreProposal(p: CreativeProposal, ctx: SpotContext, targets: ReferenceTargets = {}, taste: BrandTaste = { preferred: [], rejected: [] }): ProposalScore {
+export function scoreProposal(p: CreativeProposal, ctx: SpotContext, targets: ReferenceTargets = {}, taste: BrandTaste = { preferred: [], rejected: [] }, baseline?: CreativeProposal): ProposalScore {
   const beat = 60 / p.audioTreatment.bpm;
   const secs = p.scenes.map((s) => s.beats * beat);
   const total = secs.reduce((a, b) => a + b, 0);
@@ -190,7 +200,7 @@ export function scoreProposal(p: CreativeProposal, ctx: SpotContext, targets: Re
   const median = sorted[Math.floor(sorted.length / 2)] ?? 0;
   const issues = validateProposal(p, ctx);
   const first = p.scenes[0]!;
-  const productKinds = new Set(["hook_type", "print_assemble", "trace_draw", "fullbleed", "macro", "bands", "variant_cycle"]);
+  const productKinds = new Set(["hook_type", "type_mask", "editorial_split", "print_assemble", "trace_draw", "fullbleed", "macro", "bands", "variant_cycle"]);
   const productShare = p.scenes.reduce((a, s, i) => a + (productKinds.has(s.kind) || (s.kind === "logo_resolve") ? secs[i]! * (s.kind === "logo_resolve" ? 0.5 : 1) : 0), 0) / Math.max(0.1, total);
   const hookWords = first.texts.find((t) => t.role === "headline")?.text.replace(/\*/g, "").split(/\s+/).length ?? 99;
   const darkShare = p.scenes.filter((s) => s.field === "dark" || ["hook_type", "fullbleed", "macro", "variant_cycle", "bands"].includes(s.kind)).length / p.scenes.length;
@@ -219,6 +229,13 @@ export function scoreProposal(p: CreativeProposal, ctx: SpotContext, targets: Re
     c("variation", "Ritmo variável", 0.05, Math.min(1, cvD / 0.35), `variação da duração dos planos ${Math.round(cvD * 100)}%`),
     c("taste", "Preferências e reprovações da marca", 0.04, rej.length ? 0 : taste.preferred.length ? pref / taste.preferred.length : 0.5, rej.length ? `reprovado pela marca: ${rej.join(", ")}` : `${pref}/${taste.preferred.length} preferências atendidas`),
   ];
+  // Novidade em relação à versão ATUAL (quando há): a evolução não pode ser a mesma montagem com mais efeito.
+  if (baseline) {
+    const d = proposalDistance(p, baseline);
+    criteria.push(c("novelty", "Proposta nova em relação à versão atual", 0.1, d.differences / 6, `${d.differences}/6 diferenças da versão atual (conceito ${d.conceptSimilarity}, sequência ${d.sequenceSimilarity})`));
+    const sum = criteria.reduce((a, k) => a + k.weight, 0);
+    for (const k of criteria) k.weight = +(k.weight / sum).toFixed(4);
+  }
   const totalScore = criteria.reduce((a, k) => a + k.weight * k.score, 0) - (rej.length ? 0.15 : 0) - (issues.some((i) => ["material", "kind", "cta", "cutout"].includes(i.code)) ? 0.3 : 0);
   return { id: p.id, total: Math.round(totalScore * 1000) / 1000, criteria, issues };
 }
@@ -228,8 +245,8 @@ export function tasteViolations(p: CreativeProposal, taste: BrandTaste): string[
   return taste.rejected.filter((k) => PATTERN_OF[k]?.(p));
 }
 
-export function selectProposal(list: CreativeProposal[], ctx: SpotContext, targets?: ReferenceTargets, taste?: BrandTaste) {
-  const scores = list.map((p) => scoreProposal(p, ctx, targets, taste)).sort((a, b) => b.total - a.total);
+export function selectProposal(list: CreativeProposal[], ctx: SpotContext, targets?: ReferenceTargets, taste?: BrandTaste, baseline?: CreativeProposal) {
+  const scores = list.map((p) => scoreProposal(p, ctx, targets, taste, baseline)).sort((a, b) => b.total - a.total);
   const distances = list.flatMap((a, i) => list.slice(i + 1).map((b) => ({ a: a.id, b: b.id, ...proposalDistance(a, b) })));
   return { chosen: scores[0]!.id, scores, distances, allDistinct: distances.every((d) => d.distinct) };
 }
@@ -246,7 +263,7 @@ export type CompiledShot = {
 };
 export type CompiledSpot = { durationInFrames: number; fps: number; bpm: number; beatFrames: number; shots: CompiledShot[]; audio: AudioEvent[]; sections: { from: number; to: number; energy: number; kind: SpotShotKind }[] };
 
-const ENERGY: Record<SpotShotKind, number> = { hook_type: 0.75, print_assemble: 0.55, trace_draw: 0.55, fullbleed: 0.85, macro: 0.6, bands: 0.9, variant_cycle: 1, countdown: 0.7, type_card: 0.6, logo_resolve: 0.45 };
+const ENERGY: Record<SpotShotKind, number> = { hook_type: 0.75, type_mask: 0.7, editorial_split: 0.75, print_assemble: 0.55, trace_draw: 0.55, fullbleed: 0.85, macro: 0.6, bands: 0.9, variant_cycle: 1, countdown: 0.7, type_card: 0.6, logo_resolve: 0.45 };
 
 /**
  * `taste`: regras da marca valem na COMPILAÇÃO, não só na nota — ex.: marca que reprova cartões de foto
@@ -333,3 +350,14 @@ export function compileProposal(p: CreativeProposal, ctx: SpotContext, elementCo
   const sections = shots.map((s) => ({ from: s.from, to: s.from + s.frames, energy: ENERGY[s.kind], kind: s.kind }));
   return { durationInFrames: cursor, fps, bpm: p.audioTreatment.bpm, beatFrames, shots, audio: audio.sort((a, b) => a.frame - b.frame), sections };
 }
+
+/**
+ * Ritmo por GÊNERO (cortes rápidos não são regra universal): faixa de duração mediana dos planos e do
+ * tempo até o benefício/revelação, por tipo de campanha.
+ */
+export const GENRE_RHYTHM: Readonly<Record<"moda" | "tecnologia" | "casamento" | "ofertas", { medianShot: [number, number]; benefitBy: number; label: string }>> = {
+  moda: { medianShot: [1.4, 2.8], benefitBy: 9, label: "moda: planos de 1,4–2,8 s, produto revelado até 9 s" },
+  tecnologia: { medianShot: [2, 4], benefitBy: 6, label: "tecnologia: planos de 2–4 s (a tela precisa ser lida), benefício até 6 s" },
+  casamento: { medianShot: [2.4, 4.5], benefitBy: 8, label: "casamento: planos de 2,4–4,5 s, emoção antes da oferta" },
+  ofertas: { medianShot: [0.9, 2], benefitBy: 3, label: "ofertas: planos de 0,9–2 s, oferta até 3 s" },
+};

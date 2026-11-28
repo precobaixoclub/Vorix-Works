@@ -48,7 +48,7 @@ export function storyboardSchema() {
     focus: { type: "boolean" },
     storyboardNote: str(300),
     role: { type: "string", enum: [...NARRATIVE_ROLES] },
-    narration: obj({ line: str(110), pauseAfterMs: { type: "integer", minimum: 0, maximum: 1200 }, delivery: str(120) }),
+    narration: obj({ line: str(110), pauseAfterMs: { type: "integer", minimum: 0, maximum: 600 }, delivery: str(120), intent: { type: "string", enum: ["curiosidade", "surpresa", "entusiasmo", "explicacao", "emocao", "chamada"] } }),
   });
   const proposal = obj({
     id: { type: "string", enum: ["P1", "P2", "P3"] },
@@ -69,11 +69,14 @@ export function storyboardSchema() {
     scenes: { type: "array", minItems: 4, maxItems: 9, items: scene },
     campaignKind: { type: "string", enum: ["moda", "tecnologia", "casamento", "ofertas"] },
     voiceDirection: str(240),
+    conceptDevice: str(160),
   });
   return obj({ proposals: { type: "array", minItems: 3, maxItems: 3, items: proposal } });
 }
 
 const KINDS = {
+  type_mask: "TIPOGRAFIA VAZADA: uma ou duas palavras GIGANTES (headline) com a FOTO dentro das letras; as letras chegam e depois a máscara se abre até a foto inteira. Revela o produto pela palavra.",
+  editorial_split: "COMPOSIÇÃO EDITORIAL ASSIMÉTRICA: a foto num painel de ~60% (enquadramento pela câmera) com profundidade (a foto anda mais devagar que o painel) e uma coluna tipográfica (kicker + headline) com filetes; como página de revista.",
   hook_type: "GANCHO: frase curta GIGANTE já no 1º quadro, entrando de perto com desfoque de movimento, sobre o detalhe da foto (materials: 1 foto; camera detail/macro). Sem quadro vazio.",
   trace_draw: "O TRAÇO SE DESENHA: a estampa real (recorte da foto, cores originais) é revelada ao longo da linha com uma ponta de luz, em campo de cor; no fim pousa exatamente onde está na camiseta do plano seguinte (use transition match_print no plano seguinte). Ideal para estampa de traço/lettering.",
   print_assemble: "A ESTAMPA SE MONTA: cada elemento da estampa (recortado da foto) entra numa meia batida e a estampa pousa no produto do plano seguinte (match_print). Ideal para estampa de ícones.",
@@ -87,6 +90,7 @@ const KINDS = {
 };
 
 const TRANSITIONS = {
+  morph: "a estampa CONTINUA de um plano para o outro (mesmo elemento muda de posição e tamanho): transição motivada pelo produto",
   cut: "corte seco na batida", color_wipe: "faixa de cor da marca varre e revela o próximo plano", mask_reveal: "o próximo plano abre do centro por máscara",
   iris_print: "o próximo plano abre em círculo a partir da estampa", match_print: "continuidade: a estampa fica no mesmo lugar e o resto aparece", dissolve: "fusão curta", slide_up: "o próximo plano sobe por cima",
 };
@@ -95,9 +99,13 @@ const TRANSITIONS = {
  * `references`: [{ role: "structure"|"aesthetic"|"both", label, note, guidance: string[], sheet }]
  * (`guidance` = linhas MEDIDAS por `referenceGuidance`; `sheet` = miniaturas que vão como imagem).
  */
-export function storyboardPrompt({ idea, brand, materials, references = [], taste = { preferred: [], rejected: [] }, facts = [] }) {
+export function storyboardPrompt({ idea, brand, materials, references = [], taste = { preferred: [], rejected: [] }, facts = [], feedback = [], genre }) {
   const lines = [];
-  lines.push("Você é o diretor de criação audiovisual sênior de uma agência. Crie TRÊS propostas de vídeo vertical 9:16 para a pauta abaixo, antes de qualquer render.");
+  lines.push("Você é o diretor de criação E o editor audiovisual sênior de uma agência. Crie TRÊS propostas de vídeo vertical 9:16 para a pauta abaixo, antes de qualquer render.");
+  lines.push("Como EDITOR: cada plano precisa justificar a duração e o que acrescenta à história; corte o que não acrescenta.");
+  lines.push("Os três CONCEITOS precisam ser diferentes no DISPOSITIVO NARRATIVO (conceptDevice: o 'como a história é contada' — ex.: lupa de detetive, duelo, a linha que vira palavra, bastidor, contagem) e na proposta visual; variar só cores, fontes ou efeitos não conta.");
+  if (genre) lines.push(`Ritmo do gênero: ${genre} (não use corte rápido como regra universal).`);
+  if (feedback.length) lines.push("AVALIAÇÃO HUMANA da versão anterior desta pauta (obrigatório resolver):", ...feedback.map((f) => `- ${f}`));
   lines.push("", "PAUTA (real, do Bolsão da marca):");
   lines.push(`- Título: ${idea.title}`, `- Objetivo: ${idea.commercialObjective}`, `- Público: ${idea.targetAudience}`, `- Conceito: ${idea.concept}`, `- Direção visual: ${idea.visualDirection}`, `- Estrutura: ${idea.narrativeStructure}`, `- CTA: ${idea.cta}`);
   if (idea.videoScript?.length) lines.push(`- Roteiro sugerido: ${idea.videoScript.map((s) => `[${s.time}] ${s.text} (${s.visual})`).join(" | ")}`);
@@ -135,7 +143,9 @@ export function storyboardPrompt({ idea, brand, materials, references = [], tast
   lines.push("- Em quiz/revelação, PRESERVE O MISTÉRIO: antes do plano reveal, mostre só fragmentos (detail/detail2) e a comparação; o traço/estampa completo e a peça inteira aparecem só a partir da revelação (ex.: trace_draw como PAGAMENTO da revelação).");
   lines.push("- Texto na tela: no máximo 5 palavras por plano. Animação só quando conta algo.");
   lines.push("", "NARRAÇÃO (escrita para VOZ humana, em português do Brasil falado):");
-  lines.push("- Uma fala curta por plano (até 10 palavras) ou vazia quando o plano deve respirar; nunca leia o texto da tela palavra por palavra.");
+  lines.push("- Uma fala curta por plano (até 10 palavras) ou vazia quando o plano deve respirar.");
+  lines.push("- TEXTO DA TELA = PALAVRAS DA FALA: o headline/caption de um plano com fala usa as MESMAS palavras ditas naquele plano (um trecho da fala, na mesma ordem) — o texto aparece palavra a palavra no instante em que é falado. Nunca escreva na tela uma frase diferente da que a voz diz.");
+  lines.push("- intent de cada fala: curiosidade, surpresa, entusiasmo, explicacao, emocao ou chamada — é o que define velocidade, entonação final e respiro. Publicidade: frases curtas, ritmo de conversa ágil, sem reticências e sem pausas dramáticas longas (pauseAfterMs ≤ 250, exceto antes da revelação).");
   lines.push("- Frases como alguém diria a um amigo: 'Olha esse traço.', 'Pensa rápido.', 'Era a A.' Use reticências para suspense e *asteriscos* na palavra de ênfase.");
   lines.push("- pauseAfterMs = respiro depois da fala; delivery = como dizer (ex.: 'baixo, curioso', 'sorrindo, com certeza').");
   lines.push("- campaignKind define a interpretação: moda (envolvente e sofisticada), tecnologia (clara, segura, dinâmica), casamento (acolhedora, emocional), ofertas (enérgica sem soar artificial). voiceDirection resume a voz em uma frase.");

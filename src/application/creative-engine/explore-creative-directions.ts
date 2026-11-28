@@ -2,6 +2,7 @@ import type { IcaroBrainPort } from "../ai/icaro-brain.contract.js";
 import type { IcaroAIResponse } from "../ai/icaro.types.js";
 import { extractJson } from "../../shared/utils/skill-parsing.js";
 import type { CreativeContext } from "../../shared/utils/gpt-creative-plan.types.js";
+import { ADVERTISING_LANGUAGES, classifyBriefing } from "./creative-director.js";
 
 /**
  * Exploração barata de direções criativas — auditoria "qualidade visual e direção de arte" (ponto
@@ -37,11 +38,18 @@ export type CreativeDirectionExploration = {
 
 function buildExplorationPrompt(context: CreativeContext): string {
   const recentConcepts = (context.recentHistory ?? []).map((entry) => entry.visualConcept).filter((concept): concept is string => Boolean(concept?.trim()));
+  // Mesma camada do Diretor Criativo do piloto (creative-director.ts): o pedido do cliente classificado em
+  // obrigatório/preferência/livre e o repertório aberto de linguagens — sem chamada extra (é este mesmo prompt).
+  const briefing = classifyBriefing({ intent: context.ideaText, instructions: [context.ideaText] });
+  const requested = briefing.requestedLanguages.map((id) => ADVERTISING_LANGUAGES.find((item) => item.id === id)?.label ?? id);
   return [
     "Você é um diretor de criação sênior. Antes de detalhar o plano completo desta peça publicitária, proponha 2 a 3 DIREÇÕES CRIATIVAS distintas e curtas — nunca o plano inteiro, só o conceito de cada uma.",
     `Marca: ${context.brandName}.`,
     `Objetivo: ${context.objective}.`,
     `Pedido/ideia atual: ${context.ideaText}.`,
+    briefing.required.length ? `OBRIGATÓRIO no pedido (todas as direções cumprem): ${briefing.required.join(" ")}` : "",
+    requested.length ? `Linguagem pedida pelo cliente (todas as direções honram): ${requested.join(", ")}.` : `O cliente não fixou a linguagem: é decisão sua (${briefing.free.join(", ")}).`,
+    `Repertório de linguagens (aberto — combine ou crie outra; não é template): ${ADVERTISING_LANGUAGES.map((item) => item.label).join(", ")}. As direções precisam ser DIFERENTES entre si (linguagem e encenação), e "produto centralizado + título + fundo + logo" só quando for de fato a melhor ideia.`,
     recentConcepts.length > 0
       ? `Direções visuais JÁ USADAS recentemente por este workspace (NUNCA repita nenhuma delas nem proponha uma variação superficial em cima delas — busque algo genuinamente diferente): ${recentConcepts.map((concept) => `"${concept}"`).join("; ")}.`
       : "",

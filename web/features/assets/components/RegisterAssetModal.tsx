@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { Button } from "@/components/Button";
 import { Input, Label, Select, SelectItem, Textarea } from "@/components/Field";
+import { SelectGroup, SelectLabel } from "@/components/ui/select";
 import { Modal } from "@/components/Modal";
 import { registerAsset, removeImageBackground, uploadAssetFile, type UploadedAssetFile } from "../api";
 import { deriveAssetKind, FILE_REQUIRED_MATERIAL_TYPES } from "../derive-kind";
@@ -184,7 +185,7 @@ export function RegisterAssetModal({
           <input
             id="asset-file"
             type="file"
-            accept={isLogoMode ? "image/png,image/svg+xml,image/webp" : "image/jpeg,image/png,image/webp,image/svg+xml,video/mp4,video/quicktime,application/pdf,font/ttf,font/otf,font/woff,font/woff2"}
+            accept={isLogoMode ? "image/png,image/svg+xml,image/webp" : materialType && VIDEO_MATERIAL_TYPES.has(materialType) ? "video/mp4,video/quicktime" : "image/jpeg,image/png,image/webp,image/svg+xml,video/mp4,video/quicktime,application/pdf,font/ttf,font/otf,font/woff,font/woff2"}
             required={fileRequired}
             onChange={(e) => pickFile(e.target.files?.[0])}
             className="w-full text-sm text-ink file:mr-3 file:rounded-md file:border-0 file:bg-accent-soft file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-primary"
@@ -221,10 +222,16 @@ export function RegisterAssetModal({
               onValueChange={(value) => setMaterialType(value === MATERIAL_TYPE_NONE ? "" : (value as AssetMaterialType))}
             >
               <SelectItem value={MATERIAL_TYPE_NONE}>Não classificado</SelectItem>
-              {materialTypesFor(file?.type).map((type) => (
-                <SelectItem key={type} value={type}>
-                  {ASSET_MATERIAL_TYPE_LABEL[type]}
-                </SelectItem>
+              {/* Sem arquivo: todos os tipos, em dois grupos. Com arquivo: só o grupo que combina com ele. */}
+              {(file ? [{ label: undefined, types: materialTypesFor(file.type) }] : [{ label: "Imagens e arquivos", types: materialTypesFor("image/") }, { label: "Vídeos", types: materialTypesFor("video/") }]).map((group) => (
+                <SelectGroup key={group.label ?? "arquivo"}>
+                  {group.label ? <SelectLabel className="text-xs text-muted-foreground">{group.label}</SelectLabel> : null}
+                  {group.types.map((type) => (
+                    <SelectItem key={type} value={type}>
+                      {ASSET_MATERIAL_TYPE_LABEL[type]}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
               ))}
             </Select>
           </div>

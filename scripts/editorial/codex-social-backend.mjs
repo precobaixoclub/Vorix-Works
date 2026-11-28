@@ -14,6 +14,7 @@ import { rankIdeasForSlot } from "./dist/application/creative-engine/editorial-c
 import { matchesRejectedPiece, redoScopeViolations, resolveRedoScope, scopedText } from "./dist/application/creative-engine/redo-scope.js";
 import { applyProductMemory, buildCreativeMemory, feedbackEventsFromRows, memoryGuidance } from "./dist/application/creative-engine/creative-memory.js";
 import { verifyApprovedArt } from "./dist/application/creative-engine/publication-guard.js";
+import { briefFromIdea, directionImageLines, directionRecord, directionVideoLines, materialInventory, preferredArchetypes, recentConceptsFrom, selectCreativeDirection } from "./dist/application/creative-engine/creative-director.js";
 import { catalogPhotoSignals } from "./dist/infrastructure/media/creative/catalog-photo-signals.js";
 import { dHash, sha256Prefix, siteCaptureScore } from "./dist/infrastructure/media/creative/image-analysis.js";
 
@@ -240,7 +241,7 @@ const memorySummary = memory => ({
 
 // ---------------------------------------------------------------- motor criativo: plano da pauta
 
-const ARCHETYPES = Object.fromEntries(COMPOSITION_ARCHETYPES.map(item => [item.id, { operation: item.operation, mode: item.mode }]));
+const ARCHETYPES = Object.fromEntries(COMPOSITION_ARCHETYPES.map(item => [item.id, { operation: item.operation, mode: item.mode, label: item.label, intent: item.intent, textLayout: item.textLayout }]));
 
 async function ownedBytes(url) {
   const key = parseOwnedObjectUrl(url)?.key;
@@ -281,6 +282,41 @@ async function libraryCaptures() {
 }
 
 /** Histórico visual recente da marca (impressões das peças publicadas pela automação). */
+/**
+ * Biblioteca de materiais da marca (Configurações › Marca › Materiais): referências de estilo (imagem e vídeo,
+ * com a orientação de uso que o cliente escreveu) e vídeos PRÓPRIOS (produto, institucional, gravação de tela)
+ * que o vídeo pode usar como material. Vídeo cuja orientação diz "referência" nunca vira material de corte.
+ */
+async function brandLibrary() {
+  const { rows } = await db.query(`select a.name, a.kind, a.material_type, a.ai_instructions, a.usage_rule, a.usage_priority, a.storage_ref->>'objectKey' as key
+    from assets a join asset_libraries l on l.id=a.library_id where l.workspace_id=$1 and a.status='active' order by a.created_at desc limit 60`, [workspaceId]);
+  const guidance = (row) => [row.ai_instructions, row.usage_rule].filter(Boolean).join(" ").replace(/\s+/g, " ").trim().slice(0, 280);
+  const isReference = (row) => ["video_referencia", "referencia_visual", "campanha"].includes(row.material_type) || /refer[eê]ncia/i.test(guidance(row));
+  return {
+    references: rows.filter(isReference).slice(0, 8).map((row) => ({ name: `${row.kind === "video" ? "vídeo" : "imagem"} "${String(row.name).slice(0, 60)}"`, guidance: guidance(row) || undefined })),
+    videos: rows.filter((row) => row.kind === "video" && row.key && !isReference(row) && ["video_produto", "video_institucional", "gravacao_tela", null].includes(row.material_type ?? null))
+      .slice(0, 2).map((row) => ({ objectKey: row.key, kind: "video", role: row.material_type === "gravacao_tela" ? "screen_recording" : "footage", label: `${String(row.name).slice(0, 50)} (biblioteca da marca)` })),
+  };
+}
+
+/** Brief do Diretor Criativo para uma pauta de imagem/carrossel (o host chama o Codex com ele). */
+async function imageBrief(idea, planned, context, library) {
+  const refs = planned.plan.screens.flatMap((screen) => screen.spec.requiredReferences ?? []);
+  const identity = context.profile?.identity ?? {};
+  const medium = idea.format === "carousel" ? "carousel" : "image";
+  const brief = briefFromIdea({
+    medium, brand: { name: context.brandName, positioning: identity.positioning, tone: identity.toneOfVoice ?? identity.tone, audience: identity.targetAudience },
+    idea: { title: idea.title, objective: idea.commercialObjective, concept: idea.concept, keyMessage: idea.keyMessage, cta: idea.cta, audience: idea.targetAudience },
+    instructions: [idea.creativePrompt, idea.visualDirection, idea.approach, idea.narrativeStructure],
+    inventory: materialInventory({ medium, productPhotos: refs.filter((ref) => ref.role === "product_photo" || ref.role === "product_variant").length, screens: refs.filter((ref) => ref.role === "software_capture").length, logo: true, references: library.references.length }),
+    recentConcepts: recentConceptsFrom(context.used.map((row) => row.creative)),
+    lessons: planned.plan.screens[0]?.spec.learned ?? [],
+    references: library.references,
+  });
+  return { prompt: brief.prompt, schema: brief.schema, requestedLanguages: brief.briefing.requestedLanguages, footage: false, recentConcepts: recentConceptsFrom(context.used.map((row) => row.creative)),
+    allowed: planned.plan.screens.map((screen) => [screen.spec.composition.archetype, ...screen.spec.composition.alternatives]) };
+}
+
 async function visualHistory(usedRows) {
   const history = [];
   for (const row of usedRows.slice(0, 6)) {
@@ -662,6 +698,11 @@ async function videoMaterials(idea, creative, modules) {
       materials.push({ objectKey: key, kind: "image", role: "screenshot", label: `${capture.candidate.name}${capture.meta.feature ? ` (${capture.meta.feature})` : ""}`, width: meta.width, height: meta.height, thumb: await thumbnail(bytes) });
     }
   }
+  if (materials.length < VIDEO_MAX_MATERIALS) {
+    // Gravações próprias da marca na biblioteca (produto, institucional, tela): a pauta não precisa anexá-las.
+    const library = await brandLibrary().catch(() => ({ videos: [] }));
+    for (const video of library.videos) if (materials.length < VIDEO_MAX_MATERIALS && !materials.some((item) => item.objectKey === video.objectKey)) materials.push(video);
+  }
   return materials.map((material, index) => ({ id: `M${index + 1}`, ...material }));
 }
 
@@ -702,11 +743,26 @@ async function videoAction(workspace, brandConfig) {
     const { rows: strategies } = await db.query(`select v.plan->>'strategy' as strategy from video_versions v join video_projects p on p.id=v.project_id
       where p.workspace_id=$1 and v.plan is not null order by v.created_at desc limit 5`, [workspaceId]);
     const memory = await videoBrandMemory(modules.memory).catch(() => undefined);
+    const materials = resume ? undefined : await videoMaterials(idea, creative, modules);
+    const library = await brandLibrary().catch(() => ({ references: [], videos: [] }));
+    const { rows: recentVideos } = await db.query(`select source_artifacts->0->'payload'->'creative'->'video' as creative from publication_plans
+      where tenant_id=$1 and workspace_id=$2 and idempotency_key like $3 order by created_at desc limit 8`, [tenantId, workspaceId, `social:${videoPrefix}:%`]);
+    const recentConcepts = recentConceptsFrom(recentVideos.map((row) => row.creative));
+    const fullIdea = allIdeas.find((item) => item.id === idea.id) ?? idea;
+    const brief = briefFromIdea({
+      medium: "video", brand: { name: workspace.name, positioning: identity?.positioning, tone: identity?.toneOfVoice ?? identity?.tone, audience: identity?.targetAudience },
+      idea: { title: idea.title, objective: fullIdea.commercialObjective, concept: fullIdea.concept, keyMessage: idea.keyMessage, cta: idea.cta, audience: fullIdea.targetAudience },
+      instructions: [fullIdea.creativePrompt, fullIdea.visualDirection, fullIdea.approach, fullIdea.narrativeStructure],
+      inventory: materialInventory({ medium: "video", productPhotos: (materials ?? []).filter((m) => m.role === "product_photo").length, footage: (materials ?? []).filter((m) => m.kind === "video" && m.role === "footage").length,
+        screens: (materials ?? []).filter((m) => m.role === "screenshot" || m.role === "screen_recording").length, logo: true, references: library.references.length }),
+      recentConcepts, lessons: memory ? modules.memory.memoryGuidance(memory, "video") : [], references: library.references,
+    });
     return {
       brand: workspace.name, slot,
+      creativeBrief: { prompt: brief.prompt, schema: brief.schema, requestedLanguages: brief.briefing.requestedLanguages, footage: (materials ?? []).some((m) => m.kind === "video" && m.role === "footage"), recentConcepts },
       idea: { id: idea.id, externalId: idea.externalId, title: idea.title, keyMessage: idea.keyMessage, caption: idea.caption, cta: idea.cta, visualDirection: idea.visualDirection, category: idea.category, updatedAt: idea.updatedAt },
       request: videoRequestText(idea),
-      ...(resume ? { resume: { projectId: resume.project_id, versionId: resume.version_id, status: resume.status, stage: resume.stage } } : { materials: await videoMaterials(idea, creative, modules) }),
+      ...(resume ? { resume: { projectId: resume.project_id, versionId: resume.version_id, status: resume.status, stage: resume.stage } } : { materials }),
       brandStyle: { name: workspace.name, tone: identity?.toneOfVoice ?? identity?.tone, colors: Array.isArray(identity?.colors) ? identity.colors.slice(0, 6) : undefined },
       businessKind: creative.businessKind, musicAvailable: engine.musicLibraryAvailable,
       // Movimento por IA: só informado ao diretor quando liberado para a marca, com custo e saldo do mês.
@@ -872,7 +928,7 @@ async function videoAction(workspace, brandConfig) {
   if (existing && existing.state !== "cancelled") return { existing: videoPostSummary(await c.social.posts.get({ ...scope, postId: existing.id })) };
   const publishNow = request.publishNow === true;
   // Registro do motor (estratégia, composições, Quality Gate, revisão visual do Codex), limitado em tamanho.
-  const recordText = redactSecrets(JSON.stringify({ strategy: version.plan.strategy, durationSeconds: version.plan.durationSeconds, layouts: version.plan.clips.map((clip) => clip.layout ?? "full"), gate: version.gate.status, review: request.review ?? null, trace: request.trace ?? null }));
+  const recordText = redactSecrets(JSON.stringify({ strategy: version.plan.strategy, durationSeconds: version.plan.durationSeconds, layouts: version.plan.clips.map((clip) => clip.layout ?? "full"), gate: version.gate.status, review: request.review ?? null, direction: request.direction && typeof request.direction === "object" ? request.direction : null, trace: request.trace ?? null }));
   const videoRecord = { video: recordText.length < 60000 ? JSON.parse(recordText) : { strategy: version.plan.strategy, gate: version.gate.status } };
   const post = await c.social.posts.create({ ...input, actor, idempotencyKey, when: publishNow ? { mode: "now" } : { mode: "schedule", localDateTime: slot, timezone }, source: {
     artifacts: [{ artifactId: idea.id, artifactType: "video", schemaId: "social.post", schemaVersion: 1, checksum: sha256,
@@ -895,6 +951,14 @@ async function run() {
   const accounts = brandConfig.accounts;
   const workspace = await c.workspaceRepository.getById(workspaceId);
   requireCondition(workspace?.tenantId === tenantId && workspace.status === "active", "Workspace editorial indisponível");
+  if (mode === "creative_direction") {
+    // Diretor Criativo: confere e escolhe entre os conceitos que o Codex concebeu (regras objetivas no dist).
+    const direction = selectCreativeDirection(request.raw, { inventory: { footage: request.footage === true },
+      recentConcepts: Array.isArray(request.recentConcepts) ? request.recentConcepts : [], requestedLanguages: Array.isArray(request.requestedLanguages) ? request.requestedLanguages.map(String) : [] });
+    if (!direction) return { direction: null };
+    const allowed = Array.isArray(request.allowed) ? request.allowed.map((list) => (Array.isArray(list) ? list.map(String) : [])) : [];
+    return { direction, record: directionRecord(direction), imageLines: directionImageLines(direction), videoLines: directionVideoLines(direction), preferred: allowed.map((list) => preferredArchetypes(direction, list)) };
+  }
   if (mode === "reconcile") {
     await reconcile();
     return { brand: workspace.name, reconciled: true };
@@ -1004,7 +1068,9 @@ async function run() {
         return undefined;
       }
       if (planned.blocked) { blocked.push({ ideaId: idea.id, idea: idea.externalId, mode: planned.plan.mode, reason: "REFERENCE_MISSING", guidance: planned.plan.blockers.filter(item => item.blocking).map(item => item.message) }); return undefined; }
-      return { idea, brand: await brandFor(workspace, brandConfig, context.profile), plan: planned.plan, assets: planned.assets, trace: { references: planned.traced }, productCodes: planned.productCodes, history: context.history, archetypes: ARCHETYPES, blocked, calendar,
+      const creativeBrief = await imageBrief(idea, planned, context, await brandLibrary().catch(() => ({ references: [], videos: [] }))).catch(() => undefined);
+      return { idea, brand: await brandFor(workspace, brandConfig, context.profile), plan: planned.plan, assets: planned.assets, trace: { references: planned.traced }, productCodes: planned.productCodes, history: context.history, archetypes: ARCHETYPES, blocked,
+        ...(creativeBrief ? { creativeBrief } : {}), calendar,
         ...(redoScope ? { redoScope: { text: redoScope.text, image: redoScope.image, caption: redoScope.caption, product: redoScope.product, logo: redoScope.logo, changed: redoScope.changed, kept: redoScope.kept } } : {}),
         ...(context.memory ? { memory: memorySummary(context.memory) } : {}) };
     };

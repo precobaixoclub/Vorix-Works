@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import { chown, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { isAbsolute, join, relative, sep } from "node:path";
 import { addToReviewQueue, reviewSkipIds } from "./creative-pipeline.mjs";
-import { categoryReviewOutcome, categoryReviewPrompt, conceptImagePrompt, conceptImageSchema, directorPrompt, directorSchema, fidelityReviewOutcome, fidelityReviewPrompt, fidelityReviewSchema, redoPrompt, redoSchema, reviewCategory, reviewSchemaFor, scopedReason, targetSecondsFor, toDraft } from "./video-director.mjs";
+import { categoryReviewOutcome, categoryReviewPrompt, conceptImagePrompt, conceptImageSchema, directorPrompt, directorSchema, directorSchemaWith, dropInventedFigures, fidelityReviewOutcome, fidelityReviewPrompt, fidelityReviewSchema, redoPrompt, redoSchema, reviewCategory, reviewSchemaFor, scopedReason, targetSecondsFor, toDraft } from "./video-director.mjs";
 
 /**
  * Piloto automático — RAMO DE VÍDEO (Reels) a partir das pautas "video" do Bolsão. Não é um segundo piloto:
@@ -154,8 +154,9 @@ async function editorialReview(jobDir, selection, status, operations) {
     // Critérios comerciais pelo tipo de peça (roupa, software, fala); movimento gerado exige fidelidade.
     const category = reviewCategory({ businessKind: selection.businessKind, materials: selection.materials ?? [], sentences: status.sentences ?? [] });
     const aiMotion = Boolean(status.draft?.scenes?.some((scene) => scene.modality === "ai_motion"));
-    const { output, ms } = await codex(jobDir, { prompt: categoryReviewPrompt({ selection, plan: status.plan, gate: status.gate, category, aiMotion }), schema: reviewSchemaFor(category, { aiMotion }), images: [sheet], timeout: 180000 });
-    const outcome = categoryReviewOutcome(output, { category, aiMotion });
+    const concept = Boolean(selection.direction?.length);
+    const { output, ms } = await codex(jobDir, { prompt: categoryReviewPrompt({ selection, plan: status.plan, gate: status.gate, category, aiMotion, direction: selection.direction }), schema: reviewSchemaFor(category, { aiMotion, concept }), images: [sheet], timeout: 180000 });
+    const outcome = categoryReviewOutcome(output, { category, aiMotion, concept });
     operations.push({ step: `revisão editorial v${status.number}`, engine: "codex", durationMs: ms, outcome: outcome.verdict });
     return outcome;
   } catch (error) {
@@ -231,6 +232,7 @@ async function runWorkspace(workspaceId) {
   if (selection.empty) return { brand: selection.brand, empty: true, videoIdeas: selection.videoIdeas };
   const idea = selection.idea;
   const operations = [];
+  let direction;
   const jobDir = await jobDirectory("video");
   const started = Date.now();
   try {
@@ -257,9 +259,27 @@ async function runWorkspace(workspaceId) {
       const transcribed = status?.stage === "awaiting_draft" ? status : undefined;
       let correction;
       for (let round = 0; round < 2; round += 1) {
-        const { output, ms } = await codex(jobDir, { prompt: directorPrompt({ selection, materials, sentences: transcribed?.sentences ?? [], targetSeconds: settings.targetDurationSeconds, correction, aiMotion: transcribed ? undefined : selection.motion }), schema: directorSchema, images });
+        const brief = selection.creativeBrief;
+        const { output, ms } = await codex(jobDir, { prompt: directorPrompt({ selection, materials, sentences: transcribed?.sentences ?? [], targetSeconds: settings.targetDurationSeconds, correction, aiMotion: transcribed ? undefined : selection.motion }), schema: brief ? directorSchemaWith(brief.schema) : directorSchema, images });
         operations.push({ step: round ? "plano (correção)" : "plano", engine: "codex", durationMs: ms });
+        if (brief && output.direction && !direction) {
+          // Diretor Criativo: o backend confere a escolha (filmagem inexistente, repetição, linguagem pedida).
+          const checked = await callContainer({ workspaceId, action: "creative_direction", raw: output.direction, footage: brief.footage, recentConcepts: brief.recentConcepts, requestedLanguages: brief.requestedLanguages }).catch(() => undefined);
+          if (checked?.direction) {
+            direction = checked;
+            selection.direction = checked.videoLines;
+            operations.push({ step: "direção criativa", operation: "creative_direction", engine: "codex (na chamada do plano)", outcome: checked.direction.decision,
+              detail: `${checked.record.name} (${checked.record.language})${checked.direction.warnings.length ? ` · ${checked.direction.warnings.join("; ")}` : ""}`.slice(0, 300) });
+            if (checked.direction.decision !== "codex" && round === 0) {
+              // O plano executou um conceito descartado: refaz UMA vez executando o escolhido (só neste caso há chamada extra).
+              correction = `O conceito que você escolheu foi descartado (${checked.direction.warnings.join("; ")}). Execute este conceito:\n${checked.videoLines.join("\n")}`;
+              continue;
+            }
+          }
+        }
         let draft = toDraft(output);
+        const facts = dropInventedFigures(draft, [idea.title, idea.keyMessage, idea.caption, idea.visualDirection, idea.cta].filter(Boolean).join(" "));
+        if (facts.warnings.length) operations.push({ step: "trava de fatos", outcome: "ajustado", detail: facts.warnings.join("; ").slice(0, 300) });
         // Movimento por IA (só se liberado para a marca): cada clipe passa pela fidelidade automática e pela
         // revisão visual; reprovado é descartado e a cena volta para a foto original.
         const motion = transcribed ? { draft, extra: [] } : await applyAiMotion(jobDir, workspaceId, selection, materials, queueMaterials, draft, operations);
@@ -286,7 +306,7 @@ async function runWorkspace(workspaceId) {
       const base = status;
       const sentences = base.sentences ?? [];
       const result = await reviseWithScope(workspaceId, base.versionId, { reason: review.revisionRequest, scope: review.scope, from: "revisao" }, operations, async (correction) => {
-        const { output, ms } = await codex(jobDir, { prompt: `${directorPrompt({ selection, materials, sentences, targetSeconds: targetSecondsFor(idea, { speech: sentences.length > 0 }) })}\n\nRASCUNHO ATUAL (JSON do motor): ${JSON.stringify(base.draft)}\nAJUSTE PEDIDO PELA REVISÃO (${review.scope}): ${review.revisionRequest}\n${review.scope === "abrangente" ? "Ajuste abrangente: pode reorganizar ritmo, ordem e composição." : "Ajuste pontual: mude só o que foi pedido e mantenha o resto IDÊNTICO."}${correction ? `\nCORREÇÃO: ${correction}` : ""}\nDevolva o rascunho completo.`, schema: directorSchema, images: pictures });
+        const { output, ms } = await codex(jobDir, { prompt: `${directorPrompt({ selection: { ...selection, creativeBrief: undefined }, materials, sentences, targetSeconds: targetSecondsFor(idea, { speech: sentences.length > 0 }) })}${direction ? `\n\n${direction.videoLines.join("\n")}` : ""}\n\nRASCUNHO ATUAL (JSON do motor): ${JSON.stringify(base.draft)}\nAJUSTE PEDIDO PELA REVISÃO (${review.scope}): ${review.revisionRequest}\n${review.scope === "abrangente" ? "Ajuste abrangente: pode reorganizar ritmo, ordem e composição." : "Ajuste pontual: mude só o que foi pedido e mantenha o resto IDÊNTICO."}${correction ? `\nCORREÇÃO: ${correction}` : ""}\nDevolva o rascunho completo.`, schema: directorSchema, images: pictures });
         operations.push({ step: "ajuste da revisão", engine: "codex", durationMs: ms });
         return toDraft(output);
       });
@@ -297,8 +317,8 @@ async function runWorkspace(workspaceId) {
     }
     if (review.verdict !== "approve") throw new Error(`QUALITY_GATE: revisão editorial ${review.verdict} — ${review.findings.join("; ")}`.slice(0, 600));
     const result = await callContainer({ workspaceId, action: mode === "validate" ? "video_validate" : "video_schedule", ideaId: idea.id, updatedAt: idea.updatedAt, versionId: status.versionId, sha256: status.output.sha256, slot,
-      review: { verdict: review.verdict, findings: review.findings }, trace: { operations, totalMs: Date.now() - started } });
-    return { brand: selection.brand, idea: idea.externalId, versionId: status.versionId, durationSeconds: status.plan?.durationSeconds, strategy: status.plan?.strategy, sha256: status.output.sha256, review: review.verdict, operations, totalMs: Date.now() - started, ...result };
+      review: { verdict: review.verdict, findings: review.findings, ...(review.originalityScore !== undefined ? { originalityScore: review.originalityScore } : {}) }, ...(direction ? { direction: direction.record } : {}), trace: { operations, totalMs: Date.now() - started } });
+    return { brand: selection.brand, idea: idea.externalId, versionId: status.versionId, ...(direction ? { direction: direction.record } : {}), durationSeconds: status.plan?.durationSeconds, strategy: status.plan?.strategy, sha256: status.output.sha256, review: review.verdict, operations, totalMs: Date.now() - started, ...result };
   } catch (error) {
     const reason = error.message.replace(/^QUALITY_GATE:\s*/, "").slice(0, 600);
     await sendToReview(workspaceId, { ideaId: idea.id, idea: idea.externalId, reason: `vídeo: ${reason}` });

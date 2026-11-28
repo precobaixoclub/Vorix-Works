@@ -16,7 +16,7 @@ const ANIMATIONS = ["fade", "slide_up", "pop", "kinetic", "countdown", "none"];
 const str = () => ({ type: "string" });
 /** Modalidade da cena no motor híbrido (o FFmpeg monta todas; só ai_motion chama um provedor pago). */
 /** Cenas de motion design renderizadas pelo Remotion (o FFmpeg monta a peça). */
-export const DESIGN_TEMPLATES = ["product_hero", "detail_reveal", "lineup", "software_focus", "title_card", "speech_captions"];
+export const DESIGN_TEMPLATES = ["product_hero", "detail_reveal", "lineup", "software_focus", "title_card", "speech_captions", "clock", "counter", "versus", "mask_reveal"];
 export const MODALITIES = ["original_footage", "animated_photo", "motion_graphics", "software_demo", "ai_motion"];
 /** Emoção de cada cena (Emotion Engine): muda ritmo, intensidade, curvas, transições, som e composição. */
 export const EMOTIONS = ["curiosity", "desire", "urgency", "trust", "sophistication", "energy", "authority", "surprise", "identification"];
@@ -56,6 +56,15 @@ export const directorSchema = {
   },
 };
 
+/**
+ * Schema do plano COM a direção criativa (Diretor Criativo Autônomo): o Codex concebe 3 conceitos internos,
+ * escolhe um e, na MESMA resposta, planeja o vídeo que o executa — nenhuma chamada extra.
+ */
+export function directorSchemaWith(directionSchema) {
+  if (!directionSchema) return directorSchema;
+  return { ...directorSchema, required: ["direction", ...directorSchema.required], properties: { direction: directionSchema, ...directorSchema.properties } };
+}
+
 const cut = (value, max) => (typeof value === "string" && value.trim() ? value.trim().slice(0, max) : undefined);
 function designOf(design) {
   const out = { template: design.template, kicker: cut(design.kicker, 40), headline: cut(design.headline, 60), label: cut(design.label, 40), cta: cut(design.cta, 36),
@@ -65,6 +74,25 @@ function designOf(design) {
 }
 
 /** Saída do Codex → rascunho do motor (`VideoEditDraftV1`): tira os nulos e listas vazias opcionais. */
+/**
+ * Trava de fatos: número animado (counter) só com um número que ESTÁ na pauta. Número que não aparece no texto
+ * da pauta derruba a animação (a cena segue sem ela) e vira aviso — nunca vai ao ar um dado inventado.
+ */
+export function dropInventedFigures(draft, ideaText) {
+  const digits = (value) => (String(value ?? "").match(/\d+(?:[.,]\d+)?/g) ?? []).map((item) => item.replace(",", "."));
+  const known = new Set(digits(ideaText));
+  const warnings = [];
+  for (const scene of draft.scenes ?? []) {
+    if (scene.design?.template !== "counter") continue;
+    const used = digits(scene.design.label);
+    if (!used.length || used.some((item) => !known.has(item))) {
+      warnings.push(`número "${scene.design.label ?? ""}" não está na pauta: animação de número removida`);
+      delete scene.design;
+    }
+  }
+  return { draft, warnings };
+}
+
 export function toDraft(output) {
   return {
     schemaVersion: 1,
@@ -122,7 +150,9 @@ export function directorPrompt({ selection, materials, sentences = [], targetSec
     ``,
     `MARCA: ${selection.brandStyle?.name ?? selection.brand}${selection.brandStyle?.tone ? ` · tom: ${selection.brandStyle.tone}` : ""}`,
     selection.recentStrategies?.length ? `Estratégias recentes (evite repetir): ${selection.recentStrategies.join(", ")}` : undefined,
-    selection.lessons?.length ? `Aprendizado da marca (o cliente já reprovou isto — não repita):\n${selection.lessons.map((item) => `- ${item}`).join("\n")}` : undefined,
+    selection.lessons?.length && !selection.creativeBrief ? `Aprendizado da marca (o cliente já reprovou isto — não repita):\n${selection.lessons.map((item) => `- ${item}`).join("\n")}` : undefined,
+    ...(selection.creativeBrief ? [``, selection.creativeBrief.prompt, ``,
+      `PRIMEIRO preencha direction (3 conceitos distintos com notas e o escolhido). DEPOIS o rascunho EXECUTA o conceito escolhido: o gancho dele nos 2 primeiros segundos, a história cena a cena, a revelação e o encerramento com a chamada. O recurso visual central do conceito precisa aparecer de verdade nas cenas (use os templates abaixo; sem material real, o vídeo pode ser inteiro de motion graphics conceitual com imagens geradas — nunca slideshow de cartelas).`] : []),
     ``,
     `MATERIAIS (as imagens anexadas seguem esta ordem):`,
     ...materialLines(materials, sentences),
@@ -136,6 +166,11 @@ export function directorPrompt({ selection, materials, sentences = [], targetSec
 - software_focus (captura de tela + region OBRIGATÓRIA no componente + label): a tela inteira fica nítida em cima, o cursor vai até a função e clica, e uma lupa com os pixels reais da região cresce a partir dela até o painel de baixo (a tela não é escurecida); label curto (o que a função faz). A region deve conter o componente inteiro e legível (bordas, rótulos, valores).
 - title_card (CARD): abertura/encerramento com tipografia cinética (lines: 1–3 linhas curtas), forma gráfica, logo oficial (no encerramento com logo "end") e cta.
 - speech_captions (vídeo COM FALA + sentenceIds): legendas dinâmicas palavra a palavra e selo contextual nas palavras de emphasis (2–4 palavras-chave ditas no trecho). Material horizontal é REENQUADRADO automaticamente: o recorte acompanha a região que muda/importa (cursor, rosto, conteúdo) com movimento suave; gravação de tela ocupa a janela de cima e as legendas ficam embaixo, sem cobrir a tela.
+MOTION GRAPHICS CONCEITUAL (materialId "CARD"; não exigem material — servem a conceitos sem filmagem):
+- clock (relógio/cronômetro): mostrador analógico com ponteiros que ACELERAM (tempo passando rápido, pressão), estalo e parada brusca no fim (interrupção de ritmo para a virada); lines: 1–2 frases curtas (a pergunta ou a tensão); label opcional curto no mostrador. Bom para tempo, prazo, rotina, produtividade.
+- counter (número animado): o número de label sobe do zero até o valor com barra de progresso; label = número EXATO que está na pauta (ex.: "3", "70%", "24h") — NUNCA invente número; lines: o que o número significa (1–2 linhas). Sem número na pauta, não use.
+- versus (comparação dinâmica): tela dividida, lines[0] = o lado ruim/antes, lines[1] = o lado bom/depois; o lado bom avança e toma o quadro; kicker opcional (o tema). Bom para comparação, antes/depois, problema→solução.
+- mask_reveal (revelação por máscara): uma IMAGEM (foto de produto, imagem conceitual gerada ou referência) surge por uma máscara geométrica que se abre, com paralaxe em camadas e luz; headline + kicker. Bom para metáfora visual e revelação. Precisa de materialId de imagem.
 Em cena com design, texts = [] (os textos ficam no design). Não use o mesmo template mais de 2 vezes; varie com material real.`,
     `DIREÇÃO AUDIOVISUAL (você decide; o sistema executa):
 - story: a história do vídeo em uma frase (tensão → virada → ação). Cada cena serve a um passo dela.
@@ -155,7 +190,7 @@ Em cena com design, texts = [] (os textos ficam no design). Não use o mesmo tem
     materials.some((m) => m.role === "screenshot" || m.role === "screen_recording") ? `TELA REAL: mostre a dor e a prova da solução (ação, contexto preservado, resultado). Alterne um plano que localiza o fluxo e um region legível do componente real (inclua suas bordas e espaço para texto da interface). Evite repetir a mesma tela em molduras diferentes. Reserve a moldura para contexto. Chamada ligada ao benefício demonstrado. Evite zoom que corte controles ou informação essencial.` : undefined,
     sentences.length ? `FALA: abra com a primeira afirmação que se sustenta sozinha. Faça o plano acompanhar a mudança de assunto e preserve respirações e palavras de ligação. Use blocos completos, na ordem, e escolha o enquadramento para a informação que a fala descreve. Evite título que espelha a legenda. CTA vem da pauta. A fala é o eixo e a trilha fica atrás.` : undefined,
     ``,
-    `Devolva: concept (gancho, arco narrativo, sensação), strategy (rótulo curto), rationale, scenes, captions (legendas da fala: true só se houver fala), music, logo ("end" para fechar com a marca), warnings (o que a pauta pede e os materiais não permitem).`,
+    `Devolva: ${selection.creativeBrief ? "direction (os 3 conceitos internos e o escolhido), " : ""}concept (gancho, arco narrativo, sensação), strategy (rótulo curto), rationale, scenes, captions (legendas da fala: true só se houver fala), music, logo ("end" para fechar com a marca), warnings (o que a pauta pede e os materiais não permitem).`,
     correction ? `\nCORREÇÃO OBRIGATÓRIA: ${correction}` : undefined,
   ].filter((line) => line !== undefined && line !== null && line !== false).join("\n");
 }
@@ -300,20 +335,26 @@ export function reviewCategory({ businessKind, materials = [], sentences = [] })
   return "generic";
 }
 
-export function reviewSchemaFor(category, { aiMotion = false } = {}) {
-  const extra = [...(CATEGORY_CHECKS[category] ?? CATEGORY_CHECKS.generic).keys, ...(aiMotion ? [AI_MOTION_CHECK] : [])];
+/** Critério criativo (com direção): o conceito escolhido foi de fato executado. Julgamento subjetivo, mas bloqueia. */
+export const CONCEPT_CHECK = "conceptDelivered";
+
+export function reviewSchemaFor(category, { aiMotion = false, concept = false } = {}) {
+  const extra = [...(CATEGORY_CHECKS[category] ?? CATEGORY_CHECKS.generic).keys, ...(aiMotion ? [AI_MOTION_CHECK] : []), ...(concept ? [CONCEPT_CHECK] : [])];
   return {
     ...reviewSchema,
-    required: [...reviewSchema.required, ...extra, "commercialScore"],
-    properties: { ...reviewSchema.properties, ...Object.fromEntries(extra.map((key) => [key, { type: "boolean" }])), commercialScore: { type: "number", minimum: 0, maximum: 10 } },
+    required: [...reviewSchema.required, ...extra, "commercialScore", ...(concept ? ["originalityScore"] : [])],
+    properties: { ...reviewSchema.properties, ...Object.fromEntries(extra.map((key) => [key, { type: "boolean" }])), commercialScore: { type: "number", minimum: 0, maximum: 10 },
+      ...(concept ? { originalityScore: { type: "number", minimum: 0, maximum: 10 } } : {}) },
   };
 }
 
-export function categoryReviewPrompt({ selection, plan, gate, category, aiMotion = false }) {
+export function categoryReviewPrompt({ selection, plan, gate, category, aiMotion = false, direction }) {
   const spec = CATEGORY_CHECKS[category] ?? CATEGORY_CHECKS.generic;
   return [
     reviewPrompt({ selection, plan, gate }),
     ``,
+    ...(direction?.length ? [`CONCEITO CRIATIVO que a peça deveria executar:`, ...direction,
+      `${CONCEPT_CHECK} = o gancho, o recurso visual central e a revelação do conceito aparecem de verdade nos quadros (interpretação livre vale; trocar por cartelas genéricas ou slideshow não). originalityScore (0–10, registro — não bloqueia sozinho): quão fora do óbvio do segmento a peça ficou.`, ``] : []),
     `CRITÉRIOS COMERCIAIS (padrão de anúncio pago — não de "aceitável"):`,
     spec.text,
     aiMotion ? `${AI_MOTION_CHECK} = nas cenas com movimento gerado por IA, a peça, a estampa, as cores e o logo são os MESMOS da foto oficial em todos os quadros; realismo do movimento NÃO compensa estampa diferente — falso bloqueia.` : undefined,
@@ -323,11 +364,11 @@ export function categoryReviewPrompt({ selection, plan, gate, category, aiMotion
 }
 
 /** Leitura da revisão por categoria: critério ausente = inconclusiva; nota abaixo do mínimo = ajuste. */
-export function categoryReviewOutcome(raw, { category, aiMotion = false }) {
+export function categoryReviewOutcome(raw, { category, aiMotion = false, concept = false }) {
   const base = reviewOutcome(raw);
   if (base.verdict === "inconclusive") return { ...base, category };
   const spec = CATEGORY_CHECKS[category] ?? CATEGORY_CHECKS.generic;
-  const keys = [...spec.keys, ...(aiMotion ? [AI_MOTION_CHECK] : [])];
+  const keys = [...spec.keys, ...(aiMotion ? [AI_MOTION_CHECK] : []), ...(concept ? [CONCEPT_CHECK] : [])];
   const score = Number(raw.commercialScore);
   if (keys.some((key) => typeof raw[key] !== "boolean") || !Number.isFinite(score)) return { verdict: "inconclusive", findings: ["revisão sem os critérios comerciais obrigatórios"], category };
   const failed = keys.filter((key) => raw[key] === false);
@@ -335,7 +376,7 @@ export function categoryReviewOutcome(raw, { category, aiMotion = false }) {
   // Estampa diferente num clipe gerado é problema grave: reprova (o clipe volta para a foto original).
   const verdict = raw[AI_MOTION_CHECK] === false ? "reject" : base.verdict === "approve" && (failed.length || lowScore) ? "revise" : base.verdict;
   const scope = base.scope === "abrangente" || failed.includes("adGrade") || lowScore ? "abrangente" : base.scope;
-  return { ...base, verdict, scope, category, commercialScore: score, minScore: spec.minScore,
+  return { ...base, verdict, scope, category, commercialScore: score, minScore: spec.minScore, ...(concept && Number.isFinite(Number(raw.originalityScore)) ? { originalityScore: Number(raw.originalityScore) } : {}),
     findings: [...base.findings, ...failed.map((key) => `critério comercial reprovado: ${key}`), ...(lowScore ? [`nota comercial ${score} abaixo do mínimo ${spec.minScore} (${category})`] : [])].slice(0, 12) };
 }
 

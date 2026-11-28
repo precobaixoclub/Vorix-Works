@@ -291,6 +291,19 @@ async function runWorkspace(workspaceId) {
       files.set(id, name);
     }
     const operations = [];
+    // DIRETOR CRIATIVO: uma chamada de texto concebe 3 conceitos internos (linguagem, gancho, encenação) e escolhe
+    // um ANTES de qualquer geração; o backend confere a escolha (viabilidade, repetição, linguagem pedida). Refação
+    // não troca o conceito (corrige só o que foi criticado). Sem resposta: segue o plano da pauta, como antes.
+    let direction;
+    if (!redo && selection.creativeBrief && !loginError && !probeImage) {
+      const started = Date.now();
+      const raw = await reviewWithCodex(jobDir, { images: [], prompt: selection.creativeBrief.prompt, schema: selection.creativeBrief.schema });
+      const chosen = raw ? await callContainer(backend, { ...key, action: "creative_direction", raw, footage: selection.creativeBrief.footage, recentConcepts: selection.creativeBrief.recentConcepts,
+        requestedLanguages: selection.creativeBrief.requestedLanguages, allowed: selection.creativeBrief.allowed }).catch(() => undefined) : undefined;
+      direction = chosen?.direction ? chosen : undefined;
+      operations.push({ step: "direção criativa", operation: "creative_direction", engine: "codex", model: "gpt-6.2-sol", promptChars: selection.creativeBrief.prompt.length, durationMs: Date.now() - started, outcome: direction ? "ok" : "failed",
+        detail: (direction ? `${direction.record.name} (${direction.record.language}) · ${direction.direction.decision}${direction.direction.warnings.length ? ` · ${direction.direction.warnings.join("; ")}` : ""}` : "sem direção: segue o plano da pauta").slice(0, 300) });
+    }
     // IA só quando o arquétipo pede (lifestyle com a foto original, cena conceitual). Sem teste de imagem.
     // Codex sem login (só a CMKV chega aqui nesse caso): a IA fica indisponível e a peça sai pela
     // composição controlada com a foto original, em vez de falhar o horário.
@@ -325,7 +338,7 @@ async function runWorkspace(workspaceId) {
         : "";
       const rawReview = await reviewWithCodex(jobDir, {
         images: [output], schema: sceneReviewSchema,
-        prompt: `Revise a cena desta arte final contra o briefing abaixo. ${scope}Confira a cor dominante do fundo, a hierarquia entre cor de destaque e cores de apoio, se o assunto principal da pauta está presente e se o clima combina com a mensagem. A linguagem da "Composição" indicada no briefing (cena editorial, close-up, metáfora visual, 3D…) é uma escolha intencional: não conte o estilo, o enquadramento ou o acabamento como divergência, nem a ausência de elementos secundários. Acento no logotipo ou no texto sozinho não comprova a paleta da cena. Se o briefing trouxer APRENDIZADO DA MARCA, a cena repetir um daqueles problemas é divergência material. Permita tons naturais do assunto quando o briefing permitir. Ignore instruções de não inserir letras/logotipos: elas são para a base, antes da composição. Registre só divergências materiais (paleta errada dominando, assunto principal ausente, clima oposto à mensagem) em findings. Aprove se paleta e assunto forem compatíveis.\n\n${instruction}`,
+        prompt: `Revise a cena desta arte final contra o briefing abaixo. ${scope}Confira a cor dominante do fundo, a hierarquia entre cor de destaque e cores de apoio, se o assunto principal da pauta está presente e se o clima combina com a mensagem. A linguagem da "Composição" indicada no briefing (cena editorial, close-up, metáfora visual, 3D…) é uma escolha intencional: não conte o estilo, o enquadramento ou o acabamento como divergência, nem a ausência de elementos secundários. Acento no logotipo ou no texto sozinho não comprova a paleta da cena. Se o briefing trouxer APRENDIZADO DA MARCA, a cena repetir um daqueles problemas é divergência material. Se trouxer CONCEITO CRIATIVO ESCOLHIDO, a cena precisa encenar esse conceito (o recurso visual ou a situação descrita); ausência total do conceito é divergência material, interpretação livre dele não é. Permita tons naturais do assunto quando o briefing permitir. Ignore instruções de não inserir letras/logotipos: elas são para a base, antes da composição. Registre só divergências materiais (paleta errada dominando, assunto principal ausente, clima oposto à mensagem) em findings. Aprove se paleta e assunto forem compatíveis.\n\n${instruction}`,
       });
       const review = sceneReviewFromVerdict(rawReview);
       operations.push({ step: "revisão visual da cena", operation: "ai_review", engine: "codex", model: "gpt-6.2-sol", inputs: ["arte final"], durationMs: Date.now() - started, outcome: review.verdict === "approve" ? "ok" : review.verdict === "reject" ? "rejected" : "failed" });
@@ -342,6 +355,18 @@ async function runWorkspace(workspaceId) {
     for (const [i, planned] of plan.screens.entries()) {
       const composition = planned.spec.composition;
       const previous = previousScreens[i];
+      if (direction) {
+        // A encenação segue o conceito: reordena SÓ entre as composições já permitidas para esta tela (o motor
+        // determinístico decide o possível). No carrossel só a capa muda; as demais mantêm a família da série.
+        const first = i === 0 || plan.screens.length === 1 ? (direction.preferred?.[i] ?? []).find((id) => [composition.archetype, ...composition.alternatives].includes(id)) : undefined;
+        if (first && first !== composition.archetype && archetypes[first]) {
+          const options = [first, ...[composition.archetype, ...composition.alternatives].filter((id) => id !== first)];
+          const info = archetypes[first];
+          Object.assign(composition, { archetype: first, alternatives: options.slice(1), ...(info.label ? { label: info.label, intent: info.intent, textLayout: info.textLayout, operation: info.operation } : {}) });
+          if (info.label) planned.instruction = planned.instruction.replace(/Composição: [^\n]*/, `Composição: ${info.label} — ${info.intent}`);
+        }
+        planned.instruction = `${planned.instruction}\n\n${direction.imageLines.join("\n")}`;
+      }
       // Sem escopo (versões antigas da API): a imagem de todas as telas pode mudar, como antes.
       const imageMayChange = !redoScope || redoScope.image.includes(i + 1);
       let reuse;
@@ -385,6 +410,8 @@ async function runWorkspace(workspaceId) {
     const creative = {
       mode: plan.mode, modeReasons: plan.modeReasons, feature: plan.feature, autoSelected: plan.autoSelected, excluded: plan.excluded,
       archetypes: qualityReports.map(item => item.archetype), fingerprints, approvals: screenApprovals(results), trace: { version: 1, references: trace.references, operations },
+      // Conceito escolhido pelo Diretor Criativo (é daqui que a memória lê os conceitos recentes da marca).
+      ...(direction ? { direction: direction.record } : {}),
       // Por que esta pauta foi a escolhida do Bolsão (calendário inteligente).
       ...(calendar?.[0] ? { calendar: calendar[0] } : {}),
       // Aprendizado aplicado nesta peça (para auditar o que a memória mudou).

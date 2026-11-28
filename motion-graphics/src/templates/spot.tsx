@@ -15,8 +15,8 @@ import { bandFrame, clampRect, frame as framing, imageTransform, lerpRect, lumaU
 export type SpotPhoto = { src: string; w: number; h: number; print?: Frac; name?: string; fabric?: string; luma?: { cols: number; rows: number; values: number[] } };
 export type SpotCutout = { src: string; w: number; h: number; elements: Frac[]; /** Altura do traço (0–1) ao longo da largura: a ponta de luz segue a linha ao desenhar. */ trace?: number[] };
 export type SpotText = { text: string; role: "headline" | "kicker" | "label" | "cta" | "body" | "caption" };
-export type SpotTransition = "cut" | "color_wipe" | "mask_reveal" | "iris_print" | "match_print" | "dissolve" | "slide_up";
-export type SpotShotKind = "hook_type" | "print_assemble" | "trace_draw" | "fullbleed" | "macro" | "bands" | "variant_cycle" | "countdown" | "type_card" | "logo_resolve";
+export type SpotTransition = "cut" | "color_wipe" | "mask_reveal" | "iris_print" | "match_print" | "dissolve" | "slide_up" | "morph";
+export type SpotShotKind = "hook_type" | "type_mask" | "editorial_split" | "print_assemble" | "trace_draw" | "fullbleed" | "macro" | "bands" | "variant_cycle" | "countdown" | "type_card" | "logo_resolve";
 export type SpotShot = {
   kind: SpotShotKind;
   from: number;
@@ -34,8 +34,10 @@ export type SpotShot = {
   events?: number[];
   /** Montagem da estampa: retângulo de tela onde a estampa pousa (= posição dela no plano seguinte). */
   land?: Frac;
-  /** Palavras faladas (quadros locais): a legenda acende no tempo da narração. */
+  /** Palavras faladas (quadros locais, do ALINHAMENTO com o áudio real): texto e legenda seguem a fala. */
   words?: { word: string; start: number; end: number }[];
+  /** Morph: retângulo de tela onde a estampa estava no fim do plano anterior (o elemento continua). */
+  morphFrom?: Frac;
   /** Colchetes de foco na estampa (plano de produto). */
   focus?: boolean;
   /** Cartão final: fotos em cartões no rodapé. */
@@ -121,10 +123,24 @@ function wrapTokens(list: { word: string; em: boolean }[], maxChars: number) {
 }
 
 /** Linhas que sobem de trás de uma máscara (editorial), estalam (gráfico) ou ganham foco (cinema). */
-const Lines: React.FC<{ ctx: Ctx; text: SpotText; start: number; end: number; ink: string; align: "left" | "center"; maxWidth: number; scaleIn?: boolean }> = ({ ctx, text, start, end, ink, align, maxWidth, scaleIn }) => {
+const norm = (w: string) => w.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase().replace(/[^a-z0-9]/g, "");
+
+/** Quadro em que cada palavra do texto é DITA (casando, em ordem, com as palavras alinhadas do plano). */
+function spokenFrames(words: { word: string }[], spoken: { word: string; start: number }[] | undefined): (number | undefined)[] {
+  if (!spoken?.length) return words.map(() => undefined);
+  let k = 0;
+  return words.map((w) => {
+    for (let j = k; j < spoken.length; j += 1) if (norm(spoken[j]!.word) === norm(w.word) && norm(w.word)) { k = j + 1; return spoken[j]!.start; }
+    return undefined;
+  });
+}
+
+const Lines: React.FC<{ ctx: Ctx; text: SpotText; start: number; end: number; ink: string; align: "left" | "center"; maxWidth: number; scaleIn?: boolean; spoken?: { word: string; start: number }[] }> = ({ ctx, text, start, end, ink, align, maxWidth, scaleIn, spoken }) => {
   const f = useCurrentFrame();
   const spec = typeSpec(ctx, text.role);
   const list = tokens(spec.upper ? text.text.toUpperCase() : text.text);
+  const said = spokenFrames(list, spoken);
+  const synced = said.filter((x) => x !== undefined).length >= Math.max(1, Math.ceil(list.length * 0.6));
   const lines = wrapTokens(list, spec.chars);
   const longest = Math.max(...lines.map((l) => l.map((t) => t.word).join(" ").length));
   const size = Math.min(spec.size, maxWidth / Math.max(1, longest * (spec.factor + spec.tracking)));
@@ -133,7 +149,8 @@ const Lines: React.FC<{ ctx: Ctx; text: SpotText; start: number; end: number; in
   return (
     <div style={{ display: "flex", flexDirection: "column", alignItems: align === "center" ? "center" : "flex-start", textAlign: align }}>
       {lines.map((line, i) => {
-        const a = start + i * (lang === "graphic" ? 3 : 5);
+        // Com fala: a linha está na tela desde o início (esmaecida) e só as palavras acendem — nunca quadro vazio.
+        const a = synced ? start - 16 : start + i * (lang === "graphic" ? 3 : 5);
         const pin = progress(f, a, a + (lang === "cinematic" ? 26 : 16), ctx.m.out);
         const pout = progress(f, end - 10 + i * 2, end - 1 + i * 2, easeInOut);
         const pop = lang === "graphic" ? spring({ frame: f - a, fps: ctx.fps, config: { damping: 12, stiffness: 170, mass: 0.7 } }) : pin;
@@ -148,14 +165,21 @@ const Lines: React.FC<{ ctx: Ctx; text: SpotText; start: number; end: number; in
         return (
           <div key={i} style={{ overflow: scaleIn ? "visible" : "hidden", paddingBottom: size * 0.06 }}>
             <div style={{ fontFamily: spec.font, fontWeight: spec.weight, fontSize: size, lineHeight: spec.lineHeight, color: ink, whiteSpace: "nowrap", transformOrigin: align === "center" ? "50% 60%" : "0% 100%", display: "flex", gap: `0 ${size * 0.26}px`, justifyContent: align === "center" ? "center" : "flex-start", ...style }}>
-              {line.map((t, j) => (t.em ? (
+              {line.map((t, j) => {
+                // Sincronizado à fala: a palavra sobe da máscara no quadro em que é dita (não a linha inteira).
+                const idx = list.indexOf(t);
+                const at = synced ? said[idx] ?? said.slice(0, idx).reverse().find((x) => x !== undefined) ?? a : undefined;
+                const wp = at === undefined ? 1 : progress(f, at - 2, at + 6, ctx.m.out);
+                const wordStyle: React.CSSProperties = at === undefined ? {} : { display: "inline-block", transform: `translateY(${(1 - wp) * -6}%) scale(${0.96 + 0.04 * wp})`, opacity: 0.28 + 0.72 * wp };
+                return <span key={j} style={wordStyle}>{(t.em ? (
                 block ? (
                   <span key={j} style={{ position: "relative", padding: `0 ${size * 0.12}px`, color: ctx.p.palette.dark }}>
                     <span style={{ position: "absolute", left: 0, top: size * 0.04, bottom: size * 0.02, width: `${emWipe * 100}%`, background: ctx.p.palette.accent }} />
                     <span style={{ position: "relative", color: emWipe > 0.5 ? ctx.p.palette.dark : ink }}>{t.word}</span>
                   </span>
                 ) : <span key={j} style={{ color: ctx.p.palette.accent, fontStyle: spec.font === "DM Serif Display" ? "italic" : "normal" }}>{t.word}</span>
-              ) : <span key={j}>{t.word}</span>))}
+              ) : <span key={j}>{t.word}</span>)}</span>;
+              })}
             </div>
           </div>
         );
@@ -199,7 +223,7 @@ const FocusBrackets: React.FC<{ rect: Frac; color: string; start: number; end: n
 };
 
 /** Bloco de texto do plano: kicker com filete que se desenha + título; tinta escolhida pela luz da foto. */
-const TextBlock: React.FC<{ ctx: Ctx; texts: SpotText[]; placement: "top" | "bottom" | "center"; ink: string; start: number; end: number; align?: "left" | "center"; spokenWords?: { start: number; end: number }[] }> = ({ ctx, texts, placement, ink, start, end, align, spokenWords }) => {
+const TextBlock: React.FC<{ ctx: Ctx; texts: SpotText[]; placement: "top" | "bottom" | "center"; ink: string; start: number; end: number; align?: "left" | "center"; spokenWords?: { word?: string; start: number; end: number }[] }> = ({ ctx, texts, placement, ink, start, end, align, spokenWords }) => {
   const f = useCurrentFrame();
   const { box } = ctx;
   const al = align ?? ctx.p.align ?? (ctx.p.language === "editorial" ? "left" : "center");
@@ -218,7 +242,7 @@ const TextBlock: React.FC<{ ctx: Ctx; texts: SpotText[]; placement: "top" | "bot
           <Lines ctx={ctx} text={kicker} start={start} end={end} ink={ink} align={al} maxWidth={box.width} />
         </div>
       ) : null}
-      {rest.map((t, i) => <Lines key={i} ctx={ctx} text={t} start={start + 6 + i * 8} end={end} ink={ink} align={al} maxWidth={box.width} />)}
+      {rest.map((t, i) => <Lines key={i} ctx={ctx} text={t} start={start + 6 + i * 8} end={end} ink={ink} align={al} maxWidth={box.width} spoken={spokenWords as { word: string; start: number }[] | undefined} />)}
     </div>
     </>
   );
@@ -238,6 +262,21 @@ function cameraAt(ctx: Ctx, photo: SpotPhoto, shot: SpotShot, t: number, aspect 
   const a = framing(photo, cam.from, aspect, width);
   const b = framing(photo, cam.to, aspect, width);
   return lerpRect(a, b, ctx.m.inOut(clamp01(t)));
+}
+
+/**
+ * Morph: nos primeiros quadros do plano, a câmera parte do enquadramento em que a estampa ocupa EXATAMENTE
+ * o lugar que tinha no plano anterior e anda até o enquadramento do plano — o elemento continua.
+ */
+function cameraMorph(ctx: Ctx, photo: SpotPhoto, shot: SpotShot, f: number, D: number, aspect = ctx.W / ctx.H, width = ctx.W, height = ctx.H): Frac {
+  const base = cameraAt(ctx, photo, shot, f / D, aspect, width);
+  const T = shot.transitionFrames ?? 0;
+  if (shot.transition !== "morph" || !shot.morphFrom || !photo.print || f >= T || T <= 0) return base;
+  const R = shot.morphFrom;
+  const cw = (photo.print.w * width) / Math.max(1, R.w);
+  const ch = (cw * photo.w) / (aspect * photo.h);
+  const start = { x: photo.print.x - (R.x / width) * cw, y: photo.print.y - (R.y / height) * ch, w: cw, h: ch };
+  return lerpRect(start, base, ctx.m.inOut(clamp01(f / T)));
 }
 
 /** Mesma câmera em outra variante: a estampa fica no MESMO lugar da tela (match-cut entre cores). */
@@ -324,7 +363,7 @@ const Fullbleed: ShotRender = ({ ctx, shot, D }) => {
   const f = useCurrentFrame();
   const photo = ctx.p.photos[shot.photo ?? ""];
   if (!photo) return null;
-  const rect = cameraAt(ctx, photo, shot, f / D);
+  const rect = cameraMorph(ctx, photo, shot, f, D);
   const placement = shot.placement ?? "top";
   const mid = cameraAt(ctx, photo, shot, 0.5);
   const { ink, scrim } = inkFor(ctx, photo, mid, placement);
@@ -422,11 +461,16 @@ const VariantCycle: ShotRender = ({ ctx, shot, D }) => {
 };
 
 /** Cartela tipográfica: o texto é a imagem (campo de cor da marca). */
-const TypeCard: ShotRender = ({ ctx, shot }) => {
+const TypeCard: ShotRender = ({ ctx, shot, D }) => {
+  const f = useCurrentFrame();
   const field = shot.field ?? ctx.p.palette.dark;
+  // Cartela de respiro: o texto aproxima devagar (tensão), em vez de ficar parado.
+  const push = 1 + 0.07 * progress(f, 0, D, easeInOut);
   return (
     <AbsoluteFill style={{ background: field }}>
-      <TextBlock ctx={ctx} texts={shot.texts ?? []} placement={shot.placement ?? "center"} ink={luminance(field) > 0.4 ? ctx.p.palette.ink : ctx.p.palette.light} start={(shot.transitionFrames ?? 0) + 2} end={shot.frames + 40} />
+      <AbsoluteFill style={{ transform: `scale(${push})` }}>
+        <TextBlock ctx={ctx} texts={shot.texts ?? []} placement={shot.placement ?? "center"} ink={luminance(field) > 0.4 ? ctx.p.palette.ink : ctx.p.palette.light} start={(shot.transitionFrames ?? 0) + 2} end={shot.frames + 40} spokenWords={shot.words} />
+      </AbsoluteFill>
     </AbsoluteFill>
   );
 };
@@ -542,7 +586,7 @@ const TraceDraw: ShotRender = ({ ctx, shot, D }) => {
   const texts = shot.texts ?? [];
   const photo = shot.photo ? p.photos[shot.photo] : undefined;
   if (photo?.print) {
-    const rect = cameraAt(ctx, photo, shot, f / D);
+    const rect = cameraMorph(ctx, photo, shot, f, D);
     const pr = toScreen(photo.print, rect, W, H);
     const fade = progress(f, s1 + 4, s1 + 22, easeInOut);
     const goldMask: React.CSSProperties = { WebkitMaskImage: `url(${cut.src})`, maskImage: `url(${cut.src})`, WebkitMaskSize: "100% 100%", maskSize: "100% 100%" };
@@ -592,7 +636,85 @@ const Countdown: ShotRender = (props) => {
   );
 };
 
-const RENDER: Record<SpotShotKind, ShotRender> = { hook_type: HookType, trace_draw: TraceDraw, countdown: Countdown, print_assemble: PrintAssemble, fullbleed: Fullbleed, macro: Fullbleed, bands: Bands, variant_cycle: VariantCycle, type_card: TypeCard, logo_resolve: LogoResolve };
+/**
+ * Tipografia vazada: palavra(s) GIGANTE(S) com a foto real dentro das letras; depois a máscara se abre da
+ * faixa do texto até a foto inteira. O produto é revelado pela palavra — não por um zoom.
+ */
+const TypeMask: ShotRender = ({ ctx, shot, D }) => {
+  const f = useCurrentFrame();
+  const { W, H, p } = ctx;
+  const photo = p.photos[shot.photo ?? ""];
+  const headline = shot.texts?.find((t) => t.role === "headline");
+  if (!photo || !headline) return null;
+  const rect = cameraMorph(ctx, photo, shot, f, D);
+  const t = imageTransform(photo, rect, W);
+  const word = headline.text.replace(/\*/g, "").toUpperCase();
+  const lines = wrap(word, 7);
+  const size = Math.min(H * 0.2, (W * 0.92) / Math.max(1, Math.max(...lines.map((l) => l.length)) * 0.62));
+  const open = progress(f, Math.round(D * 0.5), Math.round(D * 0.82), ctx.m.inOut);
+  const bandTop = H * 0.5 - (lines.length * size * 0.95) / 2;
+  const bandH = lines.length * size * 0.95;
+  const top = interpolate(open, [0, 1], [bandTop / H, 0]) * 100, bottom = interpolate(open, [0, 1], [(H - bandTop - bandH) / H, 0]) * 100;
+  const said = spokenFrames(lines.flatMap((l) => l.split(" ").map((w) => ({ word: w }))), shot.words);
+  let k = 0;
+  // Letras cheias de foto ESCURA somem num fundo escuro: o fundo vira o claro da marca (e vice-versa).
+  const under = lumaUnder(photo.luma, { x: 0, y: bandTop, w: W, h: bandH }, rect, W, H).mean;
+  const requested = shot.field ?? p.palette.dark;
+  const field = under < 110 && luminance(requested) < 0.35 ? p.palette.light : under > 170 && luminance(requested) > 0.6 ? p.palette.dark : requested;
+  return (
+    <AbsoluteFill style={{ background: field, overflow: "hidden" }}>
+      <div style={{ position: "absolute", inset: 0, clipPath: `inset(${top}% 0 ${bottom}% 0)`, opacity: open > 0 ? 1 : 0 }}><Plate photo={photo} rect={rect} W={W} /></div>
+      <div style={{ position: "absolute", left: 0, right: 0, top: bandTop, display: "flex", flexDirection: "column", alignItems: "center", opacity: 1 - open * 0.9 }}>
+        {lines.map((line, i) => (
+          <div key={i} style={{ display: "flex", gap: size * 0.18, overflow: "hidden", height: size * 0.95 }}>
+            {line.split(" ").map((w, j) => {
+              const at = said[k++] ?? 2 + i * 4 + j * 3;
+              // Letras já presentes (esmaecidas) desde o 1º quadro; ganham corpo quando a palavra é dita.
+              const wp = 0.35 + 0.65 * spring({ frame: f - at, fps: ctx.fps, config: { damping: 15, stiffness: 140, mass: 0.8 } });
+              return (
+                <span key={j} style={{ fontFamily: p.brand.display, fontSize: size, lineHeight: 0.95, letterSpacing: "-0.02em", color: "transparent", backgroundImage: `url(${photo.src})`, backgroundSize: `${photo.w * t.scale}px ${photo.h * t.scale}px`, backgroundPosition: `${t.left}px ${t.top - bandTop - i * size * 0.95}px`, WebkitBackgroundClip: "text", backgroundClip: "text", WebkitTextStroke: `1.5px ${p.palette.accent}`, transform: `translateY(${(1 - wp) * 30}%)`, opacity: wp, display: "inline-block" }}>{w}</span>
+              );
+            })}
+          </div>
+        ))}
+      </div>
+    </AbsoluteFill>
+  );
+};
+
+/**
+ * Página editorial assimétrica: a foto num painel deslocado, com PROFUNDIDADE (a foto anda mais devagar que
+ * o painel e o painel gira levemente em 3D), e uma coluna tipográfica que segue a fala.
+ */
+const EditorialSplit: ShotRender = ({ ctx, shot, D }) => {
+  const f = useCurrentFrame();
+  const { W, H, p, box } = ctx;
+  const photo = p.photos[shot.photo ?? ""];
+  if (!photo) return null;
+  const panel = { x: W * 0.16, y: H * 0.11, w: W * 0.84, h: H * 0.56 };
+  const enter = progress(f, (shot.transitionFrames ?? 0), (shot.transitionFrames ?? 0) + 16, ctx.m.out);
+  const drift = progress(f, 0, D, easeInOut);
+  const rect = cameraMorph(ctx, photo, shot, f, D, panel.w / panel.h, panel.w, panel.h);
+  const field = shot.field ?? p.palette.dark;
+  const ink = luminance(field) > 0.4 ? p.palette.ink : p.palette.light;
+  const texts = shot.texts ?? [];
+  return (
+    <AbsoluteFill style={{ background: field, perspective: 2200 }}>
+      <div style={{ position: "absolute", left: box.left, top: panel.y + panel.h * 0.12, width: 2, height: panel.h * 0.76 * enter, background: p.palette.accent }} />
+      <div style={{ position: "absolute", left: panel.x, top: panel.y, width: panel.w, height: panel.h, overflow: "hidden", clipPath: `inset(${(1 - enter) * 100}% 0 0 0)`, transform: `translateY(${-drift * 24}px) rotateY(${(1 - drift) * -4}deg)`, transformOrigin: "100% 50%", boxShadow: "0 40px 90px rgba(0,0,0,0.45)" }}>
+        <div style={{ position: "absolute", inset: 0, transform: `translateY(${drift * 18}px) scale(1.04)` }}><Plate photo={photo} rect={rect} W={panel.w} /></div>
+      </div>
+      {texts.length ? (
+        <div style={{ position: "absolute", left: box.left + 28, width: box.width - 28, top: panel.y + panel.h + 56 }}>
+          {texts.filter((t) => t.role === "kicker").map((t, i) => <Lines key={`k${i}`} ctx={ctx} text={t} start={(shot.transitionFrames ?? 0) + 4} end={shot.frames} ink={p.palette.accent} align="left" maxWidth={box.width - 28} />)}
+          {texts.filter((t) => t.role === "headline").map((t, i) => <Lines key={`h${i}`} ctx={ctx} text={t} start={(shot.transitionFrames ?? 0) + 8} end={shot.frames} ink={ink} align="left" maxWidth={box.width - 28} spoken={shot.words} />)}
+        </div>
+      ) : null}
+    </AbsoluteFill>
+  );
+};
+
+const RENDER: Record<SpotShotKind, ShotRender> = { hook_type: HookType, type_mask: TypeMask, editorial_split: EditorialSplit, trace_draw: TraceDraw, countdown: Countdown, print_assemble: PrintAssemble, fullbleed: Fullbleed, macro: Fullbleed, bands: Bands, variant_cycle: VariantCycle, type_card: TypeCard, logo_resolve: LogoResolve };
 
 // ---------------------------------------------------------------------------------------------
 // Transições coordenadas (a ENTRADA de um plano por cima da saída do anterior)
@@ -627,6 +749,8 @@ const ShotLayer: React.FC<{ ctx: Ctx; shot: SpotShot; D: number; children: React
       style = { transform: `translateY(${(1 - t) * 100}%)`, boxShadow: "0 -40px 80px rgba(0,0,0,0.35)" };
     } else if (tr === "dissolve" || tr === "match_print") {
       style = { opacity: t };
+    } else if (tr === "morph") {
+      style = { opacity: clamp01(f / 5) };
     }
   }
   return (
@@ -697,6 +821,24 @@ export const Spot: React.FC<SpotProps> = (props) => {
             const bandH = (H - 10 * (n - 1)) / n;
             shot = { ...shot, land: toScreen(nextPhoto.print, bandFrame(nextPhoto, W / bandH, W), W, bandH) };
           } else shot = { ...shot, land: toScreen(nextPhoto.print, cameraAt(ctx, nextPhoto, next, 0), W, H) };
+        }
+        // Morph: posição da estampa no FIM do plano anterior (faixa, painel editorial ou tela cheia).
+        const prev = shots[i - 1];
+        const prevPhoto = prev ? props.photos[prev.photo ?? prev.photos?.[0] ?? ""] : undefined;
+        if (shot.transition === "morph" && prev && prevPhoto?.print) {
+          let from: Frac | undefined;
+          if (prev.kind === "bands" || prev.kind === "countdown") {
+            const n = Math.min(3, prev.photos?.length ?? 1);
+            const bandH = (H - 10 * (n - 1)) / n;
+            from = toScreen(prevPhoto.print, bandFrame(prevPhoto, W / bandH, W), W, bandH);
+          } else if (prev.kind === "editorial_split") {
+            const panel = { x: W * 0.16, y: H * 0.11, w: W * 0.84, h: H * 0.56 };
+            const r = toScreen(prevPhoto.print, cameraAt(ctx, prevPhoto, prev, 1, panel.w / panel.h, panel.w), panel.w, panel.h);
+            from = { x: panel.x + r.x, y: panel.y + r.y - 24, w: r.w, h: r.h };
+          } else if (prev.kind !== "logo_resolve" && prev.kind !== "type_card") {
+            from = toScreen(prevPhoto.print, cameraAt(ctx, prevPhoto, prev, 1), W, H);
+          }
+          if (from) shot = { ...shot, morphFrom: from };
         }
         return (
           <Sequence key={i} from={shot.from} durationInFrames={Math.max(1, D)} layout="none">

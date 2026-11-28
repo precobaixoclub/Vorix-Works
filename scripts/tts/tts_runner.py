@@ -60,6 +60,13 @@ def synth_piper(model_dir, voice, segments):
     parts = []
     for seg in segments:
         cfg = SynthesisConfig(length_scale=1.0 / max(0.6, min(1.6, seg.get("speed", 1.0))), noise_scale=0.35 + 0.5 * seg.get("expressiveness", 0.5), noise_w_scale=0.5 + 0.4 * seg.get("expressiveness", 0.5))
+        # Piper: frases do bloco saem juntas, com o respiro pedido entre elas (não o silêncio padrão do modelo).
+        if seg.get("sentencePause") is not None:
+            pieces = []
+            for chunk in v.synthesize(seg["text"], syn_config=cfg):
+                pieces += [chunk.audio_float_array.astype(np.float32), np.zeros(int(rate * seg["sentencePause"]), np.float32)]
+            parts.append(np.concatenate(pieces[:-1]) if pieces else np.zeros(1, np.float32))
+            continue
         audio = [np.frombuffer(chunk.audio_int16_bytes, dtype=np.int16).astype(np.float32) / 32768 for chunk in v.synthesize(seg["text"], syn_config=cfg)]
         parts.append(np.concatenate(audio) if audio else np.zeros(1, np.float32))
     return parts, rate
@@ -75,7 +82,8 @@ def synth_kokoro(model_dir, voice, segments):
     k = _kokoro["k"]
     parts, rate = [], 24000
     for seg in segments:
-        samples, rate = k.create(seg["text"], voice=voice, speed=max(0.6, min(1.5, seg.get("speed", 1.0))), lang="pt-br", sentence_pause=0.0, clause_pause=0.08)
+        # Pausas DENTRO do bloco vêm da pontuação (respiração natural); o motor nunca para entre trechos sem motivo.
+        samples, rate = k.create(seg["text"], voice=voice, speed=max(0.6, min(1.5, seg.get("speed", 1.0))), lang="pt-br", sentence_pause=seg.get("sentencePause", 0.0), clause_pause=seg.get("clausePause", 0.08))
         parts.append(samples.astype(np.float32))
     return parts, rate
 
@@ -104,7 +112,9 @@ def main():
         start = t
         out.append(audio)
         t += len(audio) / rate
-        timeline.append({"text": seg["text"], "start": round(start, 3), "end": round(t, 3), "words": estimate_words(seg["text"], start, t)})
+        # Tempos por palavra ESTIMADOS (sílabas): só servem de rascunho — a legenda usa o alinhamento do
+        # áudio real (Whisper + roteiro, ver application/video-editing/word-alignment.ts).
+        timeline.append({"text": seg["text"], "start": round(start, 3), "end": round(t, 3), "words": estimate_words(seg["text"], start, t), "estimated": True})
         gap = int(rate * seg.get("pauseAfterMs", 250) / 1000)
         out.append(np.zeros(gap, np.float32))
         t += gap / rate

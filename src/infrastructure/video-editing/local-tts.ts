@@ -30,7 +30,7 @@ export function isLocalTtsConfigured(env: NodeJS.ProcessEnv = process.env): bool
 export function synthesizeLocal(input: { engine: "piper" | "kokoro"; voice: string; segments: readonly TtsSegment[]; output: string; leadMs?: number; timeoutMs?: number; env?: NodeJS.ProcessEnv }): Promise<LocalTtsResult> {
   const env = input.env ?? process.env;
   if (!isLocalTtsConfigured(env)) return Promise.reject(new Error("Narração local não configurada (TTS_PYTHON / TTS_MODEL_DIR)."));
-  const job = { engine: input.engine, voice: input.voice, modelDir: env.TTS_MODEL_DIR, output: input.output, leadMs: input.leadMs ?? 0, segments: input.segments.map((s) => ({ text: s.text, speed: s.speed, expressiveness: s.expressiveness, pauseAfterMs: s.pauseAfterMs })) };
+  const job = { engine: input.engine, voice: input.voice, modelDir: env.TTS_MODEL_DIR, output: input.output, leadMs: input.leadMs ?? 0, segments: input.segments.map((s) => ({ text: s.text, speed: s.speed, expressiveness: s.expressiveness, pauseAfterMs: s.pauseAfterMs, ...("sentencePause" in s ? { sentencePause: (s as { sentencePause?: number }).sentencePause, clausePause: (s as { clausePause?: number }).clausePause } : {}) })) };
   return new Promise((resolvePromise, reject) => {
     const child = spawn(env.TTS_PYTHON!, ["-I", RUNNER], { shell: false, windowsHide: true, stdio: ["pipe", "pipe", "pipe"], env: { PATH: env.PATH ?? "", SYSTEMROOT: env.SYSTEMROOT ?? "", HOME: env.HOME ?? "", OMP_NUM_THREADS: env.TTS_THREADS ?? "2" } });
     const out: Buffer[] = [];

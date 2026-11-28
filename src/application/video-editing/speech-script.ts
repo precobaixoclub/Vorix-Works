@@ -143,3 +143,73 @@ export function fitNarration(lineDurations: readonly number[], scenes: readonly 
   }
   return { placements, overflowing: placements.filter((p) => p.overflow > 0.15) };
 }
+
+// ---------------------------------------------------------------------------------------------
+// Direção de locução (intenção por trecho) e síntese por BLOCO narrativo
+// ---------------------------------------------------------------------------------------------
+
+/**
+ * Intenção do trecho, escolhida pelo diretor. Os motores locais não têm "estilo": a intenção vira o que
+ * eles obedecem — velocidade, pontuação final (entonação de pergunta/exclamação), respiro depois e (Piper)
+ * variação de expressividade. Valores MEDIDOS na prova da CMKV (avaliação humana: "lenta e pausada").
+ */
+export const SPEECH_INTENTS = ["curiosidade", "surpresa", "entusiasmo", "explicacao", "emocao", "chamada"] as const;
+export type SpeechIntent = (typeof SPEECH_INTENTS)[number];
+
+const INTENT: Record<SpeechIntent, { speed: number; pauseAfterMs: number; ending?: "?" | "!"; expressiveness: number }> = {
+  curiosidade: { speed: 1.04, pauseAfterMs: 160, ending: "?", expressiveness: 0.65 },
+  surpresa: { speed: 1.1, pauseAfterMs: 120, ending: "!", expressiveness: 0.75 },
+  entusiasmo: { speed: 1.12, pauseAfterMs: 120, ending: "!", expressiveness: 0.75 },
+  explicacao: { speed: 1.08, pauseAfterMs: 140, expressiveness: 0.5 },
+  emocao: { speed: 0.98, pauseAfterMs: 220, expressiveness: 0.7 },
+  chamada: { speed: 1.06, pauseAfterMs: 0, expressiveness: 0.6 },
+};
+
+/** Ritmo-base de locução por campanha (publicidade: sem arrastar). */
+export const CAMPAIGN_SPEECH: Readonly<Record<CampaignKind, { speed: number; sentencePause: number; clausePause: number }>> = {
+  moda: { speed: 1.0, sentencePause: 0.14, clausePause: 0.05 },
+  tecnologia: { speed: 1.1, sentencePause: 0.12, clausePause: 0.05 },
+  casamento: { speed: 1.0, sentencePause: 0.2, clausePause: 0.07 },
+  ofertas: { speed: 1.14, sentencePause: 0.1, clausePause: 0.04 },
+};
+
+export type DirectedLine = { scene: number; text: string; intent: SpeechIntent };
+export type SpeechBlock = { id: number; lines: DirectedLine[] };
+
+/** Pontuação final coerente com a intenção (sem reticências: elas viravam pausa artificial). */
+function shapeEnding(text: string, intent: SpeechIntent): string {
+  const clean = text.replace(/\*/g, "").replace(/\s*(\.\.\.|…)\s*/g, ", ").replace(/[,\s]+$/g, "").trim();
+  const want = INTENT[intent].ending;
+  if (/[?!.]$/.test(clean)) return want && !clean.endsWith("?") ? clean.replace(/[.!]$/, want) : clean;
+  return `${clean}${want ?? "."}`;
+}
+
+/** Linhas → blocos: linhas seguidas sem plano de silêncio entre elas formam UM bloco contínuo. */
+export function speechBlocks(lines: readonly DirectedLine[]): SpeechBlock[] {
+  const blocks: SpeechBlock[] = [];
+  for (const line of lines) {
+    const last = blocks[blocks.length - 1];
+    const prev = last?.lines[last.lines.length - 1];
+    if (last && prev && line.scene === prev.scene + 1 && last.lines.length < 3 && line.intent !== "chamada") last.lines.push(line);
+    else blocks.push({ id: blocks.length, lines: [line] });
+  }
+  return blocks;
+}
+
+export type SpeechStrategy = "frase" | "bloco";
+
+/**
+ * Trechos para o sintetizador. `frase`: uma chamada por linha (como antes, mas sem cortar a ênfase).
+ * `bloco`: uma chamada por bloco narrativo — prosódia contínua; o respiro entre frases é o do perfil.
+ * Velocidade do bloco = base da campanha × média das intenções (o motor tem UMA velocidade por chamada).
+ */
+export function directedSegments(lines: readonly DirectedLine[], kind: CampaignKind, strategy: SpeechStrategy, lexicon: Readonly<Record<string, string>> = {}): (TtsSegment & { sentencePause: number; clausePause: number; scenes: number[] })[] {
+  const base = CAMPAIGN_SPEECH[kind];
+  const groups = strategy === "bloco" ? speechBlocks(lines).map((b) => b.lines) : lines.map((l) => [l]);
+  return groups.map((group, k) => {
+    const speed = base.speed * (group.reduce((a, l) => a + INTENT[l.intent].speed, 0) / group.length);
+    const text = group.map((l) => normalizeForSpeech(shapeEnding(l.text, l.intent), lexicon)).join(" ");
+    const last = group[group.length - 1]!;
+    return { text, speed: +speed.toFixed(3), expressiveness: Math.max(...group.map((l) => INTENT[l.intent].expressiveness)), pauseAfterMs: INTENT[last.intent].pauseAfterMs, lineIndex: k, emphasis: false, sentencePause: base.sentencePause, clausePause: base.clausePause, scenes: group.map((l) => l.scene) };
+  });
+}

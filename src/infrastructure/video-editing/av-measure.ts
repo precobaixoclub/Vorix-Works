@@ -81,11 +81,17 @@ export function pitchStd(x: Float32Array, rate: number): number | undefined {
 const syllables = (text: string) => (text.toLowerCase().match(/[aeiouáéíóúâêôãõà]+/g) ?? []).length;
 
 /** Medidas de cada fala na faixa de voz (posições conhecidas) e da trilha no mesmo trecho. */
-export async function measureLines(input: { voiceWav: string; musicWav?: string; lines: { line: string; start: number; end: number }[] }) {
+export async function measureLines(input: { voiceWav: string; musicWav?: string; lines: { line: string; spoken?: string; start: number; end: number }[] }) {
   const voice = await readWavMono(input.voiceWav);
   const music = input.musicWav ? await readWavMono(input.musicWav) : undefined;
-  return input.lines.map((l) => {
-    const a = Math.floor(l.start * voice.rate), b = Math.floor(l.end * voice.rate);
+  return input.lines.map((raw) => {
+    // Bordas da fala pela energia (−40 dBFS, janelas de 10 ms) numa vizinhança de 150 ms.
+    const w10 = Math.floor(voice.rate * 0.01);
+    let s0 = Math.max(0, Math.floor((raw.start - 0.15) * voice.rate)), s1 = Math.min(voice.samples.length, Math.ceil((raw.end + 0.15) * voice.rate));
+    while (s0 + w10 < s1 && rmsDb(voice.samples, s0, s0 + w10) < -40) s0 += w10;
+    while (s1 - w10 > s0 && rmsDb(voice.samples, s1 - w10, s1) < -40) s1 -= w10;
+    const l = { ...raw, start: s0 / voice.rate, end: s1 / voice.rate };
+    const a = s0, b = s1;
     const seg = voice.samples.subarray(a, b);
     // Pausa interna: maior trecho abaixo de −40 dBFS (janelas de 20 ms) dentro da fala.
     const win = Math.floor(voice.rate * 0.02);
@@ -93,6 +99,6 @@ export async function measureLines(input: { voiceWav: string; musicWav?: string;
     for (let i = 0; i + win <= seg.length; i += win) { const db = rmsDb(seg, i, i + win); run = db < -40 ? run + 0.02 : 0; longest = Math.max(longest, run); }
     const voiceDb = rmsDb(voice.samples, a, b);
     const musicDb = music ? rmsDb(music.samples, Math.floor(l.start * music.rate), Math.floor(l.end * music.rate)) : undefined;
-    return { ...l, syllablesPerSecond: syllables(l.line) / Math.max(0.1, l.end - l.start), pitchStd: pitchStd(seg, voice.rate), longestInnerPause: +longest.toFixed(2), voiceOverMusicDb: musicDb === undefined ? undefined : +(voiceDb - musicDb).toFixed(1) };
+    return { ...l, syllablesPerSecond: syllables(l.spoken ?? l.line) / Math.max(0.1, l.end - l.start), pitchStd: pitchStd(seg, voice.rate), longestInnerPause: +longest.toFixed(2), voiceOverMusicDb: musicDb === undefined ? undefined : +(voiceDb - musicDb).toFixed(1) };
   });
 }

@@ -78,7 +78,7 @@ export function reviewAudiovisual(input: ReviewInput): AvReview {
   for (const l of input.lines) {
     if (l.syllablesPerSecond > 7.2) f.push({ code: "narracao_artificial", severity: "media", from: l.start, to: l.end, evidence: `"${l.line}" a ${l.syllablesPerSecond.toFixed(1)} sílabas/s (corrido)` });
     if (l.syllablesPerSecond < 3.2) f.push({ code: "narracao_artificial", severity: "baixa", from: l.start, to: l.end, evidence: `"${l.line}" a ${l.syllablesPerSecond.toFixed(1)} sílabas/s (arrastado)` });
-    if (l.pitchStd !== undefined && l.pitchStd < 1.4) f.push({ code: "narracao_artificial", severity: "media", from: l.start, to: l.end, evidence: `"${l.line}" com entonação plana (variação ${l.pitchStd.toFixed(1)} semitons)` });
+    if (l.pitchStd !== undefined && l.end - l.start >= 1 && l.pitchStd < 1.4) f.push({ code: "narracao_artificial", severity: "media", from: l.start, to: l.end, evidence: `"${l.line}" com entonação plana (variação ${l.pitchStd.toFixed(1)} semitons)` });
     if (l.longestInnerPause > 0.8) f.push({ code: "pausas_inadequadas", severity: "media", from: l.start, to: l.end, evidence: `pausa de ${t(l.longestInnerPause)} no meio de "${l.line}"` });
   }
   input.lines.forEach((l, i) => {

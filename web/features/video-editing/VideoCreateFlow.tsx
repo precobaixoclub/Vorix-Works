@@ -78,7 +78,8 @@ function NewVideo({ status }: { status: VideoEngineStatus }) {
   const [libraryOpen, setLibraryOpen] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
 
-  const libraryImages = (assets ?? []).filter((asset) => asset.status === "active" && asset.storageRef?.metadata?.url && /\.(jpe?g|png|webp)(\?|$)/i.test(asset.storageRef.metadata.url) && asset.kind !== "logo");
+  // "Da biblioteca" segue a opção escolhida: vídeos da marca para editar, imagens para montar o anúncio.
+  const libraryItems = (assets ?? []).filter((asset) => asset.status === "active" && asset.storageRef?.metadata?.url && asset.kind !== "logo" && (source === "footage" ? /\.(mp4|mov)(\?|$)/i : /\.(jpe?g|png|webp)(\?|$)/i).test(asset.storageRef.metadata.url));
   const canGenerate = materials.length > 0 && request.trim().length >= 8 && !busy && !uploading;
 
   function choose(next: Source) {
@@ -141,11 +142,9 @@ function NewVideo({ status }: { status: VideoEngineStatus }) {
           <button type="button" disabled={busy || uploading} onClick={() => fileInput.current?.click()} className="inline-flex min-h-9 items-center gap-1.5 rounded-lg px-3 text-sm font-medium text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-60">
             <Paperclip className="h-4 w-4" aria-hidden="true" /> {uploading ? "Enviando…" : source === "footage" ? "Enviar vídeos" : "Enviar imagens"}
           </button>
-          {source === "images" ? (
-            <button type="button" disabled={busy} onClick={() => setLibraryOpen(true)} className="inline-flex min-h-9 items-center gap-1.5 rounded-lg px-3 text-sm font-medium text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-60">
-              <FolderOpen className="h-4 w-4" aria-hidden="true" /> Da biblioteca
-            </button>
-          ) : null}
+          <button type="button" disabled={busy} onClick={() => setLibraryOpen(true)} className="inline-flex min-h-9 items-center gap-1.5 rounded-lg px-3 text-sm font-medium text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-60">
+            <FolderOpen className="h-4 w-4" aria-hidden="true" /> Da biblioteca
+          </button>
           <input ref={fileInput} type="file" multiple className="hidden" accept={source === "footage" ? "video/mp4,video/quicktime" : "image/jpeg,image/png,image/webp"} onChange={(event) => { void attach(event.target.files); event.target.value = ""; }} />
           <span className="text-xs text-muted-foreground/70">{materials.length}/{status.limits.maxMaterials} materiais</span>
         </div>
@@ -222,12 +221,16 @@ function NewVideo({ status }: { status: VideoEngineStatus }) {
 
       {libraryOpen ? (
         <Modal title="Escolher da biblioteca" onClose={() => setLibraryOpen(false)}>
-          {libraryImages.length === 0 ? <p className="text-sm text-muted-foreground">Nenhuma imagem na biblioteca.</p> : (
+          {libraryItems.length === 0 ? <p className="text-sm text-muted-foreground">{source === "footage" ? "Nenhum vídeo na biblioteca. Adicione em Configurações › Marca e identidade › Materiais." : "Nenhuma imagem na biblioteca."}</p> : (
             <div className="grid grid-cols-3 gap-2">
-              {libraryImages.map((asset) => (
-                <button key={asset.id} type="button" onClick={() => { const url = asset.storageRef!.metadata!.url!; setMaterials((prev) => (prev.some((m) => m.url === url) || prev.length >= status.limits.maxMaterials ? prev : [...prev, { url, role: asset.materialType === "screenshot_site" || asset.materialType === "screenshot_app" ? "screenshot" : "product_photo", isVideo: false, name: asset.name }])); setLibraryOpen(false); }} className="overflow-hidden rounded-lg bg-muted text-left hover:ring-2 hover:ring-primary">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={asset.storageRef?.metadata?.url} alt="" className="aspect-square w-full object-cover" />
+              {libraryItems.map((asset) => (
+                <button key={asset.id} type="button" onClick={() => { const url = asset.storageRef!.metadata!.url!; const isVideo = source === "footage"; setMaterials((prev) => (prev.some((m) => m.url === url) || prev.length >= status.limits.maxMaterials ? prev : [...prev, { url, role: isVideo ? "footage" : asset.materialType === "screenshot_site" || asset.materialType === "screenshot_app" ? "screenshot" : "product_photo", isVideo, name: asset.name }])); setLibraryOpen(false); }} className="overflow-hidden rounded-lg bg-muted text-left hover:ring-2 hover:ring-primary">
+                  {source === "footage" ? (
+                    <video src={`${asset.storageRef?.metadata?.url}#t=0.1`} muted playsInline preload="metadata" aria-hidden="true" className="aspect-square w-full bg-black object-cover" />
+                  ) : (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={asset.storageRef?.metadata?.url} alt="" className="aspect-square w-full object-cover" />
+                  )}
                   <p className="truncate px-1.5 py-1 text-[11px] text-muted-foreground">{asset.name}</p>
                 </button>
               ))}

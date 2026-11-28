@@ -34,7 +34,10 @@ export type BrandMaterialSelectionResult = {
   reason: string;
 };
 
-const SITE_KEYWORDS_RE = /\bsite\b|\bsítio\b|\bplataforma\b|\bwebsite\b/i;
+/** Vídeos enviados à biblioteca (a chave do upload carrega a extensão do tipo do arquivo). */
+export const isVideoMaterialUrl = (url: string) => /\.(mp4|mov|m4v|webm)(\?|#|$)/i.test(url);
+
+const SITE_KEYWORDS_RE =/\bsite\b|\bsítio\b|\bplataforma\b|\bwebsite\b/i;
 const APP_KEYWORDS_RE = /\baplicativo\b|\bapp\b/i;
 
 /**
@@ -56,6 +59,8 @@ export function selectRelevantBrandMaterials(materials: readonly SelectableBrand
 
   for (const material of materials) {
     if (!material.url) continue;
+    // Vídeo da marca serve ao motor de vídeo, não à arte estática: o modelo de imagem só recebe imagem.
+    if (isVideoMaterialUrl(material.url)) continue;
     const priority = material.usagePriority ?? "automatic";
     const nameLower = material.name.trim().toLowerCase();
     const mentionsName = nameLower.length > 0 && requestTextLower.includes(nameLower);

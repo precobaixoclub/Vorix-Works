@@ -30,13 +30,27 @@ export function AssetCard({ asset, onEdit, onArchive, onDelete }: { asset: Asset
       asset.kind === "mockup" ||
       asset.kind === "visual_identity" ||
       Boolean(contentType && PREVIEWABLE_CONTENT_TYPES.has(contentType)));
+  const isVideo = Boolean(previewUrl) && (asset.kind === "video" || Boolean(contentType?.startsWith("video/")));
   const KindIcon = KIND_ICON[asset.kind] ?? Folder;
 
   return (
     <Card>
       <CardBody className="flex flex-col gap-3">
         <div className="flex aspect-video min-h-28 items-center justify-center overflow-hidden rounded-lg bg-background text-muted-foreground sm:h-24 sm:min-h-0 sm:aspect-auto">
-          {canPreview ? (
+          {isVideo ? (
+            // Prévia leve: só metadados + 1º quadro (#t=0.1); toca ao passar o mouse, sem som.
+            <video
+              src={`${previewUrl}#t=0.1`}
+              muted
+              playsInline
+              loop
+              preload="metadata"
+              aria-label={`Vídeo ${asset.name}`}
+              onMouseEnter={(event) => void event.currentTarget.play().catch(() => undefined)}
+              onMouseLeave={(event) => event.currentTarget.pause()}
+              className="h-full w-full bg-black object-contain"
+            />
+          ) : canPreview ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img src={previewUrl} alt="" className="h-full w-full object-contain" />
           ) : (

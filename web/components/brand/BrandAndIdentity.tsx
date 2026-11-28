@@ -49,7 +49,7 @@ const TABS: { id: TabId; label: string }[] = [
   { id: "materials", label: "Materiais e referências" },
 ];
 
-type MaterialFilterId = "all" | "logos" | "produtos" | "screenshots" | "referencias" | "fotos" | "fundos" | "outros";
+type MaterialFilterId = "all" | "logos" | "produtos" | "screenshots" | "referencias" | "fotos" | "videos" | "fundos" | "outros";
 
 const MATERIAL_FILTERS: { id: MaterialFilterId; label: string; kinds?: AssetKind[]; materialTypes?: AssetMaterialType[] }[] = [
   { id: "all", label: "Todos" },
@@ -58,8 +58,9 @@ const MATERIAL_FILTERS: { id: MaterialFilterId; label: string; kinds?: AssetKind
   { id: "screenshots", label: "Screenshots", kinds: ["mockup"], materialTypes: ["screenshot_site", "screenshot_app"] },
   { id: "referencias", label: "Referências", kinds: ["reference"], materialTypes: ["referencia_visual", "campanha"] },
   { id: "fotos", label: "Fotos", kinds: ["photo"], materialTypes: ["foto_institucional"] },
+  { id: "videos", label: "Vídeos", kinds: ["video"] },
   { id: "fundos", label: "Fundos", materialTypes: ["fundo"] },
-  { id: "outros", label: "Outros", kinds: ["video", "font", "brand_book", "document"], materialTypes: ["selo", "icone", "outro"] },
+  { id: "outros", label: "Outros", kinds: ["font", "brand_book", "document"], materialTypes: ["selo", "icone", "outro"] },
 ];
 
 export function BrandAndIdentity() {
@@ -307,7 +308,7 @@ function MaterialsTab({ workspaceId }: { workspaceId: string }) {
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <p className="text-sm font-semibold text-foreground">Materiais</p>
-          <p className="mt-1 text-sm text-muted-foreground">Logos, produtos, screenshots e referências que a IA pode utilizar.</p>
+          <p className="mt-1 text-sm text-muted-foreground">Logos, produtos, fotos, vídeos, screenshots e referências que a IA pode utilizar.</p>
         </div>
         <Button onClick={() => openRegister()}>+ Adicionar material</Button>
       </div>
@@ -347,7 +348,7 @@ function MaterialsTab({ workspaceId }: { workspaceId: string }) {
       ) : isLibraryEmpty ? (
         <EmptyState
           title="Sua biblioteca está vazia"
-          description="Adicione logos, produtos, screenshots ou referências para ajudar a IA a criar conteúdos mais fiéis à sua marca."
+          description="Adicione logos, produtos, fotos, vídeos, screenshots ou referências para ajudar a IA a criar conteúdos mais fiéis à sua marca."
           action={<Button onClick={() => openRegister()}>Adicionar primeiro material</Button>}
         />
       ) : visibleAssets.length === 0 ? (

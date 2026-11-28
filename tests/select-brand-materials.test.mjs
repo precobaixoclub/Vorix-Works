@@ -104,3 +104,11 @@ test("materialTypeToAssetRole: mapeia tipos com papel de composição claro, e u
   assert.equal(materialTypeToAssetRole("icone"), undefined);
   assert.equal(materialTypeToAssetRole(undefined), undefined);
 });
+
+test("selectRelevantBrandMaterials: vídeo da biblioteca nunca vai para a arte estática (o modelo de imagem só recebe imagem)", () => {
+  const video = material({ id: "video-1", name: "Vídeo do produto", materialType: "produto", usagePriority: "required", url: "https://cdn.example.com/assets/t/w/abc.mp4" });
+  const mov = material({ id: "video-2", name: "Bastidores", usagePriority: "preferred", url: "https://cdn.example.com/assets/t/w/def.MOV?v=1" });
+  const photo = material({ id: "foto-1", name: "Foto", usagePriority: "required" });
+  const result = selectRelevantBrandMaterials([video, mov, photo], { ideaText: "Vídeo do produto", objective: "venda" });
+  assert.deepEqual(result.map((r) => r.material.id), ["foto-1"]);
+});

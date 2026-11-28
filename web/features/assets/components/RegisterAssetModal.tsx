@@ -18,6 +18,7 @@ import {
 } from "../types";
 
 const LOGO_WITHOUT_TRANSPARENCY_ERROR = "ASSET_UPLOAD_LOGO_WITHOUT_TRANSPARENCY";
+const MAX_UPLOAD_BYTES = 100_000_000;
 
 // Valores-sentinela para as opções "vazias" (Radix Select não aceita value=""). Traduzidos de/para
 // "" na borda do componente — não muda o dado salvo, só a representação na UI.
@@ -73,7 +74,7 @@ export function RegisterAssetModal({
   const [bgRemoval, setBgRemoval] = useState<{ status: "idle" | "processing" | "ready" | "error"; result?: UploadedAssetFile; error?: string }>({ status: "idle" });
 
   useEffect(() => {
-    if (!file?.type.startsWith("image/")) {
+    if (!file || !(file.type.startsWith("image/") || file.type.startsWith("video/"))) {
       setLocalPreviewUrl(undefined);
       return;
     }
@@ -131,6 +132,11 @@ export function RegisterAssetModal({
       setError("Envie um arquivo para cadastrar este material.");
       return;
     }
+    // Mesmo limite padrão da API (MEDIA_UPLOAD_MAX_BYTES): avisa antes de subir um vídeo enorme à toa.
+    if (file && file.size > MAX_UPLOAD_BYTES) {
+      setError(`Arquivo de ${Math.round(file.size / 1_000_000)} MB — o limite é ${MAX_UPLOAD_BYTES / 1_000_000} MB. Para vídeo, exporte em 1080p ou corte o trecho que interessa.`);
+      return;
+    }
     setSubmitting(true);
     setError(undefined);
     setNeedsTransparency(false);
@@ -166,7 +172,7 @@ export function RegisterAssetModal({
   return (
     <Modal title={title} onClose={onClose} maxWidthClass="sm:max-w-lg">
       <p className="-mt-1 mb-1 text-xs text-muted-foreground">
-        Envie logos, fotos, screenshots ou fontes. Quanto mais contexto você der, mais fiéis à marca ficam os conteúdos gerados pela IA.
+        Envie logos, fotos, vídeos, screenshots ou fontes. Quanto mais contexto você der, mais fiéis à marca ficam os conteúdos gerados pela IA.
       </p>
       <form onSubmit={handleSubmit} className="flex flex-col gap-4">
         <div>
@@ -183,13 +189,17 @@ export function RegisterAssetModal({
             {isLogoMode ? (
               "PNG com fundo transparente (recomendado), SVG ou WEBP. Formato quadrado (1:1), pelo menos 512×512px."
             ) : (
-              <>JPEG, PNG, WEBP, SVG, MP4, MOV, PDF ou fontes (TTF/OTF/WOFF).{fileRequired ? " Obrigatório para este tipo de material." : " Opcional."}</>
+              <>JPEG, PNG, WEBP, SVG, vídeo MP4 ou MOV (até 100 MB), PDF ou fontes (TTF/OTF/WOFF).{fileRequired ? " Obrigatório para este tipo de material." : " Opcional."}</>
             )}
           </p>
           {localPreviewUrl ? (
             <div className="mt-3 overflow-hidden rounded-lg border border-border bg-surface-sunken">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={localPreviewUrl} alt="Prévia do material selecionado" className="max-h-56 w-full object-contain" />
+              {file?.type.startsWith("video/") ? (
+                <video src={localPreviewUrl} controls muted playsInline preload="metadata" aria-label="Prévia do vídeo selecionado" className="max-h-56 w-full bg-black object-contain" />
+              ) : (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={localPreviewUrl} alt="Prévia do material selecionado" className="max-h-56 w-full object-contain" />
+              )}
             </div>
           ) : null}
         </div>

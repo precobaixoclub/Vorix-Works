@@ -1054,8 +1054,8 @@ async function run() {
     media.push({ url, kind: "image", width, height, mimeType: "image/jpeg", sizeBytes: body.length });
   }
   // Refação: a legenda reescrita pelo Codex substitui a da pauta só quando o motivo falou da legenda.
-  const scope = typeof request.redoJobId === "string" ? redoScopeFor(idea) : undefined;
-  const captionAllowed = !scope || scope.caption;
+  const pieceRedoScope = typeof request.redoJobId === "string" ? redoScopeFor(idea) : undefined;
+  const captionAllowed = !pieceRedoScope || pieceRedoScope.caption;
   const baseCaption = captionAllowed && typeof request.captionOverride === "string" && request.captionOverride.trim() ? request.captionOverride.trim().slice(0, 2200) : idea.caption;
   const campaignCta = brandConfig.creative?.presentation === "fashion_campaign" && idea.cta && !baseCaption.includes(idea.cta) ? idea.cta : undefined;
   const caption = campaignCta ? `${baseCaption}\n\n${campaignCta}` : baseCaption;
@@ -1072,13 +1072,13 @@ async function run() {
     where q.tenant_id=$1 and q.workspace_id=$2 and q.decision='reject' and p.source_artifacts->0->'payload'->>'editorialIdeaId'=$3`, [tenantId, workspaceId, idea.id]);
   const rejectedPieces = rejectedRows.map(row => ({ id: row.id, caption: row.caption ?? "", imageSha256: Array.isArray(row.approvals) ? row.approvals.map(item => String(item?.imageSha256 ?? "")) : [] }));
   requireCondition(!matchesRejectedPiece({ imageSha256, caption }, rejectedPieces), "Esta é a mesma peça que o cliente reprovou (mesmas imagens e mesma legenda) — publicação bloqueada.");
-  if (scope) {
+  if (pieceRedoScope) {
     // Refação direcionada: toda tela que o motivo criticou precisa ter mudado em relação à versão reprovada.
     const { rows: [job] } = await db.query("select publication_id from publication_redo_requests where id=$1 and workspace_id=$2", [request.redoJobId, workspaceId]);
     const previous = rejectedPieces.find(piece => piece.id === job?.publication_id);
-    const violations = previous ? redoScopeViolations(scope, previous.imageSha256, imageSha256) : [];
+    const violations = previous ? redoScopeViolations(pieceRedoScope, previous.imageSha256, imageSha256) : [];
     requireCondition(!violations.length, violations.join(" "));
-    if (!scope.text.length && !scope.image.length && !scope.logo && caption.trim() === (previous?.caption ?? "").trim()) {
+    if (!pieceRedoScope.text.length && !pieceRedoScope.image.length && !pieceRedoScope.logo && caption.trim() === (previous?.caption ?? "").trim()) {
       throw new Error("A refação não mudou nada do que foi criticado.");
     }
   }
@@ -1111,7 +1111,7 @@ async function run() {
   } });
   if (typeof request.redoJobId === "string") {
     // O que mudou e o que ficou: vai na mensagem de aprovação da nova versão.
-    const summary = scope ? `Mudou: ${scope.changed}.${scope.kept ? ` Mantive: ${scope.kept}.` : ""}` : null;
+    const summary = pieceRedoScope ? `Mudou: ${pieceRedoScope.changed}.${pieceRedoScope.kept ? ` Mantive: ${pieceRedoScope.kept}.` : ""}` : null;
     await db.query(`update publication_redo_requests set status='done', result_publication_id=$2, change_summary=$4, updated_at=now() where id=$1 and workspace_id=$3`, [request.redoJobId, post.id, workspaceId, summary]);
   }
   await db.query(`update editorial_ideas set status=$4,status_changed_at=now(),updated_at=now()

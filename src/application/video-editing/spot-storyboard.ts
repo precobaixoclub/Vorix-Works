@@ -7,6 +7,8 @@
  *    composta com os mesmos números — o corte cai na batida por construção, não por ajuste posterior).
  */
 
+import { spokenCodes } from "./narration-profile.js";
+
 export const SPOT_SHOT_KINDS = ["hook_type", "type_mask", "editorial_split", "print_assemble", "trace_draw", "fullbleed", "macro", "bands", "variant_cycle", "countdown", "type_card", "logo_resolve"] as const;
 export type SpotShotKind = (typeof SPOT_SHOT_KINDS)[number];
 export const SPOT_TRANSITIONS = ["cut", "color_wipe", "mask_reveal", "iris_print", "match_print", "dissolve", "slide_up", "morph"] as const;
@@ -121,14 +123,20 @@ export function validateProposal(p: CreativeProposal, ctx: SpotContext): Proposa
     const prev = p.scenes[i - 1];
     if (prev && prev.kind === s.kind && prev.materials.join() === s.materials.join() && prev.camera.from === s.camera.from && prev.camera.to === s.camera.to) issues.push({ scene: i, code: "redundant", message: `plano ${i + 1} repete o plano ${i} (mesmo tipo, material e câmera)` });
   });
-  // Narração: frase curta e que caiba no plano (≈ 14 caracteres/s falados + a pausa).
+  // Narração: frase falada (até 16 palavras), sem código lido, e que caiba no plano (≈ 14 caracteres/s falados + a pausa).
   p.scenes.forEach((s, i) => {
     if (!s.narration?.line) return;
     const words = s.narration.line.replace(/\*/g, "").split(/\s+/).filter(Boolean).length;
     const speak = s.narration.line.replace(/\*/g, "").length / 14 + (s.narration.pauseAfterMs ?? 0) / 1000 * 0.5 + 0.15;
-    if (words > 12) issues.push({ scene: i, code: "narration_long", message: `fala do plano ${i + 1} tem ${words} palavras (máx. 12): escreva como se fala` });
+    if (words > 16) issues.push({ scene: i, code: "narration_long", message: `fala do plano ${i + 1} tem ${words} palavras (máx. 16): divida em duas frases` });
     if (speak > s.beats * beat + 0.35) issues.push({ scene: i, code: "narration_fit", message: `fala do plano ${i + 1} pede ~${speak.toFixed(1)} s e o plano tem ${(s.beats * beat).toFixed(1)} s` });
+    const codes = spokenCodes(s.narration.line);
+    if (codes.length) issues.push({ scene: i, code: "narration_code", message: `fala do plano ${i + 1} lê ${codes.join(", ")}: código fica só na tela, a voz diz o nome` });
   });
+  // Locução, não legenda lida: a mediana de palavras por fala precisa soar como frase (referências: 6–8).
+  const spoken = p.scenes.map((s) => s.narration?.line?.replace(/\*/g, "").split(/\s+/).filter(Boolean).length ?? 0).filter((n) => n > 0).sort((a, b) => a - b);
+  const mid = spoken[Math.floor((spoken.length - 1) / 2)] ?? 0;
+  if (spoken.length >= 3 && mid < 4) issues.push({ code: "narration_fragmented", message: `falas de ${mid} palavras (mediana): soa como legenda lida — escreva frases completas que continuam de um plano para o outro` });
   const durations = p.scenes.slice(0, -1).map((s) => s.beats * beat);
   const mean = durations.reduce((a, b) => a + b, 0) / Math.max(1, durations.length);
   const cv = Math.sqrt(durations.reduce((a, d) => a + (d - mean) ** 2, 0) / Math.max(1, durations.length)) / Math.max(0.01, mean);

@@ -99,7 +99,26 @@ const TRANSITIONS = {
  * `references`: [{ role: "structure"|"aesthetic"|"both", label, note, guidance: string[], sheet }]
  * (`guidance` = linhas MEDIDAS por `referenceGuidance`; `sheet` = miniaturas que vão como imagem).
  */
-export function storyboardPrompt({ idea, brand, materials, references = [], taste = { preferred: [], rejected: [] }, facts = [], feedback = [], genre }) {
+/**
+ * Regras de NARRAÇÃO (compartilhadas pelo storyboard e pela reescrita da fala): locução contínua de
+ * anúncio, não legenda lida. `reference` = linhas medidas das referências (narrationGuidance).
+ */
+export function narrationRules(reference = []) {
+  return [
+    "NARRAÇÃO (locução de anúncio em português do Brasil falado — um locutor CONTANDO a história, não legendas lidas):",
+    ...(reference.length ? ["Narração medida nas referências (siga os NÚMEROS e o ESTILO; nunca copie as frases):", ...reference.map((r) => `- ${r}`)] : []),
+    "- A fala é um TEXTO CONTÍNUO que atravessa os planos: cada plano diz a sua frase e a frase seguinte continua o raciocínio. Frases COMPLETAS e conversadas (em geral 6–14 palavras); falas de 1–4 palavras só como virada ('E sabe o melhor?', 'Achou?').",
+    "- Fale COM quem assiste (você/seu/sua) e ligue as frases com conectivos naturais ('E…', 'Com…', 'E imagina…', 'É só…').",
+    "- Arco: pergunta/dor/desejo de quem assiste → o que é e por que importa → uma virada → marca + chamada. A voz começa no 1º quadro e termina perto do fim (só o respiro final da marca).",
+    "- Planos silenciosos são raros (no máximo um respiro de tensão antes da revelação); respiro entre falas curto (0,3–0,6 s).",
+    "- NUNCA leia códigos, SKUs ou números longos (ex.: 000037): eles aparecem só na tela. Fale o nome da estampa/produto.",
+    "- TEXTO DA TELA = PALAVRAS-CHAVE DA FALA: o headline/caption de um plano com fala é um trecho (até 5 palavras) das palavras DITAS naquele plano, mesma grafia e ordem — elas acendem quando são faladas. Códigos/preços que não se falam podem ficar na tela.",
+    "- Sem reticências (viram pausa morta). *Asterisco* na palavra de ênfase. intent de cada fala: curiosidade, surpresa, entusiasmo, explicacao, emocao ou chamada (define velocidade e entonação); pauseAfterMs ≤ 250 (até 450 só antes da revelação).",
+    "- pauseAfterMs = respiro depois da fala; delivery = como dizer (ex.: 'próximo, curioso', 'sorrindo, com certeza').",
+  ];
+}
+
+export function storyboardPrompt({ idea, brand, materials, references = [], taste = { preferred: [], rejected: [] }, facts = [], feedback = [], genre, narrationReference = [] }) {
   const lines = [];
   lines.push("Você é o diretor de criação E o editor audiovisual sênior de uma agência. Crie TRÊS propostas de vídeo vertical 9:16 para a pauta abaixo, antes de qualquer render.");
   lines.push("Como EDITOR: cada plano precisa justificar a duração e o que acrescenta à história; corte o que não acrescenta.");
@@ -142,12 +161,7 @@ export function storyboardPrompt({ idea, brand, materials, references = [], tast
   lines.push("- Ritmo VARIÁVEL: pistas rápidas (2–3 batidas), um respiro antes da revelação, impacto na revelação, fechamento que respira.");
   lines.push("- Em quiz/revelação, PRESERVE O MISTÉRIO: antes do plano reveal, mostre só fragmentos (detail/detail2) e a comparação; o traço/estampa completo e a peça inteira aparecem só a partir da revelação (ex.: trace_draw como PAGAMENTO da revelação).");
   lines.push("- Texto na tela: no máximo 5 palavras por plano. Animação só quando conta algo.");
-  lines.push("", "NARRAÇÃO (escrita para VOZ humana, em português do Brasil falado):");
-  lines.push("- Uma fala curta por plano (até 10 palavras) ou vazia quando o plano deve respirar.");
-  lines.push("- TEXTO DA TELA = PALAVRAS DA FALA: o headline/caption de um plano com fala usa as MESMAS palavras ditas naquele plano (um trecho da fala, na mesma ordem) — o texto aparece palavra a palavra no instante em que é falado. Nunca escreva na tela uma frase diferente da que a voz diz.");
-  lines.push("- intent de cada fala: curiosidade, surpresa, entusiasmo, explicacao, emocao ou chamada — é o que define velocidade, entonação final e respiro. Publicidade: frases curtas, ritmo de conversa ágil, sem reticências e sem pausas dramáticas longas (pauseAfterMs ≤ 250, exceto antes da revelação).");
-  lines.push("- Frases como alguém diria a um amigo: 'Olha esse traço.', 'Pensa rápido.', 'Era a A.' Use reticências para suspense e *asteriscos* na palavra de ênfase.");
-  lines.push("- pauseAfterMs = respiro depois da fala; delivery = como dizer (ex.: 'baixo, curioso', 'sorrindo, com certeza').");
+  lines.push("", ...narrationRules(narrationReference));
   lines.push("- campaignKind define a interpretação: moda (envolvente e sofisticada), tecnologia (clara, segura, dinâmica), casamento (acolhedora, emocional), ofertas (enérgica sem soar artificial). voiceDirection resume a voz em uma frase.");
   if (taste.rejected.length || taste.preferred.length) lines.push(`9. Preferências da marca registradas por humanos — evite: ${taste.rejected.join(", ") || "—"}; prefira: ${taste.preferred.join(", ") || "—"}.`);
   lines.push("", "Em cada proposta preencha: conceito, roteiro (frases), cenas (storyboardNote descreve o quadro como um storyboard), direção de arte, linguagem de animação, tratamento de áudio (mood/bpm), o que vem de cada referência, materiais necessários, recursos técnicos e limitações previstas (o que só filmagem real ou outra foto resolveria).");

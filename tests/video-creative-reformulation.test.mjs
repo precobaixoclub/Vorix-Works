@@ -126,7 +126,7 @@ test("storyboard: validação mede gancho, leitura, revelação (spoiler), mater
   old.scenes[1] = scene("trace_draw", 3, { role: "clue" });
   assert.ok(validateProposal(old, CTX).some((i) => i.code === "spoiler" && i.scene === 1));
   // Redundância, fala que não cabe e ritmo uniforme.
-  const flat = proposal("P6", "graphic", [scene("hook_type", 4, { role: "hook", texts: [{ role: "headline", text: "Olha" }] }), scene("macro", 4, { role: "clue" }), scene("macro", 4, { role: "clue" }), scene("fullbleed", 4, { role: "proof", narration: { line: "Uma fala longa demais para caber neste plano tão curto de agora mesmo, viu", pauseAfterMs: 300, delivery: "" } }), scene("logo_resolve", 8, { materials: ["LOGO"], role: "cta", texts: [{ role: "cta", text: "Comente" }] })]);
+  const flat = proposal("P6", "graphic", [scene("hook_type", 4, { role: "hook", texts: [{ role: "headline", text: "Olha" }] }), scene("macro", 4, { role: "clue" }), scene("macro", 4, { role: "clue" }), scene("fullbleed", 4, { role: "proof", narration: { line: "Uma fala longa demais para caber neste plano tão curto de agora mesmo, viu, e ainda sobra mais coisa", pauseAfterMs: 300, delivery: "" } }), scene("logo_resolve", 8, { materials: ["LOGO"], role: "cta", texts: [{ role: "cta", text: "Comente" }] })]);
   const codes2 = validateProposal(flat, CTX).map((i) => i.code);
   for (const code of ["redundant", "narration_long", "narration_fit", "flat_rhythm"]) assert.ok(codes2.includes(code), code);
   const bad = proposal("P3", "graphic", [scene("hook_type", 6, { texts: [{ role: "headline", text: "Uma frase longa demais para gancho" }] }), scene("fullbleed", 10, { materials: ["X9"] }), scene("bands", 4), scene("type_card", 4)]);

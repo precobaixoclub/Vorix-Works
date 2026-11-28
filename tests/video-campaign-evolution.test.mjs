@@ -104,5 +104,6 @@ test("diretor: escreve fala para voz humana, papel narrativo e tipo de campanha"
   assert.ok(items.properties.scenes.items.required.includes("narration"));
   assert.ok(items.properties.scenes.items.properties.role.enum.includes("reveal"));
   const prompt = storyboardPrompt({ idea: { title: "Quiz", commercialObjective: "o", targetAudience: "p", concept: "c", visualDirection: "v", narrativeStructure: "n", cta: "Comente" }, brand: { name: "CMKV", tone: "premium", display: "DM Serif Display", palette: { dark: "#000", light: "#fff", accent: "#c90" } }, materials: [], facts: [] });
-  for (const needle of ["PRESERVE O MISTÉRIO", "Ritmo VARIÁVEL", "escrita para VOZ humana", "Não repita a pergunta do gancho"]) assert.ok(prompt.includes(needle), needle);
+  for (const needle of ["PRESERVE O MISTÉRIO", "Ritmo VARIÁVEL", "não legendas lidas", "TEXTO CONTÍNUO", "NUNCA leia códigos", "PALAVRAS-CHAVE DA FALA", "Não repita a pergunta do gancho"]) assert.ok(prompt.includes(needle), needle);
+  assert.ok(!/até 10 palavras/.test(prompt), "a regra antiga de fala curta saiu");
 });

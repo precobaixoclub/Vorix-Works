@@ -34,11 +34,27 @@ RUN python3 -m venv /opt/whisper \
     && /opt/whisper/bin/pip install --no-cache-dir -r /tmp/whisper-requirements.txt \
     && rm /tmp/whisper-requirements.txt
 
+# Locução local (Kokoro ONNX, sem PyTorch e sem API paga) — versões e modelos idênticos aos do laboratório de
+# sincronia. Medido no VPS (2 CPUs/3 GiB): +206 MB de pacotes, +338 MB de modelos, 18 s de fala em ~76 s, 604 MB
+# de pico. Pesos Apache-2.0 (github.com/thewh1teagle/kokoro-onnx); o build falha se o hash não conferir.
+COPY scripts/tts/requirements-worker.txt /tmp/tts-requirements.txt
+RUN python3 -m venv /opt/tts \
+    && /opt/tts/bin/pip install --no-cache-dir -r /tmp/tts-requirements.txt \
+    && rm /tmp/tts-requirements.txt \
+    && mkdir -p /opt/tts-models \
+    && curl -fsSL -o /opt/tts-models/kokoro-v1.0.onnx https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/kokoro-v1.0.onnx \
+    && curl -fsSL -o /opt/tts-models/voices-v1.0.bin https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/voices-v1.0.bin \
+    && echo "7d5df8ecf7d4b1878015a32686053fd0eebe2bc377234608764cc0ef3636a6c5  /opt/tts-models/kokoro-v1.0.onnx" | sha256sum -c - \
+    && echo "bca610b8308e8d99f32e6fe4197e7ec01679264efed0cac9140fe9c29f1fbf7d  /opt/tts-models/voices-v1.0.bin" | sha256sum -c -
+ENV TTS_PYTHON=/opt/tts/bin/python \
+    TTS_MODEL_DIR=/opt/tts-models
+
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev && npm cache clean --force
 COPY --from=build /app/dist ./dist
 COPY scripts/meetings/faster_whisper_transcribe.py ./scripts/meetings/faster_whisper_transcribe.py
+COPY scripts/tts/tts_runner.py ./scripts/tts/tts_runner.py
 # Motion design (Remotion): composições + Chromium headless. Licença: gratuita até 3 pessoas na organização;
 # acima disso exige Company License (ver docs/remotion-motion-design.md).
 COPY motion-graphics/package.json motion-graphics/package-lock.json ./motion-graphics/

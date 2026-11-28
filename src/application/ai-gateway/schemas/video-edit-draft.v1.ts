@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { validSourceRegion } from "../../../domain/video-editing/video-edit-plan.js";
+import { SPEECH_INTENTS } from "../../video-editing/speech-script.js";
 
 /**
  * `VideoEditDraftV1` — operação `video_edit_planning`. A IA decide a edição em ALTO NÍVEL: ordem
@@ -79,6 +80,18 @@ const draftSchema = z
     music: z.enum(["none", "subtle", "present"]),
     logo: z.enum(["none", "end", "corner"]),
     warnings: z.array(z.string().max(240)).max(10),
+    /**
+     * Locução (narração gravada pelo worker com voz local): uma fala por cena, escrita como texto contínuo.
+     * A duração da fala orienta a edição — a cena narrada nunca fica mais curta que a própria fala.
+     */
+    voiceover: z.object({
+      kind: z.enum(["moda", "tecnologia", "casamento", "ofertas"]).optional(),
+      lines: z.array(z.object({
+        scene: z.number().int().min(0).max(13),
+        text: z.string().min(2).max(180),
+        intent: z.enum(SPEECH_INTENTS).optional(),
+      }).strict()).min(1).max(12),
+    }).strict().optional(),
   })
   .strict();
 

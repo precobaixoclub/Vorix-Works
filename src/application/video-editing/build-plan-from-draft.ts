@@ -56,6 +56,11 @@ export type VideoStyleOptions = {
 };
 
 export type BuildPlanContext = {
+  /**
+   * Locução: duração mínima de cada cena (por índice) para caber a própria fala. Cena narrada usa pelo menos
+   * esse tempo e sai dos ajustes automáticos (duração pedida, batida, ritmo da emoção) — a fala guia a edição.
+   */
+  narrationMinimums?: ReadonlyArray<number | undefined>;
   /** Direção audiovisual (opcional): batidas da trilha, região de interesse dos vídeos, biblioteca de efeitos. */
   beats?: { bpm: number; times: number[] };
   roi?: Record<string, { samples: RoiSample[]; aspect: number }>;
@@ -106,6 +111,11 @@ function mix(hex: string, other: string, amount: number): string {
 }
 function darken(hex: string, amount: number): string {
   return `#${hexToRgb(hex).map((v) => Math.round(v * (1 - amount)).toString(16).padStart(2, "0")).join("").toUpperCase()}`;
+}
+
+/** Estilo da legenda da marca (o mesmo das legendas da transcrição) — usado também pela locução no worker. */
+export function captionTextStyle(context: BuildPlanContext): EditTextStyle {
+  return { ...textStyle("caption", context), colorHex: "#FFFFFF", bold: true };
 }
 
 function textStyle(role: EditTextRole, context: BuildPlanContext): EditTextStyle {
@@ -275,9 +285,11 @@ export function buildPlanFromDraft(draft: VideoEditDraft, context: BuildPlanCont
       }
     }
 
+    const spoken = context.narrationMinimums?.[index];
+    if (spoken !== undefined && spoken > duration) duration = spoken;
     built.push({
       speech,
-      flexible: asset.kind !== "video",
+      flexible: asset.kind !== "video" && spoken === undefined,
       clip: { id: `c${index + 1}`, assetId: asset.id, purpose: scene.purpose, sourceInSeconds: round3(sourceIn), durationSeconds: duration, motion: { type: motionType, intensity }, framing: { fit: asset.kind === "card" ? "fill" : fit, focusX, focusY, ...(zoom ? { zoom } : {}), ...(region ? { region } : {}) }, transitionIn: { type: scene.transitionIn, durationSeconds: 0 }, overlays: design ? [] : overlays, keepSourceAudio: speech, ...(scene.emotion ? { emotion: scene.emotion } : {}), ...(layout !== "full" && !design ? { layout } : {}), ...(design ? { design } : {}) },
     });
   });

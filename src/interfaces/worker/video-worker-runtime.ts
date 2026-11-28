@@ -31,6 +31,9 @@ import { analyzeRegionOfInterest } from "../../infrastructure/video-editing/refr
 import { sfxFile } from "../../infrastructure/video-editing/sfx-library.js";
 import type { SfxKind } from "../../application/video-editing/audiovisual-direction.js";
 import { WhisperVideoTranscriber } from "../../infrastructure/video-editing/whisper-video-transcriber.js";
+import { isLocalTtsConfigured, synthesizeLocal } from "../../infrastructure/video-editing/local-tts.js";
+import { assembleVoiceTrack } from "../../infrastructure/video-editing/audio-master.js";
+import { directedSegments, SPEECH_INTENTS, type CampaignKind, type SpeechIntent } from "../../application/video-editing/speech-script.js";
 
 const env = process.env;
 const int = (value: string | undefined, fallback: number) => (value && Number.isFinite(Number(value)) ? Number(value) : fallback);
@@ -140,6 +143,24 @@ export async function createVideoWorkerRuntime(overrides: Partial<VideoWorkerDep
     analyzeBeats: (musicPath) => analyzeBeats(musicPath),
     analyzeRoi: (videoPath, durationSeconds) => analyzeRegionOfInterest(videoPath, { start: 0, duration: durationSeconds }),
     sfxFile: (kind) => sfxFile(join(workDir, "sfx"), kind as SfxKind),
+    // Locução com voz local (Kokoro, sem API paga): uma fala por arquivo, dirigida pela intenção de cada fala.
+    ...(isLocalTtsConfigured(env)
+      ? {
+          narrate: {
+            synthesize: async ({ lines, kind, dir, signal }) => {
+              const campaign: CampaignKind = (["moda", "tecnologia", "casamento", "ofertas"] as const).find((item) => item === kind) ?? "moda";
+              const directed = lines.map((line) => ({ scene: line.scene, text: line.text, intent: ((SPEECH_INTENTS as readonly string[]).includes(line.intent ?? "") ? line.intent : "explicacao") as SpeechIntent }));
+              // Uma chamada só (o modelo carrega uma vez); cada fala é recortada pelo tempo medido no próprio arquivo.
+              if (signal.aborted) throw new Error("cancelado");
+              const file = join(dir, "voz-falas.wav");
+              const segments = directedSegments(directed, campaign, "frase").map((segment) => ({ ...segment, pauseAfterMs: 300 }));
+              const result = await synthesizeLocal({ engine: "kokoro", voice: env.VIDEO_TTS_VOICE?.trim() || "pf_dora", segments, output: file, env, timeoutMs: 300_000 });
+              return result.segments.map((segment) => ({ file, from: segment.start, to: segment.end, seconds: Math.max(0.1, segment.end - segment.start) }));
+            },
+            assemble: (input) => assembleVoiceTrack(input),
+          },
+        }
+      : {}),
     contactSheet: renderSceneContactSheet,
     sourcePreview: (videoPath, sheetPath, durationSeconds, signal) =>
       renderContactSheet(videoPath, sheetPath, { everySeconds: Math.max(0.2, durationSeconds / 8), columns: 2, tileWidth: 460, maxTiles: 8, signal }),

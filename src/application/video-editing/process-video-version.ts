@@ -16,7 +16,11 @@ import type { VideoEditExecutor } from "../ports/video-edit-executor.port.js";
 import type { VideoProject, VideoProjectRepositoryPort, VideoVersion, VideoVersionPatch } from "../ports/video-project-repository.port.js";
 import type { BrandStyle, PlanningMaterial } from "./build-plan-from-draft.js";
 import { planFromPresetDraft, type PlanningOutcome, type VideoEditPlanningService } from "./plan-video-edit.js";
-import { buildSentences, type Transcript } from "./transcript-tools.js";
+import { buildSentences, transcriptWords, type Transcript } from "./transcript-tools.js";
+import { captionTextStyle } from "./build-plan-from-draft.js";
+import { captionsFromWords, narrationMinimums, narrationQuality, placeNarration, voiceoverLines, type VoiceoverLine } from "./narration-track.js";
+import { alignScriptToAsr } from "./word-alignment.js";
+import { validateVideoEditPlan } from "../../domain/video-editing/video-edit-plan.js";
 import { evaluateVideoQualityGate, type GateAnalysis } from "./video-quality-gate.js";
 
 export type MediaFacts = { durationSeconds?: number; width?: number; height?: number; hasAudio: boolean };
@@ -43,6 +47,14 @@ export type VideoWorkerDeps = {
   sourcePreview?: (videoPath: string, sheetPath: string, durationSeconds: number, signal: AbortSignal) => Promise<void>;
   /** Estilo da marca do workspace + logo (baixado para `logoPath`, se houver). */
   resolveBrand: (project: VideoProject, logoPath: string) => Promise<{ style: BrandStyle; logo?: MediaFacts & { fileName: string } }>;
+  /**
+   * Locução com voz local (sem API paga). `synthesize` grava cada fala num arquivo e devolve a duração;
+   * `assemble` monta a faixa final com cada fala no seu instante. Ausente = rascunho com locução falha.
+   */
+  narrate?: {
+    synthesize: (input: { lines: readonly VoiceoverLine[]; kind?: string; dir: string; signal: AbortSignal }) => Promise<{ file: string; seconds: number; from?: number; to?: number }[]>;
+    assemble: (input: { lines: { file: string; at: number; from?: number; to?: number }[]; seconds: number; output: string }) => Promise<void>;
+  };
   /** Biblioteca de trilhas licenciadas; ausente = sem trilha. */
   pickMusic?: (project: VideoProject, destinationDir: string) => Promise<{ fileName: string; durationSeconds: number } | undefined>;
   log?: (message: string, details?: Record<string, unknown>) => void;
@@ -171,6 +183,17 @@ export async function processNextVideoVersion(deps: VideoWorkerDeps): Promise<{ 
       return extra;
     };
 
+    // Locução: grava as falas ANTES do plano — a duração de cada fala guia a duração da sua cena.
+    const voiceover = version.draft ? voiceoverLines(version.draft) : [];
+    let narration: { lines: VoiceoverLine[]; takes: { file: string; seconds: number; from?: number; to?: number }[] } | undefined;
+    if (voiceover.length) {
+      if (!deps.narrate) throw new Error("o rascunho pede locução, mas a voz local não está configurada no worker");
+      progress("narrating", 21, "Gravando a narração");
+      const takes = await deps.narrate.synthesize({ lines: voiceover, kind: version.draft?.voiceover?.kind, dir, signal: controller.signal });
+      if (takes.length !== voiceover.length) throw new Error("a narração não gravou todas as falas");
+      narration = { lines: voiceover, takes };
+    }
+
     // Planejamento por IA.
     progress("planning", 22, "A IA está planejando a edição");
     const scope = { tenantId: project.tenantId, workspaceId: project.workspaceId };
@@ -190,6 +213,7 @@ export async function processNextVideoVersion(deps: VideoWorkerDeps): Promise<{ 
       musicMaterialId,
       ...(await audiovisualContext()),
       recentStrategies: await deps.repository.latestStrategies(scope, 5),
+      ...(narration && version.draft ? { narrationMinimums: narrationMinimums(narration.lines, narration.takes.map((take) => take.seconds), version.draft.scenes.length) } : {}),
     };
     let outcome: PlanningOutcome;
     const pilot = project.settings.origin?.kind === "editorial_pilot";
@@ -210,6 +234,30 @@ export async function processNextVideoVersion(deps: VideoWorkerDeps): Promise<{ 
       const retry = RETRYABLE_AI.has(outcome.category) && version.attempts < version.maxAttempts;
       log("planejamento falhou", { versionId: version.id, category: outcome.category, retry });
       return await finish({ status: retry ? "queued" : "failed", stage: "planning", usage: outcome.usage, error: AI_MESSAGES[outcome.category] ?? outcome.message, message: retry ? "IA indisponível; nova tentativa em seguida." : undefined, warnings: outcome.issues.slice(0, 10) });
+    }
+    // Locução no plano: cada fala no início da sua cena, faixa montada, palavras ouvidas (Whisper) alinhadas ao
+    // roteiro → legenda palavra a palavra; a trilha abaixa sob a voz. Inteligibilidade e encaixe vão ao Quality Gate.
+    let narrationReport: { status: "ok" | "falha"; findings: string[]; coverage: number; placements: ReturnType<typeof placeNarration>["placements"] } | undefined;
+    if (narration && deps.narrate) {
+      progress("narrating", 24, "Sincronizando a narração com a edição");
+      const placed = placeNarration(outcome.plan.clips, narration.lines, narration.takes.map((take) => take.seconds));
+      const track = join(dir, "sources", "narration.wav");
+      await deps.narrate.assemble({ lines: placed.placements.map((placement, index) => { const take = narration!.takes[index]!; return { file: take.file, at: placement.at, ...(take.from !== undefined ? { from: take.from, to: take.to } : {}) }; }), seconds: outcome.plan.durationSeconds, output: track });
+      sources.NARRATION = track;
+      const heard = transcriptWords(await deps.transcribe(track, dir));
+      const script = narration.lines.flatMap((line) => line.text.split(/\s+/).filter(Boolean));
+      const aligned = alignScriptToAsr(script, heard);
+      const quality = narrationQuality({ placements: placed.placements, issues: placed.issues, coverage: aligned.coverage, lines: narration.lines.length });
+      narrationReport = { ...quality, coverage: aligned.coverage, placements: placed.placements };
+      const plan = outcome.plan;
+      plan.assets.push({ id: "NARRATION", kind: "audio", role: "narration", fileName: "narration.wav", sourceDurationSeconds: plan.durationSeconds });
+      plan.narration = { assetId: "NARRATION", startSeconds: 0, gainDb: 0 };
+      if (plan.music) plan.music.duckUnderSpeech = true;
+      const segments = captionsFromWords(aligned.words, { durationSeconds: plan.durationSeconds });
+      if (segments.length && project.settings.captions !== false) plan.captions = { enabled: true, style: captionTextStyle(request), position: "bottom", segments };
+      const valid = validateVideoEditPlan(plan);
+      if (!valid.valid) throw new Error(`plano com locução inválido: ${valid.issues.slice(0, 3).map((issue) => `${issue.path}: ${issue.message}`).join("; ")}`);
+      outcome.warnings.push(...quality.findings.map((finding) => `locução: ${finding}`));
     }
     await update({ draft: outcome.draft, plan: outcome.plan, usage: outcome.usage, warnings: outcome.warnings, status: "rendering" });
 
@@ -254,12 +302,14 @@ export async function processNextVideoVersion(deps: VideoWorkerDeps): Promise<{ 
       const sheetPath = join(dir, "sheet.jpg");
       await deps.contactSheet(output, sheetPath, outcome.plan).then(() => deps.uploadFile(videoSheetKey(project.tenantId, project.workspaceId, version.id), sheetPath, "image/jpeg")).catch((error) => log("prancha não gerada", { versionId: version.id, message: error instanceof Error ? error.message : String(error) }));
     }
-    log("versão pronta", { versionId: version.id, gate: gate.status, renderMs });
+    // Locução reprovada (fala fora da própria cena ou pouco inteligível) não vai ao cliente como pronta.
+    const ready = gate.status === "ready_for_review" && narrationReport?.status !== "falha";
+    log("versão pronta", { versionId: version.id, gate: gate.status, renderMs, narration: narrationReport ? { status: narrationReport.status, coverage: Math.round(narrationReport.coverage * 100) } : undefined });
     return await finish({
-      status: gate.status === "ready_for_review" ? "ready_for_review" : "needs_revision",
+      status: ready ? "ready_for_review" : "needs_revision",
       stage: "done",
       progress: 100,
-      message: gate.status === "ready_for_review" ? "Pronto para revisão" : "O controle de qualidade encontrou problemas",
+      message: ready ? "Pronto para revisão" : narrationReport?.status === "falha" ? `Locução reprovada: ${narrationReport.findings.join("; ").slice(0, 200)}` : "O controle de qualidade encontrou problemas",
       gate,
       warnings: [...outcome.warnings, ...result.warnings].slice(0, 20),
       outputKey,

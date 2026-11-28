@@ -1,0 +1,8 @@
+# Locução no worker de vídeo (produção): só o Kokoro ONNX — sem PyTorch, sem Piper, sem API paga.
+# Mesmas versões validadas no laboratório de sincronia (versão D da CMKV). Python 3.11.
+kokoro-onnx==0.6.1
+onnxruntime==1.32.0
+numpy==2.4.6
+phonemizer==3.6.0
+espeakng-loader==0.2.4
+psutil==7.2.2

@@ -38,6 +38,12 @@ export const VIDEO_TASTE_PATTERNS = {
   revelacao_antecipada: "Revela antes da hora (quebra o mistério)",
   narracao_envolvente: "Narração envolvente",
   trilha_com_identidade: "Trilha com identidade",
+  // Avaliação de narração: a crítica é à INTERPRETAÇÃO (velocidade, pausas, sincronia), não ao motor de voz.
+  timbre_aceitavel: "Timbre da voz aceitável",
+  narracao_lenta: "Narração lenta",
+  legenda_dessincronizada: "Texto na tela fora do tempo da fala",
+  montagem_melhorou: "Melhora visual reconhecida",
+  impacto_insuficiente: "Falta impacto e sofisticação na montagem",
 } as const;
 export type VideoTastePattern = keyof typeof VIDEO_TASTE_PATTERNS;
 export const isVideoTastePattern = (value: string): value is VideoTastePattern => Object.prototype.hasOwnProperty.call(VIDEO_TASTE_PATTERNS, value);

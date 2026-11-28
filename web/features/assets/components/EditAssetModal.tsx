@@ -7,13 +7,13 @@ import { Modal } from "@/components/Modal";
 import { updateAsset } from "../api";
 import { deriveAssetKind } from "../derive-kind";
 import {
-  ASSET_MATERIAL_TYPES,
   ASSET_MATERIAL_TYPE_LABEL,
   ASSET_USAGE_PRIORITIES,
   ASSET_USAGE_PRIORITY_LABEL,
   type Asset,
   type AssetMaterialType,
   type AssetUsagePriority,
+  materialTypesFor,
 } from "../types";
 
 const SELECT_CLASSES = "w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-primary focus:ring-2 focus:ring-accent-soft";
@@ -79,7 +79,7 @@ export function EditAssetModal({
           <Label htmlFor="asset-edit-material-type">Tipo do material</Label>
           <select id="asset-edit-material-type" value={materialType} onChange={(e) => setMaterialType(e.target.value as AssetMaterialType | "")} className={SELECT_CLASSES}>
             <option value="">Não classificado</option>
-            {ASSET_MATERIAL_TYPES.map((type) => (
+            {materialTypesFor(asset.kind === "video" ? "video/" : asset.storageRef?.metadata?.contentType).map((type) => (
               <option key={type} value={type}>
                 {ASSET_MATERIAL_TYPE_LABEL[type]}
               </option>

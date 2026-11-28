@@ -52,6 +52,10 @@ export const ASSET_MATERIAL_TYPES = [
   "fundo",
   "campanha",
   "outro",
+  "video_produto",
+  "video_institucional",
+  "gravacao_tela",
+  "video_referencia",
 ] as const;
 export type AssetMaterialType = (typeof ASSET_MATERIAL_TYPES)[number];
 
@@ -68,7 +72,20 @@ export const ASSET_MATERIAL_TYPE_LABEL: Record<AssetMaterialType, string> = {
   fundo: "Fundo",
   campanha: "Campanha",
   outro: "Outro",
+  video_produto: "Vídeo do produto",
+  video_institucional: "Vídeo institucional",
+  gravacao_tela: "Gravação de tela",
+  video_referencia: "Vídeo de referência",
 };
+
+/** Tipos que só fazem sentido para arquivo de vídeo (e os únicos oferecidos quando o arquivo é vídeo). */
+export const VIDEO_MATERIAL_TYPES = new Set<AssetMaterialType>(["video_produto", "video_institucional", "gravacao_tela", "video_referencia"]);
+
+/** Tipos oferecidos no seletor conforme o arquivo: vídeo → tipos de vídeo; imagem/PDF/fonte → os demais. */
+export function materialTypesFor(contentType?: string): AssetMaterialType[] {
+  const isVideo = Boolean(contentType?.startsWith("video/"));
+  return ASSET_MATERIAL_TYPES.filter((type) => VIDEO_MATERIAL_TYPES.has(type) === isVideo);
+}
 
 export const ASSET_USAGE_PRIORITIES = ["required", "preferred", "automatic", "on_request"] as const;
 export type AssetUsagePriority = (typeof ASSET_USAGE_PRIORITIES)[number];

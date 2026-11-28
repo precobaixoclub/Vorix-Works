@@ -34,6 +34,11 @@ export function deriveAssetKind(materialType: AssetMaterialType | "", contentTyp
       return "reference";
     case "outro":
       return "document";
+    case "video_produto":
+    case "video_institucional":
+    case "gravacao_tela":
+    case "video_referencia":
+      return "video";
     default:
       // Material ainda "Não classificado" — preserva a categoria já existente (ex.: editar sem
       // reclassificar não pode rebaixar silenciosamente uma logo/foto para "document").
@@ -54,4 +59,8 @@ export const FILE_REQUIRED_MATERIAL_TYPES = new Set<AssetMaterialType>([
   "selo",
   "icone",
   "fundo",
+  "video_produto",
+  "video_institucional",
+  "gravacao_tela",
+  "video_referencia",
 ]);

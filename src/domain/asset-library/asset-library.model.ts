@@ -54,6 +54,11 @@ export const ASSET_MATERIAL_TYPES = [
   "fundo",
   "campanha",
   "outro",
+  // Vídeos (0213): o motor de vídeo usa; a arte estática nunca recebe vídeo.
+  "video_produto",
+  "video_institucional",
+  "gravacao_tela",
+  "video_referencia",
 ] as const;
 export type AssetMaterialType = (typeof ASSET_MATERIAL_TYPES)[number];
 

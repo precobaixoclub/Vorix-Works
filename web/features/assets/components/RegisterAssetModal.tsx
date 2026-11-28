@@ -7,7 +7,6 @@ import { Modal } from "@/components/Modal";
 import { registerAsset, removeImageBackground, uploadAssetFile, type UploadedAssetFile } from "../api";
 import { deriveAssetKind, FILE_REQUIRED_MATERIAL_TYPES } from "../derive-kind";
 import {
-  ASSET_MATERIAL_TYPES,
   ASSET_MATERIAL_TYPE_LABEL,
   ASSET_USAGE_PRIORITIES,
   ASSET_USAGE_PRIORITY_LABEL,
@@ -15,6 +14,8 @@ import {
   type AssetKind,
   type AssetMaterialType,
   type AssetUsagePriority,
+  materialTypesFor,
+  VIDEO_MATERIAL_TYPES,
 } from "../types";
 
 const LOGO_WITHOUT_TRANSPARENCY_ERROR = "ASSET_UPLOAD_LOGO_WITHOUT_TRANSPARENCY";
@@ -58,7 +59,7 @@ export function RegisterAssetModal({
   const [file, setFile] = useState<File | undefined>(initialFile);
   const [name, setName] = useState(initialFile?.name ?? "");
   const [tags, setTags] = useState("");
-  const [materialType, setMaterialType] = useState<AssetMaterialType | "">(defaultMaterialType ?? "");
+  const [materialType, setMaterialType] = useState<AssetMaterialType | "">(defaultMaterialType ?? (initialFile?.type.startsWith("video/") ? "video_produto" : ""));
   const [aiInstructions, setAiInstructions] = useState("");
   const [usageRule, setUsageRule] = useState("");
   const [usagePriority, setUsagePriority] = useState<AssetUsagePriority | "">(defaultUsagePriority ?? "");
@@ -85,6 +86,9 @@ export function RegisterAssetModal({
 
   function pickFile(selected: File | undefined) {
     setFile(selected);
+    // O tipo acompanha o arquivo: vídeo já entra como "Vídeo do produto" (ajustável); imagem não herda tipo de vídeo.
+    const isVideo = Boolean(selected?.type.startsWith("video/"));
+    setMaterialType((current) => (isVideo ? (current && VIDEO_MATERIAL_TYPES.has(current) ? current : "video_produto") : current && VIDEO_MATERIAL_TYPES.has(current) ? "" : current));
     setNeedsTransparency(false);
     setBgRemoval({ status: "idle" });
     if (selected && !name.trim()) setName(selected.name);
@@ -217,7 +221,7 @@ export function RegisterAssetModal({
               onValueChange={(value) => setMaterialType(value === MATERIAL_TYPE_NONE ? "" : (value as AssetMaterialType))}
             >
               <SelectItem value={MATERIAL_TYPE_NONE}>Não classificado</SelectItem>
-              {ASSET_MATERIAL_TYPES.map((type) => (
+              {materialTypesFor(file?.type).map((type) => (
                 <SelectItem key={type} value={type}>
                   {ASSET_MATERIAL_TYPE_LABEL[type]}
                 </SelectItem>

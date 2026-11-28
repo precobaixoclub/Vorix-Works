@@ -58,7 +58,7 @@ const MATERIAL_FILTERS: { id: MaterialFilterId; label: string; kinds?: AssetKind
   { id: "screenshots", label: "Screenshots", kinds: ["mockup"], materialTypes: ["screenshot_site", "screenshot_app"] },
   { id: "referencias", label: "Referências", kinds: ["reference"], materialTypes: ["referencia_visual", "campanha"] },
   { id: "fotos", label: "Fotos", kinds: ["photo"], materialTypes: ["foto_institucional"] },
-  { id: "videos", label: "Vídeos", kinds: ["video"] },
+  { id: "videos", label: "Vídeos", kinds: ["video"], materialTypes: ["video_produto", "video_institucional", "gravacao_tela", "video_referencia"] },
   { id: "fundos", label: "Fundos", materialTypes: ["fundo"] },
   { id: "outros", label: "Outros", kinds: ["font", "brand_book", "document"], materialTypes: ["selo", "icone", "outro"] },
 ];

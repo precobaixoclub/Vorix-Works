@@ -112,3 +112,7 @@ test("selectRelevantBrandMaterials: vídeo da biblioteca nunca vai para a arte e
   const result = selectRelevantBrandMaterials([video, mov, photo], { ideaText: "Vídeo do produto", objective: "venda" });
   assert.deepEqual(result.map((r) => r.material.id), ["foto-1"]);
 });
+
+test("materialTypeToAssetRole: tipos de vídeo não têm papel na arte estática", () => {
+  for (const type of ["video_produto", "video_institucional", "gravacao_tela", "video_referencia"]) assert.equal(materialTypeToAssetRole(type), undefined);
+});
